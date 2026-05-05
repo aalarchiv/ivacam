@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "wiaConstructor",
+  "version": "0.0.0",
+  "identifier": "org.opcenter.wiaconstructor",
+  "build": {
+    "beforeDevCommand": "pnpm --dir ../../frontend dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm --dir ../../frontend build",
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "wiaConstructor",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "DXF/SVG to G-code CAM tool",
+    "longDescription": "wiaConstructor converts DXF and SVG drawings into G-code for CNC mills, lasers, and drag-knife plotters. Rust core, Svelte UI, GPL-3.0-or-later."
+  }
+}

@@ -159,6 +159,10 @@ export function defaultClient(): WiacClient {
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get('api');
+    if (fromQuery === 'wasm') {
+      // Lazy import so the wasm chunk is only fetched on opt-in.
+      return new WasmClientLazy().proxy;
+    }
     if (fromQuery) return new HttpWiacClient(fromQuery);
 
     const { protocol, hostname } = window.location;
@@ -166,6 +170,34 @@ export function defaultClient(): WiacClient {
   }
 
   return new HttpWiacClient('http://127.0.0.1:8765');
+}
+
+/**
+ * WASM client wrapper — same lazy pattern. The wiac-wasm chunk is only
+ * loaded when ?api=wasm is set, otherwise it stays out of the bundle.
+ */
+class WasmClientLazy {
+  private impl: WiacClient | null = null;
+  proxy: WiacClient;
+
+  constructor() {
+    const ensure = async (): Promise<WiacClient> => {
+      if (!this.impl) {
+        const mod = await import('./wasm');
+        this.impl = new mod.WasmWiacClient();
+      }
+      return this.impl;
+    };
+    this.proxy = {
+      health: () => ensure().then((c) => c.health()),
+      version: () => ensure().then((c) => c.version()),
+      importFile: (file, format) => ensure().then((c) => c.importFile(file, format)),
+      generate: (req) => ensure().then((c) => c.generate(req)),
+      generateStream: (req, cb) =>
+        ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
+      defaults: () => ensure().then((c) => c.defaults()),
+    };
+  }
 }
 
 /**

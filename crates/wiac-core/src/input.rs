@@ -72,6 +72,20 @@ pub fn import_path(path: &Path, opts: &ImportOptions) -> Result<ImportOutput> {
     }
 }
 
+/// Bytes-based dispatch — used by transports that don't have a filesystem
+/// (browser WASM) or that already hold the upload buffer in memory.
+pub fn import_bytes(filename: &str, bytes: &[u8], opts: &ImportOptions) -> Result<ImportOutput> {
+    let suffix = std::path::Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    match suffix.as_str() {
+        "dxf" => dxf_in::import_dxf_bytes(filename.to_string(), bytes, opts),
+        other => Err(crate::error::Error::UnsupportedFormat(other.into())),
+    }
+}
+
 /// Build the per-layer summary used by the import response.
 pub(crate) fn summarize_layers(
     segments: &[Segment],

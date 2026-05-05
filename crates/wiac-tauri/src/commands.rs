@@ -102,11 +102,10 @@ pub fn defaults() -> Result<DefaultsResponse, String> {
         .get("Setup")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
-    let definitions = serde_json::Value::Object(components.into_iter().collect());
     Ok(DefaultsResponse {
         setup: Setup::default(),
         schema: setup_schema,
-        definitions,
+        definitions: components,
     })
 }
 

@@ -40,6 +40,17 @@ pub fn import_dxf_path(path: &Path, opts: &ImportOptions) -> crate::Result<Impor
     import_drawing(&drawing, filename, opts)
 }
 
+/// Bytes-based DXF import — used by the WASM transport (no filesystem) and
+/// any future in-memory pipeline that doesn't go through a tempfile.
+pub fn import_dxf_bytes(
+    filename: String,
+    bytes: &[u8],
+    opts: &ImportOptions,
+) -> crate::Result<ImportOutput> {
+    let drawing = Drawing::load(&mut std::io::Cursor::new(bytes)).map_err(Error::Dxf)?;
+    import_drawing(&drawing, filename, opts)
+}
+
 /// Importer entry point that takes an already-parsed `Drawing`. Useful for
 /// tests and for the bytes-based import path.
 pub fn import_drawing(

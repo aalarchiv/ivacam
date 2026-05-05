@@ -493,10 +493,6 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
     )
 }
 
-fn emit_path<P: PostProcessor>(segments: &[Segment], post: &mut P) {
-    emit_path_with_dragoff(segments, 0.0, post);
-}
-
 /// Emit segments with optional drag-knife trailing offset. When
 /// `dragoff > 0`, every line→line corner is preceded by an arc that swivels
 /// the blade around the corner point so the trail aligns with the new

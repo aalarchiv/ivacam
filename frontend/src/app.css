@@ -1,11 +1,17 @@
 /* Theme tokens — both dark (default) and light. Components reference
-   var(--…) only; never hard-code hex. */
+   var(--…) only; never hard-code hex.
+
+   Theme resolution:
+   - `[data-theme="dark"]`  — explicit dark
+   - `[data-theme="light"]` — explicit light
+   - `[data-theme="auto"]`  — follow OS (default)
+   - no attribute            — same as auto */
 
 :root {
   color-scheme: light dark;
 
-  /* Dark mode — lifted from near-black to a more readable ~13% gray
-     and panel borders bumped so dividers are actually visible. */
+  /* Dark mode (default) — lifted from near-black to a more readable
+     ~13% gray and panel borders bumped so dividers are actually visible. */
   --bg-app: #181818;
   --bg-panel: #222222;
   --bg-elevated: #2a2a2a;
@@ -38,8 +44,41 @@
   --tab-marker: #ffd23a;
 }
 
+/* Light tokens applied for explicit light. */
+:root[data-theme="light"] {
+  --bg-app: #fafafa;
+  --bg-panel: #f0f0f0;
+  --bg-elevated: #ffffff;
+  --bg-input: #ffffff;
+  --border: #cccccc;
+  --text: #1a1a1a;
+  --text-strong: #050505;
+  --text-muted: #5a5a5a;
+  --text-faint: #909090;
+  --accent: #1d4ed8;
+  --accent-strong: #2563eb;
+  --success: #166534;
+  --success-bg: #15803d;
+  --error: #b91c1c;
+  --warn: #b45309;
+  --grid-major: #cccccc;
+  --grid-minor: #e5e5e5;
+  --axis-x: #c14040;
+  --axis-y: #2f8a3a;
+  --canvas-empty: #888888;
+
+  --toolpath-rapid: #1d77c2;
+  --toolpath-cut: #c41a1a;
+  --toolpath-plunge: #b58000;
+  --toolpath-retract: #2e8a3a;
+  --toolpath-arc: #c45e1a;
+  --imported-faded: #b6b6b6;
+
+  --tab-marker: #b58000;
+}
+
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
     --bg-app: #fafafa;
     --bg-panel: #f0f0f0;
     --bg-elevated: #ffffff;

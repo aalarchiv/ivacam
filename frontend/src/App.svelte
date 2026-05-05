@@ -7,6 +7,26 @@
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
   import { project } from './lib/state/project.svelte';
+  import { onMount } from 'svelte';
+
+  type ThemePref = 'auto' | 'light' | 'dark';
+  let theme = $state<ThemePref>('auto');
+  const THEME_KEY = 'wiac.theme';
+
+  onMount(() => {
+    const stored = localStorage.getItem(THEME_KEY) as ThemePref | null;
+    if (stored === 'auto' || stored === 'light' || stored === 'dark') {
+      theme = stored;
+    }
+    document.documentElement.dataset.theme = theme;
+  });
+
+  $effect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {}
+  });
 
   let activePane = $state<'2d' | '3d'>('2d');
 
@@ -56,6 +76,23 @@
       >
         3D
       </button>
+    </div>
+    <div class="theme-toggle" role="group" aria-label="Theme">
+      <button
+        class:active={theme === 'auto'}
+        onclick={() => (theme = 'auto')}
+        title="Follow OS color scheme"
+      >Auto</button>
+      <button
+        class:active={theme === 'light'}
+        onclick={() => (theme = 'light')}
+        title="Force light theme"
+      >Light</button>
+      <button
+        class:active={theme === 'dark'}
+        onclick={() => (theme = 'dark')}
+        title="Force dark theme"
+      >Dark</button>
     </div>
   </header>
 
@@ -158,6 +195,24 @@
     cursor: pointer;
   }
   .pane-toggle button.active {
+    background: var(--accent);
+    color: white;
+  }
+  .theme-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .theme-toggle button {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 0;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .theme-toggle button.active {
     background: var(--accent);
     color: white;
   }

@@ -29,13 +29,19 @@
     const ro = new ResizeObserver(() => draw());
     ro.observe(container);
     draw();
-    // Re-paint when the user toggles their OS theme.
+    // Re-paint when the user toggles their OS theme or picks a manual one.
     const mql = window.matchMedia('(prefers-color-scheme: light)');
     const onChange = () => draw();
     mql.addEventListener('change', onChange);
+    const themeMo = new MutationObserver(() => draw());
+    themeMo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
     return () => {
       ro.disconnect();
       mql.removeEventListener('change', onChange);
+      themeMo.disconnect();
     };
   });
 

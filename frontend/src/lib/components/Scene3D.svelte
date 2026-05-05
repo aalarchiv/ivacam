@@ -14,6 +14,7 @@
   let raf = 0;
   let observer: ResizeObserver | undefined;
   let themeMql: MediaQueryList | undefined;
+  let themeMo: MutationObserver | undefined;
 
   function cssVar(name: string, fallback: string): string {
     if (!host) return fallback;
@@ -73,11 +74,17 @@
     raf = requestAnimationFrame(tick);
 
     // Re-skin background + grid + (re-trigger) toolpath colors when the
-    // OS theme changes. The toolpath group rebuilds via the $effect below
-    // since we touch project.imported as a Svelte dep.
+    // OS theme changes OR the user toggles a manual theme. The toolpath
+    // group rebuilds via the $effect below since we touch project.imported
+    // as a Svelte dep.
     themeMql = window.matchMedia('(prefers-color-scheme: light)');
     const onTheme = () => applyTheme();
     themeMql.addEventListener('change', onTheme);
+    themeMo = new MutationObserver(() => applyTheme());
+    themeMo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
   });
 
   function applyTheme() {
@@ -110,6 +117,7 @@
       const handler = () => applyTheme();
       themeMql.removeEventListener('change', handler);
     }
+    themeMo?.disconnect();
     if (renderer && host?.contains(renderer.domElement)) {
       host.removeChild(renderer.domElement);
     }

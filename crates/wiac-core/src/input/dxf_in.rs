@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use dxf::entities::{
-    Arc, Circle, Ellipse, Entity, EntityType, Line, LwPolyline, ModelPoint, MText, Polyline, Spline,
+    Arc, Circle, Ellipse, Entity, EntityType, Line, LwPolyline, MLine, MText, ModelPoint,
+    Polyline, Spline,
     Text, Vertex,
 };
 use dxf::enums::Units;
@@ -232,6 +233,7 @@ impl ImportCtx<'_> {
                     self.add_entity(sub, blocks, &block_xform, depth + 1);
                 }
             }
+            EntityType::MLine(m) => self.emit_mline(m, &layer, color, xform),
             EntityType::Text(t) if !self.opts.no_text => self.emit_text(t, &layer, color, xform),
             EntityType::MText(t) if !self.opts.no_text => {
                 self.emit_mtext(t, &layer, color, xform)
@@ -468,6 +470,62 @@ impl ImportCtx<'_> {
                 self.push_arc_segments(s, e, bulge, None, layer, color);
             } else {
                 self.push_line(s, e, layer, color);
+            }
+        }
+    }
+
+    /// Flatten an MLINE into the spine (centerline) plus two parallel
+    /// offsets at ±scale_factor/2 along each vertex's miter direction. Style
+    /// table support (per-element offsets, caps, joints) is intentionally
+    /// out of scope; the typical 2-element default style emerges naturally.
+    fn emit_mline(&mut self, m: &MLine, layer: &str, color: i32, xform: &Transform2D) {
+        if m.vertices.len() < 2 {
+            return;
+        }
+        let closed = (m.flags & 2) != 0;
+        let half = (m.scale_factor * 0.5).abs();
+        let n = m.vertices.len();
+
+        // Spine: connect vertices directly.
+        let last = if closed { n } else { n - 1 };
+        for i in 0..last {
+            let v0 = &m.vertices[i];
+            let v1 = &m.vertices[(i + 1) % n];
+            let a = self.scale(xform.apply(v0.x, v0.y));
+            let b = self.scale(xform.apply(v1.x, v1.y));
+            self.push_line(a, b, layer, color);
+        }
+
+        if half < 1e-9 || m.miter_directions.is_empty() {
+            return;
+        }
+
+        // Two parallel offsets at ±half along each vertex's miter direction.
+        // We expect miter_directions.len() == n; if not, skip the offsets to
+        // avoid index-out-of-range surprises with malformed files.
+        if m.miter_directions.len() < n {
+            self.warnings.push(format!(
+                "MLINE on layer '{layer}' had {} vertices but {} miter directions; skipping parallel offsets",
+                n,
+                m.miter_directions.len()
+            ));
+            return;
+        }
+        for sign in [-1.0_f64, 1.0_f64] {
+            for i in 0..last {
+                let v0 = &m.vertices[i];
+                let v1 = &m.vertices[(i + 1) % n];
+                let m0 = &m.miter_directions[i];
+                let m1 = &m.miter_directions[(i + 1) % n];
+                let a = self.scale(xform.apply(
+                    v0.x + sign * half * m0.x,
+                    v0.y + sign * half * m0.y,
+                ));
+                let b = self.scale(xform.apply(
+                    v1.x + sign * half * m1.x,
+                    v1.y + sign * half * m1.y,
+                ));
+                self.push_line(a, b, layer, color);
             }
         }
     }

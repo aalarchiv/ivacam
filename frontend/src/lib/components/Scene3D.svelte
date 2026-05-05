@@ -132,9 +132,36 @@
     void project.visibleLayers;
     void project.generated;
     void project.playhead;
+    void project.tabs;
     rebuildGeometry();
     updateTool();
+    updateTabs();
   });
+
+  let tabsGroup: THREE.Group | undefined;
+
+  function updateTabs() {
+    if (!scene) return;
+    if (!tabsGroup) {
+      tabsGroup = new THREE.Group();
+      scene.add(tabsGroup);
+    }
+    tabsGroup.clear();
+    const color = cssColor('--tab-marker', 0xffd23a);
+    const radius = Math.max(
+      0.5,
+      ((project.imported?.bbox.max_x ?? 100) - (project.imported?.bbox.min_x ?? 0)) * 0.008,
+    );
+    const geom = new THREE.SphereGeometry(radius, 12, 8);
+    const mat = new THREE.MeshBasicMaterial({ color });
+    for (const list of Object.values(project.tabs)) {
+      for (const t of list) {
+        const sphere = new THREE.Mesh(geom, mat);
+        sphere.position.set(t.x, t.y, 0);
+        tabsGroup.add(sphere);
+      }
+    }
+  }
 
   /// Tool-tip cone: a small inverted cone whose apex sits at the current
   /// toolpath position. Color is the active move kind (cut/plunge/etc.) so

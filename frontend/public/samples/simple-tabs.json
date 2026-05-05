@@ -1,0 +1,14 @@
+{
+  "kind": "wiac-project",
+  "version": 1,
+  "imported": null,
+  "setup": {},
+  "visibleLayers": [],
+  "selectedEntities": [],
+  "tabs": {
+    "0": [{ "x": 50, "y": 70 }],
+    "1": [{ "x": 90, "y": 50 }],
+    "3": [{ "x": 50, "y": -10 }],
+    "4": [{ "x": 10, "y": 10 }]
+  }
+}

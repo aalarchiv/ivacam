@@ -2,7 +2,7 @@
 // Holds the most recently imported geometry plus UI flags.
 
 import type { DefaultsResponse, JsonSchema } from '../api/client';
-import type { GenerateResponse, ImportResponse } from '../api/types';
+import type { GenerateResponse, ImportResponse, Point2 } from '../api/types';
 
 class ProjectState {
   imported = $state<ImportResponse | null>(null);
@@ -25,12 +25,44 @@ class ProjectState {
   /// indicator and by PlaybackBar for the slider.
   playhead = $state(1.0);
 
+  /// Tab placements per imported segment index. Each tab is a position
+  /// where the cutter lifts to clear the workpiece. The CAM core honors
+  /// these via `setup.tabs.data` once gas.6 lands; until then they are
+  /// purely visual + persisted in .vc-project.json.
+  tabs = $state<Record<number, Tab[]>>({});
+
+  /// UI mode for placing tabs by clicking in the 2D canvas.
+  tabMode = $state(false);
+
+  addTab(segmentIdx: number, position: Point2) {
+    const next = { ...this.tabs };
+    next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: position.x, y: position.y }];
+    this.tabs = next;
+    this.generated = null; // invalidate gcode — needs re-Generate
+  }
+
+  removeTab(segmentIdx: number, tabIdx: number) {
+    const list = this.tabs[segmentIdx];
+    if (!list) return;
+    const next = { ...this.tabs };
+    next[segmentIdx] = list.filter((_, i) => i !== tabIdx);
+    if (next[segmentIdx].length === 0) delete next[segmentIdx];
+    this.tabs = next;
+    this.generated = null;
+  }
+
+  clearTabs() {
+    this.tabs = {};
+    this.generated = null;
+  }
+
   setImported(r: ImportResponse) {
     this.imported = r;
     this.generated = null;
     this.error = null;
     this.visibleLayers = new Set(r.layers.map((l) => l.name));
     this.selectedEntities = new Set();
+    this.tabs = {};
   }
 
   setGenerated(r: GenerateResponse) {
@@ -71,6 +103,7 @@ class ProjectState {
       setup: this.setup,
       visibleLayers: [...this.visibleLayers],
       selectedEntities: [...this.selectedEntities],
+      tabs: this.tabs,
     };
   }
 
@@ -82,7 +115,13 @@ class ProjectState {
     this.setup = file.setup ?? this.setup;
     this.visibleLayers = new Set(file.visibleLayers ?? []);
     this.selectedEntities = new Set(file.selectedEntities ?? []);
+    this.tabs = file.tabs ?? {};
   }
+}
+
+export interface Tab {
+  x: number;
+  y: number;
 }
 
 export interface ProjectFile {
@@ -92,6 +131,7 @@ export interface ProjectFile {
   setup: Record<string, unknown>;
   visibleLayers: string[];
   selectedEntities: number[];
+  tabs?: Record<number, Tab[]>;
 }
 
 export const project = new ProjectState();

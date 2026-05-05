@@ -15,9 +15,14 @@
     if (project.generated) activePane = '3d';
   });
 
+  const tabCount = $derived(
+    Object.values(project.tabs).reduce((n, list) => n + list.length, 0),
+  );
+
   function onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && project.selectedEntities.size > 0) {
-      project.selectedEntities = new Set();
+    if (e.key === 'Escape') {
+      if (project.tabMode) project.tabMode = false;
+      else if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
     }
   }
 </script>
@@ -29,6 +34,15 @@
     <h1>wiaConstructor</h1>
     <span class="tagline">DXF / SVG → G-code · Stage-1 web preview</span>
     <div class="spacer"></div>
+    <button
+      class="tool-toggle"
+      class:active={project.tabMode}
+      onclick={() => (project.tabMode = !project.tabMode)}
+      disabled={!project.imported}
+      title="Tab placement: click on a contour in 2D to add a tab; click an existing tab to remove. Esc to leave."
+    >
+      Tabs ({tabCount})
+    </button>
     <div class="pane-toggle">
       <button
         class:active={activePane === '2d'}
@@ -110,6 +124,24 @@
   }
   .spacer {
     flex: 1;
+  }
+  .tool-toggle {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .tool-toggle.active {
+    background: var(--tab-marker);
+    color: #1a1a1a;
+    border-color: var(--tab-marker);
+  }
+  .tool-toggle:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .pane-toggle {
     display: inline-flex;

@@ -112,14 +112,24 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     const params = new URLSearchParams(window.location.search);
     const sample = params.get('sample');
     const gen = params.get('gen');
+    const tabs = params.get('tabs');
     if (sample && gen) {
-      loadSampleWithGenerate(`/samples/${sample}.json`, `/samples/${gen}.json`);
+      await loadSampleWithGenerate(`/samples/${sample}.json`, `/samples/${gen}.json`);
     } else if (sample) {
-      loadSample(`/samples/${sample}.json`);
+      await loadSample(`/samples/${sample}.json`);
+    }
+    if (tabs) {
+      try {
+        const r = await fetch(`/samples/${tabs}.json`);
+        const data = await r.json();
+        if (data.tabs) project.tabs = data.tabs;
+      } catch (e) {
+        project.setError(`tabs sample: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   });
 </script>

@@ -2,36 +2,40 @@
    var(--…) only; never hard-code hex. */
 
 :root {
-  color-scheme: dark light;
+  color-scheme: light dark;
 
-  --bg-app: #0d0d0d;
-  --bg-panel: #161616;
-  --bg-elevated: #1a1a1a;
-  --bg-input: #0d0d0d;
-  --border: #2b2b2b;
-  --text: #d6d6d6;
-  --text-strong: #f0f0f0;
-  --text-muted: #888;
-  --text-faint: #666;
-  --accent: #2d6cdf;
-  --accent-strong: #6e9ce6;
-  --success: #6ec068;
-  --success-bg: #2d8c4d;
-  --error: #df6c6c;
+  /* Dark mode — lifted from near-black to a more readable ~13% gray
+     and panel borders bumped so dividers are actually visible. */
+  --bg-app: #181818;
+  --bg-panel: #222222;
+  --bg-elevated: #2a2a2a;
+  --bg-input: #1a1a1a;
+  --border: #3d3d3d;
+  --text: #e6e6e6;
+  --text-strong: #ffffff;
+  --text-muted: #a0a0a0;
+  --text-faint: #777777;
+  --accent: #4a8df0;
+  --accent-strong: #88b1f5;
+  --success: #84d676;
+  --success-bg: #2f8f4a;
+  --error: #ef8585;
   --warn: #ffd23a;
-  --grid-major: #262626;
-  --grid-minor: #1a1a1a;
-  --axis-x: #882222;
-  --axis-y: #226622;
-  --canvas-empty: #555;
+  --grid-major: #3a3a3a;
+  --grid-minor: #262626;
+  --axis-x: #c44343;
+  --axis-y: #43a463;
+  --canvas-empty: #707070;
 
   /* Toolpath color scheme — used in Three.js too via getComputedStyle. */
-  --toolpath-rapid: #35a2ff;
-  --toolpath-cut: #ff5555;
+  --toolpath-rapid: #5cb6ff;
+  --toolpath-cut: #ff7373;
   --toolpath-plunge: #ffd23a;
-  --toolpath-retract: #5fd06e;
-  --toolpath-arc: #ff8a3a;
-  --imported-faded: #444444;
+  --toolpath-retract: #7fdc8c;
+  --toolpath-arc: #ff9d4d;
+  --imported-faded: #585858;
+
+  --tab-marker: #ffd23a;
 }
 
 @media (prefers-color-scheme: light) {
@@ -40,22 +44,22 @@
     --bg-panel: #f0f0f0;
     --bg-elevated: #ffffff;
     --bg-input: #ffffff;
-    --border: #d4d4d4;
+    --border: #cccccc;
     --text: #1a1a1a;
     --text-strong: #050505;
-    --text-muted: #6a6a6a;
-    --text-faint: #999999;
+    --text-muted: #5a5a5a;
+    --text-faint: #909090;
     --accent: #1d4ed8;
     --accent-strong: #2563eb;
     --success: #166534;
     --success-bg: #15803d;
     --error: #b91c1c;
     --warn: #b45309;
-    --grid-major: #d6d6d6;
-    --grid-minor: #ebebeb;
+    --grid-major: #cccccc;
+    --grid-minor: #e5e5e5;
     --axis-x: #c14040;
     --axis-y: #2f8a3a;
-    --canvas-empty: #999999;
+    --canvas-empty: #888888;
 
     --toolpath-rapid: #1d77c2;
     --toolpath-cut: #c41a1a;
@@ -63,6 +67,8 @@
     --toolpath-retract: #2e8a3a;
     --toolpath-arc: #c45e1a;
     --imported-faded: #b6b6b6;
+
+    --tab-marker: #b58000;
   }
 }
 

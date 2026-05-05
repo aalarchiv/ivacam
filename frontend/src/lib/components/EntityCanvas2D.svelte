@@ -43,6 +43,8 @@
     void project.imported;
     void project.visibleLayers;
     void project.selectedEntities;
+    void project.tabs;
+    void project.tabMode;
     void hoverIdx;
     draw();
   });
@@ -96,18 +98,33 @@
     const idx = pixelHit(e.clientX - rect.left, e.clientY - rect.top);
     if (idx !== hoverIdx) {
       hoverIdx = idx;
-      canvas.style.cursor = idx == null ? 'default' : 'pointer';
+      const baseCursor = project.tabMode ? 'crosshair' : 'default';
+      canvas.style.cursor = idx == null ? baseCursor : project.tabMode ? 'cell' : 'pointer';
     }
   }
   function onPointerLeave() {
     hoverIdx = null;
-    canvas.style.cursor = 'default';
+    canvas.style.cursor = project.tabMode ? 'crosshair' : 'default';
   }
   function onPointerDown(e: PointerEvent) {
     const rect = canvas.getBoundingClientRect();
-    const idx = pixelHit(e.clientX - rect.left, e.clientY - rect.top);
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+
+    // Tab mode takes precedence over selection: a click adds (or removes)
+    // a tab at the closest point on the nearest segment.
+    if (project.tabMode) {
+      const removed = removeTabAtPixel(cx, cy);
+      if (removed) return;
+      const idx = pixelHit(cx, cy);
+      if (idx == null) return;
+      const proj = closestPointOnSegment(idx, cx, cy);
+      if (proj) project.addTab(idx, proj);
+      return;
+    }
+
+    const idx = pixelHit(cx, cy);
     if (idx == null) {
-      // Empty click clears selection unless the user is rectangle-marquee'ing.
       if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
         project.selectedEntities = new Set();
       }
@@ -122,6 +139,49 @@
       next.add(idx);
     }
     project.selectedEntities = next;
+  }
+
+  function closestPointOnSegment(
+    segmentIdx: number,
+    canvasX: number,
+    canvasY: number,
+  ): { x: number; y: number } | null {
+    const data = project.imported;
+    if (!data || !lastTransform) return null;
+    const { scale, offX, offY } = lastTransform;
+    const dataX = (canvasX - offX) / scale;
+    const dataY = (offY - canvasY) / scale;
+    const s = data.segments[segmentIdx];
+    if (!s) return null;
+    const dx = s.end.x - s.start.x;
+    const dy = s.end.y - s.start.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-12) return { x: s.start.x, y: s.start.y };
+    let t = ((dataX - s.start.x) * dx + (dataY - s.start.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return { x: s.start.x + t * dx, y: s.start.y + t * dy };
+  }
+
+  /// Returns true if a tab marker was clicked and removed.
+  function removeTabAtPixel(canvasX: number, canvasY: number): boolean {
+    if (!lastTransform) return false;
+    const { scale, offX, offY } = lastTransform;
+    const tolPx = 10;
+    const tolData = tolPx / scale;
+    for (const [idxStr, list] of Object.entries(project.tabs)) {
+      const segIdx = Number(idxStr);
+      for (let i = 0; i < list.length; i++) {
+        const t = list[i];
+        const cx = t.x * scale + offX;
+        const cy = offY - t.y * scale;
+        const _ = tolData; // kept to make the threshold doc-explicit
+        if (Math.hypot(canvasX - cx, canvasY - cy) <= tolPx) {
+          project.removeTab(segIdx, i);
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   function colorFor(c: number): string {
@@ -184,6 +244,28 @@
       ctx.lineWidth = selected ? 2.4 : hovered ? 1.8 : 1.25;
       ctx.strokeStyle = selected ? accent : hovered ? hoverColor : colorFor(seg.color);
       drawSegment(ctx, seg, project2);
+    }
+
+    drawTabs(ctx, project2);
+  }
+
+  function drawTabs(
+    ctx: CanvasRenderingContext2D,
+    p: (x: number, y: number) => [number, number],
+  ) {
+    const tabFill = themeVar('--tab-marker', '#ffd23a');
+    const tabStroke = themeVar('--bg-app', '#0d0d0d');
+    for (const list of Object.values(project.tabs)) {
+      for (const tab of list) {
+        const [cx, cy] = p(tab.x, tab.y);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.fillStyle = tabFill;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = tabStroke;
+        ctx.stroke();
+      }
     }
   }
 

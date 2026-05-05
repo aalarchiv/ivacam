@@ -245,7 +245,13 @@ async fn generate(
             closed += 1;
         }
         if obj.closed && setup.pockets.active {
-            for mut o in pocket_for_object(obj, radius, setup.pockets.nocontour, 6) {
+            for mut o in pocket_for_object(
+                obj,
+                radius,
+                setup.pockets.nocontour,
+                6,
+                setup.pockets.zigzag,
+            ) {
                 o.source_object_idx = idx;
                 offsets.push(o);
             }

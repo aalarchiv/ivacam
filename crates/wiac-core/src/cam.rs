@@ -190,6 +190,109 @@ pub fn segment_to_points(seg: &Segment, interpolate: usize) -> Vec<Point2> {
     out
 }
 
+// ─── Object transforms (rov.15) ────────────────────────────────────────────
+//
+// Pure helpers that mutate a `VcObject` (or any `&mut [Segment]`). They
+// keep the segment list shape — bulges, kinds, layers — intact, only
+// touching coordinates.
+
+/// Rotate every point of `segments` around `pivot` by `angle_rad`.
+pub fn rotate_segments(segments: &mut [Segment], pivot: Point2, angle_rad: f64) {
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
+    for s in segments.iter_mut() {
+        s.start = rotate_point(s.start, pivot, cos_a, sin_a);
+        s.end = rotate_point(s.end, pivot, cos_a, sin_a);
+        if let Some(c) = s.center {
+            s.center = Some(rotate_point(c, pivot, cos_a, sin_a));
+        }
+    }
+}
+
+/// Translate every point by `(dx, dy)`.
+pub fn translate_segments(segments: &mut [Segment], dx: f64, dy: f64) {
+    for s in segments.iter_mut() {
+        s.start.x += dx;
+        s.start.y += dy;
+        s.end.x += dx;
+        s.end.y += dy;
+        if let Some(c) = s.center {
+            s.center = Some(Point2::new(c.x + dx, c.y + dy));
+        }
+    }
+}
+
+/// Uniformly scale around `pivot`.
+pub fn scale_segments(segments: &mut [Segment], pivot: Point2, factor: f64) {
+    for s in segments.iter_mut() {
+        s.start = scale_point(s.start, pivot, factor);
+        s.end = scale_point(s.end, pivot, factor);
+        if let Some(c) = s.center {
+            s.center = Some(scale_point(c, pivot, factor));
+        }
+        // Bulge survives uniform scale unchanged (it's an angle ratio).
+    }
+}
+
+/// Mirror across the X-axis line `y = pivot.y`. Negates bulge so arcs
+/// stay valid in the mirrored frame.
+pub fn mirror_segments_x(segments: &mut [Segment], pivot: Point2) {
+    for s in segments.iter_mut() {
+        s.start.y = 2.0 * pivot.y - s.start.y;
+        s.end.y = 2.0 * pivot.y - s.end.y;
+        if let Some(c) = s.center {
+            s.center = Some(Point2::new(c.x, 2.0 * pivot.y - c.y));
+        }
+        s.bulge = -s.bulge;
+    }
+}
+
+/// Mirror across the Y-axis line `x = pivot.x`. Negates bulge.
+pub fn mirror_segments_y(segments: &mut [Segment], pivot: Point2) {
+    for s in segments.iter_mut() {
+        s.start.x = 2.0 * pivot.x - s.start.x;
+        s.end.x = 2.0 * pivot.x - s.end.x;
+        if let Some(c) = s.center {
+            s.center = Some(Point2::new(2.0 * pivot.x - c.x, c.y));
+        }
+        s.bulge = -s.bulge;
+    }
+}
+
+fn rotate_point(p: Point2, pivot: Point2, cos_a: f64, sin_a: f64) -> Point2 {
+    let dx = p.x - pivot.x;
+    let dy = p.y - pivot.y;
+    Point2::new(
+        pivot.x + dx * cos_a - dy * sin_a,
+        pivot.y + dx * sin_a + dy * cos_a,
+    )
+}
+
+fn scale_point(p: Point2, pivot: Point2, factor: f64) -> Point2 {
+    Point2::new(
+        pivot.x + (p.x - pivot.x) * factor,
+        pivot.y + (p.y - pivot.y) * factor,
+    )
+}
+
+/// Combined bbox over many objects (calc.py:objects2minmax).
+pub fn objects_bbox(objects: &[VcObject]) -> Option<crate::BBox> {
+    let mut bbox = crate::BBox::EMPTY;
+    let mut any = false;
+    for obj in objects {
+        for s in &obj.segments {
+            bbox.extend_point(s.start);
+            bbox.extend_point(s.end);
+            any = true;
+        }
+    }
+    if any {
+        Some(bbox)
+    } else {
+        None
+    }
+}
+
 /// Flatten a sequence of segments to a polyline. Connecting endpoints are
 /// shared (no duplicate consecutive points).
 pub fn segments_to_points(segments: &[Segment], interpolate: usize) -> Vec<Point2> {
@@ -253,6 +356,44 @@ mod tests {
         assert!(is_inside_polygon(&sq, Point2::new(5.0, 5.0)));
         assert!(!is_inside_polygon(&sq, Point2::new(15.0, 5.0)));
         assert!(!is_inside_polygon(&sq, Point2::new(-1.0, 5.0)));
+    }
+
+    #[test]
+    fn translate_and_rotate_round_trip() {
+        let mut segs = vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), "0", 7),
+            Segment::arc(
+                Point2::new(10.0, 0.0),
+                Point2::new(0.0, 10.0),
+                1.0,
+                Some(Point2::new(0.0, 0.0)),
+                "0",
+                7,
+            ),
+        ];
+        translate_segments(&mut segs, 5.0, 5.0);
+        translate_segments(&mut segs, -5.0, -5.0);
+        assert!(segs[0].start.distance(Point2::new(0.0, 0.0)) < 1e-9);
+        assert!(segs[0].end.distance(Point2::new(10.0, 0.0)) < 1e-9);
+
+        rotate_segments(&mut segs, Point2::new(0.0, 0.0), std::f64::consts::PI);
+        rotate_segments(&mut segs, Point2::new(0.0, 0.0), -std::f64::consts::PI);
+        assert!(segs[0].end.distance(Point2::new(10.0, 0.0)) < 1e-9);
+    }
+
+    #[test]
+    fn mirror_negates_bulge() {
+        let mut segs = vec![Segment::arc(
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 0.0),
+            0.5,
+            None,
+            "0",
+            7,
+        )];
+        let original_bulge = segs[0].bulge;
+        mirror_segments_x(&mut segs, Point2::new(0.0, 0.0));
+        assert!((segs[0].bulge + original_bulge).abs() < 1e-9);
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
-use wiac_core::cam::offsets::{parallel_offset_object, pocket_for_object, PolylineOffset};
+use wiac_core::cam::offsets::{parallel_offset_object, PolylineOffset};
 use wiac_core::cam::setup::{Setup, ToolOffset};
 use wiac_core::gcode::{emit_polylines, linuxcnc};
 use wiac_core::testing::{diff_gcode, DiffOptions, DiffOutcome};

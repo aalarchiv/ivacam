@@ -74,11 +74,120 @@ pub fn emit_polylines<P: PostProcessor>(
 ) -> String {
     program_begin(setup, post);
     let mut last_pos = Point2::new(0.0, 0.0);
-    for offset in offsets {
-        emit_offset(setup, offset, post, &mut last_pos);
+    let order = order_offsets(setup, offsets, last_pos);
+    for &idx in &order {
+        emit_offset(setup, &offsets[idx], post, &mut last_pos);
     }
     program_end(setup, post);
     post.finish()
+}
+
+/// Decide the cut order for the offsets. Honors `setup.mill.objectorder`:
+/// - `Unordered`  — input order, matches the upstream Python tool.
+/// - `Nearest`    — greedy nearest-neighbor from current pen position;
+///                  ties broken by deepest level (innermost) first so
+///                  pocket cascades unwind from the inside out.
+/// - `PerObject`  — group all offsets sharing source_object_idx, finish
+///                  one object before starting the next; within a group
+///                  use Nearest.
+fn order_offsets(
+    setup: &Setup,
+    offsets: &[PolylineOffset],
+    start: Point2,
+) -> Vec<usize> {
+    use crate::cam::setup::ObjectOrder;
+    let n = offsets.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    match setup.mill.objectorder {
+        ObjectOrder::Unordered => (0..n).collect(),
+        ObjectOrder::Nearest => greedy_nearest(offsets, start),
+        ObjectOrder::PerObject => {
+            // Group by source_object_idx (preserving first-seen order),
+            // run nearest-neighbor inside each group seeded at the
+            // previous group's end.
+            let mut groups: Vec<Vec<usize>> = Vec::new();
+            let mut group_of: std::collections::HashMap<usize, usize> = Default::default();
+            for (i, o) in offsets.iter().enumerate() {
+                let g = *group_of
+                    .entry(o.source_object_idx)
+                    .or_insert_with(|| {
+                        groups.push(Vec::new());
+                        groups.len() - 1
+                    });
+                groups[g].push(i);
+            }
+            let mut out = Vec::with_capacity(n);
+            let mut pen = start;
+            for group in groups {
+                let group_offsets: Vec<&PolylineOffset> =
+                    group.iter().map(|&i| &offsets[i]).collect();
+                let local = greedy_nearest_among(&group_offsets, pen);
+                for li in local {
+                    let global = group[li];
+                    out.push(global);
+                    pen = end_pos(&offsets[global]);
+                }
+            }
+            out
+        }
+    }
+}
+
+fn greedy_nearest(offsets: &[PolylineOffset], start: Point2) -> Vec<usize> {
+    let refs: Vec<&PolylineOffset> = offsets.iter().collect();
+    greedy_nearest_among(&refs, start)
+}
+
+fn greedy_nearest_among(offsets: &[&PolylineOffset], start: Point2) -> Vec<usize> {
+    let n = offsets.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let mut taken = vec![false; n];
+    let mut order = Vec::with_capacity(n);
+    let mut pen = start;
+    for _ in 0..n {
+        let mut best: Option<(usize, f64, u32)> = None;
+        for (i, o) in offsets.iter().enumerate() {
+            if taken[i] {
+                continue;
+            }
+            let d = pen.distance(start_pos_of(o));
+            // Tie-breaker: deeper levels first so pocket cascades unwind
+            // inside-out (innermost ring before its parent contour).
+            let level = o.level;
+            let better = match best {
+                None => true,
+                Some((_, bd, bl)) => d < bd || (d == bd && level > bl),
+            };
+            if better {
+                best = Some((i, d, level));
+            }
+        }
+        let (chosen, _, _) = best.unwrap();
+        taken[chosen] = true;
+        order.push(chosen);
+        pen = end_pos(offsets[chosen]);
+    }
+    order
+}
+
+fn start_pos_of(offset: &PolylineOffset) -> Point2 {
+    offset
+        .segments
+        .first()
+        .map(|s| s.start)
+        .unwrap_or(Point2::new(0.0, 0.0))
+}
+
+fn end_pos(offset: &PolylineOffset) -> Point2 {
+    offset
+        .segments
+        .last()
+        .map(|s| s.end)
+        .unwrap_or(Point2::new(0.0, 0.0))
 }
 
 fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
@@ -163,27 +272,107 @@ fn multi_pass<P: PostProcessor>(
     } else {
         setup.mill.step
     };
-    // Tabs interrupt the cut from `total_depth + tab.height` upward — when
-    // the pass is shallower than that, tabs are irrelevant for that pass.
     let tabs_z = total_depth + setup.tabs.height.abs();
     let tab_radius = (setup.tool.diameter * 0.5).max(0.5);
 
+    // Helix mode replaces the straight Z plunge between passes with a
+    // spiral down the contour — gentler on small-diameter tools and
+    // produces cleaner closed-contour entries. Only meaningful for
+    // closed paths; for open paths we silently fall back to straight.
+    let closed_path = is_closed_path(segments);
+    let helix = setup.mill.helix_mode && closed_path;
+
+    let mut prev_z: Option<f64> = None;
     let mut z = (setup.mill.start_depth + step).max(total_depth);
     loop {
-        post.feedrate(setup.tool.rate_v);
-        post.linear(None, None, Some(z));
-        post.feedrate(setup.tool.rate_h);
-        let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
-        if pass_uses_tabs {
-            emit_path_with_tabs(segments, tabs, tabs_z, z, tab_radius, post);
+        if helix && prev_z.is_some() {
+            // Spiral from prev_z down to z while tracing the segments.
+            post.feedrate(setup.tool.rate_h);
+            emit_helix_pass(segments, prev_z.unwrap(), z, post);
         } else {
-            emit_path(segments, post);
+            post.feedrate(setup.tool.rate_v);
+            post.linear(None, None, Some(z));
+            post.feedrate(setup.tool.rate_h);
+            let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
+            if pass_uses_tabs {
+                emit_path_with_tabs(segments, tabs, tabs_z, z, tab_radius, post);
+            } else {
+                emit_path(segments, post);
+            }
         }
+        prev_z = Some(z);
         if z <= total_depth + 1e-9 {
             break;
         }
         z = (z + step).max(total_depth);
     }
+}
+
+fn is_closed_path(segments: &[Segment]) -> bool {
+    if segments.len() < 3 {
+        return false;
+    }
+    let first = segments.first().unwrap().start;
+    let last = segments.last().unwrap().end;
+    first.distance(last) < 1e-3
+}
+
+/// Emit one revolution around `segments` while linearly descending Z from
+/// `from_z` to `to_z`. Each segment endpoint gets the interpolated Z so
+/// the spiral stays smooth even with arc segments.
+fn emit_helix_pass<P: PostProcessor>(
+    segments: &[Segment],
+    from_z: f64,
+    to_z: f64,
+    post: &mut P,
+) {
+    let total_len: f64 = segments
+        .iter()
+        .map(|s| match s.kind {
+            SegmentKind::Line | SegmentKind::Point => s.start.distance(s.end),
+            SegmentKind::Arc | SegmentKind::Circle => arc_length(s),
+        })
+        .sum();
+    if total_len < 1e-9 {
+        post.linear(None, None, Some(to_z));
+        return;
+    }
+    let mut consumed = 0.0;
+    for seg in segments {
+        let seg_len = match seg.kind {
+            SegmentKind::Line | SegmentKind::Point => seg.start.distance(seg.end),
+            SegmentKind::Arc | SegmentKind::Circle => arc_length(seg),
+        };
+        consumed += seg_len;
+        let t = consumed / total_len;
+        let z = from_z + (to_z - from_z) * t;
+        match seg.kind {
+            SegmentKind::Line => post.linear(Some(seg.end.x), Some(seg.end.y), Some(z)),
+            SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), Some(z)),
+            SegmentKind::Arc | SegmentKind::Circle => {
+                let center = seg
+                    .center
+                    .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+                let i = center.x - seg.start.x;
+                let j = center.y - seg.start.y;
+                if seg.bulge > 0.0 {
+                    post.arc_ccw(Some(seg.end.x), Some(seg.end.y), Some(z), Some(i), Some(j));
+                } else {
+                    post.arc_cw(Some(seg.end.x), Some(seg.end.y), Some(z), Some(i), Some(j));
+                }
+            }
+        }
+    }
+}
+
+fn arc_length(seg: &Segment) -> f64 {
+    let chord = seg.start.distance(seg.end);
+    if seg.bulge.abs() < 1e-12 || chord < 1e-12 {
+        return chord;
+    }
+    let (_, _, _, radius) = math::bulge_to_arc(seg.start, seg.end, seg.bulge);
+    let theta = 4.0 * seg.bulge.atan(); // canonical bulge identity
+    radius * theta.abs()
 }
 
 /// Emit the cut path with tab interruptions. For each LINE segment that
@@ -407,6 +596,56 @@ mod tests {
             source_object_idx: 0,
             tabs: Vec::new(),
         }
+    }
+
+    #[test]
+    fn nearest_neighbor_picks_the_closer_offset_first() {
+        use crate::cam::setup::ObjectOrder;
+        let mut setup = Setup::default();
+        setup.tool.diameter = 1.0;
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+        setup.mill.objectorder = ObjectOrder::Nearest;
+
+        // Far-from-origin offset first in the input, near-origin second.
+        let mut far = square_offset();
+        for s in &mut far.segments {
+            s.start.x += 100.0;
+            s.start.y += 100.0;
+            s.end.x += 100.0;
+            s.end.y += 100.0;
+        }
+        far.source_object_idx = 1;
+        let offsets = vec![far, square_offset()];
+
+        let order = super::order_offsets(&setup, &offsets, Point2::new(0.0, 0.0));
+        assert_eq!(order, vec![1, 0], "near-origin offset should run first");
+    }
+
+    #[test]
+    fn helix_mode_emits_z_during_arc_or_line_moves() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.mill.depth = -2.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.mill.helix_mode = true;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        // After the first pass, subsequent passes should descend Z
+        // mid-path (G1 with both XY and Z together).
+        let combined_xyz = g
+            .lines()
+            .filter(|l| l.starts_with("G1"))
+            .any(|l| l.contains('X') && l.contains('Z'));
+        assert!(combined_xyz, "helix mode should combine XY moves with Z descent");
     }
 
     #[test]

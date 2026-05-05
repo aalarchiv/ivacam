@@ -3,6 +3,7 @@
   import { defaultClient } from '../api/http';
   import { project } from '../state/project.svelte';
   import SchemaForm from './SchemaForm.svelte';
+  import ToolPresets from './ToolPresets.svelte';
 
   const client = defaultClient();
   let loading = $state(false);
@@ -43,6 +44,7 @@
   {:else if loadError}
     <p class="error">{loadError}</p>
   {:else if project.setupSchema}
+    <ToolPresets />
     <SchemaForm
       schema={project.setupSchema}
       definitions={project.setupDefinitions}

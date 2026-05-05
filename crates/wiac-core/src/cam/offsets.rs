@@ -215,15 +215,27 @@ fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<
 /// Inward-cascade pocket offsets. `boundary` is the (already-tool-radius-offset)
 /// inner boundary; `delta` is the per-ring step (positive number — caller
 /// doesn't need to negate). Returns rings from outermost to innermost.
+///
+/// Convenience wrapper for the common single-boundary case; calls
+/// [`pocket_cascade_with_islands`] with no holes.
 pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
+    pocket_cascade_with_islands(boundary, &[], delta)
+}
+
+/// Inward-cascade pocket offsets that respect islands (closed contours
+/// inside the boundary that should be left uncut). Each `island` is a
+/// closed polyline already inflated by `tool_radius` outward — the
+/// caller is responsible for that pre-inflation, matching the upstream
+/// Python `do_pockets` islands branch.
+pub fn pocket_cascade_with_islands(
+    boundary: &[Point2],
+    islands: &[Vec<Point2>],
+    delta: f64,
+) -> Vec<Vec<Point2>> {
     if boundary.len() < 3 || delta <= 1e-9 {
         return Vec::new();
     }
-    let mut current: Paths = boundary
-        .iter()
-        .map(|p| (p.x, p.y))
-        .collect::<Vec<_>>()
-        .into();
+    let mut current: Paths = build_paths(boundary, islands);
     let mut rings = Vec::new();
     loop {
         let next = current.inflate(-delta, JoinType::Round, EndType::Polygon, 2.0);
@@ -238,16 +250,62 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
         }
         current = next;
         if rings.len() > 1024 {
-            break; // pathological — bail out.
+            break;
         }
     }
     rings
+}
+
+fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> Paths {
+    // Clipper2 treats CW-wound rings as holes when EndType::Polygon is in
+    // play. Force the outer boundary CCW and the islands CW regardless of
+    // how the caller hands them in.
+    let mut all: Vec<Vec<(f64, f64)>> = Vec::with_capacity(islands.len() + 1);
+    let outer = if signed_area(boundary) > 0.0 {
+        boundary.to_vec()
+    } else {
+        let mut r = boundary.to_vec();
+        r.reverse();
+        r
+    };
+    all.push(outer.iter().map(|p| (p.x, p.y)).collect());
+    for island in islands {
+        if island.len() < 3 {
+            continue;
+        }
+        let hole = if signed_area(island) < 0.0 {
+            island.clone()
+        } else {
+            let mut r = island.clone();
+            r.reverse();
+            r
+        };
+        all.push(hole.iter().map(|p| (p.x, p.y)).collect());
+    }
+    all.into()
+}
+
+fn signed_area(pts: &[Point2]) -> f64 {
+    if pts.len() < 3 {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    for i in 0..pts.len() {
+        let a = pts[i];
+        let b = pts[(i + 1) % pts.len()];
+        sum += a.x * b.y - b.x * a.y;
+    }
+    sum * 0.5
 }
 
 /// Combine a parallel-offset boundary pass with an inward cascade. Returns
 /// the boundary ring first (if `nocontour=false`), then progressively-inward
 /// pocket rings. When `zigzag` is true the inward cascade is replaced with
 /// a single back-and-forth raster fill (one open polyline per offset).
+///
+/// `islands` are closed contours that should be left uncut inside the
+/// pocket (e.g. raised features). Each island gets pre-inflated by the
+/// tool radius before being subtracted from the cascade.
 ///
 /// Special case: if `obj` is a single CIRCLE/POINT segment with radius
 /// smaller than the tool radius, we can't carve a pocket — emit a drill
@@ -259,6 +317,7 @@ pub fn pocket_for_object(
     nocontour: bool,
     interpolate: usize,
     zigzag: bool,
+    islands: &[Vec<Point2>],
 ) -> Vec<PolylineOffset> {
     let mut out = Vec::new();
 
@@ -294,7 +353,7 @@ pub fn pocket_for_object(
             continue;
         }
 
-        let rings = pocket_cascade(&pts, tool_radius.abs());
+        let rings = pocket_cascade_with_islands(&pts, islands, tool_radius.abs());
         for (i, ring) in rings.iter().enumerate() {
             if ring.len() < 2 {
                 continue;
@@ -496,7 +555,7 @@ mod tests {
             color: 7,
         };
         let obj = VcObject::new(vec![half1, half2], true);
-        let offsets = pocket_for_object(&obj, 1.5, false, 6, false);
+        let offsets = pocket_for_object(&obj, 1.5, false, 6, false, &[]);
         assert_eq!(offsets.len(), 1);
         assert_eq!(offsets[0].segments.len(), 1);
         assert!(matches!(
@@ -525,6 +584,22 @@ mod tests {
             for pt in [s.start, s.end] {
                 assert!(pt.x >= -0.01 && pt.x <= 20.01);
                 assert!(pt.y >= -0.01 && pt.y <= 20.01);
+            }
+        }
+    }
+
+    #[test]
+    fn pocket_cascade_with_island_skips_around_it() {
+        // 30x30 outer with a 10x10 island centered at (15, 15).
+        let outer = vec![p(0.0, 0.0), p(30.0, 0.0), p(30.0, 30.0), p(0.0, 30.0)];
+        let island = vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0), p(10.0, 20.0)];
+        let rings = pocket_cascade_with_islands(&outer, &[island], 2.0);
+        assert!(!rings.is_empty(), "should produce at least one ring");
+        // No ring should cross the island's interior.
+        for ring in &rings {
+            for pt in ring {
+                let inside = pt.x > 10.5 && pt.x < 19.5 && pt.y > 10.5 && pt.y < 19.5;
+                assert!(!inside, "pocket ring crossed the island at {:?}", pt);
             }
         }
     }

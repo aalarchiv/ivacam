@@ -245,12 +245,28 @@ async fn generate(
             closed += 1;
         }
         if obj.closed && setup.pockets.active {
+            // Honor islands: inner closed objects of `obj` get materialized
+            // as polylines and passed to the pocket cascade so the cutter
+            // routes around them instead of through them.
+            let islands: Vec<Vec<wiac_core::Point2>> = if setup.pockets.islands {
+                obj.inner_objects
+                    .iter()
+                    .filter_map(|i| objects.get(*i))
+                    .filter(|inner| inner.closed)
+                    .map(|inner| {
+                        wiac_core::cam::segments_to_points(&inner.segments, 6)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             for mut o in pocket_for_object(
                 obj,
                 radius,
                 setup.pockets.nocontour,
                 6,
                 setup.pockets.zigzag,
+                &islands,
             ) {
                 o.source_object_idx = idx;
                 offsets.push(o);

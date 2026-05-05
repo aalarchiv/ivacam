@@ -61,6 +61,10 @@ pub struct MillConfig {
     pub reverse: bool,
     pub objectorder: ObjectOrder,
     pub offset: ToolOffset,
+    /// When true, dip into sharp inner corners so the cutter fully clears
+    /// them. Mirrors viaConstructor's `mill.overcut`.
+    #[serde(default)]
+    pub overcut: bool,
 }
 
 impl Default for MillConfig {
@@ -75,6 +79,7 @@ impl Default for MillConfig {
             reverse: false,
             objectorder: ObjectOrder::default(),
             offset: ToolOffset::None,
+            overcut: false,
         }
     }
 }

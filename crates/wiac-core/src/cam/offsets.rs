@@ -485,6 +485,170 @@ fn _math_unused() {
     let _ = math::TWO_PI;
 }
 
+/// Apply overcut to every closed offset whose source object exists in
+/// `objects`. The dip targets each offset's owning original boundary, not the
+/// offset's own corners, so cascade rings still respect the parent shape.
+pub fn apply_overcut_to_offsets(
+    offsets: &mut [PolylineOffset],
+    objects: &[VcObject],
+    tool_radius: f64,
+) {
+    for off in offsets.iter_mut() {
+        if !off.closed {
+            continue;
+        }
+        if let Some(obj) = objects.get(off.source_object_idx) {
+            apply_overcut(off, &obj.segments, tool_radius);
+        }
+    }
+}
+
+/// Apply overcut to a closed offset polyline whose reflex (concave) corners
+/// need a small dip toward the original wall so the cutter (radius
+/// `tool_radius`) clears the geometric corner.
+///
+/// Pre-conditions: `offset.closed`, polyline is wound CCW (interior on left),
+/// `boundary_segments` is the original object boundary the offset was derived
+/// from. Arcs are skipped (no overcut applied across them).
+///
+/// At each reflex corner of the offset polyline we cast a ray along the
+/// outward bisector and stop at the first boundary endpoint that lies on the
+/// ray. The dip length is `dist_to_boundary - tool_radius`; the inserted
+/// vertex pattern is `corner, dip, corner` so the cutter swings out and back.
+pub fn apply_overcut(
+    offset: &mut PolylineOffset,
+    boundary_segments: &[Segment],
+    tool_radius: f64,
+) {
+    use std::f64::consts::FRAC_PI_4;
+    if !offset.closed || offset.segments.len() < 3 {
+        return;
+    }
+    let r_abs = tool_radius.abs();
+    let n = offset.segments.len();
+    let pts: Vec<(Point2, f64)> = offset
+        .segments
+        .iter()
+        .map(|s| (s.start, s.bulge))
+        .collect();
+
+    let mut emitted: Vec<(f64, f64, f64)> = Vec::with_capacity(n * 2);
+
+    for i in 0..n {
+        let prev = pts[(i + n - 1) % n].0;
+        let cur = pts[i].0;
+        let next = pts[(i + 1) % n].0;
+        let in_bulge = pts[(i + n - 1) % n].1;
+        let out_bulge = pts[i].1;
+
+        // Always emit the corner first.
+        emitted.push((cur.x, cur.y, out_bulge));
+
+        // Skip arc-bounded corners; the dip only makes sense between two
+        // straight segments.
+        if in_bulge.abs() > 1e-12 || out_bulge.abs() > 1e-12 {
+            continue;
+        }
+
+        let tin = (cur.x - prev.x, cur.y - prev.y);
+        let tout = (next.x - cur.x, next.y - cur.y);
+        let len_in = (tin.0 * tin.0 + tin.1 * tin.1).sqrt();
+        let len_out = (tout.0 * tout.0 + tout.1 * tout.1).sqrt();
+        if len_in < 1e-9 || len_out < 1e-9 {
+            continue;
+        }
+        let ti = (tin.0 / len_in, tin.1 / len_in);
+        let to_ = (tout.0 / len_out, tout.1 / len_out);
+
+        // Signed turn: positive = left (convex on CCW), negative = right
+        // (reflex on CCW). Need a sharp right turn.
+        let cross = ti.0 * to_.1 - ti.1 * to_.0;
+        let dot = ti.0 * to_.0 + ti.1 * to_.1;
+        let turn = cross.atan2(dot);
+        if turn >= -FRAC_PI_4 {
+            continue;
+        }
+
+        // Outward bisector at a reflex corner: opposite of (-tin + tout)
+        // (which points into the interior at convex corners). At a reflex
+        // corner the geometric "interior" direction sits on the OPPOSITE side
+        // of the offset's local interior — i.e. toward the original wall —
+        // so we negate.
+        let bx = -ti.0 + to_.0;
+        let by = -ti.1 + to_.1;
+        let blen = (bx * bx + by * by).sqrt();
+        if blen < 1e-9 {
+            continue;
+        }
+        let out = (-bx / blen, -by / blen);
+
+        // Probe boundary endpoints along the outward ray.
+        let mut nearest: Option<f64> = None;
+        for seg in boundary_segments {
+            for p1 in [seg.start, seg.end] {
+                let dx = p1.x - cur.x;
+                let dy = p1.y - cur.y;
+                let along = dx * out.0 + dy * out.1;
+                if along <= 1e-6 {
+                    continue;
+                }
+                let perp = (dx * out.1 - dy * out.0).abs();
+                if perp > 0.25 {
+                    continue;
+                }
+                if nearest.map_or(true, |c| along < c) {
+                    nearest = Some(along);
+                }
+            }
+        }
+        let Some(dist) = nearest else {
+            continue;
+        };
+        let dip = dist - r_abs;
+        if dip <= 1e-6 {
+            continue;
+        }
+        let dip_x = cur.x + out.0 * dip;
+        let dip_y = cur.y + out.1 * dip;
+        // Pattern at the corner: corner, dip, corner. The first `corner` is
+        // the one we already pushed (with its outgoing bulge cleared so the
+        // dip-to is a straight line); we need to fix that.
+        if let Some(last_emit) = emitted.last_mut() {
+            // We just pushed (cur, out_bulge). Reset its outgoing bulge to 0
+            // so the segment to the dip is straight.
+            last_emit.2 = 0.0;
+        }
+        emitted.push((dip_x, dip_y, 0.0));
+        emitted.push((cur.x, cur.y, out_bulge));
+    }
+
+    if emitted.len() < 3 || emitted.len() == n {
+        return;
+    }
+
+    let mut new_segs: Vec<Segment> = Vec::with_capacity(emitted.len());
+    let m = emitted.len();
+    for i in 0..m {
+        let a = emitted[i];
+        let b = emitted[(i + 1) % m];
+        let kind = if a.2.abs() > 1e-12 {
+            SegmentKind::Arc
+        } else {
+            SegmentKind::Line
+        };
+        new_segs.push(Segment {
+            kind,
+            start: Point2 { x: a.0, y: a.1 },
+            end: Point2 { x: b.0, y: b.1 },
+            bulge: a.2,
+            center: None,
+            layer: offset.layer.clone(),
+            color: offset.color,
+        });
+    }
+    offset.segments = new_segs;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -600,6 +764,66 @@ mod tests {
             for pt in ring {
                 let inside = pt.x > 10.5 && pt.x < 19.5 && pt.y > 10.5 && pt.y < 19.5;
                 assert!(!inside, "pocket ring crossed the island at {:?}", pt);
+            }
+        }
+    }
+
+    #[test]
+    fn overcut_dips_into_inner_corner() {
+        // L-shaped boundary CCW: a 20x20 square with a 10x10 notch removed
+        // from the top-right. The reflex corner sits at (10, 10).
+        // Boundary CCW: (0,0)→(20,0)→(20,10)→(10,10)→(10,20)→(0,20)→(0,0).
+        let boundary = vec![
+            Segment::line(p(0.0, 0.0), p(20.0, 0.0), "0", 7),
+            Segment::line(p(20.0, 0.0), p(20.0, 10.0), "0", 7),
+            Segment::line(p(20.0, 10.0), p(10.0, 10.0), "0", 7),
+            Segment::line(p(10.0, 10.0), p(10.0, 20.0), "0", 7),
+            Segment::line(p(10.0, 20.0), p(0.0, 20.0), "0", 7),
+            Segment::line(p(0.0, 20.0), p(0.0, 0.0), "0", 7),
+        ];
+        // A radius-1 inward parallel offset of an L would put the reflex
+        // corner at the offset (~(11,11)) on a CCW polyline. We construct
+        // it by hand to keep the test independent of cavc's exact mitering.
+        let r = 1.0_f64;
+        let mut offset = PolylineOffset {
+            segments: vec![
+                Segment::line(p(r, r), p(20.0 - r, r), "0", 7),
+                Segment::line(p(20.0 - r, r), p(20.0 - r, 10.0 - r), "0", 7),
+                Segment::line(p(20.0 - r, 10.0 - r), p(10.0 + r, 10.0 - r), "0", 7),
+                Segment::line(p(10.0 + r, 10.0 - r), p(10.0 + r, 20.0 - r), "0", 7),
+                Segment::line(p(10.0 + r, 20.0 - r), p(r, 20.0 - r), "0", 7),
+                Segment::line(p(r, 20.0 - r), p(r, r), "0", 7),
+            ],
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+        };
+        let before = offset.segments.len();
+        // Wait — for an inside-of-shape offset like a pocket, the offset poly
+        // is wound CCW and the L's reflex corner becomes a CONVEX corner on
+        // the offset (mitered). For overcut we need the reflex case: that's
+        // an OUTSIDE cut around an L-shaped island where the offset poly is
+        // CW. Reverse the offset segments to get the right winding.
+        offset.segments.reverse();
+        for s in offset.segments.iter_mut() {
+            std::mem::swap(&mut s.start, &mut s.end);
+        }
+        apply_overcut(&mut offset, &boundary, 1.0);
+        // At the lone reflex corner we add 2 extra vertices (= 2 extra segments).
+        assert!(
+            offset.segments.len() > before,
+            "overcut should add segments at sharp reflex corners (was {before}, now {})",
+            offset.segments.len()
+        );
+        // All inserted vertices stay in the data-space bbox of the original.
+        for s in &offset.segments {
+            for pt in [s.start, s.end] {
+                assert!(pt.x >= -0.01 && pt.x <= 20.01, "overcut vertex out of bbox: {pt:?}");
+                assert!(pt.y >= -0.01 && pt.y <= 20.01, "overcut vertex out of bbox: {pt:?}");
             }
         }
     }

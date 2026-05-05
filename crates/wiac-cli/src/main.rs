@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
-use wiac_core::cam::offsets::{pocket_for_object, PolylineOffset};
+use wiac_core::cam::offsets::{apply_overcut_to_offsets, pocket_for_object, PolylineOffset};
 use wiac_core::cam::setup::{Setup, ToolOffset};
 use wiac_core::cam::VcObject;
 use wiac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
@@ -71,6 +71,7 @@ fn print_help() {
          usage:\n  \
            wiac import <path>                        Parse a DXF and print /import JSON\n  \
            wiac generate <path> [--post linuxcnc|grbl|hpgl] [--diameter MM] [--depth MM]\n  \
+                                                     [--inside|--outside|--on] [--overcut]\n  \
                                                      Generate gcode + preview toolpath\n  \
            wiac --help                               Show this message"
     );
@@ -104,6 +105,7 @@ fn cmd_generate(args: impl Iterator<Item = String>) -> Result<()> {
     let mut step = -1.0_f64;
     let mut tool_offset = ToolOffset::Outside;
 
+    let mut overcut = false;
     let mut iter = args.peekable();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -119,6 +121,7 @@ fn cmd_generate(args: impl Iterator<Item = String>) -> Result<()> {
             "--inside" => tool_offset = ToolOffset::Inside,
             "--outside" => tool_offset = ToolOffset::Outside,
             "--on" => tool_offset = ToolOffset::On,
+            "--overcut" => overcut = true,
             other if path.is_none() => path = Some(PathBuf::from(other)),
             other => bail!("unexpected argument: {other}"),
         }
@@ -128,13 +131,14 @@ fn cmd_generate(args: impl Iterator<Item = String>) -> Result<()> {
     let import = wiac_core::input::import_path(&path, &ImportOptions::default())
         .with_context(|| format!("import {}", path.display()))?;
 
-    let (offsets, stats) = build_offsets(&import, diameter, depth, step, tool_offset);
+    let (offsets, stats) = build_offsets(&import, diameter, depth, step, tool_offset, overcut);
 
     let mut setup = Setup::default();
     setup.tool.diameter = diameter;
     setup.mill.depth = depth;
     setup.mill.step = step;
     setup.mill.offset = tool_offset;
+    setup.mill.overcut = overcut;
     setup.machine.comments = true;
 
     let gcode = match post_kind.as_str() {
@@ -172,6 +176,7 @@ fn build_offsets(
     _depth: f64,
     _step: f64,
     tool_offset: ToolOffset,
+    overcut: bool,
 ) -> (Vec<PolylineOffset>, GenerateStats) {
     let mut objects = segments_to_objects(&import.segments);
     classify_containment(&mut objects);
@@ -220,6 +225,10 @@ fn build_offsets(
             }
         }
     }
+    if overcut {
+        apply_overcut_to_offsets(&mut offsets, &objects, radius);
+    }
+
     let stats = GenerateStats {
         object_count: objects.len(),
         closed_object_count: closed,

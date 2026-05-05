@@ -195,6 +195,11 @@ export interface components {
             helix_mode: boolean;
             objectorder: components["schemas"]["ObjectOrder"];
             offset: components["schemas"]["ToolOffset"];
+            /**
+             * @description When true, dip into sharp inner corners so the cutter fully clears them. Mirrors viaConstructor's `mill.overcut`.
+             * @default false
+             */
+            overcut: boolean;
             reverse: boolean;
             /** Format: double */
             start_depth: number;

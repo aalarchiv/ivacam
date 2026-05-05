@@ -14,12 +14,14 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tower_http::cors::{Any, CorsLayer};
+use axum::http::{HeaderValue, Method};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
 use wiac_core::cam::offsets::{
-    attach_tabs_to_offsets, parallel_offset_object, pocket_for_object, PolylineOffset, TabPoint,
+    apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_object, pocket_for_object,
+    PolylineOffset, TabPoint,
 };
 use wiac_core::cam::setup::{Setup, ToolOffset};
 use wiac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
@@ -39,10 +41,7 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(8766);
 
-    let cors = CorsLayer::new()
-        .allow_methods(Any)
-        .allow_headers(Any)
-        .allow_origin(Any);
+    let cors = build_cors_layer();
 
     let app = Router::new()
         .route("/healthz", get(healthz))
@@ -67,6 +66,62 @@ async fn main() -> Result<()> {
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("shutdown signal received");
+}
+
+/// Build a CORS layer from `WIAC_CORS_ORIGINS` (comma-separated).
+///
+/// - unset or empty: localhost-only allow-list (dev default)
+/// - `*` or `any`:   permissive (origin: any). Methods/headers stay restricted to
+///                   what the JSON API actually uses.
+/// - otherwise:      exact origin match against the supplied list.
+fn build_cors_layer() -> CorsLayer {
+    let methods = [Method::GET, Method::POST, Method::OPTIONS];
+    let headers = [
+        axum::http::header::CONTENT_TYPE,
+        axum::http::header::ACCEPT,
+        axum::http::header::AUTHORIZATION,
+    ];
+    let raw = std::env::var("WIAC_CORS_ORIGINS").unwrap_or_default();
+    let trimmed = raw.trim();
+    let origin = if trimmed.is_empty() {
+        let defaults: Vec<HeaderValue> = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:1420",
+            "http://127.0.0.1:1420",
+            "tauri://localhost",
+        ]
+        .into_iter()
+        .filter_map(|s| HeaderValue::from_str(s).ok())
+        .collect();
+        AllowOrigin::list(defaults)
+    } else if trimmed == "*" || trimmed.eq_ignore_ascii_case("any") {
+        AllowOrigin::any()
+    } else {
+        let list: Vec<HeaderValue> = trimmed
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| HeaderValue::from_str(s).ok())
+            .collect();
+        if list.is_empty() {
+            tracing::warn!(
+                "WIAC_CORS_ORIGINS contained no valid entries; falling back to localhost defaults"
+            );
+            AllowOrigin::list(
+                ["http://localhost:5173", "http://127.0.0.1:5173"]
+                    .into_iter()
+                    .filter_map(|s| HeaderValue::from_str(s).ok())
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            AllowOrigin::list(list)
+        }
+    };
+    CorsLayer::new()
+        .allow_methods(methods)
+        .allow_headers(headers)
+        .allow_origin(origin)
 }
 
 #[derive(Default)]
@@ -302,6 +357,10 @@ async fn generate(
     // toolpath off the source contour.
     if !tabs_by_object.is_empty() {
         attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
+    }
+
+    if setup.mill.overcut {
+        apply_overcut_to_offsets(&mut offsets, &objects, setup.tool.diameter * 0.5);
     }
 
     let post_kind = req.post_processor.as_deref().unwrap_or("linuxcnc");

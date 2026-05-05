@@ -330,6 +330,10 @@ components:
           $ref: '#/components/schemas/ObjectOrder'
         offset:
           $ref: '#/components/schemas/ToolOffset'
+        overcut:
+          default: false
+          description: When true, dip into sharp inner corners so the cutter fully clears them. Mirrors viaConstructor's `mill.overcut`.
+          type: boolean
         reverse:
           type: boolean
         start_depth:

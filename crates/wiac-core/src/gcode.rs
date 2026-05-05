@@ -297,7 +297,8 @@ fn multi_pass<P: PostProcessor>(
             if pass_uses_tabs {
                 emit_path_with_tabs(segments, tabs, tabs_z, z, tab_radius, post);
             } else {
-                emit_path(segments, post);
+                let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+                emit_path_with_dragoff(segments, dragoff, post);
             }
         }
         prev_z = Some(z);
@@ -493,10 +494,62 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
 }
 
 fn emit_path<P: PostProcessor>(segments: &[Segment], post: &mut P) {
+    emit_path_with_dragoff(segments, 0.0, post);
+}
+
+/// Emit segments with optional drag-knife trailing offset. When
+/// `dragoff > 0`, every line→line corner is preceded by an arc that swivels
+/// the blade around the corner point so the trail aligns with the new
+/// direction. Mirrors `viaconstructor.machine_cmd.segment2machine_cmd`.
+fn emit_path_with_dragoff<P: PostProcessor>(
+    segments: &[Segment],
+    dragoff: f64,
+    post: &mut P,
+) {
+    use std::f64::consts::{FRAC_PI_2, PI};
+    let mut last_motion: Option<f64> = None;
     for seg in segments {
         match seg.kind {
-            SegmentKind::Line => post.linear(Some(seg.end.x), Some(seg.end.y), None),
-            SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
+            SegmentKind::Line => {
+                let new_motion = (seg.end.y - seg.start.y).atan2(seg.end.x - seg.start.x);
+                if dragoff > 1e-9 {
+                    if let Some(last_m) = last_motion {
+                        let last_a = last_m + FRAC_PI_2;
+                        let new_a = new_motion + FRAC_PI_2;
+                        let off1 = (
+                            seg.start.x + dragoff * last_a.sin(),
+                            seg.start.y - dragoff * last_a.cos(),
+                        );
+                        let off2 = (
+                            seg.start.x + dragoff * new_a.sin(),
+                            seg.start.y - dragoff * new_a.cos(),
+                        );
+                        post.linear(Some(off1.0), Some(off1.1), None);
+                        let mut diff = new_a - last_a;
+                        while diff > PI {
+                            diff -= 2.0 * PI;
+                        }
+                        while diff < -PI {
+                            diff += 2.0 * PI;
+                        }
+                        if diff.abs() > 1e-6 {
+                            let i = seg.start.x - off1.0;
+                            let j = seg.start.y - off1.1;
+                            if diff > 0.0 {
+                                post.arc_ccw(Some(off2.0), Some(off2.1), None, Some(i), Some(j));
+                            } else {
+                                post.arc_cw(Some(off2.0), Some(off2.1), None, Some(i), Some(j));
+                            }
+                        }
+                    }
+                }
+                post.linear(Some(seg.end.x), Some(seg.end.y), None);
+                last_motion = Some(new_motion);
+            }
+            SegmentKind::Point => {
+                post.linear(Some(seg.start.x), Some(seg.start.y), None);
+                last_motion = None;
+            }
             SegmentKind::Arc | SegmentKind::Circle => {
                 let center = seg
                     .center
@@ -508,6 +561,16 @@ fn emit_path<P: PostProcessor>(segments: &[Segment], post: &mut P) {
                 } else {
                     post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
                 }
+                // Tangent at end of arc: rotate radius 90° in the arc's
+                // orientation. CCW arc → +90° rotation; CW → -90°.
+                let rx = seg.end.x - center.x;
+                let ry = seg.end.y - center.y;
+                let (tx, ty) = if seg.bulge > 0.0 {
+                    (-ry, rx)
+                } else {
+                    (ry, -rx)
+                };
+                last_motion = Some(ty.atan2(tx));
             }
         }
     }
@@ -673,6 +736,35 @@ mod tests {
         assert!(g.contains("Z-1"), "expected lift to tabs_z=-1 in: {g}");
         // Both Z=-2 (cut depth) and Z=-1 (tabs_z) should appear.
         assert!(g.contains("Z-2"), "expected cut at depth -2 in: {g}");
+    }
+
+    #[test]
+    fn dragoff_inserts_swivel_arcs_at_corners() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 0.0; // drag knife: no radius
+        setup.tool.speed = 0;
+        setup.tool.rate_h = 800;
+        setup.tool.dragoff = Some(0.5);
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        // Each of the 4 corners gets swivel arcs (G2 or G3 with I/J center).
+        let arc_count = g
+            .lines()
+            .filter(|l| (l.starts_with("G2 ") || l.starts_with("G3 ")) && l.contains('I'))
+            .count();
+        assert!(
+            arc_count >= 3,
+            "expected at least 3 swivel arcs at square corners; got {arc_count}\n{g}"
+        );
     }
 
     #[test]

@@ -22,9 +22,19 @@ OUT = ROOT / "tests/golden/expected"
 OUT.mkdir(parents=True, exist_ok=True)
 
 SETUPS = {
-    "default": [],
-    "inside": ["--mill-offset", "inside"],
+    # Each entry maps to viaconstructor CLI flags. Keep the labels short —
+    # they end up baked into the generated filename and the Rust diff side
+    # parses them out of the stem (rov.16 parity matrix).
+    "default":     [],
+    "inside":      ["--mill-offset", "inside"],
+    "on":          ["--mill-offset", "on"],
+    "outside-1mm": ["--tool-diameter", "1"],
     "outside-2mm": ["--tool-diameter", "2"],
+    "outside-6mm": ["--tool-diameter", "6"],
+    "pocket":      ["--pockets-active", "1"],
+    "pocket-zigzag": ["--pockets-active", "1", "--pockets-zigzag", "1"],
+    "overcut":     ["--mill-overcut", "1"],
+    "helix":       ["--mill-helix-mode", "1"],
 }
 
 

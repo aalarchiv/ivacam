@@ -6,7 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
-use wiac_core::cam::offsets::{parallel_offset_object, PolylineOffset};
+use wiac_core::cam::offsets::{
+    apply_overcut_to_offsets, parallel_offset_object, pocket_for_object, PolylineOffset,
+};
 use wiac_core::cam::setup::{Setup, ToolOffset};
 use wiac_core::gcode::{emit_polylines, linuxcnc};
 use wiac_core::testing::{diff_gcode, DiffOptions, DiffOutcome};
@@ -87,12 +89,14 @@ fn golden_diff_runs_when_references_present() {
             continue;
         }
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap();
-        // Filename convention: <basename>.<setup>.expected.gcode
+        // Filename convention: <basename>.<setup>.expected.gcode where
+        // <setup> matches a label in tests/golden/refresh.py SETUPS.
         let parts: Vec<&str> = stem.split('.').collect();
         if parts.len() < 2 {
             continue;
         }
         let dxf_name = format!("{}.dxf", parts[0]);
+        let label = parts[1];
         let dxf_path = workspace_root_from(&cwd)
             .join("refs/viaconstructor/tests/data")
             .join(dxf_name);
@@ -103,19 +107,52 @@ fn golden_diff_runs_when_references_present() {
             .expect("import");
         let mut objects = segments_to_objects(&import.segments);
         classify_containment(&mut objects);
-        let mut setup = Setup::default();
-        setup.tool.diameter = 3.0;
-        setup.mill.depth = -2.0;
-        setup.mill.step = -1.0;
-        setup.mill.offset = ToolOffset::Outside;
-        setup.machine.comments = false;
+        let setup = setup_for_label(label);
+        for obj in objects.iter_mut() {
+            obj.tool_offset = setup.mill.offset;
+        }
+        let radius = setup.tool.diameter * 0.5;
         let mut offsets: Vec<PolylineOffset> = Vec::new();
         for (idx, obj) in objects.iter().enumerate() {
-            let delta = -setup.tool.diameter * 0.5;
-            for mut o in parallel_offset_object(obj, delta) {
-                o.source_object_idx = idx;
-                offsets.push(o);
+            if obj.closed && setup.pockets.active {
+                for mut o in pocket_for_object(
+                    obj,
+                    radius,
+                    setup.pockets.nocontour,
+                    6,
+                    setup.pockets.zigzag,
+                    &[],
+                ) {
+                    o.source_object_idx = idx;
+                    offsets.push(o);
+                }
+                continue;
             }
+            let delta = match setup.mill.offset {
+                ToolOffset::None | ToolOffset::On => 0.0,
+                ToolOffset::Outside => -radius,
+                ToolOffset::Inside => radius,
+            };
+            if delta.abs() < 1e-9 {
+                offsets.push(PolylineOffset {
+                    segments: obj.segments.clone(),
+                    closed: obj.closed,
+                    level: 0,
+                    is_pocket: 0,
+                    layer: obj.layer.clone(),
+                    color: obj.color,
+                    source_object_idx: idx,
+                    tabs: Vec::new(),
+                });
+            } else {
+                for mut o in parallel_offset_object(obj, delta) {
+                    o.source_object_idx = idx;
+                    offsets.push(o);
+                }
+            }
+        }
+        if setup.mill.overcut {
+            apply_overcut_to_offsets(&mut offsets, &objects, radius);
         }
         let actual = emit_polylines(&setup, &offsets, &mut linuxcnc::Post::new());
         let expected = fs::read_to_string(&path).unwrap();
@@ -144,6 +181,37 @@ fn golden_diff_runs_when_references_present() {
             eprintln!("  {f}");
         }
     }
+}
+
+/// Map a setup label (the `<setup>` in `<basename>.<setup>.expected.gcode`)
+/// to the same Setup we expect viaConstructor to have produced when
+/// generating the golden under `tests/golden/refresh.py`. Keep these two
+/// matrices in lockstep — drift here is the most common source of
+/// false-positive regressions in the parity test.
+fn setup_for_label(label: &str) -> Setup {
+    let mut setup = Setup::default();
+    setup.tool.diameter = 3.0;
+    setup.mill.depth = -2.0;
+    setup.mill.step = -1.0;
+    setup.mill.offset = ToolOffset::Outside;
+    setup.machine.comments = false;
+    match label {
+        "default" => {}
+        "inside" => setup.mill.offset = ToolOffset::Inside,
+        "on" => setup.mill.offset = ToolOffset::On,
+        "outside-1mm" => setup.tool.diameter = 1.0,
+        "outside-2mm" => setup.tool.diameter = 2.0,
+        "outside-6mm" => setup.tool.diameter = 6.0,
+        "pocket" => setup.pockets.active = true,
+        "pocket-zigzag" => {
+            setup.pockets.active = true;
+            setup.pockets.zigzag = true;
+        }
+        "overcut" => setup.mill.overcut = true,
+        "helix" => setup.mill.helix_mode = true,
+        _ => {}
+    }
+    setup
 }
 
 fn workspace_root_from(cwd: &Path) -> PathBuf {

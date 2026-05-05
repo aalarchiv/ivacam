@@ -44,6 +44,9 @@ Thumbs.db
 refs/
 !refs/.gitkeep
 
+# Local Claude-Code session state.
+.claude/
+
 # Bridge venv (Stage-1 Python service).
 bridge/.venv/
 bridge/__pycache__/

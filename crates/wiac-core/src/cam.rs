@@ -5,6 +5,7 @@
 //! * `chaining` (segments → closed/open VcObjects) — port of `segments2objects`
 //! * `offsets` (cavalier_contours + clipper2 driven contour offsetting and pockets)
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point2, Segment, SegmentKind};
@@ -15,7 +16,7 @@ pub mod offsets;
 pub mod setup;
 
 /// `VcObject` analogue: a chain of segments grouped after `segments2objects`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct VcObject {
     pub segments: Vec<Segment>,
     pub closed: bool,

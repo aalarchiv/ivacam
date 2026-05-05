@@ -3,9 +3,10 @@
 //! Initial scope is the subset of fields that `do_pockets` and the gcode
 //! emitter actually read. Missing fields land as the gcode pass needs them.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolOffset {
     #[default]
@@ -15,7 +16,7 @@ pub enum ToolOffset {
     On,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ToolConfig {
     pub number: u32,
     pub diameter: f64,
@@ -48,7 +49,7 @@ impl Default for ToolConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MillConfig {
     pub active: bool,
     pub depth: f64,
@@ -78,7 +79,7 @@ impl Default for MillConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ObjectOrder {
     #[default]
@@ -87,7 +88,7 @@ pub enum ObjectOrder {
     Unordered,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct PocketConfig {
     pub active: bool,
     pub islands: bool,
@@ -97,7 +98,7 @@ pub struct PocketConfig {
     pub nocontour: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TabsConfig {
     pub active: bool,
     pub width: f64,
@@ -116,7 +117,7 @@ impl Default for TabsConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TabType {
     #[default]
@@ -124,7 +125,7 @@ pub enum TabType {
     Ramp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LeadsConfig {
     pub r#in: LeadKind,
     pub out: LeadKind,
@@ -143,7 +144,7 @@ impl Default for LeadsConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LeadKind {
     #[default]
@@ -152,7 +153,7 @@ pub enum LeadKind {
     Arc,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MachineConfig {
     pub unit: UnitSystem,
     pub mode: MachineMode,
@@ -174,7 +175,7 @@ impl Default for MachineConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum UnitSystem {
     #[default]
@@ -182,7 +183,7 @@ pub enum UnitSystem {
     Inch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum MachineMode {
     #[default]
@@ -191,7 +192,7 @@ pub enum MachineMode {
     Drag,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct Setup {
     pub machine: MachineConfig,
     pub tool: ToolConfig,

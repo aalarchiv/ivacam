@@ -11,3 +11,6 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+wiac-core = { workspace = true }

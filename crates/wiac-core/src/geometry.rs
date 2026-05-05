@@ -3,9 +3,10 @@
 //! Mirrors `schema/openapi.yaml` so the JSON contract is shared. All field
 //! names use serde renames where they differ from the YAML keys.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Point2 {
     pub x: f64,
     pub y: f64,
@@ -23,7 +24,7 @@ impl Point2 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SegmentKind {
     Line,
@@ -34,7 +35,7 @@ pub enum SegmentKind {
 
 /// A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between
 /// `start` and `end` (bulge = `tan(included_angle / 4)`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Segment {
     #[serde(rename = "type")]
     pub kind: SegmentKind,
@@ -102,14 +103,14 @@ impl Segment {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Layer {
     pub name: String,
     pub color: i32,
     pub segment_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BBox {
     pub min_x: f64,
     pub min_y: f64,

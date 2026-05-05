@@ -12,10 +12,20 @@
   let geometryGroup: THREE.Group | undefined;
   let raf = 0;
   let observer: ResizeObserver | undefined;
+  let themeMql: MediaQueryList | undefined;
+
+  function cssVar(name: string, fallback: string): string {
+    if (!host) return fallback;
+    const v = getComputedStyle(host).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+  function cssColor(name: string, fallback: number): THREE.Color {
+    return new THREE.Color(cssVar(name, '') || fallback);
+  }
 
   onMount(() => {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d0d0d);
+    scene.background = cssColor('--bg-app', 0x0d0d0d);
 
     camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
     camera.position.set(150, -150, 150);
@@ -28,9 +38,12 @@
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Z-up grid on the XY plane.
-    const grid = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
+    // Z-up grid on the XY plane. Colors track the active theme.
+    const gridMajor = cssColor('--grid-major', 0x262626);
+    const gridMinor = cssColor('--grid-minor', 0x1a1a1a);
+    const grid = new THREE.GridHelper(400, 40, gridMajor, gridMinor);
     grid.rotation.x = Math.PI / 2;
+    grid.name = 'theme-grid';
     scene.add(grid);
 
     const axes = new THREE.AxesHelper(50);
@@ -54,13 +67,45 @@
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
+
+    // Re-skin background + grid + (re-trigger) toolpath colors when the
+    // OS theme changes. The toolpath group rebuilds via the $effect below
+    // since we touch project.imported as a Svelte dep.
+    themeMql = window.matchMedia('(prefers-color-scheme: light)');
+    const onTheme = () => applyTheme();
+    themeMql.addEventListener('change', onTheme);
   });
+
+  function applyTheme() {
+    if (!scene) return;
+    scene.background = cssColor('--bg-app', 0x0d0d0d);
+    const grid = scene.getObjectByName('theme-grid') as THREE.GridHelper | undefined;
+    if (grid) {
+      const newGrid = new THREE.GridHelper(
+        400,
+        40,
+        cssColor('--grid-major', 0x262626),
+        cssColor('--grid-minor', 0x1a1a1a),
+      );
+      newGrid.rotation.x = Math.PI / 2;
+      newGrid.name = 'theme-grid';
+      scene.remove(grid);
+      grid.geometry.dispose();
+      (grid.material as THREE.Material).dispose();
+      scene.add(newGrid);
+    }
+    rebuildGeometry();
+  }
 
   onDestroy(() => {
     cancelAnimationFrame(raf);
     observer?.disconnect();
     controls?.dispose();
     renderer?.dispose();
+    if (themeMql) {
+      const handler = () => applyTheme();
+      themeMql.removeEventListener('change', handler);
+    }
     if (renderer && host?.contains(renderer.domElement)) {
       host.removeChild(renderer.domElement);
     }
@@ -79,6 +124,13 @@
   // When a /generate response is also available, draw the 3D toolpath on
   // top with depth + color coded by move kind (rapid/cut/plunge/retract).
   $effect(() => {
+    void project.imported;
+    void project.visibleLayers;
+    void project.generated;
+    rebuildGeometry();
+  });
+
+  function rebuildGeometry() {
     if (!geometryGroup || !scene) return;
     geometryGroup.clear();
     const data = project.imported;
@@ -89,13 +141,17 @@
     const colors: number[] = [];
     const c = new THREE.Color();
 
-    // Imported entities at Z=0 (faded if a toolpath is also visible).
+    const fadedColor = cssColor('--imported-faded', 0x444444);
     if (data) {
       const flat = !!gen;
       for (const seg of data.segments) {
         if (!project.visibleLayers.has(seg.layer)) continue;
         const points = tessellate(seg);
-        c.set(flat ? 0x444444 : aciColor(seg.color));
+        if (flat) {
+          c.copy(fadedColor);
+        } else {
+          c.copy(aciColor(seg.color));
+        }
         for (let i = 0; i < points.length - 1; i++) {
           const [ax, ay] = points[i];
           const [bx, by] = points[i + 1];
@@ -105,19 +161,18 @@
       }
     }
 
-    // Toolpath: rapid=cyan, cut=red, plunge=yellow, retract=green.
-    const toolpathColor: Record<string, number> = {
-      rapid: 0x35a2ff,
-      cut: 0xff5555,
-      plunge: 0xffd23a,
-      retract: 0x5fd06e,
-      arc: 0xff8a3a,
-    };
     if (gen) {
+      const toolpath: Record<string, THREE.Color> = {
+        rapid: cssColor('--toolpath-rapid', 0x35a2ff),
+        cut: cssColor('--toolpath-cut', 0xff5555),
+        plunge: cssColor('--toolpath-plunge', 0xffd23a),
+        retract: cssColor('--toolpath-retract', 0x5fd06e),
+        arc: cssColor('--toolpath-arc', 0xff8a3a),
+      };
       for (const seg of gen.toolpath) {
-        c.set(toolpathColor[seg.kind] ?? 0xffffff);
+        const tp = toolpath[seg.kind] ?? toolpath.cut;
         positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
-        colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+        colors.push(tp.r, tp.g, tp.b, tp.r, tp.g, tp.b);
       }
     }
     if (positions.length === 0) return;
@@ -128,8 +183,6 @@
     const lines = new THREE.LineSegments(geom, mat);
     geometryGroup.add(lines);
 
-    // Frame the geometry's bounding sphere with margin, then place the
-    // camera along the +x/-y/+z diagonal looking at the centroid.
     if (camera && controls) {
       const sphere = new THREE.Sphere();
       lines.geometry.computeBoundingSphere();
@@ -145,7 +198,7 @@
       camera.updateProjectionMatrix();
       controls.update();
     }
-  });
+  }
 
   function tessellate(seg: { start: { x: number; y: number }; end: { x: number; y: number }; bulge: number; type: string }): [number, number][] {
     if (seg.type === 'POINT') return [[seg.start.x, seg.start.y]];
@@ -184,17 +237,19 @@
     return pts;
   }
 
-  function aciColor(c: number): number {
-    const map: Record<number, number> = {
+  function aciColor(c: number): THREE.Color {
+    const fixed: Record<number, number> = {
       1: 0xff0000,
       2: 0xffff00,
       3: 0x00ff00,
       4: 0x00ffff,
       5: 0x0000ff,
       6: 0xff00ff,
-      7: 0xe6e6e6,
     };
-    return map[c] ?? 0xbbbbbb;
+    if (c === 7 || c === 256) return cssColor('--text-strong', 0xe6e6e6);
+    if (c === 8) return cssColor('--text-muted', 0x888888);
+    if (fixed[c] !== undefined) return new THREE.Color(fixed[c]);
+    return cssColor('--text-faint', 0xbbbbbb);
   }
 </script>
 
@@ -206,6 +261,6 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #0d0d0d;
+    background: var(--bg-app);
   }
 </style>

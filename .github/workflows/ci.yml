@@ -31,6 +31,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --all-features
+      - name: schema drift guard
+        run: cargo run -p xtask -- schema-check
 
   wasm:
     name: wasm-pack

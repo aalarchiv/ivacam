@@ -9,11 +9,9 @@ info:
     bindings — same shape everywhere.
   license:
     name: GPL-3.0-or-later
-
 servers:
-  - url: http://localhost:8765
-    description: local Stage-1 FastAPI bridge
-
+- url: http://localhost:8765
+  description: local Stage-1 FastAPI bridge
 paths:
   /healthz:
     get:
@@ -26,7 +24,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
-
   /version:
     get:
       summary: Version + capabilities
@@ -38,7 +35,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VersionResponse'
-
   /import:
     post:
       summary: Parse a vector file into wiaConstructor geometry
@@ -54,7 +50,8 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              required:
+              - file
               properties:
                 file:
                   type: string
@@ -73,7 +70,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
-
   /generate:
     post:
       summary: Generate gcode + 3D toolpath preview from imported geometry
@@ -95,7 +91,6 @@ paths:
                 $ref: '#/components/schemas/GenerateResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
-
   /defaults:
     get:
       summary: Setup-tree JSON Schema (drives the form UI)
@@ -107,166 +102,587 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DefaultsResponse'
-
 components:
   schemas:
-    HealthResponse:
-      type: object
-      required: [ok]
-      properties:
-        ok: { type: boolean }
-
-    VersionResponse:
-      type: object
-      required: [version, transport, capabilities]
-      properties:
-        version: { type: string, example: "0.0.1" }
-        transport:
-          type: string
-          enum: [python-bridge, rust-server, tauri, wasm]
-        capabilities:
-          type: array
-          items: { type: string }
-          example: [import-dxf, generate-gcode]
-
-    Point2:
-      type: object
-      required: [x, y]
-      properties:
-        x: { type: number }
-        y: { type: number }
-
     BBox:
-      type: object
-      required: [min_x, min_y, max_x, max_y]
       properties:
-        min_x: { type: number }
-        min_y: { type: number }
-        max_x: { type: number }
-        max_y: { type: number }
-
-    Segment:
-      type: object
-      description: A single LINE or ARC primitive. ARC encoded as bulge between start and end.
-      required: [type, start, end, bulge, layer, color]
-      properties:
-        type:
-          type: string
-          enum: [LINE, ARC, CIRCLE, POINT]
-        start: { $ref: '#/components/schemas/Point2' }
-        end:   { $ref: '#/components/schemas/Point2' }
-        bulge:
+        max_x:
+          format: double
           type: number
-          description: tan(included_angle / 4); 0 for LINE, ±value for ARC.
-        center:
-          $ref: '#/components/schemas/Point2'
-          description: For ARC/CIRCLE only.
-        layer: { type: string }
-        color: { type: integer }
-
-    Layer:
+        max_y:
+          format: double
+          type: number
+        min_x:
+          format: double
+          type: number
+        min_y:
+          format: double
+          type: number
+      required:
+      - max_x
+      - max_y
+      - min_x
+      - min_y
       type: object
-      required: [name, color, segment_count]
-      properties:
-        name:  { type: string }
-        color: { type: integer }
-        segment_count: { type: integer }
-
-    ImportResponse:
-      type: object
-      required: [filename, format, segments, layers, bbox, unit_scale]
-      properties:
-        filename: { type: string }
-        format:   { type: string, example: dxf }
-        segments:
-          type: array
-          items: { $ref: '#/components/schemas/Segment' }
-        layers:
-          type: array
-          items: { $ref: '#/components/schemas/Layer' }
-        bbox:        { $ref: '#/components/schemas/BBox' }
-        unit_scale:  { type: number, description: "mm per source unit" }
-        warnings:
-          type: array
-          items: { type: string }
-
-    GenerateRequest:
-      type: object
-      required: [segments]
-      properties:
-        segments:
-          type: array
-          items: { $ref: '#/components/schemas/Segment' }
-        setup:
-          type: object
-          additionalProperties: true
-          description: Setup tree (machine/tool/mill/pockets/tabs/leads). Schema in /defaults.
-        post_processor:
-          type: string
-          enum: [gcode_linuxcnc, gcode_grbl, hpgl]
-          default: gcode_linuxcnc
-
-    Pose3:
-      type: object
-      required: [x, y, z]
-      properties:
-        x: { type: number }
-        y: { type: number }
-        z: { type: number }
-
-    ToolpathSegment:
-      type: object
-      description: Linear segment in 3D for the preview renderer.
-      required: [from, to, kind]
-      properties:
-        from: { $ref: '#/components/schemas/Pose3' }
-        to:   { $ref: '#/components/schemas/Pose3' }
-        kind:
-          type: string
-          enum: [rapid, cut, plunge, retract]
-
-    GenerateResponse:
-      type: object
-      required: [gcode, toolpath]
-      properties:
-        gcode:    { type: string }
-        toolpath:
-          type: array
-          items: { $ref: '#/components/schemas/ToolpathSegment' }
-        stats:
-          type: object
-          properties:
-            segment_count:    { type: integer }
-            travel_distance:  { type: number }
-            cut_distance:     { type: number }
-
     DefaultsResponse:
-      type: object
-      required: [setup, schema]
       properties:
+        schema: true
         setup:
-          type: object
-          additionalProperties: true
-        schema:
-          type: object
-          description: JSON Schema describing the setup tree.
-
-    Error:
+          $ref: '#/components/schemas/Setup'
+      required:
+      - schema
+      - setup
       type: object
-      required: [error]
+    Error:
       properties:
-        error:    { type: string }
-        details:  { type: object, additionalProperties: true }
-
+        details: true
+        error:
+          type: string
+      required:
+      - error
+      type: object
+    GenerateRequest:
+      properties:
+        post_processor:
+          anyOf:
+          - $ref: '#/components/schemas/PostProcessorKind'
+          - type: 'null'
+        segments:
+          items:
+            $ref: '#/components/schemas/Segment'
+          type: array
+        setup:
+          anyOf:
+          - $ref: '#/components/schemas/Setup'
+          - type: 'null'
+      required:
+      - segments
+      type: object
+    GenerateResponse:
+      properties:
+        gcode:
+          type: string
+        stats:
+          $ref: '#/components/schemas/GenerateStats'
+        toolpath:
+          items:
+            $ref: '#/components/schemas/ToolpathSegment'
+          type: array
+      required:
+      - gcode
+      - stats
+      - toolpath
+      type: object
+    GenerateStats:
+      properties:
+        closed_object_count:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        cut_distance:
+          format: double
+          type:
+          - number
+          - 'null'
+        object_count:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        offset_count:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        travel_distance:
+          format: double
+          type:
+          - number
+          - 'null'
+      required:
+      - closed_object_count
+      - object_count
+      - offset_count
+      type: object
+    HealthResponse:
+      properties:
+        ok:
+          type: boolean
+      required:
+      - ok
+      type: object
+    ImportResponse:
+      properties:
+        bbox:
+          $ref: '#/components/schemas/BBox'
+        filename:
+          type: string
+        format:
+          type: string
+        layers:
+          items:
+            $ref: '#/components/schemas/Layer'
+          type: array
+        segments:
+          items:
+            $ref: '#/components/schemas/Segment'
+          type: array
+        unit_scale:
+          format: double
+          type: number
+        warnings:
+          items:
+            type: string
+          type: array
+      required:
+      - bbox
+      - filename
+      - format
+      - layers
+      - segments
+      - unit_scale
+      - warnings
+      type: object
+    Layer:
+      properties:
+        color:
+          format: int32
+          type: integer
+        name:
+          type: string
+        segment_count:
+          format: uint
+          minimum: 0.0
+          type: integer
+      required:
+      - color
+      - name
+      - segment_count
+      type: object
+    LeadKind:
+      enum:
+      - off
+      - straight
+      - arc
+      type: string
+    LeadsConfig:
+      properties:
+        in:
+          $ref: '#/components/schemas/LeadKind'
+        in_lenght:
+          format: double
+          type: number
+        out:
+          $ref: '#/components/schemas/LeadKind'
+        out_lenght:
+          format: double
+          type: number
+      required:
+      - in
+      - in_lenght
+      - out
+      - out_lenght
+      type: object
+    MachineConfig:
+      properties:
+        arcs:
+          description: Whether the machine emits arc commands (G2/G3).
+          type: boolean
+        comments:
+          type: boolean
+        mode:
+          $ref: '#/components/schemas/MachineMode'
+        supports_toolchange:
+          type: boolean
+        unit:
+          $ref: '#/components/schemas/UnitSystem'
+      required:
+      - arcs
+      - comments
+      - mode
+      - supports_toolchange
+      - unit
+      type: object
+    MachineMode:
+      enum:
+      - mill
+      - laser
+      - drag
+      type: string
+    MillConfig:
+      properties:
+        active:
+          type: boolean
+        depth:
+          format: double
+          type: number
+        fast_move_z:
+          format: double
+          type: number
+        helix_mode:
+          type: boolean
+        objectorder:
+          $ref: '#/components/schemas/ObjectOrder'
+        offset:
+          $ref: '#/components/schemas/ToolOffset'
+        reverse:
+          type: boolean
+        start_depth:
+          format: double
+          type: number
+        step:
+          description: Per-pass z step (negative ⇒ down).
+          format: double
+          type: number
+      required:
+      - active
+      - depth
+      - fast_move_z
+      - helix_mode
+      - objectorder
+      - offset
+      - reverse
+      - start_depth
+      - step
+      type: object
+    ObjectOrder:
+      enum:
+      - nearest
+      - per_object
+      - unordered
+      type: string
+    PocketConfig:
+      properties:
+        active:
+          type: boolean
+        insideout:
+          type: boolean
+        islands:
+          type: boolean
+        nocontour:
+          description: Skip the boundary contour pass (used by HATCH-equivalent layers).
+          type: boolean
+        zigzag:
+          type: boolean
+      required:
+      - active
+      - insideout
+      - islands
+      - nocontour
+      - zigzag
+      type: object
+    Point2:
+      properties:
+        x:
+          format: double
+          type: number
+        y:
+          format: double
+          type: number
+      required:
+      - x
+      - y
+      type: object
+    PolylineOffset:
+      description: One concentric offset of a closed object — used for both the boundary pass and any inward pocket cascade rings.
+      properties:
+        closed:
+          type: boolean
+        color:
+          format: int32
+          type: integer
+        is_pocket:
+          description: 0 = boundary, 1 = zigzag fill stroke, 2 = pocket ring.
+          format: uint8
+          minimum: 0.0
+          type: integer
+        layer:
+          type: string
+        level:
+          description: 0 = outer boundary, 1+ = pocket cascade inward.
+          format: uint32
+          minimum: 0.0
+          type: integer
+        segments:
+          items:
+            $ref: '#/components/schemas/Segment'
+          type: array
+        source_object_idx:
+          format: uint
+          minimum: 0.0
+          type: integer
+      required:
+      - closed
+      - color
+      - is_pocket
+      - layer
+      - level
+      - segments
+      - source_object_idx
+      type: object
+    Pose3:
+      properties:
+        x:
+          format: double
+          type: number
+        y:
+          format: double
+          type: number
+        z:
+          format: double
+          type: number
+      required:
+      - x
+      - y
+      - z
+      type: object
+    PostProcessorKind:
+      enum:
+      - linuxcnc
+      - grbl
+      - hpgl
+      type: string
+    Segment:
+      description: A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
+      properties:
+        bulge:
+          default: 0.0
+          format: double
+          type: number
+        center:
+          anyOf:
+          - $ref: '#/components/schemas/Point2'
+          - type: 'null'
+        color:
+          default: 7
+          format: int32
+          type: integer
+        end:
+          $ref: '#/components/schemas/Point2'
+        layer:
+          default: '0'
+          type: string
+        start:
+          $ref: '#/components/schemas/Point2'
+        type:
+          $ref: '#/components/schemas/SegmentKind'
+      required:
+      - end
+      - start
+      - type
+      type: object
+    SegmentKind:
+      enum:
+      - LINE
+      - ARC
+      - CIRCLE
+      - POINT
+      type: string
+    Setup:
+      properties:
+        leads:
+          $ref: '#/components/schemas/LeadsConfig'
+        machine:
+          $ref: '#/components/schemas/MachineConfig'
+        mill:
+          $ref: '#/components/schemas/MillConfig'
+        pockets:
+          $ref: '#/components/schemas/PocketConfig'
+        tabs:
+          $ref: '#/components/schemas/TabsConfig'
+        tool:
+          $ref: '#/components/schemas/ToolConfig'
+      required:
+      - leads
+      - machine
+      - mill
+      - pockets
+      - tabs
+      - tool
+      type: object
+    TabType:
+      enum:
+      - rectangle
+      - ramp
+      type: string
+    TabsConfig:
+      properties:
+        active:
+          type: boolean
+        height:
+          format: double
+          type: number
+        tab_type:
+          $ref: '#/components/schemas/TabType'
+        width:
+          format: double
+          type: number
+      required:
+      - active
+      - height
+      - tab_type
+      - width
+      type: object
+    ToolConfig:
+      properties:
+        diameter:
+          format: double
+          type: number
+        dragoff:
+          description: Drag-knife offset (if present, otherwise None).
+          format: double
+          type:
+          - number
+          - 'null'
+        flood:
+          type: boolean
+        mist:
+          type: boolean
+        number:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        pause:
+          description: Spindle warm-up pause in seconds.
+          format: uint32
+          minimum: 0.0
+          type: integer
+        rate_h:
+          description: Cutting feedrate (mm/min).
+          format: uint32
+          minimum: 0.0
+          type: integer
+        rate_v:
+          description: Plunge feedrate (mm/min).
+          format: uint32
+          minimum: 0.0
+          type: integer
+        speed:
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - diameter
+      - flood
+      - mist
+      - number
+      - pause
+      - rate_h
+      - rate_v
+      - speed
+      type: object
+    ToolOffset:
+      enum:
+      - none
+      - outside
+      - inside
+      - on
+      type: string
+    ToolpathSegment:
+      properties:
+        from:
+          $ref: '#/components/schemas/Pose3'
+        kind:
+          $ref: '#/components/schemas/SegmentKind'
+        to:
+          $ref: '#/components/schemas/Pose3'
+      required:
+      - from
+      - kind
+      - to
+      type: object
+    TransportKind:
+      enum:
+      - python-bridge
+      - rust-server
+      - tauri
+      - wasm
+      type: string
+    UnitSystem:
+      enum:
+      - mm
+      - inch
+      type: string
+    VcObject:
+      description: '`VcObject` analogue: a chain of segments grouped after `segments2objects`.'
+      properties:
+        closed:
+          type: boolean
+        color:
+          format: int32
+          type: integer
+        inner_objects:
+          description: IDs of objects fully contained by this one.
+          items:
+            format: uint
+            minimum: 0.0
+            type: integer
+          type: array
+        layer:
+          type: string
+        outer_objects:
+          description: IDs of objects fully containing this one.
+          items:
+            format: uint
+            minimum: 0.0
+            type: integer
+          type: array
+        overwrite_offset:
+          description: Per-object override of the tool-radius offset (None ⇒ tool diameter / 2).
+          format: double
+          type:
+          - number
+          - 'null'
+        segments:
+          items:
+            $ref: '#/components/schemas/Segment'
+          type: array
+        setup:
+          allOf:
+          - $ref: '#/components/schemas/Setup'
+          description: Per-object setup overrides (mill depth, leads, tabs, …).
+        start:
+          anyOf:
+          - $ref: '#/components/schemas/Point2'
+          - type: 'null'
+          description: Optional starting point for cut-order seeding.
+        tool_offset:
+          allOf:
+          - $ref: '#/components/schemas/ToolOffset'
+          description: '"outside" / "inside" / "none" — see `setup::ToolOffset`.'
+      required:
+      - closed
+      - color
+      - inner_objects
+      - layer
+      - outer_objects
+      - segments
+      - setup
+      - tool_offset
+      type: object
+    VersionResponse:
+      properties:
+        capabilities:
+          items:
+            type: string
+          type: array
+        transport:
+          $ref: '#/components/schemas/TransportKind'
+        version:
+          type: string
+      required:
+      - capabilities
+      - transport
+      - version
+      type: object
   responses:
     BadRequest:
       description: Malformed input
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-
+          schema:
+            $ref: '#/components/schemas/Error'
     UnprocessableEntity:
       description: Could not parse content
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema:
+            $ref: '#/components/schemas/Error'

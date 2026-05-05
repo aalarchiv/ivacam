@@ -62,22 +62,6 @@
 </div>
 
 <style>
-  :global(html),
-  :global(body) {
-    height: 100%;
-    margin: 0;
-    background: #0d0d0d;
-    color: #d6d6d6;
-    font-family:
-      system-ui,
-      -apple-system,
-      Segoe UI,
-      Roboto,
-      sans-serif;
-  }
-  :global(#app) {
-    height: 100%;
-  }
   .app {
     display: grid;
     grid-template-rows: auto auto auto 1fr auto;
@@ -89,38 +73,38 @@
     align-items: center;
     gap: 1rem;
     padding: 0.5rem 0.9rem;
-    background: #161616;
-    border-bottom: 1px solid #2b2b2b;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
   }
   h1 {
     font-size: 1rem;
     margin: 0;
-    color: #f0f0f0;
+    color: var(--text-strong);
     font-weight: 600;
   }
   .tagline {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--text-muted);
   }
   .spacer {
     flex: 1;
   }
   .pane-toggle {
     display: inline-flex;
-    border: 1px solid #2b2b2b;
+    border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
   }
   .pane-toggle button {
-    background: #1a1a1a;
-    color: #aaa;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
     border: 0;
     padding: 0.3rem 0.7rem;
     font-size: 0.8rem;
     cursor: pointer;
   }
   .pane-toggle button.active {
-    background: #2d6cdf;
+    background: var(--accent);
     color: white;
   }
   main {
@@ -134,11 +118,11 @@
     overflow: hidden;
   }
   footer {
-    background: #161616;
-    border-top: 1px solid #2b2b2b;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
     padding: 0.35rem 0.9rem;
     font-size: 0.75rem;
-    color: #888;
+    color: var(--text-muted);
     font-variant-numeric: tabular-nums;
   }
 </style>

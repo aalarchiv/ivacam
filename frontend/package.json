@@ -11,13 +11,15 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "lint": "prettier --check .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "codegen": "openapi-typescript ../schema/openapi.yaml -o src/lib/api/generated.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.12.2",
     "@types/three": "^0.184.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.3.3",
     "prettier-plugin-svelte": "^3.2.6",
     "svelte": "^5.55.4",

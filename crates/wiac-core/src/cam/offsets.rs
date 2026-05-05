@@ -7,6 +7,7 @@
 
 use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Polyline};
 use clipper2::{EndType, JoinType, Paths};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::cam::{segments_to_points, VcObject};
@@ -15,7 +16,7 @@ use crate::math;
 
 /// One concentric offset of a closed object — used for both the boundary
 /// pass and any inward pocket cascade rings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PolylineOffset {
     pub segments: Vec<Segment>,
     pub closed: bool,

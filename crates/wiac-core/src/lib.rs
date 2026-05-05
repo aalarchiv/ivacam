@@ -11,6 +11,7 @@ pub mod gcode;
 pub mod geometry;
 pub mod input;
 pub mod math;
+pub mod schema;
 pub mod testing;
 
 pub use error::{Error, Result};

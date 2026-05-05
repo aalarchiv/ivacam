@@ -3,28 +3,40 @@
   import { project } from '../state/project.svelte';
   import type { Segment } from '../api/types';
 
-  // Minimal AutoCAD ACI palette. Replace with full table later (mtm.8 follow-up).
-  const ACI_COLORS: Record<number, string> = {
+  // AutoCAD ACI palette. ACI 7 means "white in dark mode, black in light" —
+  // this is exactly how AutoCAD itself renders it. We resolve it at draw
+  // time from the active theme.
+  const ACI_FIXED: Record<number, string> = {
     1: '#ff0000',
     2: '#ffff00',
     3: '#00ff00',
     4: '#00ffff',
     5: '#0000ff',
     6: '#ff00ff',
-    7: '#e6e6e6',
-    8: '#414141',
     9: '#808080',
-    256: '#e6e6e6',
   };
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
 
+  function themeVar(name: string, fallback: string): string {
+    if (!container) return fallback;
+    const v = getComputedStyle(container).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
   onMount(() => {
     const ro = new ResizeObserver(() => draw());
     ro.observe(container);
     draw();
-    return () => ro.disconnect();
+    // Re-paint when the user toggles their OS theme.
+    const mql = window.matchMedia('(prefers-color-scheme: light)');
+    const onChange = () => draw();
+    mql.addEventListener('change', onChange);
+    return () => {
+      ro.disconnect();
+      mql.removeEventListener('change', onChange);
+    };
   });
 
   $effect(() => {
@@ -34,7 +46,9 @@
   });
 
   function colorFor(c: number): string {
-    return ACI_COLORS[c] ?? '#bbbbbb';
+    if (c === 7 || c === 256) return themeVar('--text-strong', '#e6e6e6');
+    if (c === 8) return themeVar('--text-muted', '#888');
+    return ACI_FIXED[c] ?? themeVar('--text-faint', '#bbbbbb');
   }
 
   function draw() {
@@ -51,12 +65,12 @@
     canvas.style.height = `${h}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.fillStyle = '#0d0d0d';
+    ctx.fillStyle = themeVar('--bg-app', '#0d0d0d');
     ctx.fillRect(0, 0, w, h);
 
     const data = project.imported;
     if (!data || data.segments.length === 0) {
-      ctx.fillStyle = '#555';
+      ctx.fillStyle = themeVar('--canvas-empty', '#555');
       ctx.font = '13px system-ui, sans-serif';
       ctx.fillText('Open a file to view geometry', 16, 24);
       return;
@@ -160,9 +174,11 @@
     const px = Math.abs(scale * minorStep);
     if (px < 6) return; // too tight to be useful
     ctx.lineWidth = 1;
+    const minorColor = themeVar('--grid-minor', '#1a1a1a');
+    const majorColor = themeVar('--grid-major', '#262626');
     for (const [step, color] of [
-      [minorStep, '#1a1a1a'],
-      [majorStep, '#262626'],
+      [minorStep, minorColor],
+      [majorStep, majorColor],
     ] as const) {
       ctx.strokeStyle = color;
       const start = Math.floor(-offX / scale / step) * step;
@@ -192,12 +208,12 @@
     offY: number,
   ) {
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#882222';
+    ctx.strokeStyle = themeVar('--axis-x', '#882222');
     ctx.beginPath();
     ctx.moveTo(0, offY);
     ctx.lineTo(w, offY);
     ctx.stroke();
-    ctx.strokeStyle = '#226622';
+    ctx.strokeStyle = themeVar('--axis-y', '#226622');
     ctx.beginPath();
     ctx.moveTo(offX, 0);
     ctx.lineTo(offX, h);
@@ -215,7 +231,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #0d0d0d;
+    background: var(--bg-app);
   }
   canvas {
     display: block;

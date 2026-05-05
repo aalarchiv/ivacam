@@ -25,6 +25,8 @@ fn main() -> ExitCode {
         Some("frontend-test") => pnpm(&["run", "test"]),
         Some("frontend-check") => pnpm(&["run", "check"]),
         Some("frontend-lint") => pnpm(&["run", "lint"]),
+        Some("schema") => schema(false),
+        Some("schema-check") => schema(true),
         Some("ci") => ci_all(),
         Some(unknown) => {
             eprintln!("xtask: unknown task '{unknown}'");
@@ -52,6 +54,8 @@ fn usage() {
            frontend-test   pnpm run test\n\
            frontend-check  pnpm run check (svelte-check + tsc)\n\
            frontend-lint   pnpm run lint (prettier --check)\n\
+           schema          regenerate schema/openapi.yaml's components/schemas\n\
+           schema-check    fail if schema/openapi.yaml is out of date\n\
            ci              run everything CI runs"
     );
 }
@@ -96,6 +100,57 @@ fn ci_all() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+fn schema(check_only: bool) -> ExitCode {
+    let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let yaml_path = workspace_root.join("schema/openapi.yaml");
+    let on_disk = match std::fs::read_to_string(&yaml_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("read {}: {e}", yaml_path.display());
+            return ExitCode::from(1);
+        }
+    };
+    let mut doc: serde_yaml::Value = match serde_yaml::from_str(&on_disk) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("parse {}: {e}", yaml_path.display());
+            return ExitCode::from(1);
+        }
+    };
+    let derived = wiac_core::schema::components_schemas();
+    let derived_yaml = serde_yaml::to_value(&derived).unwrap();
+    let components = doc
+        .get_mut("components")
+        .and_then(|c| c.as_mapping_mut())
+        .expect("components: missing in OpenAPI YAML");
+    components.insert(
+        serde_yaml::Value::String("schemas".into()),
+        derived_yaml,
+    );
+
+    let serialized = serde_yaml::to_string(&doc).unwrap();
+    if check_only {
+        if serialized.trim() == on_disk.trim() {
+            eprintln!("schema/openapi.yaml is up to date");
+            ExitCode::SUCCESS
+        } else {
+            eprintln!(
+                "schema/openapi.yaml drift detected. Run `cargo xtask schema` to regenerate."
+            );
+            ExitCode::from(1)
+        }
+    } else if let Err(e) = std::fs::write(&yaml_path, serialized) {
+        eprintln!("write {}: {e}", yaml_path.display());
+        ExitCode::from(1)
+    } else {
+        eprintln!("regenerated {}", yaml_path.display());
+        ExitCode::SUCCESS
+    }
 }
 
 fn run(cmd: &mut Command) -> ExitCode {

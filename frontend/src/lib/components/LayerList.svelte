@@ -8,9 +8,13 @@
     4: '#00ffff',
     5: '#0000ff',
     6: '#ff00ff',
-    7: '#e6e6e6',
   };
-  const swatch = (c: number) => ACI[c] ?? '#bbbbbb';
+  // ACI 7 / 256 = BYLAYER white (paper-color). Theme-tracked.
+  function swatch(c: number): string {
+    if (c === 7 || c === 256) return 'var(--text-strong)';
+    if (c === 8) return 'var(--text-muted)';
+    return ACI[c] ?? 'var(--text-faint)';
+  }
 </script>
 
 <aside class="layers">
@@ -25,7 +29,7 @@
               checked={project.visibleLayers.has(layer.name)}
               onchange={() => project.toggleLayer(layer.name)}
             />
-            <span class="swatch" style:background={swatch(layer.color)}></span>
+            <span class="swatch" style="background: {swatch(layer.color)}"></span>
             <span class="name">{layer.name}</span>
             <span class="count">{layer.segment_count}</span>
           </label>
@@ -41,9 +45,9 @@
   .layers {
     width: 100%;
     height: 100%;
-    background: #161616;
-    color: #d6d6d6;
-    border-left: 1px solid #2b2b2b;
+    background: var(--bg-panel);
+    color: var(--text);
+    border-left: 1px solid var(--border);
     overflow-y: auto;
     padding: 0.75rem 0.75rem 1rem;
     box-sizing: border-box;
@@ -53,7 +57,7 @@
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #888;
+    color: var(--text-muted);
   }
   ul {
     list-style: none;
@@ -71,14 +75,14 @@
     cursor: pointer;
   }
   input[type='checkbox'] {
-    accent-color: #2d6cdf;
+    accent-color: var(--accent);
   }
   .swatch {
     width: 10px;
     height: 10px;
     border-radius: 2px;
     display: inline-block;
-    border: 1px solid #2b2b2b;
+    border: 1px solid var(--border);
   }
   .name {
     flex: 1;
@@ -88,11 +92,11 @@
   }
   .count {
     font-variant-numeric: tabular-nums;
-    color: #777;
+    color: var(--text-faint);
     font-size: 0.75rem;
   }
   .empty {
-    color: #666;
+    color: var(--text-faint);
     font-size: 0.85rem;
   }
 </style>

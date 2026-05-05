@@ -1,11 +1,79 @@
+/* Theme tokens — both dark (default) and light. Components reference
+   var(--…) only; never hard-code hex. */
+
+:root {
+  color-scheme: dark light;
+
+  --bg-app: #0d0d0d;
+  --bg-panel: #161616;
+  --bg-elevated: #1a1a1a;
+  --bg-input: #0d0d0d;
+  --border: #2b2b2b;
+  --text: #d6d6d6;
+  --text-strong: #f0f0f0;
+  --text-muted: #888;
+  --text-faint: #666;
+  --accent: #2d6cdf;
+  --accent-strong: #6e9ce6;
+  --success: #6ec068;
+  --success-bg: #2d8c4d;
+  --error: #df6c6c;
+  --warn: #ffd23a;
+  --grid-major: #262626;
+  --grid-minor: #1a1a1a;
+  --axis-x: #882222;
+  --axis-y: #226622;
+  --canvas-empty: #555;
+
+  /* Toolpath color scheme — used in Three.js too via getComputedStyle. */
+  --toolpath-rapid: #35a2ff;
+  --toolpath-cut: #ff5555;
+  --toolpath-plunge: #ffd23a;
+  --toolpath-retract: #5fd06e;
+  --toolpath-arc: #ff8a3a;
+  --imported-faded: #444444;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-app: #fafafa;
+    --bg-panel: #f0f0f0;
+    --bg-elevated: #ffffff;
+    --bg-input: #ffffff;
+    --border: #d4d4d4;
+    --text: #1a1a1a;
+    --text-strong: #050505;
+    --text-muted: #6a6a6a;
+    --text-faint: #999999;
+    --accent: #1d4ed8;
+    --accent-strong: #2563eb;
+    --success: #166534;
+    --success-bg: #15803d;
+    --error: #b91c1c;
+    --warn: #b45309;
+    --grid-major: #d6d6d6;
+    --grid-minor: #ebebeb;
+    --axis-x: #c14040;
+    --axis-y: #2f8a3a;
+    --canvas-empty: #999999;
+
+    --toolpath-rapid: #1d77c2;
+    --toolpath-cut: #c41a1a;
+    --toolpath-plunge: #b58000;
+    --toolpath-retract: #2e8a3a;
+    --toolpath-arc: #c45e1a;
+    --imported-faded: #b6b6b6;
+  }
+}
+
 html,
 body,
 #app {
   margin: 0;
   height: 100%;
   width: 100%;
-  background: #0d0d0d;
-  color: #d6d6d6;
+  background: var(--bg-app);
+  color: var(--text);
   font-family:
     system-ui,
     -apple-system,

@@ -4,16 +4,17 @@
 //! Reads emitted gcode line-by-line, tracks XYZ + active modal G-code, and
 //! emits typed [`ToolpathSegment`]s the frontend feeds straight to Three.js.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Pose3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SegmentKind {
     Rapid,
@@ -23,7 +24,7 @@ pub enum SegmentKind {
     Arc,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ToolpathSegment {
     pub from: Pose3,
     pub to: Pose3,

@@ -113,16 +113,16 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #2b2b2b;
-    background: #1a1a1a;
-    color: #e6e6e6;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
     flex-wrap: wrap;
   }
   .upload.drag-over {
-    background: #243049;
+    background: color-mix(in srgb, var(--accent) 24%, var(--bg-elevated));
   }
   button {
-    background: #2d6cdf;
+    background: var(--accent);
     color: white;
     border: none;
     padding: 0.4rem 0.9rem;
@@ -136,33 +136,33 @@
   }
   .hint {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--text-muted);
   }
   .samples {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--text-muted);
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
   }
   .samples .sample {
     background: transparent;
-    color: #6e9ce6;
-    border: 1px solid #2b2b2b;
+    color: var(--accent-strong);
+    border: 1px solid var(--border);
     padding: 0.15rem 0.45rem;
     border-radius: 3px;
     font-size: 0.72rem;
     cursor: pointer;
   }
   .samples .sample:hover {
-    background: #1f2c44;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
   .loaded {
     font-size: 0.8rem;
-    color: #6ec068;
+    color: var(--success);
   }
   .error {
     font-size: 0.8rem;
-    color: #df6c6c;
+    color: var(--error);
   }
 </style>

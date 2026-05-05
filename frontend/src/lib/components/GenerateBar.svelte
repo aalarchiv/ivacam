@@ -135,14 +135,14 @@
     align-items: center;
     gap: 0.7rem;
     padding: 0.4rem 0.9rem;
-    background: #161616;
-    border-bottom: 1px solid #2b2b2b;
-    color: #d6d6d6;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
     flex-wrap: wrap;
     font-size: 0.78rem;
   }
   .title {
-    color: #888;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-size: 0.7rem;
@@ -153,24 +153,24 @@
     gap: 0.25rem;
   }
   input[type='number'] {
-    background: #0d0d0d;
-    color: #e6e6e6;
-    border: 1px solid #2b2b2b;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
     border-radius: 3px;
     padding: 0.18rem 0.3rem;
     width: 4.5rem;
     font-size: 0.78rem;
   }
   select {
-    background: #0d0d0d;
-    color: #e6e6e6;
-    border: 1px solid #2b2b2b;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
     border-radius: 3px;
     padding: 0.18rem 0.3rem;
     font-size: 0.78rem;
   }
   button {
-    background: #2d6cdf;
+    background: var(--accent);
     color: white;
     border: none;
     padding: 0.3rem 0.7rem;
@@ -179,13 +179,13 @@
     cursor: pointer;
   }
   button.download {
-    background: #2d8c4d;
+    background: var(--success-bg);
   }
   button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
   .stats {
-    color: #6ec068;
+    color: var(--success);
   }
 </style>

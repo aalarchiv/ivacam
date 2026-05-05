@@ -4,11 +4,14 @@
 
 use crate::geometry::{BBox, Layer, Segment};
 use crate::Result;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
 pub mod dxf_in;
 pub mod nurbs;
+pub mod text;
 
 /// Optional knobs for any importer. The `args.dxfread_*` flags from the
 /// Python plugin map here.
@@ -26,6 +29,12 @@ pub struct ImportOptions {
     /// 0.0 keeps arcs as single ARC segments (with bulge) — used for the
     /// CAM pipeline. The Python importer subdivides for rendering.
     pub arc_max_step_rad: f64,
+    /// Path to a TTF for rendering TEXT/MTEXT entities. If `None`, the
+    /// importer falls back to scanning a few well-known system locations
+    /// (`/usr/share/fonts/...`, `/Library/Fonts/...`, `C:\Windows\Fonts\...`).
+    /// Single-line / engraving fonts (RhSS, OSIFont, Hershey ports) are
+    /// auto-detected — see [`crate::input::text::is_single_line_font`].
+    pub font_path: Option<std::path::PathBuf>,
 }
 
 impl ImportOptions {
@@ -38,7 +47,7 @@ impl ImportOptions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ImportOutput {
     pub filename: String,
     pub format: String,

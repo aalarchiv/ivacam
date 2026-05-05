@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use dxf::entities::{
-    Arc, Circle, Ellipse, Entity, EntityType, Line, LwPolyline, ModelPoint, Polyline, Spline,
-    Vertex,
+    Arc, Circle, Ellipse, Entity, EntityType, Line, LwPolyline, ModelPoint, MText, Polyline, Spline,
+    Text, Vertex,
 };
 use dxf::enums::Units;
 use dxf::Drawing;
@@ -66,6 +66,10 @@ pub fn import_drawing(
         Some(opts.select_layers.iter().map(String::as_str).collect())
     };
 
+    // Eagerly load the font once per import. Empty bytes => no rendering
+    // possible; the importer downgrades to warnings on any TEXT/MTEXT entity.
+    let font_bytes = load_font(opts);
+
     let mut ctx = ImportCtx {
         opts,
         unit_scale,
@@ -74,6 +78,7 @@ pub fn import_drawing(
         layer_colors: &layer_colors,
         select: select_set.as_ref(),
         cam_setup: String::new(),
+        font_bytes,
     };
 
     // Build a block index for INSERT expansion. Block lookup is by the
@@ -158,6 +163,9 @@ struct ImportCtx<'a> {
     layer_colors: &'a BTreeMap<String, i32>,
     select: Option<&'a std::collections::HashSet<&'a str>>,
     cam_setup: String,
+    /// Loaded font bytes for TEXT/MTEXT outlining. Empty when no font was
+    /// available; in that case TEXT entities downgrade to a warning.
+    font_bytes: Vec<u8>,
 }
 
 impl ImportCtx<'_> {
@@ -224,12 +232,12 @@ impl ImportCtx<'_> {
                     self.add_entity(sub, blocks, &block_xform, depth + 1);
                 }
             }
-            EntityType::Text(_) | EntityType::MText(_) | EntityType::AttributeDefinition(_) => {
-                if !self.opts.no_text {
-                    self.warnings.push(format!(
-                        "TEXT-class entity on layer '{layer}' skipped (text→path lands in av1.11/12)"
-                    ));
-                }
+            EntityType::Text(t) if !self.opts.no_text => self.emit_text(t, &layer, color, xform),
+            EntityType::MText(t) if !self.opts.no_text => {
+                self.emit_mtext(t, &layer, color, xform)
+            }
+            EntityType::AttributeDefinition(_) => {
+                // Attribute definitions are template-only; ignored.
             }
             other => {
                 self.warnings.push(format!(
@@ -464,6 +472,79 @@ impl ImportCtx<'_> {
         }
     }
 
+    fn emit_text(&mut self, t: &Text, layer: &str, color: i32, xform: &Transform2D) {
+        if self.font_bytes.is_empty() {
+            self.warnings.push(format!(
+                "TEXT '{}' on layer '{layer}' skipped (no font available; pass ImportOptions::font_path)",
+                t.value
+            ));
+            return;
+        }
+        let origin_world = xform.apply(t.location.x, t.location.y);
+        let origin = self.scale(origin_world);
+        let height = t.text_height * self.unit_scale * xform.uniform_scale_factor();
+        if height < 1e-6 || t.value.is_empty() {
+            return;
+        }
+        let segs = match crate::input::text::render_text(
+            &self.font_bytes,
+            &t.value,
+            origin,
+            height,
+            layer,
+            color,
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.warnings.push(format!("TEXT render failed: {e}"));
+                return;
+            }
+        };
+        // DXF Text supports a rotation; rotate-around-origin if non-zero.
+        let rot = t.rotation.to_radians() + xform.rotation;
+        let segs = if rot.abs() > 1e-9 {
+            rotate_segments(&segs, origin, rot)
+        } else {
+            segs
+        };
+        self.segments.extend(segs);
+    }
+
+    fn emit_mtext(&mut self, t: &MText, layer: &str, color: i32, xform: &Transform2D) {
+        if self.font_bytes.is_empty() {
+            self.warnings.push(format!(
+                "MTEXT on layer '{layer}' skipped (no font available)"
+            ));
+            return;
+        }
+        let origin_world = xform.apply(t.insertion_point.x, t.insertion_point.y);
+        let origin = self.scale(origin_world);
+        let height = t.initial_text_height * self.unit_scale * xform.uniform_scale_factor();
+        if height < 1e-6 || t.text.is_empty() {
+            return;
+        }
+        // MTEXT has \P as the line break sentinel (matches the Python tool).
+        let line_step = height * 1.4;
+        for (i, line) in t.text.split("\\P").enumerate() {
+            let row_origin = Point2::new(origin.x, origin.y - (i as f64) * line_step);
+            let segs = match crate::input::text::render_text(
+                &self.font_bytes,
+                line,
+                row_origin,
+                height,
+                layer,
+                color,
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    self.warnings.push(format!("MTEXT render failed: {e}"));
+                    continue;
+                }
+            };
+            self.segments.extend(segs);
+        }
+    }
+
     fn emit_spline(&mut self, spline: &Spline, layer: &str, color: i32, xform: &Transform2D) {
         let degree = spline.degree_of_curve as usize;
         let knots: Vec<f64> = spline.knot_values.clone();
@@ -537,6 +618,60 @@ fn color_to_aci(color: &dxf::Color, default: i32) -> i32 {
     } else {
         default
     }
+}
+
+/// Rotate every segment around `pivot` by `angle_rad`. Used for DXF TEXT
+/// rotation since `text::render_text` produces glyphs at angle 0.
+fn rotate_segments(segs: &[Segment], pivot: Point2, angle_rad: f64) -> Vec<Segment> {
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
+    segs.iter()
+        .map(|s| {
+            let mut out = s.clone();
+            out.start = rotate_around(s.start, pivot, cos_a, sin_a);
+            out.end = rotate_around(s.end, pivot, cos_a, sin_a);
+            if let Some(c) = s.center {
+                out.center = Some(rotate_around(c, pivot, cos_a, sin_a));
+            }
+            out
+        })
+        .collect()
+}
+
+fn rotate_around(p: Point2, pivot: Point2, cos_a: f64, sin_a: f64) -> Point2 {
+    let dx = p.x - pivot.x;
+    let dy = p.y - pivot.y;
+    Point2::new(
+        pivot.x + dx * cos_a - dy * sin_a,
+        pivot.y + dx * sin_a + dy * cos_a,
+    )
+}
+
+/// Resolve a font: explicit `opts.font_path` first, then a small list of
+/// well-known system locations. Returns empty bytes if nothing can be read.
+fn load_font(opts: &ImportOptions) -> Vec<u8> {
+    if let Some(path) = &opts.font_path {
+        if let Ok(b) = std::fs::read(path) {
+            return b;
+        }
+    }
+    // Common cross-platform fallbacks. We deliberately prefer fonts that
+    // exist on the broadest set of distros so the importer "just works"
+    // for typical TEXT entities.
+    const CANDIDATES: &[&str] = &[
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/Library/Fonts/Arial.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "C:\\Windows\\Fonts\\arial.ttf",
+    ];
+    for cand in CANDIDATES {
+        if let Ok(b) = std::fs::read(cand) {
+            return b;
+        }
+    }
+    Vec::new()
 }
 
 /// 2D affine transform used to expand INSERT block references.
@@ -639,15 +774,17 @@ mod tests {
     }
 
     #[test]
-    fn imports_all_dxf_with_text_warnings() {
+    fn imports_all_dxf_with_text_outlines() {
         let path = fixture("all.dxf");
         let opts = ImportOptions::default();
         let out = import_dxf_path(&path, &opts).expect("import");
-        assert!(out.segments.len() > 10, "all.dxf should yield segments");
-        // It contains TEXT — we should warn (but not fail).
+        // With a system font available the renderer should now emit
+        // outline segments for the embedded "Via" text — the segment
+        // count goes from ~30 (lines+arcs only) to well over 100.
         assert!(
-            out.warnings.iter().any(|w| w.contains("TEXT")) || !out.warnings.is_empty(),
-            "expected at least some warnings"
+            out.segments.len() > 50,
+            "all.dxf with text rendering: got {} segments",
+            out.segments.len()
         );
     }
 }

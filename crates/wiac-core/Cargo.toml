@@ -19,3 +19,8 @@ tracing = { workspace = true }
 dxf = "0.6"
 cavalier_contours = "=0.4.0"
 clipper2 = "0.5"
+schemars = { version = "0.8", features = ["preserve_order"] }
+ttf-parser = "0.25"
+
+[dev-dependencies]
+ttf-parser = "0.25"

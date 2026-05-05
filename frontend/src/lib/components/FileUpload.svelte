@@ -18,6 +18,39 @@
     { label: 'all (rs)', url: '/samples/all-rust.json' },
   ];
 
+  function saveProject() {
+    const blob = new Blob([JSON.stringify(project.snapshot(), null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
+    a.href = url;
+    a.download = `${base}.vc-project.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadProjectFile(file: File) {
+    project.loading = true;
+    project.error = null;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      project.restore(data);
+    } catch (e) {
+      project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      project.loading = false;
+    }
+  }
+
+  let projectInput: HTMLInputElement;
+  function onProjectPick(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (target.files?.[0]) loadProjectFile(target.files[0]);
+  }
+
   async function load(file: File) {
     project.loading = true;
     project.error = null;
@@ -55,13 +88,39 @@
     e.preventDefault();
     dragOver = false;
     const file = e.dataTransfer?.files[0];
-    if (file) load(file);
+    if (!file) return;
+    if (file.name.endsWith('.vc-project.json') || file.name.endsWith('.json')) {
+      loadProjectFile(file);
+    } else {
+      load(file);
+    }
+  }
+
+  async function loadSampleWithGenerate(sampleUrl: string, generatedUrl: string) {
+    project.loading = true;
+    try {
+      const [imp, gen] = await Promise.all([
+        fetch(sampleUrl).then((r) => r.json()),
+        fetch(generatedUrl).then((r) => r.json()),
+      ]);
+      project.setImported(imp);
+      project.setGenerated(gen);
+    } catch (e) {
+      project.setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      project.loading = false;
+    }
   }
 
   onMount(() => {
     const params = new URLSearchParams(window.location.search);
     const sample = params.get('sample');
-    if (sample) loadSample(`/samples/${sample}.json`);
+    const gen = params.get('gen');
+    if (sample && gen) {
+      loadSampleWithGenerate(`/samples/${sample}.json`, `/samples/${gen}.json`);
+    } else if (sample) {
+      loadSample(`/samples/${sample}.json`);
+    }
   });
 </script>
 
@@ -84,8 +143,33 @@
     onchange={onPick}
     hidden
   />
+  <input
+    bind:this={projectInput}
+    type="file"
+    accept=".vc-project.json,.json"
+    onchange={onProjectPick}
+    hidden
+  />
   <button type="button" onclick={() => inputEl.click()} disabled={project.loading}>
     {project.loading ? 'Loading…' : 'Open file'}
+  </button>
+  <button
+    type="button"
+    class="secondary"
+    onclick={() => projectInput.click()}
+    disabled={project.loading}
+    title="Open a saved project (.vc-project.json)"
+  >
+    Open project
+  </button>
+  <button
+    type="button"
+    class="secondary"
+    onclick={saveProject}
+    disabled={!project.imported}
+    title="Save current geometry + setup to a .vc-project.json file"
+  >
+    Save project
   </button>
   <span class="hint">or drop a .dxf / .svg / .hpgl / .ngc / .stl here</span>
   <span class="samples">
@@ -129,6 +213,14 @@
     border-radius: 4px;
     font-size: 0.85rem;
     cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button.secondary:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
   button:disabled {
     opacity: 0.6;

@@ -10,6 +10,7 @@
   let camera: THREE.PerspectiveCamera | undefined;
   let controls: OrbitControls | undefined;
   let geometryGroup: THREE.Group | undefined;
+  let toolGroup: THREE.Group | undefined;
   let raf = 0;
   let observer: ResizeObserver | undefined;
   let themeMql: MediaQueryList | undefined;
@@ -56,6 +57,9 @@
 
     geometryGroup = new THREE.Group();
     scene.add(geometryGroup);
+
+    toolGroup = new THREE.Group();
+    scene.add(toolGroup);
 
     observer = new ResizeObserver(() => fit());
     observer.observe(host);
@@ -127,8 +131,47 @@
     void project.imported;
     void project.visibleLayers;
     void project.generated;
+    void project.playhead;
     rebuildGeometry();
+    updateTool();
   });
+
+  /// Tool-tip cone: a small inverted cone whose apex sits at the current
+  /// toolpath position. Color is the active move kind (cut/plunge/etc.) so
+  /// the user can see at a glance what the tool is doing right now.
+  function updateTool() {
+    if (!toolGroup) return;
+    toolGroup.clear();
+    const gen = project.generated;
+    if (!gen || gen.toolpath.length === 0) return;
+    const total = gen.toolpath.length;
+    const headIdx = Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
+    const seg = gen.toolpath[headIdx];
+    if (!seg) return;
+    // Interpolate within the active segment for smooth motion at low speeds.
+    const subT = project.playhead * total - headIdx;
+    const t = Math.max(0, Math.min(1, subT));
+    const px = seg.from.x + (seg.to.x - seg.from.x) * t;
+    const py = seg.from.y + (seg.to.y - seg.from.y) * t;
+    const pz = seg.from.z + (seg.to.z - seg.from.z) * t;
+    const tipColor: Record<string, number> = {
+      rapid: 0x35a2ff,
+      cut: 0xff5555,
+      plunge: 0xffd23a,
+      retract: 0x5fd06e,
+      arc: 0xff8a3a,
+    };
+    const colorHex = tipColor[seg.kind] ?? 0xff5555;
+    const radius = Math.max(2, ((project.imported?.bbox.max_x ?? 100) - (project.imported?.bbox.min_x ?? 0)) * 0.015);
+    const height = radius * 4;
+    const geom = new THREE.ConeGeometry(radius, height, 16);
+    geom.rotateX(Math.PI); // apex points down (-Z)
+    geom.translate(0, 0, height / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.85 });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(px, py, pz);
+    toolGroup.add(mesh);
+  }
 
   function rebuildGeometry() {
     if (!geometryGroup || !scene) return;
@@ -169,10 +212,24 @@
         retract: cssColor('--toolpath-retract', 0x5fd06e),
         arc: cssColor('--toolpath-arc', 0xff8a3a),
       };
-      for (const seg of gen.toolpath) {
+      const total = gen.toolpath.length;
+      const head = Math.max(0, Math.min(total, Math.round(project.playhead * total)));
+      for (let i = 0; i < total; i++) {
+        const seg = gen.toolpath[i];
         const tp = toolpath[seg.kind] ?? toolpath.cut;
+        let r = tp.r;
+        let g = tp.g;
+        let b = tp.b;
+        // Future moves (after the head) faded so the user can see what's
+        // come and what's coming next.
+        if (i >= head) {
+          const f = 0.25;
+          r = tp.r * f + 0.05;
+          g = tp.g * f + 0.05;
+          b = tp.b * f + 0.05;
+        }
         positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
-        colors.push(tp.r, tp.g, tp.b, tp.r, tp.g, tp.b);
+        colors.push(r, g, b, r, g, b);
       }
     }
     if (positions.length === 0) return;

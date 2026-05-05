@@ -42,8 +42,87 @@
   $effect(() => {
     void project.imported;
     void project.visibleLayers;
+    void project.selectedEntities;
+    void hoverIdx;
     draw();
   });
+
+  // Mouse → segment hit testing. We project each segment to canvas space
+  // and pick the nearest one within `HIT_PIXEL_TOL`.
+  const HIT_PIXEL_TOL = 8;
+  let hoverIdx = $state<number | null>(null);
+  let lastTransform: { scale: number; offX: number; offY: number } | null = null;
+
+  function pixelHit(canvasX: number, canvasY: number): number | null {
+    const data = project.imported;
+    if (!data || !lastTransform) return null;
+    const { scale, offX, offY } = lastTransform;
+    const dataX = (canvasX - offX) / scale;
+    const dataY = (offY - canvasY) / scale;
+    const tolData = HIT_PIXEL_TOL / scale;
+    let bestIdx: number | null = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < data.segments.length; i++) {
+      const s = data.segments[i];
+      if (!project.visibleLayers.has(s.layer)) continue;
+      const d = distanceToSegment(s.start, s.end, dataX, dataY);
+      if (d < tolData && d < bestDist) {
+        bestIdx = i;
+        bestDist = d;
+      }
+    }
+    return bestIdx;
+  }
+
+  function distanceToSegment(
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+    px: number,
+    py: number,
+  ): number {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-12) return Math.hypot(px - a.x, py - a.y);
+    let t = ((px - a.x) * dx + (py - a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const ix = a.x + t * dx;
+    const iy = a.y + t * dy;
+    return Math.hypot(px - ix, py - iy);
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    const rect = canvas.getBoundingClientRect();
+    const idx = pixelHit(e.clientX - rect.left, e.clientY - rect.top);
+    if (idx !== hoverIdx) {
+      hoverIdx = idx;
+      canvas.style.cursor = idx == null ? 'default' : 'pointer';
+    }
+  }
+  function onPointerLeave() {
+    hoverIdx = null;
+    canvas.style.cursor = 'default';
+  }
+  function onPointerDown(e: PointerEvent) {
+    const rect = canvas.getBoundingClientRect();
+    const idx = pixelHit(e.clientX - rect.left, e.clientY - rect.top);
+    if (idx == null) {
+      // Empty click clears selection unless the user is rectangle-marquee'ing.
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        project.selectedEntities = new Set();
+      }
+      return;
+    }
+    const next = new Set(project.selectedEntities);
+    const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+    if (next.has(idx)) {
+      next.delete(idx);
+    } else {
+      if (!additive) next.clear();
+      next.add(idx);
+    }
+    project.selectedEntities = next;
+  }
 
   function colorFor(c: number): string {
     if (c === 7 || c === 256) return themeVar('--text-strong', '#e6e6e6');
@@ -93,11 +172,17 @@
 
     drawGrid(ctx, w, h, scale, offX, offY);
     drawAxes(ctx, w, h, offX, offY);
+    lastTransform = { scale, offX, offY };
 
-    ctx.lineWidth = 1.25;
-    for (const seg of data.segments) {
+    const accent = themeVar('--accent', '#2d6cdf');
+    const hoverColor = themeVar('--accent-strong', '#6e9ce6');
+    for (let i = 0; i < data.segments.length; i++) {
+      const seg = data.segments[i];
       if (!project.visibleLayers.has(seg.layer)) continue;
-      ctx.strokeStyle = colorFor(seg.color);
+      const selected = project.selectedEntities.has(i);
+      const hovered = hoverIdx === i;
+      ctx.lineWidth = selected ? 2.4 : hovered ? 1.8 : 1.25;
+      ctx.strokeStyle = selected ? accent : hovered ? hoverColor : colorFor(seg.color);
       drawSegment(ctx, seg, project2);
     }
   }
@@ -222,7 +307,15 @@
 </script>
 
 <div class="canvas-host" bind:this={container}>
-  <canvas bind:this={canvas}></canvas>
+  <canvas
+    bind:this={canvas}
+    onpointermove={onPointerMove}
+    onpointerleave={onPointerLeave}
+    onpointerdown={onPointerDown}
+  ></canvas>
+  {#if project.selectedEntities.size > 0}
+    <div class="selection-hud">{project.selectedEntities.size} selected · esc to clear</div>
+  {/if}
 </div>
 
 <style>
@@ -235,5 +328,18 @@
   }
   canvas {
     display: block;
+    user-select: none;
+    touch-action: none;
+  }
+  .selection-hud {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    background: color-mix(in srgb, var(--accent) 80%, transparent);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    pointer-events: none;
   }
 </style>

@@ -14,4 +14,25 @@ export interface WiacClient {
   version(): Promise<VersionResponse>;
   importFile(file: File, format?: string): Promise<ImportResponse>;
   generate(request: GenerateRequest): Promise<GenerateResponse>;
+  defaults(): Promise<DefaultsResponse>;
+}
+
+export interface DefaultsResponse {
+  setup: Record<string, unknown>;
+  schema: JsonSchema;
+  definitions: Record<string, JsonSchema>;
+}
+
+export interface JsonSchema {
+  type?: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
+  description?: string;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  enum?: string[];
+  $ref?: string;
+  format?: string;
+  minimum?: number;
+  maximum?: number;
+  default?: unknown;
+  items?: JsonSchema;
 }

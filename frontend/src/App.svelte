@@ -3,7 +3,9 @@
   import EntityCanvas2D from './lib/components/EntityCanvas2D.svelte';
   import Scene3D from './lib/components/Scene3D.svelte';
   import LayerList from './lib/components/LayerList.svelte';
+  import SetupPanel from './lib/components/SetupPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
+  import PlaybackBar from './lib/components/PlaybackBar.svelte';
   import { project } from './lib/state/project.svelte';
 
   let activePane = $state<'2d' | '3d'>('2d');
@@ -12,7 +14,15 @@
   $effect(() => {
     if (project.generated) activePane = '3d';
   });
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && project.selectedEntities.size > 0) {
+      project.selectedEntities = new Set();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onKeyDown} />
 
 <div class="app">
   <header>
@@ -40,13 +50,25 @@
 
   <main>
     <section class="viewport">
-      {#if activePane === '2d'}
-        <EntityCanvas2D />
-      {:else}
-        <Scene3D />
+      <div class="canvas-area">
+        {#if activePane === '2d'}
+          <EntityCanvas2D />
+        {:else}
+          <Scene3D />
+        {/if}
+      </div>
+      {#if activePane === '3d' && project.generated}
+        <PlaybackBar />
       {/if}
     </section>
-    <LayerList />
+    <aside class="sidebar">
+      <div class="layers-host">
+        <LayerList />
+      </div>
+      <div class="setup-host">
+        <SetupPanel />
+      </div>
+    </aside>
   </main>
 
   <footer>
@@ -109,12 +131,30 @@
   }
   main {
     display: grid;
-    grid-template-columns: 1fr 240px;
+    grid-template-columns: 1fr 320px;
     overflow: hidden;
     min-height: 0;
   }
   .viewport {
     position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .canvas-area {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+  .sidebar {
+    display: grid;
+    grid-template-rows: 200px 1fr;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .layers-host,
+  .setup-host {
+    min-height: 0;
     overflow: hidden;
   }
   footer {

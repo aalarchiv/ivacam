@@ -1,7 +1,7 @@
 // HTTP implementation of WiacClient. Talks to whichever server is wired
 // up — Stage-1 Python FastAPI now, Rust axum later. Same shape.
 
-import type { WiacClient } from './client';
+import type { DefaultsResponse, WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -40,6 +40,12 @@ export class HttpWiacClient implements WiacClient {
       throw new Error(`/import returned ${res.status}: ${JSON.stringify(detail)}`);
     }
     return (await res.json()) as ImportResponse;
+  }
+
+  async defaults(): Promise<DefaultsResponse> {
+    const res = await fetch(`${this.base}/defaults`);
+    if (!res.ok) throw new Error(`/defaults returned ${res.status}`);
+    return (await res.json()) as DefaultsResponse;
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResponse> {

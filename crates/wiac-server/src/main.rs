@@ -140,13 +140,15 @@ async fn version() -> Json<VersionResponse> {
 
 async fn defaults() -> Json<serde_json::Value> {
     let setup = Setup::default();
+    let components = wiac_core::schema::components_schemas();
     Json(serde_json::json!({
         "setup": setup,
-        "schema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "title": "Setup tree (placeholder — full schema lands in d0d.2)"
-        }
+        // The frontend renders a form from `schema` (the Setup type's JSON
+        // Schema) using `definitions` to resolve $refs. Refs are written as
+        // OpenAPI's `#/components/schemas/X` form so the frontend can use
+        // the same lookup logic against the full OpenAPI doc.
+        "schema": components.get("Setup").cloned().unwrap_or(serde_json::Value::Null),
+        "definitions": components,
     }))
 }
 

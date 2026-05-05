@@ -1,14 +1,13 @@
 <script lang="ts">
+  // Simplified bar: post-processor + Generate + Download. The full setup
+  // tree lives in SetupPanel and feeds project.setup.
+
   import { defaultClient } from '../api/http';
   import { project } from '../state/project.svelte';
   import type { GenerateRequest } from '../api/types';
 
   const client = defaultClient();
   let post: 'linuxcnc' | 'grbl' | 'hpgl' = $state('linuxcnc');
-  let diameter = $state(3);
-  let depth = $state(-2);
-  let step = $state(-1);
-  let mode: 'outside' | 'inside' | 'on' | 'none' = $state('outside');
 
   async function run() {
     if (!project.imported) return;
@@ -18,46 +17,8 @@
       const req: GenerateRequest = {
         segments: project.imported.segments,
         post_processor: post,
-        setup: {
-          machine: {
-            unit: 'mm',
-            mode: 'mill',
-            comments: true,
-            arcs: true,
-            supports_toolchange: false,
-          },
-          tool: {
-            number: 1,
-            diameter,
-            speed: 18000,
-            pause: 1,
-            mist: false,
-            flood: false,
-            dragoff: null,
-            rate_v: 100,
-            rate_h: 800,
-          },
-          mill: {
-            active: true,
-            depth,
-            start_depth: 0,
-            step,
-            fast_move_z: 5,
-            helix_mode: false,
-            reverse: false,
-            objectorder: 'nearest',
-            offset: mode,
-          },
-          pockets: {
-            active: false,
-            islands: false,
-            zigzag: false,
-            insideout: false,
-            nocontour: false,
-          },
-          tabs: { active: false, width: 10, height: 1, tab_type: 'rectangle' },
-          leads: { in: 'off', out: 'off', in_lenght: 5, out_lenght: 5 },
-        },
+        // The Setup type's serde shape matches the JSON we ship.
+        setup: project.setup as GenerateRequest['setup'],
       };
       const r = await client.generate(req);
       project.setGenerated(r);
@@ -74,7 +35,7 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') || 'output';
+    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
     a.download = `${base}.${post === 'hpgl' ? 'plt' : 'ngc'}`;
     a.click();
     URL.revokeObjectURL(url);
@@ -83,30 +44,6 @@
 
 <div class="bar">
   <span class="title">Generate:</span>
-  <label
-    >diameter
-    <input type="number" bind:value={diameter} step="0.1" min="0.1" />
-    mm</label
-  >
-  <label
-    >depth
-    <input type="number" bind:value={depth} step="0.1" />
-    mm</label
-  >
-  <label
-    >step
-    <input type="number" bind:value={step} step="0.1" />
-    mm</label
-  >
-  <label
-    >mode
-    <select bind:value={mode}>
-      <option value="outside">outside</option>
-      <option value="inside">inside</option>
-      <option value="on">on</option>
-      <option value="none">none</option>
-    </select>
-  </label>
   <label
     >post
     <select bind:value={post}>
@@ -151,15 +88,6 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-  }
-  input[type='number'] {
-    background: var(--bg-input);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 0.18rem 0.3rem;
-    width: 4.5rem;
-    font-size: 0.78rem;
   }
   select {
     background: var(--bg-input);

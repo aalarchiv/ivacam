@@ -9,6 +9,7 @@ use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Poly
 use clipper2::{EndType, JoinType, Paths};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::{Point2, Segment, SegmentKind};
@@ -27,6 +28,75 @@ pub struct PolylineOffset {
     pub layer: String,
     pub color: i32,
     pub source_object_idx: usize,
+    /// Tab positions (data-space XY) the cutter should lift over while
+    /// cutting this offset. Frontend places these via mtm.10; the gcode
+    /// emitter splits the cut at each crossing and lifts Z to tabs.height.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tabs: Vec<TabPoint>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+pub struct TabPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Project a list of imported-segment-keyed tab points onto a generated
+/// offset's tab list. We snap each tab to the closest point on the
+/// offset's polyline; tabs that land further than `max_distance` from the
+/// nearest segment are dropped (they belong to a different object).
+pub fn attach_tabs_to_offsets(
+    offsets: &mut [PolylineOffset],
+    tabs_by_object: &HashMap<usize, Vec<TabPoint>>,
+    max_distance: f64,
+) {
+    for offset in offsets.iter_mut() {
+        let Some(tabs) = tabs_by_object.get(&offset.source_object_idx) else {
+            continue;
+        };
+        for tab in tabs {
+            // Snap to closest point on any segment of this offset.
+            if let Some(snap) = snap_to_offset(offset, *tab, max_distance) {
+                offset.tabs.push(snap);
+            }
+        }
+    }
+}
+
+fn snap_to_offset(
+    offset: &PolylineOffset,
+    tab: TabPoint,
+    max_distance: f64,
+) -> Option<TabPoint> {
+    let mut best: Option<(TabPoint, f64)> = None;
+    for seg in &offset.segments {
+        let p = closest_point_on_segment(seg, tab);
+        let d = (p.x - tab.x).hypot(p.y - tab.y);
+        if d > max_distance {
+            continue;
+        }
+        if best.map_or(true, |(_, bd)| d < bd) {
+            best = Some((p, d));
+        }
+    }
+    best.map(|(p, _)| p)
+}
+
+fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
+    let dx = seg.end.x - seg.start.x;
+    let dy = seg.end.y - seg.start.y;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq < 1e-12 {
+        return TabPoint {
+            x: seg.start.x,
+            y: seg.start.y,
+        };
+    }
+    let t = (((tab.x - seg.start.x) * dx + (tab.y - seg.start.y) * dy) / len_sq).clamp(0.0, 1.0);
+    TabPoint {
+        x: seg.start.x + t * dx,
+        y: seg.start.y + t * dy,
+    }
 }
 
 /// Generate parallel offsets of `obj` at `delta`. Negative delta = inward
@@ -48,6 +118,7 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
             layer: obj.layer.clone(),
             color: obj.color,
             source_object_idx: 0,
+            tabs: Vec::new(),
         })
         .collect()
 }
@@ -130,6 +201,7 @@ pub fn pocket_for_object(
                 layer: offset.layer.clone(),
                 color: offset.color,
                 source_object_idx: offset.source_object_idx,
+                tabs: Vec::new(),
             });
         }
     }

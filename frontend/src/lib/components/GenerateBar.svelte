@@ -14,11 +14,19 @@
     project.generating = true;
     project.error = null;
     try {
-      const req: GenerateRequest = {
+      // Auto-enable tabs in the setup when the user has placed any — the
+      // backend gates emission on setup.tabs.active.
+      const tabsCount = Object.values(project.tabs).reduce((n, l) => n + l.length, 0);
+      const setup = (project.setup as Record<string, unknown>) ?? {};
+      const setupWithTabs = tabsCount > 0
+        ? { ...setup, tabs: { ...(setup.tabs ?? {}), active: true } }
+        : setup;
+      const req: GenerateRequest & { tabs?: Record<number, { x: number; y: number }[]> } = {
         segments: project.imported.segments,
         post_processor: post,
-        // The Setup type's serde shape matches the JSON we ship.
-        setup: project.setup as GenerateRequest['setup'],
+        setup: setupWithTabs as GenerateRequest['setup'],
+        // Tab placements keyed by imported-segment index.
+        tabs: project.tabs,
       };
       const r = await client.generate(req);
       project.setGenerated(r);
@@ -115,5 +123,10 @@
   }
   .stats {
     color: var(--success);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
   }
 </style>

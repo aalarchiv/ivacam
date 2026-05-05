@@ -155,6 +155,13 @@ components:
           anyOf:
           - $ref: '#/components/schemas/Setup'
           - type: 'null'
+        tabs:
+          additionalProperties:
+            items:
+              $ref: '#/components/schemas/TabPoint'
+            type: array
+          description: Tab placements keyed by imported-segment index. The server snaps each tab onto the closest derived offset so the gcode emitter can lift Z when the cut crosses it.
+          type: object
       required:
       - segments
       type: object
@@ -409,6 +416,11 @@ components:
           format: uint
           minimum: 0.0
           type: integer
+        tabs:
+          description: Tab positions (data-space XY) the cutter should lift over while cutting this offset. Frontend places these via mtm.10; the gcode emitter splits the cut at each crossing and lifts Z to tabs.height.
+          items:
+            $ref: '#/components/schemas/TabPoint'
+          type: array
       required:
       - closed
       - color
@@ -497,6 +509,18 @@ components:
       - pockets
       - tabs
       - tool
+      type: object
+    TabPoint:
+      properties:
+        x:
+          format: double
+          type: number
+        y:
+          format: double
+          type: number
+      required:
+      - x
+      - y
       type: object
     TabType:
       enum:

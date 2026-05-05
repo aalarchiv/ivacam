@@ -211,6 +211,7 @@ fn build_offsets(
                 layer: obj.layer.clone(),
                 color: obj.color,
                 source_object_idx: idx,
+                tabs: Vec::new(),
             });
         } else {
             for mut o in wiac_core::cam::offsets::parallel_offset_object(obj, delta) {

@@ -18,7 +18,9 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
-use wiac_core::cam::offsets::{parallel_offset_object, pocket_for_object, PolylineOffset};
+use wiac_core::cam::offsets::{
+    attach_tabs_to_offsets, parallel_offset_object, pocket_for_object, PolylineOffset, TabPoint,
+};
 use wiac_core::cam::setup::{Setup, ToolOffset};
 use wiac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
 
@@ -102,6 +104,11 @@ struct GenerateRequest {
     setup: Option<Setup>,
     #[serde(default)]
     post_processor: Option<String>,
+    /// Tab placements keyed by **imported** segment index. The server maps
+    /// each imported-segment tab back to the closest containing object,
+    /// then attaches the tab to every offset derived from that object.
+    #[serde(default)]
+    tabs: std::collections::HashMap<u32, Vec<TabPoint>>,
 }
 
 #[derive(Serialize)]
@@ -213,6 +220,23 @@ async fn generate(
     for obj in &mut objects {
         obj.tool_offset = setup.mill.offset;
     }
+
+    // Map imported-segment-keyed tabs to their owning chain object.
+    // Each chain knows which imported-segment indices it consumed.
+    let mut tabs_by_object: std::collections::HashMap<usize, Vec<TabPoint>> =
+        std::collections::HashMap::new();
+    if !req.tabs.is_empty() {
+        let segment_to_object = build_segment_to_object_map(&req.segments, &objects);
+        for (seg_idx, tabs) in &req.tabs {
+            if let Some(&obj_idx) = segment_to_object.get(&(*seg_idx as usize)) {
+                tabs_by_object
+                    .entry(obj_idx)
+                    .or_default()
+                    .extend_from_slice(tabs);
+            }
+        }
+    }
+
     let radius = setup.tool.diameter * 0.5;
     let mut offsets = Vec::new();
     let mut closed = 0usize;
@@ -241,6 +265,7 @@ async fn generate(
                 layer: obj.layer.clone(),
                 color: obj.color,
                 source_object_idx: idx,
+                tabs: Vec::new(),
             });
         } else {
             for mut o in parallel_offset_object(obj, delta) {
@@ -248,6 +273,13 @@ async fn generate(
                 offsets.push(o);
             }
         }
+    }
+
+    // Snap tabs onto their offsets. Tab radius = 1.5x tool radius so the
+    // tab still gates the cut even after the parallel offset moves the
+    // toolpath off the source contour.
+    if !tabs_by_object.is_empty() {
+        attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
     }
 
     let post_kind = req.post_processor.as_deref().unwrap_or("linuxcnc");
@@ -327,6 +359,38 @@ fn tempfile_path(suffix: &str) -> Result<PathBuf, AppError> {
     let mut name = format!("wiac-{}.{}", uuid_like(), suffix);
     name.retain(|c| !c.is_whitespace());
     Ok(std::env::temp_dir().join(name))
+}
+
+/// Build a lookup table from imported-segment index → chain (VcObject)
+/// index. The chaining pass re-orders + flips segments, so we identify
+/// each segment by its endpoint pair and find which chain contains it.
+fn build_segment_to_object_map(
+    imported: &[wiac_core::Segment],
+    objects: &[wiac_core::cam::VcObject],
+) -> std::collections::HashMap<usize, usize> {
+    let mut out = std::collections::HashMap::new();
+    for (orig_idx, seg) in imported.iter().enumerate() {
+        for (obj_idx, obj) in objects.iter().enumerate() {
+            for c in &obj.segments {
+                if endpoints_match(seg, c) {
+                    out.insert(orig_idx, obj_idx);
+                    break;
+                }
+            }
+            if out.contains_key(&orig_idx) {
+                break;
+            }
+        }
+    }
+    out
+}
+
+fn endpoints_match(a: &wiac_core::Segment, b: &wiac_core::Segment) -> bool {
+    let eq = |p: &wiac_core::Point2, q: &wiac_core::Point2| {
+        (p.x - q.x).abs() < 1e-3 && (p.y - q.y).abs() < 1e-3
+    };
+    (eq(&a.start, &b.start) && eq(&a.end, &b.end))
+        || (eq(&a.start, &b.end) && eq(&a.end, &b.start))
 }
 
 fn uuid_like() -> String {

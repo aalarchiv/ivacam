@@ -54,6 +54,11 @@ pub struct GenerateRequest {
     pub setup: Option<Setup>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_processor: Option<PostProcessorKind>,
+    /// Tab placements keyed by imported-segment index. The server snaps
+    /// each tab onto the closest derived offset so the gcode emitter
+    /// can lift Z when the cut crosses it.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub tabs: std::collections::HashMap<u32, Vec<crate::cam::offsets::TabPoint>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]

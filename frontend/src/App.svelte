@@ -163,9 +163,14 @@
   }
   main {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 360px;
     overflow: hidden;
     min-height: 0;
+  }
+  @media (max-width: 1100px) {
+    main {
+      grid-template-columns: 1fr 320px;
+    }
   }
   .viewport {
     position: relative;
@@ -180,13 +185,15 @@
   }
   .sidebar {
     display: grid;
-    grid-template-rows: 200px 1fr;
+    grid-template-rows: minmax(120px, 220px) minmax(0, 1fr);
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
   }
   .layers-host,
   .setup-host {
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
   }
   footer {

@@ -62,8 +62,10 @@
     color: var(--text);
     border-left: 1px solid var(--border);
     overflow-y: auto;
-    padding: 0.6rem 0.75rem 1rem;
+    overflow-x: hidden;
+    padding: 0.6rem 0.7rem 1rem;
     box-sizing: border-box;
+    min-width: 0;
   }
   header {
     display: flex;

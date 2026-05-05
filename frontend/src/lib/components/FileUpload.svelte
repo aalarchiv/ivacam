@@ -205,12 +205,19 @@
   .upload {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    gap: 0.5rem 0.75rem;
+    padding: 0.4rem 0.75rem;
     border-bottom: 1px solid var(--border);
     background: var(--bg-elevated);
     color: var(--text);
     flex-wrap: wrap;
+  }
+  .loaded {
+    flex: 1;
+    min-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .upload.drag-over {
     background: color-mix(in srgb, var(--accent) 24%, var(--bg-elevated));
@@ -263,6 +270,9 @@
     font-size: 0.8rem;
     color: var(--success);
   }
+
+  /* The status pill grows to fill remaining row space and ellipsizes long
+     filenames so the toolbar stays a single row at typical widths. */
   .error {
     font-size: 0.8rem;
     color: var(--error);

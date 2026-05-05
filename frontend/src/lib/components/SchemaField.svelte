@@ -80,10 +80,11 @@
     flex-direction: column;
     gap: 0.15rem;
     margin: 0.25rem 0;
+    min-width: 0;
   }
   label {
     display: grid;
-    grid-template-columns: 11rem 1fr;
+    grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr);
     align-items: center;
     gap: 0.5rem;
   }
@@ -93,6 +94,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
   input,
   select {
@@ -102,8 +104,9 @@
     border-radius: 3px;
     padding: 0.18rem 0.35rem;
     font-size: 0.78rem;
-    min-width: 6rem;
+    min-width: 0;
     width: 100%;
+    box-sizing: border-box;
   }
   input[type='checkbox'] {
     width: auto;
@@ -111,10 +114,13 @@
     justify-self: start;
   }
   .hint {
-    grid-column: 2;
     font-size: 0.7rem;
     color: var(--text-muted);
-    margin-left: 11.5rem;
+    line-height: 1.3;
+    word-break: break-word;
+    margin-top: 0.05rem;
+    /* Subtly indented so the hint visually pairs with its field. */
+    padding-left: 0.2rem;
   }
   .unsupported {
     font-family: monospace;

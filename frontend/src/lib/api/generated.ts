@@ -124,6 +124,10 @@ export interface components {
             post_processor?: components["schemas"]["PostProcessorKind"] | null;
             segments: components["schemas"]["Segment"][];
             setup?: components["schemas"]["Setup"] | null;
+            /** @description Tab placements keyed by imported-segment index. The server snaps each tab onto the closest derived offset so the gcode emitter can lift Z when the cut crosses it. */
+            tabs?: {
+                [key: string]: components["schemas"]["TabPoint"][];
+            };
         };
         GenerateResponse: {
             gcode: string;
@@ -235,6 +239,8 @@ export interface components {
             segments: components["schemas"]["Segment"][];
             /** Format: uint */
             source_object_idx: number;
+            /** @description Tab positions (data-space XY) the cutter should lift over while cutting this offset. Frontend places these via mtm.10; the gcode emitter splits the cut at each crossing and lifts Z to tabs.height. */
+            tabs?: components["schemas"]["TabPoint"][];
         };
         Pose3: {
             /** Format: double */
@@ -274,6 +280,12 @@ export interface components {
             pockets: components["schemas"]["PocketConfig"];
             tabs: components["schemas"]["TabsConfig"];
             tool: components["schemas"]["ToolConfig"];
+        };
+        TabPoint: {
+            /** Format: double */
+            x: number;
+            /** Format: double */
+            y: number;
         };
         /** @enum {string} */
         TabType: "rectangle" | "ramp";

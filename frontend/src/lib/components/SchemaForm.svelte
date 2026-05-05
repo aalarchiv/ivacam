@@ -115,12 +115,15 @@
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
+    min-width: 0;
   }
   details {
     margin: 0.15rem 0 0.4rem 0;
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--bg-elevated);
+    overflow: hidden; /* keeps deeply-nested fields from popping the panel width */
+    min-width: 0;
   }
   summary {
     padding: 0.3rem 0.55rem;
@@ -139,6 +142,7 @@
     content: '▾ ';
   }
   .group {
-    padding: 0.25rem 0.6rem 0.5rem;
+    padding: 0.25rem 0.55rem 0.5rem;
+    min-width: 0;
   }
 </style>

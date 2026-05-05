@@ -27,7 +27,8 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-window-state = "2"
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tauri-plugin-store = "2"
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time"] }
 
 [features]
 # Engaged automatically by tauri-cli for release builds; isolates dev

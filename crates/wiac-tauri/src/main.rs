@@ -7,6 +7,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod menu;
+
+use tauri::{Emitter, Manager};
 
 fn main() {
     if let Err(err) = run() {
@@ -19,6 +22,7 @@ fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
@@ -28,6 +32,31 @@ fn run() -> tauri::Result<()> {
                 )
                 .build(),
         )
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let m = menu::build_menu(&handle)?;
+            app.set_menu(m)?;
+            app.on_menu_event(move |app, event| menu::handle_menu_event(app, event.id().as_ref()));
+
+            // OS file-association launches deliver the path as argv. Forward
+            // it to the frontend so the same import flow runs as if the user
+            // had picked from the dialog.
+            if let Some(arg) = std::env::args().nth(1) {
+                let p = std::path::PathBuf::from(&arg);
+                if p.is_file() {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let path_str = arg.clone();
+                        // Wait for the frontend to settle before emitting.
+                        let window = window.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                            let _ = window.emit("app:open_path", path_str);
+                        });
+                    }
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::healthz,
             commands::version,

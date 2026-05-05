@@ -4,10 +4,19 @@
   import { isTauri } from '../api/tauri';
   import { project } from '../state/project.svelte';
   import type { ImportResponse } from '../api/types';
+  import { pushRecent, readRecent, type RecentEntry } from '../recent';
 
   const client = defaultClient();
   let dragOver = $state(false);
   let inputEl: HTMLInputElement;
+  let recent = $state<RecentEntry[]>([]);
+
+  async function refreshRecent() {
+    recent = await readRecent();
+  }
+  async function recordRecent(path: string, filename: string) {
+    recent = await pushRecent({ path, filename, lastOpened: new Date().toISOString() });
+  }
 
   // Same-origin samples for the demo. Bypasses cross-origin HSTS issues
   // when the frontend is opened from a host that has cached HSTS for the
@@ -83,12 +92,18 @@
       ],
     });
     if (typeof selected !== 'string') return;
+    await loadFromPath(selected);
+  }
+
+  async function loadFromPath(path: string) {
     project.loading = true;
     project.error = null;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const result = await invoke<ImportResponse>('import_path', { path: selected });
+      const result = await invoke<ImportResponse>('import_path', { path });
       project.setImported(result);
+      const filename = path.split(/[\\/]/).pop() ?? path;
+      await recordRecent(path, filename);
     } catch (e) {
       project.setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -180,6 +195,14 @@
   }
 
   onMount(async () => {
+    void refreshRecent();
+    if (isTauri()) {
+      const { listen } = await import('@tauri-apps/api/event');
+      // OS file-association launches: main.rs forwards the path here.
+      void listen<string>('app:open_path', (event) => {
+        if (typeof event.payload === 'string') void loadFromPath(event.payload);
+      });
+    }
     const params = new URLSearchParams(window.location.search);
     const sample = params.get('sample');
     const gen = params.get('gen');
@@ -229,6 +252,7 @@
   />
   <button
     type="button"
+    class="open-file"
     onclick={() => (isTauri() ? openFileNative() : inputEl.click())}
     disabled={project.loading}
   >
@@ -236,7 +260,7 @@
   </button>
   <button
     type="button"
-    class="secondary"
+    class="secondary open-project"
     onclick={() => (isTauri() ? openProjectNative() : projectInput.click())}
     disabled={project.loading}
     title="Open a saved project (.vc-project.json)"
@@ -245,7 +269,7 @@
   </button>
   <button
     type="button"
-    class="secondary"
+    class="secondary save-project"
     onclick={saveProject}
     disabled={!project.imported}
     title="Save current geometry + setup to a .vc-project.json file"
@@ -253,6 +277,24 @@
     Save project
   </button>
   <span class="hint">or drop a .dxf / .svg / .hpgl / .ngc / .stl here</span>
+  {#if isTauri() && recent.length > 0}
+    <span class="recent-host">
+      <select
+        class="recent"
+        title="Recent files"
+        onchange={(e) => {
+          const path = (e.currentTarget as HTMLSelectElement).value;
+          (e.currentTarget as HTMLSelectElement).value = '';
+          if (path) void loadFromPath(path);
+        }}
+      >
+        <option value="">recent…</option>
+        {#each recent as r (r.path)}
+          <option value={r.path} title={r.path}>{r.filename}</option>
+        {/each}
+      </select>
+    </span>
+  {/if}
   <span class="samples">
     samples:
     {#each SAMPLES as s (s.url)}
@@ -336,6 +378,18 @@
   }
   .samples .sample:hover {
     background: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .recent-host {
+    display: inline-flex;
+  }
+  .recent {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.18rem 0.4rem;
+    font-size: 0.78rem;
+    max-width: 14rem;
   }
   .loaded {
     font-size: 0.8rem;

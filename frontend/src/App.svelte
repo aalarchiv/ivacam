@@ -10,6 +10,7 @@
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { setLocale, locale } from './lib/i18n';
+  import { isTauri } from './lib/api/tauri';
 
   type LocalePref = 'en' | 'de';
   let lang = $state<LocalePref>('en');
@@ -31,7 +32,47 @@
       theme = stored;
     }
     document.documentElement.dataset.theme = theme;
+
+    if (isTauri()) {
+      void wireMenuEvents();
+    }
   });
+
+  /**
+   * Bridge native menu actions emitted from crates/wiac-tauri/src/menu.rs.
+   * Each menu item's id (e.g. 'file:open', 'view:2d') maps to a UI action
+   * that already exists elsewhere in the app — we mostly dispatch synthetic
+   * clicks against the visible buttons so behavior stays in one place.
+   */
+  async function wireMenuEvents() {
+    const { listen } = await import('@tauri-apps/api/event');
+    await listen<string>('app:menu', (event) => {
+      const id = event.payload;
+      switch (id) {
+        case 'file:open':
+          (document.querySelector('button.open-file') as HTMLButtonElement | null)?.click();
+          break;
+        case 'file:open_project':
+          (document.querySelector('button.open-project') as HTMLButtonElement | null)?.click();
+          break;
+        case 'file:save_project':
+          (document.querySelector('button.save-project') as HTMLButtonElement | null)?.click();
+          break;
+        case 'file:export_gcode':
+          (document.querySelector('button.download') as HTMLButtonElement | null)?.click();
+          break;
+        case 'view:2d':
+          activePane = '2d';
+          break;
+        case 'view:3d':
+          activePane = '3d';
+          break;
+        case 'view:toggle_tabs':
+          if (project.imported) project.tabMode = !project.tabMode;
+          break;
+      }
+    });
+  }
 
   $effect(() => {
     document.documentElement.dataset.theme = theme;

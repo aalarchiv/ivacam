@@ -8,6 +8,18 @@
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
   import { project } from './lib/state/project.svelte';
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
+  import { setLocale, locale } from './lib/i18n';
+
+  type LocalePref = 'en' | 'de';
+  let lang = $state<LocalePref>('en');
+  $effect(() => {
+    const cur = $locale;
+    if (cur === 'en' || cur === 'de') lang = cur;
+  });
+  function pickLocale(code: LocalePref) {
+    setLocale(code);
+  }
 
   type ThemePref = 'auto' | 'light' | 'dark';
   let theme = $state<ThemePref>('auto');
@@ -51,48 +63,52 @@
 
 <div class="app">
   <header>
-    <h1>wiaConstructor</h1>
-    <span class="tagline">DXF / SVG → G-code · Stage-1 web preview</span>
+    <h1>{$_('app.title')}</h1>
+    <span class="tagline">{$_('app.tagline')}</span>
     <div class="spacer"></div>
     <button
       class="tool-toggle"
       class:active={project.tabMode}
       onclick={() => (project.tabMode = !project.tabMode)}
       disabled={!project.imported}
-      title="Tab placement: click on a contour in 2D to add a tab; click an existing tab to remove. Esc to leave."
+      title={$_('header.tabs_hint')}
     >
-      Tabs ({tabCount})
+      {$_('header.tabs', { values: { count: tabCount } })}
     </button>
     <div class="pane-toggle">
       <button
         class:active={activePane === '2d'}
         onclick={() => (activePane = '2d')}
       >
-        2D
+        {$_('header.pane.2d')}
       </button>
       <button
         class:active={activePane === '3d'}
         onclick={() => (activePane = '3d')}
       >
-        3D
+        {$_('header.pane.3d')}
       </button>
     </div>
     <div class="theme-toggle" role="group" aria-label="Theme">
       <button
         class:active={theme === 'auto'}
         onclick={() => (theme = 'auto')}
-        title="Follow OS color scheme"
-      >Auto</button>
+        title={$_('header.theme.auto_hint')}
+      >{$_('header.theme.auto')}</button>
       <button
         class:active={theme === 'light'}
         onclick={() => (theme = 'light')}
-        title="Force light theme"
-      >Light</button>
+        title={$_('header.theme.light_hint')}
+      >{$_('header.theme.light')}</button>
       <button
         class:active={theme === 'dark'}
         onclick={() => (theme = 'dark')}
-        title="Force dark theme"
-      >Dark</button>
+        title={$_('header.theme.dark_hint')}
+      >{$_('header.theme.dark')}</button>
+    </div>
+    <div class="lang-toggle" role="group" aria-label={$_('header.lang.title')}>
+      <button class:active={lang === 'en'} onclick={() => pickLocale('en')}>EN</button>
+      <button class:active={lang === 'de'} onclick={() => pickLocale('de')}>DE</button>
     </div>
   </header>
 
@@ -124,12 +140,18 @@
 
   <footer>
     {#if project.imported}
-      bbox=({project.imported.bbox.min_x.toFixed(2)},
-      {project.imported.bbox.min_y.toFixed(2)})–({project.imported.bbox.max_x.toFixed(2)},
-      {project.imported.bbox.max_y.toFixed(2)}) · {project.imported.segments.length} segments ·
-      unit_scale={project.imported.unit_scale}
+      {$_('footer.bbox', {
+        values: {
+          minX: project.imported.bbox.min_x.toFixed(2),
+          minY: project.imported.bbox.min_y.toFixed(2),
+          maxX: project.imported.bbox.max_x.toFixed(2),
+          maxY: project.imported.bbox.max_y.toFixed(2),
+          count: project.imported.segments.length,
+          unit: project.imported.unit_scale,
+        },
+      })}
     {:else}
-      Ready
+      {$_('footer.ready')}
     {/if}
   </footer>
 </div>
@@ -213,6 +235,24 @@
     cursor: pointer;
   }
   .theme-toggle button.active {
+    background: var(--accent);
+    color: white;
+  }
+  .lang-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .lang-toggle button {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 0;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .lang-toggle button.active {
     background: var(--accent);
     color: white;
   }

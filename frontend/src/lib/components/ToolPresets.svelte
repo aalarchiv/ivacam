@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { project } from '../state/project.svelte';
+  import { _ } from 'svelte-i18n';
 
   type ToolConfig = Record<string, unknown>;
   const STORAGE_KEY = 'wiac.tools';
@@ -54,28 +55,28 @@
 
 <div class="tools">
   <label class="row">
-    <span class="lbl">Tool</span>
+    <span class="lbl">{$_('tools.label')}</span>
     <select
       bind:value={selected}
       onchange={(e) => loadPreset((e.target as HTMLSelectElement).value)}
-      title="Load a saved tool preset"
+      title={$_('tools.load_hint')}
     >
-      <option value="">— pick preset —</option>
+      <option value="">{$_('tools.pick_preset')}</option>
       {#each presetNames as name}
         <option value={name}>{name}</option>
       {/each}
     </select>
-    <button onclick={deletePreset} disabled={!selected} title="Delete the selected preset">×</button>
+    <button onclick={deletePreset} disabled={!selected} title={$_('tools.delete_hint')}>×</button>
   </label>
   <label class="row">
-    <span class="lbl">Save as</span>
+    <span class="lbl">{$_('tools.save_as')}</span>
     <input
       type="text"
-      placeholder="3mm endmill"
+      placeholder={$_('tools.placeholder')}
       bind:value={newName}
       onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
     />
-    <button onclick={saveCurrent} disabled={!newName.trim()} title="Save the current tool config under this name">save</button>
+    <button onclick={saveCurrent} disabled={!newName.trim()} title={$_('tools.save_hint')}>{$_('tools.save_button')}</button>
   </label>
 </div>
 

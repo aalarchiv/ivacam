@@ -1,0 +1,50 @@
+{
+  "app.title": "wiaConstructor",
+  "app.tagline": "DXF / SVG → G-Code · Stage-1 Webvorschau",
+
+  "header.tabs": "Stege ({count})",
+  "header.tabs_hint": "Stege setzen: in der 2D-Ansicht auf eine Kontur klicken, um einen Steg hinzuzufügen; auf einen bestehenden Steg klicken, um ihn zu entfernen. Esc zum Beenden.",
+  "header.pane.2d": "2D",
+  "header.pane.3d": "3D",
+  "header.theme.auto": "Auto",
+  "header.theme.light": "Hell",
+  "header.theme.dark": "Dunkel",
+  "header.theme.auto_hint": "Dem Farbschema des Betriebssystems folgen",
+  "header.theme.light_hint": "Helles Design erzwingen",
+  "header.theme.dark_hint": "Dunkles Design erzwingen",
+  "header.lang.title": "Sprache",
+
+  "footer.ready": "Bereit",
+  "footer.bbox": "bbox=({minX},{minY})–({maxX},{maxY}) · {count} Segmente · unit_scale={unit}",
+
+  "file.open_file": "Datei öffnen",
+  "file.open_project": "Projekt öffnen",
+  "file.save_project": "Projekt speichern",
+  "file.no_file": "Keine Datei ausgewählt",
+
+  "generate.title": "Generieren:",
+  "generate.post": "Postprozessor",
+  "generate.run": "Generieren",
+  "generate.running": "Generiere…",
+  "generate.download_ngc": ".ngc herunterladen",
+  "generate.download_plt": ".plt herunterladen",
+  "generate.stats": "{objects} Obj. · {offsets} Versätze · {moves} Bewegungen",
+  "generate.starting": "starte…",
+
+  "setup.title": "Einstellungen",
+  "setup.reset": "zurück",
+  "setup.reset_hint": "Auf Standardwerte zurücksetzen",
+  "setup.loading": "Lade Einstellungs-Baum…",
+  "setup.no_schema": "Keine Einstellungs-Beschreibung verfügbar.",
+
+  "tools.label": "Werkzeug",
+  "tools.pick_preset": "— Vorgabe wählen —",
+  "tools.delete_hint": "Ausgewählte Vorgabe löschen",
+  "tools.save_as": "Speichern als",
+  "tools.save_hint": "Aktuelle Werkzeug-Einstellungen unter diesem Namen speichern",
+  "tools.load_hint": "Eine gespeicherte Werkzeug-Vorgabe laden",
+  "tools.placeholder": "3mm Schaftfräser",
+  "tools.save_button": "speichern",
+
+  "layers.title": "Ebenen"
+}

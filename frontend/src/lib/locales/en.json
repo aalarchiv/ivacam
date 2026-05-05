@@ -1,0 +1,50 @@
+{
+  "app.title": "wiaConstructor",
+  "app.tagline": "DXF / SVG → G-code · Stage-1 web preview",
+
+  "header.tabs": "Tabs ({count})",
+  "header.tabs_hint": "Tab placement: click on a contour in 2D to add a tab; click an existing tab to remove. Esc to leave.",
+  "header.pane.2d": "2D",
+  "header.pane.3d": "3D",
+  "header.theme.auto": "Auto",
+  "header.theme.light": "Light",
+  "header.theme.dark": "Dark",
+  "header.theme.auto_hint": "Follow OS color scheme",
+  "header.theme.light_hint": "Force light theme",
+  "header.theme.dark_hint": "Force dark theme",
+  "header.lang.title": "Language",
+
+  "footer.ready": "Ready",
+  "footer.bbox": "bbox=({minX},{minY})–({maxX},{maxY}) · {count} segments · unit_scale={unit}",
+
+  "file.open_file": "Open file",
+  "file.open_project": "Open project",
+  "file.save_project": "Save project",
+  "file.no_file": "No file selected",
+
+  "generate.title": "Generate:",
+  "generate.post": "post",
+  "generate.run": "Generate",
+  "generate.running": "Generating…",
+  "generate.download_ngc": "Download .ngc",
+  "generate.download_plt": "Download .plt",
+  "generate.stats": "{objects} obj · {offsets} offsets · {moves} moves",
+  "generate.starting": "starting…",
+
+  "setup.title": "Setup",
+  "setup.reset": "reset",
+  "setup.reset_hint": "Reset to defaults",
+  "setup.loading": "Loading setup tree…",
+  "setup.no_schema": "No setup schema available.",
+
+  "tools.label": "Tool",
+  "tools.pick_preset": "— pick preset —",
+  "tools.delete_hint": "Delete the selected preset",
+  "tools.save_as": "Save as",
+  "tools.save_hint": "Save the current tool config under this name",
+  "tools.load_hint": "Load a saved tool preset",
+  "tools.placeholder": "3mm endmill",
+  "tools.save_button": "save",
+
+  "layers.title": "Layers"
+}

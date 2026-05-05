@@ -29,6 +29,7 @@
     "vitest": "^2.1.5"
   },
   "dependencies": {
+    "svelte-i18n": "^4.0.1",
     "three": "^0.184.0"
   }
 }

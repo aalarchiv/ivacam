@@ -5,6 +5,7 @@
   import { defaultClient } from '../api/http';
   import { project } from '../state/project.svelte';
   import type { GenerateRequest } from '../api/types';
+  import { _ } from 'svelte-i18n';
 
   const client = defaultClient();
   let post: 'linuxcnc' | 'grbl' | 'hpgl' = $state('linuxcnc');
@@ -62,9 +63,9 @@
 </script>
 
 <div class="bar">
-  <span class="title">Generate:</span>
+  <span class="title">{$_('generate.title')}</span>
   <label
-    >post
+    >{$_('generate.post')}
     <select bind:value={post}>
       <option value="linuxcnc">LinuxCNC</option>
       <option value="grbl">GRBL</option>
@@ -72,7 +73,7 @@
     </select>
   </label>
   <button onclick={run} disabled={!project.imported || project.generating}>
-    {project.generating ? 'Generating…' : 'Generate'}
+    {project.generating ? $_('generate.running') : $_('generate.run')}
   </button>
   {#if project.generating}
     <div
@@ -84,16 +85,21 @@
       title={progressMsg}
     >
       <div class="bar-fill" style="width: {Math.round(progressFrac * 100)}%"></div>
-      <span class="progress-text">{progressMsg || 'starting…'}</span>
+      <span class="progress-text">{progressMsg || $_('generate.starting')}</span>
     </div>
   {/if}
   {#if project.generated}
     <button onclick={downloadGcode} class="download">
-      Download {post === 'hpgl' ? '.plt' : '.ngc'}
+      {post === 'hpgl' ? $_('generate.download_plt') : $_('generate.download_ngc')}
     </button>
     <span class="stats">
-      {project.generated.stats.object_count} obj · {project.generated.stats.offset_count} offsets ·
-      {project.generated.toolpath.length} moves
+      {$_('generate.stats', {
+        values: {
+          objects: project.generated.stats.object_count,
+          offsets: project.generated.stats.offset_count,
+          moves: project.generated.toolpath.length,
+        },
+      })}
     </span>
   {/if}
 </div>

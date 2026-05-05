@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { defaultClient } from '../api/http';
   import { project } from '../state/project.svelte';
+  import { _ } from 'svelte-i18n';
   import SchemaForm from './SchemaForm.svelte';
   import ToolPresets from './ToolPresets.svelte';
 
@@ -34,13 +35,13 @@
 
 <aside class="setup">
   <header>
-    <h3>Setup</h3>
-    <button class="reset" onclick={reset} disabled={loading} title="Reset to defaults"
-      >reset</button
+    <h3>{$_('setup.title')}</h3>
+    <button class="reset" onclick={reset} disabled={loading} title={$_('setup.reset_hint')}
+      >{$_('setup.reset')}</button
     >
   </header>
   {#if loading && !project.setupSchema}
-    <p class="hint">Loading setup tree…</p>
+    <p class="hint">{$_('setup.loading')}</p>
   {:else if loadError}
     <p class="error">{loadError}</p>
   {:else if project.setupSchema}
@@ -52,7 +53,7 @@
       onChange={(next) => project.setSetup(next)}
     />
   {:else}
-    <p class="hint">No setup schema available.</p>
+    <p class="hint">{$_('setup.no_schema')}</p>
   {/if}
 </aside>
 

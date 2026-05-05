@@ -34,6 +34,19 @@ class ProjectState {
   /// UI mode for placing tabs by clicking in the 2D canvas.
   tabMode = $state(false);
 
+  /// Stock visualization in the 3D view. `auto` (default) derives the
+  /// rectangular extent from the imported bbox plus a small margin and
+  /// uses setup.mill.depth for the thickness; explicit values override.
+  /// `visible` toggles the translucent box without losing the dimensions.
+  stock = $state<StockConfig>({
+    visible: true,
+    mode: 'auto',
+    margin: 5,
+    thickness: 5,
+    customX: 100,
+    customY: 100,
+  });
+
   addTab(segmentIdx: number, position: Point2) {
     const next = { ...this.tabs };
     next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: position.x, y: position.y }];
@@ -104,6 +117,7 @@ class ProjectState {
       visibleLayers: [...this.visibleLayers],
       selectedEntities: [...this.selectedEntities],
       tabs: this.tabs,
+      stock: this.stock,
     };
   }
 
@@ -116,12 +130,22 @@ class ProjectState {
     this.visibleLayers = new Set(file.visibleLayers ?? []);
     this.selectedEntities = new Set(file.selectedEntities ?? []);
     this.tabs = file.tabs ?? {};
+    if (file.stock) this.stock = { ...this.stock, ...file.stock };
   }
 }
 
 export interface Tab {
   x: number;
   y: number;
+}
+
+export interface StockConfig {
+  visible: boolean;
+  mode: 'auto' | 'manual';
+  margin: number;
+  thickness: number;
+  customX: number;
+  customY: number;
 }
 
 export interface ProjectFile {
@@ -132,6 +156,7 @@ export interface ProjectFile {
   visibleLayers: string[];
   selectedEntities: number[];
   tabs?: Record<number, Tab[]>;
+  stock?: StockConfig;
 }
 
 export const project = new ProjectState();

@@ -141,12 +141,79 @@
     void project.generated;
     void project.playhead;
     void project.tabs;
+    void project.stock;
+    void (project.setup as Record<string, unknown>)?.mill;
     rebuildGeometry();
     updateTool();
     updateTabs();
+    updateStock();
   });
 
   let tabsGroup: THREE.Group | undefined;
+  let stockGroup: THREE.Group | undefined;
+
+  /// Translucent stock box + its wireframe. The Z extents go from
+  /// setup.mill.depth (or stock.thickness for `manual` mode) up to 0.
+  /// In `auto` mode the XY footprint is derived from the imported bbox
+  /// plus a margin; otherwise the user supplies customX/customY centered
+  /// on the bbox center.
+  function updateStock() {
+    if (!scene) return;
+    if (!stockGroup) {
+      stockGroup = new THREE.Group();
+      scene.add(stockGroup);
+    }
+    stockGroup.clear();
+    const cfg = project.stock;
+    if (!cfg.visible) return;
+    const data = project.imported;
+    if (!data) return;
+
+    const mill = ((project.setup as Record<string, unknown>)?.mill ?? {}) as {
+      depth?: number;
+    };
+    const cx = (data.bbox.min_x + data.bbox.max_x) * 0.5;
+    const cy = (data.bbox.min_y + data.bbox.max_y) * 0.5;
+    let sizeX: number;
+    let sizeY: number;
+    let z0: number;
+    if (cfg.mode === 'manual') {
+      sizeX = Math.max(0.1, cfg.customX);
+      sizeY = Math.max(0.1, cfg.customY);
+      z0 = -Math.max(0.1, cfg.thickness);
+    } else {
+      const margin = Math.max(0, cfg.margin);
+      sizeX = (data.bbox.max_x - data.bbox.min_x) + 2 * margin;
+      sizeY = (data.bbox.max_y - data.bbox.min_y) + 2 * margin;
+      const depth = Math.abs(typeof mill.depth === 'number' ? mill.depth : -2);
+      z0 = -Math.max(0.5, depth);
+    }
+    if (sizeX <= 0.1 || sizeY <= 0.1) return;
+
+    const sizeZ = -z0;
+    const cz = z0 / 2;
+    const box = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
+    const fillMat = new THREE.MeshBasicMaterial({
+      color: cssColor('--accent', 0x4a8df0),
+      transparent: true,
+      opacity: 0.07,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const fill = new THREE.Mesh(box, fillMat);
+    fill.position.set(cx, cy, cz);
+    stockGroup.add(fill);
+
+    const edges = new THREE.EdgesGeometry(box);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: cssColor('--text-muted', 0xa0a0a0),
+      transparent: true,
+      opacity: 0.55,
+    });
+    const wire = new THREE.LineSegments(edges, lineMat);
+    wire.position.set(cx, cy, cz);
+    stockGroup.add(wire);
+  }
 
   function updateTabs() {
     if (!scene) return;

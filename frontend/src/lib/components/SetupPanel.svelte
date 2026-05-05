@@ -5,6 +5,7 @@
   import { _ } from 'svelte-i18n';
   import SchemaForm from './SchemaForm.svelte';
   import ToolPresets from './ToolPresets.svelte';
+  import StockPanel from './StockPanel.svelte';
 
   const client = defaultClient();
   let loading = $state(false);
@@ -46,6 +47,7 @@
     <p class="error">{loadError}</p>
   {:else if project.setupSchema}
     <ToolPresets />
+    <StockPanel />
     <SchemaForm
       schema={project.setupSchema}
       definitions={project.setupDefinitions}

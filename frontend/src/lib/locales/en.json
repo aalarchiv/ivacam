@@ -46,5 +46,12 @@
   "tools.placeholder": "3mm endmill",
   "tools.save_button": "save",
 
-  "layers.title": "Layers"
+  "layers.title": "Layers",
+
+  "stock.title": "Stock",
+  "stock.mode": "mode",
+  "stock.auto": "auto (bbox + margin)",
+  "stock.manual": "manual (X/Y/thickness)",
+  "stock.margin": "margin",
+  "stock.thickness": "thickness"
 }

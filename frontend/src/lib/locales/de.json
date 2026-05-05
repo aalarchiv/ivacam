@@ -46,5 +46,12 @@
   "tools.placeholder": "3mm Schaftfräser",
   "tools.save_button": "speichern",
 
-  "layers.title": "Ebenen"
+  "layers.title": "Ebenen",
+
+  "stock.title": "Rohmaterial",
+  "stock.mode": "Modus",
+  "stock.auto": "Automatik (BBox + Rand)",
+  "stock.manual": "manuell (X/Y/Dicke)",
+  "stock.margin": "Rand",
+  "stock.thickness": "Dicke"
 }

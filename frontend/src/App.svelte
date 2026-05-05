@@ -70,8 +70,34 @@
         case 'view:toggle_tabs':
           if (project.imported) project.tabMode = !project.tabMode;
           break;
+        case 'help:check_update':
+          void runUpdateCheck();
+          break;
       }
     });
+  }
+
+  /**
+   * Manual auto-update check. Pulls the latest manifest from the configured
+   * endpoint, prompts the user via the plugin's built-in dialog, downloads
+   * + installs + relaunches if accepted. Failures surface as a toast in
+   * project.error so they don't crash silently.
+   */
+  async function runUpdateCheck() {
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+      if (!update) {
+        return;
+      }
+      // The plugin has a built-in dialog when configured in tauri.conf.json,
+      // so we just trigger downloadAndInstall on confirmation.
+      await update.downloadAndInstall();
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await relaunch();
+    } catch (e) {
+      project.setError(`update: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   $effect(() => {

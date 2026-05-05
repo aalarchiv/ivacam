@@ -1,0 +1,127 @@
+name: Release desktop bundles
+
+# Triggered on a `v*` tag push (e.g. v0.1.0). Builds Tauri 2 bundles for
+# Linux (.deb / .rpm / AppImage), macOS (.dmg / .app, optionally notarized),
+# and Windows (.msi via WiX, optionally Authenticode-signed) in parallel,
+# then attaches the artifacts to a GitHub Release.
+#
+# Manual triggers (workflow_dispatch) build the bundles without a release
+# so we can sanity-check the matrix against main.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ""
+          - name: macos
+            runner: macos-13
+            target: universal-apple-darwin
+            args: --target universal-apple-darwin
+          - name: windows
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── frontend prerequisites ──
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # ── rust toolchain pinned by rust-toolchain.toml ──
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./crates/wiac-tauri -> target"
+
+      # ── Linux system libs ──
+      - name: install linux deps
+        if: matrix.platform.runner == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev libfreetype6-dev \
+            patchelf
+
+      # ── tauri-cli ──
+      - name: install tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      # ── build the bundle ──
+      - name: tauri build
+        working-directory: crates/wiac-tauri
+        env:
+          # macOS notarization (set in repo secrets if signing is desired):
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows code signing (optional):
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build ${{ matrix.platform.args }}
+
+      - name: list artifacts
+        shell: bash
+        run: |
+          find target -type f \( \
+            -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \
+            -o -name "*.dmg" -o -name "*.app.tar.gz" \
+            -o -name "*.msi" -o -name "*.exe" \
+          \) -print
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiaConstructor-${{ matrix.platform.name }}
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/macos/*.app.tar.gz
+            target/release/bundle/msi/*.msi
+            target/**/release/bundle/**/*
+
+  release:
+    name: attach to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/**/*

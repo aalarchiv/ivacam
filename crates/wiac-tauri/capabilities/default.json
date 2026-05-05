@@ -9,6 +9,9 @@
     "dialog:default",
     "fs:default",
     "store:default",
+    "log:default",
+    "updater:default",
+    "process:default",
     "window-state:default",
     {
       "identifier": "fs:allow-read-text-file",

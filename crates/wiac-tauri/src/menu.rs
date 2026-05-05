@@ -71,7 +71,12 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .copyright(Some("GPL-3.0-or-later"))
         .website(Some("https://github.com/wiaconstructor/wiaconstructor"))
         .build();
+    let view_logs = MenuItemBuilder::with_id("help:view_logs", "Open log directory").build(app)?;
+    let check_update = MenuItemBuilder::with_id("help:check_update", "Check for updates…").build(app)?;
     let help = SubmenuBuilder::new(app, "Help")
+        .item(&check_update)
+        .item(&view_logs)
+        .separator()
         .item(&PredefinedMenuItem::about(app, Some("About"), Some(metadata))?)
         .build()?;
 
@@ -86,8 +91,39 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 /// Route menu events to the frontend. Each id matches the `id` argument of
 /// the `MenuItemBuilder` calls above; the frontend listens for
 /// `app:menu` events with `{action: <id>}` and reacts accordingly.
+///
+/// `help:view_logs` is handled in the Rust side because we need the path
+/// from PathResolver, which the frontend can't compute. Everything else
+/// is forwarded.
 pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    if id == "help:view_logs" {
+        if let Ok(dir) = app.path().app_log_dir() {
+            // Best-effort: open the directory in the OS file manager.
+            if let Err(err) = open_path_in_os(&dir) {
+                log::warn!("could not open log dir {}: {}", dir.display(), err);
+            }
+        }
+        return;
+    }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("app:menu", id);
     }
+}
+
+#[cfg(target_os = "linux")]
+fn open_path_in_os(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("xdg-open").arg(path).status()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn open_path_in_os(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("open").arg(path).status()?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn open_path_in_os(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("explorer").arg(path).status()?;
+    Ok(())
 }

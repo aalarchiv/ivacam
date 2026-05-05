@@ -1,0 +1,7 @@
+#!/usr//bin/bash
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+
+sed -i -e '/Co-Authored-By: /d' "$COMMIT_MSG_FILE"
+sed -i -e '/^#/d' -e :a -e '/^\n*$/{$d;N;ba}' "$COMMIT_MSG_FILE"

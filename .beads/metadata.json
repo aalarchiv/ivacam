@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "wiaconstructor",
+  "project_id": "306ef03b-f29f-4a17-9689-048834e270dd"
+}

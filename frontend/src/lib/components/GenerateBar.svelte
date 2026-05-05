@@ -8,11 +8,15 @@
 
   const client = defaultClient();
   let post: 'linuxcnc' | 'grbl' | 'hpgl' = $state('linuxcnc');
+  let progressMsg = $state<string>('');
+  let progressFrac = $state<number>(0);
 
   async function run() {
     if (!project.imported) return;
     project.generating = true;
     project.error = null;
+    progressMsg = '';
+    progressFrac = 0;
     try {
       // Auto-enable tabs in the setup when the user has placed any — the
       // backend gates emission on setup.tabs.active.
@@ -28,12 +32,19 @@
         // Tab placements keyed by imported-segment index.
         tabs: project.tabs,
       };
-      const r = await client.generate(req);
+      const r = client.generateStream
+        ? await client.generateStream(req, (ev) => {
+            progressMsg = ev.message;
+            progressFrac = ev.fraction;
+          })
+        : await client.generate(req);
       project.setGenerated(r);
     } catch (e) {
       project.setError(e instanceof Error ? e.message : String(e));
     } finally {
       project.generating = false;
+      progressMsg = '';
+      progressFrac = 0;
     }
   }
 
@@ -63,6 +74,19 @@
   <button onclick={run} disabled={!project.imported || project.generating}>
     {project.generating ? 'Generating…' : 'Generate'}
   </button>
+  {#if project.generating}
+    <div
+      class="progress"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow={Math.round(progressFrac * 100)}
+      title={progressMsg}
+    >
+      <div class="bar-fill" style="width: {Math.round(progressFrac * 100)}%"></div>
+      <span class="progress-text">{progressMsg || 'starting…'}</span>
+    </div>
+  {/if}
   {#if project.generated}
     <button onclick={downloadGcode} class="download">
       Download {post === 'hpgl' ? '.plt' : '.ngc'}
@@ -128,5 +152,31 @@
     white-space: nowrap;
     flex: 1;
     min-width: 0;
+  }
+  .progress {
+    position: relative;
+    flex: 1;
+    height: 1.2rem;
+    min-width: 8rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 120ms ease-out;
+  }
+  .progress-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: var(--text-strong);
+    pointer-events: none;
+    text-shadow: 0 0 4px var(--bg-app);
   }
 </style>

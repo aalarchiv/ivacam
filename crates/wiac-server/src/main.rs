@@ -2,19 +2,25 @@
 //! `schema/openapi.yaml`. Drop-in replacement for the Stage-1 Python
 //! FastAPI bridge.
 
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use axum::extract::{DefaultBodyLimit, Multipart, State};
 use axum::http::StatusCode;
+use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use axum::http::{HeaderValue, Method};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::StreamExt;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
@@ -48,6 +54,7 @@ async fn main() -> Result<()> {
         .route("/version", get(version))
         .route("/import", post(import))
         .route("/generate", post(generate))
+        .route("/generate/stream", post(generate_stream))
         .route("/defaults", get(defaults))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
@@ -269,12 +276,75 @@ async fn generate(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, AppError> {
+    run_generate(req, |_phase, _fraction, _msg| {}).map(Json)
+}
+
+/// SSE variant: emits `{phase, fraction, message}` progress events as the
+/// pipeline advances and a final `result` event carrying the full
+/// `GenerateResponse`. Frontend reads via `EventSource.addEventListener`.
+async fn generate_stream(
+    State(_state): State<Arc<AppState>>,
+    Json(req): Json<GenerateRequest>,
+) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    let (tx, rx) = tokio::sync::mpsc::channel::<SseEvent>(16);
+
+    tokio::task::spawn_blocking(move || {
+        let send = |ev: SseEvent| {
+            // Best-effort: if the client hung up we just stop emitting.
+            let _ = tx.blocking_send(ev);
+        };
+        let progress = |phase: &str, fraction: f64, message: &str| {
+            let payload = serde_json::json!({
+                "phase": phase,
+                "fraction": fraction,
+                "message": message,
+            });
+            send(
+                SseEvent::default()
+                    .event("progress")
+                    .json_data(payload)
+                    .expect("progress payload"),
+            );
+        };
+        match run_generate(req, progress) {
+            Ok(resp) => send(
+                SseEvent::default()
+                    .event("result")
+                    .json_data(&resp)
+                    .expect("result payload"),
+            ),
+            Err(err) => send(
+                SseEvent::default()
+                    .event("error")
+                    .json_data(serde_json::json!({
+                        "status": err.status.as_u16(),
+                        "message": err.message,
+                    }))
+                    .expect("error payload"),
+            ),
+        }
+        // tx drops here → stream completes.
+    });
+
+    let stream = ReceiverStream::new(rx).map(Ok);
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+/// Synchronous core. `progress(phase, fraction, message)` is called at each
+/// phase boundary; pass a no-op for the non-streaming endpoint.
+fn run_generate<F: Fn(&str, f64, &str)>(
+    req: GenerateRequest,
+    progress: F,
+) -> Result<GenerateResponse, AppError> {
     let setup = req.setup.unwrap_or_default();
+    progress("import", 0.05, "preparing segments");
+
     let mut objects = segments_to_objects(&req.segments);
     classify_containment(&mut objects);
     for obj in &mut objects {
         obj.tool_offset = setup.mill.offset;
     }
+    progress("objects", 0.20, "chained segments into objects");
 
     // Map imported-segment-keyed tabs to their owning chain object.
     // Each chain knows which imported-segment indices it consumed.
@@ -300,17 +370,12 @@ async fn generate(
             closed += 1;
         }
         if obj.closed && setup.pockets.active {
-            // Honor islands: inner closed objects of `obj` get materialized
-            // as polylines and passed to the pocket cascade so the cutter
-            // routes around them instead of through them.
             let islands: Vec<Vec<wiac_core::Point2>> = if setup.pockets.islands {
                 obj.inner_objects
                     .iter()
                     .filter_map(|i| objects.get(*i))
                     .filter(|inner| inner.closed)
-                    .map(|inner| {
-                        wiac_core::cam::segments_to_points(&inner.segments, 6)
-                    })
+                    .map(|inner| wiac_core::cam::segments_to_points(&inner.segments, 6))
                     .collect()
             } else {
                 Vec::new()
@@ -351,8 +416,9 @@ async fn generate(
             }
         }
     }
+    progress("offsets", 0.55, "built parallel offsets");
 
-    // Snap tabs onto their offsets. Tab radius = 1.5x tool radius so the
+    // Snap tabs onto their offsets. Tab radius = 1.5× tool radius so the
     // tab still gates the cut even after the parallel offset moves the
     // toolpath off the source contour.
     if !tabs_by_object.is_empty() {
@@ -364,14 +430,17 @@ async fn generate(
     }
 
     let post_kind = req.post_processor.as_deref().unwrap_or("linuxcnc");
+    progress("gcode", 0.75, "emitting gcode");
     let gcode = match post_kind {
         "linuxcnc" => emit_polylines(&setup, &offsets, &mut linuxcnc::Post::new()),
         "grbl" => emit_polylines(&setup, &offsets, &mut grbl::Post::new()),
         "hpgl" => emit_polylines(&setup, &offsets, &mut hpgl::Post::new()),
         other => return Err(AppError::bad_request(format!("unknown post_processor: {other}"))),
     };
+    progress("preview", 0.92, "interpreting toolpath");
     let toolpath = preview::interpret(&gcode);
-    Ok(Json(GenerateResponse {
+    progress("done", 1.0, "complete");
+    Ok(GenerateResponse {
         stats: GenerateStats {
             object_count: objects.len(),
             closed_object_count: closed,
@@ -379,7 +448,7 @@ async fn generate(
         },
         gcode,
         toolpath,
-    }))
+    })
 }
 
 // ─── error type ────────────────────────────────────────────────────────────

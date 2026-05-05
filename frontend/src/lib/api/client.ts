@@ -14,7 +14,24 @@ export interface WiacClient {
   version(): Promise<VersionResponse>;
   importFile(file: File, format?: string): Promise<ImportResponse>;
   generate(request: GenerateRequest): Promise<GenerateResponse>;
+  /**
+   * Streaming variant: emits {phase, fraction, message} via the supplied
+   * onProgress callback as the pipeline advances, returning the same
+   * GenerateResponse the non-streaming `generate()` would. Falls back to
+   * the non-streaming endpoint on transports that don't support streaming
+   * (Tauri/WASM implementations land in d0d.7/.8).
+   */
+  generateStream?(
+    request: GenerateRequest,
+    onProgress: (e: ProgressEvent) => void,
+  ): Promise<GenerateResponse>;
   defaults(): Promise<DefaultsResponse>;
+}
+
+export interface ProgressEvent {
+  phase: string;
+  fraction: number;
+  message: string;
 }
 
 export interface DefaultsResponse {

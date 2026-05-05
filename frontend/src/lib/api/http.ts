@@ -1,7 +1,7 @@
 // HTTP implementation of WiacClient. Talks to whichever server is wired
 // up — Stage-1 Python FastAPI now, Rust axum later. Same shape.
 
-import type { DefaultsResponse, WiacClient } from './client';
+import type { DefaultsResponse, ProgressEvent, WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -64,6 +64,78 @@ export class HttpWiacClient implements WiacClient {
       throw new Error(`/generate returned ${res.status}: ${JSON.stringify(detail)}`);
     }
     return (await res.json()) as GenerateResponse;
+  }
+
+  /**
+   * Stream variant — POST + parse text/event-stream by hand. We avoid the
+   * built-in EventSource because it's GET-only; the request body is JSON.
+   * Emits one `progress` event per phase boundary, then a `result` event
+   * carrying the final response (or an `error` event with status+message).
+   */
+  async generateStream(
+    request: GenerateRequest,
+    onProgress: (e: ProgressEvent) => void,
+  ): Promise<GenerateResponse> {
+    const res = await fetch(`${this.base}/generate/stream`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok || !res.body) {
+      let detail: unknown;
+      try {
+        detail = await res.json();
+      } catch {
+        detail = await res.text();
+      }
+      throw new Error(`/generate/stream returned ${res.status}: ${JSON.stringify(detail)}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let result: GenerateResponse | undefined;
+    let errorPayload: { status: number; message: string } | undefined;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE framing: events separated by a blank line; fields by single
+      // newlines. We only care about `event:` and `data:`.
+      let i: number;
+      while ((i = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, i);
+        buffer = buffer.slice(i + 2);
+        let eventName = 'message';
+        const dataLines: string[] = [];
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+        }
+        if (dataLines.length === 0) continue;
+        const data = dataLines.join('\n');
+        try {
+          if (eventName === 'progress') {
+            onProgress(JSON.parse(data) as ProgressEvent);
+          } else if (eventName === 'result') {
+            result = JSON.parse(data) as GenerateResponse;
+          } else if (eventName === 'error') {
+            errorPayload = JSON.parse(data) as { status: number; message: string };
+          }
+        } catch {
+          // Malformed frame — drop and keep reading.
+        }
+      }
+    }
+
+    if (errorPayload) {
+      throw new Error(`/generate/stream errored ${errorPayload.status}: ${errorPayload.message}`);
+    }
+    if (!result) {
+      throw new Error('/generate/stream closed before emitting a result');
+    }
+    return result;
   }
 }
 

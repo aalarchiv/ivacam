@@ -43,7 +43,14 @@ browser-only.
 
 ## Building from source
 
-Not yet available — bootstrap in progress. See `CONTRIBUTING.md`.
+See [`BUILDING.md`](./BUILDING.md) for prerequisites per platform and the
+full clone → cargo → tauri workflow. Short version:
+
+```sh
+cargo build --workspace          # core + CLI + server
+cd frontend && npm install && npm run dev   # web UI on :5173
+cd crates/wiac-tauri && cargo tauri build   # desktop bundle
+```
 
 ## License
 

@@ -23,5 +23,7 @@ tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 axum = { version = "0.7", features = ["multipart", "macros"] }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal", "fs"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal", "fs", "sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
 tower-http = { version = "0.6", features = ["cors", "trace"] }

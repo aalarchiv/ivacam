@@ -1465,8 +1465,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -5205,13 +5207,12 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.23.1"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
+checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
 dependencies = [
- "getrandom 0.4.2",
- "js-sys",
- "serde_core",
+ "getrandom 0.2.17",
+ "serde",
  "wasm-bindgen",
 ]
 
@@ -5586,9 +5587,11 @@ name = "wiac-wasm"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
+ "getrandom 0.2.17",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "uuid",
  "wasm-bindgen",
  "wiac-core",
 ]

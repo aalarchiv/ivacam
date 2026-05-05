@@ -6,6 +6,7 @@
 //! algorithm level — see the unit tests for the contracts.
 
 use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Polyline};
+#[cfg(feature = "pocket-cascade")]
 use clipper2::{EndType, JoinType, Paths};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -227,6 +228,10 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
 /// closed polyline already inflated by `tool_radius` outward — the
 /// caller is responsible for that pre-inflation, matching the upstream
 /// Python `do_pockets` islands branch.
+///
+/// Without the `pocket-cascade` feature (e.g. wasm32 builds without a C++
+/// stdlib) the cascade is unavailable and this returns an empty list.
+#[cfg(feature = "pocket-cascade")]
 pub fn pocket_cascade_with_islands(
     boundary: &[Point2],
     islands: &[Vec<Point2>],
@@ -256,6 +261,16 @@ pub fn pocket_cascade_with_islands(
     rings
 }
 
+#[cfg(not(feature = "pocket-cascade"))]
+pub fn pocket_cascade_with_islands(
+    _boundary: &[Point2],
+    _islands: &[Vec<Point2>],
+    _delta: f64,
+) -> Vec<Vec<Point2>> {
+    Vec::new()
+}
+
+#[cfg(feature = "pocket-cascade")]
 fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> Paths {
     // Clipper2 treats CW-wound rings as holes when EndType::Polygon is in
     // play. Force the outer boundary CCW and the islands CW regardless of
@@ -285,6 +300,7 @@ fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> Paths {
     all.into()
 }
 
+#[cfg(feature = "pocket-cascade")]
 fn signed_area(pts: &[Point2]) -> f64 {
     if pts.len() < 3 {
         return 0.0;
@@ -752,6 +768,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "pocket-cascade")]
     #[test]
     fn pocket_cascade_with_island_skips_around_it() {
         // 30x30 outer with a 10x10 island centered at (15, 15).
@@ -828,6 +845,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "pocket-cascade")]
     #[test]
     fn pocket_cascade_produces_inward_rings() {
         let boundary = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];

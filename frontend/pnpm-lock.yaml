@@ -32,6 +32,9 @@ importers:
       three:
         specifier: ^0.184.0
         version: 0.184.0
+      wiac-wasm:
+        specifier: link:../crates/wiac-wasm/pkg
+        version: link:../crates/wiac-wasm/pkg
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.0.0

@@ -50,8 +50,12 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Internal crates
-wiac-core = { path = "crates/wiac-core" }
+# Internal crates. default-features = false at the workspace level so the
+# wasm32 target build isn't pulled into clipper2 (C++) by sibling crates'
+# feature requests under cargo's per-workspace feature unification.
+# Crates that need the cascade pocket fill (CLI, server, Tauri) opt in
+# explicitly via `features = ["pocket-cascade"]`.
+wiac-core = { path = "crates/wiac-core", default-features = false }
 
 [profile.release]
 lto = "thin"

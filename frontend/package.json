@@ -36,6 +36,7 @@
     "@tauri-apps/plugin-store": "^2.4.3",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "svelte-i18n": "^4.0.1",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "wiac-wasm": "link:../crates/wiac-wasm/pkg"
   }
 }

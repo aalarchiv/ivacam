@@ -1,0 +1,16 @@
+# Stage-1 Python FastAPI bridge — wraps the existing viaConstructor core.
+# This service is throwaway scaffolding to ship a working web UI before the
+# Rust port lands. See bd epic wiaconstructor-d0d.
+
+fastapi==0.119.0
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# viaConstructor's runtime deps (import-side only). For Stage-1 we ship
+# /import end-to-end first; /generate is wired in a follow-up once we
+# pull pyclipper + cavalier-contours back in (currently broken on 3.13).
+ezdxf==1.3.0
+pillow==10.4.0
+matplotlib==3.9.2
+freetype-py==2.4.0
+python-utils==3.8.2

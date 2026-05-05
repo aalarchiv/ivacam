@@ -1,0 +1,274 @@
+//! CAM math layer — port of viaConstructor's `calc.py`.
+//!
+//! Three logical groups:
+//! * `geometry` helpers (lines, angles, distances, polygon-inside) — pure math
+//! * `chaining` (segments → closed/open VcObjects) — port of `segments2objects`
+//! * `offsets` (cavalier_contours + clipper2 driven contour offsetting and pockets)
+
+use serde::{Deserialize, Serialize};
+
+use crate::geometry::{Point2, Segment, SegmentKind};
+use crate::math;
+
+pub mod chaining;
+pub mod offsets;
+pub mod setup;
+
+/// `VcObject` analogue: a chain of segments grouped after `segments2objects`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VcObject {
+    pub segments: Vec<Segment>,
+    pub closed: bool,
+    /// "outside" / "inside" / "none" — see `setup::ToolOffset`.
+    pub tool_offset: setup::ToolOffset,
+    /// Per-object override of the tool-radius offset (None ⇒ tool diameter / 2).
+    pub overwrite_offset: Option<f64>,
+    /// IDs of objects fully containing this one.
+    pub outer_objects: Vec<usize>,
+    /// IDs of objects fully contained by this one.
+    pub inner_objects: Vec<usize>,
+    pub layer: String,
+    pub color: i32,
+    /// Optional starting point for cut-order seeding.
+    pub start: Option<Point2>,
+    /// Per-object setup overrides (mill depth, leads, tabs, …).
+    pub setup: setup::Setup,
+}
+
+impl VcObject {
+    pub fn new(segments: Vec<Segment>, closed: bool) -> Self {
+        let layer = segments
+            .first()
+            .map(|s| s.layer.clone())
+            .unwrap_or_else(|| "0".into());
+        let color = segments.first().map(|s| s.color).unwrap_or(7);
+        Self {
+            segments,
+            closed,
+            tool_offset: setup::ToolOffset::None,
+            overwrite_offset: None,
+            outer_objects: Vec::new(),
+            inner_objects: Vec::new(),
+            layer,
+            color,
+            start: None,
+            setup: setup::Setup::default(),
+        }
+    }
+}
+
+// ─── Pure geometry helpers (port of calc.py:60–340) ────────────────────────
+
+/// Distance between two 2D points.
+pub fn calc_distance(a: Point2, b: Point2) -> f64 {
+    a.distance(b)
+}
+
+/// Angle of the line a→b in radians, in (-π, π].
+pub fn angle_of_line(a: Point2, b: Point2) -> f64 {
+    (b.y - a.y).atan2(b.x - a.x)
+}
+
+/// Square distance from point `p` to the *infinite* line through a→b.
+/// Negative on the right of a→b, positive on the left (matches calc.py
+/// sign-by-cross convention).
+pub fn distance_to_line_signed(a: Point2, b: Point2, p: Point2) -> f64 {
+    let len = a.distance(b);
+    if len < 1e-12 {
+        return a.distance(p);
+    }
+    let cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    cross / len
+}
+
+/// Returns the (x, y) of the line-segment intersection of (s1→e1) and (s2→e2)
+/// if they cross within both segments' parameter ranges, else None.
+pub fn lines_intersect(s1: Point2, e1: Point2, s2: Point2, e2: Point2) -> Option<Point2> {
+    let dx1 = e1.x - s1.x;
+    let dy1 = e1.y - s1.y;
+    let dx2 = e2.x - s2.x;
+    let dy2 = e2.y - s2.y;
+    let denom = dx1 * dy2 - dy1 * dx2;
+    if denom.abs() < 1e-12 {
+        return None;
+    }
+    let t = ((s2.x - s1.x) * dy2 - (s2.y - s1.y) * dx2) / denom;
+    let u = ((s2.x - s1.x) * dy1 - (s2.y - s1.y) * dx1) / denom;
+    if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
+        Some(Point2::new(s1.x + t * dx1, s1.y + t * dy1))
+    } else {
+        None
+    }
+}
+
+/// Bounding box of a list of points.
+pub fn points_bbox(points: &[Point2]) -> Option<crate::BBox> {
+    if points.is_empty() {
+        return None;
+    }
+    let mut bbox = crate::BBox::EMPTY;
+    for p in points {
+        bbox.extend_point(*p);
+    }
+    Some(bbox)
+}
+
+/// Center of mass of a polygon (treats `points` as polygon vertices in order).
+pub fn polygon_centroid(points: &[Point2]) -> Option<Point2> {
+    if points.is_empty() {
+        return None;
+    }
+    let (mut sx, mut sy) = (0.0, 0.0);
+    for p in points {
+        sx += p.x;
+        sy += p.y;
+    }
+    Some(Point2::new(sx / points.len() as f64, sy / points.len() as f64))
+}
+
+/// Even-odd point-in-polygon test on a closed polyline of `points`.
+pub fn is_inside_polygon(points: &[Point2], p: Point2) -> bool {
+    if points.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let n = points.len();
+    let mut j = n - 1;
+    for i in 0..n {
+        let pi = points[i];
+        let pj = points[j];
+        let crosses_y = (pi.y > p.y) != (pj.y > p.y);
+        if crosses_y {
+            let x_at = pi.x + (p.y - pi.y) * (pj.x - pi.x) / (pj.y - pi.y);
+            if p.x < x_at {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    inside
+}
+
+/// Convert a [`Segment`] (LINE or ARC-with-bulge) into a flat polyline of
+/// `points` for clipper-side polygon ops. `interpolate` controls per-arc
+/// subdivision (≥1 step, default 6 to match `calc.py:vertex2points` default).
+pub fn segment_to_points(seg: &Segment, interpolate: usize) -> Vec<Point2> {
+    if seg.bulge.abs() < 1e-12 || seg.kind == SegmentKind::Line {
+        return vec![seg.start, seg.end];
+    }
+    // Tessellate proportional to sweep, with at least `interpolate` steps.
+    let max_step = (std::f64::consts::TAU / 8.0).max(0.05);
+    let coarse = math::tessellate_arc(seg.start, seg.end, seg.bulge, max_step);
+    if interpolate <= 1 {
+        return coarse;
+    }
+    // Uniformly sub-sample the parametric arc for `interpolate * sweep_steps` points.
+    let (center, a0, a1, radius) = math::bulge_to_arc(seg.start, seg.end, seg.bulge);
+    let mut sweep = a1 - a0;
+    if seg.bulge > 0.0 && sweep < 0.0 {
+        sweep += std::f64::consts::TAU;
+    }
+    if seg.bulge < 0.0 && sweep > 0.0 {
+        sweep -= std::f64::consts::TAU;
+    }
+    let n = interpolate * 8; // ≥8 per quadrant for fidelity
+    let mut out = Vec::with_capacity(n + 1);
+    for i in 0..=n {
+        let t = a0 + sweep * (i as f64) / (n as f64);
+        out.push(Point2::new(
+            center.x + radius * t.cos(),
+            center.y + radius * t.sin(),
+        ));
+    }
+    if let Some(p) = out.first_mut() {
+        *p = seg.start;
+    }
+    if let Some(p) = out.last_mut() {
+        *p = seg.end;
+    }
+    out
+}
+
+/// Flatten a sequence of segments to a polyline. Connecting endpoints are
+/// shared (no duplicate consecutive points).
+pub fn segments_to_points(segments: &[Segment], interpolate: usize) -> Vec<Point2> {
+    let mut out: Vec<Point2> = Vec::new();
+    for s in segments {
+        let pts = segment_to_points(s, interpolate);
+        if out.is_empty() {
+            out.extend_from_slice(&pts);
+        } else if let Some(last) = out.last() {
+            if last.distance(pts[0]) < 1e-6 {
+                out.extend_from_slice(&pts[1..]);
+            } else {
+                // Gap — insert anyway.
+                out.extend_from_slice(&pts);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-9
+    }
+
+    #[test]
+    fn line_intersection_basic() {
+        let i = lines_intersect(
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 10.0),
+            Point2::new(0.0, 10.0),
+            Point2::new(10.0, 0.0),
+        )
+        .unwrap();
+        assert!(approx(i.x, 5.0));
+        assert!(approx(i.y, 5.0));
+    }
+
+    #[test]
+    fn parallel_lines_no_intersection() {
+        let i = lines_intersect(
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 0.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(10.0, 1.0),
+        );
+        assert!(i.is_none());
+    }
+
+    #[test]
+    fn polygon_inside_outside() {
+        let sq = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 0.0),
+            Point2::new(10.0, 10.0),
+            Point2::new(0.0, 10.0),
+        ];
+        assert!(is_inside_polygon(&sq, Point2::new(5.0, 5.0)));
+        assert!(!is_inside_polygon(&sq, Point2::new(15.0, 5.0)));
+        assert!(!is_inside_polygon(&sq, Point2::new(-1.0, 5.0)));
+    }
+
+    #[test]
+    fn arc_segment_tessellation_is_smooth() {
+        let s = Segment::arc(
+            Point2::new(1.0, 0.0),
+            Point2::new(-1.0, 0.0),
+            1.0, // bulge=1 → 180° CCW
+            None,
+            "0",
+            7,
+        );
+        let pts = segment_to_points(&s, 6);
+        assert!(pts.len() > 8);
+        // All points should be ~unit-distance from origin.
+        for p in &pts {
+            assert!((p.x * p.x + p.y * p.y - 1.0).abs() < 1e-3);
+        }
+    }
+}

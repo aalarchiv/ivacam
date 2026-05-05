@@ -3,3 +3,52 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/.svelte-kit
+frontend/.vite
+
+# Tauri
+crates/wiac-tauri/target
+crates/wiac-tauri/gen
+
+# WASM
+crates/wiac-wasm/pkg
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+
+# Upstream clones — checked out alongside but not tracked here.
+# Bring your own copies via:
+#   git clone https://github.com/multigcs/viaconstructor refs/viaconstructor
+#   git clone https://github.com/IxMilia/dxf-rs        refs/dxf-rs
+refs/
+!refs/.gitkeep
+
+# Bridge venv (Stage-1 Python service).
+bridge/.venv/
+bridge/__pycache__/
+bridge/wiac_bridge/__pycache__/
+
+# Tempfiles + samples generated during demos.
+frontend/public/samples/*-rust.json
+frontend/public/samples/*-generated.json

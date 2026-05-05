@@ -1,0 +1,272 @@
+openapi: 3.0.3
+info:
+  title: wiaConstructor API
+  version: 0.0.1
+  description: |
+    JSON contract for wiaConstructor core operations.
+    Implementation-agnostic: served by the Stage-1 Python FastAPI bridge,
+    the Rust axum server, Tauri command bindings, and the WASM browser
+    bindings — same shape everywhere.
+  license:
+    name: GPL-3.0-or-later
+
+servers:
+  - url: http://localhost:8765
+    description: local Stage-1 FastAPI bridge
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      operationId: health
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /version:
+    get:
+      summary: Version + capabilities
+      operationId: version
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+
+  /import:
+    post:
+      summary: Parse a vector file into wiaConstructor geometry
+      operationId: import
+      description: |
+        Accepts the bytes of a DXF, SVG, HPGL, NGC, STL or other supported
+        format and returns the flattened geometry: layers, segments
+        (LINE/ARC primitives with bulge for arcs), bounding box, and unit
+        scale.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                format:
+                  type: string
+                  description: Optional explicit format hint (dxf|svg|hpgl|ngc|stl). Inferred from filename otherwise.
+      responses:
+        '200':
+          description: Parsed geometry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /generate:
+    post:
+      summary: Generate gcode + 3D toolpath preview from imported geometry
+      operationId: generate
+      description: |
+        Stub for Stage-1; full setup-tree input lands in d0d follow-ups.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: Generated output
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /defaults:
+    get:
+      summary: Setup-tree JSON Schema (drives the form UI)
+      operationId: defaults
+      responses:
+        '200':
+          description: Default setup tree + JSON Schema for the form UI
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultsResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+
+    VersionResponse:
+      type: object
+      required: [version, transport, capabilities]
+      properties:
+        version: { type: string, example: "0.0.1" }
+        transport:
+          type: string
+          enum: [python-bridge, rust-server, tauri, wasm]
+        capabilities:
+          type: array
+          items: { type: string }
+          example: [import-dxf, generate-gcode]
+
+    Point2:
+      type: object
+      required: [x, y]
+      properties:
+        x: { type: number }
+        y: { type: number }
+
+    BBox:
+      type: object
+      required: [min_x, min_y, max_x, max_y]
+      properties:
+        min_x: { type: number }
+        min_y: { type: number }
+        max_x: { type: number }
+        max_y: { type: number }
+
+    Segment:
+      type: object
+      description: A single LINE or ARC primitive. ARC encoded as bulge between start and end.
+      required: [type, start, end, bulge, layer, color]
+      properties:
+        type:
+          type: string
+          enum: [LINE, ARC, CIRCLE, POINT]
+        start: { $ref: '#/components/schemas/Point2' }
+        end:   { $ref: '#/components/schemas/Point2' }
+        bulge:
+          type: number
+          description: tan(included_angle / 4); 0 for LINE, ±value for ARC.
+        center:
+          $ref: '#/components/schemas/Point2'
+          description: For ARC/CIRCLE only.
+        layer: { type: string }
+        color: { type: integer }
+
+    Layer:
+      type: object
+      required: [name, color, segment_count]
+      properties:
+        name:  { type: string }
+        color: { type: integer }
+        segment_count: { type: integer }
+
+    ImportResponse:
+      type: object
+      required: [filename, format, segments, layers, bbox, unit_scale]
+      properties:
+        filename: { type: string }
+        format:   { type: string, example: dxf }
+        segments:
+          type: array
+          items: { $ref: '#/components/schemas/Segment' }
+        layers:
+          type: array
+          items: { $ref: '#/components/schemas/Layer' }
+        bbox:        { $ref: '#/components/schemas/BBox' }
+        unit_scale:  { type: number, description: "mm per source unit" }
+        warnings:
+          type: array
+          items: { type: string }
+
+    GenerateRequest:
+      type: object
+      required: [segments]
+      properties:
+        segments:
+          type: array
+          items: { $ref: '#/components/schemas/Segment' }
+        setup:
+          type: object
+          additionalProperties: true
+          description: Setup tree (machine/tool/mill/pockets/tabs/leads). Schema in /defaults.
+        post_processor:
+          type: string
+          enum: [gcode_linuxcnc, gcode_grbl, hpgl]
+          default: gcode_linuxcnc
+
+    Pose3:
+      type: object
+      required: [x, y, z]
+      properties:
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+
+    ToolpathSegment:
+      type: object
+      description: Linear segment in 3D for the preview renderer.
+      required: [from, to, kind]
+      properties:
+        from: { $ref: '#/components/schemas/Pose3' }
+        to:   { $ref: '#/components/schemas/Pose3' }
+        kind:
+          type: string
+          enum: [rapid, cut, plunge, retract]
+
+    GenerateResponse:
+      type: object
+      required: [gcode, toolpath]
+      properties:
+        gcode:    { type: string }
+        toolpath:
+          type: array
+          items: { $ref: '#/components/schemas/ToolpathSegment' }
+        stats:
+          type: object
+          properties:
+            segment_count:    { type: integer }
+            travel_distance:  { type: number }
+            cut_distance:     { type: number }
+
+    DefaultsResponse:
+      type: object
+      required: [setup, schema]
+      properties:
+        setup:
+          type: object
+          additionalProperties: true
+        schema:
+          type: object
+          description: JSON Schema describing the setup tree.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:    { type: string }
+        details:  { type: object, additionalProperties: true }
+
+  responses:
+    BadRequest:
+      description: Malformed input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+    UnprocessableEntity:
+      description: Could not parse content
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

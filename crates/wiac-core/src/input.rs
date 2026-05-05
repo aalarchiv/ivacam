@@ -1,0 +1,91 @@
+//! Input pipeline: reads vector files, returns flat [`Segment`]s plus
+//! layer metadata + bounding box. The shape mirrors the bridge's
+//! `/import` JSON response.
+
+use crate::geometry::{BBox, Layer, Segment};
+use crate::Result;
+use std::collections::BTreeMap;
+use std::path::Path;
+
+pub mod dxf_in;
+pub mod nurbs;
+
+/// Optional knobs for any importer. The `args.dxfread_*` flags from the
+/// Python plugin map here.
+#[derive(Debug, Clone, Default)]
+pub struct ImportOptions {
+    /// Override unit conversion. 0.0 => auto-detect from file's `$INSUNITS`.
+    pub scale: f64,
+    /// Skip TEXT/MTEXT entities entirely.
+    pub no_text: bool,
+    /// Append the DXF color name to layer names so colors become layers.
+    pub color_layers: bool,
+    /// Whitelist of layer names. Empty => accept all.
+    pub select_layers: Vec<String>,
+    /// Maximum sweep per arc subdivision step, in radians.
+    /// 0.0 keeps arcs as single ARC segments (with bulge) — used for the
+    /// CAM pipeline. The Python importer subdivides for rendering.
+    pub arc_max_step_rad: f64,
+}
+
+impl ImportOptions {
+    pub fn arc_max_step_or_default(&self) -> f64 {
+        if self.arc_max_step_rad > 0.0 {
+            self.arc_max_step_rad
+        } else {
+            std::f64::consts::FRAC_PI_4 // 45°, matches dxfread.py
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportOutput {
+    pub filename: String,
+    pub format: String,
+    pub segments: Vec<Segment>,
+    pub layers: Vec<Layer>,
+    pub bbox: BBox,
+    pub unit_scale: f64,
+    pub warnings: Vec<String>,
+}
+
+/// Dispatch to the right importer based on file extension.
+pub fn import_path(path: &Path, opts: &ImportOptions) -> Result<ImportOutput> {
+    let suffix = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    match suffix.as_str() {
+        "dxf" => dxf_in::import_dxf_path(path, opts),
+        other => Err(crate::error::Error::UnsupportedFormat(other.into())),
+    }
+}
+
+/// Build the per-layer summary used by the import response.
+pub(crate) fn summarize_layers(
+    segments: &[Segment],
+    seed_colors: &BTreeMap<String, i32>,
+) -> Vec<Layer> {
+    let mut counts: BTreeMap<String, (i32, usize)> = BTreeMap::new();
+    for seg in segments {
+        let entry = counts
+            .entry(seg.layer.clone())
+            .or_insert_with(|| (seg.color, 0));
+        entry.1 += 1;
+    }
+    // Backfill colors from the seed map for layers that exist in the DXF
+    // but don't carry segments after filtering.
+    for (name, color) in seed_colors {
+        counts.entry(name.clone()).or_insert((*color, 0));
+    }
+    counts
+        .into_iter()
+        .map(|(name, (color, count))| Layer {
+            name,
+            color,
+            segment_count: count,
+        })
+        .collect()
+}

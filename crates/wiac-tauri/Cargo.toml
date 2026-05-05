@@ -1,0 +1,21 @@
+[package]
+name = "wiac-tauri"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "wiaConstructor Tauri desktop shell"
+
+[[bin]]
+name = "wiac-desktop"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+wiac-core = { workspace = true }
+anyhow = { workspace = true }
+# tauri = "2"  # added in wiaconstructor-u40 (Tauri packaging epic)

@@ -1,0 +1,21 @@
+[package]
+name = "wiac-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "wiaConstructor core: DXF/SVG import, CAM math, gcode generation"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+dxf = "0.6"
+cavalier_contours = "=0.4.0"
+clipper2 = "0.5"

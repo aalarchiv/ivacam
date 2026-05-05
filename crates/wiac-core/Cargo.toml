@@ -24,3 +24,8 @@ ttf-parser = "0.25"
 
 [dev-dependencies]
 ttf-parser = "0.25"
+criterion = { version = "0.5", default-features = false, features = ["plotters", "cargo_bench_support"] }
+
+[[bench]]
+name = "pipeline"
+harness = false

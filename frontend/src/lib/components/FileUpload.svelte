@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { defaultClient } from '../api/http';
+  import { isTauri } from '../api/tauri';
   import { project } from '../state/project.svelte';
   import type { ImportResponse } from '../api/types';
 
@@ -18,15 +19,31 @@
     { label: 'all (rs)', url: '/samples/all-rust.json' },
   ];
 
-  function saveProject() {
-    const blob = new Blob([JSON.stringify(project.snapshot(), null, 2)], {
-      type: 'application/json',
-    });
+  async function saveProject() {
+    const snapshot = JSON.stringify(project.snapshot(), null, 2);
+    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
+    const filename = `${base}.vc-project.json`;
+    if (isTauri()) {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+      const path = await save({
+        defaultPath: filename,
+        filters: [{ name: 'wiaConstructor project', extensions: ['vc-project.json', 'json'] }],
+      });
+      if (typeof path === 'string') {
+        try {
+          await writeTextFile(path, snapshot);
+        } catch (e) {
+          project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return;
+    }
+    const blob = new Blob([snapshot], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
     a.href = url;
-    a.download = `${base}.vc-project.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -49,6 +66,56 @@
   function onProjectPick(e: Event) {
     const target = e.target as HTMLInputElement;
     if (target.files?.[0]) loadProjectFile(target.files[0]);
+  }
+
+  /**
+   * Native open dialog for desktop. Routes through tauri-plugin-dialog so
+   * the user gets the OS picker and we receive an absolute path back —
+   * which the Rust import_path command can use directly without the
+   * write-to-temp dance the web client needs.
+   */
+  async function openFileNative() {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      filters: [
+        { name: 'CAD/CAM input', extensions: ['dxf', 'svg', 'hpgl', 'plt', 'ngc', 'stl'] },
+      ],
+    });
+    if (typeof selected !== 'string') return;
+    project.loading = true;
+    project.error = null;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<ImportResponse>('import_path', { path: selected });
+      project.setImported(result);
+    } catch (e) {
+      project.setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      project.loading = false;
+    }
+  }
+
+  async function openProjectNative() {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const { readTextFile } = await import('@tauri-apps/plugin-fs');
+    const selected = await open({
+      multiple: false,
+      filters: [
+        { name: 'wiaConstructor project', extensions: ['vc-project.json', 'json'] },
+      ],
+    });
+    if (typeof selected !== 'string') return;
+    project.loading = true;
+    project.error = null;
+    try {
+      const text = await readTextFile(selected);
+      project.restore(JSON.parse(text));
+    } catch (e) {
+      project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      project.loading = false;
+    }
   }
 
   async function load(file: File) {
@@ -160,13 +227,17 @@
     onchange={onProjectPick}
     hidden
   />
-  <button type="button" onclick={() => inputEl.click()} disabled={project.loading}>
+  <button
+    type="button"
+    onclick={() => (isTauri() ? openFileNative() : inputEl.click())}
+    disabled={project.loading}
+  >
     {project.loading ? 'Loading…' : 'Open file'}
   </button>
   <button
     type="button"
     class="secondary"
-    onclick={() => projectInput.click()}
+    onclick={() => (isTauri() ? openProjectNative() : projectInput.click())}
     disabled={project.loading}
     title="Open a saved project (.vc-project.json)"
   >

@@ -141,9 +141,18 @@ export class HttpWiacClient implements WiacClient {
 
 export function defaultClient(): WiacClient {
   // Resolution order:
+  //   0. Running inside the Tauri shell → in-process invoke()
   //   1. VITE_WIAC_API at build time
   //   2. ?api=… query param at runtime (handy for demos)
-  //   3. http://<host>:8765 — talks to the Stage-1 bridge directly
+  //   3. http://<host>:8766 — Rust server
+  if (typeof window !== 'undefined') {
+    const w = window as unknown as Record<string, unknown>;
+    if (typeof w.__TAURI_INTERNALS__ !== 'undefined') {
+      const mod = (w.__WIAC_TAURI_CLIENT__ ??= new TauriClientLazy()) as TauriClientLazy;
+      return mod.proxy;
+    }
+  }
+
   const fromEnv = import.meta.env.VITE_WIAC_API as string | undefined;
   if (fromEnv) return new HttpWiacClient(fromEnv);
 
@@ -153,10 +162,37 @@ export function defaultClient(): WiacClient {
     if (fromQuery) return new HttpWiacClient(fromQuery);
 
     const { protocol, hostname } = window.location;
-    // Default to the Rust server (port 8766). Stage-1 Python bridge on 8765
-    // remains available via ?api=http://host:8765 for comparison.
     return new HttpWiacClient(`${protocol}//${hostname}:8766`);
   }
 
   return new HttpWiacClient('http://127.0.0.1:8765');
+}
+
+/**
+ * Tauri client wrapper — defers loading the implementation module until
+ * it's first used so plain web builds don't need to resolve the
+ * @tauri-apps/* import graph eagerly.
+ */
+class TauriClientLazy {
+  private impl: WiacClient | null = null;
+  proxy: WiacClient;
+
+  constructor() {
+    const ensure = async (): Promise<WiacClient> => {
+      if (!this.impl) {
+        const mod = await import('./tauri');
+        this.impl = new mod.TauriWiacClient();
+      }
+      return this.impl;
+    };
+    this.proxy = {
+      health: () => ensure().then((c) => c.health()),
+      version: () => ensure().then((c) => c.version()),
+      importFile: (file, format) => ensure().then((c) => c.importFile(file, format)),
+      generate: (req) => ensure().then((c) => c.generate(req)),
+      generateStream: (req, cb) =>
+        ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
+      defaults: () => ensure().then((c) => c.defaults()),
+    };
+  }
 }

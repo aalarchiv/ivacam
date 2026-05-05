@@ -3,6 +3,7 @@
   // tree lives in SetupPanel and feeds project.setup.
 
   import { defaultClient } from '../api/http';
+  import { isTauri } from '../api/tauri';
   import { project } from '../state/project.svelte';
   import type { GenerateRequest } from '../api/types';
   import { _ } from 'svelte-i18n';
@@ -49,14 +50,32 @@
     }
   }
 
-  function downloadGcode() {
+  async function downloadGcode() {
     if (!project.generated) return;
+    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
+    const ext = post === 'hpgl' ? 'plt' : 'ngc';
+    const filename = `${base}.${ext}`;
+    if (isTauri()) {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+      const path = await save({
+        defaultPath: filename,
+        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+      });
+      if (typeof path === 'string') {
+        try {
+          await writeTextFile(path, project.generated.gcode);
+        } catch (e) {
+          project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return;
+    }
     const blob = new Blob([project.generated.gcode], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
-    a.download = `${base}.${post === 'hpgl' ? 'plt' : 'ngc'}`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   }

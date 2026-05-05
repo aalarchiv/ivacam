@@ -29,6 +29,9 @@
     "vitest": "^2.1.5"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
     "svelte-i18n": "^4.0.1",
     "three": "^0.184.0"
   }

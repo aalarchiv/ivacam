@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "identifier": "org.opcenter.wiaconstructor",
   "build": {
-    "beforeDevCommand": "pnpm --dir ../../frontend dev",
+    "beforeDevCommand": "pnpm --dir ../frontend dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "pnpm --dir ../../frontend build",
+    "beforeBuildCommand": "pnpm --dir ../frontend build",
     "frontendDist": "../../frontend/dist"
   },
   "plugins": {

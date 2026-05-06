@@ -1,7 +1,11 @@
 <script lang="ts">
   import FileUpload from './lib/components/FileUpload.svelte';
   import EntityCanvas2D from './lib/components/EntityCanvas2D.svelte';
-  import Scene3D from './lib/components/Scene3D.svelte';
+  // Scene3D pulls in the entire three.js graph (~600 KB pre-min) — keep
+  // it out of the initial bundle by dynamic-importing on first 3D switch.
+  type Scene3DComp = typeof import('./lib/components/Scene3D.svelte').default;
+  let Scene3D = $state<Scene3DComp | null>(null);
+  let scene3dLoading = $state(false);
   import LayerList from './lib/components/LayerList.svelte';
   import SetupPanel from './lib/components/SetupPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
@@ -10,7 +14,7 @@
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { setLocale, locale } from './lib/i18n';
-  import { isTauri } from './lib/api/tauri';
+  import { isTauri } from './lib/api/env';
 
   type LocalePref = 'en' | 'de';
   let lang = $state<LocalePref>('en');
@@ -114,6 +118,18 @@
     if (project.generated) activePane = '3d';
   });
 
+  // Pull Scene3D in on first activation. The dynamic import becomes its
+  // own Vite chunk, so the initial main chunk doesn't carry three.js.
+  $effect(() => {
+    if (activePane === '3d' && !Scene3D && !scene3dLoading) {
+      scene3dLoading = true;
+      void import('./lib/components/Scene3D.svelte').then((m) => {
+        Scene3D = m.default;
+        scene3dLoading = false;
+      });
+    }
+  });
+
   const tabCount = $derived(
     Object.values(project.tabs).reduce((n, list) => n + list.length, 0),
   );
@@ -187,8 +203,11 @@
       <div class="canvas-area">
         {#if activePane === '2d'}
           <EntityCanvas2D />
+        {:else if Scene3D}
+          {@const C = Scene3D}
+          <C />
         {:else}
-          <Scene3D />
+          <p class="loading-3d">Loading 3D…</p>
         {/if}
       </div>
       {#if activePane === '3d' && project.generated}
@@ -344,6 +363,14 @@
     flex: 1;
     min-height: 0;
     position: relative;
+  }
+  .loading-3d {
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
   }
   .sidebar {
     display: grid;

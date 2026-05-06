@@ -4,6 +4,11 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte()],
+  build: {
+    // Scene3D + three.js is a single intentional chunk (~540 KB);
+    // anything bigger than that is the warning we actually want.
+    chunkSizeWarningLimit: 600,
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

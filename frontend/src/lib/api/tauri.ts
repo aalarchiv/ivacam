@@ -13,10 +13,9 @@ import type {
   VersionResponse,
 } from './types';
 
-export function isTauri(): boolean {
-  if (typeof window === 'undefined') return false;
-  return typeof (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ !== 'undefined';
-}
+// `isTauri()` lives in ./env.ts so callers can detect the shell without
+// dragging in @tauri-apps/* (this file is meant to be code-split into its
+// own chunk).
 
 export class TauriWiacClient implements WiacClient {
   async health(): Promise<boolean> {

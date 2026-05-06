@@ -3,7 +3,7 @@
   // tree lives in SetupPanel and feeds project.setup.
 
   import { defaultClient } from '../api/http';
-  import { isTauri } from '../api/tauri';
+  import { isTauri } from '../api/env';
   import { project } from '../state/project.svelte';
   import type { GenerateRequest } from '../api/types';
   import { _ } from 'svelte-i18n';

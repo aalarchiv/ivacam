@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { defaultClient } from '../api/http';
-  import { isTauri } from '../api/tauri';
+  import { isTauri } from '../api/env';
   import { project } from '../state/project.svelte';
   import type { ImportResponse } from '../api/types';
   import { pushRecent, readRecent, type RecentEntry } from '../recent';

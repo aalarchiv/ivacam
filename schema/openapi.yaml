@@ -124,6 +124,12 @@ components:
       - min_x
       - min_y
       type: object
+    Coolant:
+      enum:
+      - off
+      - mist
+      - flood
+      type: string
     DefaultsResponse:
       properties:
         schema: true
@@ -350,6 +356,225 @@ components:
       - per_object
       - unordered
       type: string
+    Operation:
+      properties:
+        enabled:
+          type: boolean
+        id:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        kind:
+          $ref: '#/components/schemas/OperationKind'
+        name:
+          type: string
+        params:
+          $ref: '#/components/schemas/OperationParams'
+        source:
+          $ref: '#/components/schemas/OperationSource'
+        tool_id:
+          description: id of a `Project.tools` entry.
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - enabled
+      - id
+      - kind
+      - name
+      - params
+      - source
+      - tool_id
+      type: object
+    OperationKind:
+      oneOf:
+      - description: Contour cut — equivalent to today's "mill" with a parallel-offset pass at `offset` of the tool radius.
+        properties:
+          offset:
+            $ref: '#/components/schemas/ToolOffset'
+          type:
+            enum:
+            - profile
+            type: string
+        required:
+        - offset
+        - type
+        type: object
+      - description: Pocket fill — cascade of inward offsets, optionally zigzag.
+        properties:
+          strategy:
+            $ref: '#/components/schemas/PocketStrategy'
+          type:
+            enum:
+            - pocket
+            type: string
+        required:
+        - strategy
+        - type
+        type: object
+      - description: Drill cycle — point or circle smaller than tool.
+        properties:
+          type:
+            enum:
+            - drill
+            type: string
+        required:
+        - type
+        type: object
+      - description: Helical thread — bore + helical thread cut.
+        properties:
+          type:
+            enum:
+            - thread
+            type: string
+        required:
+        - type
+        type: object
+      - description: V-bit edge break.
+        properties:
+          type:
+            enum:
+            - chamfer
+            type: string
+        required:
+        - type
+        type: object
+      - description: Tool-on engraving — no offset, follows the source path.
+        properties:
+          type:
+            enum:
+            - engrave
+            type: string
+        required:
+        - type
+        type: object
+      - description: Drag-knife — emits trail-compensation moves.
+        properties:
+          type:
+            enum:
+            - drag_knife
+            type: string
+        required:
+        - type
+        type: object
+      - description: Helical entry into a closed contour.
+        properties:
+          type:
+            enum:
+            - helix
+            type: string
+        required:
+        - type
+        type: object
+    OperationParams:
+      properties:
+        depth:
+          description: Final cut depth (negative number — a depth, not a height).
+          format: double
+          type: number
+        fast_move_z:
+          description: Z for rapid moves between cuts.
+          format: double
+          type: number
+        helix:
+          default: false
+          description: Helical descent inside a closed contour.
+          type: boolean
+        leads:
+          allOf:
+          - $ref: '#/components/schemas/LeadsConfig'
+          default:
+            in: off
+            in_lenght: 5.0
+            out: off
+            out_lenght: 5.0
+          description: Lead-in / lead-out shape for this op.
+        objectorder:
+          allOf:
+          - $ref: '#/components/schemas/ObjectOrder'
+          default: nearest
+          description: Cut-order strategy for multiple objects.
+        overcut:
+          default: false
+          description: Dip into sharp inner corners so the cutter clears the geometric corner. Only meaningful for Profile ops with non-zero offset.
+          type: boolean
+        pocket_insideout:
+          default: false
+          type: boolean
+        pocket_islands:
+          default: false
+          type: boolean
+        pocket_nocontour:
+          default: false
+          type: boolean
+        reverse:
+          default: false
+          description: Reverse the cut direction (climb ↔ conventional).
+          type: boolean
+        start_depth:
+          description: Z at which the first pass starts.
+          format: double
+          type: number
+        step:
+          description: Per-pass step (negative ⇒ down).
+          format: double
+          type: number
+        tabs:
+          allOf:
+          - $ref: '#/components/schemas/TabsConfig'
+          default:
+            active: false
+            height: 1.0
+            tab_type: rectangle
+            width: 10.0
+          description: Per-op tabs config. The Project's `tabs` map carries the actual placement points; this controls width / height / type.
+      required:
+      - depth
+      - fast_move_z
+      - start_depth
+      - step
+      type: object
+    OperationSource:
+      oneOf:
+      - description: Run on every chain on the listed layer names.
+        properties:
+          kind:
+            enum:
+            - layers
+            type: string
+          layers:
+            items:
+              type: string
+            type: array
+        required:
+        - kind
+        - layers
+        type: object
+      - description: Run on the listed chain ids only.
+        properties:
+          ids:
+            items:
+              format: uint32
+              minimum: 0.0
+              type: integer
+            type: array
+          kind:
+            enum:
+            - objects
+            type: string
+        required:
+        - ids
+        - kind
+        type: object
+      - description: Run on every chained object in the project.
+        properties:
+          kind:
+            enum:
+            - all
+            type: string
+        required:
+        - kind
+        type: object
     PipelineStats:
       properties:
         closed_object_count:
@@ -389,6 +614,12 @@ components:
       - nocontour
       - zigzag
       type: object
+    PocketStrategy:
+      enum:
+      - cascade
+      - zigzag
+      - spiral
+      type: string
     Point2:
       properties:
         x:
@@ -465,6 +696,36 @@ components:
       - grbl
       - hpgl
       type: string
+    Project:
+      properties:
+        machine:
+          $ref: '#/components/schemas/MachineConfig'
+        operations:
+          items:
+            $ref: '#/components/schemas/Operation'
+          type: array
+        segments:
+          description: Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained.
+          items:
+            $ref: '#/components/schemas/Segment'
+          type: array
+        tabs:
+          additionalProperties:
+            items:
+              $ref: '#/components/schemas/TabPoint'
+            type: array
+          description: Tab placements keyed by imported-segment index. Same shape as the legacy PipelineRequest.tabs.
+          type: object
+        tools:
+          items:
+            $ref: '#/components/schemas/ToolEntry'
+          type: array
+      required:
+      - machine
+      - operations
+      - segments
+      - tools
+      type: object
     Segment:
       description: A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
       properties:
@@ -606,6 +867,76 @@ components:
       - rate_v
       - speed
       type: object
+    ToolEntry:
+      properties:
+        coolant:
+          $ref: '#/components/schemas/Coolant'
+        diameter:
+          format: double
+          type: number
+        dragoff:
+          description: Drag-knife trailing offset (None for everything else).
+          format: double
+          type:
+          - number
+          - 'null'
+        feed_rate:
+          description: Cutting feedrate (mm/min).
+          format: uint32
+          minimum: 0.0
+          type: integer
+        flutes:
+          format: uint8
+          minimum: 0.0
+          type: integer
+        id:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        kind:
+          $ref: '#/components/schemas/ToolKind'
+        name:
+          type: string
+        plunge_rate:
+          description: Plunge feedrate (mm/min).
+          format: uint32
+          minimum: 0.0
+          type: integer
+        speed:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        tip_diameter:
+          description: V-bit tip diameter (None for endmill / ball nose / drag knife).
+          format: double
+          type:
+          - number
+          - 'null'
+      required:
+      - coolant
+      - diameter
+      - feed_rate
+      - flutes
+      - id
+      - kind
+      - name
+      - plunge_rate
+      - speed
+      type: object
+    ToolKind:
+      oneOf:
+      - enum:
+        - endmill
+        - ball_nose
+        - v_bit
+        - engraver
+        - drag_knife
+        - drill
+        type: string
+      - description: Used for laser cutting / etching — no physical tool radius.
+        enum:
+        - laser_beam
+        type: string
     ToolOffset:
       enum:
       - none

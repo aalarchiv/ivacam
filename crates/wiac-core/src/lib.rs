@@ -12,6 +12,7 @@ pub mod geometry;
 pub mod input;
 pub mod math;
 pub mod pipeline;
+pub mod project;
 pub mod schema;
 pub mod testing;
 

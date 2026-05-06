@@ -82,6 +82,18 @@ pub fn components_schemas() -> Value {
     insert::<PolylineOffset>(&mut schemas, "PolylineOffset");
     insert::<ToolpathSegment>(&mut schemas, "ToolpathSegment");
 
+    // New project / operations / tools shapes — ship them so the frontend
+    // can codegen the matching TS types ahead of UX-4..-7.
+    insert::<crate::project::Project>(&mut schemas, "Project");
+    insert::<crate::project::Operation>(&mut schemas, "Operation");
+    insert::<crate::project::OperationKind>(&mut schemas, "OperationKind");
+    insert::<crate::project::OperationParams>(&mut schemas, "OperationParams");
+    insert::<crate::project::OperationSource>(&mut schemas, "OperationSource");
+    insert::<crate::project::PocketStrategy>(&mut schemas, "PocketStrategy");
+    insert::<crate::project::ToolEntry>(&mut schemas, "ToolEntry");
+    insert::<crate::project::ToolKind>(&mut schemas, "ToolKind");
+    insert::<crate::project::Coolant>(&mut schemas, "Coolant");
+
     insert::<HealthResponse>(&mut schemas, "HealthResponse");
     insert::<VersionResponse>(&mut schemas, "VersionResponse");
     insert::<GenerateRequest>(&mut schemas, "GenerateRequest");

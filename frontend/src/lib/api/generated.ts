@@ -112,6 +112,8 @@ export interface components {
             /** Format: double */
             min_y: number;
         };
+        /** @enum {string} */
+        Coolant: "off" | "mist" | "flood";
         DefaultsResponse: {
             schema: unknown;
             setup: components["schemas"]["Setup"];
@@ -207,6 +209,127 @@ export interface components {
         };
         /** @enum {string} */
         ObjectOrder: "nearest" | "per_object" | "unordered";
+        Operation: {
+            enabled: boolean;
+            /** Format: uint32 */
+            id: number;
+            kind: components["schemas"]["OperationKind"];
+            name: string;
+            params: components["schemas"]["OperationParams"];
+            source: components["schemas"]["OperationSource"];
+            /**
+             * Format: uint32
+             * @description id of a `Project.tools` entry.
+             */
+            tool_id: number;
+        };
+        OperationKind: {
+            offset: components["schemas"]["ToolOffset"];
+            /** @enum {string} */
+            type: "profile";
+        } | {
+            strategy: components["schemas"]["PocketStrategy"];
+            /** @enum {string} */
+            type: "pocket";
+        } | {
+            /** @enum {string} */
+            type: "drill";
+        } | {
+            /** @enum {string} */
+            type: "thread";
+        } | {
+            /** @enum {string} */
+            type: "chamfer";
+        } | {
+            /** @enum {string} */
+            type: "engrave";
+        } | {
+            /** @enum {string} */
+            type: "drag_knife";
+        } | {
+            /** @enum {string} */
+            type: "helix";
+        };
+        OperationParams: {
+            /**
+             * Format: double
+             * @description Final cut depth (negative number — a depth, not a height).
+             */
+            depth: number;
+            /**
+             * Format: double
+             * @description Z for rapid moves between cuts.
+             */
+            fast_move_z: number;
+            /**
+             * @description Helical descent inside a closed contour.
+             * @default false
+             */
+            helix: boolean;
+            /**
+             * @description Lead-in / lead-out shape for this op.
+             * @default {
+             *       "in": "off",
+             *       "in_lenght": 5,
+             *       "out": "off",
+             *       "out_lenght": 5
+             *     }
+             */
+            leads: components["schemas"]["LeadsConfig"];
+            /**
+             * @description Cut-order strategy for multiple objects.
+             * @default nearest
+             */
+            objectorder: components["schemas"]["ObjectOrder"];
+            /**
+             * @description Dip into sharp inner corners so the cutter clears the geometric corner. Only meaningful for Profile ops with non-zero offset.
+             * @default false
+             */
+            overcut: boolean;
+            /** @default false */
+            pocket_insideout: boolean;
+            /** @default false */
+            pocket_islands: boolean;
+            /** @default false */
+            pocket_nocontour: boolean;
+            /**
+             * @description Reverse the cut direction (climb ↔ conventional).
+             * @default false
+             */
+            reverse: boolean;
+            /**
+             * Format: double
+             * @description Z at which the first pass starts.
+             */
+            start_depth: number;
+            /**
+             * Format: double
+             * @description Per-pass step (negative ⇒ down).
+             */
+            step: number;
+            /**
+             * @description Per-op tabs config. The Project's `tabs` map carries the actual placement points; this controls width / height / type.
+             * @default {
+             *       "active": false,
+             *       "height": 1,
+             *       "tab_type": "rectangle",
+             *       "width": 10
+             *     }
+             */
+            tabs: components["schemas"]["TabsConfig"];
+        };
+        OperationSource: {
+            /** @enum {string} */
+            kind: "layers";
+            layers: string[];
+        } | {
+            ids: number[];
+            /** @enum {string} */
+            kind: "objects";
+        } | {
+            /** @enum {string} */
+            kind: "all";
+        };
         PipelineStats: {
             /** Format: uint */
             closed_object_count: number;
@@ -223,6 +346,8 @@ export interface components {
             nocontour: boolean;
             zigzag: boolean;
         };
+        /** @enum {string} */
+        PocketStrategy: "cascade" | "zigzag" | "spiral";
         Point2: {
             /** Format: double */
             x: number;
@@ -261,6 +386,17 @@ export interface components {
         };
         /** @enum {string} */
         PostProcessorKind: "linuxcnc" | "grbl" | "hpgl";
+        Project: {
+            machine: components["schemas"]["MachineConfig"];
+            operations: components["schemas"]["Operation"][];
+            /** @description Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained. */
+            segments: components["schemas"]["Segment"][];
+            /** @description Tab placements keyed by imported-segment index. Same shape as the legacy PipelineRequest.tabs. */
+            tabs?: {
+                [key: string]: components["schemas"]["TabPoint"][];
+            };
+            tools: components["schemas"]["ToolEntry"][];
+        };
         /** @description A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`). */
         Segment: {
             /**
@@ -336,6 +472,40 @@ export interface components {
             /** Format: uint32 */
             speed: number;
         };
+        ToolEntry: {
+            coolant: components["schemas"]["Coolant"];
+            /** Format: double */
+            diameter: number;
+            /**
+             * Format: double
+             * @description Drag-knife trailing offset (None for everything else).
+             */
+            dragoff?: number | null;
+            /**
+             * Format: uint32
+             * @description Cutting feedrate (mm/min).
+             */
+            feed_rate: number;
+            /** Format: uint8 */
+            flutes: number;
+            /** Format: uint32 */
+            id: number;
+            kind: components["schemas"]["ToolKind"];
+            name: string;
+            /**
+             * Format: uint32
+             * @description Plunge feedrate (mm/min).
+             */
+            plunge_rate: number;
+            /** Format: uint32 */
+            speed: number;
+            /**
+             * Format: double
+             * @description V-bit tip diameter (None for endmill / ball nose / drag knife).
+             */
+            tip_diameter?: number | null;
+        };
+        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam";
         /** @enum {string} */
         ToolOffset: "none" | "outside" | "inside" | "on";
         ToolpathSegment: {

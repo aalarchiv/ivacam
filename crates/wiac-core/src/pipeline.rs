@@ -1,10 +1,6 @@
 //! Shared CAM pipeline driver — per-operation gcode emission.
 //!
 //! All three transports (HTTP, Tauri, WASM) funnel through `run_pipeline`.
-//! Internally the driver always operates on a [`crate::project::Project`]:
-//! legacy callers that hand us segments + Setup + tabs get migrated via
-//! [`crate::project::migrate_legacy`] before the per-op loop runs.
-//!
 //! Each enabled operation produces a gcode block prefixed with a
 //! `; OP <id>` marker so the preview interpreter (UX-2) can stamp the
 //! right `op_id` on every resulting [`preview::ToolpathSegment`]. The
@@ -28,28 +24,14 @@ use crate::gcode::{
     PostProcessor,
 };
 use crate::geometry::{Point2, Segment};
-use crate::project::{
-    collapse_to_setup, migrate_legacy, Operation, OperationKind, OperationSource, PocketStrategy,
-    Project,
-};
+use crate::project::{Operation, OperationKind, OperationSource, PocketStrategy, Project};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineRequest {
-    /// Legacy flat-shape input — segments + Setup + tabs. Still the path
-    /// every existing client takes; UX-3 migrates them internally to
-    /// Project + a single Profile/Pocket op.
-    pub segments: Vec<Segment>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub setup: Option<Setup>,
+    /// The full project — geometry + machine + tools + operations + tabs.
+    pub project: Project,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_processor: Option<PostProcessorKind>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub tabs: HashMap<u32, Vec<TabPoint>>,
-
-    /// New op-driven input. When present this takes precedence over
-    /// segments/setup/tabs; the `Project` carries its own copies.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project: Option<Project>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
@@ -94,26 +76,17 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     progress: F,
 ) -> Result<PipelineResponse, PipelineError> {
     progress("import", 0.05, "preparing project");
-
-    // Settle on a Project regardless of which input shape the caller used.
-    let project = match req.project {
-        Some(p) => p,
-        None => migrate_legacy(
-            req.segments,
-            req.setup.unwrap_or_default(),
-            req.tabs,
-        ),
-    };
+    let project = req.project;
 
     let mut objects = segments_to_objects(&project.segments);
     classify_containment(&mut objects);
     progress("objects", 0.20, "chained segments into objects");
 
     let post_kind = req.post_processor.unwrap_or_default();
-    // Use the first enabled op's setup as the program-level header / footer
-    // basis — that way Setup.machine.unit / mill.fast_move_z / tool.rate_h
-    // come from a real op, not a synthetic default.
-    let header_setup = collapse_to_setup(&project).0;
+    // Use the first enabled op's setup as the program-level header /
+    // footer basis. This lets unit / fast_move_z / feed-rate come from
+    // a real op rather than a synthetic default.
+    let header_setup = header_setup_for(&project);
     let stats_collector = std::cell::RefCell::new((0usize, 0usize, 0usize)); // (closed, offsets, _)
     let progress_ref = &progress;
     let n_ops = project.operations.iter().filter(|o| o.enabled).count().max(1);
@@ -243,7 +216,7 @@ fn build_op_offsets(
     let mut closed = 0usize;
     let mut emitted_objects = 0usize;
     for (idx, obj) in objects.iter().enumerate() {
-        if !op_includes_object(op, obj) {
+        if !op_includes_object(op, obj, idx) {
             continue;
         }
         emitted_objects += 1;
@@ -335,14 +308,17 @@ fn build_op_offsets(
     Ok((offsets, closed))
 }
 
-fn op_includes_object(op: &Operation, obj: &VcObject) -> bool {
+fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> bool {
     match &op.source {
         OperationSource::All => true,
         OperationSource::Layers { layers } => layers.iter().any(|l| l == &obj.layer),
-        // Object ids aren't yet stamped onto VcObjects — UX-8 (selection
-        // model) lands them. Until then a non-empty Objects source falls
-        // back to All so the op still runs.
-        OperationSource::Objects { ids } => ids.is_empty() || ids.iter().any(|_| true),
+        // OperationSource::Objects ids are 1-based, matching the
+        // ImportOutput.objects[i] mapping the frontend uses for
+        // selection.
+        OperationSource::Objects { ids } => {
+            let chain_id = (idx as u32) + 1;
+            ids.iter().any(|id| *id == chain_id)
+        }
     }
 }
 
@@ -412,6 +388,45 @@ fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, Pipel
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
+/// Header / footer Setup for the program. We synthesize it from the
+/// first enabled op so machine.unit, mill.fast_move_z, tool.rate_h
+/// pick up the user's actual values rather than struct defaults.
+fn header_setup_for(project: &Project) -> Setup {
+    let mut setup = Setup {
+        machine: project.machine.clone(),
+        ..Setup::default()
+    };
+    if let Some(op) = project.operations.iter().find(|o| o.enabled) {
+        if let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) {
+            setup.tool = crate::cam::setup::ToolConfig {
+                number: tool.id,
+                diameter: tool.diameter,
+                speed: tool.speed,
+                pause: 1,
+                mist: matches!(tool.coolant, crate::project::Coolant::Mist),
+                flood: matches!(tool.coolant, crate::project::Coolant::Flood),
+                dragoff: tool.dragoff,
+                rate_v: tool.plunge_rate,
+                rate_h: tool.feed_rate,
+            };
+        }
+        setup.mill.fast_move_z = op.params.fast_move_z;
+    } else if let Some(tool) = project.tools.first() {
+        setup.tool = crate::cam::setup::ToolConfig {
+            number: tool.id,
+            diameter: tool.diameter,
+            speed: tool.speed,
+            pause: 1,
+            mist: matches!(tool.coolant, crate::project::Coolant::Mist),
+            flood: matches!(tool.coolant, crate::project::Coolant::Flood),
+            dragoff: tool.dragoff,
+            rate_v: tool.plunge_rate,
+            rate_h: tool.feed_rate,
+        };
+    }
+    setup
+}
+
 fn build_segment_to_object_map(
     segments: &[Segment],
     objects: &[VcObject],
@@ -443,8 +458,7 @@ mod tests {
     use crate::cam::setup::ToolOffset;
     use crate::geometry::Segment;
     use crate::project::{
-        Coolant, Operation, OperationKind, OperationParams, OperationSource, ToolEntry,
-        ToolKind,
+        Coolant, Operation, OperationKind, OperationParams, OperationSource, ToolEntry, ToolKind,
     };
 
     fn closed_square(side: f64) -> Vec<Segment> {
@@ -456,69 +470,65 @@ mod tests {
         ]
     }
 
+    fn endmill(id: u32, diameter: f64) -> ToolEntry {
+        ToolEntry {
+            id,
+            name: format!("{diameter:.1}mm endmill"),
+            kind: ToolKind::Endmill,
+            diameter,
+            tip_diameter: None,
+            dragoff: None,
+            flutes: 2,
+            speed: 18_000,
+            plunge_rate: 100,
+            feed_rate: 800,
+            coolant: Coolant::Off,
+        }
+    }
+
+    fn profile_op(id: u32, tool_id: u32, offset: ToolOffset) -> Operation {
+        Operation {
+            id,
+            name: format!("Profile {id}"),
+            enabled: true,
+            kind: OperationKind::Profile { offset },
+            tool_id,
+            source: OperationSource::All,
+            params: OperationParams::mill_default(),
+        }
+    }
+
+    fn project_with(ops: Vec<Operation>, tools: Vec<ToolEntry>) -> Project {
+        Project {
+            segments: closed_square(20.0),
+            machine: Default::default(),
+            tools,
+            operations: ops,
+            tabs: Default::default(),
+        }
+    }
+
     #[test]
     fn run_pipeline_emits_a_recognizable_program() {
-        let mut setup = Setup::default();
-        setup.tool.diameter = 3.0;
-        setup.mill.depth = -2.0;
-        setup.mill.offset = ToolOffset::Outside;
-        setup.machine.comments = false;
-
         let resp = run_pipeline(
             PipelineRequest {
-                segments: closed_square(20.0),
-                setup: Some(setup),
+                project: project_with(
+                    vec![profile_op(1, 1, ToolOffset::Outside)],
+                    vec![endmill(1, 3.0)],
+                ),
                 post_processor: Some(PostProcessorKind::Linuxcnc),
-                tabs: HashMap::new(),
-                project: None,
             },
             |_, _, _| {},
         )
         .unwrap();
-
         assert!(resp.gcode.contains("G21"));
         assert!(resp.gcode.contains("G90"));
         assert!(!resp.toolpath.is_empty());
         assert_eq!(resp.stats.object_count, 1);
         assert_eq!(resp.stats.closed_object_count, 1);
         assert!(resp.stats.offset_count >= 1);
-    }
-
-    #[test]
-    fn run_pipeline_picks_grbl_when_requested() {
-        let resp = run_pipeline(
-            PipelineRequest {
-                segments: closed_square(20.0),
-                setup: None,
-                post_processor: Some(PostProcessorKind::Grbl),
-                tabs: HashMap::new(),
-                project: None,
-            },
-            |_, _, _| {},
-        )
-        .unwrap();
-        assert!(!resp.gcode.is_empty());
-    }
-
-    #[test]
-    fn legacy_request_emits_an_op_marker() {
-        let resp = run_pipeline(
-            PipelineRequest {
-                segments: closed_square(10.0),
-                setup: None,
-                post_processor: Some(PostProcessorKind::Linuxcnc),
-                tabs: HashMap::new(),
-                project: None,
-            },
-            |_, _, _| {},
-        )
-        .unwrap();
-        // migrate_legacy synthesises a single op with id=1. The driver
-        // emits the marker before its cut block, and preview::interpret
-        // stamps op_id=1 onto every produced segment after it. The
-        // program-header rapid moves before the marker carry op_id=0,
-        // which is the right "this isn't a cut" signal.
         assert!(resp.gcode.contains("; OP 1"));
+        // Cut segments carry the op id; program-header rapids carry op_id=0.
         assert!(resp.toolpath.iter().any(|s| s.op_id == 1));
         assert!(
             resp.toolpath
@@ -529,64 +539,40 @@ mod tests {
     }
 
     #[test]
-    fn two_op_project_emits_two_distinct_op_blocks() {
-        let segments = closed_square(20.0);
-        let project = Project {
-            segments,
-            machine: Default::default(),
-            tools: vec![ToolEntry {
-                id: 1,
-                name: "test".into(),
-                kind: ToolKind::Endmill,
-                diameter: 3.0,
-                tip_diameter: None,
-                dragoff: None,
-                flutes: 2,
-                speed: 12_000,
-                plunge_rate: 100,
-                feed_rate: 800,
-                coolant: Coolant::Off,
-            }],
-            operations: vec![
-                Operation {
-                    id: 1,
-                    name: "rough".into(),
-                    enabled: true,
-                    kind: OperationKind::Profile {
-                        offset: ToolOffset::Outside,
-                    },
-                    tool_id: 1,
-                    source: OperationSource::All,
-                    params: OperationParams::mill_default(),
-                },
-                Operation {
-                    id: 2,
-                    name: "finish".into(),
-                    enabled: true,
-                    kind: OperationKind::Profile {
-                        offset: ToolOffset::Outside,
-                    },
-                    tool_id: 1,
-                    source: OperationSource::All,
-                    params: OperationParams::mill_default(),
-                },
-            ],
-            tabs: Default::default(),
-        };
+    fn run_pipeline_picks_grbl_when_requested() {
         let resp = run_pipeline(
             PipelineRequest {
-                segments: vec![],
-                setup: None,
+                project: project_with(
+                    vec![profile_op(1, 1, ToolOffset::Outside)],
+                    vec![endmill(1, 3.0)],
+                ),
+                post_processor: Some(PostProcessorKind::Grbl),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(!resp.gcode.is_empty());
+    }
+
+    #[test]
+    fn two_op_project_emits_two_distinct_op_blocks() {
+        let project = project_with(
+            vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 1, ToolOffset::Outside),
+            ],
+            vec![endmill(1, 3.0)],
+        );
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
                 post_processor: Some(PostProcessorKind::Linuxcnc),
-                tabs: HashMap::new(),
-                project: Some(project),
             },
             |_, _, _| {},
         )
         .unwrap();
         assert!(resp.gcode.contains("; OP 1"));
         assert!(resp.gcode.contains("; OP 2"));
-        // Toolpath segments split between op 1 and op 2.
         assert!(resp.toolpath.iter().any(|s| s.op_id == 1));
         assert!(resp.toolpath.iter().any(|s| s.op_id == 2));
     }
@@ -596,11 +582,11 @@ mod tests {
         let phases = std::cell::RefCell::new(Vec::<String>::new());
         let _ = run_pipeline(
             PipelineRequest {
-                segments: closed_square(10.0),
-                setup: None,
+                project: project_with(
+                    vec![profile_op(1, 1, ToolOffset::Outside)],
+                    vec![endmill(1, 3.0)],
+                ),
                 post_processor: None,
-                tabs: HashMap::new(),
-                project: None,
             },
             |phase, _f, _m| phases.borrow_mut().push(phase.to_string()),
         )
@@ -614,7 +600,13 @@ mod tests {
     #[test]
     fn unknown_post_processor_is_a_deserialization_failure() {
         let raw = serde_json::json!({
-            "segments": [],
+            "project": {
+                "segments": [],
+                "machine": { "unit": "mm", "mode": "mill", "comments": true,
+                             "arcs": true, "supports_toolchange": false },
+                "tools": [],
+                "operations": []
+            },
             "post_processor": "robotic_arm"
         });
         let res: Result<PipelineRequest, _> = serde_json::from_value(raw);

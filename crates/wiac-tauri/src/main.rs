@@ -77,7 +77,6 @@ fn run() -> tauri::Result<()> {
             commands::version,
             commands::import_path,
             commands::generate,
-            commands::defaults,
         ])
         .run(tauri::generate_context!())
 }

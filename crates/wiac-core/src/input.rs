@@ -58,6 +58,25 @@ pub struct ImportOutput {
     pub bbox: BBox,
     pub unit_scale: f64,
     pub warnings: Vec<String>,
+    /// Per-segment object id from the chaining pass — `objects[i]` is the
+    /// 1-based id of the chained object that consumed `segments[i]` (0
+    /// means "didn't chain into any object", e.g. an isolated point).
+    /// The frontend uses this to do object-level selection in 2D.
+    #[serde(default)]
+    pub objects: Vec<u32>,
+    /// Object metadata (closed flag, layer, color, bbox) keyed by the same
+    /// 1-based id — `object_meta[id - 1]` is the entry for object `id`.
+    #[serde(default)]
+    pub object_meta: Vec<ImportedObject>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ImportedObject {
+    pub id: u32,
+    pub closed: bool,
+    pub layer: String,
+    pub color: i32,
+    pub bbox: BBox,
 }
 
 /// Dispatch to the right importer based on file extension.
@@ -96,6 +115,56 @@ pub fn import_bytes(filename: &str, bytes: &[u8], opts: &ImportOptions) -> Resul
         "svg" => svg_in::import_svg_bytes(filename.to_string(), bytes, opts),
         other => Err(crate::error::Error::UnsupportedFormat(other.into())),
     }
+}
+
+/// Run the chaining pass and produce the per-segment object id + the
+/// object metadata table the frontend uses for 2D selection. Returns
+/// `(objects, object_meta)` where `objects[i]` is the 1-based id of the
+/// chained object containing `segments[i]` (0 = unchained / point /
+/// degenerate); `object_meta[id - 1]` carries the chain's metadata.
+pub(crate) fn object_index(
+    segments: &[Segment],
+) -> (Vec<u32>, Vec<ImportedObject>) {
+    use crate::cam::chaining::{classify_containment, segments_to_objects};
+
+    let mut chains = segments_to_objects(segments);
+    classify_containment(&mut chains);
+
+    let mut objects = vec![0u32; segments.len()];
+    let mut meta = Vec::with_capacity(chains.len());
+    for (chain_idx, chain) in chains.iter().enumerate() {
+        let id = chain_idx as u32 + 1;
+        // Map back from chain-segment to imported-segment by endpoint
+        // coincidence; the chaining pass may flip/reorder edges so
+        // direct index identity isn't reliable.
+        for chain_seg in &chain.segments {
+            for (seg_idx, src) in segments.iter().enumerate() {
+                if objects[seg_idx] != 0 {
+                    continue;
+                }
+                let same = approx_pt(src.start, chain_seg.start)
+                    && approx_pt(src.end, chain_seg.end);
+                let reverse = approx_pt(src.start, chain_seg.end)
+                    && approx_pt(src.end, chain_seg.start);
+                if same || reverse {
+                    objects[seg_idx] = id;
+                    break;
+                }
+            }
+        }
+        meta.push(ImportedObject {
+            id,
+            closed: chain.closed,
+            layer: chain.layer.clone(),
+            color: chain.color,
+            bbox: BBox::from_segments(&chain.segments),
+        });
+    }
+    (objects, meta)
+}
+
+fn approx_pt(a: crate::geometry::Point2, b: crate::geometry::Point2) -> bool {
+    (a.x - b.x).abs() < 1e-6 && (a.y - b.y).abs() < 1e-6
 }
 
 /// Build the per-layer summary used by the import response.

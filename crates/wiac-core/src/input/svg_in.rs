@@ -48,6 +48,7 @@ pub fn import_svg_bytes(
     let segments = ctx.segments;
     let bbox = BBox::from_segments(&segments);
     let layers = summarize_layers(&segments, &BTreeMap::from([(SVG_LAYER.into(), SVG_COLOR)]));
+    let (objects, object_meta) = super::object_index(&segments);
     Ok(ImportOutput {
         filename,
         format: "svg".into(),
@@ -56,6 +57,8 @@ pub fn import_svg_bytes(
         bbox,
         unit_scale,
         warnings: Vec::new(),
+        objects,
+        object_meta,
     })
 }
 

@@ -1,17 +1,11 @@
 //! Project = geometry + machine + tool library + ordered list of
 //! Operations. The Operation is the unit of CAM work — each one carries a
-//! tool reference and per-kind parameters and produces a gcode block in the
-//! final program.
+//! tool reference and per-kind parameters and produces a gcode block in
+//! the final program.
 //!
-//! This is the data model behind the UX rework tracked in `dlr` /
-//! `gua / 9dx / 5vc / …`. The shape lines up with mainstream CAM tools
-//! (Carbide Create, Fusion 360 CAM, Estlcam, FreeCAD Path Workbench) so
-//! the user's mental model translates without surprises.
-//!
-//! Backwards compatibility: every existing call site still hands the
-//! pipeline a flat (segments, Setup, tabs) tuple. `migrate_legacy` lifts
-//! that triple into a single-Profile-op Project so the pipeline can keep
-//! running unchanged while the UI rolls over to the new model.
+//! Modeled after mainstream CAM tools (Carbide Create, Fusion 360 CAM,
+//! Estlcum, FreeCAD Path Workbench) so the user's mental model translates
+//! without surprises.
 
 use std::collections::HashMap;
 
@@ -20,8 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cam::offsets::TabPoint;
 use crate::cam::setup::{
-    LeadKind, LeadsConfig, MachineConfig, MillConfig, ObjectOrder, PocketConfig, Setup,
-    TabsConfig, TabType, ToolConfig, ToolOffset,
+    LeadKind, LeadsConfig, MachineConfig, ObjectOrder, TabType, TabsConfig, ToolOffset,
 };
 use crate::geometry::Segment;
 
@@ -259,247 +252,28 @@ impl OperationParams {
     }
 }
 
-// ─── legacy migration ─────────────────────────────────────────────────────
-
-/// Build a single-Profile-op Project from the legacy
-/// (segments, setup, tabs) triple the old PipelineRequest carried. Used
-/// during the rollout so existing transports keep producing identical
-/// gcode while the UI flips to the new operations model.
-pub fn migrate_legacy(
-    segments: Vec<Segment>,
-    setup: Setup,
-    tabs: HashMap<u32, Vec<TabPoint>>,
-) -> Project {
-    let tool = ToolEntry {
-        id: 1,
-        name: format!("{:.1} mm tool", setup.tool.diameter),
-        kind: kind_from_machine_mode(&setup),
-        diameter: setup.tool.diameter,
-        tip_diameter: None,
-        dragoff: setup.tool.dragoff,
-        flutes: 2,
-        speed: setup.tool.speed,
-        plunge_rate: setup.tool.rate_v,
-        feed_rate: setup.tool.rate_h,
-        coolant: coolant_from_setup(&setup),
-    };
-    let kind = kind_from_setup(&setup);
-    let params = params_from_setup(&setup);
-    let op = Operation {
-        id: 1,
-        name: name_for_kind(&kind),
-        enabled: true,
-        kind,
-        tool_id: tool.id,
-        source: OperationSource::All,
-        params,
-    };
-    Project {
-        segments,
-        machine: setup.machine,
-        tools: vec![tool],
-        operations: vec![op],
-        tabs,
-    }
-}
-
-fn kind_from_machine_mode(setup: &Setup) -> ToolKind {
-    use crate::cam::setup::MachineMode;
-    match setup.machine.mode {
-        MachineMode::Drag => ToolKind::DragKnife,
-        MachineMode::Laser => ToolKind::LaserBeam,
-        MachineMode::Mill if setup.tool.dragoff.is_some() => ToolKind::DragKnife,
-        MachineMode::Mill => ToolKind::Endmill,
-    }
-}
-
-fn coolant_from_setup(setup: &Setup) -> Coolant {
-    if setup.tool.flood {
-        Coolant::Flood
-    } else if setup.tool.mist {
-        Coolant::Mist
-    } else {
-        Coolant::Off
-    }
-}
-
-fn kind_from_setup(setup: &Setup) -> OperationKind {
-    if setup.pockets.active {
-        OperationKind::Pocket {
-            strategy: if setup.pockets.zigzag {
-                PocketStrategy::Zigzag
-            } else {
-                PocketStrategy::Cascade
-            },
-        }
-    } else {
-        OperationKind::Profile {
-            offset: setup.mill.offset,
-        }
-    }
-}
-
-fn name_for_kind(kind: &OperationKind) -> String {
-    match kind {
-        OperationKind::Profile { .. } => "Profile",
-        OperationKind::Pocket { .. } => "Pocket",
-        OperationKind::Drill => "Drill",
-        OperationKind::Thread => "Thread",
-        OperationKind::Chamfer => "Chamfer",
-        OperationKind::Engrave => "Engrave",
-        OperationKind::DragKnife => "Drag-knife",
-        OperationKind::Helix => "Helix",
-    }
-    .into()
-}
-
-fn params_from_setup(setup: &Setup) -> OperationParams {
-    OperationParams {
-        depth: setup.mill.depth,
-        start_depth: setup.mill.start_depth,
-        step: setup.mill.step,
-        fast_move_z: setup.mill.fast_move_z,
-        helix: setup.mill.helix_mode,
-        reverse: setup.mill.reverse,
-        objectorder: setup.mill.objectorder,
-        overcut: setup.mill.overcut,
-        pocket_islands: setup.pockets.islands,
-        pocket_nocontour: setup.pockets.nocontour,
-        pocket_insideout: setup.pockets.insideout,
-        tabs: setup.tabs.clone(),
-        leads: setup.leads.clone(),
-    }
-}
-
-/// Reverse direction: collapse a single-op Project back to a Setup so the
-/// existing `run_pipeline` body can keep running until UX-3 lands. When
-/// the project has more than one op, only the first one round-trips.
-pub fn collapse_to_setup(project: &Project) -> (Setup, HashMap<u32, Vec<TabPoint>>) {
-    let mut setup = Setup {
-        machine: project.machine.clone(),
-        ..Setup::default()
-    };
-    if let Some(tool) = project.tools.first() {
-        setup.tool = ToolConfig {
-            number: tool.id,
-            diameter: tool.diameter,
-            speed: tool.speed,
-            pause: 1,
-            mist: tool.coolant == Coolant::Mist,
-            flood: tool.coolant == Coolant::Flood,
-            dragoff: tool.dragoff,
-            rate_v: tool.plunge_rate,
-            rate_h: tool.feed_rate,
-        };
-    }
-    if let Some(op) = project.operations.iter().find(|o| o.enabled) {
-        setup.mill = MillConfig {
-            active: true,
-            depth: op.params.depth,
-            start_depth: op.params.start_depth,
-            step: op.params.step,
-            fast_move_z: op.params.fast_move_z,
-            helix_mode: op.params.helix,
-            reverse: op.params.reverse,
-            objectorder: op.params.objectorder,
-            offset: match op.kind {
-                OperationKind::Profile { offset } => offset,
-                OperationKind::Pocket { .. } => ToolOffset::None,
-                OperationKind::Engrave => ToolOffset::On,
-                OperationKind::DragKnife => ToolOffset::On,
-                _ => ToolOffset::None,
-            },
-            overcut: op.params.overcut,
-        };
-        setup.pockets = match op.kind {
-            OperationKind::Pocket { strategy } => PocketConfig {
-                active: true,
-                islands: op.params.pocket_islands,
-                zigzag: strategy == PocketStrategy::Zigzag,
-                insideout: op.params.pocket_insideout,
-                nocontour: op.params.pocket_nocontour,
-            },
-            _ => PocketConfig::default(),
-        };
-        setup.tabs = op.params.tabs.clone();
-        setup.leads = op.params.leads.clone();
-    }
-    (setup, project.tabs.clone())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::{MachineMode, ToolOffset};
-    use crate::geometry::{Point2, Segment};
+    use crate::cam::setup::ToolOffset;
 
-    fn closed_square() -> Vec<Segment> {
-        vec![
-            Segment::line(Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), "0", 7),
-            Segment::line(Point2::new(10.0, 0.0), Point2::new(10.0, 10.0), "0", 7),
-            Segment::line(Point2::new(10.0, 10.0), Point2::new(0.0, 10.0), "0", 7),
-            Segment::line(Point2::new(0.0, 10.0), Point2::new(0.0, 0.0), "0", 7),
-        ]
+    #[test]
+    fn project_default_is_empty_but_well_typed() {
+        let p = Project::default();
+        assert!(p.segments.is_empty());
+        assert!(p.tools.is_empty());
+        assert!(p.operations.is_empty());
+        assert!(p.tabs.is_empty());
     }
 
     #[test]
-    fn migrate_legacy_synthesises_a_single_profile_op() {
-        let mut setup = Setup::default();
-        setup.tool.diameter = 6.0;
-        setup.tool.speed = 12_000;
-        setup.tool.flood = true;
-        setup.mill.offset = ToolOffset::Outside;
-        setup.mill.depth = -3.0;
-
-        let project = migrate_legacy(closed_square(), setup, HashMap::new());
-        assert_eq!(project.tools.len(), 1);
-        assert_eq!(project.tools[0].diameter, 6.0);
-        assert_eq!(project.tools[0].coolant, Coolant::Flood);
-        assert_eq!(project.operations.len(), 1);
+    fn operation_default_is_an_outside_profile_on_all_geometry() {
+        let op = Operation::default();
         assert!(matches!(
-            project.operations[0].kind,
+            op.kind,
             OperationKind::Profile { offset: ToolOffset::Outside }
         ));
-        assert_eq!(project.operations[0].params.depth, -3.0);
-    }
-
-    #[test]
-    fn migrate_legacy_picks_pocket_when_setup_says_so() {
-        let mut setup = Setup::default();
-        setup.pockets.active = true;
-        setup.pockets.zigzag = true;
-        let project = migrate_legacy(closed_square(), setup, HashMap::new());
-        assert!(matches!(
-            project.operations[0].kind,
-            OperationKind::Pocket {
-                strategy: PocketStrategy::Zigzag
-            }
-        ));
-    }
-
-    #[test]
-    fn migrate_legacy_picks_dragknife_for_drag_machine_mode() {
-        let mut setup = Setup::default();
-        setup.machine.mode = MachineMode::Drag;
-        setup.tool.dragoff = Some(0.5);
-        let project = migrate_legacy(closed_square(), setup, HashMap::new());
-        assert_eq!(project.tools[0].kind, ToolKind::DragKnife);
-        assert_eq!(project.tools[0].dragoff, Some(0.5));
-    }
-
-    #[test]
-    fn collapse_to_setup_round_trips_a_single_op() {
-        let mut original = Setup::default();
-        original.tool.diameter = 4.0;
-        original.tool.speed = 15_000;
-        original.mill.offset = ToolOffset::Inside;
-        original.mill.depth = -1.5;
-
-        let project = migrate_legacy(closed_square(), original.clone(), HashMap::new());
-        let (back, _) = collapse_to_setup(&project);
-        assert_eq!(back.tool.diameter, original.tool.diameter);
-        assert_eq!(back.tool.speed, original.tool.speed);
-        assert_eq!(back.mill.offset, ToolOffset::Inside);
-        assert_eq!(back.mill.depth, -1.5);
+        assert!(matches!(op.source, OperationSource::All));
+        assert!(op.enabled);
     }
 }

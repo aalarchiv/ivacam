@@ -49,23 +49,67 @@
       </select>
     </label>
 
-    <label class="row">
-      <span>Source</span>
-      <select
-        value={op.sourceLayers === null ? '_all_' : op.sourceLayers.join(',') || '_all_'}
-        onchange={(e) => {
-          const v = (e.currentTarget as HTMLSelectElement).value;
-          patch('sourceLayers', v === '_all_' ? null : v.split(',').filter((s) => s));
+    <fieldset>
+      <legend>Source</legend>
+      <label class="row">
+        <span>Mode</span>
+        <select
+          value={op.sourceObjects && op.sourceObjects.length > 0
+            ? '_objects_'
+            : op.sourceLayers === null
+            ? '_all_'
+            : '_layer_'}
+          onchange={(e) => {
+            const v = (e.currentTarget as HTMLSelectElement).value;
+            if (v === '_all_') {
+              patch('sourceLayers', null);
+              patch('sourceObjects', undefined);
+            } else if (v === '_layer_') {
+              patch('sourceObjects', undefined);
+              if (op && op.sourceLayers === null) patch('sourceLayers', []);
+            } else {
+              patch('sourceLayers', null);
+              if (op && (op.sourceObjects?.length ?? 0) === 0)
+                patch('sourceObjects', []);
+            }
+          }}
+        >
+          <option value="_all_">all imported geometry</option>
+          <option value="_layer_">specific layer(s)</option>
+          <option value="_objects_">selected objects</option>
+        </select>
+      </label>
+      {#if op.sourceLayers !== null && (op.sourceObjects?.length ?? 0) === 0}
+        <label class="row">
+          <span>Layer</span>
+          <select
+            value={op.sourceLayers[0] ?? ''}
+            onchange={(e) => patch('sourceLayers', [(e.currentTarget as HTMLSelectElement).value])}
+          >
+            <option value="">— pick a layer —</option>
+            {#if project.imported}
+              {#each project.imported.layers.filter((l) => l.segment_count > 0) as layer (layer.name)}
+                <option value={layer.name}>"{layer.name}"</option>
+              {/each}
+            {/if}
+          </select>
+        </label>
+      {:else if op.sourceObjects && op.sourceObjects.length > 0}
+        <p class="hint">{op.sourceObjects.length} object(s) selected</p>
+      {:else if op.sourceLayers === null}
+        <p class="hint">runs on every chain in the import</p>
+      {/if}
+      <button
+        class="from-selection"
+        type="button"
+        disabled={project.selectedObjects.size === 0}
+        onclick={() => {
+          patch('sourceLayers', null);
+          patch('sourceObjects', [...project.selectedObjects]);
         }}
-      >
-        <option value="_all_">all imported geometry</option>
-        {#if project.imported}
-          {#each project.imported.layers.filter((l) => l.segment_count > 0) as layer (layer.name)}
-            <option value={layer.name}>layer "{layer.name}"</option>
-          {/each}
-        {/if}
-      </select>
-    </label>
+        title="Use the chains currently highlighted in the 2D pane"
+      >Set from current selection ({project.selectedObjects.size})</button>
+    </fieldset>
 
     <fieldset>
       <legend>Cut</legend>
@@ -195,5 +239,25 @@
     background: var(--bg-input);
     padding: 0 0.2rem;
     border-radius: 2px;
+  }
+  .hint {
+    margin: 0.2rem 0 0;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+  .from-selection {
+    margin-top: 0.3rem;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.74rem;
+    cursor: pointer;
+    width: 100%;
+  }
+  .from-selection:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 </style>

@@ -134,6 +134,9 @@ function buildOpKind(op: OpEntry): WireOpKind {
 }
 
 function buildSource(op: OpEntry): WireSource {
+  if (op.sourceObjects && op.sourceObjects.length > 0) {
+    return { kind: 'objects', ids: op.sourceObjects };
+  }
   if (op.sourceLayers === null || op.sourceLayers.length === 0) return { kind: 'all' };
   return { kind: 'layers', layers: op.sourceLayers };
 }

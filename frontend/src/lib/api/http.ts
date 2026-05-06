@@ -1,7 +1,7 @@
 // HTTP implementation of WiacClient. Talks to wiac-server (axum) over the
 // JSON contract in schema/openapi.yaml.
 
-import type { DefaultsResponse, ProgressEvent, WiacClient } from './client';
+import type { ProgressEvent, WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -40,12 +40,6 @@ export class HttpWiacClient implements WiacClient {
       throw new Error(`/import returned ${res.status}: ${JSON.stringify(detail)}`);
     }
     return (await res.json()) as ImportResponse;
-  }
-
-  async defaults(): Promise<DefaultsResponse> {
-    const res = await fetch(`${this.base}/defaults`);
-    if (!res.ok) throw new Error(`/defaults returned ${res.status}`);
-    return (await res.json()) as DefaultsResponse;
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResponse> {
@@ -195,7 +189,6 @@ class WasmClientLazy {
       generate: (req) => ensure().then((c) => c.generate(req)),
       generateStream: (req, cb) =>
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
-      defaults: () => ensure().then((c) => c.defaults()),
     };
   }
 }
@@ -224,7 +217,6 @@ class TauriClientLazy {
       generate: (req) => ensure().then((c) => c.generate(req)),
       generateStream: (req, cb) =>
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
-      defaults: () => ensure().then((c) => c.defaults()),
     };
   }
 }

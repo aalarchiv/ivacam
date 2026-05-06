@@ -1,7 +1,6 @@
 // Global project state, Svelte 5 runes.
 // Holds the most recently imported geometry plus UI flags.
 
-import type { DefaultsResponse, JsonSchema } from '../api/client';
 import type { GenerateResponse, ImportResponse, Point2 } from '../api/types';
 
 class ProjectState {
@@ -12,13 +11,14 @@ class ProjectState {
   error = $state<string | null>(null);
   visibleLayers = $state<Set<string>>(new Set());
 
-  /// Setup tree (machine/tool/mill/pockets/tabs/leads). Hydrated from
-  /// /defaults; user edits replace the in-memory copy.
-  setup = $state<Record<string, unknown>>({});
-  setupSchema = $state<JsonSchema | null>(null);
-  setupDefinitions = $state<Record<string, JsonSchema>>({});
-
-  /// Extra app-level UI state we want round-tripped to .vc-project.
+  /// Per-segment hover indicator (single segment, not the chain).
+  hoverSegment = $state<number | null>(null);
+  /// Object-level selection. Each id is a 1-based chain id from
+  /// imported.objects (0 = unchained segment). Used by the operations
+  /// list when the user clicks "Set source from selection".
+  selectedObjects = $state<Set<number>>(new Set());
+  /// Legacy entity-level selection (per-segment); kept for the project
+  /// file but no longer drives the UI.
   selectedEntities = $state<Set<number>>(new Set());
 
   /// Toolpath scrub position in [0, 1]. Read by Scene3D for the tool-tip
@@ -106,25 +106,26 @@ class ProjectState {
     this.error = null;
     this.visibleLayers = new Set(r.layers.map((l) => l.name));
     this.selectedEntities = new Set();
+    this.selectedObjects = new Set();
+    this.hoverSegment = null;
     this.tabs = {};
+  }
+
+  toggleObject(id: number, additive = false) {
+    if (id <= 0) return;
+    const next = additive ? new Set(this.selectedObjects) : new Set<number>();
+    if (additive && next.has(id)) next.delete(id);
+    else next.add(id);
+    this.selectedObjects = next;
+  }
+  clearSelection() {
+    this.selectedObjects = new Set();
   }
 
   setGenerated(r: GenerateResponse) {
     this.generated = r;
     this.error = null;
     this.playhead = 1.0;
-  }
-
-  setDefaults(d: DefaultsResponse) {
-    this.setup = d.setup;
-    this.setupSchema = d.schema;
-    this.setupDefinitions = d.definitions;
-  }
-
-  setSetup(next: Record<string, unknown>) {
-    this.setup = next;
-    // Discard any prior toolpath — the setup change invalidates it.
-    this.generated = null;
   }
 
   setError(msg: string) {
@@ -138,15 +139,12 @@ class ProjectState {
     this.visibleLayers = next;
   }
 
-  /// Snapshot for project save. version=2 once tools/machine/ops were
-  /// added — we still read v1 files (today's snapshot) by leaving those
-  /// fields empty and honoring the legacy setup tree.
+  /// Snapshot for project save.
   snapshot(): ProjectFile {
     return {
-      version: 2,
       kind: 'wiac-project',
+      version: 1,
       imported: this.imported,
-      setup: this.setup,
       visibleLayers: [...this.visibleLayers],
       selectedEntities: [...this.selectedEntities],
       tabs: this.tabs,
@@ -162,14 +160,10 @@ class ProjectState {
       throw new Error('not a wiaConstructor project file');
     }
     if (file.imported) this.setImported(file.imported);
-    this.setup = file.setup ?? this.setup;
     this.visibleLayers = new Set(file.visibleLayers ?? []);
     this.selectedEntities = new Set(file.selectedEntities ?? []);
     this.tabs = file.tabs ?? {};
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
-    // v2 fields. Absent for v1 files — those keep the defaults set by
-    // the constructor + the legacy setup tree, and Generate falls back
-    // to the legacy flow until the user starts adding operations.
     if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
     if (file.machine) this.machine = { ...this.machine, ...file.machine };
     if (Array.isArray(file.operations)) this.operations = file.operations;
@@ -297,9 +291,12 @@ export interface OpEntry {
   enabled: boolean;
   kind: OpKind;
   toolId: number;
-  /// If set, the op runs only on chains whose layer name is in the list.
-  /// null means "every chain in the imported geometry".
+  /// Source kind:
+  ///   null              → all imported geometry (the default)
+  ///   string[]          → run only on chains whose layer name is listed
+  ///   { objects: [...]} → run only on the listed object ids (1-based)
   sourceLayers: string[] | null;
+  sourceObjects?: number[];
   depth: number;
   startDepth: number;
   step: number;
@@ -309,12 +306,8 @@ export interface OpEntry {
 
 export interface ProjectFile {
   kind: 'wiac-project';
-  /// 1 = legacy snapshot before tools/machine/ops were modeled in the
-  /// frontend. 2 = current. restore() is lenient — missing v2 fields
-  /// fall back to in-memory defaults.
-  version: 1 | 2;
+  version: 1;
   imported: ImportResponse | null;
-  setup: Record<string, unknown>;
   visibleLayers: string[];
   selectedEntities: number[];
   tabs?: Record<number, Tab[]>;

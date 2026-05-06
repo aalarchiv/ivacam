@@ -48,7 +48,7 @@
   $effect(() => {
     void project.imported;
     void project.visibleLayers;
-    void project.selectedEntities;
+    void project.selectedObjects;
     void project.tabs;
     void project.tabMode;
     void hoverIdx;
@@ -130,21 +130,15 @@
     }
 
     const idx = pixelHit(cx, cy);
+    const additive = e.ctrlKey || e.metaKey || e.shiftKey;
     if (idx == null) {
-      if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        project.selectedEntities = new Set();
-      }
+      if (!additive) project.clearSelection();
       return;
     }
-    const next = new Set(project.selectedEntities);
-    const additive = e.ctrlKey || e.metaKey || e.shiftKey;
-    if (next.has(idx)) {
-      next.delete(idx);
-    } else {
-      if (!additive) next.clear();
-      next.add(idx);
-    }
-    project.selectedEntities = next;
+    // Map segment index → its 1-based object id from the chaining pass.
+    const objId = project.imported?.objects?.[idx] ?? 0;
+    if (objId === 0) return;
+    project.toggleObject(objId, additive);
   }
 
   function closestPointOnSegment(
@@ -242,11 +236,13 @@
 
     const accent = themeVar('--accent', '#2d6cdf');
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
+    const hoverObj = hoverIdx == null ? 0 : data.objects?.[hoverIdx] ?? 0;
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
       if (!project.visibleLayers.has(seg.layer)) continue;
-      const selected = project.selectedEntities.has(i);
-      const hovered = hoverIdx === i;
+      const objId = data.objects?.[i] ?? 0;
+      const selected = objId !== 0 && project.selectedObjects.has(objId);
+      const hovered = objId !== 0 && objId === hoverObj;
       ctx.lineWidth = selected ? 2.4 : hovered ? 1.8 : 1.25;
       ctx.strokeStyle = selected ? accent : hovered ? hoverColor : colorFor(seg.color);
       drawSegment(ctx, seg, project2);

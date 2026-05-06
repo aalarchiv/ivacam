@@ -152,7 +152,7 @@
     void project.generated;
     void project.tabs;
     void project.stock;
-    void (project.setup as Record<string, unknown>)?.mill;
+    void project.operations;
     rebuildGeometry();
     updateTabs();
     updateStock();
@@ -161,7 +161,9 @@
   $effect(() => {
     void project.playhead;
     void project.generated;
-    void (project.setup as Record<string, unknown>)?.tool;
+    void project.tools;
+    void project.machine;
+    void project.selectedOpId;
     updateTool();
   });
 
@@ -185,9 +187,11 @@
     const data = project.imported;
     if (!data) return;
 
-    const mill = ((project.setup as Record<string, unknown>)?.mill ?? {}) as {
-      depth?: number;
-    };
+    // Stock thickness in auto mode is the deepest enabled-op depth so
+    // the box sized to the actual cut volume.
+    const opDepth = project.operations
+      .filter((o) => o.enabled)
+      .reduce((min, o) => Math.min(min, o.depth), 0);
     const cx = (data.bbox.min_x + data.bbox.max_x) * 0.5;
     const cy = (data.bbox.min_y + data.bbox.max_y) * 0.5;
     let sizeX: number;
@@ -201,7 +205,9 @@
       const margin = Math.max(0, cfg.margin);
       sizeX = (data.bbox.max_x - data.bbox.min_x) + 2 * margin;
       sizeY = (data.bbox.max_y - data.bbox.min_y) + 2 * margin;
-      const depth = Math.abs(typeof mill.depth === 'number' ? mill.depth : -2);
+      // Default to a 2 mm sheet when no ops are configured yet so the
+      // user still sees a sensibly-sized stock outline.
+      const depth = Math.abs(opDepth < 0 ? opDepth : -2);
       z0 = -Math.max(0.5, depth);
     }
     if (sizeX <= 0.1 || sizeY <= 0.1) return;
@@ -287,12 +293,20 @@
     };
     const colorHex = tipColor[seg.kind] ?? 0xff5555;
 
-    const setup = (project.setup as Record<string, unknown>) ?? {};
-    const tool = (setup.tool ?? {}) as { diameter?: number; dragoff?: number | null };
-    const machine = (setup.machine ?? {}) as { mode?: string };
-    const diameter = Math.max(0.2, typeof tool.diameter === 'number' ? tool.diameter : 3);
+    // Pick the tool: prefer the selected op's tool, else the active
+    // segment's op, else the first tool entry, else fallback.
+    const segOp = project.operations.find((o) => o.id === seg.op_id);
+    const selOp =
+      project.selectedOpId == null
+        ? null
+        : project.operations.find((o) => o.id === project.selectedOpId) ?? null;
+    const opForTool = selOp ?? segOp ?? project.operations[0];
+    const tool =
+      project.tools.find((t) => t.id === (opForTool?.toolId ?? 0)) ?? project.tools[0];
+    const diameter = Math.max(0.2, tool?.diameter ?? 3);
     const radius = diameter * 0.5;
-    const mode = machine.mode ?? 'mill';
+    const mode = project.machine.mode;
+    const dragoff = tool?.dragoff;
 
     // Body color matches the move kind so users see what the tool's doing.
     const mat = new THREE.MeshBasicMaterial({
@@ -305,10 +319,10 @@
     if (mode === 'drag') {
       // Drag-knife: small blade ~5x diameter long, offset by dragoff so the
       // user can see the trailing geometry the gcode is laying out.
-      const dragoff = typeof tool.dragoff === 'number' ? tool.dragoff : 0;
+      const off = dragoff ?? 0;
       const bladeLen = Math.max(diameter * 4, 4);
       const bladeT = Math.max(0.4, diameter * 0.4);
-      const geom = new THREE.BoxGeometry(bladeT, dragoff > 0 ? dragoff * 2 : bladeT, bladeLen);
+      const geom = new THREE.BoxGeometry(bladeT, off > 0 ? off * 2 : bladeT, bladeLen);
       geom.translate(0, 0, bladeLen / 2);
       mesh = new THREE.Mesh(geom, mat);
     } else if (mode === 'laser') {

@@ -151,6 +151,7 @@ pub fn import_drawing(
     }
     let bbox = BBox::from_segments(&segments);
     let layers = summarize_layers(&segments, &layer_colors);
+    let (objects, object_meta) = super::object_index(&segments);
 
     Ok(ImportOutput {
         filename,
@@ -160,6 +161,8 @@ pub fn import_drawing(
         bbox,
         unit_scale,
         warnings,
+        objects,
+        object_meta,
     })
 }
 

@@ -15,5 +15,4 @@ declare module 'wiac-wasm' {
   };
   export function importBytes(filename: string, bytes: Uint8Array): unknown;
   export function generate(request: unknown): unknown;
-  export function defaults(): unknown;
 }

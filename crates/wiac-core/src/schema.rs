@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::cam::offsets::PolylineOffset;
-use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::gcode::preview::ToolpathSegment;
 use crate::geometry::{BBox, Layer, Point2, Segment};
@@ -47,17 +46,13 @@ pub enum TransportKind {
     Wasm,
 }
 
-// GenerateRequest, GenerateResponse, GenerateStats and PostProcessorKind
-// live in `crate::pipeline` so the schema and the runtime implementation
-// share one source of truth. We re-export their schemas under the same
-// component names the OpenAPI document used to publish.
-pub use crate::pipeline::{PipelineRequest as GenerateRequest, PipelineResponse as GenerateResponse, PipelineStats as GenerateStats, PostProcessorKind};
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct DefaultsResponse {
-    pub setup: Setup,
-    pub schema: Value,
-}
+// GenerateRequest / Response live in crate::pipeline; we publish them
+// under the same OpenAPI component names so the wire contract stays
+// stable.
+pub use crate::pipeline::{
+    PipelineRequest as GenerateRequest, PipelineResponse as GenerateResponse,
+    PipelineStats as GenerateStats, PostProcessorKind,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ErrorResponse {
@@ -77,7 +72,6 @@ pub fn components_schemas() -> Value {
     insert::<Layer>(&mut schemas, "Layer");
     insert::<Segment>(&mut schemas, "Segment");
     insert::<ImportOutput>(&mut schemas, "ImportResponse");
-    insert::<Setup>(&mut schemas, "Setup");
     insert::<VcObject>(&mut schemas, "VcObject");
     insert::<PolylineOffset>(&mut schemas, "PolylineOffset");
     insert::<ToolpathSegment>(&mut schemas, "ToolpathSegment");
@@ -99,7 +93,6 @@ pub fn components_schemas() -> Value {
     insert::<GenerateRequest>(&mut schemas, "GenerateRequest");
     insert::<GenerateResponse>(&mut schemas, "GenerateResponse");
     insert::<GenerateStats>(&mut schemas, "GenerateStats");
-    insert::<DefaultsResponse>(&mut schemas, "DefaultsResponse");
     insert::<ErrorResponse>(&mut schemas, "Error");
 
     let mut value = Value::Object(schemas);
@@ -155,7 +148,9 @@ pub fn frontend_types() -> &'static [&'static str] {
         "Layer",
         "Segment",
         "ImportResponse",
-        "Setup",
+        "Project",
+        "Operation",
+        "ToolEntry",
         "PolylineOffset",
         "ToolpathSegment",
     ]

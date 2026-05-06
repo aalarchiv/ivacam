@@ -5,7 +5,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import type { DefaultsResponse, ProgressEvent, WiacClient } from './client';
+import type { ProgressEvent, WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -71,9 +71,5 @@ export class TauriWiacClient implements WiacClient {
     const r = await invoke<GenerateResponse>('generate', { request });
     onProgress({ phase: 'done', fraction: 1.0, message: 'complete' });
     return r;
-  }
-
-  async defaults(): Promise<DefaultsResponse> {
-    return invoke<DefaultsResponse>('defaults');
   }
 }

@@ -23,7 +23,6 @@ use tokio_stream::StreamExt;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use wiac_core::cam::setup::Setup;
 use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
 
 #[tokio::main]
@@ -49,7 +48,6 @@ async fn main() -> Result<()> {
         .route("/import", post(import))
         .route("/generate", post(generate))
         .route("/generate/stream", post(generate_stream))
-        .route("/defaults", get(defaults))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -179,19 +177,6 @@ async fn version() -> Json<VersionResponse> {
     })
 }
 
-async fn defaults() -> Json<serde_json::Value> {
-    let setup = Setup::default();
-    let components = wiac_core::schema::components_schemas();
-    Json(serde_json::json!({
-        "setup": setup,
-        // The frontend renders a form from `schema` (the Setup type's JSON
-        // Schema) using `definitions` to resolve $refs. Refs are written as
-        // OpenAPI's `#/components/schemas/X` form so the frontend can use
-        // the same lookup logic against the full OpenAPI doc.
-        "schema": components.get("Setup").cloned().unwrap_or(serde_json::Value::Null),
-        "definitions": components,
-    }))
-}
 
 async fn import(
     State(_state): State<Arc<AppState>>,

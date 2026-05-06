@@ -91,17 +91,6 @@ paths:
                 $ref: '#/components/schemas/GenerateResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
-  /defaults:
-    get:
-      summary: Setup-tree JSON Schema (drives the form UI)
-      operationId: defaults
-      responses:
-        '200':
-          description: Default setup tree + JSON Schema for the form UI
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DefaultsResponse'
 components:
   schemas:
     BBox:
@@ -130,15 +119,6 @@ components:
       - mist
       - flood
       type: string
-    DefaultsResponse:
-      properties:
-        schema: true
-        setup:
-          $ref: '#/components/schemas/Setup'
-      required:
-      - schema
-      - setup
-      type: object
     Error:
       properties:
         details: true
@@ -173,27 +153,11 @@ components:
           - $ref: '#/components/schemas/PostProcessorKind'
           - type: 'null'
         project:
-          anyOf:
+          allOf:
           - $ref: '#/components/schemas/Project'
-          - type: 'null'
-          description: New op-driven input. When present this takes precedence over segments/setup/tabs; the `Project` carries its own copies.
-        segments:
-          description: Legacy flat-shape input — segments + Setup + tabs. Still the path every existing client takes; UX-3 migrates them internally to Project + a single Profile/Pocket op.
-          items:
-            $ref: '#/components/schemas/Segment'
-          type: array
-        setup:
-          anyOf:
-          - $ref: '#/components/schemas/Setup'
-          - type: 'null'
-        tabs:
-          additionalProperties:
-            items:
-              $ref: '#/components/schemas/TabPoint'
-            type: array
-          type: object
+          description: The full project — geometry + machine + tools + operations + tabs.
       required:
-      - segments
+      - project
       type: object
     GenerateResponse:
       properties:
@@ -251,6 +215,20 @@ components:
           items:
             $ref: '#/components/schemas/Layer'
           type: array
+        object_meta:
+          default: []
+          description: Object metadata (closed flag, layer, color, bbox) keyed by the same 1-based id — `object_meta[id - 1]` is the entry for object `id`.
+          items:
+            $ref: '#/components/schemas/ImportedObject'
+          type: array
+        objects:
+          default: []
+          description: Per-segment object id from the chaining pass — `objects[i]` is the 1-based id of the chained object that consumed `segments[i]` (0 means "didn't chain into any object", e.g. an isolated point). The frontend uses this to do object-level selection in 2D.
+          items:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          type: array
         segments:
           items:
             $ref: '#/components/schemas/Segment'
@@ -270,6 +248,28 @@ components:
       - segments
       - unit_scale
       - warnings
+      type: object
+    ImportedObject:
+      properties:
+        bbox:
+          $ref: '#/components/schemas/BBox'
+        closed:
+          type: boolean
+        color:
+          format: int32
+          type: integer
+        id:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        layer:
+          type: string
+      required:
+      - bbox
+      - closed
+      - color
+      - id
+      - layer
       type: object
     Layer:
       properties:

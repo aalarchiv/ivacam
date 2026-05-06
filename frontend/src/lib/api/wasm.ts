@@ -3,7 +3,7 @@
 // demos and CI smoke tests; the same JSON contract the HTTP / Tauri
 // transports speak.
 
-import type { DefaultsResponse, ProgressEvent, WiacClient } from './client';
+import type { ProgressEvent, WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -17,7 +17,6 @@ type WasmModule = {
   version: () => VersionResponse;
   importBytes: (filename: string, bytes: Uint8Array) => ImportResponse;
   generate: (request: GenerateRequest) => GenerateResponse;
-  defaults: () => DefaultsResponse;
 };
 
 let modPromise: Promise<WasmModule> | null = null;
@@ -68,10 +67,5 @@ export class WasmWiacClient implements WiacClient {
     const r = await this.generate(request);
     onProgress({ phase: 'done', fraction: 1.0, message: 'complete' });
     return r;
-  }
-
-  async defaults(): Promise<DefaultsResponse> {
-    const m = await loadModule();
-    return m.defaults();
   }
 }

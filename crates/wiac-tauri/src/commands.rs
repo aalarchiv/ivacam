@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use wiac_core::cam::setup::Setup;
 use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
 use wiac_core::{ImportOptions, ImportOutput};
 
@@ -62,23 +61,3 @@ pub async fn generate(request: PipelineRequest) -> Result<PipelineResponse, Stri
         .map_err(|e| e.to_string())
 }
 
-#[derive(Serialize)]
-pub struct DefaultsResponse {
-    pub setup: Setup,
-    pub schema: serde_json::Value,
-    pub definitions: serde_json::Value,
-}
-
-#[tauri::command]
-pub fn defaults() -> Result<DefaultsResponse, String> {
-    let components = wiac_core::schema::components_schemas();
-    let setup_schema = components
-        .get("Setup")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
-    Ok(DefaultsResponse {
-        setup: Setup::default(),
-        schema: setup_schema,
-        definitions: components,
-    })
-}

@@ -11,7 +11,6 @@
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use wiac_core::cam::setup::Setup;
 use wiac_core::pipeline::{run_pipeline, PipelineRequest};
 use wiac_core::ImportOptions;
 
@@ -66,28 +65,6 @@ pub fn generate(request: JsValue) -> Result<JsValue, JsValue> {
         serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
     let resp = run_pipeline(req, |_phase, _fraction, _msg| {})
         .map_err(|e| into_js_error(e.to_string()))?;
-    serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
-}
-
-#[derive(Serialize)]
-struct DefaultsResponse {
-    setup: Setup,
-    schema: serde_json::Value,
-    definitions: serde_json::Value,
-}
-
-#[wasm_bindgen]
-pub fn defaults() -> Result<JsValue, JsValue> {
-    let components = wiac_core::schema::components_schemas();
-    let setup_schema = components
-        .get("Setup")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
-    let resp = DefaultsResponse {
-        setup: Setup::default(),
-        schema: setup_schema,
-        definitions: components,
-    };
     serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
 }
 

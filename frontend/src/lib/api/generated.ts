@@ -81,23 +81,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/defaults": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Setup-tree JSON Schema (drives the form UI) */
-        get: operations["defaults"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -114,10 +97,6 @@ export interface components {
         };
         /** @enum {string} */
         Coolant: "off" | "mist" | "flood";
-        DefaultsResponse: {
-            schema: unknown;
-            setup: components["schemas"]["Setup"];
-        };
         Error: {
             details?: unknown;
             error: string;
@@ -129,14 +108,8 @@ export interface components {
         };
         GenerateRequest: {
             post_processor?: components["schemas"]["PostProcessorKind"] | null;
-            /** @description New op-driven input. When present this takes precedence over segments/setup/tabs; the `Project` carries its own copies. */
-            project?: components["schemas"]["Project"] | null;
-            /** @description Legacy flat-shape input — segments + Setup + tabs. Still the path every existing client takes; UX-3 migrates them internally to Project + a single Profile/Pocket op. */
-            segments: components["schemas"]["Segment"][];
-            setup?: components["schemas"]["Setup"] | null;
-            tabs?: {
-                [key: string]: components["schemas"]["TabPoint"][];
-            };
+            /** @description The full project — geometry + machine + tools + operations + tabs. */
+            project: components["schemas"]["Project"];
         };
         GenerateResponse: {
             gcode: string;
@@ -160,10 +133,29 @@ export interface components {
             filename: string;
             format: string;
             layers: components["schemas"]["Layer"][];
+            /**
+             * @description Object metadata (closed flag, layer, color, bbox) keyed by the same 1-based id — `object_meta[id - 1]` is the entry for object `id`.
+             * @default []
+             */
+            object_meta: components["schemas"]["ImportedObject"][];
+            /**
+             * @description Per-segment object id from the chaining pass — `objects[i]` is the 1-based id of the chained object that consumed `segments[i]` (0 means "didn't chain into any object", e.g. an isolated point). The frontend uses this to do object-level selection in 2D.
+             * @default []
+             */
+            objects: number[];
             segments: components["schemas"]["Segment"][];
             /** Format: double */
             unit_scale: number;
             warnings: string[];
+        };
+        ImportedObject: {
+            bbox: components["schemas"]["BBox"];
+            closed: boolean;
+            /** Format: int32 */
+            color: number;
+            /** Format: uint32 */
+            id: number;
+            layer: string;
         };
         Layer: {
             /** Format: int32 */
@@ -689,26 +681,6 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-        };
-    };
-    defaults: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Default setup tree + JSON Schema for the form UI */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DefaultsResponse"];
-                };
-            };
         };
     };
 }

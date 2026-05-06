@@ -16,7 +16,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures::stream::Stream;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::net::TcpListener;
 use axum::http::{HeaderValue, Method};
 use tokio_stream::wrappers::ReceiverStream;
@@ -24,13 +24,8 @@ use tokio_stream::StreamExt;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
-use wiac_core::cam::offsets::{
-    apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_object, pocket_for_object,
-    PolylineOffset, TabPoint,
-};
-use wiac_core::cam::setup::{Setup, ToolOffset};
-use wiac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
+use wiac_core::cam::setup::Setup;
+use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -159,33 +154,11 @@ struct ImportResponse<'a> {
     warnings: &'a [String],
 }
 
-#[derive(Deserialize)]
-struct GenerateRequest {
-    segments: Vec<wiac_core::Segment>,
-    #[serde(default)]
-    setup: Option<Setup>,
-    #[serde(default)]
-    post_processor: Option<String>,
-    /// Tab placements keyed by **imported** segment index. The server maps
-    /// each imported-segment tab back to the closest containing object,
-    /// then attaches the tab to every offset derived from that object.
-    #[serde(default)]
-    tabs: std::collections::HashMap<u32, Vec<TabPoint>>,
-}
-
-#[derive(Serialize)]
-struct GenerateResponse {
-    gcode: String,
-    toolpath: Vec<preview::ToolpathSegment>,
-    stats: GenerateStats,
-}
-
-#[derive(Serialize, Default)]
-struct GenerateStats {
-    object_count: usize,
-    closed_object_count: usize,
-    offset_count: usize,
-}
+// `GenerateRequest` and `GenerateResponse` types live in
+// `wiac_core::pipeline` so all three transports (HTTP, Tauri, WASM) share
+// the same shape. Tabs are keyed by **imported** segment index.
+type GenerateRequest = PipelineRequest;
+type GenerateResponse = PipelineResponse;
 
 // ─── handlers ──────────────────────────────────────────────────────────────
 
@@ -276,7 +249,9 @@ async fn generate(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, AppError> {
-    run_generate(req, |_phase, _fraction, _msg| {}).map(Json)
+    run_pipeline(req, |_phase, _fraction, _msg| {})
+        .map(Json)
+        .map_err(AppError::from)
 }
 
 /// SSE variant: emits `{phase, fraction, message}` progress events as the
@@ -306,149 +281,31 @@ async fn generate_stream(
                     .expect("progress payload"),
             );
         };
-        match run_generate(req, progress) {
+        match run_pipeline(req, progress) {
             Ok(resp) => send(
                 SseEvent::default()
                     .event("result")
                     .json_data(&resp)
                     .expect("result payload"),
             ),
-            Err(err) => send(
-                SseEvent::default()
-                    .event("error")
-                    .json_data(serde_json::json!({
-                        "status": err.status.as_u16(),
-                        "message": err.message,
-                    }))
-                    .expect("error payload"),
-            ),
+            Err(err) => {
+                let app_err = AppError::from(err);
+                send(
+                    SseEvent::default()
+                        .event("error")
+                        .json_data(serde_json::json!({
+                            "status": app_err.status.as_u16(),
+                            "message": app_err.message,
+                        }))
+                        .expect("error payload"),
+                );
+            }
         }
         // tx drops here → stream completes.
     });
 
     let stream = ReceiverStream::new(rx).map(Ok);
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
-}
-
-/// Synchronous core. `progress(phase, fraction, message)` is called at each
-/// phase boundary; pass a no-op for the non-streaming endpoint.
-fn run_generate<F: Fn(&str, f64, &str)>(
-    req: GenerateRequest,
-    progress: F,
-) -> Result<GenerateResponse, AppError> {
-    let setup = req.setup.unwrap_or_default();
-    progress("import", 0.05, "preparing segments");
-
-    let mut objects = segments_to_objects(&req.segments);
-    classify_containment(&mut objects);
-    for obj in &mut objects {
-        obj.tool_offset = setup.mill.offset;
-    }
-    progress("objects", 0.20, "chained segments into objects");
-
-    // Map imported-segment-keyed tabs to their owning chain object.
-    // Each chain knows which imported-segment indices it consumed.
-    let mut tabs_by_object: std::collections::HashMap<usize, Vec<TabPoint>> =
-        std::collections::HashMap::new();
-    if !req.tabs.is_empty() {
-        let segment_to_object = build_segment_to_object_map(&req.segments, &objects);
-        for (seg_idx, tabs) in &req.tabs {
-            if let Some(&obj_idx) = segment_to_object.get(&(*seg_idx as usize)) {
-                tabs_by_object
-                    .entry(obj_idx)
-                    .or_default()
-                    .extend_from_slice(tabs);
-            }
-        }
-    }
-
-    let radius = setup.tool.diameter * 0.5;
-    let mut offsets = Vec::new();
-    let mut closed = 0usize;
-    for (idx, obj) in objects.iter().enumerate() {
-        if obj.closed {
-            closed += 1;
-        }
-        if obj.closed && setup.pockets.active {
-            let islands: Vec<Vec<wiac_core::Point2>> = if setup.pockets.islands {
-                obj.inner_objects
-                    .iter()
-                    .filter_map(|i| objects.get(*i))
-                    .filter(|inner| inner.closed)
-                    .map(|inner| wiac_core::cam::segments_to_points(&inner.segments, 6))
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            for mut o in pocket_for_object(
-                obj,
-                radius,
-                setup.pockets.nocontour,
-                6,
-                setup.pockets.zigzag,
-                &islands,
-            ) {
-                o.source_object_idx = idx;
-                offsets.push(o);
-            }
-            continue;
-        }
-        let delta = match setup.mill.offset {
-            ToolOffset::None | ToolOffset::On => 0.0,
-            ToolOffset::Outside => -radius,
-            ToolOffset::Inside => radius,
-        };
-        if delta.abs() < 1e-9 {
-            offsets.push(PolylineOffset {
-                segments: obj.segments.clone(),
-                closed: obj.closed,
-                level: 0,
-                is_pocket: 0,
-                layer: obj.layer.clone(),
-                color: obj.color,
-                source_object_idx: idx,
-                tabs: Vec::new(),
-            });
-        } else {
-            for mut o in parallel_offset_object(obj, delta) {
-                o.source_object_idx = idx;
-                offsets.push(o);
-            }
-        }
-    }
-    progress("offsets", 0.55, "built parallel offsets");
-
-    // Snap tabs onto their offsets. Tab radius = 1.5× tool radius so the
-    // tab still gates the cut even after the parallel offset moves the
-    // toolpath off the source contour.
-    if !tabs_by_object.is_empty() {
-        attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
-    }
-
-    if setup.mill.overcut {
-        apply_overcut_to_offsets(&mut offsets, &objects, setup.tool.diameter * 0.5);
-    }
-
-    let post_kind = req.post_processor.as_deref().unwrap_or("linuxcnc");
-    progress("gcode", 0.75, "emitting gcode");
-    let gcode = match post_kind {
-        "linuxcnc" => emit_polylines(&setup, &offsets, &mut linuxcnc::Post::new()),
-        "grbl" => emit_polylines(&setup, &offsets, &mut grbl::Post::new()),
-        "hpgl" => emit_polylines(&setup, &offsets, &mut hpgl::Post::new()),
-        other => return Err(AppError::bad_request(format!("unknown post_processor: {other}"))),
-    };
-    progress("preview", 0.92, "interpreting toolpath");
-    let toolpath = preview::interpret(&gcode);
-    progress("done", 1.0, "complete");
-    Ok(GenerateResponse {
-        stats: GenerateStats {
-            object_count: objects.len(),
-            closed_object_count: closed,
-            offset_count: offsets.len(),
-        },
-        gcode,
-        toolpath,
-    })
 }
 
 // ─── error type ────────────────────────────────────────────────────────────
@@ -493,6 +350,16 @@ impl From<wiac_core::Error> for AppError {
     }
 }
 
+impl From<wiac_core::pipeline::PipelineError> for AppError {
+    fn from(e: wiac_core::pipeline::PipelineError) -> Self {
+        match e {
+            wiac_core::pipeline::PipelineError::UnknownPostProcessor(_) => {
+                Self::bad_request(e.to_string())
+            }
+        }
+    }
+}
+
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         Self::internal(e.to_string())
@@ -509,38 +376,6 @@ fn tempfile_path(suffix: &str) -> Result<PathBuf, AppError> {
     let mut name = format!("wiac-{}.{}", uuid_like(), suffix);
     name.retain(|c| !c.is_whitespace());
     Ok(std::env::temp_dir().join(name))
-}
-
-/// Build a lookup table from imported-segment index → chain (VcObject)
-/// index. The chaining pass re-orders + flips segments, so we identify
-/// each segment by its endpoint pair and find which chain contains it.
-fn build_segment_to_object_map(
-    imported: &[wiac_core::Segment],
-    objects: &[wiac_core::cam::VcObject],
-) -> std::collections::HashMap<usize, usize> {
-    let mut out = std::collections::HashMap::new();
-    for (orig_idx, seg) in imported.iter().enumerate() {
-        for (obj_idx, obj) in objects.iter().enumerate() {
-            for c in &obj.segments {
-                if endpoints_match(seg, c) {
-                    out.insert(orig_idx, obj_idx);
-                    break;
-                }
-            }
-            if out.contains_key(&orig_idx) {
-                break;
-            }
-        }
-    }
-    out
-}
-
-fn endpoints_match(a: &wiac_core::Segment, b: &wiac_core::Segment) -> bool {
-    let eq = |p: &wiac_core::Point2, q: &wiac_core::Point2| {
-        (p.x - q.x).abs() < 1e-3 && (p.y - q.y).abs() < 1e-3
-    };
-    (eq(&a.start, &b.start) && eq(&a.end, &b.end))
-        || (eq(&a.start, &b.end) && eq(&a.end, &b.start))
 }
 
 fn uuid_like() -> String {

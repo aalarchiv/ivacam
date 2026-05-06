@@ -120,31 +120,27 @@ export interface components {
             details?: unknown;
             error: string;
         };
+        /** @description Pipeline input. Tabs are keyed by *imported-segment* index (the key the frontend uses when tracking placed tabs); we resolve each tab to its containing chain object internally. */
         GenerateRequest: {
             post_processor?: components["schemas"]["PostProcessorKind"] | null;
             segments: components["schemas"]["Segment"][];
             setup?: components["schemas"]["Setup"] | null;
-            /** @description Tab placements keyed by imported-segment index. The server snaps each tab onto the closest derived offset so the gcode emitter can lift Z when the cut crosses it. */
             tabs?: {
                 [key: string]: components["schemas"]["TabPoint"][];
             };
         };
         GenerateResponse: {
             gcode: string;
-            stats: components["schemas"]["GenerateStats"];
+            stats: components["schemas"]["PipelineStats"];
             toolpath: components["schemas"]["ToolpathSegment"][];
         };
         GenerateStats: {
-            /** Format: uint32 */
+            /** Format: uint */
             closed_object_count: number;
-            /** Format: double */
-            cut_distance?: number | null;
-            /** Format: uint32 */
+            /** Format: uint */
             object_count: number;
-            /** Format: uint32 */
+            /** Format: uint */
             offset_count: number;
-            /** Format: double */
-            travel_distance?: number | null;
         };
         HealthResponse: {
             ok: boolean;
@@ -211,6 +207,14 @@ export interface components {
         };
         /** @enum {string} */
         ObjectOrder: "nearest" | "per_object" | "unordered";
+        PipelineStats: {
+            /** Format: uint */
+            closed_object_count: number;
+            /** Format: uint */
+            object_count: number;
+            /** Format: uint */
+            offset_count: number;
+        };
         PocketConfig: {
             active: boolean;
             insideout: boolean;

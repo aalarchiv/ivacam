@@ -47,46 +47,11 @@ pub enum TransportKind {
     Wasm,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GenerateRequest {
-    pub segments: Vec<Segment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub setup: Option<Setup>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_processor: Option<PostProcessorKind>,
-    /// Tab placements keyed by imported-segment index. The server snaps
-    /// each tab onto the closest derived offset so the gcode emitter
-    /// can lift Z when the cut crosses it.
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub tabs: std::collections::HashMap<u32, Vec<crate::cam::offsets::TabPoint>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum PostProcessorKind {
-    #[default]
-    Linuxcnc,
-    Grbl,
-    Hpgl,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GenerateResponse {
-    pub gcode: String,
-    pub toolpath: Vec<ToolpathSegment>,
-    pub stats: GenerateStats,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-pub struct GenerateStats {
-    pub object_count: u32,
-    pub closed_object_count: u32,
-    pub offset_count: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub travel_distance: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cut_distance: Option<f64>,
-}
+// GenerateRequest, GenerateResponse, GenerateStats and PostProcessorKind
+// live in `crate::pipeline` so the schema and the runtime implementation
+// share one source of truth. We re-export their schemas under the same
+// component names the OpenAPI document used to publish.
+pub use crate::pipeline::{PipelineRequest as GenerateRequest, PipelineResponse as GenerateResponse, PipelineStats as GenerateStats, PostProcessorKind};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DefaultsResponse {

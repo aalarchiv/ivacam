@@ -142,6 +142,7 @@ components:
       - error
       type: object
     GenerateRequest:
+      description: Pipeline input. Tabs are keyed by *imported-segment* index (the key the frontend uses when tracking placed tabs); we resolve each tab to its containing chain object internally.
       properties:
         post_processor:
           anyOf:
@@ -160,7 +161,6 @@ components:
             items:
               $ref: '#/components/schemas/TabPoint'
             type: array
-          description: Tab placements keyed by imported-segment index. The server snaps each tab onto the closest derived offset so the gcode emitter can lift Z when the cut crosses it.
           type: object
       required:
       - segments
@@ -170,7 +170,7 @@ components:
         gcode:
           type: string
         stats:
-          $ref: '#/components/schemas/GenerateStats'
+          $ref: '#/components/schemas/PipelineStats'
         toolpath:
           items:
             $ref: '#/components/schemas/ToolpathSegment'
@@ -183,27 +183,17 @@ components:
     GenerateStats:
       properties:
         closed_object_count:
-          format: uint32
+          format: uint
           minimum: 0.0
           type: integer
-        cut_distance:
-          format: double
-          type:
-          - number
-          - 'null'
         object_count:
-          format: uint32
+          format: uint
           minimum: 0.0
           type: integer
         offset_count:
-          format: uint32
+          format: uint
           minimum: 0.0
           type: integer
-        travel_distance:
-          format: double
-          type:
-          - number
-          - 'null'
       required:
       - closed_object_count
       - object_count
@@ -360,6 +350,25 @@ components:
       - per_object
       - unordered
       type: string
+    PipelineStats:
+      properties:
+        closed_object_count:
+          format: uint
+          minimum: 0.0
+          type: integer
+        object_count:
+          format: uint
+          minimum: 0.0
+          type: integer
+        offset_count:
+          format: uint
+          minimum: 0.0
+          type: integer
+      required:
+      - closed_object_count
+      - object_count
+      - offset_count
+      type: object
     PocketConfig:
       properties:
         active:

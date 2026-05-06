@@ -19,9 +19,9 @@
 
 <aside class="layers">
   <h3>Layers</h3>
-  {#if project.imported && project.imported.layers.length > 0}
+  {#if project.imported && project.imported.layers.some((l) => l.segment_count > 0)}
     <ul>
-      {#each project.imported.layers as layer (layer.name)}
+      {#each project.imported.layers.filter((l) => l.segment_count > 0) as layer (layer.name)}
         <li>
           <label>
             <input

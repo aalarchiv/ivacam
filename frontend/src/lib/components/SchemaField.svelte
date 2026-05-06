@@ -25,6 +25,20 @@
   function asBool(v: unknown): boolean {
     return Boolean(v);
   }
+
+  // schemars renders Option<T> as `type: [T, "null"]`. Detect the array
+  // form and pull out the underlying scalar so the rest of the component
+  // can render it as a normal editable input — blank value clears to null.
+  function pickScalarType(t: unknown): string | undefined {
+    if (typeof t === 'string') return t;
+    if (Array.isArray(t)) {
+      const v = t.find((x) => typeof x === 'string' && x !== 'null');
+      return typeof v === 'string' ? v : undefined;
+    }
+    return undefined;
+  }
+  const effectiveType = $derived(pickScalarType(resolved.type));
+  const isNullable = $derived(Array.isArray(resolved.type) && resolved.type.includes('null'));
 </script>
 
 <div class="field">
@@ -39,27 +53,37 @@
           <option value={opt}>{opt}</option>
         {/each}
       </select>
-    {:else if resolved.type === 'boolean'}
+    {:else if effectiveType === 'boolean'}
       <input
         type="checkbox"
         checked={asBool(value)}
         onchange={(e) => onChange((e.currentTarget as HTMLInputElement).checked)}
       />
-    {:else if resolved.type === 'integer'}
+    {:else if effectiveType === 'integer'}
       <input
         type="number"
         step="1"
-        value={asNumber(value)}
-        onchange={(e) => onChange(parseInt((e.currentTarget as HTMLInputElement).value, 10) || 0)}
+        value={value == null ? '' : asNumber(value)}
+        placeholder={isNullable ? 'unset' : ''}
+        onchange={(e) => {
+          const raw = (e.currentTarget as HTMLInputElement).value;
+          if (raw === '' && isNullable) onChange(null);
+          else onChange(parseInt(raw, 10) || 0);
+        }}
       />
-    {:else if resolved.type === 'number'}
+    {:else if effectiveType === 'number'}
       <input
         type="number"
         step="0.01"
-        value={asNumber(value)}
-        onchange={(e) => onChange(parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+        value={value == null ? '' : asNumber(value)}
+        placeholder={isNullable ? 'unset' : ''}
+        onchange={(e) => {
+          const raw = (e.currentTarget as HTMLInputElement).value;
+          if (raw === '' && isNullable) onChange(null);
+          else onChange(parseFloat(raw) || 0);
+        }}
       />
-    {:else if resolved.type === 'string'}
+    {:else if effectiveType === 'string'}
       <input
         type="text"
         value={asString(value)}

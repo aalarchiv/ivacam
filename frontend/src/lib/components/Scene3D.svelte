@@ -135,18 +135,27 @@
   // Mirror imported geometry into the 3D scene as flat polylines on Z=0.
   // When a /generate response is also available, draw the 3D toolpath on
   // top with depth + color coded by move kind (rapid/cut/plunge/retract).
+  // Splitting these effects keeps OrbitControls responsive during playback —
+  // every frame `project.playhead` ticks at 60 Hz, and rebuildGeometry +
+  // updateStock + updateTabs are far too expensive to run that often. Only
+  // updateTool needs to follow the playhead.
   $effect(() => {
     void project.imported;
     void project.visibleLayers;
     void project.generated;
-    void project.playhead;
     void project.tabs;
     void project.stock;
     void (project.setup as Record<string, unknown>)?.mill;
     rebuildGeometry();
-    updateTool();
     updateTabs();
     updateStock();
+  });
+
+  $effect(() => {
+    void project.playhead;
+    void project.generated;
+    void (project.setup as Record<string, unknown>)?.tool;
+    updateTool();
   });
 
   let tabsGroup: THREE.Group | undefined;
@@ -241,6 +250,12 @@
   /// Tool-tip cone: a small inverted cone whose apex sits at the current
   /// toolpath position. Color is the active move kind (cut/plunge/etc.) so
   /// the user can see at a glance what the tool is doing right now.
+  /// Tool tip indicator: a real-scale endmill (cylinder), V-bit (cone),
+  /// or drag-knife (small blade) sitting above the work with the cutting
+  /// tip planted at the current toolpath point. The shape comes from
+  /// setup.machine.mode + setup.tool.{diameter,dragoff}; size matches the
+  /// configured tool diameter so it visibly differs between a 1 mm engraver
+  /// and a 6 mm endmill.
   function updateTool() {
     if (!toolGroup) return;
     toolGroup.clear();
@@ -250,12 +265,12 @@
     const headIdx = Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
     const seg = gen.toolpath[headIdx];
     if (!seg) return;
-    // Interpolate within the active segment for smooth motion at low speeds.
     const subT = project.playhead * total - headIdx;
     const t = Math.max(0, Math.min(1, subT));
     const px = seg.from.x + (seg.to.x - seg.from.x) * t;
     const py = seg.from.y + (seg.to.y - seg.from.y) * t;
     const pz = seg.from.z + (seg.to.z - seg.from.z) * t;
+
     const tipColor: Record<string, number> = {
       rapid: 0x35a2ff,
       cut: 0xff5555,
@@ -264,15 +279,95 @@
       arc: 0xff8a3a,
     };
     const colorHex = tipColor[seg.kind] ?? 0xff5555;
-    const radius = Math.max(2, ((project.imported?.bbox.max_x ?? 100) - (project.imported?.bbox.min_x ?? 0)) * 0.015);
-    const height = radius * 4;
-    const geom = new THREE.ConeGeometry(radius, height, 16);
-    geom.rotateX(Math.PI); // apex points down (-Z)
-    geom.translate(0, 0, height / 2);
-    const mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.85 });
-    const mesh = new THREE.Mesh(geom, mat);
+
+    const setup = (project.setup as Record<string, unknown>) ?? {};
+    const tool = (setup.tool ?? {}) as { diameter?: number; dragoff?: number | null };
+    const machine = (setup.machine ?? {}) as { mode?: string };
+    const diameter = Math.max(0.2, typeof tool.diameter === 'number' ? tool.diameter : 3);
+    const radius = diameter * 0.5;
+    const mode = machine.mode ?? 'mill';
+
+    // Body color matches the move kind so users see what the tool's doing.
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.85,
+    });
+
+    let mesh: THREE.Mesh;
+    if (mode === 'drag') {
+      // Drag-knife: small blade ~5x diameter long, offset by dragoff so the
+      // user can see the trailing geometry the gcode is laying out.
+      const dragoff = typeof tool.dragoff === 'number' ? tool.dragoff : 0;
+      const bladeLen = Math.max(diameter * 4, 4);
+      const bladeT = Math.max(0.4, diameter * 0.4);
+      const geom = new THREE.BoxGeometry(bladeT, dragoff > 0 ? dragoff * 2 : bladeT, bladeLen);
+      geom.translate(0, 0, bladeLen / 2);
+      mesh = new THREE.Mesh(geom, mat);
+    } else if (mode === 'laser') {
+      // Laser: thin red beam shape from above.
+      const beamLen = Math.max(8, diameter * 6);
+      const geom = new THREE.CylinderGeometry(0.3, 0.3, beamLen, 12);
+      geom.rotateX(Math.PI / 2);
+      geom.translate(0, 0, beamLen / 2);
+      mesh = new THREE.Mesh(geom, mat);
+    } else {
+      // Mill: cylinder body + small conical tip so the cutting edge is
+      // visible at the toolpath point. Body height = ~6× diameter so it
+      // looks like a real endmill, not a stub.
+      const bodyLen = Math.max(diameter * 6, 8);
+      const tipLen = diameter * 0.6;
+      const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
+      body.rotateX(Math.PI / 2);
+      body.translate(0, 0, tipLen + bodyLen / 2);
+      const tipGeom = new THREE.ConeGeometry(radius, tipLen, 24);
+      tipGeom.rotateX(Math.PI); // apex points -Z (toward work)
+      tipGeom.translate(0, 0, tipLen / 2);
+      const merged = mergeBufferGeometries([body, tipGeom]);
+      mesh = new THREE.Mesh(merged, mat);
+    }
     mesh.position.set(px, py, pz);
     toolGroup.add(mesh);
+  }
+
+  /// Tiny helper because three.js's BufferGeometryUtils requires a separate
+  /// import. Manually splice positions/indices for our two-piece tool.
+  function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry {
+    const out = new THREE.BufferGeometry();
+    let posCount = 0;
+    let idxCount = 0;
+    for (const g of geometries) {
+      posCount += g.attributes.position.count;
+      idxCount += g.index ? g.index.count : g.attributes.position.count;
+    }
+    const positions = new Float32Array(posCount * 3);
+    const indices = new Uint32Array(idxCount);
+    let posOffset = 0;
+    let idxOffset = 0;
+    let vertexBase = 0;
+    for (const g of geometries) {
+      const p = g.attributes.position.array as Float32Array;
+      positions.set(p, posOffset * 3);
+      const idx = g.index ? (g.index.array as ArrayLike<number>) : null;
+      const n = g.attributes.position.count;
+      if (idx) {
+        for (let i = 0; i < idx.length; i++) {
+          indices[idxOffset + i] = idx[i] + vertexBase;
+        }
+        idxOffset += idx.length;
+      } else {
+        for (let i = 0; i < n; i++) {
+          indices[idxOffset + i] = i + vertexBase;
+        }
+        idxOffset += n;
+      }
+      vertexBase += n;
+      posOffset += n;
+    }
+    out.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    out.setIndex(new THREE.BufferAttribute(indices, 1));
+    out.computeVertexNormals();
+    return out;
   }
 
   function rebuildGeometry() {

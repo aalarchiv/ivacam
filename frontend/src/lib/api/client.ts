@@ -40,8 +40,18 @@ export interface DefaultsResponse {
   definitions: Record<string, JsonSchema>;
 }
 
+type JsonSchemaScalarType =
+  | 'object'
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'array'
+  | 'null';
+
 export interface JsonSchema {
-  type?: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
+  // schemars 0.8 emits Option<T> as `type: [T, "null"]`, so accept the array form too.
+  type?: JsonSchemaScalarType | JsonSchemaScalarType[];
   description?: string;
   properties?: Record<string, JsonSchema>;
   required?: string[];

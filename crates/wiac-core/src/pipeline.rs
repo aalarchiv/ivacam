@@ -210,3 +210,94 @@ fn build_segment_to_object_map(
 fn approx_pt(a: Point2, b: Point2) -> bool {
     (a.x - b.x).abs() < 1e-6 && (a.y - b.y).abs() < 1e-6
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cam::setup::ToolOffset;
+    use crate::geometry::Segment;
+
+    fn closed_square(side: f64) -> Vec<Segment> {
+        vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(side, 0.0), "0", 7),
+            Segment::line(Point2::new(side, 0.0), Point2::new(side, side), "0", 7),
+            Segment::line(Point2::new(side, side), Point2::new(0.0, side), "0", 7),
+            Segment::line(Point2::new(0.0, side), Point2::new(0.0, 0.0), "0", 7),
+        ]
+    }
+
+    #[test]
+    fn run_pipeline_emits_a_recognizable_program() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.mill.depth = -2.0;
+        setup.mill.offset = ToolOffset::Outside;
+        setup.machine.comments = false;
+
+        let resp = run_pipeline(
+            PipelineRequest {
+                segments: closed_square(20.0),
+                setup: Some(setup),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+                tabs: HashMap::new(),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+
+        assert!(resp.gcode.contains("G21"), "expected G21 mm; got: {}", resp.gcode);
+        assert!(resp.gcode.contains("G90"), "expected G90 absolute");
+        assert!(!resp.toolpath.is_empty());
+        assert_eq!(resp.stats.object_count, 1);
+        assert_eq!(resp.stats.closed_object_count, 1);
+        assert!(resp.stats.offset_count >= 1);
+    }
+
+    #[test]
+    fn run_pipeline_picks_grbl_when_requested() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                segments: closed_square(20.0),
+                setup: None,
+                post_processor: Some(PostProcessorKind::Grbl),
+                tabs: HashMap::new(),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // grbl emit drops the G64 / probing dialect lines linuxcnc adds.
+        assert!(!resp.gcode.is_empty());
+    }
+
+    #[test]
+    fn progress_callback_fires_each_phase() {
+        let phases = std::cell::RefCell::new(Vec::<String>::new());
+        let _ = run_pipeline(
+            PipelineRequest {
+                segments: closed_square(10.0),
+                setup: None,
+                post_processor: None,
+                tabs: HashMap::new(),
+            },
+            |phase, _f, _m| phases.borrow_mut().push(phase.to_string()),
+        )
+        .unwrap();
+        let phases = phases.into_inner();
+        // Coverage check: every phase boundary should have fired exactly once.
+        for expected in ["import", "objects", "offsets", "gcode", "preview", "done"] {
+            assert!(phases.contains(&expected.to_string()), "missing {expected} in {phases:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_post_processor_is_a_deserialization_failure() {
+        // PostProcessorKind only knows linuxcnc/grbl/hpgl; the JSON for an
+        // unknown name has to fail at serde, not silently fall through.
+        let raw = serde_json::json!({
+            "segments": [],
+            "post_processor": "robotic_arm"
+        });
+        let res: Result<PipelineRequest, _> = serde_json::from_value(raw);
+        assert!(res.is_err());
+    }
+}

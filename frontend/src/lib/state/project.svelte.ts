@@ -69,6 +69,15 @@ class ProjectState {
     fastMoveZ: 5,
   });
 
+  /// Ordered list of operations the program runs. Each op has a kind, a
+  /// tool reference (id into project.tools), a source (which geometry it
+  /// consumes), and per-kind parameters. Reordering = changing run
+  /// order. Disabling = excluding from the final program without
+  /// losing config.
+  operations = $state<OpEntry[]>([]);
+  /// id of the currently-selected op (drives OpPropertiesPanel).
+  selectedOpId = $state<number | null>(null);
+
   addTab(segmentIdx: number, position: Point2) {
     const next = { ...this.tabs };
     next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: position.x, y: position.y }];
@@ -157,6 +166,66 @@ class ProjectState {
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
     if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
     if (file.machine) this.machine = { ...this.machine, ...file.machine };
+    if (Array.isArray(file.operations)) this.operations = file.operations;
+    this.selectedOpId = null;
+  }
+
+  // ── operation helpers ────────────────────────────────────────────────
+
+  addOperation(kind: OpKind): OpEntry {
+    const nextId = this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
+    const tool = this.tools[0];
+    const op: OpEntry = {
+      id: nextId,
+      name: prettyOpKind(kind),
+      enabled: true,
+      kind,
+      toolId: tool?.id ?? 1,
+      sourceLayers: null,
+      depth: -2,
+      startDepth: 0,
+      step: -1,
+      offset: kind === 'engrave' || kind === 'drag_knife' ? 'on' : 'outside',
+      pocketStrategy: kind === 'pocket' ? 'cascade' : null,
+    };
+    this.operations = [...this.operations, op];
+    this.selectedOpId = op.id;
+    this.generated = null;
+    return op;
+  }
+
+  removeOperation(id: number) {
+    this.operations = this.operations.filter((o) => o.id !== id);
+    if (this.selectedOpId === id) this.selectedOpId = null;
+    this.generated = null;
+  }
+
+  updateOperation(id: number, patch: Partial<OpEntry>) {
+    this.operations = this.operations.map((o) => (o.id === id ? { ...o, ...patch } : o));
+    this.generated = null;
+  }
+
+  reorderOperation(id: number, toIndex: number) {
+    const cur = this.operations.findIndex((o) => o.id === id);
+    if (cur < 0) return;
+    const next = [...this.operations];
+    const [op] = next.splice(cur, 1);
+    next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, op);
+    this.operations = next;
+    this.generated = null;
+  }
+}
+
+function prettyOpKind(kind: OpKind): string {
+  switch (kind) {
+    case 'profile': return 'Profile';
+    case 'pocket': return 'Pocket';
+    case 'drill': return 'Drill';
+    case 'thread': return 'Thread';
+    case 'chamfer': return 'Chamfer';
+    case 'engrave': return 'Engraving';
+    case 'drag_knife': return 'Drag-knife';
+    case 'helix': return 'Helix';
   }
 }
 
@@ -200,6 +269,38 @@ export interface MachineSettings {
   fastMoveZ: number;
 }
 
+export type OpKind =
+  | 'profile'
+  | 'pocket'
+  | 'drill'
+  | 'thread'
+  | 'chamfer'
+  | 'engrave'
+  | 'drag_knife'
+  | 'helix';
+
+export type ProfileOffset = 'outside' | 'inside' | 'on';
+export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral';
+
+/// Thin frontend mirror of wiac_core::project::Operation. Tracks just
+/// what the UI needs to show + edit; the wire format expands to the
+/// full Operation when Generate ships.
+export interface OpEntry {
+  id: number;
+  name: string;
+  enabled: boolean;
+  kind: OpKind;
+  toolId: number;
+  /// If set, the op runs only on chains whose layer name is in the list.
+  /// null means "every chain in the imported geometry".
+  sourceLayers: string[] | null;
+  depth: number;
+  startDepth: number;
+  step: number;
+  offset: ProfileOffset;
+  pocketStrategy: PocketStrategy | null;
+}
+
 export interface ProjectFile {
   kind: 'wiac-project';
   version: 1;
@@ -211,6 +312,7 @@ export interface ProjectFile {
   stock?: StockConfig;
   tools?: ToolEntry[];
   machine?: MachineSettings;
+  operations?: OpEntry[];
 }
 
 export const project = new ProjectState();

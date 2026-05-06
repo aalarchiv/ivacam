@@ -8,6 +8,8 @@
   let scene3dLoading = $state(false);
   import LayerList from './lib/components/LayerList.svelte';
   import SetupPanel from './lib/components/SetupPanel.svelte';
+  import OperationsList from './lib/components/OperationsList.svelte';
+  import OpPropertiesPanel from './lib/components/OpPropertiesPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
   import GcodePanel from './lib/components/GcodePanel.svelte';
@@ -257,8 +259,17 @@
       <div class="layers-host">
         <LayerList />
       </div>
-      <div class="setup-host">
-        <SetupPanel />
+      <div class="ops-host">
+        <OperationsList />
+      </div>
+      <div class="props-host">
+        <OpPropertiesPanel />
+      </div>
+      <div class="legacy-host">
+        <details>
+          <summary>Legacy setup tree</summary>
+          <SetupPanel />
+        </details>
       </div>
     </aside>
   </main>
@@ -462,16 +473,32 @@
   }
   .sidebar {
     display: grid;
-    grid-template-rows: minmax(120px, 220px) minmax(0, 1fr);
+    grid-template-rows: minmax(80px, 130px) minmax(120px, 1.4fr) minmax(120px, 1.6fr) auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
   .layers-host,
-  .setup-host {
+  .ops-host,
+  .props-host,
+  .legacy-host {
     min-height: 0;
     min-width: 0;
     overflow: hidden;
+  }
+  .legacy-host {
+    border-top: 1px solid var(--border);
+    background: var(--bg-panel);
+    padding: 0.3rem 0.55rem 0.4rem;
+    max-height: 30vh;
+    overflow: auto;
+  }
+  .legacy-host summary {
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 0.15rem 0;
   }
   footer {
     background: var(--bg-panel);

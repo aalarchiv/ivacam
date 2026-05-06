@@ -11,8 +11,11 @@ fully client-side WebAssembly mode.
 
 ## Status
 
-Pre-alpha. Bootstrapping the project skeleton; no functional code yet. See the
-issue tracker (`bd ready`) for current work.
+Alpha. The Rust core (DXF + SVG import, CAM math, gcode emit), HTTP +
+Tauri + WASM transports, and the Svelte frontend (2D entity canvas + 3D
+toolpath preview, schema-driven setup tree, tab placement, theme + i18n
+toggles, project save/load) are all in place. See the issue tracker
+(`bd ready`) for current work.
 
 ## Why a rewrite
 
@@ -63,4 +66,5 @@ preserved in any files ported from the original.
 - Oliver Dippel / `multigcs` and contributors — original viaConstructor
 - Brett Forsgren / `IxMilia` — `dxf-rs` crate (DXF parser)
 - Jed Buckley / `jbuckmccready` — `cavalier_contours` (polyline-with-arcs offsetting)
-- Angus Johnson — Clipper2 (polygon offsetting)
+- Angus Johnson — Clipper2; `clipper2-rust` is a pure-Rust port (BSL-1.0)
+- The `linebender` team — `usvg` (SVG canonicalisation)

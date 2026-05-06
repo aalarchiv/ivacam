@@ -22,8 +22,9 @@ crates/
 xtask/            cargo-xtask for dev workflows
 frontend/         Svelte + Vite + TypeScript web UI
 schema/           OpenAPI / JSON Schema source-of-truth contracts
-tests/            integration / golden-file corpus
-refs/             upstream viaConstructor + dxf-rs (read-only references)
+tests/            integration corpus + bench baselines
+refs/             upstream viaConstructor + dxf-rs (read-only references,
+                  gitignored — clone yourself per the comment in .gitignore)
 ```
 
 ## Issue tracker
@@ -43,11 +44,12 @@ PRs.
 
 ## Toolchain
 
-- Rust: pinned via `rust-toolchain.toml` (stable; current MSRV documented in
-  the workspace `Cargo.toml`)
-- Node: LTS (`.nvmrc`)
-- Tauri 2 (for desktop builds)
-- `wasm-pack` (for the WASM crate)
+- Rust: pinned via `rust-toolchain.toml` (currently 1.88.0)
+- Node: LTS 20+
+- pnpm 10+ (lockfile committed)
+- `wasm-pack` 0.14+ (for the WASM crate; `cargo install wasm-pack --locked`)
+- `tauri-cli` 2.x (for desktop bundles; `cargo install tauri-cli --version "^2" --locked`)
+- `cargo-deny` 0.19+ (for the licenses / advisories check)
 
 ## Development
 
@@ -65,15 +67,18 @@ Pre-commit hooks (rustfmt, clippy, eslint, prettier) are wired via
 ## Pull requests
 
 - Branch off `main`. Keep PRs scoped to a single bd issue when practical.
-- CI must pass: cargo test, clippy, fmt, frontend lint+test+build, parity tests
-  against the Python reference (`bd-0zz` epic) once that harness lands.
-- Add or update tests for behavior changes. Geometry/gcode changes need a
-  golden-file entry.
-- Conventional commit messages preferred (`feat:`, `fix:`, `refactor:`, …) and
-  reference the bd issue ID, e.g. `feat(core): port LWPOLYLINE bulge expansion (wiaconstructor-av1.6)`.
+- CI must pass: cargo test (workspace), clippy, fmt, cargo-deny, frontend
+  lint+check+build, wasm-pack build.
+- Geometry / gcode changes should add or update a unit test in
+  `crates/wiac-core/src/cam/` or `crates/wiac-core/src/gcode.rs`. The
+  workspace-wide smoke test (`crates/wiac-core/tests/golden_corpus.rs`)
+  walks every fixture under `refs/viaconstructor/tests/data/*.dxf` and
+  asserts a non-empty linuxcnc program comes out — keep it green.
+- Conventional commit messages preferred (`feat:`, `fix:`, `refactor:`, …)
+  and reference the bd issue ID where relevant.
 
 ## Reporting bugs
 
-Open a `bd` issue (`--type=bug`) with: viaConstructor input file (if
-distributable), expected output, actual output, platform, build mode (server /
-desktop / WASM).
+Open a `bd` issue (`--type=bug`) with: input file (DXF / SVG / project,
+if distributable), expected output, actual output, platform, build mode
+(server / desktop / browser-WASM).

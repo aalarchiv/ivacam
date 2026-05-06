@@ -21,12 +21,6 @@ serve:
 dev-frontend:
     cd frontend && pnpm dev
 
-# Re-generate gcode reference files using upstream Python viaConstructor.
-# Requires the upstream's runtime deps to be importable; see
-# tests/golden/refresh.py for the activation hint.
-refresh-golden:
-    python3 tests/golden/refresh.py
-
 # Format everything.
 fmt:
     cargo fmt --all

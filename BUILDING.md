@@ -11,7 +11,9 @@ the desktop bundle is produced by Tauri 2.
 | Rust        | pinned in [`rust-toolchain.toml`](./rust-toolchain.toml) | rustup picks up the pin automatically the first time you run cargo in this repo. |
 | Node.js     | ≥ 20             | Any LTS works; we use it only to drive Vite + svelte-check. |
 | pnpm or npm | npm ≥ 10 / pnpm ≥ 9 | Lockfile is `frontend/pnpm-lock.yaml`; npm works against it but pnpm is faster. |
-| Tauri CLI   | matches Cargo entry in `crates/wiac-tauri/Cargo.toml` | Install via `cargo install tauri-cli --version "^2"` once you're set up for desktop builds. |
+| Tauri CLI   | 2.x              | Install via `cargo install tauri-cli --version "^2" --locked` once you're set up for desktop builds. |
+| wasm-pack   | ≥ 0.14           | Install via `cargo install wasm-pack --locked` for the WASM crate. |
+| cargo-deny  | ≥ 0.19           | Optional but recommended; CI runs it. `cargo install cargo-deny --locked`. |
 
 ### Linux (Debian/Ubuntu)
 
@@ -67,7 +69,8 @@ git clone https://github.com/IxMilia/dxf-rs           refs/dxf-rs
 ```
 
 These are read-only references — the Rust port reimplements the parts it
-needs, and the Python tree is only used as a fixture and parity oracle.
+needs. The viaConstructor checkout supplies DXF fixtures under
+`refs/viaconstructor/tests/data/` that the workspace smoke test exercises.
 
 ## 3. Build
 
@@ -75,24 +78,40 @@ needs, and the Python tree is only used as a fixture and parity oracle.
 
 ```sh
 cargo build --workspace
-cargo test  --workspace      # 40+ unit + integration tests
+cargo test --workspace --tests   # 56+ unit + integration tests
 ```
 
 ### Web frontend (browser)
 
 ```sh
 cd frontend
-npm install                  # or pnpm install
-npm run dev                  # http://localhost:5173, hot reload
-npm run build                # static bundle to frontend/dist/
+pnpm install                 # or npm install
+pnpm dev                     # http://localhost:5173, hot reload
+pnpm build                   # static bundle to frontend/dist/
 ```
 
-To exercise the full stack point the dev server at the Rust HTTP server:
+The full stack on top of `wiac-server` (Rust HTTP):
 
 ```sh
 # in another shell
 cargo run -p wiac-server     # listens on 127.0.0.1:8766
 ```
+
+`vite.config.ts` already proxies `/api/*` to that port, so the dev
+server's "Open file" / Generate UI just works.
+
+### Browser-only (WASM, no backend)
+
+```sh
+wasm-pack build crates/wiac-wasm --target web --release
+# pkg/ is published as a local dep — pnpm picks it up via
+#   "wiac-wasm": "file:../crates/wiac-wasm/pkg"
+cd frontend && pnpm install && pnpm dev
+# visit http://localhost:5173/?api=wasm
+```
+
+The browser downloads the wiac-wasm pkg lazily and runs the entire
+CAM pipeline client-side — no Rust server, no Python, no anything.
 
 ### Desktop bundle (Tauri)
 

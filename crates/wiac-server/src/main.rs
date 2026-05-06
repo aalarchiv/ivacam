@@ -351,10 +351,11 @@ impl From<wiac_core::Error> for AppError {
 
 impl From<wiac_core::pipeline::PipelineError> for AppError {
     fn from(e: wiac_core::pipeline::PipelineError) -> Self {
+        use wiac_core::pipeline::PipelineError;
         match e {
-            wiac_core::pipeline::PipelineError::UnknownPostProcessor(_) => {
-                Self::bad_request(e.to_string())
-            }
+            PipelineError::UnknownPostProcessor(_)
+            | PipelineError::UnknownTool(_, _)
+            | PipelineError::UnimplementedKind(_) => Self::bad_request(e.to_string()),
         }
     }
 }

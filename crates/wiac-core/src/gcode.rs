@@ -74,12 +74,38 @@ pub fn emit_polylines<P: PostProcessor>(
 ) -> String {
     program_begin(setup, post);
     let mut last_pos = Point2::new(0.0, 0.0);
-    let order = order_offsets(setup, offsets, last_pos);
-    for &idx in &order {
-        emit_offset(setup, &offsets[idx], post, &mut last_pos);
-    }
+    emit_polylines_block(setup, offsets, post, &mut last_pos);
     program_end(setup, post);
     post.finish()
+}
+
+/// Header-only emit. Per-op pipeline drivers call this once at the start
+/// of the program, then loop through each op calling
+/// [`emit_polylines_block`], then close with [`emit_program_end`].
+pub fn emit_program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
+    program_begin(setup, post);
+}
+
+/// Footer-only emit. Counterpart to [`emit_program_begin`].
+pub fn emit_program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
+    program_end(setup, post);
+}
+
+/// Cut-block emit — the per-offset loop without program-begin / -end. The
+/// per-op driver calls this once per operation; the `setup` passed is the
+/// op's *synthesized* setup (its tool + params), and `last_pos` is shared
+/// across calls so the next op continues from where the previous one
+/// finished.
+pub fn emit_polylines_block<P: PostProcessor>(
+    setup: &Setup,
+    offsets: &[PolylineOffset],
+    post: &mut P,
+    last_pos: &mut Point2,
+) {
+    let order = order_offsets(setup, offsets, *last_pos);
+    for &idx in &order {
+        emit_offset(setup, &offsets[idx], post, last_pos);
+    }
 }
 
 /// Decide the cut order for the offsets. Honors `setup.mill.objectorder`:

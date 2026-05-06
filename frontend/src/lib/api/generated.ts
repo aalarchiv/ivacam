@@ -122,9 +122,16 @@ export interface components {
             details?: unknown;
             error: string;
         };
-        /** @description Pipeline input. Tabs are keyed by *imported-segment* index (the key the frontend uses when tracking placed tabs); we resolve each tab to its containing chain object internally. */
+        /** @description Lookup table the frontend uses to wire the gcode text panel to the 3D toolpath: line N in the gcode corresponds to `segments[lines_to_segment[N]]`, and `segments_to_line[i]` is the 1-based gcode line that produced segment `i`. Both vectors are dense — gcode lines that don't move the tool map to `usize::MAX` so callers can detect the gap. */
+        GcodeIndex: {
+            lines_to_segment: number[];
+            segments_to_line: number[];
+        };
         GenerateRequest: {
             post_processor?: components["schemas"]["PostProcessorKind"] | null;
+            /** @description New op-driven input. When present this takes precedence over segments/setup/tabs; the `Project` carries its own copies. */
+            project?: components["schemas"]["Project"] | null;
+            /** @description Legacy flat-shape input — segments + Setup + tabs. Still the path every existing client takes; UX-3 migrates them internally to Project + a single Profile/Pocket op. */
             segments: components["schemas"]["Segment"][];
             setup?: components["schemas"]["Setup"] | null;
             tabs?: {
@@ -133,6 +140,7 @@ export interface components {
         };
         GenerateResponse: {
             gcode: string;
+            gcode_index: components["schemas"]["GcodeIndex"];
             stats: components["schemas"]["PipelineStats"];
             toolpath: components["schemas"]["ToolpathSegment"][];
         };

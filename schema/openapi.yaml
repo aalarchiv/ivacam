@@ -147,14 +147,38 @@ components:
       required:
       - error
       type: object
+    GcodeIndex:
+      description: 'Lookup table the frontend uses to wire the gcode text panel to the 3D toolpath: line N in the gcode corresponds to `segments[lines_to_segment[N]]`, and `segments_to_line[i]` is the 1-based gcode line that produced segment `i`. Both vectors are dense — gcode lines that don''t move the tool map to `usize::MAX` so callers can detect the gap.'
+      properties:
+        lines_to_segment:
+          items:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          type: array
+        segments_to_line:
+          items:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          type: array
+      required:
+      - lines_to_segment
+      - segments_to_line
+      type: object
     GenerateRequest:
-      description: Pipeline input. Tabs are keyed by *imported-segment* index (the key the frontend uses when tracking placed tabs); we resolve each tab to its containing chain object internally.
       properties:
         post_processor:
           anyOf:
           - $ref: '#/components/schemas/PostProcessorKind'
           - type: 'null'
+        project:
+          anyOf:
+          - $ref: '#/components/schemas/Project'
+          - type: 'null'
+          description: New op-driven input. When present this takes precedence over segments/setup/tabs; the `Project` carries its own copies.
         segments:
+          description: Legacy flat-shape input — segments + Setup + tabs. Still the path every existing client takes; UX-3 migrates them internally to Project + a single Profile/Pocket op.
           items:
             $ref: '#/components/schemas/Segment'
           type: array
@@ -175,6 +199,8 @@ components:
       properties:
         gcode:
           type: string
+        gcode_index:
+          $ref: '#/components/schemas/GcodeIndex'
         stats:
           $ref: '#/components/schemas/PipelineStats'
         toolpath:
@@ -183,6 +209,7 @@ components:
           type: array
       required:
       - gcode
+      - gcode_index
       - stats
       - toolpath
       type: object

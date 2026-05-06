@@ -13,6 +13,9 @@ pub enum Error {
 
     #[error("malformed input: {0}")]
     Malformed(String),
+
+    #[error("parse: {0}")]
+    Parse(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

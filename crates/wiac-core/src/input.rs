@@ -11,6 +11,7 @@ use std::path::Path;
 
 pub mod dxf_in;
 pub mod nurbs;
+pub mod svg_in;
 pub mod text;
 
 /// Optional knobs for any importer. The `args.dxfread_*` flags from the
@@ -68,6 +69,15 @@ pub fn import_path(path: &Path, opts: &ImportOptions) -> Result<ImportOutput> {
 
     match suffix.as_str() {
         "dxf" => dxf_in::import_dxf_path(path, opts),
+        "svg" => {
+            let bytes = std::fs::read(path)?;
+            let filename = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            svg_in::import_svg_bytes(filename, &bytes, opts)
+        }
         other => Err(crate::error::Error::UnsupportedFormat(other.into())),
     }
 }
@@ -82,6 +92,7 @@ pub fn import_bytes(filename: &str, bytes: &[u8], opts: &ImportOptions) -> Resul
         .unwrap_or_default();
     match suffix.as_str() {
         "dxf" => dxf_in::import_dxf_bytes(filename.to_string(), bytes, opts),
+        "svg" => svg_in::import_svg_bytes(filename.to_string(), bytes, opts),
         other => Err(crate::error::Error::UnsupportedFormat(other.into())),
     }
 }

@@ -23,6 +23,12 @@ cavalier_contours = "0.7"
 clipper2-rust = "1"
 schemars = { version = "0.8", features = ["preserve_order"] }
 ttf-parser = "0.25"
+# usvg canonicalises an SVG document to a tree of paths with absolute
+# transforms applied. We disable its `text` / system-fonts pull so our
+# wasm bundle doesn't grow needlessly — the SVG importer treats <text>
+# as text-to-paths-already, which is fine for CAM input where
+# text-to-stroke conversion happens upstream.
+usvg = { version = "0.45", default-features = false }
 
 [dev-dependencies]
 ttf-parser = "0.25"

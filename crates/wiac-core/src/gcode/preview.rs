@@ -52,13 +52,12 @@ pub fn interpret(gcode: &str) -> Vec<ToolpathSegment> {
         let mut x = state.x;
         let mut y = state.y;
         let mut z = state.z;
-        let mut i = 0.0;
-        let mut j = 0.0;
-        let mut had_x = false;
-        let mut had_y = false;
         let mut had_z = false;
-        let mut had_i = false;
-        let mut had_j = false;
+        // I/J (arc center offsets) are intentionally ignored — the preview
+        // renders arcs as straight segments between successive G-code rows
+        // and Three.js samples them densely enough that the chord error is
+        // imperceptible. If we ever want true arc rendering, capture them
+        // here and add an Arc variant that carries the center.
         for tok in line.split_whitespace() {
             let (head, val_str) = tok.split_at(1);
             let val: f64 = val_str.parse().unwrap_or(0.0);
@@ -74,30 +73,15 @@ pub fn interpret(gcode: &str) -> Vec<ToolpathSegment> {
                         }
                     }
                 }
-                "X" | "x" => {
-                    x = val * unit_scale;
-                    had_x = true;
-                }
-                "Y" | "y" => {
-                    y = val * unit_scale;
-                    had_y = true;
-                }
+                "X" | "x" => x = val * unit_scale,
+                "Y" | "y" => y = val * unit_scale,
                 "Z" | "z" => {
                     z = val * unit_scale;
                     had_z = true;
                 }
-                "I" | "i" => {
-                    i = val * unit_scale;
-                    had_i = true;
-                }
-                "J" | "j" => {
-                    j = val * unit_scale;
-                    had_j = true;
-                }
                 _ => {}
             }
         }
-        let _ = (had_x, had_y, had_i, had_j);
         let from = state;
         let to = Pose3 { x, y, z };
         let moved = from.x != to.x || from.y != to.y || from.z != to.z;

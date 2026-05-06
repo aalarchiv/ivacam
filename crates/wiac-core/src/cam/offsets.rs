@@ -476,26 +476,6 @@ fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset
     })
 }
 
-// expose a tiny helper used by chaining tests
-pub(crate) fn segments_signed_area(segments: &[Segment]) -> f64 {
-    // Shoelace area of the closed polygon traced by the segment endpoints.
-    if segments.len() < 3 {
-        return 0.0;
-    }
-    let mut sum = 0.0;
-    for s in segments {
-        sum += (s.start.x * s.end.y) - (s.end.x * s.start.y);
-        // Bulge contribution to area (Cavalier Contours treats this exactly,
-        // but for chaining containment a small approximation is fine).
-        if s.bulge.abs() > 1e-12 {
-            let chord = s.start.distance(s.end);
-            let sagitta = (s.bulge * chord) * 0.5;
-            sum += sagitta * chord; // arc bulge area approx
-        }
-    }
-    sum * 0.5
-}
-
 #[allow(dead_code)]
 fn _math_unused() {
     let _ = math::TWO_PI;

@@ -16,7 +16,7 @@
 //! glyph is a network of thin curves, not a filled shape). See
 //! `is_single_line_font` for the threshold + tests.
 
-use ttf_parser::{Face, GlyphId, OutlineBuilder};
+use ttf_parser::{Face, OutlineBuilder};
 
 use crate::error::Error;
 use crate::geometry::{Point2, Segment};

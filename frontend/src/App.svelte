@@ -10,6 +10,12 @@
   import SetupPanel from './lib/components/SetupPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
+  import GcodePanel from './lib/components/GcodePanel.svelte';
+
+  // Bottom-strip tab — Playback (default) or G-code text. We keep the
+  // tab choice locally to App because both tabs share the same row
+  // and the user toggles between them frequently.
+  let bottomTab = $state<'playback' | 'gcode'>('playback');
   import { project } from './lib/state/project.svelte';
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
@@ -210,8 +216,30 @@
           <p class="loading-3d">Loading 3D…</p>
         {/if}
       </div>
-      {#if activePane === '3d' && project.generated}
-        <PlaybackBar />
+      {#if project.generated}
+        <div class="bottom-strip">
+          <div class="tabs">
+            <button
+              class:active={bottomTab === 'playback'}
+              onclick={() => (bottomTab = 'playback')}
+            >
+              {$_('bottom.playback') ?? 'Playback'}
+            </button>
+            <button
+              class:active={bottomTab === 'gcode'}
+              onclick={() => (bottomTab = 'gcode')}
+            >
+              {$_('bottom.gcode') ?? 'G-code'}
+            </button>
+          </div>
+          <div class="tab-body">
+            {#if bottomTab === 'playback'}
+              <PlaybackBar />
+            {:else}
+              <GcodePanel />
+            {/if}
+          </div>
+        </div>
       {/if}
     </section>
     <aside class="sidebar">
@@ -371,6 +399,39 @@
     justify-content: center;
     color: var(--text-muted);
     font-size: 0.85rem;
+  }
+  .bottom-strip {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    border-top: 1px solid var(--border);
+    background: var(--bg-panel);
+    /* Height clamp so the gcode panel doesn't push the canvas off
+       screen on small displays. Drag-resize is a follow-up. */
+    max-height: 40vh;
+  }
+  .tabs {
+    display: inline-flex;
+    gap: 0.15rem;
+    padding: 0.2rem 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs button {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .tabs button.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .tab-body {
+    overflow: hidden;
+    min-height: 0;
   }
   .sidebar {
     display: grid;

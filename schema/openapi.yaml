@@ -377,6 +377,14 @@ components:
       - start_depth
       - step
       type: object
+    MoveKind:
+      enum:
+      - rapid
+      - cut
+      - plunge
+      - retract
+      - arc
+      type: string
     ObjectOrder:
       enum:
       - nearest
@@ -982,7 +990,7 @@ components:
           minimum: 0.0
           type: integer
         kind:
-          $ref: '#/components/schemas/SegmentKind'
+          $ref: '#/components/schemas/MoveKind'
         op_id:
           default: 0
           description: Operation id from the per-op emitter. 0 = legacy / unstamped.

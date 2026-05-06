@@ -25,6 +25,13 @@
     return new THREE.Color(cssVar(name, '') || fallback);
   }
 
+  /// Deterministic hue in [0, 1) per op id. Spread by the golden-ratio
+  /// conjugate so even close ids land far apart on the wheel.
+  function opPalette(opId: number): number {
+    const phi = 0.6180339887498949;
+    return ((opId * phi) % 1 + 1) % 1;
+  }
+
   onMount(() => {
     scene = new THREE.Scene();
     scene.background = cssColor('--bg-app', 0x0d0d0d);
@@ -402,7 +409,7 @@
     }
 
     if (gen) {
-      const toolpath: Record<string, THREE.Color> = {
+      const moveTints: Record<string, THREE.Color> = {
         rapid: cssColor('--toolpath-rapid', 0x35a2ff),
         cut: cssColor('--toolpath-cut', 0xff5555),
         plunge: cssColor('--toolpath-plunge', 0xffd23a),
@@ -413,17 +420,25 @@
       const head = Math.max(0, Math.min(total, Math.round(project.playhead * total)));
       for (let i = 0; i < total; i++) {
         const seg = gen.toolpath[i];
-        const tp = toolpath[seg.kind] ?? toolpath.cut;
-        let r = tp.r;
-        let g = tp.g;
-        let b = tp.b;
-        // Future moves (after the head) faded so the user can see what's
-        // come and what's coming next.
+        const moveTint = moveTints[seg.kind] ?? moveTints.cut;
+        // Per-op base hue from a stable hash of op_id; the move tint
+        // brightens it 1.5× for cuts, halves it for rapids — so the eye
+        // can pick out each operation while still distinguishing
+        // rapid/cut/plunge/retract within an op.
+        const opId = seg.op_id ?? 0;
+        const opHue = opId === 0 ? 0.0 : opPalette(opId);
+        const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
+        const moveBoost = seg.kind === 'rapid' ? 0.5 : seg.kind === 'plunge' || seg.kind === 'retract' ? 0.85 : 1.15;
+        let r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
+        let g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
+        let b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
+        // Future moves (after the playhead) faded so the user can see
+        // what's come and what's coming next.
         if (i >= head) {
           const f = 0.25;
-          r = tp.r * f + 0.05;
-          g = tp.g * f + 0.05;
-          b = tp.b * f + 0.05;
+          r = r * f + 0.05;
+          g = g * f + 0.05;
+          b = b * f + 0.05;
         }
         positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
         colors.push(r, g, b, r, g, b);

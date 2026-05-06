@@ -21,7 +21,7 @@ pub struct Pose3 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-pub enum SegmentKind {
+pub enum MoveKind {
     Rapid,
     Cut,
     Plunge,
@@ -33,7 +33,7 @@ pub enum SegmentKind {
 pub struct ToolpathSegment {
     pub from: Pose3,
     pub to: Pose3,
-    pub kind: SegmentKind,
+    pub kind: MoveKind,
     /// 1-based line number in the source gcode that produced this move.
     /// 0 means "synthetic / unknown".
     #[serde(default)]
@@ -132,20 +132,20 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
             continue;
         }
         let kind = match active_code {
-            0 => SegmentKind::Rapid,
+            0 => MoveKind::Rapid,
             1 => {
                 if had_z && from.x == to.x && from.y == to.y {
                     if to.z > from.z {
-                        SegmentKind::Retract
+                        MoveKind::Retract
                     } else {
-                        SegmentKind::Plunge
+                        MoveKind::Plunge
                     }
                 } else {
-                    SegmentKind::Cut
+                    MoveKind::Cut
                 }
             }
-            2 | 3 => SegmentKind::Arc,
-            _ => SegmentKind::Cut,
+            2 | 3 => MoveKind::Arc,
+            _ => MoveKind::Cut,
         };
         let seg_idx = out.len() as u32;
         out.push(ToolpathSegment {
@@ -216,8 +216,8 @@ mod tests {
         let g = "G21\nG90\nG0 X10 Y0\nG1 X10 Y10 F800\n";
         let segs = interpret(g);
         assert_eq!(segs.len(), 2);
-        assert!(matches!(segs[0].kind, SegmentKind::Rapid));
-        assert!(matches!(segs[1].kind, SegmentKind::Cut));
+        assert!(matches!(segs[0].kind, MoveKind::Rapid));
+        assert!(matches!(segs[1].kind, MoveKind::Cut));
         assert_eq!(segs[1].to.y, 10.0);
     }
 
@@ -226,9 +226,9 @@ mod tests {
         let g = "G21\nG0 X0 Y0 Z5\nG1 Z-2 F100\nG1 Z5 F200\n";
         let segs = interpret(g);
         assert_eq!(segs.len(), 3);
-        assert!(matches!(segs[0].kind, SegmentKind::Rapid));
-        assert!(matches!(segs[1].kind, SegmentKind::Plunge));
-        assert!(matches!(segs[2].kind, SegmentKind::Retract));
+        assert!(matches!(segs[0].kind, MoveKind::Rapid));
+        assert!(matches!(segs[1].kind, MoveKind::Plunge));
+        assert!(matches!(segs[2].kind, MoveKind::Retract));
     }
 
     #[test]

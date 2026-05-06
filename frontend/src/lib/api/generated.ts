@@ -216,6 +216,8 @@ export interface components {
             step: number;
         };
         /** @enum {string} */
+        MoveKind: "rapid" | "cut" | "plunge" | "retract" | "arc";
+        /** @enum {string} */
         ObjectOrder: "nearest" | "per_object" | "unordered";
         Operation: {
             enabled: boolean;
@@ -524,7 +526,7 @@ export interface components {
              * @default 0
              */
             gcode_line: number;
-            kind: components["schemas"]["SegmentKind"];
+            kind: components["schemas"]["MoveKind"];
             /**
              * Format: uint32
              * @description Operation id from the per-op emitter. 0 = legacy / unstamped.

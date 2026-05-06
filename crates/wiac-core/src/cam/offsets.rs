@@ -107,7 +107,27 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
         return Vec::new();
     }
     let pline = vc_to_pline(obj);
-    let offsets = pline.parallel_offset(delta);
+    // cavalier_contours can panic on degenerate inputs ("input assumed
+    // to not have repeat position vertexes") for self-touching contours
+    // produced by some HATCH boundaries / ELLIPSE flattening. We
+    // already dedupe consecutive vertices in vc_to_pline, but the
+    // crate's intermediate self-intersection handling can still trip
+    // the assert. Catch the panic and skip the offset rather than
+    // taking down the whole pipeline — the user gets a partial result
+    // plus a warning instead of a 500.
+    let layer = obj.layer.clone();
+    let offsets = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pline.parallel_offset(delta)
+    })) {
+        Ok(v) => v,
+        Err(_) => {
+            tracing::warn!(
+                "parallel_offset on layer '{}' panicked in cavalier_contours; skipping",
+                layer
+            );
+            return Vec::new();
+        }
+    };
     offsets
         .into_iter()
         .map(|o| PolylineOffset {
@@ -401,17 +421,31 @@ fn vc_to_pline(obj: &VcObject) -> Polyline<f64> {
     } else {
         Polyline::new()
     };
+    // cavalier_contours panics on consecutive coincident vertices ("bug:
+    // input assumed to not have repeat position vertexes"), so swallow
+    // them here. Imported HATCH boundaries and SVG paths can carry
+    // duplicates legitimately.
+    let mut last: Option<(f64, f64)> = None;
+    let push = |pl: &mut Polyline<f64>, last: &mut Option<(f64, f64)>, x: f64, y: f64, b: f64| {
+        if let Some((lx, ly)) = *last {
+            if (x - lx).abs() < 1e-9 && (y - ly).abs() < 1e-9 {
+                return;
+            }
+        }
+        pl.add_vertex(PlineVertex::new(x, y, b));
+        *last = Some((x, y));
+    };
     for seg in &obj.segments {
         let bulge = if seg.kind == SegmentKind::Line {
             0.0
         } else {
             seg.bulge
         };
-        pl.add_vertex(PlineVertex::new(seg.start.x, seg.start.y, bulge));
+        push(&mut pl, &mut last, seg.start.x, seg.start.y, bulge);
     }
     if !obj.closed {
-        if let Some(last) = obj.segments.last() {
-            pl.add_vertex(PlineVertex::new(last.end.x, last.end.y, 0.0));
+        if let Some(last_seg) = obj.segments.last() {
+            push(&mut pl, &mut last, last_seg.end.x, last_seg.end.y, 0.0);
         }
     }
     pl

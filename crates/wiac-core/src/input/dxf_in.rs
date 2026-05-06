@@ -31,24 +31,52 @@ const CAMCFG_LAYER: &str = "_CAMCFG";
 
 /// Top-level entry: read a DXF file from disk and tessellate to segments.
 pub fn import_dxf_path(path: &Path, opts: &ImportOptions) -> crate::Result<ImportOutput> {
-    let drawing = Drawing::load_file(path).map_err(Error::Dxf)?;
+    let bytes = std::fs::read(path)?;
     let filename = path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_string();
-    import_drawing(&drawing, filename, opts)
+    import_dxf_bytes(filename, &bytes, opts)
 }
 
-/// Bytes-based DXF import — used by the WASM transport (no filesystem) and
-/// any future in-memory pipeline that doesn't go through a tempfile.
+/// Bytes-based DXF import. Two passes: first hand the buffer to dxf-rs
+/// for the entities it natively supports, then text-mode-scan the same
+/// buffer for HATCH entities (which dxf-rs 0.6 silently swallows) and
+/// append their boundary geometry to the result.
 pub fn import_dxf_bytes(
     filename: String,
     bytes: &[u8],
     opts: &ImportOptions,
 ) -> crate::Result<ImportOutput> {
     let drawing = Drawing::load(&mut std::io::Cursor::new(bytes)).map_err(Error::Dxf)?;
-    import_drawing(&drawing, filename, opts)
+    let mut out = import_drawing(&drawing, filename, opts)?;
+
+    // HATCH boundary recovery pass — only meaningful for text-mode DXFs.
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        let mut hatch_segments = Vec::new();
+        let n = super::hatch::extract_hatch_boundaries(
+            text,
+            out.unit_scale,
+            &mut hatch_segments,
+            &mut out.warnings,
+        );
+        if n > 0 {
+            // BBox + per-layer counts need a refresh.
+            out.segments.extend(hatch_segments);
+            out.bbox = crate::geometry::BBox::from_segments(&out.segments);
+            out.layers = super::summarize_layers(
+                &out.segments,
+                &drawing
+                    .layers()
+                    .map(|l| (l.name.clone(), color_to_aci(&l.color, 7)))
+                    .collect(),
+            );
+            out.warnings
+                .push(format!("recovered {n} HATCH boundary path(s)"));
+        }
+    }
+    Ok(out)
 }
 
 /// Importer entry point that takes an already-parsed `Drawing`. Useful for

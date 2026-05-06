@@ -47,6 +47,28 @@ class ProjectState {
     customY: 100,
   });
 
+  /// Project-scoped tool library. Replaces the single `setup.tool`
+  /// configured via SetupPanel; ops will reference an entry by id once
+  /// the operations list lands. Today these don't drive Generate yet
+  /// (the legacy setup path is still wired) but they're persisted via
+  /// .vc-project so the user can curate a stable set across sessions.
+  tools = $state<ToolEntry[]>([
+    { id: 1, name: '3 mm endmill', kind: 'endmill', diameter: 3, flutes: 2,
+      speed: 18000, plungeRate: 100, feedRate: 800, coolant: 'off' },
+  ]);
+
+  /// Project-scoped machine settings. Same story as tools — duplicates
+  /// `setup.machine` until the rewire lands but is the source of truth
+  /// going forward.
+  machine = $state<MachineSettings>({
+    unit: 'mm',
+    mode: 'mill',
+    comments: true,
+    arcs: true,
+    supportsToolchange: false,
+    fastMoveZ: 5,
+  });
+
   addTab(segmentIdx: number, position: Point2) {
     const next = { ...this.tabs };
     next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: position.x, y: position.y }];
@@ -118,6 +140,8 @@ class ProjectState {
       selectedEntities: [...this.selectedEntities],
       tabs: this.tabs,
       stock: this.stock,
+      tools: this.tools,
+      machine: this.machine,
     };
   }
 
@@ -131,6 +155,8 @@ class ProjectState {
     this.selectedEntities = new Set(file.selectedEntities ?? []);
     this.tabs = file.tabs ?? {};
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
+    if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
+    if (file.machine) this.machine = { ...this.machine, ...file.machine };
   }
 }
 
@@ -148,6 +174,32 @@ export interface StockConfig {
   customY: number;
 }
 
+export type ToolKind = 'endmill' | 'ball_nose' | 'v_bit' | 'engraver' | 'drag_knife' | 'drill' | 'laser_beam';
+export type CoolantMode = 'off' | 'mist' | 'flood';
+
+export interface ToolEntry {
+  id: number;
+  name: string;
+  kind: ToolKind;
+  diameter: number;
+  tipDiameter?: number;
+  dragoff?: number;
+  flutes: number;
+  speed: number;
+  plungeRate: number;
+  feedRate: number;
+  coolant: CoolantMode;
+}
+
+export interface MachineSettings {
+  unit: 'mm' | 'inch';
+  mode: 'mill' | 'laser' | 'drag';
+  comments: boolean;
+  arcs: boolean;
+  supportsToolchange: boolean;
+  fastMoveZ: number;
+}
+
 export interface ProjectFile {
   kind: 'wiac-project';
   version: 1;
@@ -157,6 +209,8 @@ export interface ProjectFile {
   selectedEntities: number[];
   tabs?: Record<number, Tab[]>;
   stock?: StockConfig;
+  tools?: ToolEntry[];
+  machine?: MachineSettings;
 }
 
 export const project = new ProjectState();

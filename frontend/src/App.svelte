@@ -11,6 +11,11 @@
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
   import GcodePanel from './lib/components/GcodePanel.svelte';
+  import MachineDialog from './lib/components/MachineDialog.svelte';
+  import ToolLibraryDialog from './lib/components/ToolLibraryDialog.svelte';
+
+  let machineOpen = $state(false);
+  let toolsOpen = $state(false);
 
   // Bottom-strip tab — Playback (default) or G-code text. We keep the
   // tab choice locally to App because both tabs share the same row
@@ -155,6 +160,12 @@
     <h1>{$_('app.title')}</h1>
     <span class="tagline">{$_('app.tagline')}</span>
     <div class="spacer"></div>
+    <button class="config-btn" onclick={() => (toolsOpen = true)} title="Tool library">
+      Tools…
+    </button>
+    <button class="config-btn" onclick={() => (machineOpen = true)} title="Machine settings">
+      Machine…
+    </button>
     <button
       class="tool-toggle"
       class:active={project.tabMode}
@@ -252,6 +263,9 @@
     </aside>
   </main>
 
+  <MachineDialog open={machineOpen} onClose={() => (machineOpen = false)} />
+  <ToolLibraryDialog open={toolsOpen} onClose={() => (toolsOpen = false)} />
+
   <footer>
     {#if project.imported}
       {$_('footer.bbox', {
@@ -297,6 +311,19 @@
   }
   .spacer {
     flex: 1;
+  }
+  .config-btn {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .config-btn:hover {
+    color: var(--text-strong);
+    border-color: var(--accent);
   }
   .tool-toggle {
     background: var(--bg-elevated);

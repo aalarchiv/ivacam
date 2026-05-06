@@ -18,16 +18,11 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 dxf = "0.6"
 cavalier_contours = "0.7"
-clipper2 = { version = "0.5", optional = true }
+# Pure-Rust port of Clipper2 (BSL-1.0). Builds for wasm32-unknown-unknown
+# without a C++ stdlib, so the pocket cascade ships in every transport.
+clipper2-rust = "1"
 schemars = { version = "0.8", features = ["preserve_order"] }
 ttf-parser = "0.25"
-
-[features]
-default = ["pocket-cascade"]
-# Inward-cascade pocketing via clipper2. Disable for wasm32-unknown-unknown
-# builds where the C++ stdlib isn't available — the rest of the CAM core
-# (parallel offsets, gcode emit, tabs, drag-knife) keeps working.
-pocket-cascade = ["dep:clipper2"]
 
 [dev-dependencies]
 ttf-parser = "0.25"

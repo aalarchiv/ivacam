@@ -16,7 +16,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-wiac-core = { workspace = true, features = ["pocket-cascade"] }
+wiac-core = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

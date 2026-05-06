@@ -6,8 +6,7 @@
 //! algorithm level — see the unit tests for the contracts.
 
 use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Polyline};
-#[cfg(feature = "pocket-cascade")]
-use clipper2::{EndType, JoinType, Paths};
+use clipper2_rust::{inflate_paths_d, EndType, JoinType, PathD, PathsD, Point as ClipperPoint};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -228,10 +227,6 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
 /// closed polyline already inflated by `tool_radius` outward — the
 /// caller is responsible for that pre-inflation, matching the upstream
 /// Python `do_pockets` islands branch.
-///
-/// Without the `pocket-cascade` feature (e.g. wasm32 builds without a C++
-/// stdlib) the cascade is unavailable and this returns an empty list.
-#[cfg(feature = "pocket-cascade")]
 pub fn pocket_cascade_with_islands(
     boundary: &[Point2],
     islands: &[Vec<Point2>],
@@ -240,17 +235,19 @@ pub fn pocket_cascade_with_islands(
     if boundary.len() < 3 || delta <= 1e-9 {
         return Vec::new();
     }
-    let mut current: Paths = build_paths(boundary, islands);
+    let mut current: PathsD = build_paths(boundary, islands);
     let mut rings = Vec::new();
     loop {
-        let next = current.inflate(-delta, JoinType::Round, EndType::Polygon, 2.0);
-        let raw: Vec<Vec<(f64, f64)>> = next.clone().into();
-        if raw.is_empty() || raw.iter().all(|r| r.len() < 3) {
+        // clipper2-rust args: (paths, delta, jt, et, miter_limit, precision, arc_tol).
+        // precision = 4 → 1e-4 mm internal grid (sub-micrometer). arc_tol is
+        // the chord error for round joins, in input units.
+        let next = inflate_paths_d(&current, -delta, JoinType::Round, EndType::Polygon, 2.0, 4, 0.25);
+        if next.is_empty() || next.iter().all(|r| r.len() < 3) {
             break;
         }
-        for ring in &raw {
+        for ring in &next {
             if ring.len() >= 3 {
-                rings.push(ring.iter().map(|(x, y)| Point2::new(*x, *y)).collect());
+                rings.push(ring.iter().map(|pt| Point2::new(pt.x, pt.y)).collect());
             }
         }
         current = next;
@@ -261,21 +258,11 @@ pub fn pocket_cascade_with_islands(
     rings
 }
 
-#[cfg(not(feature = "pocket-cascade"))]
-pub fn pocket_cascade_with_islands(
-    _boundary: &[Point2],
-    _islands: &[Vec<Point2>],
-    _delta: f64,
-) -> Vec<Vec<Point2>> {
-    Vec::new()
-}
-
-#[cfg(feature = "pocket-cascade")]
-fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> Paths {
+fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> PathsD {
     // Clipper2 treats CW-wound rings as holes when EndType::Polygon is in
     // play. Force the outer boundary CCW and the islands CW regardless of
     // how the caller hands them in.
-    let mut all: Vec<Vec<(f64, f64)>> = Vec::with_capacity(islands.len() + 1);
+    let mut all: PathsD = Vec::with_capacity(islands.len() + 1);
     let outer = if signed_area(boundary) > 0.0 {
         boundary.to_vec()
     } else {
@@ -283,7 +270,11 @@ fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> Paths {
         r.reverse();
         r
     };
-    all.push(outer.iter().map(|p| (p.x, p.y)).collect());
+    let outer_path: PathD = outer
+        .iter()
+        .map(|p| ClipperPoint::new(p.x, p.y))
+        .collect();
+    all.push(outer_path);
     for island in islands {
         if island.len() < 3 {
             continue;
@@ -295,12 +286,15 @@ fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> Paths {
             r.reverse();
             r
         };
-        all.push(hole.iter().map(|p| (p.x, p.y)).collect());
+        let hole_path: PathD = hole
+            .iter()
+            .map(|p| ClipperPoint::new(p.x, p.y))
+            .collect();
+        all.push(hole_path);
     }
-    all.into()
+    all
 }
 
-#[cfg(feature = "pocket-cascade")]
 fn signed_area(pts: &[Point2]) -> f64 {
     if pts.len() < 3 {
         return 0.0;
@@ -748,7 +742,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "pocket-cascade")]
     #[test]
     fn pocket_cascade_with_island_skips_around_it() {
         // 30x30 outer with a 10x10 island centered at (15, 15).
@@ -825,7 +818,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "pocket-cascade")]
     #[test]
     fn pocket_cascade_produces_inward_rings() {
         let boundary = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];

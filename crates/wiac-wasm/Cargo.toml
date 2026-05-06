@@ -15,10 +15,6 @@ crate-type = ["cdylib", "rlib"]
 workspace = true
 
 [dependencies]
-# Workspace dep already declares default-features = false at the
-# workspace level so the cascade pocket fill (clipper2 → C++) is off
-# by default. The wasm32 transport stays Rust-only; parallel offsets,
-# gcode emit, tabs and drag-knife still work.
 wiac-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

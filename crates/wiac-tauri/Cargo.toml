@@ -19,7 +19,7 @@ workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-wiac-core = { workspace = true, features = ["pocket-cascade"] }
+wiac-core = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -599,24 +599,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "clipper2"
-version = "0.5.4"
+name = "clipper2-rust"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb9c8be020eb163b25a763f2b58de1285f30c4e512a48808ee1d641d23cfe3e3"
+checksum = "119b9306cc17492f50224736a2b2595543665c3095ba40c04c5c5181d53678bc"
 dependencies = [
- "clipper2c-sys",
- "libc",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "clipper2c-sys"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6801d5a9a1d30e747025ec2afdc841d51665028481d61b5c719d173e88211ea3"
-dependencies = [
- "cc",
- "libc",
+ "num-traits 0.2.19",
 ]
 
 [[package]]
@@ -5533,7 +5521,7 @@ name = "wiac-core"
 version = "0.0.0"
 dependencies = [
  "cavalier_contours",
- "clipper2",
+ "clipper2-rust",
  "criterion",
  "dxf",
  "schemars 0.8.22",

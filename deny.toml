@@ -6,7 +6,29 @@ all-features = true
 
 [advisories]
 yanked = "deny"
-ignore = []
+# Unmaintained advisories we accept transitively. None of these have
+# active vulnerabilities; they're flagged as "no longer maintained" by
+# their authors (gtk3-rs has migrated to gtk4, etc.). We can't drop them
+# without retiring Tauri's GTK webview / the icu pipeline / the older
+# proc-macro2 helpers, which is way out of scope.
+ignore = [
+    "RUSTSEC-2024-0370",  # proc-macro-error unmaintained (transitive)
+    "RUSTSEC-2024-0411",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0412",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0413",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0414",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0415",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0416",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0417",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0418",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0419",  # gtk3-rs unmaintained
+    "RUSTSEC-2024-0420",  # gtk3-rs unmaintained
+    "RUSTSEC-2025-0075",  # unic-char-range unmaintained
+    "RUSTSEC-2025-0080",  # unic-common unmaintained
+    "RUSTSEC-2025-0081",  # unic-char-property unmaintained
+    "RUSTSEC-2025-0098",  # unic-ucd-version unmaintained
+    "RUSTSEC-2025-0100",  # unic-ucd-ident unmaintained
+]
 
 [licenses]
 # Allow GPL-compatible licenses for our GPL-3 derivative work.
@@ -20,18 +42,23 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "BSL-1.0",          # clipper2-rust (pure-Rust polygon offsetter)
     "ISC",
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
+    "CDLA-Permissive-2.0",  # webpki-root-certs (transitive via reqwest in Tauri)
 ]
 confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace-internal `wiac-core = { path = "..." }` declarations look like
+# wildcards to cargo-deny; allow them.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

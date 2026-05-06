@@ -3,7 +3,7 @@
 //! Three logical groups:
 //! * `geometry` helpers (lines, angles, distances, polygon-inside) — pure math
 //! * `chaining` (segments → closed/open VcObjects) — port of `segments2objects`
-//! * `offsets` (cavalier_contours + clipper2 driven contour offsetting and pockets)
+//! * `offsets` (cavalier_contours + clipper2-rust driven contour offsetting and pockets)
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

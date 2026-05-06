@@ -29,6 +29,7 @@ rust-version = "1.78"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/wiaconstructor/wiaconstructor"
 authors = ["wiaConstructor contributors"]
+publish = false
 
 [workspace.lints.rust]
 unsafe_code = "warn"

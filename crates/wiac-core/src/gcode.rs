@@ -285,10 +285,10 @@ fn multi_pass<P: PostProcessor>(
     let mut prev_z: Option<f64> = None;
     let mut z = (setup.mill.start_depth + step).max(total_depth);
     loop {
-        if helix && prev_z.is_some() {
+        if let (true, Some(pz)) = (helix, prev_z) {
             // Spiral from prev_z down to z while tracing the segments.
             post.feedrate(setup.tool.rate_h);
-            emit_helix_pass(segments, prev_z.unwrap(), z, post);
+            emit_helix_pass(segments, pz, z, post);
         } else {
             post.feedrate(setup.tool.rate_v);
             post.linear(None, None, Some(z));

@@ -5,8 +5,12 @@ Walks `refs/viaconstructor/tests/data/*.dxf`, runs each through the Python
 CAM pipeline under a small setup matrix, and writes the gcode into
 `tests/golden/expected/<name>.<setup>.expected.gcode`.
 
-Run:
-    bridge/.venv/bin/python tests/golden/refresh.py
+Requires viaConstructor's runtime deps importable. Easiest:
+
+    python3 -m venv .venv-golden
+    source .venv-golden/bin/activate
+    pip install -r refs/viaconstructor/requirements.txt
+    python3 tests/golden/refresh.py
 """
 
 from __future__ import annotations

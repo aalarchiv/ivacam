@@ -1,5 +1,5 @@
-// HTTP implementation of WiacClient. Talks to whichever server is wired
-// up — Stage-1 Python FastAPI now, Rust axum later. Same shape.
+// HTTP implementation of WiacClient. Talks to wiac-server (axum) over the
+// JSON contract in schema/openapi.yaml.
 
 import type { DefaultsResponse, ProgressEvent, WiacClient } from './client';
 import type {
@@ -169,7 +169,7 @@ export function defaultClient(): WiacClient {
     return new HttpWiacClient(`${protocol}//${hostname}:8766`);
   }
 
-  return new HttpWiacClient('http://127.0.0.1:8765');
+  return new HttpWiacClient('http://127.0.0.1:8766');
 }
 
 /**

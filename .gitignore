@@ -47,10 +47,9 @@ refs/
 # Local Claude-Code session state.
 .claude/
 
-# Bridge venv (Stage-1 Python service).
-bridge/.venv/
-bridge/__pycache__/
-bridge/wiac_bridge/__pycache__/
+# Local Python venv used by tests/golden/refresh.py.
+.venv-golden/
+**/__pycache__/
 
 # Tempfiles + samples generated during demos.
 frontend/public/samples/*-rust.json

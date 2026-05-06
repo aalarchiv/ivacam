@@ -1,6 +1,5 @@
 //! `wiac-server` — axum HTTP server exposing the JSON contract from
-//! `schema/openapi.yaml`. Drop-in replacement for the Stage-1 Python
-//! FastAPI bridge.
+//! `schema/openapi.yaml`.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;

@@ -12,11 +12,12 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    // Same-origin proxy to the Stage-1 FastAPI bridge so the frontend can
-    // ship without bothering with CORS in dev.
+    // Same-origin proxy to wiac-server so the frontend can ship without
+    // bothering with CORS in dev. Override with VITE_WIAC_API at build
+    // time or `?api=…` at runtime if you're pointing at a remote host.
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8765',
+        target: 'http://127.0.0.1:8766',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ''),
       },

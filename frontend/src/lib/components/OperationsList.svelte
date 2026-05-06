@@ -5,6 +5,7 @@
   /// (drives OpPropertiesPanel). Drag-handle reorders. + Add operation
   /// pops a kind picker.
   import { project, type OpEntry, type OpKind } from '../state/project.svelte';
+  import OpPropertiesPanel from './OpPropertiesPanel.svelte';
 
   const KIND_LABEL: Record<OpKind, string> = {
     profile: 'Profile',
@@ -39,13 +40,34 @@
     return t ? t.name : `tool #${toolId}`;
   }
 
-  function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad' } {
+  function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad'; reason: string } {
     if (!project.tools.find((t) => t.id === op.toolId)) {
-      return { label: 'no tool', tone: 'bad' };
+      return { label: '✘', tone: 'bad', reason: `Tool #${op.toolId} is not in the project's tool library. Pick a tool in the operation properties.` };
     }
-    if (!project.imported) return { label: '—', tone: 'warn' };
-    if (project.generated) return { label: '✓', tone: 'ok' };
-    return { label: '⚠', tone: 'warn' };
+    if (!project.imported) {
+      return { label: '⚠', tone: 'warn', reason: 'No drawing imported yet — open a DXF/SVG to apply this operation.' };
+    }
+    if (op.sourceObjects && op.sourceObjects.length > 0) {
+      const have = project.imported.objects ?? [];
+      const missing = op.sourceObjects.filter((id) => !have.includes(id));
+      if (missing.length > 0) {
+        return { label: '⚠', tone: 'warn', reason: `Source includes ${missing.length} object id(s) not present in the current import — they may have come from a different drawing.` };
+      }
+    }
+    if (op.sourceLayers && op.sourceLayers.length > 0) {
+      const knownLayers = new Set(project.imported.layers.map((l) => l.name));
+      const missing = op.sourceLayers.filter((l) => !knownLayers.has(l));
+      if (missing.length > 0) {
+        return { label: '⚠', tone: 'warn', reason: `Source layer(s) "${missing.join(', ')}" not in this drawing.` };
+      }
+    }
+    if (project.dirty) {
+      return { label: '⚠', tone: 'warn', reason: 'Project changed since the last Generate — re-Generate to refresh this operation\'s gcode.' };
+    }
+    if (!project.generated) {
+      return { label: '·', tone: 'warn', reason: 'Not generated yet — click Generate to produce this operation\'s gcode.' };
+    }
+    return { label: '✓', tone: 'ok', reason: 'Up to date with the last Generate.' };
   }
 
   function selectOp(id: number) {
@@ -106,36 +128,44 @@
         {@const status = statusFor(op)}
         {@const selected = project.selectedOpId === op.id}
         {@const dragOver = dragOverId === op.id}
-        <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-        <li
-          class:selected
-          class:drag-over={dragOver}
-          draggable="true"
-          ondragstart={(e) => onDragStart(e, op.id)}
-          ondragover={(e) => onDragOver(e, op.id)}
-          ondrop={(e) => onDrop(e, op.id)}
-          ondragend={onDragEnd}
-          onclick={() => selectOp(op.id)}
-          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectOp(op.id); }}
-          role="option"
-          tabindex="0"
-          aria-selected={selected}
-        >
-          <input
-            type="checkbox"
-            checked={op.enabled}
-            onclick={(e) => e.stopPropagation()}
-            onchange={(e) => project.updateOperation(op.id, { enabled: (e.currentTarget as HTMLInputElement).checked })}
-          />
-          <span class="ico" title={KIND_LABEL[op.kind]}>{KIND_ICON[op.kind]}</span>
-          <span class="name">{op.name}</span>
-          <span class="tool">{toolName(op.toolId)}</span>
-          <span class="status {status.tone}" title={status.label}>{status.label}</span>
-          <button
-            class="del"
-            onclick={(e) => { e.stopPropagation(); project.removeOperation(op.id); }}
-            title="Delete operation"
-          >×</button>
+        <li class:selected class:drag-over={dragOver}>
+          <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+          <div
+            class="row"
+            draggable="true"
+            ondragstart={(e) => onDragStart(e, op.id)}
+            ondragover={(e) => onDragOver(e, op.id)}
+            ondrop={(e) => onDrop(e, op.id)}
+            ondragend={onDragEnd}
+            onclick={() => selectOp(op.id)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectOp(op.id); }}
+            role="option"
+            tabindex="0"
+            aria-selected={selected}
+          >
+            <span class="grip" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
+            <input
+              type="checkbox"
+              checked={op.enabled}
+              onclick={(e) => e.stopPropagation()}
+              onchange={(e) => project.updateOperation(op.id, { enabled: (e.currentTarget as HTMLInputElement).checked })}
+            />
+            <span class="caret" aria-hidden="true">{selected ? '▾' : '▸'}</span>
+            <span class="ico" title={KIND_LABEL[op.kind]}>{KIND_ICON[op.kind]}</span>
+            <span class="name">{op.name}</span>
+            <span class="tool">{toolName(op.toolId)}</span>
+            <span class="status {status.tone}" title={status.reason}>{status.label}</span>
+            <button
+              class="del"
+              onclick={(e) => { e.stopPropagation(); project.removeOperation(op.id); }}
+              title="Delete operation"
+            >×</button>
+          </div>
+          {#if selected}
+            <div class="props">
+              <OpPropertiesPanel embedded />
+            </div>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -223,16 +253,12 @@
     gap: 0.18rem;
   }
   li {
-    display: grid;
-    grid-template-columns: auto auto minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
-    gap: 0.3rem;
-    align-items: center;
-    padding: 0.25rem 0.35rem;
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--border);
     border-radius: 3px;
     background: var(--bg-elevated);
     font-size: 0.78rem;
-    cursor: pointer;
   }
   li.selected {
     border-color: var(--accent);
@@ -241,6 +267,31 @@
   li.drag-over {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent) inset;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: auto auto auto auto minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+    gap: 0.3rem;
+    align-items: center;
+    padding: 0.25rem 0.35rem;
+    cursor: pointer;
+  }
+  .grip {
+    color: var(--text-faint);
+    cursor: grab;
+    font-size: 0.7rem;
+    user-select: none;
+    line-height: 1;
+  }
+  .caret {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    width: 0.8rem;
+    text-align: center;
+  }
+  .props {
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel));
   }
   .name {
     overflow: hidden;

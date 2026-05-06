@@ -11,6 +11,13 @@
     type PocketStrategy,
   } from '../state/project.svelte';
 
+  interface Props {
+    /// True when rendered inline under an OperationsList row (drops the
+    /// outer aside chrome + the standalone "Properties" header).
+    embedded?: boolean;
+  }
+  let { embedded = false }: Props = $props();
+
   const op = $derived<OpEntry | null>(
     project.selectedOpId == null
       ? null
@@ -22,11 +29,15 @@
   }
 </script>
 
-<aside class="props">
-  <h3>Properties</h3>
+<aside class="props" class:embedded>
+  {#if !embedded}
+    <h3>Properties</h3>
+  {/if}
 
   {#if !op}
-    <p class="empty">Select an operation in the list to edit it.</p>
+    {#if !embedded}
+      <p class="empty">Select an operation in the list to edit it.</p>
+    {/if}
   {:else}
     <label class="row">
       <span>Name</span>
@@ -189,6 +200,12 @@
     padding: 0.6rem 0.7rem 1rem;
     box-sizing: border-box;
     min-width: 0;
+  }
+  .props.embedded {
+    height: auto;
+    border-left: 0;
+    background: transparent;
+    padding: 0.4rem 0.5rem 0.6rem 1.6rem;
   }
   h3 {
     margin: 0 0 0.4rem 0;

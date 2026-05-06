@@ -77,12 +77,17 @@ class ProjectState {
   operations = $state<OpEntry[]>([]);
   /// id of the currently-selected op (drives OpPropertiesPanel).
   selectedOpId = $state<number | null>(null);
+  /// True when the in-memory project differs from the gcode currently
+  /// shown in `generated`. Set by op edits/reorders/enable toggles;
+  /// cleared by setGenerated. The status badge in the ops list reads
+  /// this so the user knows "re-Generate to refresh".
+  dirty = $state(false);
 
   addTab(segmentIdx: number, position: Point2) {
     const next = { ...this.tabs };
     next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: position.x, y: position.y }];
     this.tabs = next;
-    this.generated = null; // invalidate gcode — needs re-Generate
+    this.dirty = true;
   }
 
   removeTab(segmentIdx: number, tabIdx: number) {
@@ -92,17 +97,18 @@ class ProjectState {
     next[segmentIdx] = list.filter((_, i) => i !== tabIdx);
     if (next[segmentIdx].length === 0) delete next[segmentIdx];
     this.tabs = next;
-    this.generated = null;
+    this.dirty = true;
   }
 
   clearTabs() {
     this.tabs = {};
-    this.generated = null;
+    this.dirty = true;
   }
 
   setImported(r: ImportResponse) {
     this.imported = r;
     this.generated = null;
+    this.dirty = true;
     this.error = null;
     this.visibleLayers = new Set(r.layers.map((l) => l.name));
     this.selectedEntities = new Set();
@@ -124,6 +130,7 @@ class ProjectState {
 
   setGenerated(r: GenerateResponse) {
     this.generated = r;
+    this.dirty = false;
     this.error = null;
     this.playhead = 1.0;
   }
@@ -190,29 +197,36 @@ class ProjectState {
     };
     this.operations = [...this.operations, op];
     this.selectedOpId = op.id;
-    this.generated = null;
+    this.dirty = true;
     return op;
   }
 
   removeOperation(id: number) {
     this.operations = this.operations.filter((o) => o.id !== id);
     if (this.selectedOpId === id) this.selectedOpId = null;
-    this.generated = null;
+    this.dirty = true;
   }
 
   updateOperation(id: number, patch: Partial<OpEntry>) {
     this.operations = this.operations.map((o) => (o.id === id ? { ...o, ...patch } : o));
-    this.generated = null;
+    this.dirty = true;
   }
 
+  /// Reorder. Skipped when source and target index are the same so a
+  /// stray drag-and-drop with no actual move doesn't dirty the project.
+  /// (A real reorder still flips dirty so the status badge surfaces it,
+  /// but the previously-generated gcode stays on screen until the user
+  /// clicks Generate again.)
   reorderOperation(id: number, toIndex: number) {
     const cur = this.operations.findIndex((o) => o.id === id);
     if (cur < 0) return;
+    const clamped = Math.max(0, Math.min(toIndex, this.operations.length - 1));
+    if (clamped === cur) return;
     const next = [...this.operations];
     const [op] = next.splice(cur, 1);
-    next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, op);
+    next.splice(clamped, 0, op);
     this.operations = next;
-    this.generated = null;
+    this.dirty = true;
   }
 }
 

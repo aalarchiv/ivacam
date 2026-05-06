@@ -8,7 +8,6 @@
   let scene3dLoading = $state(false);
   import LayerList from './lib/components/LayerList.svelte';
   import OperationsList from './lib/components/OperationsList.svelte';
-  import OpPropertiesPanel from './lib/components/OpPropertiesPanel.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
@@ -19,10 +18,11 @@
   let machineOpen = $state(false);
   let toolsOpen = $state(false);
 
-  // Bottom-strip tab — Playback (default) or G-code text. We keep the
-  // tab choice locally to App because both tabs share the same row
-  // and the user toggles between them frequently.
-  let bottomTab = $state<'playback' | 'gcode'>('playback');
+  // G-code panel visibility. The playback bar always sits below the
+  // 3D canvas; the gcode panel opens as an extra row beneath it so
+  // the user sees the toolpath, the playhead, and the program text
+  // simultaneously and can drive each from the others.
+  let gcodeOpen = $state(false);
   import { project } from './lib/state/project.svelte';
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
@@ -230,29 +230,22 @@
         {/if}
       </div>
       {#if project.generated}
-        <div class="bottom-strip">
-          <div class="tabs">
-            <button
-              class:active={bottomTab === 'playback'}
-              onclick={() => (bottomTab = 'playback')}
-            >
-              {$_('bottom.playback') ?? 'Playback'}
-            </button>
-            <button
-              class:active={bottomTab === 'gcode'}
-              onclick={() => (bottomTab = 'gcode')}
-            >
-              {$_('bottom.gcode') ?? 'G-code'}
-            </button>
-          </div>
-          <div class="tab-body">
-            {#if bottomTab === 'playback'}
-              <PlaybackBar />
-            {:else}
-              <GcodePanel />
-            {/if}
-          </div>
+        <PlaybackBar />
+        <div class="gcode-toggle">
+          <button
+            class:active={gcodeOpen}
+            onclick={() => (gcodeOpen = !gcodeOpen)}
+            title="Show / hide the gcode text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
+          >
+            {gcodeOpen ? '▼' : '▶'} {$_('bottom.gcode') ?? 'G-code'}
+            <span class="hint">{project.generated.gcode.split('\n').length} lines</span>
+          </button>
         </div>
+        {#if gcodeOpen}
+          <div class="gcode-row">
+            <GcodePanel />
+          </div>
+        {/if}
       {/if}
     </section>
     <aside class="sidebar">
@@ -261,9 +254,6 @@
       </div>
       <div class="ops-host">
         <OperationsList />
-      </div>
-      <div class="props-host">
-        <OpPropertiesPanel />
       </div>
       <div class="stock-host">
         <details>
@@ -438,49 +428,46 @@
     color: var(--text-muted);
     font-size: 0.85rem;
   }
-  .bottom-strip {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+  .gcode-toggle {
+    display: flex;
     border-top: 1px solid var(--border);
     background: var(--bg-panel);
-    /* Height clamp so the gcode panel doesn't push the canvas off
-       screen on small displays. Drag-resize is a follow-up. */
-    max-height: 40vh;
   }
-  .tabs {
-    display: inline-flex;
-    gap: 0.15rem;
-    padding: 0.2rem 0.4rem;
-    border-bottom: 1px solid var(--border);
-  }
-  .tabs button {
-    background: var(--bg-elevated);
+  .gcode-toggle button {
+    background: transparent;
     color: var(--text-muted);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 0.2rem 0.6rem;
+    border: 0;
+    padding: 0.2rem 0.7rem;
     font-size: 0.72rem;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
   }
-  .tabs button.active {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
+  .gcode-toggle button.active {
+    color: var(--text-strong);
   }
-  .tab-body {
+  .gcode-toggle .hint {
+    color: var(--text-faint);
+    font-size: 0.7rem;
+  }
+  .gcode-row {
+    border-top: 1px solid var(--border);
+    background: var(--bg-input);
+    /* Vertical split: capped so the canvas stays usable on small screens. */
+    height: clamp(180px, 35vh, 480px);
     overflow: hidden;
     min-height: 0;
   }
   .sidebar {
     display: grid;
-    grid-template-rows: minmax(80px, 130px) minmax(120px, 1.4fr) minmax(120px, 1.6fr) auto;
+    grid-template-rows: minmax(80px, 130px) minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
   .layers-host,
   .ops-host,
-  .props-host,
   .stock-host {
     min-height: 0;
     min-width: 0;

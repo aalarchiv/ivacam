@@ -16,6 +16,23 @@
   let themeMql: MediaQueryList | undefined;
   let themeMo: MutationObserver | undefined;
 
+  // Pickable line mesh + owner map. Each entry in `lineOwners` describes
+  // the source of one *line pair* (two consecutive vertices in the
+  // BufferAttribute) so a Raycaster.intersectObject hit can be mapped
+  // back to either an imported object id or a toolpath segment index.
+  type LineOwner =
+    | { kind: 'object'; objectId: number }
+    | { kind: 'toolpath'; segIdx: number };
+  let linesObject: THREE.LineSegments | undefined;
+  let lineOwners: LineOwner[] = [];
+  let sceneRadius = 100;
+  // Click vs. drag: OrbitControls owns pointermove so we only treat a
+  // pointerup as a click when the user barely moved the cursor between
+  // down and up. 3px / 400ms is the same threshold the 2D pane uses.
+  let pointerStart: { x: number; y: number; t: number } | null = null;
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+
   function cssVar(name: string, fallback: string): string {
     if (!host) return fallback;
     const v = getComputedStyle(host).getPropertyValue(name).trim();
@@ -43,6 +60,8 @@
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     host.appendChild(renderer.domElement);
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointerup', onPointerUp);
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -118,6 +137,10 @@
   onDestroy(() => {
     cancelAnimationFrame(raf);
     observer?.disconnect();
+    if (renderer) {
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointerup', onPointerUp);
+    }
     controls?.dispose();
     renderer?.dispose();
     if (themeMql) {
@@ -153,6 +176,7 @@
     void project.tabs;
     void project.stock;
     void project.operations;
+    void project.selectedObjects;
     rebuildGeometry();
     updateTabs();
     updateStock();
@@ -315,37 +339,58 @@
       opacity: 0.85,
     });
 
+    // Tool shape derived from the tool kind first, machine mode second.
+    // Each piece is built with its axis along +Z (Z-up world) and the
+    // cutting tip at z=0 so mesh.position.set(px, py, pz) lands the tip
+    // exactly on the toolpath point.
+    const kind = tool?.kind ?? 'endmill';
     let mesh: THREE.Mesh;
-    if (mode === 'drag') {
-      // Drag-knife: small blade ~5x diameter long, offset by dragoff so the
-      // user can see the trailing geometry the gcode is laying out.
+    if (mode === 'drag' || kind === 'drag_knife') {
       const off = dragoff ?? 0;
       const bladeLen = Math.max(diameter * 4, 4);
       const bladeT = Math.max(0.4, diameter * 0.4);
       const geom = new THREE.BoxGeometry(bladeT, off > 0 ? off * 2 : bladeT, bladeLen);
       geom.translate(0, 0, bladeLen / 2);
       mesh = new THREE.Mesh(geom, mat);
-    } else if (mode === 'laser') {
-      // Laser: thin red beam shape from above.
+    } else if (mode === 'laser' || kind === 'laser_beam') {
       const beamLen = Math.max(8, diameter * 6);
       const geom = new THREE.CylinderGeometry(0.3, 0.3, beamLen, 12);
-      geom.rotateX(Math.PI / 2);
+      geom.rotateX(Math.PI / 2); // CylinderGeometry's axis is +Y → put on +Z
       geom.translate(0, 0, beamLen / 2);
       mesh = new THREE.Mesh(geom, mat);
-    } else {
-      // Mill: cylinder body + small conical tip so the cutting edge is
-      // visible at the toolpath point. Body height = ~6× diameter so it
-      // looks like a real endmill, not a stub.
-      const bodyLen = Math.max(diameter * 6, 8);
-      const tipLen = diameter * 0.6;
+    } else if (kind === 'v_bit' || kind === 'engraver' || kind === 'drill') {
+      // Tapered cutter: cone with apex at the cutting tip.
+      const len = Math.max(diameter * 4, 8);
+      const tipR = (tool?.tipDiameter ?? 0) * 0.5;
+      const geom = new THREE.CylinderGeometry(radius, Math.max(tipR, 0.05), len, 24);
+      // CylinderGeometry's axis is +Y; the *first* radius is the +Y end and
+      // the second is the -Y end. After rotateX(π/2), +Y → -Z so the small
+      // (tip) end lands at -Z. Then translate so the tip sits at z=0.
+      geom.rotateX(Math.PI / 2);
+      geom.translate(0, 0, len / 2);
+      mesh = new THREE.Mesh(geom, mat);
+    } else if (kind === 'ball_nose') {
+      // Cylinder body with a hemisphere at the cutting end.
+      const bodyLen = Math.max(diameter * 5, 8);
       const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
       body.rotateX(Math.PI / 2);
-      body.translate(0, 0, tipLen + bodyLen / 2);
-      const tipGeom = new THREE.ConeGeometry(radius, tipLen, 24);
-      tipGeom.rotateX(Math.PI); // apex points -Z (toward work)
-      tipGeom.translate(0, 0, tipLen / 2);
-      const merged = mergeBufferGeometries([body, tipGeom]);
+      body.translate(0, 0, radius + bodyLen / 2);
+      const ball = new THREE.SphereGeometry(radius, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+      // Default sphere: top half is +Y. After rotateX(π) it's -Y; we want
+      // -Z, so rotateX(-π/2) puts the dome face at -Z. Translate so the
+      // pole sits at z=0.
+      ball.rotateX(-Math.PI / 2);
+      ball.translate(0, 0, radius);
+      const merged = mergeBufferGeometries([body, ball]);
       mesh = new THREE.Mesh(merged, mat);
+    } else {
+      // Endmill: a flat-ended cylinder. No cone — the cutting edge is the
+      // bottom face. Tip lands at z=0; body extends +Z.
+      const bodyLen = Math.max(diameter * 6, 8);
+      const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
+      body.rotateX(Math.PI / 2);
+      body.translate(0, 0, bodyLen / 2);
+      mesh = new THREE.Mesh(body, mat);
     }
     mesh.position.set(px, py, pz);
     toolGroup.add(mesh);
@@ -394,6 +439,8 @@
   function rebuildGeometry() {
     if (!geometryGroup || !scene) return;
     geometryGroup.clear();
+    linesObject = undefined;
+    lineOwners = [];
     const data = project.imported;
     const gen = project.generated;
     if (!data && !gen) return;
@@ -403,12 +450,21 @@
     const c = new THREE.Color();
 
     const fadedColor = cssColor('--imported-faded', 0x444444);
+    const selectedColor = cssColor('--accent', 0x4a8df0);
     if (data) {
       const flat = !!gen;
+      let segIdx = 0;
       for (const seg of data.segments) {
-        if (!project.visibleLayers.has(seg.layer)) continue;
+        if (!project.visibleLayers.has(seg.layer)) {
+          segIdx++;
+          continue;
+        }
+        const objectId = data.objects?.[segIdx] ?? 0;
+        const isSelected = objectId > 0 && project.selectedObjects.has(objectId);
         const points = tessellate(seg);
-        if (flat) {
+        if (isSelected) {
+          c.copy(selectedColor);
+        } else if (flat) {
           c.copy(fadedColor);
         } else {
           c.copy(aciColor(seg.color));
@@ -418,7 +474,9 @@
           const [bx, by] = points[i + 1];
           positions.push(ax, ay, 0, bx, by, 0);
           colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+          lineOwners.push({ kind: 'object', objectId });
         }
+        segIdx++;
       }
     }
 
@@ -456,6 +514,7 @@
         }
         positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
         colors.push(r, g, b, r, g, b);
+        lineOwners.push({ kind: 'toolpath', segIdx: i });
       }
     }
     if (positions.length === 0) return;
@@ -465,12 +524,14 @@
     const mat = new THREE.LineBasicMaterial({ vertexColors: true });
     const lines = new THREE.LineSegments(geom, mat);
     geometryGroup.add(lines);
+    linesObject = lines;
 
     if (camera && controls) {
       const sphere = new THREE.Sphere();
       lines.geometry.computeBoundingSphere();
       if (lines.geometry.boundingSphere) sphere.copy(lines.geometry.boundingSphere);
       const radius = Math.max(sphere.radius, 1);
+      sceneRadius = radius;
       const fov = (camera.fov * Math.PI) / 180;
       const distance = (radius * 1.4) / Math.sin(fov / 2);
       const dir = new THREE.Vector3(0.6, -0.9, 0.9).normalize();
@@ -480,6 +541,51 @@
       camera.far = distance * 10;
       camera.updateProjectionMatrix();
       controls.update();
+    }
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    pointerStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+  }
+
+  function onPointerUp(e: PointerEvent) {
+    if (!pointerStart) return;
+    const dx = e.clientX - pointerStart.x;
+    const dy = e.clientY - pointerStart.y;
+    const dt = performance.now() - pointerStart.t;
+    pointerStart = null;
+    if (Math.hypot(dx, dy) > 3 || dt > 400) return;
+    handlePick(e);
+  }
+
+  /// Single-click pick: cast a ray through the cursor against the merged
+  /// LineSegments mesh and act on the closest hit. Imported geometry hits
+  /// drive object selection (mirrors the 2D pane); toolpath hits scrub
+  /// the playhead so the gcode panel scrolls + highlights the matching
+  /// line.
+  function handlePick(e: PointerEvent) {
+    if (!camera || !renderer || !linesObject) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    raycaster.params.Line = { threshold: Math.max(0.5, sceneRadius * 0.01) };
+    const hits = raycaster.intersectObject(linesObject, false);
+    if (hits.length === 0) {
+      if (!e.shiftKey) project.clearSelection();
+      return;
+    }
+    const hit = hits[0];
+    if (hit.index == null) return;
+    const owner = lineOwners[Math.floor(hit.index / 2)];
+    if (!owner) return;
+    if (owner.kind === 'object') {
+      if (owner.objectId > 0) project.toggleObject(owner.objectId, e.shiftKey);
+      else if (!e.shiftKey) project.clearSelection();
+    } else {
+      const total = project.generated?.toolpath.length ?? 0;
+      if (total > 0) project.playhead = (owner.segIdx + 1) / total;
     }
   }
 

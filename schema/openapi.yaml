@@ -948,8 +948,20 @@ components:
       properties:
         from:
           $ref: '#/components/schemas/Pose3'
+        gcode_line:
+          default: 0
+          description: 1-based line number in the source gcode that produced this move. 0 means "synthetic / unknown".
+          format: uint32
+          minimum: 0.0
+          type: integer
         kind:
           $ref: '#/components/schemas/SegmentKind'
+        op_id:
+          default: 0
+          description: Operation id from the per-op emitter. 0 = legacy / unstamped.
+          format: uint32
+          minimum: 0.0
+          type: integer
         to:
           $ref: '#/components/schemas/Pose3'
       required:

@@ -510,7 +510,19 @@ export interface components {
         ToolOffset: "none" | "outside" | "inside" | "on";
         ToolpathSegment: {
             from: components["schemas"]["Pose3"];
+            /**
+             * Format: uint32
+             * @description 1-based line number in the source gcode that produced this move. 0 means "synthetic / unknown".
+             * @default 0
+             */
+            gcode_line: number;
             kind: components["schemas"]["SegmentKind"];
+            /**
+             * Format: uint32
+             * @description Operation id from the per-op emitter. 0 = legacy / unstamped.
+             * @default 0
+             */
+            op_id: number;
             to: components["schemas"]["Pose3"];
         };
         /** @enum {string} */

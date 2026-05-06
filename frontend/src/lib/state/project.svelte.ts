@@ -138,10 +138,12 @@ class ProjectState {
     this.visibleLayers = next;
   }
 
-  /// Snapshot for project save.
+  /// Snapshot for project save. version=2 once tools/machine/ops were
+  /// added — we still read v1 files (today's snapshot) by leaving those
+  /// fields empty and honoring the legacy setup tree.
   snapshot(): ProjectFile {
     return {
-      version: 1,
+      version: 2,
       kind: 'wiac-project',
       imported: this.imported,
       setup: this.setup,
@@ -151,6 +153,7 @@ class ProjectState {
       stock: this.stock,
       tools: this.tools,
       machine: this.machine,
+      operations: this.operations,
     };
   }
 
@@ -164,6 +167,9 @@ class ProjectState {
     this.selectedEntities = new Set(file.selectedEntities ?? []);
     this.tabs = file.tabs ?? {};
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
+    // v2 fields. Absent for v1 files — those keep the defaults set by
+    // the constructor + the legacy setup tree, and Generate falls back
+    // to the legacy flow until the user starts adding operations.
     if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
     if (file.machine) this.machine = { ...this.machine, ...file.machine };
     if (Array.isArray(file.operations)) this.operations = file.operations;
@@ -303,7 +309,10 @@ export interface OpEntry {
 
 export interface ProjectFile {
   kind: 'wiac-project';
-  version: 1;
+  /// 1 = legacy snapshot before tools/machine/ops were modeled in the
+  /// frontend. 2 = current. restore() is lenient — missing v2 fields
+  /// fall back to in-memory defaults.
+  version: 1 | 2;
   imported: ImportResponse | null;
   setup: Record<string, unknown>;
   visibleLayers: string[];

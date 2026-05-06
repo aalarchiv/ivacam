@@ -5,6 +5,7 @@
   import { defaultClient } from '../api/http';
   import { isTauri } from '../api/env';
   import { project } from '../state/project.svelte';
+  import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
   import type { GenerateRequest } from '../api/types';
   import { _ } from 'svelte-i18n';
 
@@ -20,20 +21,34 @@
     progressMsg = '';
     progressFrac = 0;
     try {
-      // Auto-enable tabs in the setup when the user has placed any — the
-      // backend gates emission on setup.tabs.active.
-      const tabsCount = Object.values(project.tabs).reduce((n, l) => n + l.length, 0);
-      const setup = (project.setup as Record<string, unknown>) ?? {};
-      const setupWithTabs = tabsCount > 0
-        ? { ...setup, tabs: { ...(setup.tabs ?? {}), active: true } }
-        : setup;
-      const req: GenerateRequest & { tabs?: Record<number, { x: number; y: number }[]> } = {
-        segments: project.imported.segments,
-        post_processor: post,
-        setup: setupWithTabs as GenerateRequest['setup'],
-        // Tab placements keyed by imported-segment index.
-        tabs: project.tabs,
-      };
+      // New op-driven path: when the user has built operations, send a
+      // Project in the request. Otherwise fall back to the legacy
+      // segments+setup flow so the existing setup tree still works
+      // until users migrate.
+      const opProject = buildProject(project);
+      let req: GenerateRequestWithProject;
+      if (opProject) {
+        req = {
+          // Backend reads project.* when present; legacy fields stay
+          // populated as a fallback in case the wire shape is rejected.
+          segments: project.imported.segments,
+          post_processor: post,
+          tabs: project.tabs,
+          project: opProject,
+        };
+      } else {
+        const tabsCount = Object.values(project.tabs).reduce((n, l) => n + l.length, 0);
+        const setup = (project.setup as Record<string, unknown>) ?? {};
+        const setupWithTabs = tabsCount > 0
+          ? { ...setup, tabs: { ...(setup.tabs ?? {}), active: true } }
+          : setup;
+        req = {
+          segments: project.imported.segments,
+          post_processor: post,
+          setup: setupWithTabs as GenerateRequest['setup'],
+          tabs: project.tabs,
+        };
+      }
       const r = client.generateStream
         ? await client.generateStream(req, (ev) => {
             progressMsg = ev.message;

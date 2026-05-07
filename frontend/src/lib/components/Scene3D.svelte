@@ -16,6 +16,17 @@
   let themeMql: MediaQueryList | undefined;
   let themeMo: MutationObserver | undefined;
 
+  /// Render-on-demand flag. The animation loop calls `renderer.render()`
+  /// only when something has visibly changed since the last frame —
+  /// otherwise it just ticks `controls.update()` (cheap, needed for
+  /// damping) and bails. Without this we burned 60 fps of GPU + CPU
+  /// drawing the same static scene whenever the 3D pane was open.
+  /// Anything that mutates the scene must call `requestRender()`.
+  let needsRender = true;
+  function requestRender() {
+    needsRender = true;
+  }
+
   // Pickable line mesh + owner map. Each entry in `lineOwners` describes
   // the source of one *line pair* (two consecutive vertices in the
   // BufferAttribute) so a Raycaster.intersectObject hit can be mapped
@@ -65,6 +76,10 @@
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    // OrbitControls dispatches 'change' whenever the camera moves —
+    // user drag, zoom, pan, AND each damping tick after release. Hooking
+    // it is enough to keep the scene rendering until damping settles.
+    controls.addEventListener('change', requestRender);
 
     // Z-up grid on the XY plane. Colors track the active theme.
     const gridMajor = cssColor('--grid-major', 0x262626);
@@ -93,8 +108,15 @@
     fit();
 
     const tick = () => {
+      // Damping needs controls.update() every frame to advance, but the
+      // call itself is cheap (~50 µs) and dispatches 'change' (and thus
+      // requestRender) when anything actually moved. The expensive call
+      // is renderer.render — we gate it on needsRender.
       controls?.update();
-      if (renderer && scene && camera) renderer.render(scene, camera);
+      if (needsRender && renderer && scene && camera) {
+        renderer.render(scene, camera);
+        needsRender = false;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -141,6 +163,7 @@
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
     }
+    controls?.removeEventListener('change', requestRender);
     controls?.dispose();
     renderer?.dispose();
     if (themeMql) {
@@ -160,6 +183,7 @@
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    requestRender();
   }
 
   // Mirror imported geometry into the 3D scene as flat polylines on Z=0.
@@ -180,6 +204,7 @@
     rebuildGeometry();
     updateTabs();
     updateStock();
+    requestRender();
   });
 
   $effect(() => {
@@ -189,6 +214,7 @@
     void project.machine;
     void project.selectedOpId;
     updateTool();
+    requestRender();
   });
 
   let tabsGroup: THREE.Group | undefined;

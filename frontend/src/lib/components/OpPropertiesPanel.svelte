@@ -9,7 +9,19 @@
     type OpEntry,
     type ProfileOffset,
     type PocketStrategy,
+    type SourceCombine,
   } from '../state/project.svelte';
+
+  /// Tooltip blurb per combine mode — kept short so it fits in a native
+  /// option's `title` attribute (most browsers cut after ~2 lines).
+  const COMBINE_HELP: Record<SourceCombine, string> = {
+    auto: 'Containment-aware: nested closed objects become holes (outer + inner = annulus). Default.',
+    union: 'Boolean union of all selected closed contours.',
+    difference: 'First selected minus the union of the rest.',
+    intersection: 'Boolean intersection of all selected closed contours.',
+    xor: 'Symmetric difference (xor) of all selected closed contours.',
+    none: 'No combination — one boundary per selected object, no holes.',
+  };
 
   interface Props {
     /// True when rendered inline under an OperationsList row (drops the
@@ -109,6 +121,23 @@
         <p class="hint">{op.sourceObjects.length} object(s) selected</p>
       {:else if op.sourceLayers === null}
         <p class="hint">runs on every chain in the import</p>
+      {/if}
+      {#if (op.sourceObjects?.length ?? 0) > 1 || (op.sourceLayers !== null && op.sourceLayers.length > 0)}
+        <label class="row" title={COMBINE_HELP[op.sourceCombine ?? 'auto']}>
+          <span>Combine</span>
+          <select
+            value={op.sourceCombine ?? 'auto'}
+            onchange={(e) =>
+              patch('sourceCombine', (e.currentTarget as HTMLSelectElement).value as SourceCombine)}
+          >
+            <option value="auto" title={COMBINE_HELP.auto}>auto (containment)</option>
+            <option value="union" title={COMBINE_HELP.union}>union</option>
+            <option value="difference" title={COMBINE_HELP.difference}>difference</option>
+            <option value="intersection" title={COMBINE_HELP.intersection}>intersection</option>
+            <option value="xor" title={COMBINE_HELP.xor}>xor</option>
+            <option value="none" title={COMBINE_HELP.none}>none (per object)</option>
+          </select>
+        </label>
       {/if}
       <button
         class="from-selection"

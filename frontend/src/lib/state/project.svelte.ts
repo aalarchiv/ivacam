@@ -188,6 +188,7 @@ class ProjectState {
       enabled: true,
       kind,
       toolId: tool?.id ?? 1,
+      sourceCombine: 'auto',
       sourceLayers: null,
       depth: -2,
       startDepth: 0,

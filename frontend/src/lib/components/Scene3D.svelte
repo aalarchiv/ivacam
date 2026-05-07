@@ -91,6 +91,15 @@
   /// Selection set the color attribute currently reflects. Compared
   /// against project.selectedObjects to compute the symmetric diff.
   let appliedSelection = new Set<number>();
+
+  /// Persistent tool-tip mesh + the spec it was built for. updateTool()
+  /// fires every playhead change (60×/sec while playing), so creating a
+  /// fresh BufferGeometry + Mesh per tick churned ~60 GPU uploads / GC
+  /// cycles per second. We cache the mesh keyed by the tool/mode spec
+  /// and only rebuild when the spec changes; per-tick updates are now
+  /// position.set + material.color.setHex.
+  let toolMesh: THREE.Mesh | undefined;
+  let toolMeshKey = '';
   // Click vs. drag: OrbitControls owns pointermove so we only treat a
   // pointerup as a click when the user barely moved the cursor between
   // down and up. 3px / 400ms is the same threshold the 2D pane uses.
@@ -180,7 +189,17 @@
     themeMql = window.matchMedia('(prefers-color-scheme: light)');
     const onTheme = () => applyTheme();
     themeMql.addEventListener('change', onTheme);
-    themeMo = new MutationObserver(() => applyTheme());
+    // MutationObserver fires on every attribute *write*, even when the
+    // value didn't change — track the last seen value so we only do the
+    // work when the theme actually flipped. applyTheme rebuilds the grid
+    // and re-runs rebuildGeometry, which is non-trivial on big imports.
+    let lastTheme = document.documentElement.dataset.theme ?? '';
+    themeMo = new MutationObserver(() => {
+      const cur = document.documentElement.dataset.theme ?? '';
+      if (cur === lastTheme) return;
+      lastTheme = cur;
+      applyTheme();
+    });
     themeMo.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme'],
@@ -219,6 +238,10 @@
     }
     controls?.removeEventListener('change', requestRender);
     controls?.dispose();
+    if (toolMesh) {
+      disposeMesh(toolMesh);
+      toolMesh = undefined;
+    }
     renderer?.dispose();
     if (themeMql) {
       const handler = () => applyTheme();
@@ -431,9 +454,18 @@
   /// and a 6 mm endmill.
   function updateTool() {
     if (!toolGroup) return;
-    toolGroup.clear();
     const gen = project.generated;
-    if (!gen || gen.toolpath.length === 0) return;
+    if (!gen || gen.toolpath.length === 0) {
+      // No toolpath → drop the cached mesh so a future regenerate starts
+      // clean instead of orbiting the previous program's tip.
+      if (toolMesh) {
+        toolGroup.remove(toolMesh);
+        disposeMesh(toolMesh);
+        toolMesh = undefined;
+        toolMeshKey = '';
+      }
+      return;
+    }
     const total = gen.toolpath.length;
     const headIdx = Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
     const seg = gen.toolpath[headIdx];
@@ -464,48 +496,84 @@
     const tool =
       project.tools.find((t) => t.id === (opForTool?.toolId ?? 0)) ?? project.tools[0];
     const diameter = Math.max(0.2, tool?.diameter ?? 3);
-    const radius = diameter * 0.5;
     const mode = project.machine.mode;
     const dragoff = tool?.dragoff;
+    const tipDiameter = tool?.tipDiameter;
+    const kind = tool?.kind ?? 'endmill';
 
-    // Body color matches the move kind so users see what the tool's doing.
+    // Cache key — anything that changes the geometry shape. Color is NOT
+    // part of the key; we only mutate material.color on the cached mesh
+    // for that.
+    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${dragoff ?? ''}`;
+    if (key !== toolMeshKey || !toolMesh) {
+      if (toolMesh) {
+        toolGroup.remove(toolMesh);
+        disposeMesh(toolMesh);
+      }
+      toolMesh = buildToolMesh(kind, mode, diameter, tipDiameter, dragoff, colorHex);
+      toolGroup.add(toolMesh);
+      toolMeshKey = key;
+    } else {
+      // Cached mesh — just retint the material to match the active move.
+      const m = toolMesh.material as THREE.MeshBasicMaterial;
+      if (m.color.getHex() !== colorHex) m.color.setHex(colorHex);
+    }
+    toolMesh.position.set(px, py, pz);
+  }
+
+  function disposeMesh(mesh: THREE.Mesh) {
+    mesh.geometry.dispose();
+    const m = mesh.material as THREE.Material | THREE.Material[];
+    if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
+    else m.dispose();
+  }
+
+  /// Build the tool-tip mesh for the given spec. Each piece is built
+  /// with its axis along +Z (Z-up world) and the cutting tip at z=0 so
+  /// mesh.position.set(px, py, pz) lands the tip exactly on the
+  /// toolpath point.
+  function buildToolMesh(
+    kind: string,
+    mode: string,
+    diameter: number,
+    tipDiameter: number | undefined,
+    dragoff: number | undefined,
+    colorHex: number,
+  ): THREE.Mesh {
+    const radius = diameter * 0.5;
     const mat = new THREE.MeshBasicMaterial({
       color: colorHex,
       transparent: true,
       opacity: 0.85,
     });
-
-    // Tool shape derived from the tool kind first, machine mode second.
-    // Each piece is built with its axis along +Z (Z-up world) and the
-    // cutting tip at z=0 so mesh.position.set(px, py, pz) lands the tip
-    // exactly on the toolpath point.
-    const kind = tool?.kind ?? 'endmill';
-    let mesh: THREE.Mesh;
     if (mode === 'drag' || kind === 'drag_knife') {
       const off = dragoff ?? 0;
       const bladeLen = Math.max(diameter * 4, 4);
       const bladeT = Math.max(0.4, diameter * 0.4);
       const geom = new THREE.BoxGeometry(bladeT, off > 0 ? off * 2 : bladeT, bladeLen);
       geom.translate(0, 0, bladeLen / 2);
-      mesh = new THREE.Mesh(geom, mat);
-    } else if (mode === 'laser' || kind === 'laser_beam') {
+      return new THREE.Mesh(geom, mat);
+    }
+    if (mode === 'laser' || kind === 'laser_beam') {
       const beamLen = Math.max(8, diameter * 6);
       const geom = new THREE.CylinderGeometry(0.3, 0.3, beamLen, 12);
       geom.rotateX(Math.PI / 2); // CylinderGeometry's axis is +Y → put on +Z
       geom.translate(0, 0, beamLen / 2);
-      mesh = new THREE.Mesh(geom, mat);
-    } else if (kind === 'v_bit' || kind === 'engraver' || kind === 'drill') {
+      return new THREE.Mesh(geom, mat);
+    }
+    if (kind === 'v_bit' || kind === 'engraver' || kind === 'drill') {
       // Tapered cutter: cone with apex at the cutting tip.
       const len = Math.max(diameter * 4, 8);
-      const tipR = (tool?.tipDiameter ?? 0) * 0.5;
+      const tipR = (tipDiameter ?? 0) * 0.5;
       const geom = new THREE.CylinderGeometry(radius, Math.max(tipR, 0.05), len, 24);
       // CylinderGeometry's axis is +Y; the *first* radius is the +Y end and
       // the second is the -Y end. After rotateX(π/2), +Y → -Z so the small
       // (tip) end lands at -Z. Then translate so the tip sits at z=0.
       geom.rotateX(Math.PI / 2);
       geom.translate(0, 0, len / 2);
-      mesh = new THREE.Mesh(geom, mat);
-    } else if (kind === 'ball_nose') {
+      return new THREE.Mesh(geom, mat);
+    }
+    if (kind === 'ball_nose') {
       // Cylinder body with a hemisphere at the cutting end.
       const bodyLen = Math.max(diameter * 5, 8);
       const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
@@ -518,18 +586,15 @@
       ball.rotateX(-Math.PI / 2);
       ball.translate(0, 0, radius);
       const merged = mergeBufferGeometries([body, ball]);
-      mesh = new THREE.Mesh(merged, mat);
-    } else {
-      // Endmill: a flat-ended cylinder. No cone — the cutting edge is the
-      // bottom face. Tip lands at z=0; body extends +Z.
-      const bodyLen = Math.max(diameter * 6, 8);
-      const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
-      body.rotateX(Math.PI / 2);
-      body.translate(0, 0, bodyLen / 2);
-      mesh = new THREE.Mesh(body, mat);
+      return new THREE.Mesh(merged, mat);
     }
-    mesh.position.set(px, py, pz);
-    toolGroup.add(mesh);
+    // Endmill: a flat-ended cylinder. No cone — the cutting edge is the
+    // bottom face. Tip lands at z=0; body extends +Z.
+    const bodyLen = Math.max(diameter * 6, 8);
+    const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
+    body.rotateX(Math.PI / 2);
+    body.translate(0, 0, bodyLen / 2);
+    return new THREE.Mesh(body, mat);
   }
 
   /// Tiny helper because three.js's BufferGeometryUtils requires a separate

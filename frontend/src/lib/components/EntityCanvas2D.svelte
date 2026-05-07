@@ -33,7 +33,17 @@
     const mql = window.matchMedia('(prefers-color-scheme: light)');
     const onChange = () => draw();
     mql.addEventListener('change', onChange);
-    const themeMo = new MutationObserver(() => draw());
+    // Diff the data-theme value before redrawing — MutationObserver fires
+    // on every attribute write, including same-value writes (e.g. an
+    // unrelated rerender that re-applies the stored preference). draw()
+    // is non-trivial for big imports.
+    let lastTheme = document.documentElement.dataset.theme ?? '';
+    const themeMo = new MutationObserver(() => {
+      const cur = document.documentElement.dataset.theme ?? '';
+      if (cur === lastTheme) return;
+      lastTheme = cur;
+      draw();
+    });
     themeMo.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme'],

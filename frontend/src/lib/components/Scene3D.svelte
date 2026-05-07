@@ -3,6 +3,7 @@
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { project } from '../state/project.svelte';
+  import { HeightfieldDriver } from '../sim/driver';
 
   let host: HTMLDivElement;
   let renderer: THREE.WebGLRenderer | undefined;
@@ -112,6 +113,15 @@
   /// position.set + material.color.setHex.
   let toolMesh: THREE.Mesh | undefined;
   let toolMeshKey = '';
+
+  /// Heightfield-based cutting simulator. Lazy-loaded on first need
+  /// (the WASM module is async). Owns its own group inside `scene`;
+  /// shows / hides per project.settings.previewMode.
+  let driver: HeightfieldDriver | undefined;
+  let driverInitPromise: Promise<void> | undefined;
+  /// Cache the inputs that trigger a sim rebuild (footprint or grid
+  /// resolution change) so we don't tear it down for cosmetic changes.
+  let lastSimKey = '';
   // Click vs. drag: OrbitControls owns pointermove so we only treat a
   // pointerup as a click when the user barely moved the cursor between
   // down and up. 3px / 400ms is the same threshold the 2D pane uses.
@@ -254,6 +264,8 @@
       disposeMesh(toolMesh);
       toolMesh = undefined;
     }
+    driver?.destroy();
+    driver = undefined;
     renderer?.dispose();
     if (themeMql) {
       const handler = () => applyTheme();
@@ -329,6 +341,106 @@
     applyToolpathFade();
     requestRender();
   });
+
+  /// Build (or rebuild) the heightfield simulator + mesh whenever the
+  /// stock footprint, grid resolution, or active generated toolpath
+  /// changes. Cosmetic settings (color / opacity) are NOT in this key —
+  /// those flow through applyStyle without rebuilding.
+  $effect(() => {
+    if (!scene) return;
+    const settings = project.settings;
+    if (settings.previewMode === 'wireframe') {
+      driver?.setVisible(false);
+      requestRender();
+      return;
+    }
+    const imported = project.imported;
+    const generated = project.generated;
+    const firstOp = project.operations[0];
+    const tool =
+      project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
+    if (!imported || !generated || !tool) {
+      driver?.setVisible(false);
+      requestRender();
+      return;
+    }
+    const cellRes = settings.cellResolutionMode === 'manual' ? settings.cellResolutionMm : -1;
+    const key = JSON.stringify({
+      bbox: imported.bbox,
+      stock: project.stock,
+      tool_id: tool.id,
+      tool_dia: tool.diameter,
+      cellRes,
+      maxCells: settings.maxSimulationCells,
+      gen_id: generated.gcode.length, // cheap stand-in for "is this a new gen?"
+    });
+    if (key !== lastSimKey) {
+      ensureDriver().then(() => {
+        if (!driver) return;
+        driver.build({
+          imported,
+          generated,
+          tool,
+          stock: project.stock,
+          settings,
+        });
+        driver.setVisible(true);
+        driver.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+        driver.setEdgesVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+        lastSimKey = key;
+        // Replay 0..head so we see the carved state immediately (not
+        // an unmilled stock we have to scrub forward through).
+        driver.advanceTo(project.playhead, generated.toolpath, tool);
+        requestRender();
+      });
+    } else {
+      driver?.setVisible(true);
+      driver?.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+      driver?.setEdgesVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+      requestRender();
+    }
+  });
+
+  /// Advance the simulation on every playhead change. Falls through
+  /// silently if the driver isn't built yet (preview mode = wireframe
+  /// or no generated yet).
+  $effect(() => {
+    void project.playhead;
+    if (!driver) return;
+    const generated = project.generated;
+    const firstOp = project.operations[0];
+    const tool =
+      project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
+    if (!generated || !tool) return;
+    driver.advanceTo(project.playhead, generated.toolpath, tool);
+  });
+
+  /// Live-apply cosmetic settings (color / opacity).
+  $effect(() => {
+    void project.settings.solidColor;
+    void project.settings.solidOpacity;
+    void project.settings.edgeColor;
+    void project.settings.edgeOpacity;
+    driver?.applyStyle({
+      solidColor: project.settings.solidColor,
+      solidOpacity: project.settings.solidOpacity,
+      edgeColor: project.settings.edgeColor,
+      edgeOpacity: project.settings.edgeOpacity,
+    });
+  });
+
+  async function ensureDriver(): Promise<void> {
+    if (driver) return;
+    if (!driverInitPromise) {
+      driverInitPromise = (async () => {
+        if (!scene) return;
+        const d = new HeightfieldDriver({ scene, requestRender });
+        await d.init();
+        driver = d;
+      })();
+    }
+    return driverInitPromise;
+  }
 
   /// Mutate the color attribute in place to reflect the current
   /// playhead — segments before the head get their base color, segments

@@ -380,24 +380,31 @@
       gen_id: generated.gcode.length, // cheap stand-in for "is this a new gen?"
     });
     if (key !== lastSimKey) {
-      ensureDriver().then(() => {
-        if (!driver) return;
-        driver.build({
-          imported,
-          generated,
-          tool,
-          stock: project.stock,
-          settings,
+      ensureDriver()
+        .then(() => {
+          if (!driver) return;
+          driver.build({
+            imported,
+            generated,
+            tool,
+            stock: project.stock,
+            settings,
+          });
+          driver.setVisible(true);
+          driver.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+          driver.setEdgesVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+          lastSimKey = key;
+          // Replay 0..head so we see the carved state immediately (not
+          // an unmilled stock we have to scrub forward through).
+          driver.advanceTo(project.playhead, generated.toolpath, tool);
+          requestRender();
+        })
+        .catch((e) => {
+          // Surface async failures the user couldn't otherwise see.
+          // Driver init failures (wasm load) and build failures
+          // (Simulator construction throwing) used to swallow silently.
+          project.setError(`solid preview: ${e instanceof Error ? e.message : String(e)}`);
         });
-        driver.setVisible(true);
-        driver.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
-        driver.setEdgesVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
-        lastSimKey = key;
-        // Replay 0..head so we see the carved state immediately (not
-        // an unmilled stock we have to scrub forward through).
-        driver.advanceTo(project.playhead, generated.toolpath, tool);
-        requestRender();
-      });
     } else {
       driver?.setVisible(true);
       driver?.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');

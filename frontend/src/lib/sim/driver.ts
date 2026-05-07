@@ -79,10 +79,14 @@ let wasmPromise: Promise<WasmHandle> | null = null;
 async function loadWasm(): Promise<WasmHandle> {
   if (!wasmPromise) {
     wasmPromise = (async () => {
-      // The pkg is built by `wasm-pack build crates/wiac-wasm --target web`.
-      // The frontend has it linked via package.json so the bare specifier
-      // resolves at bundle time.
-      const mod = (await import(/* @vite-ignore */ 'wiac-wasm')) as WasmModule;
+      // The pkg is built by `wasm-pack build crates/wiac-wasm --target web`
+      // and linked via package.json. Letting vite resolve the import is
+      // critical here: the browser can't fetch a bare `wiac-wasm` URL,
+      // so an @vite-ignore'd dynamic import would fail silently in a
+      // bundled app. Without the ignore, vite splits this into a chunk,
+      // copies wiac_wasm_bg.wasm with a hashed name, and rewrites the
+      // js's `import.meta.url`-relative .wasm fetch to match.
+      const mod = (await import('wiac-wasm')) as WasmModule;
       if (typeof mod.default !== 'function') {
         throw new Error('wiac-wasm pkg missing default init export');
       }

@@ -13,6 +13,19 @@ addMessages('de', de);
 
 function pickInitial(): string {
   if (typeof window === 'undefined') return 'en';
+  // Prefer the unified settings blob written by SettingsDialog; fall back
+  // to the legacy single-purpose key so existing installs keep their
+  // chosen language across the upgrade.
+  try {
+    const raw = window.localStorage.getItem('wiac.settings');
+    if (raw) {
+      const parsed = JSON.parse(raw) as { language?: unknown } | null;
+      const lang = parsed?.language;
+      if (lang === 'en' || lang === 'de') return lang;
+    }
+  } catch {
+    // ignore parse errors and fall through to legacy / browser fallback
+  }
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (stored === 'en' || stored === 'de') return stored;
   const browser = getLocaleFromNavigator();

@@ -14,9 +14,11 @@
   import GcodePanel from './lib/components/GcodePanel.svelte';
   import MachineDialog from './lib/components/MachineDialog.svelte';
   import ToolLibraryDialog from './lib/components/ToolLibraryDialog.svelte';
+  import SettingsDialog from './lib/components/SettingsDialog.svelte';
 
   let machineOpen = $state(false);
   let toolsOpen = $state(false);
+  let settingsOpen = $state(false);
 
   // G-code panel visibility. The playback bar always sits below the
   // 3D canvas; the gcode panel opens as an extra row beneath it so
@@ -29,26 +31,18 @@
   import { setLocale, locale } from './lib/i18n';
   import { isTauri } from './lib/api/env';
 
-  type LocalePref = 'en' | 'de';
-  let lang = $state<LocalePref>('en');
+  // Keep the i18n locale in sync with the persisted setting on first
+  // load. Subsequent changes go through SettingsDialog which calls
+  // setLocale itself.
   $effect(() => {
     const cur = $locale;
-    if (cur === 'en' || cur === 'de') lang = cur;
+    if ((cur === 'en' || cur === 'de') && cur !== project.settings.language) {
+      project.updateSettings({ language: cur });
+    }
   });
-  function pickLocale(code: LocalePref) {
-    setLocale(code);
-  }
-
-  type ThemePref = 'auto' | 'light' | 'dark';
-  let theme = $state<ThemePref>('auto');
-  const THEME_KEY = 'wiac.theme';
 
   onMount(() => {
-    const stored = localStorage.getItem(THEME_KEY) as ThemePref | null;
-    if (stored === 'auto' || stored === 'light' || stored === 'dark') {
-      theme = stored;
-    }
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.theme = project.settings.theme;
 
     if (isTauri()) {
       void wireMenuEvents();
@@ -117,11 +111,11 @@
     }
   }
 
+  // Reactively apply the current theme. Persistence is handled inside
+  // project.updateSettings() so we just mirror the current value into
+  // the document dataset for the CSS [data-theme] selectors.
   $effect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem(THEME_KEY, theme);
-    } catch {}
+    document.documentElement.dataset.theme = project.settings.theme;
   });
 
   let activePane = $state<'2d' | '3d'>('2d');
@@ -169,6 +163,27 @@
       Machine…
     </button>
     <button
+      class="config-btn icon"
+      onclick={() => (settingsOpen = true)}
+      title="Settings"
+      aria-label="Settings"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+    <button
       class="tool-toggle"
       class:active={project.tabMode}
       onclick={() => (project.tabMode = !project.tabMode)}
@@ -190,27 +205,6 @@
       >
         {$_('header.pane.3d')}
       </button>
-    </div>
-    <div class="theme-toggle" role="group" aria-label="Theme">
-      <button
-        class:active={theme === 'auto'}
-        onclick={() => (theme = 'auto')}
-        title={$_('header.theme.auto_hint')}
-      >{$_('header.theme.auto')}</button>
-      <button
-        class:active={theme === 'light'}
-        onclick={() => (theme = 'light')}
-        title={$_('header.theme.light_hint')}
-      >{$_('header.theme.light')}</button>
-      <button
-        class:active={theme === 'dark'}
-        onclick={() => (theme = 'dark')}
-        title={$_('header.theme.dark_hint')}
-      >{$_('header.theme.dark')}</button>
-    </div>
-    <div class="lang-toggle" role="group" aria-label={$_('header.lang.title')}>
-      <button class:active={lang === 'en'} onclick={() => pickLocale('en')}>EN</button>
-      <button class:active={lang === 'de'} onclick={() => pickLocale('de')}>DE</button>
     </div>
   </header>
 
@@ -276,6 +270,7 @@
 
   <MachineDialog open={machineOpen} onClose={() => (machineOpen = false)} />
   <ToolLibraryDialog open={toolsOpen} onClose={() => (toolsOpen = false)} />
+  <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
 
   <footer>
     {#if project.imported}
@@ -336,6 +331,12 @@
     color: var(--text-strong);
     border-color: var(--accent);
   }
+  .config-btn.icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem 0.45rem;
+  }
   .tool-toggle {
     background: var(--bg-elevated);
     color: var(--text);
@@ -369,42 +370,6 @@
     cursor: pointer;
   }
   .pane-toggle button.active {
-    background: var(--accent);
-    color: white;
-  }
-  .theme-toggle {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  .theme-toggle button {
-    background: var(--bg-elevated);
-    color: var(--text-muted);
-    border: 0;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.72rem;
-    cursor: pointer;
-  }
-  .theme-toggle button.active {
-    background: var(--accent);
-    color: white;
-  }
-  .lang-toggle {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  .lang-toggle button {
-    background: var(--bg-elevated);
-    color: var(--text-muted);
-    border: 0;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.72rem;
-    cursor: pointer;
-  }
-  .lang-toggle button.active {
     background: var(--accent);
     color: white;
   }

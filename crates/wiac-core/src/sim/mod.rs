@@ -3,3 +3,4 @@
 //! cutter surface reaches how far down at a given radial offset.
 
 pub mod heightmap;
+pub mod sweep;

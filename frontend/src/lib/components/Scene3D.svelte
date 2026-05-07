@@ -349,6 +349,11 @@
   $effect(() => {
     if (!scene) return;
     const settings = project.settings;
+    // Wire-mesh visibility tracks the preview mode: wireframe / both
+    // show the toolpath + imported lines; solid hides them in favor of
+    // the heightfield carved-stock mesh.
+    const wireVisible = settings.previewMode !== 'solid';
+    if (linesObject) linesObject.visible = wireVisible;
     if (settings.previewMode === 'wireframe') {
       driver?.setVisible(false);
       requestRender();

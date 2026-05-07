@@ -47,8 +47,10 @@ interface SimulatorWasm {
   free(): void;
 }
 
-interface WasmExports {
-  default?: () => Promise<unknown>;
+interface WasmModule {
+  default?: (
+    module_or_path?: unknown,
+  ) => Promise<{ memory: WebAssembly.Memory } & Record<string, unknown>>;
   Simulator: new (
     minX: number,
     minY: number,
@@ -57,29 +59,38 @@ interface WasmExports {
     cellSize: number,
     topZ: number,
   ) => SimulatorWasm;
-  memory?: WebAssembly.Memory;
-  __wbindgen_memory?: () => WebAssembly.Memory;
 }
 
-let wasmPromise: Promise<WasmExports> | null = null;
+/// The bundle of things the driver actually uses: the constructor
+/// reference (so we can `new wasm.Simulator(...)`) plus the
+/// WebAssembly.Memory grabbed from the InitOutput. Captured separately
+/// because the imported module's namespace is read-only — assigning
+/// `module.memory = ...` silently fails in strict mode (and ESM is
+/// always strict). Stuffing memory back on the module object was a
+/// real bug pre-fix; the Float32Array view never had valid memory and
+/// the heightfield mesh stayed at top_z.
+interface WasmHandle {
+  Simulator: WasmModule['Simulator'];
+  memory: WebAssembly.Memory;
+}
 
-async function loadWasm(): Promise<WasmExports> {
+let wasmPromise: Promise<WasmHandle> | null = null;
+
+async function loadWasm(): Promise<WasmHandle> {
   if (!wasmPromise) {
     wasmPromise = (async () => {
       // The pkg is built by `wasm-pack build crates/wiac-wasm --target web`.
       // The frontend has it linked via package.json so the bare specifier
       // resolves at bundle time.
-      const wasm = (await import(/* @vite-ignore */ 'wiac-wasm')) as WasmExports & {
-        default?: () => Promise<{ memory?: WebAssembly.Memory }>;
-      };
-      if (typeof wasm.default === 'function') {
-        const init = await wasm.default();
-        // wasm-bindgen returns the InitOutput which carries `memory`.
-        if (init && (init as { memory?: WebAssembly.Memory }).memory) {
-          wasm.memory = (init as { memory: WebAssembly.Memory }).memory;
-        }
+      const mod = (await import(/* @vite-ignore */ 'wiac-wasm')) as WasmModule;
+      if (typeof mod.default !== 'function') {
+        throw new Error('wiac-wasm pkg missing default init export');
       }
-      return wasm;
+      const init = await mod.default();
+      if (!init.memory) {
+        throw new Error('wiac-wasm init returned no memory');
+      }
+      return { Simulator: mod.Simulator, memory: init.memory };
     })();
   }
   return wasmPromise;
@@ -151,7 +162,7 @@ export class HeightfieldDriver {
   readonly group: THREE.Group;
   private sim: SimulatorWasm | null = null;
   private mesh: HeightfieldMesh | null = null;
-  private wasm: WasmExports | null = null;
+  private wasm: WasmHandle | null = null;
   /// Cached buffer view; valid until the next advance() that may grow
   /// WASM linear memory. Re-taken after every advance.
   private heightView: Float32Array | null = null;
@@ -320,14 +331,9 @@ export class HeightfieldDriver {
       this.heightView = null;
       return;
     }
-    const memory = this.wasm.memory ?? this.wasm.__wbindgen_memory?.();
-    if (!memory) {
-      this.heightView = null;
-      return;
-    }
     const cols = this.sim.cols();
     const rows = this.sim.rows();
-    this.heightView = new Float32Array(memory.buffer, this.sim.data_ptr(), cols * rows);
+    this.heightView = new Float32Array(this.wasm.memory.buffer, this.sim.data_ptr(), cols * rows);
   }
 
   private scheduleEdgeRebuild() {

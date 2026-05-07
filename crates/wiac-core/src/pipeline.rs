@@ -554,6 +554,27 @@ fn push_tool_fit_size_warning(
                 setup.tool.diameter, op.name,
             ),
         });
+        return;
+    }
+    // Pocket-specific second pass: the boundary contour fits but the
+    // cascade carved no inward rings → the cutter is wide enough to
+    // reach the wall but not to chew out the interior. The user gets
+    // a hollow pocket (just the wall trace), which can look like
+    // "pocketing isn't working". Surface this so they can pick a
+    // smaller tool. PolylineOffset.is_pocket == 0 is the boundary,
+    // is_pocket >= 1 is a cascade ring or zigzag fill.
+    if matches!(op.kind, OperationKind::Pocket { .. })
+        && offsets.iter().any(|o| o.is_pocket == 0)
+        && !offsets.iter().any(|o| o.is_pocket >= 1)
+    {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "pocket_fill_incomplete".into(),
+            message: format!(
+                "tool diameter {:.2} mm fits the pocket boundary in op '{}' but not the interior — only the wall is cut, not the fill. Use a smaller tool to pocket the inside.",
+                setup.tool.diameter, op.name,
+            ),
+        });
     }
 }
 
@@ -1395,6 +1416,51 @@ mod tests {
             first_cut.from.z <= -0.999,
             "direct plunge should reach cut depth before XY travel; first cut from.z = {}",
             first_cut.from.z
+        );
+    }
+
+    /// A 10x10 pocket with a 6mm endmill: tool fits the boundary
+    /// offset (4x4 left after a 3mm offset) but no cascade ring fits
+    /// inside it → the cutter walks the wall and leaves a hollow
+    /// rectangle. We surface this as a pocket_fill_incomplete warning
+    /// so the user understands why the gcode is just the contour.
+    #[test]
+    fn pocket_with_just_fitting_tool_warns_about_incomplete_fill() {
+        let project = Project {
+            segments: closed_square_offset(10.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 6.0)],
+            operations: vec![Operation {
+                id: 9,
+                name: "Hollow pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let incomplete: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.kind == "pocket_fill_incomplete")
+            .collect();
+        assert_eq!(
+            incomplete.len(),
+            1,
+            "expected pocket_fill_incomplete warning, got {:?}",
+            resp.warnings,
         );
     }
 

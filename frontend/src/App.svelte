@@ -214,12 +214,21 @@
   <main>
     <section class="viewport">
       <div class="canvas-area">
-        {#if activePane === '2d'}
+        <!-- Keep both panes mounted so the 3D camera angle and the
+             heightfield mesh state survive 2D ↔ 3D toggles. The hidden
+             pane has display:none, so its IntersectionObserver reports
+             non-intersecting and Scene3D's RAF pauses (see 9js). The
+             user only pays the Scene3D mount cost once, on first 3D
+             activation. -->
+        <div class:pane-hidden={activePane !== '2d'} class="pane">
           <EntityCanvas2D />
-        {:else if Scene3D}
+        </div>
+        {#if Scene3D}
           {@const C = Scene3D}
-          <C />
-        {:else}
+          <div class:pane-hidden={activePane !== '3d'} class="pane">
+            <C />
+          </div>
+        {:else if activePane === '3d'}
           <p class="loading-3d">Loading 3D…</p>
         {/if}
       </div>
@@ -411,6 +420,13 @@
     flex: 1;
     min-height: 0;
     position: relative;
+  }
+  .pane {
+    width: 100%;
+    height: 100%;
+  }
+  .pane-hidden {
+    display: none;
   }
   .loading-3d {
     display: flex;

@@ -112,16 +112,24 @@ export class HeightfieldMesh {
     dataView: Float32Array,
     aabb?: { ix0: number; iy0: number; ix1: number; iy1: number },
   ): void {
+    // PlaneGeometry's vertex layout is row-major TOP-DOWN — Three.js
+    // emits each vertex as (x, -y, 0), so vertex with index `iy*cols+ix`
+    // sits at local Y = +halfHeight - iy*step. The heightmap, on the
+    // other hand, is row-major BOTTOM-UP (cell (ix, iy=0) lives at the
+    // smallest world Y). Without an iy flip on upload, the carved
+    // surface appeared mirrored on Y — the user reported it as the
+    // simulator being "rotated 180° around Z".
     const positions = this.solidGeometry.attributes.position.array as Float32Array;
     const ix0 = aabb ? Math.max(0, aabb.ix0) : 0;
     const iy0 = aabb ? Math.max(0, aabb.iy0) : 0;
     const ix1 = aabb ? Math.min(this.cols, aabb.ix1) : this.cols;
     const iy1 = aabb ? Math.min(this.rows, aabb.iy1) : this.rows;
+    const lastRow = this.rows - 1;
     for (let iy = iy0; iy < iy1; iy++) {
-      const rowOffset = iy * this.cols;
+      const dataRow = iy * this.cols;
+      const vertRow = (lastRow - iy) * this.cols;
       for (let ix = ix0; ix < ix1; ix++) {
-        const vert = rowOffset + ix;
-        positions[vert * 3 + 2] = dataView[vert];
+        positions[(vertRow + ix) * 3 + 2] = dataView[dataRow + ix];
       }
     }
     this.solidGeometry.attributes.position.needsUpdate = true;

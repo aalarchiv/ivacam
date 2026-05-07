@@ -165,6 +165,11 @@ components:
           type: string
         gcode_index:
           $ref: '#/components/schemas/GcodeIndex'
+        regions:
+          description: 'Filled-area preview for Pocket ops: the actual region the cutter will machine, computed via the per-op SourceCombine mode (Auto by default — outer + inner = annulus). The frontend paints these as translucent fills so the user sees what they''re cutting before reading the toolpath. Empty for non-Pocket ops.'
+          items:
+            $ref: '#/components/schemas/RegionPreview'
+          type: array
         stats:
           $ref: '#/components/schemas/PipelineStats'
         toolpath:
@@ -764,6 +769,27 @@ components:
       - operations
       - segments
       - tools
+      type: object
+    RegionPreview:
+      description: One filled region attached to a specific operation. `outer` is the outer boundary; `holes` are the islands the cutter must avoid. Both in project units (typically mm).
+      properties:
+        holes:
+          items:
+            items:
+              $ref: '#/components/schemas/Point2'
+            type: array
+          type: array
+        op_id:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        outer:
+          items:
+            $ref: '#/components/schemas/Point2'
+          type: array
+      required:
+      - op_id
+      - outer
       type: object
     Segment:
       description: A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).

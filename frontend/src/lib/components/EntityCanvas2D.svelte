@@ -51,6 +51,9 @@
     void project.selectedObjects;
     void project.tabs;
     void project.tabMode;
+    void project.generated;
+    void project.selectedOpId;
+    void project.regionsVisible;
     void hoverIdx;
     draw();
   });
@@ -234,6 +237,17 @@
     drawAxes(ctx, w, h, offX, offY);
     lastTransform = { scale, offX, offY };
 
+    // Filled-region preview: paint the area each Pocket op will actually
+    // machine, before the wireframe so contours stay legible. Regions
+    // come from the backend (pipeline.rs build_region_previews) and are
+    // present whenever a /generate has run; we draw the current op's
+    // region in accent color and others in a faded muted tone so the
+    // user can see the full set without the selection getting lost.
+    const regions = project.generated?.regions ?? [];
+    if (regions.length > 0 && project.regionsVisible) {
+      drawRegions(ctx, regions, project2);
+    }
+
     const accent = themeVar('--accent', '#2d6cdf');
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
     const hoverObj = hoverIdx == null ? 0 : data.objects?.[hoverIdx] ?? 0;
@@ -249,6 +263,45 @@
     }
 
     drawTabs(ctx, project2);
+  }
+
+  /// Paint each region's outer polygon and punch its holes via the
+  /// even-odd fill rule. The selected op's region is drawn in accent so
+  /// the user can spot it; others fade so the canvas doesn't get loud.
+  function drawRegions(
+    ctx: CanvasRenderingContext2D,
+    regions: Array<{ op_id: number; outer: Array<{ x: number; y: number }>; holes?: Array<Array<{ x: number; y: number }>> }>,
+    p: (x: number, y: number) => [number, number],
+  ) {
+    const accent = themeVar('--accent', '#2d6cdf');
+    const muted = themeVar('--text-muted', '#9aa0aa');
+    for (const r of regions) {
+      const isSelected = project.selectedOpId === r.op_id;
+      ctx.fillStyle = isSelected
+        ? `${accent}33` // ~20% alpha
+        : `${muted}1a`; // ~10% alpha
+      ctx.beginPath();
+      tracePolygon(ctx, r.outer, p);
+      for (const hole of r.holes ?? []) {
+        tracePolygon(ctx, hole, p);
+      }
+      ctx.fill('evenodd');
+    }
+  }
+
+  function tracePolygon(
+    ctx: CanvasRenderingContext2D,
+    pts: Array<{ x: number; y: number }>,
+    p: (x: number, y: number) => [number, number],
+  ) {
+    if (pts.length < 3) return;
+    const [x0, y0] = p(pts[0].x, pts[0].y);
+    ctx.moveTo(x0, y0);
+    for (let i = 1; i < pts.length; i++) {
+      const [x, y] = p(pts[i].x, pts[i].y);
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
   }
 
   function drawTabs(

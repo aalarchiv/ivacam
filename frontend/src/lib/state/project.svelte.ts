@@ -83,6 +83,11 @@ class ProjectState {
   /// this so the user knows "re-Generate to refresh".
   dirty = $state(false);
 
+  /// Whether the 2D canvas paints the filled-region preview for Pocket
+  /// ops on top of the wireframe. Default on — it's the answer to
+  /// "what will this op actually machine?".
+  regionsVisible = $state(true);
+
   addTab(segmentIdx: number, position: Point2) {
     const next = { ...this.tabs };
     next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: position.x, y: position.y }];

@@ -260,6 +260,16 @@
           <summary>Stock</summary>
           <StockPanel />
         </details>
+        {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
+          <label class="region-toggle" title="Show / hide the translucent fill that marks each pocket op's machined region.">
+            <input
+              type="checkbox"
+              checked={project.regionsVisible}
+              onchange={(e) => (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Show machined regions</span>
+          </label>
+        {/if}
       </div>
     </aside>
   </main>
@@ -486,6 +496,15 @@
     text-transform: uppercase;
     cursor: pointer;
     padding: 0.15rem 0;
+  }
+  .region-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    cursor: pointer;
   }
   footer {
     background: var(--bg-panel);

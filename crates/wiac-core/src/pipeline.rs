@@ -52,6 +52,24 @@ pub struct PipelineResponse {
     pub toolpath: Vec<preview::ToolpathSegment>,
     pub gcode_index: preview::GcodeIndex,
     pub stats: PipelineStats,
+    /// Filled-area preview for Pocket ops: the actual region the cutter
+    /// will machine, computed via the per-op SourceCombine mode (Auto by
+    /// default — outer + inner = annulus). The frontend paints these as
+    /// translucent fills so the user sees what they're cutting before
+    /// reading the toolpath. Empty for non-Pocket ops.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<RegionPreview>,
+}
+
+/// One filled region attached to a specific operation. `outer` is the
+/// outer boundary; `holes` are the islands the cutter must avoid. Both
+/// in project units (typically mm).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RegionPreview {
+    pub op_id: u32,
+    pub outer: Vec<Point2>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holes: Vec<Vec<Point2>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -129,6 +147,7 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
 
     progress("preview", 0.92, "interpreting toolpath");
     let (toolpath, gcode_index) = preview::interpret_with_index(&gcode);
+    let regions = build_region_previews(&project, &objects);
     progress("done", 1.0, "complete");
     Ok(PipelineResponse {
         stats: PipelineStats {
@@ -139,7 +158,32 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
         gcode,
         toolpath,
         gcode_index,
+        regions,
     })
+}
+
+/// Compute the filled-region preview for every enabled Pocket op. Auto
+/// mode runs through the same containment-aware logic as the per-op
+/// driver; explicit modes route through the clipper2 boolean ops in
+/// cam::source_combine. Non-Pocket ops contribute nothing.
+fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionPreview> {
+    let mut out = Vec::new();
+    for op in project.operations.iter().filter(|o| o.enabled) {
+        if !matches!(op.kind, OperationKind::Pocket { .. }) {
+            continue;
+        }
+        let selected = ordered_selection(op, objects);
+        let mode = source_combine_mode(op);
+        let regions = combine_source_regions(objects, &selected, mode);
+        for r in regions {
+            out.push(RegionPreview {
+                op_id: op.id,
+                outer: r.boundary,
+                holes: r.holes,
+            });
+        }
+    }
+    out
 }
 
 /// Per-post-processor monomorphisation of the per-op driver. Pulled out

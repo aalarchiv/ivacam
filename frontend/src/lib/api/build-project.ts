@@ -51,10 +51,17 @@ type WireOpKind =
   | { type: 'drag_knife' }
   | { type: 'helix' };
 
+type WireSourceCombine =
+  | 'auto'
+  | 'union'
+  | 'difference'
+  | 'intersection'
+  | 'xor'
+  | 'none';
 type WireSource =
   | { kind: 'all' }
-  | { kind: 'layers'; layers: string[] }
-  | { kind: 'objects'; ids: number[] };
+  | { kind: 'layers'; layers: string[]; combine?: WireSourceCombine }
+  | { kind: 'objects'; ids: number[]; combine?: WireSourceCombine };
 
 interface WireOp {
   id: number;
@@ -134,11 +141,18 @@ function buildOpKind(op: OpEntry): WireOpKind {
 }
 
 function buildSource(op: OpEntry): WireSource {
+  // Only attach a `combine` field when the user picked something other
+  // than the default — keeps wire payloads small and lets the Rust side
+  // fall back to SourceCombine::Auto via serde default.
+  const combine: WireSourceCombine | undefined =
+    op.sourceCombine && op.sourceCombine !== 'auto'
+      ? (op.sourceCombine as WireSourceCombine)
+      : undefined;
   if (op.sourceObjects && op.sourceObjects.length > 0) {
-    return { kind: 'objects', ids: op.sourceObjects };
+    return { kind: 'objects', ids: op.sourceObjects, ...(combine ? { combine } : {}) };
   }
   if (op.sourceLayers === null || op.sourceLayers.length === 0) return { kind: 'all' };
-  return { kind: 'layers', layers: op.sourceLayers };
+  return { kind: 'layers', layers: op.sourceLayers, ...(combine ? { combine } : {}) };
 }
 
 function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireOp {

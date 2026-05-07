@@ -343,11 +343,11 @@ fn build_op_offsets(
 fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> bool {
     match &op.source {
         OperationSource::All => true,
-        OperationSource::Layers { layers } => layers.iter().any(|l| l == &obj.layer),
+        OperationSource::Layers { layers, .. } => layers.iter().any(|l| l == &obj.layer),
         // OperationSource::Objects ids are 1-based, matching the
         // ImportOutput.objects[i] mapping the frontend uses for
         // selection.
-        OperationSource::Objects { ids } => {
+        OperationSource::Objects { ids, .. } => {
             let chain_id = (idx as u32) + 1;
             ids.iter().any(|id| *id == chain_id)
         }
@@ -490,7 +490,8 @@ mod tests {
     use crate::cam::setup::ToolOffset;
     use crate::geometry::Segment;
     use crate::project::{
-        Coolant, Operation, OperationKind, OperationParams, OperationSource, ToolEntry, ToolKind,
+        Coolant, Operation, OperationKind, OperationParams, OperationSource, SourceCombine,
+        ToolEntry, ToolKind,
     };
 
     fn closed_square(side: f64) -> Vec<Segment> {
@@ -683,7 +684,10 @@ mod tests {
             operations: vec![pocket_op(
                 1,
                 1,
-                OperationSource::Objects { ids: vec![1] },
+                OperationSource::Objects {
+                    ids: vec![1],
+                    combine: SourceCombine::Auto,
+                },
             )],
             tabs: Default::default(),
         };
@@ -694,7 +698,10 @@ mod tests {
             operations: vec![pocket_op(
                 1,
                 1,
-                OperationSource::Objects { ids: vec![1, 2] },
+                OperationSource::Objects {
+                    ids: vec![1, 2],
+                    combine: SourceCombine::Auto,
+                },
             )],
             tabs: Default::default(),
         };

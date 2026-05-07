@@ -166,9 +166,17 @@ pub enum PocketStrategy {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum OperationSource {
     /// Run on every chain on the listed layer names.
-    Layers { layers: Vec<String> },
+    Layers {
+        layers: Vec<String>,
+        #[serde(default, skip_serializing_if = "SourceCombine::is_default")]
+        combine: SourceCombine,
+    },
     /// Run on the listed chain ids only.
-    Objects { ids: Vec<u32> },
+    Objects {
+        ids: Vec<u32>,
+        #[serde(default, skip_serializing_if = "SourceCombine::is_default")]
+        combine: SourceCombine,
+    },
     /// Run on every chained object in the project.
     All,
 }
@@ -176,6 +184,39 @@ pub enum OperationSource {
 impl Default for OperationSource {
     fn default() -> Self {
         Self::All
+    }
+}
+
+/// How a multi-object source selection is combined into the region(s) the
+/// operation actually consumes. Default is `Auto` — containment-based,
+/// which gives the user "outer + inner = annulus" behavior with no extra
+/// thought. The other modes are clipper2-driven boolean ops; `None` keeps
+/// each selected object as its own boundary (the pre-combine behavior,
+/// surfaced for callers who really want it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceCombine {
+    /// Containment-aware: nested closed objects in the selection become
+    /// islands of their outermost selected ancestor. Equivalent to today's
+    /// pipeline-level behavior (see pipeline.rs's selected_set logic).
+    #[default]
+    Auto,
+    /// Boolean union of all selected closed polygons.
+    Union,
+    /// First selected polygon minus the union of the rest.
+    Difference,
+    /// Boolean intersection of all selected closed polygons.
+    Intersection,
+    /// Symmetric difference (xor) of all selected closed polygons.
+    Xor,
+    /// No combination — emit one boundary per selected object as-is. This
+    /// is the pre-j7y behavior, kept for callers who explicitly want it.
+    None,
+}
+
+impl SourceCombine {
+    fn is_default(&self) -> bool {
+        matches!(self, SourceCombine::Auto)
     }
 }
 

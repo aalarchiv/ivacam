@@ -295,6 +295,16 @@ export type OpKind =
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral';
+/// How a multi-object source selection is combined into the region(s)
+/// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
+/// Default 'auto' is containment-aware (outer + inner = annulus).
+export type SourceCombine =
+  | 'auto'
+  | 'union'
+  | 'difference'
+  | 'intersection'
+  | 'xor'
+  | 'none';
 
 /// Thin frontend mirror of wiac_core::project::Operation. Tracks just
 /// what the UI needs to show + edit; the wire format expands to the
@@ -311,6 +321,11 @@ export interface OpEntry {
   ///   { objects: [...]} → run only on the listed object ids (1-based)
   sourceLayers: string[] | null;
   sourceObjects?: number[];
+  /// Combine mode for multi-object selections. Default 'auto' is the
+  /// containment-aware behavior (outer + inner = annulus pocket); other
+  /// modes drive clipper2 boolean ops on the selected closed polygons.
+  /// Persisted in .vc-project so the user's choice survives reloads.
+  sourceCombine?: SourceCombine;
   depth: number;
   startDepth: number;
   step: number;

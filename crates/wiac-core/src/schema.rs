@@ -83,6 +83,7 @@ pub fn components_schemas() -> Value {
     insert::<crate::project::OperationKind>(&mut schemas, "OperationKind");
     insert::<crate::project::OperationParams>(&mut schemas, "OperationParams");
     insert::<crate::project::OperationSource>(&mut schemas, "OperationSource");
+    insert::<crate::project::SourceCombine>(&mut schemas, "SourceCombine");
     insert::<crate::project::PocketStrategy>(&mut schemas, "PocketStrategy");
     insert::<crate::project::ToolEntry>(&mut schemas, "ToolEntry");
     insert::<crate::project::ToolKind>(&mut schemas, "ToolKind");

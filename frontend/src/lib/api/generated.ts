@@ -321,10 +321,12 @@ export interface components {
             tabs: components["schemas"]["TabsConfig"];
         };
         OperationSource: {
+            combine?: components["schemas"]["SourceCombine"];
             /** @enum {string} */
             kind: "layers";
             layers: string[];
         } | {
+            combine?: components["schemas"]["SourceCombine"];
             ids: number[];
             /** @enum {string} */
             kind: "objects";
@@ -428,6 +430,8 @@ export interface components {
             tabs: components["schemas"]["TabsConfig"];
             tool: components["schemas"]["ToolConfig"];
         };
+        /** @description How a multi-object source selection is combined into the region(s) the operation actually consumes. Default is `Auto` — containment-based, which gives the user "outer + inner = annulus" behavior with no extra thought. The other modes are clipper2-driven boolean ops; `None` keeps each selected object as its own boundary (the pre-combine behavior, surfaced for callers who really want it). */
+        SourceCombine: "auto" | "union" | "difference" | "intersection" | "xor" | "none";
         TabPoint: {
             /** Format: double */
             x: number;

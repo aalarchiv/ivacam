@@ -573,6 +573,8 @@ components:
       oneOf:
       - description: Run on every chain on the listed layer names.
         properties:
+          combine:
+            $ref: '#/components/schemas/SourceCombine'
           kind:
             enum:
             - layers
@@ -587,6 +589,8 @@ components:
         type: object
       - description: Run on the listed chain ids only.
         properties:
+          combine:
+            $ref: '#/components/schemas/SourceCombine'
           ids:
             items:
               format: uint32
@@ -819,6 +823,33 @@ components:
       - tabs
       - tool
       type: object
+    SourceCombine:
+      description: How a multi-object source selection is combined into the region(s) the operation actually consumes. Default is `Auto` — containment-based, which gives the user "outer + inner = annulus" behavior with no extra thought. The other modes are clipper2-driven boolean ops; `None` keeps each selected object as its own boundary (the pre-combine behavior, surfaced for callers who really want it).
+      oneOf:
+      - description: 'Containment-aware: nested closed objects in the selection become islands of their outermost selected ancestor. Equivalent to today''s pipeline-level behavior (see pipeline.rs''s selected_set logic).'
+        enum:
+        - auto
+        type: string
+      - description: Boolean union of all selected closed polygons.
+        enum:
+        - union
+        type: string
+      - description: First selected polygon minus the union of the rest.
+        enum:
+        - difference
+        type: string
+      - description: Boolean intersection of all selected closed polygons.
+        enum:
+        - intersection
+        type: string
+      - description: Symmetric difference (xor) of all selected closed polygons.
+        enum:
+        - xor
+        type: string
+      - description: No combination — emit one boundary per selected object as-is. This is the pre-j7y behavior, kept for callers who explicitly want it.
+        enum:
+        - none
+        type: string
     TabPoint:
       properties:
         x:

@@ -1532,6 +1532,70 @@ mod tests {
         );
     }
 
+    /// Direct end-to-end check that zigzag emission is alive: at default
+    /// xy_overlap the gcode for a 50x50 pocket must contain cuts at
+    /// distinct Y values inside the pocket — not just the boundary
+    /// contour at four corners.
+    #[test]
+    fn zigzag_pocket_emits_interior_strokes() {
+        let mut params = OperationParams::mill_default();
+        // Force the default explicitly so the test pins behavior even
+        // if the constant changes later.
+        params.xy_overlap = 0.5;
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Zigzag pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Zigzag,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Cuts at the level=0 contour visit only y=1.5 and y=48.5 (the
+        // contour inset by tool_radius=1.5 from the original 0..50).
+        // Zigzag fill should add strokes at intermediate Y values.
+        let interior_cut_y_values: std::collections::HashSet<i32> = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .filter_map(|s| {
+                // Round to the nearest mm so floating-point doesn't
+                // explode the set.
+                let y_mm = s.from.y.round() as i32;
+                if (1..=49).contains(&y_mm) {
+                    Some(y_mm)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // A 50x50 pocket at 1.5mm stride gives at least 20 distinct
+        // interior Y rows. If we see only 2 (just the contour edges),
+        // zigzag emission is broken.
+        assert!(
+            interior_cut_y_values.len() > 5,
+            "expected many distinct interior Y rows from zigzag, got {}: {:?}",
+            interior_cut_y_values.len(),
+            interior_cut_y_values,
+        );
+    }
+
     #[test]
     fn unknown_post_processor_is_a_deserialization_failure() {
         let raw = serde_json::json!({

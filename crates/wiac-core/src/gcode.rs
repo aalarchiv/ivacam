@@ -307,19 +307,66 @@ fn multi_pass<P: PostProcessor>(
     // closed paths; for open paths we silently fall back to straight.
     let closed_path = is_closed_path(segments);
     let helix = setup.mill.helix_mode && closed_path;
+    // Ramp plunge: descend Z while walking the first `ramp_length` of
+    // the path, then continue at depth. Computed once per pass from
+    // `step / tan(angle)`. Disabled when helix is active (the helix
+    // already provides a ramped descent over the full path).
+    use crate::cam::setup::PlungeStrategy;
+    let ramp_angle_deg = match setup.mill.plunge {
+        PlungeStrategy::Ramp { angle_deg } => Some(angle_deg.clamp(0.5, 45.0)),
+        PlungeStrategy::Direct => None,
+    };
+    let total_path_len: f64 = segments
+        .iter()
+        .map(|s| match s.kind {
+            SegmentKind::Line | SegmentKind::Point => s.start.distance(s.end),
+            SegmentKind::Arc | SegmentKind::Circle => arc_length(s),
+        })
+        .sum();
 
+    // For the helix-vs-direct decision we treat the first pass as
+    // having no prev_z (no spiral from somewhere), but the ramp plunge
+    // wants to descend from start_depth on the first pass too — that's
+    // when it matters most. We track them with separate state.
     let mut prev_z: Option<f64> = None;
+    let mut ramp_from: f64 = setup.mill.start_depth;
     let mut z = (setup.mill.start_depth + step).max(total_depth);
     loop {
+        let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
         if let (true, Some(pz)) = (helix, prev_z) {
             // Spiral from prev_z down to z while tracing the segments.
             post.feedrate(setup.tool.rate_h);
             emit_helix_pass(segments, pz, z, post);
+        } else if let Some(angle) = ramp_angle_deg.filter(|_| !pass_uses_tabs) {
+            // Ramp plunge: descend from pz to z over the first
+            // ramp_length of arc length, then continue at z for the
+            // remainder. emit_ramp_pass walks ALL segments — the ramp
+            // IS the full pass — so we don't follow it with another
+            // path emit. Tabs-needed passes fall through to the direct
+            // branch below to keep the tabs walker authoritative.
+            let pz = ramp_from;
+            let dz = (pz - z).abs();
+            let ramp_length = if dz < 1e-9 {
+                0.0
+            } else {
+                dz / angle.to_radians().tan()
+            };
+            if ramp_length > 1e-6 && total_path_len >= ramp_length {
+                post.feedrate(setup.tool.rate_h);
+                emit_ramp_pass(segments, pz, z, ramp_length, post);
+            } else {
+                // Path too short for the ramp → fall back to straight
+                // plunge so the user still gets a valid program.
+                post.feedrate(setup.tool.rate_v);
+                post.linear(None, None, Some(z));
+                post.feedrate(setup.tool.rate_h);
+                let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+                emit_path_with_dragoff(segments, dragoff, post);
+            }
         } else {
             post.feedrate(setup.tool.rate_v);
             post.linear(None, None, Some(z));
             post.feedrate(setup.tool.rate_h);
-            let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
             if pass_uses_tabs {
                 emit_path_with_tabs(segments, tabs, tabs_z, z, tab_radius, post);
             } else {
@@ -328,10 +375,79 @@ fn multi_pass<P: PostProcessor>(
             }
         }
         prev_z = Some(z);
+        ramp_from = z;
         if z <= total_depth + 1e-9 {
             break;
         }
         z = (z + step).max(total_depth);
+    }
+}
+
+/// Walk `segments` while linearly descending Z from `from_z` to `to_z`
+/// over the first `ramp_length` of arc length, then continue at `to_z`
+/// for the remainder.
+///
+/// Line segments are *split* when they cross the ramp_length boundary
+/// so the ramp angle is honored even if the first segment is longer
+/// than ramp_length. Arc segments aren't split mid-arc (the math gets
+/// fiddly); the ramp simply finishes at the first arc boundary that
+/// crosses ramp_length and the rest of the path proceeds at to_z.
+fn emit_ramp_pass<P: PostProcessor>(
+    segments: &[Segment],
+    from_z: f64,
+    to_z: f64,
+    ramp_length: f64,
+    post: &mut P,
+) {
+    if ramp_length < 1e-9 {
+        post.linear(None, None, Some(to_z));
+        return;
+    }
+    let mut consumed = 0.0;
+    let interp_z = |consumed: f64| -> f64 {
+        let t = (consumed / ramp_length).min(1.0);
+        from_z + (to_z - from_z) * t
+    };
+    for seg in segments {
+        let seg_len = match seg.kind {
+            SegmentKind::Line | SegmentKind::Point => seg.start.distance(seg.end),
+            SegmentKind::Arc | SegmentKind::Circle => arc_length(seg),
+        };
+        // Split this segment at ramp_length boundary if it's a line
+        // and it crosses the boundary.
+        let crosses_boundary = consumed < ramp_length
+            && consumed + seg_len > ramp_length
+            && matches!(seg.kind, SegmentKind::Line);
+        if crosses_boundary {
+            let remaining_ramp = ramp_length - consumed;
+            let frac = remaining_ramp / seg_len;
+            let mid_x = seg.start.x + (seg.end.x - seg.start.x) * frac;
+            let mid_y = seg.start.y + (seg.end.y - seg.start.y) * frac;
+            // Emit the ramp portion at to_z (we just arrived at depth)
+            // then continue to the segment end at to_z.
+            post.linear(Some(mid_x), Some(mid_y), Some(to_z));
+            post.linear(Some(seg.end.x), Some(seg.end.y), Some(to_z));
+            consumed += seg_len;
+            continue;
+        }
+        consumed += seg_len;
+        let z = interp_z(consumed);
+        match seg.kind {
+            SegmentKind::Line => post.linear(Some(seg.end.x), Some(seg.end.y), Some(z)),
+            SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), Some(z)),
+            SegmentKind::Arc | SegmentKind::Circle => {
+                let center = seg
+                    .center
+                    .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+                let i = center.x - seg.start.x;
+                let j = center.y - seg.start.y;
+                if seg.bulge > 0.0 {
+                    post.arc_ccw(Some(seg.end.x), Some(seg.end.y), Some(z), Some(i), Some(j));
+                } else {
+                    post.arc_cw(Some(seg.end.x), Some(seg.end.y), Some(z), Some(i), Some(j));
+                }
+            }
+        }
     }
 }
 

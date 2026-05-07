@@ -211,6 +211,13 @@ export interface components {
              * @default false
              */
             overcut: boolean;
+            /**
+             * @description How the cutter descends into material at the start of each Z pass. `Direct` is a straight plunge; `Ramp` walks the first `ramp_length` of the path while linearly descending Z so the cutter takes a chip in both Z and XY simultaneously.
+             * @default {
+             *       "kind": "direct"
+             *     }
+             */
+            plunge: components["schemas"]["PlungeStrategy"];
             reverse: boolean;
             /** Format: double */
             start_depth: number;
@@ -305,6 +312,8 @@ export interface components {
              * @default false
              */
             overcut: boolean;
+            /** @description How the cutter descends into material at the start of each Z pass. Default Direct (straight plunge). Ramp { angle_deg } walks forward along the path while descending Z, taking a chip in both directions simultaneously — required for non-center-cutting bits and for harder materials. */
+            plunge?: components["schemas"]["PlungeStrategy"];
             /** @default false */
             pocket_insideout: boolean;
             /** @default false */
@@ -370,6 +379,16 @@ export interface components {
              * @description Op the warning applies to. `None` means project-wide.
              */
             op_id?: number | null;
+        };
+        /** @description Per-pass entry strategy. */
+        PlungeStrategy: {
+            /** @enum {string} */
+            kind: "direct";
+        } | {
+            /** Format: double */
+            angle_deg: number;
+            /** @enum {string} */
+            kind: "ramp";
         };
         PocketConfig: {
             active: boolean;

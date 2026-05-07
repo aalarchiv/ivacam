@@ -18,6 +18,12 @@
     conventional: 'Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.',
     climb: 'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
   };
+  const PLUNGE_HELP: Record<'direct' | 'ramp', string> = {
+    direct:
+      'Straight Z plunge into material. Safe for center-cutting end mills on shallow steps; risky on harder materials.',
+    ramp:
+      'Ramped descent: cutter walks forward along the path while Z descends, taking a chip in both directions. Required for non-center-cutting bits.',
+  };
 
   /// Tooltip blurb per combine mode — kept short so it fits in a native
   /// option's `title` attribute (most browsers cut after ~2 lines).
@@ -204,6 +210,43 @@
             <option value="climb" title={CUT_DIR_HELP.climb}>climb</option>
           </select>
         </label>
+        <label class="row" title={PLUNGE_HELP[op.plunge?.kind ?? 'direct']}>
+          <span>Plunge</span>
+          <select
+            value={op.plunge?.kind ?? 'direct'}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              if (v === 'ramp') {
+                patch('plunge', {
+                  kind: 'ramp',
+                  angle_deg: op.plunge && op.plunge.kind === 'ramp' ? op.plunge.angle_deg : 3,
+                });
+              } else {
+                patch('plunge', { kind: 'direct' });
+              }
+            }}
+          >
+            <option value="direct" title={PLUNGE_HELP.direct}>direct</option>
+            <option value="ramp" title={PLUNGE_HELP.ramp}>ramp</option>
+          </select>
+        </label>
+        {#if op.plunge && op.plunge.kind === 'ramp'}
+          <label class="row" title="Ramp angle in degrees. 1°–5° is gentle, 10°+ is aggressive. The ramp's horizontal length is step / tan(angle).">
+            <span>Ramp angle</span>
+            <input
+              type="number"
+              step="0.5"
+              min="0.5"
+              max="45"
+              value={op.plunge.angle_deg}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v))
+                  patch('plunge', { kind: 'ramp', angle_deg: Math.max(0.5, Math.min(45, v)) });
+              }}
+            />
+          </label>
+        {/if}
       {/if}
     </fieldset>
 

@@ -672,6 +672,7 @@ fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, Pipel
         objectorder: op.params.objectorder,
         offset,
         overcut: op.params.overcut,
+        plunge: op.params.plunge,
     };
     setup.pockets = match op.kind {
         OperationKind::Pocket { strategy } => PocketConfig {
@@ -1264,6 +1265,137 @@ mod tests {
         )
         .unwrap();
         assert!(resp.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"));
+    }
+
+    /// Ramp plunge: the FIRST cut moves descend Z linearly while
+    /// walking forward along the path. With angle=10° and step=-1,
+    /// ramp_length = 1/tan(10°) ≈ 5.67mm. After ~5.67mm of XY travel
+    /// the cutter should be at Z=-1; subsequent cut moves stay at -1.
+    #[test]
+    fn ramp_plunge_descends_z_during_first_cuts() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = -1.0;
+        params.start_depth = 0.0;
+        params.plunge = crate::cam::setup::PlungeStrategy::Ramp { angle_deg: 10.0 };
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Ramped profile".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Walk the cut+arc moves at op_id=1. Either kind can carry the
+        // descending Z during the ramp depending on whether the offset
+        // polyline starts with a corner arc or a straight edge.
+        let path: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| {
+                s.op_id == 1
+                    && matches!(
+                        s.kind,
+                        crate::gcode::preview::MoveKind::Cut | crate::gcode::preview::MoveKind::Arc
+                    )
+            })
+            .collect();
+        assert!(!path.is_empty(), "expected cut/arc moves");
+        // The very first move's `from` is wherever the plunge left the
+        // cutter — for ramp plunge that's start_depth (=0), not the
+        // final cut depth.
+        let first = path[0];
+        assert!(
+            first.from.z > -0.001,
+            "ramp should start at Z≈0, got {} → {}",
+            first.from.z,
+            first.to.z
+        );
+        // Find where Z first reaches the cut depth.
+        let mut horizontal_during_ramp = 0.0;
+        let mut reached_depth = false;
+        for s in &path {
+            if !reached_depth {
+                horizontal_during_ramp += (s.to.x - s.from.x).hypot(s.to.y - s.from.y);
+            }
+            if s.to.z <= -0.999 {
+                reached_depth = true;
+                break;
+            }
+        }
+        assert!(reached_depth, "Z never reached cut depth during ramp");
+        // Expected ramp length is 1 / tan(10°) ≈ 5.67mm. Allow ±25%:
+        // the offset polyline may begin with a small corner arc that
+        // can't be split mid-arc, which slightly extends the
+        // descending portion.
+        let expected = 1.0 / 10f64.to_radians().tan();
+        assert!(
+            (horizontal_during_ramp - expected).abs() / expected < 0.25,
+            "horizontal ramp length should be ~{expected:.2}mm, got {horizontal_during_ramp:.2}",
+        );
+    }
+
+    #[test]
+    fn direct_plunge_keeps_default_behavior() {
+        // Sanity-check that the new plunge field doesn't affect the
+        // default Direct path: the first cut move must already be at
+        // the cut depth (the plunge happens before XY travel starts).
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = -1.0;
+        // params.plunge defaults to Direct.
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Direct profile".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let first_cut = resp
+            .toolpath
+            .iter()
+            .find(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut) && s.op_id == 1)
+            .expect("expected at least one cut");
+        assert!(
+            first_cut.from.z <= -0.999,
+            "direct plunge should reach cut depth before XY travel; first cut from.z = {}",
+            first_cut.from.z
+        );
     }
 
     #[test]

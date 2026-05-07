@@ -299,6 +299,18 @@ pub struct OperationParams {
     /// conventional milling on hobby machines.
     #[serde(default, skip_serializing_if = "CutDirection::is_default")]
     pub finish_cut_direction: CutDirection,
+
+    /// How the cutter descends into material at the start of each Z
+    /// pass. Default Direct (straight plunge). Ramp { angle_deg } walks
+    /// forward along the path while descending Z, taking a chip in both
+    /// directions simultaneously — required for non-center-cutting bits
+    /// and for harder materials.
+    #[serde(default, skip_serializing_if = "is_default_plunge")]
+    pub plunge: crate::cam::setup::PlungeStrategy,
+}
+
+fn is_default_plunge(p: &crate::cam::setup::PlungeStrategy) -> bool {
+    matches!(p, crate::cam::setup::PlungeStrategy::Direct)
 }
 
 impl OperationParams {
@@ -330,6 +342,7 @@ impl OperationParams {
             },
             cut_direction: CutDirection::Conventional,
             finish_cut_direction: CutDirection::Conventional,
+            plunge: crate::cam::setup::PlungeStrategy::Direct,
         }
     }
 }

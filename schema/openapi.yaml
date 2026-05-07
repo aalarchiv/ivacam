@@ -378,6 +378,12 @@ components:
           default: false
           description: When true, dip into sharp inner corners so the cutter fully clears them. Mirrors viaConstructor's `mill.overcut`.
           type: boolean
+        plunge:
+          allOf:
+          - $ref: '#/components/schemas/PlungeStrategy'
+          default:
+            kind: direct
+          description: How the cutter descends into material at the start of each Z pass. `Direct` is a straight plunge; `Ramp` walks the first `ramp_length` of the path while linearly descending Z so the cutter takes a chip in both Z and XY simultaneously.
         reverse:
           type: boolean
         start_depth:
@@ -562,6 +568,10 @@ components:
           default: false
           description: Dip into sharp inner corners so the cutter clears the geometric corner. Only meaningful for Profile ops with non-zero offset.
           type: boolean
+        plunge:
+          allOf:
+          - $ref: '#/components/schemas/PlungeStrategy'
+          description: How the cutter descends into material at the start of each Z pass. Default Direct (straight plunge). Ramp { angle_deg } walks forward along the path while descending Z, taking a chip in both directions simultaneously — required for non-center-cutting bits and for harder materials.
         pocket_insideout:
           default: false
           type: boolean
@@ -682,6 +692,31 @@ components:
       - kind
       - message
       type: object
+    PlungeStrategy:
+      description: Per-pass entry strategy.
+      oneOf:
+      - description: Straight plunge — current behavior. Safe for end mills with center-cutting geometry on shallow steps; risky on harder materials or non-center-cutting bits.
+        properties:
+          kind:
+            enum:
+            - direct
+            type: string
+        required:
+        - kind
+        type: object
+      - description: 'Linear ramp into the first cut: descend Z at `angle_deg` from the previous Z to the current pass Z while walking forward along the path. The horizontal distance traveled during the ramp is `step / tan(angle_deg)`. Falls back to Direct if the path is shorter than the required ramp.'
+        properties:
+          angle_deg:
+            format: double
+            type: number
+          kind:
+            enum:
+            - ramp
+            type: string
+        required:
+        - angle_deg
+        - kind
+        type: object
     PocketConfig:
       properties:
         active:

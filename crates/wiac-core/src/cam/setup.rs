@@ -65,6 +65,34 @@ pub struct MillConfig {
     /// them. Mirrors viaConstructor's `mill.overcut`.
     #[serde(default)]
     pub overcut: bool,
+    /// How the cutter descends into material at the start of each Z
+    /// pass. `Direct` is a straight plunge; `Ramp` walks the first
+    /// `ramp_length` of the path while linearly descending Z so the
+    /// cutter takes a chip in both Z and XY simultaneously.
+    #[serde(default)]
+    pub plunge: PlungeStrategy,
+}
+
+/// Per-pass entry strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PlungeStrategy {
+    /// Straight plunge — current behavior. Safe for end mills with
+    /// center-cutting geometry on shallow steps; risky on harder
+    /// materials or non-center-cutting bits.
+    Direct,
+    /// Linear ramp into the first cut: descend Z at `angle_deg` from
+    /// the previous Z to the current pass Z while walking forward
+    /// along the path. The horizontal distance traveled during the
+    /// ramp is `step / tan(angle_deg)`. Falls back to Direct if the
+    /// path is shorter than the required ramp.
+    Ramp { angle_deg: f64 },
+}
+
+impl Default for PlungeStrategy {
+    fn default() -> Self {
+        Self::Direct
+    }
 }
 
 impl Default for MillConfig {
@@ -80,6 +108,7 @@ impl Default for MillConfig {
             objectorder: ObjectOrder::default(),
             offset: ToolOffset::None,
             overcut: false,
+            plunge: PlungeStrategy::default(),
         }
     }
 }

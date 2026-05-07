@@ -202,6 +202,7 @@ class ProjectState {
       pocketStrategy: kind === 'pocket' ? 'cascade' : null,
       cutDirection: 'conventional',
       finishCutDirection: 'conventional',
+      plunge: { kind: 'direct' },
     };
     this.operations = [...this.operations, op];
     this.selectedOpId = op.id;
@@ -309,6 +310,15 @@ export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral';
 /// with feed → better surface finish but needs a rigid stiff machine.
 /// See wiac_core::project::CutDirection for the winding rules.
 export type CutDirection = 'conventional' | 'climb';
+
+/// Plunge entry strategy. `direct` is a straight Z dive (current
+/// behavior); `ramp` walks forward along the path while descending Z so
+/// the cutter takes a chip in both directions simultaneously — required
+/// for non-center-cutting bits and for harder materials. The angle is
+/// in degrees, conservative default 3°.
+export type PlungeStrategy =
+  | { kind: 'direct' }
+  | { kind: 'ramp'; angle_deg: number };
 /// How a multi-object source selection is combined into the region(s)
 /// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
 /// Default 'auto' is containment-aware (outer + inner = annulus).
@@ -352,6 +362,9 @@ export interface OpEntry {
   /// hobby machines is almost always best with conventional milling
   /// even when the roughing passes use climb.
   finishCutDirection?: CutDirection;
+  /// How the cutter descends into material at the start of each Z
+  /// pass. Default { kind: 'direct' }.
+  plunge?: PlungeStrategy;
 }
 
 export interface ProjectFile {

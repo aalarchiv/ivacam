@@ -86,6 +86,7 @@ interface WireOp {
     leads: { in: 'off' | 'straight' | 'arc'; out: 'off' | 'straight' | 'arc'; in_lenght: number; out_lenght: number };
     cut_direction?: 'conventional' | 'climb';
     finish_cut_direction?: 'conventional' | 'climb';
+    plunge?: { kind: 'direct' } | { kind: 'ramp'; angle_deg: number };
   };
 }
 
@@ -191,6 +192,9 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
         : {}),
       ...(op.finishCutDirection && op.finishCutDirection !== 'conventional'
         ? { finish_cut_direction: op.finishCutDirection }
+        : {}),
+      ...(op.plunge && op.plunge.kind !== 'direct'
+        ? { plunge: op.plunge }
         : {}),
     },
   };

@@ -14,8 +14,10 @@ pub mod math;
 pub mod pipeline;
 pub mod project;
 pub mod schema;
+pub mod sim;
 pub mod testing;
 
 pub use error::{Error, Result};
 pub use geometry::{BBox, Layer, Point2, Segment, SegmentKind};
 pub use input::{ImportOptions, ImportOutput};
+pub use sim::heightmap::{Heightmap, ToolProfile};

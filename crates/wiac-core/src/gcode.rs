@@ -381,6 +381,23 @@ fn multi_pass<P: PostProcessor>(
         }
         z = (z + step).max(total_depth);
     }
+    // Ramp plunge leaves a sloped section at the start of every pass —
+    // the cells under the ramp sit at progressively descending Z, NOT
+    // at the pass's final depth. Earlier passes' slopes are re-cut by
+    // later passes (which start at the previous z and ramp deeper),
+    // but the LAST pass's slope persists as material left in the
+    // pocket. Add a constant-depth cleanup walk at total_depth to
+    // sweep that slope flat. Skipped on tabs-active paths because the
+    // tabs walker already lifts/lowers Z based on its own logic and a
+    // bonus pass would double-cut.
+    let needs_ramp_cleanup = ramp_angle_deg.is_some()
+        && !(setup.tabs.active && !tabs.is_empty())
+        && total_path_len > 1e-6;
+    if needs_ramp_cleanup {
+        post.feedrate(setup.tool.rate_h);
+        let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+        emit_path_with_dragoff(segments, dragoff, post);
+    }
 }
 
 /// Walk `segments` while linearly descending Z from `from_z` to `to_z`

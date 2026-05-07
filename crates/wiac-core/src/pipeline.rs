@@ -1596,6 +1596,67 @@ mod tests {
         );
     }
 
+    /// Ramp plunge used to leave a sloped section at the start of the
+    /// last Z pass — the cutter ramps from prev_z to total_depth over
+    /// `ramp_length`, but the cells in the ramp region sit at
+    /// progressively descending Z, not at total_depth. The fix is a
+    /// constant-depth cleanup walk after all the ramped passes.
+    /// This test verifies the gcode now contains a final pass at
+    /// total_depth that visits the path's start XY at total_depth.
+    #[test]
+    fn ramp_plunge_cleans_up_with_a_final_constant_depth_pass() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = -1.0;
+        params.start_depth = 0.0;
+        params.plunge = crate::cam::setup::PlungeStrategy::Ramp { angle_deg: 10.0 };
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Ramped profile".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Walk cut moves at op_id=1; group by Z plane (rounded).
+        let cuts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut) && s.op_id == 1)
+            .collect();
+        // Total horizontal distance traversed at exactly total_depth=-1.
+        let cleanup_distance: f64 = cuts
+            .iter()
+            .filter(|s| (s.from.z - -1.0).abs() < 1e-3 && (s.to.z - -1.0).abs() < 1e-3)
+            .map(|s| (s.to.x - s.from.x).hypot(s.to.y - s.from.y))
+            .sum();
+        // Without the cleanup, only the post-ramp portion of the single
+        // pass would be at -1 (about path_len - ramp_length ≈ 400 -
+        // 5.67 ≈ 394). With cleanup we get one extra full lap (~400)
+        // → expect roughly ≥ 700.
+        assert!(
+            cleanup_distance > 700.0,
+            "expected ≥700mm of constant-depth cuts (post-ramp + cleanup); got {cleanup_distance:.1}",
+        );
+    }
+
     #[test]
     fn unknown_post_processor_is_a_deserialization_failure() {
         let raw = serde_json::json!({

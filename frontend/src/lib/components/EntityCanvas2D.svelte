@@ -64,6 +64,85 @@
   let hoverIdx = $state<number | null>(null);
   let lastTransform: { scale: number; offX: number; offY: number } | null = null;
 
+  /// Uniform-grid spatial index for segment hit testing. Without it,
+  /// pixelHit() ran an O(N) scan on every pointermove — fine for tiny
+  /// DXFs but a million distance computations per second of idle hover
+  /// on a 10k-segment file. The grid is rebuilt when project.imported
+  /// changes (rare); each query inspects only the cells overlapping the
+  /// cursor + tolerance and bails early past that.
+  type HitIndex = {
+    cellW: number;
+    cellH: number;
+    minX: number;
+    minY: number;
+    cols: number;
+    rows: number;
+    /// One Uint32Array per cell with segment indices that touch it.
+    /// Cells with zero hits stay undefined to keep memory bounded.
+    cells: (Uint32Array | undefined)[];
+  };
+  let hitIndex: HitIndex | null = null;
+
+  $effect(() => {
+    void project.imported;
+    hitIndex = buildHitIndex(project.imported);
+  });
+
+  function buildHitIndex(
+    data: typeof project.imported,
+  ): HitIndex | null {
+    if (!data || data.segments.length === 0) return null;
+    const { min_x, min_y, max_x, max_y } = data.bbox;
+    const dx = Math.max(max_x - min_x, 1e-6);
+    const dy = Math.max(max_y - min_y, 1e-6);
+    // Aim for ~sqrt(N) cells per side, capped so tiny imports don't get
+    // a sparse grid and huge ones don't blow the memory budget.
+    const target = Math.min(128, Math.max(8, Math.floor(Math.sqrt(data.segments.length))));
+    const cols = target;
+    const rows = target;
+    const cellW = dx / cols;
+    const cellH = dy / rows;
+    // Bucket counts then bucket arrays — two-pass build avoids growing
+    // arrays per-insert.
+    const counts = new Uint32Array(cols * rows);
+    const segs = data.segments;
+    const visit = (cb: (cellIdx: number, segIdx: number) => void) => {
+      for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        const sxMin = Math.min(s.start.x, s.end.x);
+        const syMin = Math.min(s.start.y, s.end.y);
+        const sxMax = Math.max(s.start.x, s.end.x);
+        const syMax = Math.max(s.start.y, s.end.y);
+        const c0 = clamp(Math.floor((sxMin - min_x) / cellW), 0, cols - 1);
+        const c1 = clamp(Math.floor((sxMax - min_x) / cellW), 0, cols - 1);
+        const r0 = clamp(Math.floor((syMin - min_y) / cellH), 0, rows - 1);
+        const r1 = clamp(Math.floor((syMax - min_y) / cellH), 0, rows - 1);
+        for (let r = r0; r <= r1; r++) {
+          for (let c = c0; c <= c1; c++) {
+            cb(r * cols + c, i);
+          }
+        }
+      }
+    };
+    visit((cellIdx) => {
+      counts[cellIdx]++;
+    });
+    const cells: (Uint32Array | undefined)[] = new Array(cols * rows);
+    const writeIdx = new Uint32Array(cols * rows);
+    for (let i = 0; i < counts.length; i++) {
+      if (counts[i] > 0) cells[i] = new Uint32Array(counts[i]);
+    }
+    visit((cellIdx, segIdx) => {
+      const buf = cells[cellIdx]!;
+      buf[writeIdx[cellIdx]++] = segIdx;
+    });
+    return { cellW, cellH, minX: min_x, minY: min_y, cols, rows, cells };
+  }
+
+  function clamp(v: number, lo: number, hi: number): number {
+    return v < lo ? lo : v > hi ? hi : v;
+  }
+
   function pixelHit(canvasX: number, canvasY: number): number | null {
     const data = project.imported;
     if (!data || !lastTransform) return null;
@@ -73,8 +152,40 @@
     const tolData = HIT_PIXEL_TOL / scale;
     let bestIdx: number | null = null;
     let bestDist = Infinity;
-    for (let i = 0; i < data.segments.length; i++) {
-      const s = data.segments[i];
+    const segs = data.segments;
+    if (hitIndex) {
+      const { cellW, cellH, minX, minY, cols, rows, cells } = hitIndex;
+      const c0 = clamp(Math.floor((dataX - tolData - minX) / cellW), 0, cols - 1);
+      const c1 = clamp(Math.floor((dataX + tolData - minX) / cellW), 0, cols - 1);
+      const r0 = clamp(Math.floor((dataY - tolData - minY) / cellH), 0, rows - 1);
+      const r1 = clamp(Math.floor((dataY + tolData - minY) / cellH), 0, rows - 1);
+      // Dedup across cells — a single segment can land in multiple cells
+      // when its bbox crosses cell boundaries.
+      const seen = new Set<number>();
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          const buf = cells[r * cols + c];
+          if (!buf) continue;
+          for (let k = 0; k < buf.length; k++) {
+            const i = buf[k];
+            if (seen.has(i)) continue;
+            seen.add(i);
+            const s = segs[i];
+            if (!project.visibleLayers.has(s.layer)) continue;
+            const d = distanceToSegment(s.start, s.end, dataX, dataY);
+            if (d < tolData && d < bestDist) {
+              bestIdx = i;
+              bestDist = d;
+            }
+          }
+        }
+      }
+      return bestIdx;
+    }
+    // Fallback for the rare case the index hasn't been built yet (first
+    // mousemove during the initial mount before the $effect fires).
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
       if (!project.visibleLayers.has(s.layer)) continue;
       const d = distanceToSegment(s.start, s.end, dataX, dataY);
       if (d < tolData && d < bestDist) {
@@ -245,7 +356,7 @@
     // user can see the full set without the selection getting lost.
     const regions = project.generated?.regions ?? [];
     if (regions.length > 0 && project.regionsVisible) {
-      drawRegions(ctx, regions, project2);
+      drawRegions(ctx, regions, scale, offX, offY);
     }
 
     const accent = themeVar('--accent', '#2d6cdf');
@@ -265,44 +376,74 @@
     drawTabs(ctx, project2);
   }
 
+  /// Path2D cache for region previews. Tracing each region's polygons by
+  /// hand on every redraw was O(total tessellated points) per draw, which
+  /// fires on hover, selection, layer toggle, etc. We build the Path2D
+  /// objects once in *data space* (no canvas transform applied) and
+  /// stamp them with ctx.setTransform during draw — re-rebuilt only when
+  /// project.generated.regions actually changes.
+  type RegionPath = {
+    op_id: number;
+    path: Path2D;
+  };
+  let regionPathCache: { regionsRef: unknown; paths: RegionPath[] } | null = null;
+
+  function regionPaths(
+    regions: NonNullable<typeof project.generated>['regions'],
+  ): RegionPath[] {
+    if (regionPathCache && regionPathCache.regionsRef === regions) {
+      return regionPathCache.paths;
+    }
+    const paths: RegionPath[] = (regions ?? []).map((r) => {
+      const path = new Path2D();
+      tracePolygonInto(path, r.outer);
+      for (const hole of r.holes ?? []) tracePolygonInto(path, hole);
+      return { op_id: r.op_id, path };
+    });
+    regionPathCache = { regionsRef: regions, paths };
+    return paths;
+  }
+
   /// Paint each region's outer polygon and punch its holes via the
   /// even-odd fill rule. The selected op's region is drawn in accent so
   /// the user can spot it; others fade so the canvas doesn't get loud.
   function drawRegions(
     ctx: CanvasRenderingContext2D,
-    regions: Array<{ op_id: number; outer: Array<{ x: number; y: number }>; holes?: Array<Array<{ x: number; y: number }>> }>,
-    p: (x: number, y: number) => [number, number],
+    regions: NonNullable<typeof project.generated>['regions'],
+    scale: number,
+    offX: number,
+    offY: number,
   ) {
     const accent = themeVar('--accent', '#2d6cdf');
     const muted = themeVar('--text-muted', '#9aa0aa');
-    for (const r of regions) {
-      const isSelected = project.selectedOpId === r.op_id;
+    const paths = regionPaths(regions);
+    // Compose data → canvas transform on top of the existing dpr scale.
+    // Y is flipped (canvas y-down vs DXF y-up) so we use -scale on Y +
+    // offY as the canvas-space origin of data-y=0.
+    ctx.save();
+    ctx.transform(scale, 0, 0, -scale, offX, offY);
+    for (const rp of paths) {
+      const isSelected = project.selectedOpId === rp.op_id;
       ctx.fillStyle = isSelected
         ? `${accent}33` // ~20% alpha
         : `${muted}1a`; // ~10% alpha
-      ctx.beginPath();
-      tracePolygon(ctx, r.outer, p);
-      for (const hole of r.holes ?? []) {
-        tracePolygon(ctx, hole, p);
-      }
-      ctx.fill('evenodd');
+      ctx.fill(rp.path, 'evenodd');
     }
+    ctx.restore();
   }
 
-  function tracePolygon(
-    ctx: CanvasRenderingContext2D,
+  function tracePolygonInto(
+    path: Path2D,
     pts: Array<{ x: number; y: number }>,
-    p: (x: number, y: number) => [number, number],
   ) {
     if (pts.length < 3) return;
-    const [x0, y0] = p(pts[0].x, pts[0].y);
-    ctx.moveTo(x0, y0);
+    path.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) {
-      const [x, y] = p(pts[i].x, pts[i].y);
-      ctx.lineTo(x, y);
+      path.lineTo(pts[i].x, pts[i].y);
     }
-    ctx.closePath();
+    path.closePath();
   }
+
 
   function drawTabs(
     ctx: CanvasRenderingContext2D,

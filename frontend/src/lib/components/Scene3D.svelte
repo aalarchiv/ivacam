@@ -13,8 +13,15 @@
   let toolGroup: THREE.Group | undefined;
   let raf = 0;
   let observer: ResizeObserver | undefined;
+  let intersectObserver: IntersectionObserver | undefined;
   let themeMql: MediaQueryList | undefined;
   let themeMo: MutationObserver | undefined;
+  /// RAF gating: stop the loop entirely when the page is hidden OR the
+  /// host element is fully off-screen. Pane swaps unmount Scene3D
+  /// already (so onDestroy stops RAF), but minimised windows / tabbed-
+  /// away IDEs still left the loop running pre-9js.
+  let pageVisible = true;
+  let hostVisible = true;
 
   /// Render-on-demand flag. The animation loop calls `renderer.render()`
   /// only when something has visibly changed since the last frame —
@@ -27,6 +34,40 @@
     needsRender = true;
   }
 
+  function tickFrame() {
+    // Damping needs controls.update() every frame to advance, but the
+    // call itself is cheap (~50 µs) and dispatches 'change' (and thus
+    // requestRender) when anything actually moved. The expensive call
+    // is renderer.render — we gate it on needsRender.
+    controls?.update();
+    if (needsRender && renderer && scene && camera) {
+      renderer.render(scene, camera);
+      needsRender = false;
+    }
+    raf = requestAnimationFrame(tickFrame);
+  }
+
+  function maybeStartTick() {
+    if (raf) return;
+    if (!pageVisible || !hostVisible) return;
+    raf = requestAnimationFrame(tickFrame);
+  }
+
+  function stopTick() {
+    if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+  }
+
+  function onVisibilityChange() {
+    const visible = document.visibilityState === 'visible';
+    if (visible && !pageVisible) requestRender();
+    pageVisible = visible;
+    if (visible) maybeStartTick();
+    else stopTick();
+  }
+
   // Pickable line mesh + owner map. Each entry in `lineOwners` describes
   // the source of one *line pair* (two consecutive vertices in the
   // BufferAttribute) so a Raycaster.intersectObject hit can be mapped
@@ -37,6 +78,19 @@
   let linesObject: THREE.LineSegments | undefined;
   let lineOwners: LineOwner[] = [];
   let sceneRadius = 100;
+
+  /// Per-object color ranges into linesObject.geometry.attributes.color.
+  /// Each entry is `{ start, count, base: [r,g,b] }` — start is the
+  /// vertex index (not floats) where this object's first vertex lives,
+  /// count is how many vertices belong to it, base is the original
+  /// (non-selected) color the object should revert to. Filled during
+  /// rebuildGeometry so the selection-only $effect can mutate the
+  /// color attribute in-place instead of rebuilding the whole mesh.
+  type ColorRange = { start: number; count: number; base: [number, number, number] };
+  let objectColorRanges = new Map<number, ColorRange[]>();
+  /// Selection set the color attribute currently reflects. Compared
+  /// against project.selectedObjects to compute the symmetric diff.
+  let appliedSelection = new Set<number>();
   // Click vs. drag: OrbitControls owns pointermove so we only treat a
   // pointerup as a click when the user barely moved the cursor between
   // down and up. 3px / 400ms is the same threshold the 2D pane uses.
@@ -107,19 +161,17 @@
     observer.observe(host);
     fit();
 
-    const tick = () => {
-      // Damping needs controls.update() every frame to advance, but the
-      // call itself is cheap (~50 µs) and dispatches 'change' (and thus
-      // requestRender) when anything actually moved. The expensive call
-      // is renderer.render — we gate it on needsRender.
-      controls?.update();
-      if (needsRender && renderer && scene && camera) {
-        renderer.render(scene, camera);
-        needsRender = false;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
+    intersectObserver = new IntersectionObserver((entries) => {
+      const isect = entries[0]?.isIntersecting ?? true;
+      if (isect && !hostVisible) requestRender();
+      hostVisible = isect;
+      maybeStartTick();
+    });
+    intersectObserver.observe(host);
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    pageVisible = document.visibilityState === 'visible';
+    maybeStartTick();
 
     // Re-skin background + grid + (re-trigger) toolpath colors when the
     // OS theme changes OR the user toggles a manual theme. The toolpath
@@ -157,8 +209,10 @@
   }
 
   onDestroy(() => {
-    cancelAnimationFrame(raf);
+    stopTick();
     observer?.disconnect();
+    intersectObserver?.disconnect();
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     if (renderer) {
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
@@ -200,10 +254,24 @@
     void project.tabs;
     void project.stock;
     void project.operations;
-    void project.selectedObjects;
     rebuildGeometry();
     updateTabs();
     updateStock();
+    requestRender();
+  });
+
+  /// Selection-only fast path: mutate the color attribute in place
+  /// instead of rebuilding the entire LineSegments mesh on every click.
+  /// Falls through to a full rebuild only if the geometry is missing
+  /// (e.g. before the first rebuild has run).
+  $effect(() => {
+    const sel = project.selectedObjects;
+    if (!linesObject) {
+      // Geometry hasn't been built yet; the next rebuildGeometry will
+      // pick up the current selection naturally.
+      return;
+    }
+    applySelectionDelta(sel);
     requestRender();
   });
 
@@ -216,6 +284,48 @@
     updateTool();
     requestRender();
   });
+
+  function applySelectionDelta(next: Set<number>) {
+    if (!linesObject) return;
+    const attr = linesObject.geometry.attributes.color as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    const selectedColor = cssColor('--accent', 0x4a8df0);
+    let touched = false;
+    // Newly-selected objects: paint accent over their ranges.
+    for (const id of next) {
+      if (appliedSelection.has(id)) continue;
+      const ranges = objectColorRanges.get(id);
+      if (!ranges) continue;
+      for (const r of ranges) {
+        for (let v = 0; v < r.count; v++) {
+          const off = (r.start + v) * 3;
+          arr[off] = selectedColor.r;
+          arr[off + 1] = selectedColor.g;
+          arr[off + 2] = selectedColor.b;
+        }
+      }
+      touched = true;
+    }
+    // Newly-deselected objects: restore base color from the recorded
+    // ranges so the wireframe goes back to ACI / faded.
+    for (const id of appliedSelection) {
+      if (next.has(id)) continue;
+      const ranges = objectColorRanges.get(id);
+      if (!ranges) continue;
+      for (const r of ranges) {
+        const [br, bg, bb] = r.base;
+        for (let v = 0; v < r.count; v++) {
+          const off = (r.start + v) * 3;
+          arr[off] = br;
+          arr[off + 1] = bg;
+          arr[off + 2] = bb;
+        }
+      }
+      touched = true;
+    }
+    if (touched) attr.needsUpdate = true;
+    appliedSelection = new Set(next);
+  }
 
   let tabsGroup: THREE.Group | undefined;
   let stockGroup: THREE.Group | undefined;
@@ -467,6 +577,7 @@
     geometryGroup.clear();
     linesObject = undefined;
     lineOwners = [];
+    objectColorRanges = new Map();
     const data = project.imported;
     const gen = project.generated;
     if (!data && !gen) return;
@@ -488,19 +599,43 @@
         const objectId = data.objects?.[segIdx] ?? 0;
         const isSelected = objectId > 0 && project.selectedObjects.has(objectId);
         const points = tessellate(seg);
-        if (isSelected) {
-          c.copy(selectedColor);
-        } else if (flat) {
-          c.copy(fadedColor);
+        // Base color (non-selected) so selection toggles can revert without
+        // recomputing aciColor / fadedColor / etc.
+        let baseR: number;
+        let baseG: number;
+        let baseB: number;
+        if (flat) {
+          baseR = fadedColor.r;
+          baseG = fadedColor.g;
+          baseB = fadedColor.b;
         } else {
           c.copy(aciColor(seg.color));
+          baseR = c.r;
+          baseG = c.g;
+          baseB = c.b;
         }
+        const r = isSelected ? selectedColor.r : baseR;
+        const g = isSelected ? selectedColor.g : baseG;
+        const b = isSelected ? selectedColor.b : baseB;
+        const startVertex = positions.length / 3;
+        let pairCount = 0;
         for (let i = 0; i < points.length - 1; i++) {
           const [ax, ay] = points[i];
           const [bx, by] = points[i + 1];
           positions.push(ax, ay, 0, bx, by, 0);
-          colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+          colors.push(r, g, b, r, g, b);
           lineOwners.push({ kind: 'object', objectId });
+          pairCount++;
+        }
+        if (objectId > 0 && pairCount > 0) {
+          const range: ColorRange = {
+            start: startVertex,
+            count: pairCount * 2,
+            base: [baseR, baseG, baseB],
+          };
+          const list = objectColorRanges.get(objectId);
+          if (list) list.push(range);
+          else objectColorRanges.set(objectId, [range]);
         }
         segIdx++;
       }
@@ -551,6 +686,9 @@
     const lines = new THREE.LineSegments(geom, mat);
     geometryGroup.add(lines);
     linesObject = lines;
+    // Snapshot the selection that's now baked into the color attribute,
+    // so the selection-only $effect can compute deltas against it.
+    appliedSelection = new Set(project.selectedObjects);
 
     if (camera && controls) {
       const sphere = new THREE.Sphere();

@@ -1,0 +1,407 @@
+<script lang="ts">
+  /// Settings dialog. Per-installation user preferences (theme, language,
+  /// cutting-preview defaults, performance caps). Persisted to localStorage
+  /// under `wiac.settings`; not part of .vc-project. Mirrors the modal
+  /// style used by MachineDialog / ToolLibraryDialog.
+  ///
+  /// Unlike Machine / Tools we commit changes live: theme switching needs
+  /// to apply immediately, and there's no "Cancel" button — Escape or the
+  /// close button just dismisses the dialog.
+  import { project, type AppSettings } from '../state/project.svelte';
+  import { setLocale } from '../i18n';
+
+  interface Props {
+    open: boolean;
+    onClose: () => void;
+  }
+  let { open, onClose }: Props = $props();
+
+  function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
+    project.updateSettings({ [key]: value } as Partial<AppSettings>);
+  }
+
+  function pickLanguage(code: 'en' | 'de') {
+    update('language', code);
+    // Drive the live svelte-i18n locale too so labels switch immediately.
+    setLocale(code);
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && open) {
+      e.stopPropagation();
+      onClose();
+    }
+  }
+
+  // Coerce a number input: keep current value if the user typed garbage.
+  function toNumber(raw: string, fallback: number, min?: number, max?: number): number {
+    const n = Number.parseFloat(raw);
+    if (!Number.isFinite(n)) return fallback;
+    let v = n;
+    if (typeof min === 'number' && v < min) v = min;
+    if (typeof max === 'number' && v > max) v = max;
+    return v;
+  }
+</script>
+
+<svelte:window onkeydown={onKeyDown} />
+
+{#if open}
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal">
+      <header>
+        <h2 id="settings-title">Settings</h2>
+        <button class="close" onclick={onClose} aria-label="Close">×</button>
+      </header>
+
+      <div class="body">
+        <section>
+          <h3>Appearance</h3>
+          <div class="grid">
+            <label>Theme
+              <div class="seg" role="group" aria-label="Theme">
+                <button
+                  class:active={project.settings.theme === 'auto'}
+                  onclick={() => update('theme', 'auto')}
+                  type="button"
+                >Auto</button>
+                <button
+                  class:active={project.settings.theme === 'light'}
+                  onclick={() => update('theme', 'light')}
+                  type="button"
+                >Light</button>
+                <button
+                  class:active={project.settings.theme === 'dark'}
+                  onclick={() => update('theme', 'dark')}
+                  type="button"
+                >Dark</button>
+              </div>
+            </label>
+
+            <label>Language
+              <div class="seg" role="group" aria-label="Language">
+                <button
+                  class:active={project.settings.language === 'en'}
+                  onclick={() => pickLanguage('en')}
+                  type="button"
+                >EN</button>
+                <button
+                  class:active={project.settings.language === 'de'}
+                  onclick={() => pickLanguage('de')}
+                  type="button"
+                >DE</button>
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section>
+          <h3>Cutting preview</h3>
+          <p class="hint">
+            How the 3D viewport renders the simulated stock once cutting
+            preview lands. These values are stored now so the eventual
+            renderer picks them up automatically.
+          </p>
+          <div class="grid">
+            <label>Default mode
+              <select
+                value={project.settings.previewMode}
+                onchange={(e) => update('previewMode', (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'])}
+              >
+                <option value="wireframe">Wireframe</option>
+                <option value="solid">Solid</option>
+                <option value="both">Both</option>
+              </select>
+            </label>
+
+            <label>Solid color
+              <div class="color">
+                <input
+                  type="color"
+                  value={project.settings.solidColor}
+                  oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
+                />
+                <input
+                  type="text"
+                  class="hex"
+                  value={project.settings.solidColor}
+                  oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
+                />
+              </div>
+            </label>
+
+            <label>Solid opacity
+              <div class="slider-row">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.05"
+                  value={project.settings.solidOpacity}
+                  oninput={(e) => update('solidOpacity', toNumber((e.currentTarget as HTMLInputElement).value, project.settings.solidOpacity, 0.1, 1))}
+                />
+                <span class="num">{project.settings.solidOpacity.toFixed(2)}</span>
+              </div>
+            </label>
+
+            <label>Edge color
+              <div class="color">
+                <input
+                  type="color"
+                  value={project.settings.edgeColor}
+                  oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
+                />
+                <input
+                  type="text"
+                  class="hex"
+                  value={project.settings.edgeColor}
+                  oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
+                />
+              </div>
+            </label>
+
+            <label>Edge opacity
+              <div class="slider-row">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={project.settings.edgeOpacity}
+                  oninput={(e) => update('edgeOpacity', toNumber((e.currentTarget as HTMLInputElement).value, project.settings.edgeOpacity, 0, 1))}
+                />
+                <span class="num">{project.settings.edgeOpacity.toFixed(2)}</span>
+              </div>
+            </label>
+
+            <label>Cell resolution
+              <select
+                value={project.settings.cellResolutionMode}
+                onchange={(e) => update('cellResolutionMode', (e.currentTarget as HTMLSelectElement).value as AppSettings['cellResolutionMode'])}
+              >
+                <option value="auto">Auto (tool diameter / 15)</option>
+                <option value="manual">Manual</option>
+              </select>
+            </label>
+
+            {#if project.settings.cellResolutionMode === 'manual'}
+              <label>Cell size (mm)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.05"
+                  value={project.settings.cellResolutionMm}
+                  oninput={(e) => update('cellResolutionMm', toNumber((e.currentTarget as HTMLInputElement).value, project.settings.cellResolutionMm, 0.01))}
+                />
+              </label>
+            {/if}
+          </div>
+        </section>
+
+        <section>
+          <h3>Performance</h3>
+          <div class="grid">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={project.settings.solidPreviewByDefault}
+                onchange={(e) => update('solidPreviewByDefault', (e.currentTarget as HTMLInputElement).checked)}
+              />
+              <span>Enable solid preview by default</span>
+            </label>
+
+            <label>Max simulation cells
+              <input
+                type="number"
+                min="100000"
+                step="100000"
+                value={project.settings.maxSimulationCells}
+                oninput={(e) => update('maxSimulationCells', Math.round(toNumber((e.currentTarget as HTMLInputElement).value, project.settings.maxSimulationCells, 100_000)))}
+              />
+            </label>
+          </div>
+          <p class="hint">
+            Caps the heightmap grid size before resolution gets coarsened
+            automatically. Higher values look sharper at the cost of
+            memory + redraw time.
+          </p>
+        </section>
+      </div>
+
+      <footer>
+        <button class="primary" onclick={onClose} type="button">Done</button>
+      </footer>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: color-mix(in srgb, black 50%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+  .modal {
+    width: min(540px, 95vw);
+    max-height: 90vh;
+    background: var(--bg-panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated);
+  }
+  h2 {
+    font-size: 0.95rem;
+    margin: 0;
+    color: var(--text-strong);
+  }
+  .close {
+    background: transparent;
+    color: var(--text-muted);
+    border: 0;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 0.3rem;
+  }
+  .body {
+    padding: 0.7rem 0.9rem;
+    overflow: auto;
+  }
+  section {
+    margin-bottom: 1rem;
+  }
+  section:last-child {
+    margin-bottom: 0;
+  }
+  h3 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .hint {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    margin: 0 0 0.5rem;
+    line-height: 1.35;
+  }
+  .grid {
+    display: grid;
+    gap: 0.5rem;
+  }
+  label {
+    display: grid;
+    grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.8rem;
+  }
+  label.check {
+    grid-template-columns: auto 1fr;
+    gap: 0.4rem;
+  }
+  input[type='number'],
+  input[type='text'],
+  select {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+    min-width: 0;
+  }
+  input[type='checkbox'] {
+    accent-color: var(--accent);
+  }
+  input[type='range'] {
+    accent-color: var(--accent);
+    flex: 1;
+    min-width: 0;
+  }
+  input[type='color'] {
+    width: 2.2rem;
+    height: 1.6rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 0;
+  }
+  .color {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+  .color .hex {
+    flex: 1;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+  .slider-row .num {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    min-width: 2.5rem;
+    text-align: right;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .seg button {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 0;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .seg button.active {
+    background: var(--accent);
+    color: white;
+  }
+  footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    padding: 0.5rem 0.7rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-elevated);
+  }
+  .primary {
+    background: var(--accent);
+    color: white;
+    border: 0;
+    padding: 0.3rem 0.8rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+</style>

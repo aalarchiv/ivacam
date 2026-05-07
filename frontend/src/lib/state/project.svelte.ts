@@ -3,6 +3,69 @@
 
 import type { GenerateResponse, ImportResponse, Point2 } from '../api/types';
 
+const SETTINGS_KEY = 'wiac.settings';
+const LEGACY_THEME_KEY = 'wiac.theme';
+const LEGACY_LOCALE_KEY = 'wiac.locale';
+
+export interface AppSettings {
+  theme: 'auto' | 'light' | 'dark';
+  language: 'en' | 'de';
+  previewMode: 'wireframe' | 'solid' | 'both';
+  solidColor: string;
+  solidOpacity: number;
+  edgeColor: string;
+  edgeOpacity: number;
+  cellResolutionMode: 'auto' | 'manual';
+  cellResolutionMm: number;
+  solidPreviewByDefault: boolean;
+  maxSimulationCells: number;
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'auto',
+  language: 'en',
+  previewMode: 'wireframe',
+  solidColor: '#c8b48a',
+  solidOpacity: 0.5,
+  edgeColor: '#1a1a1a',
+  edgeOpacity: 1.0,
+  cellResolutionMode: 'auto',
+  cellResolutionMm: 0.2,
+  solidPreviewByDefault: false,
+  maxSimulationCells: 4_000_000,
+};
+
+/// Load persisted settings, deep-merging stored values over defaults so
+/// adding new keys later doesn't break old payloads. Falls back to the
+/// legacy `wiac.theme` / `wiac.locale` keys when no `wiac.settings` blob
+/// exists yet (first run after the dialog ships).
+function loadSettings(): AppSettings {
+  if (typeof window === 'undefined') return { ...DEFAULT_SETTINGS };
+  let merged: AppSettings = { ...DEFAULT_SETTINGS };
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AppSettings> | null;
+      if (parsed && typeof parsed === 'object') {
+        merged = { ...merged, ...parsed };
+      }
+      return merged;
+    }
+    // Migration path: seed from legacy single-purpose keys.
+    const legacyTheme = window.localStorage.getItem(LEGACY_THEME_KEY);
+    if (legacyTheme === 'auto' || legacyTheme === 'light' || legacyTheme === 'dark') {
+      merged.theme = legacyTheme;
+    }
+    const legacyLocale = window.localStorage.getItem(LEGACY_LOCALE_KEY);
+    if (legacyLocale === 'en' || legacyLocale === 'de') {
+      merged.language = legacyLocale;
+    }
+  } catch {
+    // localStorage unavailable / quota / parse failure → defaults are fine.
+  }
+  return merged;
+}
+
 class ProjectState {
   imported = $state<ImportResponse | null>(null);
   generated = $state<GenerateResponse | null>(null);
@@ -87,6 +150,29 @@ class ProjectState {
   /// ops on top of the wireframe. Default on — it's the answer to
   /// "what will this op actually machine?".
   regionsVisible = $state(true);
+
+  /// Per-installation user preferences. Persisted to localStorage under
+  /// `wiac.settings`; not part of .vc-project (those are per-project).
+  /// The SettingsDialog owns the UX; consumers (theme application, i18n
+  /// init, future cutting-preview rendering) read from here.
+  settings = $state<AppSettings>(loadSettings());
+
+  /// Persist `settings` to localStorage. Cheap (one JSON.stringify on a
+  /// tiny object) so we just call it on every mutation rather than
+  /// debouncing — the dialog won't fire updates fast enough to matter.
+  saveSettings() {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
+    } catch {
+      // ignore — quota / disabled storage are non-fatal here.
+    }
+  }
+
+  updateSettings(patch: Partial<AppSettings>) {
+    this.settings = { ...this.settings, ...patch };
+    this.saveSettings();
+  }
 
   addTab(segmentIdx: number, position: Point2) {
     const next = { ...this.tabs };

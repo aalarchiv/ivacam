@@ -67,6 +67,19 @@
     if (!project.generated) {
       return { label: '·', tone: 'warn', reason: 'Not generated yet — click Generate to produce this operation\'s gcode.' };
     }
+    // Pipeline warnings tagged with this op's id (tool-fit, kind
+    // mismatch, etc.) — escalate to the bad tone if a structural
+    // problem (kind mismatch, impossible geometry); warn for fit issues.
+    const opWarnings = (project.generated.warnings ?? []).filter((w) => w.op_id === op.id);
+    if (opWarnings.length > 0) {
+      const bad = opWarnings.find(
+        (w) => w.kind === 'tool_kind_mismatch' || w.kind === 'tool_geometry_impossible',
+      );
+      const reason = opWarnings.map((w) => w.message).join('\n');
+      return bad
+        ? { label: '✘', tone: 'bad', reason }
+        : { label: '⚠', tone: 'warn', reason };
+    }
     return { label: '✓', tone: 'ok', reason: 'Up to date with the last Generate.' };
   }
 

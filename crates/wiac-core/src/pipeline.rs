@@ -60,6 +60,25 @@ pub struct PipelineResponse {
     /// reading the toolpath. Empty for non-Pocket ops.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub regions: Vec<RegionPreview>,
+    /// Non-fatal warnings raised during planning — mostly tool-fit
+    /// problems (cutter doesn't fit the geometry, kind mismatch, …).
+    /// The frontend surfaces these in the operations list status badge
+    /// and a sidebar list; the gcode is still emitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<PipelineWarning>,
+}
+
+/// One non-fatal warning attached to (optionally) a specific op.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PipelineWarning {
+    /// Op the warning applies to. `None` means project-wide.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op_id: Option<u32>,
+    /// Stable identifier — frontend can branch on this to render an
+    /// icon, link to docs, etc.
+    pub kind: String,
+    /// Human-readable description.
+    pub message: String,
 }
 
 /// One filled region attached to a specific operation. `outer` is the
@@ -112,6 +131,7 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     let stats_collector = std::cell::RefCell::new((0usize, 0usize, 0usize)); // (closed, offsets, _)
     let progress_ref = &progress;
     let n_ops = project.operations.iter().filter(|o| o.enabled).count().max(1);
+    let mut warnings: Vec<PipelineWarning> = Vec::new();
 
     let gcode = match post_kind {
         PostProcessorKind::Linuxcnc => {
@@ -123,6 +143,7 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
                 &stats_collector,
                 progress_ref,
                 n_ops,
+                &mut warnings,
             )?
         }
         PostProcessorKind::Grbl => run_per_op(
@@ -133,6 +154,7 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
             &stats_collector,
             progress_ref,
             n_ops,
+            &mut warnings,
         )?,
         PostProcessorKind::Hpgl => run_per_op(
             &project,
@@ -142,6 +164,7 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
             &stats_collector,
             progress_ref,
             n_ops,
+            &mut warnings,
         )?,
     };
     let (total_closed, total_offsets, _) = *stats_collector.borrow();
@@ -160,6 +183,7 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
         toolpath,
         gcode_index,
         regions,
+        warnings,
     })
 }
 
@@ -198,6 +222,7 @@ fn run_per_op<P, F>(
     stats: &std::cell::RefCell<(usize, usize, usize)>,
     progress: &F,
     n_ops: usize,
+    warnings: &mut Vec<PipelineWarning>,
 ) -> Result<String, PipelineError>
 where
     P: PostProcessor,
@@ -209,7 +234,7 @@ where
     for op in project.operations.iter().filter(|o| o.enabled) {
         let setup = synthesize_op_setup(op, project)?;
         let (offsets, closed_count) =
-            build_op_offsets(op, project, &mut objects.clone(), &setup)?;
+            build_op_offsets(op, project, &mut objects.clone(), &setup, warnings)?;
         {
             let mut s = stats.borrow_mut();
             s.0 += closed_count;
@@ -239,7 +264,12 @@ fn build_op_offsets(
     project: &Project,
     objects: &mut Vec<VcObject>,
     setup: &Setup,
+    warnings: &mut Vec<PipelineWarning>,
 ) -> Result<(Vec<PolylineOffset>, usize), PipelineError> {
+    // Up-front sanity checks that don't depend on whether the cascade
+    // succeeds. push_tool_fit_kind_warnings populates `warnings` for
+    // tool-kind / op-kind mismatches and impossible tool geometry.
+    push_tool_fit_kind_warnings(op, project, setup, warnings);
     // Map imported-segment-keyed tabs → owning chain object.
     let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> = HashMap::new();
     if !project.tabs.is_empty() {
@@ -314,6 +344,7 @@ fn build_op_offsets(
                 apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
             }
             apply_cut_direction(&mut offsets, op, false);
+            push_tool_fit_size_warning(op, setup, closed, &offsets, warnings);
             return Ok((offsets, closed));
         }
     }
@@ -432,7 +463,98 @@ fn build_op_offsets(
         apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
     }
     apply_cut_direction(&mut offsets, op, false);
+    push_tool_fit_size_warning(op, setup, closed, &offsets, warnings);
     Ok((offsets, closed))
+}
+
+/// Sanity warnings that don't depend on whether the offset cascade
+/// succeeded. Run before the heavy work.
+fn push_tool_fit_kind_warnings(
+    op: &Operation,
+    project: &Project,
+    setup: &Setup,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    use crate::project::ToolKind;
+    let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) else {
+        return;
+    };
+    // Impossible tool geometry: tip diameter ≥ shank diameter.
+    if let Some(tip) = tool.tip_diameter {
+        if tip >= tool.diameter {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "tool_geometry_impossible".into(),
+                message: format!(
+                    "tool '{}': tip diameter {tip} ≥ shank diameter {}",
+                    tool.name, tool.diameter
+                ),
+            });
+        }
+    }
+    // Tool kind mismatched with op kind. We warn rather than error
+    // because the gcode emitter still produces something usable in many
+    // cases (a drag knife on a Profile is fine, for instance), but a
+    // drill on a Pocket really doesn't make sense.
+    let mismatch = match (&op.kind, tool.kind) {
+        (OperationKind::Pocket { .. }, ToolKind::Drill) => Some("pocket op assigned a drill bit"),
+        (OperationKind::Pocket { .. }, ToolKind::DragKnife) => {
+            Some("pocket op assigned a drag knife (cut path won't carve area)")
+        }
+        (OperationKind::Profile { .. }, ToolKind::Drill) => Some("profile op assigned a drill bit"),
+        _ => None,
+    };
+    if let Some(msg) = mismatch {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "tool_kind_mismatch".into(),
+            message: format!(
+                "{msg} — '{}' on op '{}'. Pick a different tool kind.",
+                tool.name, op.name
+            ),
+        });
+    }
+    let _ = setup; // reserved for future feed/speed sanity checks
+}
+
+/// Post-build warning: a closed boundary was supplied but the offset
+/// cascade produced nothing — the tool diameter doesn't fit the
+/// geometry (slot too narrow, pocket smaller than the tool, etc.).
+fn push_tool_fit_size_warning(
+    op: &Operation,
+    setup: &Setup,
+    closed_count: usize,
+    offsets: &[PolylineOffset],
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    if closed_count == 0 {
+        return; // nothing closed → not a tool-fit problem, just no work
+    }
+    // Profile-on / Engrave / DragKnife emit straight contour walks even
+    // when offsets is empty in the cascade sense, so don't flag them.
+    let needs_offset = match op.kind {
+        OperationKind::Pocket { .. } => true,
+        OperationKind::Profile {
+            offset: crate::cam::setup::ToolOffset::Outside,
+        }
+        | OperationKind::Profile {
+            offset: crate::cam::setup::ToolOffset::Inside,
+        } => true,
+        _ => false,
+    };
+    if !needs_offset {
+        return;
+    }
+    if offsets.is_empty() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "tool_too_large".into(),
+            message: format!(
+                "tool diameter {:.2} mm doesn't fit op '{}' — offset/cascade produced no toolpath. Try a smaller tool.",
+                setup.tool.diameter, op.name,
+            ),
+        });
+    }
 }
 
 /// Walk the op's source in user-specified order and return the matching
@@ -1058,6 +1180,90 @@ mod tests {
                 areas[1]
             );
         }
+    }
+
+    /// Pocket a 4mm box with a 6mm endmill — the cutter doesn't fit.
+    /// Expect a `tool_too_large` warning attached to the op id, and the
+    /// pipeline still completes (no error).
+    #[test]
+    fn pocket_with_oversized_tool_emits_tool_too_large_warning() {
+        let project = Project {
+            segments: closed_square_offset(4.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 6.0)],
+            operations: vec![Operation {
+                id: 7,
+                name: "Tiny pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let too_large: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.kind == "tool_too_large")
+            .collect();
+        assert_eq!(too_large.len(), 1, "expected one tool_too_large warning, got {:?}", resp.warnings);
+        assert_eq!(too_large[0].op_id, Some(7));
+    }
+
+    /// Drill bit on a Pocket op — emits a `tool_kind_mismatch` warning
+    /// regardless of whether the cascade actually produced anything.
+    #[test]
+    fn pocket_with_drill_bit_warns_about_tool_kind() {
+        let drill = ToolEntry {
+            id: 1,
+            name: "drill".into(),
+            kind: ToolKind::Drill,
+            diameter: 1.0,
+            tip_diameter: None,
+            dragoff: None,
+            flutes: 2,
+            speed: 18_000,
+            plunge_rate: 100,
+            feed_rate: 800,
+            coolant: Coolant::Off,
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![drill],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"));
     }
 
     #[test]

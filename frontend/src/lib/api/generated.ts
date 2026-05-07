@@ -127,6 +127,8 @@ export interface components {
             regions?: components["schemas"]["RegionPreview"][];
             stats: components["schemas"]["PipelineStats"];
             toolpath: components["schemas"]["ToolpathSegment"][];
+            /** @description Non-fatal warnings raised during planning — mostly tool-fit problems (cutter doesn't fit the geometry, kind mismatch, …). The frontend surfaces these in the operations list status badge and a sidebar list; the gcode is still emitted. */
+            warnings?: components["schemas"]["PipelineWarning"][];
         };
         GenerateStats: {
             /** Format: uint */
@@ -356,6 +358,18 @@ export interface components {
             object_count: number;
             /** Format: uint */
             offset_count: number;
+        };
+        /** @description One non-fatal warning attached to (optionally) a specific op. */
+        PipelineWarning: {
+            /** @description Stable identifier — frontend can branch on this to render an icon, link to docs, etc. */
+            kind: string;
+            /** @description Human-readable description. */
+            message: string;
+            /**
+             * Format: uint32
+             * @description Op the warning applies to. `None` means project-wide.
+             */
+            op_id?: number | null;
         };
         PocketConfig: {
             active: boolean;

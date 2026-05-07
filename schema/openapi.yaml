@@ -187,6 +187,11 @@ components:
           items:
             $ref: '#/components/schemas/ToolpathSegment'
           type: array
+        warnings:
+          description: Non-fatal warnings raised during planning — mostly tool-fit problems (cutter doesn't fit the geometry, kind mismatch, …). The frontend surfaces these in the operations list status badge and a sidebar list; the gcode is still emitted.
+          items:
+            $ref: '#/components/schemas/PipelineWarning'
+          type: array
       required:
       - gcode
       - gcode_index
@@ -656,6 +661,26 @@ components:
       - closed_object_count
       - object_count
       - offset_count
+      type: object
+    PipelineWarning:
+      description: One non-fatal warning attached to (optionally) a specific op.
+      properties:
+        kind:
+          description: Stable identifier — frontend can branch on this to render an icon, link to docs, etc.
+          type: string
+        message:
+          description: Human-readable description.
+          type: string
+        op_id:
+          description: Op the warning applies to. `None` means project-wide.
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+      required:
+      - kind
+      - message
       type: object
     PocketConfig:
       properties:

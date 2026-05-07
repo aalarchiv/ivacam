@@ -86,6 +86,7 @@ pub fn components_schemas() -> Value {
     insert::<crate::project::SourceCombine>(&mut schemas, "SourceCombine");
     insert::<crate::project::CutDirection>(&mut schemas, "CutDirection");
     insert::<crate::pipeline::RegionPreview>(&mut schemas, "RegionPreview");
+    insert::<crate::pipeline::PipelineWarning>(&mut schemas, "PipelineWarning");
     insert::<crate::project::PocketStrategy>(&mut schemas, "PocketStrategy");
     insert::<crate::project::ToolEntry>(&mut schemas, "ToolEntry");
     insert::<crate::project::ToolKind>(&mut schemas, "ToolKind");

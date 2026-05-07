@@ -92,6 +92,18 @@
   /// against project.selectedObjects to compute the symmetric diff.
   let appliedSelection = new Set<number>();
 
+  /// Per-toolpath-segment color ranges into linesObject's color
+  /// attribute, baked at rebuild time. Each entry covers exactly two
+  /// vertices (one line segment), records the segment's BASE color
+  /// (un-faded), and lets the playhead $effect mutate the attribute in
+  /// place on each tick instead of rebuilding the entire geometry —
+  /// which previously also reset the camera, killing user pan/zoom
+  /// during playback.
+  type ToolpathColor = { start: number; base: [number, number, number] };
+  let toolpathColors: ToolpathColor[] = [];
+  /// Head index the toolpath fade currently reflects.
+  let appliedHead = -1;
+
   /// Persistent tool-tip mesh + the spec it was built for. updateTool()
   /// fires every playhead change (60×/sec while playing), so creating a
   /// fresh BufferGeometry + Mesh per tick churned ~60 GPU uploads / GC
@@ -283,6 +295,15 @@
     requestRender();
   });
 
+  /// Fit-to-view fires only when a *new* geometry source appears (the
+  /// reference identity of project.imported changes). Previously this
+  /// ran inside rebuildGeometry, which made every layer toggle / op
+  /// edit / Generate snap the camera back to the default angle.
+  $effect(() => {
+    void project.imported;
+    fitCameraToScene();
+  });
+
   /// Selection-only fast path: mutate the color attribute in place
   /// instead of rebuilding the entire LineSegments mesh on every click.
   /// Falls through to a full rebuild only if the geometry is missing
@@ -305,8 +326,44 @@
     void project.machine;
     void project.selectedOpId;
     updateTool();
+    applyToolpathFade();
     requestRender();
   });
+
+  /// Mutate the color attribute in place to reflect the current
+  /// playhead — segments before the head get their base color, segments
+  /// after get faded. Walks only the slice between appliedHead and the
+  /// new head so a 60fps playback is O(playhead delta) per tick, not
+  /// O(toolpath length). Replaces the per-frame full rebuild that
+  /// previously also reset the camera and broke pan/zoom during play.
+  function applyToolpathFade() {
+    if (!linesObject || toolpathColors.length === 0) return;
+    const total = toolpathColors.length;
+    const head = Math.max(0, Math.min(total, Math.round(project.playhead * total)));
+    if (head === appliedHead) return;
+    const attr = linesObject.geometry.attributes.color as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    const f = 0.25; // fade factor for future moves
+    const fade_offset = 0.05;
+    const lo = appliedHead < 0 ? 0 : Math.min(appliedHead, head);
+    const hi = appliedHead < 0 ? total : Math.max(appliedHead, head);
+    for (let i = lo; i < hi; i++) {
+      const tc = toolpathColors[i];
+      const past = i < head;
+      const r = past ? tc.base[0] : tc.base[0] * f + fade_offset;
+      const g = past ? tc.base[1] : tc.base[1] * f + fade_offset;
+      const b = past ? tc.base[2] : tc.base[2] * f + fade_offset;
+      const off = tc.start * 3;
+      arr[off] = r;
+      arr[off + 1] = g;
+      arr[off + 2] = b;
+      arr[off + 3] = r;
+      arr[off + 4] = g;
+      arr[off + 5] = b;
+    }
+    attr.needsUpdate = true;
+    appliedHead = head;
+  }
 
   function applySelectionDelta(next: Set<number>) {
     if (!linesObject) return;
@@ -643,6 +700,8 @@
     linesObject = undefined;
     lineOwners = [];
     objectColorRanges = new Map();
+    toolpathColors = [];
+    appliedHead = -1;
     const data = project.imported;
     const gen = project.generated;
     if (!data && !gen) return;
@@ -715,7 +774,12 @@
         arc: cssColor('--toolpath-arc', 0xff8a3a),
       };
       const total = gen.toolpath.length;
-      const head = Math.max(0, Math.min(total, Math.round(project.playhead * total)));
+      // Bake colors at full intensity here; the playhead $effect below
+      // applies the past/future fade in-place by mutating the color
+      // attribute for the affected slice. Reading project.playhead in
+      // rebuildGeometry would auto-track it as a dep, causing 60fps
+      // re-tessellation + camera reset during playback (which fought
+      // OrbitControls and made pan/zoom unusable).
       for (let i = 0; i < total; i++) {
         const seg = gen.toolpath[i];
         const moveTint = moveTints[seg.kind] ?? moveTints.cut;
@@ -727,20 +791,14 @@
         const opHue = opId === 0 ? 0.0 : opPalette(opId);
         const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
         const moveBoost = seg.kind === 'rapid' ? 0.5 : seg.kind === 'plunge' || seg.kind === 'retract' ? 0.85 : 1.15;
-        let r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
-        let g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
-        let b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
-        // Future moves (after the playhead) faded so the user can see
-        // what's come and what's coming next.
-        if (i >= head) {
-          const f = 0.25;
-          r = r * f + 0.05;
-          g = g * f + 0.05;
-          b = b * f + 0.05;
-        }
+        const r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
+        const g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
+        const b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
+        const startVertex = positions.length / 3;
         positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
         colors.push(r, g, b, r, g, b);
         lineOwners.push({ kind: 'toolpath', segIdx: i });
+        toolpathColors.push({ start: startVertex, base: [r, g, b] });
       }
     }
     if (positions.length === 0) return;
@@ -755,22 +813,43 @@
     // so the selection-only $effect can compute deltas against it.
     appliedSelection = new Set(project.selectedObjects);
 
-    if (camera && controls) {
-      const sphere = new THREE.Sphere();
-      lines.geometry.computeBoundingSphere();
-      if (lines.geometry.boundingSphere) sphere.copy(lines.geometry.boundingSphere);
-      const radius = Math.max(sphere.radius, 1);
-      sceneRadius = radius;
-      const fov = (camera.fov * Math.PI) / 180;
-      const distance = (radius * 1.4) / Math.sin(fov / 2);
-      const dir = new THREE.Vector3(0.6, -0.9, 0.9).normalize();
-      controls.target.copy(sphere.center);
-      camera.position.copy(sphere.center).addScaledVector(dir, distance);
-      camera.near = Math.max(distance / 1000, 0.01);
-      camera.far = distance * 10;
-      camera.updateProjectionMatrix();
-      controls.update();
+    // Update sceneRadius for raycaster threshold scaling, but do NOT
+    // touch the camera here — fit-to-view is moved to a dedicated
+    // $effect that only fires when project.imported actually changes.
+    // Resetting the camera on every rebuild fought OrbitControls: any
+    // layer toggle / Generate / op edit cancelled the user's view.
+    lines.geometry.computeBoundingSphere();
+    if (lines.geometry.boundingSphere) {
+      sceneRadius = Math.max(lines.geometry.boundingSphere.radius, 1);
     }
+    // Re-apply the past/future fade to the freshly-baked colors so the
+    // playhead tint is correct even when no playhead change triggered
+    // the rebuild (e.g. layer toggle).
+    applyToolpathFade();
+  }
+
+  /// Camera fit-to-view, run once when a new geometry source appears.
+  /// Manual fit (e.g. a "frame" button) would call this directly. Layer
+  /// toggles / generates / op edits no longer reset the user's view.
+  function fitCameraToScene() {
+    if (!camera || !controls || !linesObject) return;
+    const sphere = new THREE.Sphere();
+    linesObject.geometry.computeBoundingSphere();
+    if (linesObject.geometry.boundingSphere) {
+      sphere.copy(linesObject.geometry.boundingSphere);
+    }
+    const radius = Math.max(sphere.radius, 1);
+    sceneRadius = radius;
+    const fov = (camera.fov * Math.PI) / 180;
+    const distance = (radius * 1.4) / Math.sin(fov / 2);
+    const dir = new THREE.Vector3(0.6, -0.9, 0.9).normalize();
+    controls.target.copy(sphere.center);
+    camera.position.copy(sphere.center).addScaledVector(dir, distance);
+    camera.near = Math.max(distance / 1000, 0.01);
+    camera.far = distance * 10;
+    camera.updateProjectionMatrix();
+    controls.update();
+    requestRender();
   }
 
   function onPointerDown(e: PointerEvent) {

@@ -54,9 +54,12 @@ export class HeightfieldMesh {
     this.rows = opts.rows;
     this.edgeThresholdDeg = opts.edgeThresholdDeg ?? 30;
 
+    // PlaneGeometry width = (cols - 1) * cellSize so the vertex-to-vertex
+    // spacing equals cellSize exactly. (cols * cellSize would put one
+    // extra cell-worth of space between the outer vertices.)
     this.solidGeometry = new THREE.PlaneGeometry(
-      opts.cols * opts.cellSize,
-      opts.rows * opts.cellSize,
+      (opts.cols - 1) * opts.cellSize,
+      (opts.rows - 1) * opts.cellSize,
       opts.cols - 1,
       opts.rows - 1,
     );
@@ -99,8 +102,8 @@ export class HeightfieldMesh {
     // PlaneGeometry is centered at the local origin. Translate so the
     // heightmap's (originX, originY) corner lands on vertex (ix=0, iy=0).
     this.group.position.set(
-      opts.originX + (opts.cols * opts.cellSize) / 2,
-      opts.originY + (opts.rows * opts.cellSize) / 2,
+      opts.originX + ((opts.cols - 1) * opts.cellSize) / 2,
+      opts.originY + ((opts.rows - 1) * opts.cellSize) / 2,
       0,
     );
   }

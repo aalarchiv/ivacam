@@ -10,7 +10,14 @@
     type ProfileOffset,
     type PocketStrategy,
     type SourceCombine,
+    type CutDirection,
   } from '../state/project.svelte';
+
+  /// One-line description per cut direction for the option titles.
+  const CUT_DIR_HELP: Record<CutDirection, string> = {
+    conventional: 'Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.',
+    climb: 'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
+  };
 
   /// Tooltip blurb per combine mode — kept short so it fits in a native
   /// option's `title` attribute (most browsers cut after ~2 lines).
@@ -174,6 +181,30 @@
           onchange={(e) => patch('step', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
         />
       </label>
+      {#if op.kind === 'profile' || op.kind === 'pocket'}
+        <label class="row" title={CUT_DIR_HELP[op.cutDirection ?? 'conventional']}>
+          <span>Direction</span>
+          <select
+            value={op.cutDirection ?? 'conventional'}
+            onchange={(e) =>
+              patch('cutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
+          >
+            <option value="conventional" title={CUT_DIR_HELP.conventional}>conventional</option>
+            <option value="climb" title={CUT_DIR_HELP.climb}>climb</option>
+          </select>
+        </label>
+        <label class="row" title={CUT_DIR_HELP[op.finishCutDirection ?? 'conventional']}>
+          <span>Finish dir</span>
+          <select
+            value={op.finishCutDirection ?? 'conventional'}
+            onchange={(e) =>
+              patch('finishCutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
+          >
+            <option value="conventional" title={CUT_DIR_HELP.conventional}>conventional</option>
+            <option value="climb" title={CUT_DIR_HELP.climb}>climb</option>
+          </select>
+        </label>
+      {/if}
     </fieldset>
 
     {#if op.kind === 'profile'}

@@ -97,6 +97,15 @@ export interface components {
         };
         /** @enum {string} */
         Coolant: "off" | "mist" | "flood";
+        /**
+         * @description Climb vs conventional milling. Determines the path winding the generator emits — for a standard right-hand spindle:
+         *
+         *     | context (cutter location) | conventional      | climb              | |---------------------------|-------------------|--------------------| | outer (cutter outside)    | CW (area < 0)     | CCW (area > 0)     | | inner (cutter in pocket)  | CCW (area > 0)    | CW (area < 0)      |
+         *
+         *     "Conventional" is the safer default — most hobby and older mills don't have the rigidity / backlash takeup needed for clean climb cuts. Climb gives a better surface finish but requires a stiff machine. The finishing pass typically stays conventional regardless of the main strategy because the finish wall quality matters most.
+         * @enum {string}
+         */
+        CutDirection: "conventional" | "climb";
         Error: {
             details?: unknown;
             error: string;
@@ -255,6 +264,8 @@ export interface components {
             type: "helix";
         };
         OperationParams: {
+            /** @description Cut direction for the main (roughing) passes. Default: Conventional. See [`CutDirection`] for the winding rules. */
+            cut_direction?: components["schemas"]["CutDirection"];
             /**
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
@@ -265,6 +276,8 @@ export interface components {
              * @description Z for rapid moves between cuts.
              */
             fast_move_z: number;
+            /** @description Cut direction for the finishing pass — the offset that defines the wall surface (Pocket level=0 ring; Profile single-pass cut). Default: Conventional, regardless of the main `cut_direction`. Surface quality on the finish wall is almost always best with conventional milling on hobby machines. */
+            finish_cut_direction?: components["schemas"]["CutDirection"];
             /**
              * @description Helical descent inside a closed contour.
              * @default false

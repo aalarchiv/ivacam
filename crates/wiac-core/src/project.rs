@@ -220,6 +220,33 @@ impl SourceCombine {
     }
 }
 
+/// Climb vs conventional milling. Determines the path winding the
+/// generator emits — for a standard right-hand spindle:
+///
+/// | context (cutter location) | conventional      | climb              |
+/// |---------------------------|-------------------|--------------------|
+/// | outer (cutter outside)    | CW (area < 0)     | CCW (area > 0)     |
+/// | inner (cutter in pocket)  | CCW (area > 0)    | CW (area < 0)      |
+///
+/// "Conventional" is the safer default — most hobby and older mills
+/// don't have the rigidity / backlash takeup needed for clean climb
+/// cuts. Climb gives a better surface finish but requires a stiff
+/// machine. The finishing pass typically stays conventional regardless
+/// of the main strategy because the finish wall quality matters most.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CutDirection {
+    #[default]
+    Conventional,
+    Climb,
+}
+
+impl CutDirection {
+    fn is_default(&self) -> bool {
+        matches!(self, CutDirection::Conventional)
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct OperationParams {
     /// Final cut depth (negative number — a depth, not a height).
@@ -260,6 +287,18 @@ pub struct OperationParams {
     /// Lead-in / lead-out shape for this op.
     #[serde(default)]
     pub leads: LeadsConfig,
+
+    /// Cut direction for the main (roughing) passes.
+    /// Default: Conventional. See [`CutDirection`] for the winding rules.
+    #[serde(default, skip_serializing_if = "CutDirection::is_default")]
+    pub cut_direction: CutDirection,
+    /// Cut direction for the finishing pass — the offset that defines
+    /// the wall surface (Pocket level=0 ring; Profile single-pass cut).
+    /// Default: Conventional, regardless of the main `cut_direction`.
+    /// Surface quality on the finish wall is almost always best with
+    /// conventional milling on hobby machines.
+    #[serde(default, skip_serializing_if = "CutDirection::is_default")]
+    pub finish_cut_direction: CutDirection,
 }
 
 impl OperationParams {
@@ -289,6 +328,8 @@ impl OperationParams {
                 in_lenght: 5.0,
                 out_lenght: 5.0,
             },
+            cut_direction: CutDirection::Conventional,
+            finish_cut_direction: CutDirection::Conventional,
         }
     }
 }

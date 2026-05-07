@@ -328,6 +328,137 @@ fn signed_area(pts: &[Point2]) -> f64 {
     sum * 0.5
 }
 
+/// Signed area of an offset's segment chain, computed from the start
+/// vertex of each segment. Arcs aren't sampled at midpoints — the chord
+/// approximation is enough for sign-of-area, which is all this is used
+/// for (winding direction).
+fn offset_signed_area(offset: &PolylineOffset) -> f64 {
+    if offset.segments.len() < 3 {
+        return 0.0;
+    }
+    let pts: Vec<Point2> = offset.segments.iter().map(|s| s.start).collect();
+    signed_area(&pts)
+}
+
+/// Reverse a closed offset's traversal direction in place. The order of
+/// segments is reversed; each segment's start/end swap; arc bulges
+/// negate (an arc traversed the other way bends the opposite direction).
+fn reverse_offset(offset: &mut PolylineOffset) {
+    offset.segments.reverse();
+    for s in &mut offset.segments {
+        std::mem::swap(&mut s.start, &mut s.end);
+        s.bulge = -s.bulge;
+    }
+}
+
+/// Side of the workpiece the cutter sits on for a given offset:
+/// * `Outer` — cutter is outside the part (external profile, or walking
+///   around a pocket island).
+/// * `Inner` — cutter is inside the part / pocket (pocket boundary,
+///   pocket cascade ring, internal profile).
+/// * `Skip` — winding doesn't matter (Engrave / DragKnife / Profile-On).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CutContext {
+    Outer,
+    Inner,
+    Skip,
+}
+
+/// Apply a desired cut direction to a closed offset by reversing its
+/// traversal if the resulting winding doesn't match the convention.
+///
+/// For a right-hand spindle (standard CW from above):
+///
+/// |  context |   conventional   |     climb        |
+/// |----------|------------------|------------------|
+/// |  outer   |  CW (area < 0)   |  CCW (area > 0)  |
+/// |  inner   |  CCW (area > 0)  |  CW (area < 0)   |
+///
+/// The "outer" and "inner" labels refer to where the *cutter* sits, not
+/// the geometry's role in the program. A cutter walking around the
+/// outside of a part = Outer; walking inside a pocket = Inner; walking
+/// around an island inside a pocket = Outer (the cutter is outside the
+/// island).
+pub fn enforce_winding(
+    offset: &mut PolylineOffset,
+    context: CutContext,
+    direction: crate::project::CutDirection,
+) {
+    use crate::project::CutDirection;
+    if !offset.closed || matches!(context, CutContext::Skip) {
+        return;
+    }
+    let area = offset_signed_area(offset);
+    if area.abs() < 1e-9 {
+        return;
+    }
+    let want_ccw = match (context, direction) {
+        (CutContext::Inner, CutDirection::Conventional) => true,
+        (CutContext::Inner, CutDirection::Climb) => false,
+        (CutContext::Outer, CutDirection::Conventional) => false,
+        (CutContext::Outer, CutDirection::Climb) => true,
+        (CutContext::Skip, _) => return,
+    };
+    let is_ccw = area > 0.0;
+    if is_ccw != want_ccw {
+        reverse_offset(offset);
+    }
+}
+
+/// Walk a per-op offset list and enforce climb/conventional on each
+/// closed offset. The op's main `cut_direction` applies to roughing
+/// passes (cascade level ≥ 1); the `finish_direction` applies to the
+/// finishing pass (level = 0 — the offset that defines the wall
+/// surface).
+///
+/// Context is derived from the op kind and per-offset signed_area:
+/// * Profile + ToolOffset::Outside → all offsets are Outer
+/// * Profile + ToolOffset::Inside  → all offsets are Inner
+/// * Profile + ToolOffset::On/None → Skip (no winding choice)
+/// * Pocket → CCW offsets are Inner (cutter inside the pocket), CW
+///   offsets are Outer (cutter going around an island)
+/// * Engrave / DragKnife → Skip
+pub fn apply_cut_direction(
+    offsets: &mut [PolylineOffset],
+    op: &crate::project::Operation,
+    finish_default_for_outside_profile_only: bool,
+) {
+    use crate::cam::setup::ToolOffset;
+    use crate::project::OperationKind;
+    let _ = finish_default_for_outside_profile_only; // currently unused; kept for future hook
+    let main = op.params.cut_direction;
+    let finish = op.params.finish_cut_direction;
+    let context_for = |offset: &PolylineOffset| -> CutContext {
+        match op.kind {
+            OperationKind::Profile { offset: tool_offset } => match tool_offset {
+                ToolOffset::Outside => CutContext::Outer,
+                ToolOffset::Inside => CutContext::Inner,
+                ToolOffset::None | ToolOffset::On => CutContext::Skip,
+            },
+            OperationKind::Pocket { .. } => {
+                if offset_signed_area(offset) > 0.0 {
+                    CutContext::Inner
+                } else {
+                    CutContext::Outer
+                }
+            }
+            OperationKind::Engrave
+            | OperationKind::DragKnife
+            | OperationKind::Drill
+            | OperationKind::Thread
+            | OperationKind::Chamfer
+            | OperationKind::Helix => CutContext::Skip,
+        }
+    };
+    for offset in offsets.iter_mut() {
+        let ctx = context_for(offset);
+        // level=0 is the wall-defining pass for both Pocket and Profile
+        // (single-pass profile is itself the finishing pass).
+        let dir = if offset.level == 0 { finish } else { main };
+        enforce_winding(offset, ctx, dir);
+    }
+}
+
 /// Combine a parallel-offset boundary pass with an inward cascade. Returns
 /// the boundary ring first (if `nocontour=false`), then progressively-inward
 /// pocket rings. When `zigzag` is true the inward cascade is replaced with
@@ -868,5 +999,91 @@ mod tests {
             assert!(area < prev_area, "rings should shrink");
             prev_area = area;
         }
+    }
+
+    fn sample_offset_ccw() -> PolylineOffset {
+        // 10×10 square wound CCW, signed area > 0.
+        PolylineOffset {
+            segments: vec![
+                Segment::line(p(0.0, 0.0), p(10.0, 0.0), "0", 7),
+                Segment::line(p(10.0, 0.0), p(10.0, 10.0), "0", 7),
+                Segment::line(p(10.0, 10.0), p(0.0, 10.0), "0", 7),
+                Segment::line(p(0.0, 10.0), p(0.0, 0.0), "0", 7),
+            ],
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn enforce_winding_inner_conventional_keeps_ccw() {
+        let mut o = sample_offset_ccw();
+        let before_area = offset_signed_area(&o);
+        assert!(before_area > 0.0);
+        enforce_winding(&mut o, CutContext::Inner, crate::project::CutDirection::Conventional);
+        // Inner + Conventional → CCW. CCW-input stays CCW.
+        assert!(offset_signed_area(&o) > 0.0);
+    }
+
+    #[test]
+    fn enforce_winding_inner_climb_flips_to_cw() {
+        let mut o = sample_offset_ccw();
+        enforce_winding(&mut o, CutContext::Inner, crate::project::CutDirection::Climb);
+        assert!(offset_signed_area(&o) < 0.0);
+    }
+
+    #[test]
+    fn enforce_winding_outer_conventional_flips_to_cw() {
+        let mut o = sample_offset_ccw();
+        enforce_winding(&mut o, CutContext::Outer, crate::project::CutDirection::Conventional);
+        assert!(offset_signed_area(&o) < 0.0);
+    }
+
+    #[test]
+    fn enforce_winding_outer_climb_keeps_ccw() {
+        let mut o = sample_offset_ccw();
+        enforce_winding(&mut o, CutContext::Outer, crate::project::CutDirection::Climb);
+        assert!(offset_signed_area(&o) > 0.0);
+    }
+
+    #[test]
+    fn enforce_winding_skip_leaves_offset_alone() {
+        let mut o = sample_offset_ccw();
+        let before: Vec<_> = o.segments.iter().map(|s| (s.start, s.end)).collect();
+        enforce_winding(&mut o, CutContext::Skip, crate::project::CutDirection::Conventional);
+        let after: Vec<_> = o.segments.iter().map(|s| (s.start, s.end)).collect();
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn reverse_offset_negates_bulges() {
+        let arc1 = Segment::arc(p(0.0, 0.0), p(10.0, 0.0), 0.5, None, "0", 7);
+        let arc2 = Segment::arc(p(10.0, 0.0), p(10.0, 10.0), -0.3, None, "0", 7);
+        let mut o = PolylineOffset {
+            segments: vec![arc1, arc2],
+            closed: false,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+        };
+        reverse_offset(&mut o);
+        assert_eq!(o.segments.len(), 2);
+        // After reversal, the chain runs end → start of the original
+        // last arc, then end → start of the first arc — and the bulges
+        // negate so the curve direction is preserved.
+        assert_eq!(o.segments[0].start, p(10.0, 10.0));
+        assert_eq!(o.segments[0].end, p(10.0, 0.0));
+        assert!((o.segments[0].bulge - 0.3).abs() < 1e-12);
+        assert_eq!(o.segments[1].start, p(10.0, 0.0));
+        assert_eq!(o.segments[1].end, p(0.0, 0.0));
+        assert!((o.segments[1].bulge - -0.5).abs() < 1e-12);
     }
 }

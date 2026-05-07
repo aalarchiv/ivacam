@@ -84,6 +84,8 @@ interface WireOp {
     pocket_insideout: boolean;
     tabs: { active: boolean; width: number; height: number; tab_type: 'rectangle' | 'ramp' };
     leads: { in: 'off' | 'straight' | 'arc'; out: 'off' | 'straight' | 'arc'; in_lenght: number; out_lenght: number };
+    cut_direction?: 'conventional' | 'climb';
+    finish_cut_direction?: 'conventional' | 'climb';
   };
 }
 
@@ -182,6 +184,14 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
       pocket_insideout: false,
       tabs: { active: anyTabs, width: 10, height: 1, tab_type: 'rectangle' },
       leads: { in: 'off', out: 'off', in_lenght: 5, out_lenght: 5 },
+      // Only emit when ≠ conventional so the wire stays small and the
+      // Rust side falls back to the serde default.
+      ...(op.cutDirection && op.cutDirection !== 'conventional'
+        ? { cut_direction: op.cutDirection }
+        : {}),
+      ...(op.finishCutDirection && op.finishCutDirection !== 'conventional'
+        ? { finish_cut_direction: op.finishCutDirection }
+        : {}),
     },
   };
 }

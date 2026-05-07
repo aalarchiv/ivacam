@@ -200,6 +200,8 @@ class ProjectState {
       step: -1,
       offset: kind === 'engrave' || kind === 'drag_knife' ? 'on' : 'outside',
       pocketStrategy: kind === 'pocket' ? 'cascade' : null,
+      cutDirection: 'conventional',
+      finishCutDirection: 'conventional',
     };
     this.operations = [...this.operations, op];
     this.selectedOpId = op.id;
@@ -301,6 +303,12 @@ export type OpKind =
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral';
+/// Cut direction for milling. `conventional` is the safer default —
+/// cutter rotation opposes the feed at the contact point so chip starts
+/// thin and grows; works on machines with backlash. `climb` is rotation
+/// with feed → better surface finish but needs a rigid stiff machine.
+/// See wiac_core::project::CutDirection for the winding rules.
+export type CutDirection = 'conventional' | 'climb';
 /// How a multi-object source selection is combined into the region(s)
 /// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
 /// Default 'auto' is containment-aware (outer + inner = annulus).
@@ -337,6 +345,13 @@ export interface OpEntry {
   step: number;
   offset: ProfileOffset;
   pocketStrategy: PocketStrategy | null;
+  /// Main / roughing cut direction. Default 'conventional'.
+  cutDirection?: CutDirection;
+  /// Direction for the wall-defining finishing pass. Default
+  /// 'conventional' regardless of cutDirection — surface quality on
+  /// hobby machines is almost always best with conventional milling
+  /// even when the roughing passes use climb.
+  finishCutDirection?: CutDirection;
 }
 
 export interface ProjectFile {

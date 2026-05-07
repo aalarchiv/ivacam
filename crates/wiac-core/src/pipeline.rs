@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::cam::chaining::{classify_containment, segments_to_objects};
 use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::offsets::{
-    apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_object, pocket_for_object,
+    apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets,
+    parallel_offset_object, pocket_for_object,
     PolylineOffset, TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
@@ -312,6 +313,7 @@ fn build_op_offsets(
             if op.params.overcut {
                 apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
             }
+            apply_cut_direction(&mut offsets, op, false);
             return Ok((offsets, closed));
         }
     }
@@ -429,6 +431,7 @@ fn build_op_offsets(
     if op.params.overcut {
         apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
     }
+    apply_cut_direction(&mut offsets, op, false);
     Ok((offsets, closed))
 }
 
@@ -949,6 +952,112 @@ mod tests {
         });
         assert!(visited_outside_inner, "annulus pocket should reach outside the inner box");
         assert!(visited_inside_outer, "annulus pocket should stay inside the outer box");
+    }
+
+    /// Climb on the main + conventional on the finishing pass: walks the
+    /// pipeline output and verifies the level=0 ring uses the
+    /// conventional winding (CCW for an inner pocket boundary) while
+    /// any level≥1 cascade ring uses climb (CW for an inner ring).
+    #[test]
+    fn pocket_with_climb_main_and_conventional_finish_winds_correctly() {
+        let segments = closed_square_offset(50.0, 0.0, 0.0);
+        let mut params = OperationParams::mill_default();
+        params.cut_direction = crate::project::CutDirection::Climb;
+        params.finish_cut_direction = crate::project::CutDirection::Conventional;
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // We can't read PolylineOffset directly here (it isn't on the
+        // PipelineResponse), but the toolpath order encodes the cut.
+        // Walk the cut moves at op_id=1 and group them by Z-plane to
+        // recover individual passes; then check the winding of each.
+        let cuts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut) && s.op_id == 1)
+            .collect();
+        assert!(!cuts.is_empty(), "expected cut segments");
+        // Group consecutive cuts that form a closed loop (same Z and the
+        // final point is near the first). The first such loop is the
+        // boundary (level=0) — we look at its signed area.
+        let mut loops: Vec<Vec<&preview::ToolpathSegment>> = Vec::new();
+        let mut cur: Vec<&preview::ToolpathSegment> = Vec::new();
+        for s in &cuts {
+            if cur.is_empty() {
+                cur.push(s);
+                continue;
+            }
+            let prev = cur.last().unwrap();
+            // New loop when there's a Z jump or a position discontinuity.
+            let z_jump = (s.from.z - prev.to.z).abs() > 1e-3;
+            let xy_jump = (s.from.x - prev.to.x).hypot(s.from.y - prev.to.y) > 0.01;
+            if z_jump || xy_jump {
+                loops.push(std::mem::take(&mut cur));
+            }
+            cur.push(s);
+        }
+        if !cur.is_empty() {
+            loops.push(cur);
+        }
+        let area_of_loop = |loop_segs: &[&preview::ToolpathSegment]| -> f64 {
+            let mut s = 0.0;
+            for seg in loop_segs {
+                s += seg.from.x * seg.to.y - seg.to.x * seg.from.y;
+            }
+            s * 0.5
+        };
+        // The boundary pass = the loop with the largest |area| (it's the
+        // outermost ring in the cascade). With Conventional + Pocket
+        // (inner context) we expect CCW = positive signed area.
+        // Group loops by Z so we look at one cut-pass plane only —
+        // multiple Z passes would each repeat the same XY rings.
+        let z_of = |loop_segs: &[&preview::ToolpathSegment]| -> f64 {
+            loop_segs.first().map(|s| s.from.z).unwrap_or(0.0)
+        };
+        let first_z = z_of(&loops[0]);
+        let same_z: Vec<_> = loops
+            .iter()
+            .filter(|l| (z_of(l) - first_z).abs() < 1e-3)
+            .collect();
+        let mut areas: Vec<f64> = same_z.iter().map(|l| area_of_loop(l)).collect();
+        areas.sort_by(|a, b| b.abs().partial_cmp(&a.abs()).unwrap());
+        let boundary_area = areas[0];
+        assert!(
+            boundary_area > 0.0,
+            "finishing pass should be CCW (conventional) for an inner pocket; got area {boundary_area}"
+        );
+        // For a square boundary the cascade produces ≥ 1 inner ring on
+        // a 50×50 pocket with a 3 mm tool; that ring should be CW =
+        // negative signed area under climb.
+        if areas.len() >= 2 {
+            assert!(
+                areas[1] < 0.0,
+                "cascade ring should be CW (climb) for an inner pocket; got area {}",
+                areas[1]
+            );
+        }
     }
 
     #[test]

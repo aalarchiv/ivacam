@@ -158,7 +158,12 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
       reverse: false,
       objectorder: 'nearest',
       overcut: false,
-      pocket_islands: false,
+      // Pocket islands are now driven by the selection itself: when the
+      // user picks an outer + inner closed contour, the inner one is
+      // automatically treated as an island (see pipeline.rs's
+      // selected_set logic). The wire flag stays at its default and only
+      // matters for legacy `source = All` flows.
+      pocket_islands: true,
       pocket_nocontour: false,
       pocket_insideout: false,
       tabs: { active: anyTabs, width: 10, height: 1, tab_type: 'rectangle' },

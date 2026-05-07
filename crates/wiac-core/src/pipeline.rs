@@ -7,7 +7,7 @@
 //! whole program shares a single header/footer; cut blocks concatenate
 //! between them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -215,6 +215,15 @@ fn build_op_offsets(
     let mut offsets: Vec<PolylineOffset> = Vec::new();
     let mut closed = 0usize;
     let mut emitted_objects = 0usize;
+
+    // Containment-aware Pocket: when the user selects an outer ring and
+    // an inner ring, the inner one should become a hole in the outer
+    // pocket — not a top-level pocket boundary on its own. Compute the
+    // selected-object set up front so the Pocket branch can consult it
+    // while iterating.
+    let selected_set: HashSet<usize> = (0..objects.len())
+        .filter(|i| op_includes_object(op, &objects[*i], *i))
+        .collect();
     for (idx, obj) in objects.iter().enumerate() {
         if !op_includes_object(op, obj, idx) {
             continue;
@@ -226,17 +235,40 @@ fn build_op_offsets(
 
         match op.kind {
             OperationKind::Pocket { strategy } => {
+                // Skip objects that are geometrically inside another
+                // selected object — they belong to that pocket as islands.
+                let contained_by_selected = obj
+                    .outer_objects
+                    .iter()
+                    .any(|o| selected_set.contains(o));
+                if contained_by_selected {
+                    continue;
+                }
                 let zigzag = matches!(strategy, PocketStrategy::Zigzag);
-                let islands: Vec<Vec<Point2>> = if op.params.pocket_islands {
-                    obj.inner_objects
+                // Islands = nested closed objects that are *also* in this
+                // op's selection. Honored unconditionally so the user gets
+                // an annulus pocket from "outer + inner" without having to
+                // toggle pocket_islands. The legacy `pocket_islands` flag
+                // still works as a fallback for pre-selection projects
+                // (e.g. source = All) — there it pulls in *all* nested
+                // closed children, matching the historical behavior.
+                let mut islands: Vec<Vec<Point2>> = obj
+                    .inner_objects
+                    .iter()
+                    .filter(|i| selected_set.contains(i))
+                    .filter_map(|i| objects.get(*i))
+                    .filter(|inner| inner.closed)
+                    .map(|inner| segments_to_points(&inner.segments, 6))
+                    .collect();
+                if islands.is_empty() && op.params.pocket_islands {
+                    islands = obj
+                        .inner_objects
                         .iter()
                         .filter_map(|i| objects.get(*i))
                         .filter(|inner| inner.closed)
                         .map(|inner| segments_to_points(&inner.segments, 6))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
+                        .collect();
+                }
                 if obj.closed {
                     for mut o in pocket_for_object(
                         obj,
@@ -595,6 +627,119 @@ mod tests {
         for expected in ["import", "objects", "gcode", "preview", "done"] {
             assert!(phases.contains(&expected.to_string()), "missing {expected} in {phases:?}");
         }
+    }
+
+    fn pocket_op(id: u32, tool_id: u32, source: OperationSource) -> Operation {
+        Operation {
+            id,
+            name: format!("Pocket {id}"),
+            enabled: true,
+            kind: OperationKind::Pocket {
+                strategy: crate::project::PocketStrategy::Cascade,
+            },
+            tool_id,
+            source,
+            params: OperationParams::mill_default(),
+        }
+    }
+
+    fn closed_square_offset(side: f64, ox: f64, oy: f64) -> Vec<Segment> {
+        vec![
+            Segment::line(Point2::new(ox, oy), Point2::new(ox + side, oy), "0", 7),
+            Segment::line(
+                Point2::new(ox + side, oy),
+                Point2::new(ox + side, oy + side),
+                "0",
+                7,
+            ),
+            Segment::line(
+                Point2::new(ox + side, oy + side),
+                Point2::new(ox, oy + side),
+                "0",
+                7,
+            ),
+            Segment::line(Point2::new(ox, oy + side), Point2::new(ox, oy), "0", 7),
+        ]
+    }
+
+    /// Selecting an outer ring + inner ring as the source for a pocket op
+    /// produces ONE annulus pocket (outer minus inner), not one pocket per
+    /// ring. The bug was that the pipeline iterated each selected object
+    /// independently, so the inner ring was getting machined as its own
+    /// pocket boundary on top of the outer pocket.
+    #[test]
+    fn pocket_with_outer_plus_inner_selection_emits_a_single_annulus() {
+        let mut segments = closed_square_offset(50.0, 0.0, 0.0);
+        // Inner 20x20 box centered inside the outer 50x50.
+        segments.extend(closed_square_offset(20.0, 15.0, 15.0));
+        // Two distinct pocket projects, exact same geometry — one runs
+        // pocket on JUST the outer (baseline), the other on outer+inner.
+        // The annulus pocket should emit *fewer* offset segments than
+        // pocketing the whole outer because the middle is left intact.
+        let baseline_project = Project {
+            segments: segments.clone(),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![pocket_op(
+                1,
+                1,
+                OperationSource::Objects { ids: vec![1] },
+            )],
+            tabs: Default::default(),
+        };
+        let annulus_project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![pocket_op(
+                1,
+                1,
+                OperationSource::Objects { ids: vec![1, 2] },
+            )],
+            tabs: Default::default(),
+        };
+        let baseline = run_pipeline(
+            PipelineRequest {
+                project: baseline_project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let annulus = run_pipeline(
+            PipelineRequest {
+                project: annulus_project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Outer-only pocket fills the full 50x50; outer+inner leaves a
+        // 20x20 hole, so its cut path must be strictly shorter.
+        let cut_total = |toolpath: &[preview::ToolpathSegment]| -> f64 {
+            toolpath
+                .iter()
+                .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+                .map(|s| {
+                    let dx = s.to.x - s.from.x;
+                    let dy = s.to.y - s.from.y;
+                    (dx * dx + dy * dy).sqrt()
+                })
+                .sum()
+        };
+        let baseline_cut = cut_total(&baseline.toolpath);
+        let annulus_cut = cut_total(&annulus.toolpath);
+        assert!(
+            annulus_cut < baseline_cut,
+            "annulus cut length {annulus_cut} should be less than the full pocket {baseline_cut}",
+        );
+        // Also: the annulus should still emit at least one offset (the
+        // outer pocket cascade with the inner ring as a hole). Zero would
+        // mean we accidentally skipped both objects.
+        assert!(
+            annulus.stats.offset_count >= 1,
+            "annulus pocket emitted no offsets",
+        );
     }
 
     #[test]

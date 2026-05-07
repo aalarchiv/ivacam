@@ -257,6 +257,16 @@ pub struct OperationParams {
     pub step: f64,
     /// Z for rapid moves between cuts.
     pub fast_move_z: f64,
+    /// XY overlap between consecutive pocket cuts, as a fraction in
+    /// (0, 1). Drives the cascade step (= tool_diameter * (1 - overlap))
+    /// and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a
+    /// conservative default that fills tight pockets cleanly. Higher
+    /// overlap = smaller step = more rings, slower cut, better finish.
+    /// Lower overlap = bigger step = fewer rings, faster cut, may leave
+    /// stripes. Honored only for Pocket ops; ignored elsewhere. Stored
+    /// at 0.0 means "use the default" so old payloads still work.
+    #[serde(default)]
+    pub xy_overlap: f64,
     /// Helical descent inside a closed contour.
     #[serde(default)]
     pub helix: bool,
@@ -321,6 +331,7 @@ impl OperationParams {
             start_depth: 0.0,
             step: -1.0,
             fast_move_z: 5.0,
+            xy_overlap: 0.5,
             helix: false,
             reverse: false,
             objectorder: ObjectOrder::default(),

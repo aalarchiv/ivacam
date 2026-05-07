@@ -87,6 +87,7 @@ interface WireOp {
     cut_direction?: 'conventional' | 'climb';
     finish_cut_direction?: 'conventional' | 'climb';
     plunge?: { kind: 'direct' } | { kind: 'ramp'; angle_deg: number };
+    xy_overlap?: number;
   };
 }
 
@@ -195,6 +196,10 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
         : {}),
       ...(op.plunge && op.plunge.kind !== 'direct'
         ? { plunge: op.plunge }
+        : {}),
+      // Only emit xy_overlap when set; the Rust default kicks in on 0.
+      ...(op.xyOverlap !== undefined && op.xyOverlap > 0
+        ? { xy_overlap: op.xyOverlap }
         : {}),
     },
   };

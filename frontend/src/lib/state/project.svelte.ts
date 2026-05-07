@@ -289,6 +289,7 @@ class ProjectState {
       cutDirection: 'conventional',
       finishCutDirection: 'conventional',
       plunge: { kind: 'direct' },
+      xyOverlap: 0.5,
     };
     this.operations = [...this.operations, op];
     this.selectedOpId = op.id;
@@ -451,6 +452,11 @@ export interface OpEntry {
   /// How the cutter descends into material at the start of each Z
   /// pass. Default { kind: 'direct' }.
   plunge?: PlungeStrategy;
+  /// XY overlap fraction in (0.05, 0.95) — drives the cascade step
+  /// (= tool_diameter * (1 - overlap)) and zigzag stride. Default 0.5
+  /// = 50% overlap. Higher = tighter cascade = better fill on small
+  /// pockets. Honored only by Pocket ops.
+  xyOverlap?: number;
 }
 
 export interface ProjectFile {

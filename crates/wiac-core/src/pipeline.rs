@@ -290,6 +290,18 @@ fn build_op_offsets(
     }
 
     let radius = setup.tool.diameter * 0.5;
+    // Lateral step between consecutive Pocket cuts. Default 0.5
+    // overlap = step is half the tool diameter (≈ tool radius). The
+    // explicit param lets the user dial it tighter for cleaner fill or
+    // looser for faster cuts. Clamp to a sane envelope so a stray 1.0
+    // (= no advance) doesn't loop forever and a stray 0 doesn't pin to
+    // the lower bound forever either.
+    let overlap = if op.params.xy_overlap > 0.0 {
+        op.params.xy_overlap.clamp(0.05, 0.95)
+    } else {
+        0.5
+    };
+    let xy_step = setup.tool.diameter * (1.0 - overlap);
     let mut offsets: Vec<PolylineOffset> = Vec::new();
     let mut closed = 0usize;
     let mut emitted_objects = 0usize;
@@ -332,6 +344,7 @@ fn build_op_offsets(
                     6,
                     zigzag,
                     &region.holes,
+                    xy_step,
                 ) {
                     o.source_object_idx = region.source_idx;
                     offsets.push(o);
@@ -402,6 +415,7 @@ fn build_op_offsets(
                         6,
                         zigzag,
                         &islands,
+                        xy_step,
                     ) {
                         o.source_object_idx = idx;
                         offsets.push(o);
@@ -1461,6 +1475,60 @@ mod tests {
             1,
             "expected pocket_fill_incomplete warning, got {:?}",
             resp.warnings,
+        );
+    }
+
+    /// Higher xy_overlap → smaller step → more cascade rings on the
+    /// same geometry. Verifies the new knob actually drives the cascade
+    /// step. With 0.7 overlap the cut path on a 50x50 pocket should be
+    /// strictly longer than at 0.3 overlap.
+    #[test]
+    fn higher_xy_overlap_emits_a_longer_cut_path() {
+        fn cut_total(resp: &PipelineResponse) -> f64 {
+            resp.toolpath
+                .iter()
+                .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+                .map(|s| {
+                    let dx = s.to.x - s.from.x;
+                    let dy = s.to.y - s.from.y;
+                    (dx * dx + dy * dy).sqrt()
+                })
+                .sum()
+        }
+        let make = |overlap: f64| -> PipelineResponse {
+            let mut params = OperationParams::mill_default();
+            params.xy_overlap = overlap;
+            let project = Project {
+                segments: closed_square_offset(50.0, 0.0, 0.0),
+                machine: Default::default(),
+                tools: vec![endmill(1, 3.0)],
+                operations: vec![Operation {
+                    id: 1,
+                    name: "Pocket".into(),
+                    enabled: true,
+                    kind: OperationKind::Pocket {
+                        strategy: crate::project::PocketStrategy::Cascade,
+                    },
+                    tool_id: 1,
+                    source: OperationSource::All,
+                    params,
+                }],
+                tabs: Default::default(),
+            };
+            run_pipeline(
+                PipelineRequest {
+                    project,
+                    post_processor: None,
+                },
+                |_, _, _| {},
+            )
+            .unwrap()
+        };
+        let lo = cut_total(&make(0.3));
+        let hi = cut_total(&make(0.7));
+        assert!(
+            hi > lo * 1.2,
+            "expected higher overlap to add ≥20% cut length; got {hi} vs {lo}",
         );
     }
 

@@ -144,15 +144,19 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
 }
 
 /// Generate a zigzag (raster) pocket fill within `boundary`. The fill is
-/// a series of horizontal sweep lines at Y stride `tool_diameter * 0.9`,
-/// each segment trimmed to the polygon's interior. Adjacent strokes are
+/// a series of horizontal sweep lines at the given Y `stride`, each
+/// segment trimmed to the polygon's interior. Adjacent strokes are
 /// joined at their endpoints to form a single open polyline (returns a
-/// chain of segments).
-pub fn pocket_zigzag(boundary: &[Point2], tool_diameter: f64) -> Vec<Segment> {
-    if boundary.len() < 3 || tool_diameter <= 0.0 {
+/// chain of segments). `stride` is the lateral distance between
+/// consecutive raster lines — typically `tool_diameter * (1 - overlap)`.
+/// `tool_diameter` is needed separately to inset the rasters by half a
+/// tool diameter from the polygon edges so the cutter doesn't carve
+/// past the boundary.
+pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Vec<Segment> {
+    if boundary.len() < 3 || stride <= 0.0 {
         return Vec::new();
     }
-    let stride = (tool_diameter * 0.9).max(0.1);
+    let stride = stride.max(0.1);
     let (min_y, max_y) = boundary
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
@@ -479,6 +483,7 @@ pub fn pocket_for_object(
     interpolate: usize,
     zigzag: bool,
     islands: &[Vec<Point2>],
+    xy_step: f64,
 ) -> Vec<PolylineOffset> {
     let mut out = Vec::new();
 
@@ -491,6 +496,10 @@ pub fn pocket_for_object(
     if boundary.is_empty() {
         return out;
     }
+    // Effective step in mm: lateral distance between consecutive cuts.
+    // The caller passes the step (typically tool_diameter * (1 - overlap));
+    // we clamp to a safe minimum so a 100% overlap doesn't loop forever.
+    let step = xy_step.max(tool_radius * 0.05);
     for offset in &boundary {
         if !nocontour {
             out.push(offset.clone());
@@ -498,7 +507,10 @@ pub fn pocket_for_object(
         let pts = segments_to_points(&offset.segments, interpolate);
 
         if zigzag {
-            let strokes = pocket_zigzag(&pts, tool_radius.abs() * 2.0);
+            // Zigzag stride is the same step semantics — distance between
+            // raster lines. Old default was 0.9 * diameter (10% overlap);
+            // the new default lands closer to 50% overlap for cleaner fill.
+            let strokes = pocket_zigzag(&pts, step.max(0.1), tool_radius * 2.0);
             if !strokes.is_empty() {
                 out.push(PolylineOffset {
                     segments: strokes,
@@ -514,7 +526,7 @@ pub fn pocket_for_object(
             continue;
         }
 
-        let rings = pocket_cascade_with_islands(&pts, islands, tool_radius.abs());
+        let rings = pocket_cascade_with_islands(&pts, islands, step);
         for (i, ring) in rings.iter().enumerate() {
             if ring.len() < 2 {
                 continue;
@@ -874,7 +886,7 @@ mod tests {
             color: 7,
         };
         let obj = VcObject::new(vec![half1, half2], true);
-        let offsets = pocket_for_object(&obj, 1.5, false, 6, false, &[]);
+        let offsets = pocket_for_object(&obj, 1.5, false, 6, false, &[], 1.5);
         assert_eq!(offsets.len(), 1);
         assert_eq!(offsets[0].segments.len(), 1);
         assert!(matches!(
@@ -887,7 +899,7 @@ mod tests {
     #[test]
     fn zigzag_pocket_fills_a_square() {
         let boundary = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];
-        let segs = pocket_zigzag(&boundary, 2.0);
+        let segs = pocket_zigzag(&boundary, 1.8, 2.0);
         assert!(
             segs.len() > 5,
             "20x20 square at tool diameter 2 should produce many strokes; got {}",

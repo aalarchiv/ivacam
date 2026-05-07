@@ -345,6 +345,12 @@ export interface components {
              *     }
              */
             tabs: components["schemas"]["TabsConfig"];
+            /**
+             * Format: double
+             * @description XY overlap between consecutive pocket cuts, as a fraction in (0, 1). Drives the cascade step (= tool_diameter * (1 - overlap)) and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a conservative default that fills tight pockets cleanly. Higher overlap = smaller step = more rings, slower cut, better finish. Lower overlap = bigger step = fewer rings, faster cut, may leave stripes. Honored only for Pocket ops; ignored elsewhere. Stored at 0.0 means "use the default" so old payloads still work.
+             * @default 0
+             */
+            xy_overlap: number;
         };
         OperationSource: {
             combine?: components["schemas"]["SourceCombine"];

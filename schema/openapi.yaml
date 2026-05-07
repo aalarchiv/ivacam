@@ -602,6 +602,11 @@ components:
             tab_type: rectangle
             width: 10.0
           description: Per-op tabs config. The Project's `tabs` map carries the actual placement points; this controls width / height / type.
+        xy_overlap:
+          default: 0.0
+          description: XY overlap between consecutive pocket cuts, as a fraction in (0, 1). Drives the cascade step (= tool_diameter * (1 - overlap)) and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a conservative default that fills tight pockets cleanly. Higher overlap = smaller step = more rings, slower cut, better finish. Lower overlap = bigger step = fewer rings, faster cut, may leave stripes. Honored only for Pocket ops; ignored elsewhere. Stored at 0.0 means "use the default" so old payloads still work.
+          format: double
+          type: number
       required:
       - depth
       - fast_move_z

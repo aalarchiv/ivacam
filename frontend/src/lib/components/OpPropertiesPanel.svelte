@@ -279,6 +279,24 @@
             <option value="spiral">spiral</option>
           </select>
         </label>
+        <label
+          class="row"
+          title="XY overlap between consecutive pocket cuts. 0.5 = 50% overlap (step is half the tool diameter, the standard default). Higher = tighter cascade rings, cleaner fill on small pockets but slower; lower = bigger steps, faster but may leave stripes."
+        >
+          <span>XY overlap</span>
+          <input
+            type="number"
+            step="0.05"
+            min="0.05"
+            max="0.95"
+            value={op.xyOverlap ?? 0.5}
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              if (!isNaN(v))
+                patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
+            }}
+          />
+        </label>
       </fieldset>
     {/if}
 

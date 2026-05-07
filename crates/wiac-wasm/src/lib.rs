@@ -14,6 +14,8 @@ use wasm_bindgen::prelude::*;
 use wiac_core::pipeline::{run_pipeline, PipelineRequest};
 use wiac_core::ImportOptions;
 
+pub mod sim;
+
 #[wasm_bindgen(start)]
 pub fn start() {
     // Surface Rust panics in the JS console with stack traces. Silently
@@ -68,6 +70,6 @@ pub fn generate(request: JsValue) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
 }
 
-fn into_js_error<E: std::fmt::Display>(err: E) -> JsValue {
+pub(crate) fn into_js_error<E: std::fmt::Display>(err: E) -> JsValue {
     JsValue::from_str(&err.to_string())
 }

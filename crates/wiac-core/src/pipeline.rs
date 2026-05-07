@@ -13,6 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::cam::chaining::{classify_containment, segments_to_objects};
+use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::offsets::{
     apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_object, pocket_for_object,
     PolylineOffset, TabPoint,
@@ -24,7 +25,9 @@ use crate::gcode::{
     PostProcessor,
 };
 use crate::geometry::{Point2, Segment};
-use crate::project::{Operation, OperationKind, OperationSource, PocketStrategy, Project};
+use crate::project::{
+    Operation, OperationKind, OperationSource, PocketStrategy, Project, SourceCombine,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineRequest {
@@ -224,6 +227,51 @@ fn build_op_offsets(
     let selected_set: HashSet<usize> = (0..objects.len())
         .filter(|i| op_includes_object(op, &objects[*i], *i))
         .collect();
+
+    // Non-Auto combine modes (Union/Difference/Intersection/Xor/None) for
+    // Pocket short-circuit the per-object loop: we materialize the
+    // combined regions once via clipper2 and emit a pocket per region.
+    // Other op kinds (Profile, Engrave, DragKnife) keep their per-object
+    // semantics — they cut paths, not regions.
+    if let OperationKind::Pocket { strategy } = op.kind {
+        let combine = source_combine_mode(op);
+        if !matches!(combine, SourceCombine::Auto) {
+            // Preserve the user-specified selection order — Difference is
+            // order-sensitive ("first minus the rest"), so we cannot iterate
+            // a HashSet here. ordered_selection() walks op.source as the
+            // user wrote it and returns the corresponding object indices.
+            let selected = ordered_selection(op, objects);
+            let regions = combine_source_regions(objects, &selected, combine);
+            let zigzag = matches!(strategy, PocketStrategy::Zigzag);
+            for region in &regions {
+                if region.boundary.len() < 3 {
+                    continue;
+                }
+                closed += 1;
+                emitted_objects += 1;
+                let synthetic = synthesize_region_object(region);
+                for mut o in pocket_for_object(
+                    &synthetic,
+                    radius,
+                    op.params.pocket_nocontour,
+                    6,
+                    zigzag,
+                    &region.holes,
+                ) {
+                    o.source_object_idx = region.source_idx;
+                    offsets.push(o);
+                }
+            }
+            if !tabs_by_object.is_empty() {
+                attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
+            }
+            if op.params.overcut {
+                apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
+            }
+            return Ok((offsets, closed));
+        }
+    }
+
     for (idx, obj) in objects.iter().enumerate() {
         if !op_includes_object(op, obj, idx) {
             continue;
@@ -338,6 +386,62 @@ fn build_op_offsets(
         apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
     }
     Ok((offsets, closed))
+}
+
+/// Walk the op's source in user-specified order and return the matching
+/// object indices. Used by non-Auto combine modes — Difference in
+/// particular is order-sensitive ("first selected minus the rest"), so
+/// we cannot iterate the unordered selected_set there.
+fn ordered_selection(op: &Operation, objects: &[VcObject]) -> Vec<usize> {
+    match &op.source {
+        OperationSource::All => (0..objects.len()).collect(),
+        OperationSource::Layers { layers, .. } => objects
+            .iter()
+            .enumerate()
+            .filter(|(_, obj)| layers.iter().any(|l| l == &obj.layer))
+            .map(|(i, _)| i)
+            .collect(),
+        OperationSource::Objects { ids, .. } => ids
+            .iter()
+            .filter_map(|id| {
+                let idx = (*id as usize).checked_sub(1)?;
+                objects.get(idx).map(|_| idx)
+            })
+            .collect(),
+    }
+}
+
+/// Pull the SourceCombine mode out of an op's source. Defaults to Auto
+/// when the source is `All` (no combine choice applies) or when no
+/// combine field is set (back-compat for pre-p5o projects).
+fn source_combine_mode(op: &Operation) -> SourceCombine {
+    match &op.source {
+        OperationSource::All => SourceCombine::Auto,
+        OperationSource::Layers { combine, .. } | OperationSource::Objects { combine, .. } => {
+            *combine
+        }
+    }
+}
+
+/// Build a synthetic VcObject from a CombinedRegion's boundary so it can
+/// be fed into pocket_for_object (which is shaped around VcObjects). The
+/// region's holes are passed alongside as islands; only the outer
+/// boundary lives in this object.
+fn synthesize_region_object(region: &CombinedRegion) -> VcObject {
+    let pts = &region.boundary;
+    let mut segments = Vec::with_capacity(pts.len());
+    for win in pts.windows(2) {
+        segments.push(Segment::line(win[0], win[1], region.layer.clone(), region.color));
+    }
+    if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
+        if first.distance(*last) > 1e-6 {
+            segments.push(Segment::line(*last, *first, region.layer.clone(), region.color));
+        }
+    }
+    let mut obj = VcObject::new(segments, true);
+    obj.layer = region.layer.clone();
+    obj.color = region.color;
+    obj
 }
 
 fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> bool {
@@ -747,6 +851,60 @@ mod tests {
             annulus.stats.offset_count >= 1,
             "annulus pocket emitted no offsets",
         );
+    }
+
+    /// SourceCombine::Difference applied at the pipeline level should
+    /// produce one annulus pocket from "outer minus inner", matching
+    /// what the user means when they pick Difference explicitly. This
+    /// guards the synthesize_region_object path that fakes a VcObject
+    /// from clipper2 polytree output.
+    #[test]
+    fn pocket_with_difference_combine_emits_an_annulus() {
+        let mut segments = closed_square_offset(50.0, 0.0, 0.0);
+        segments.extend(closed_square_offset(20.0, 15.0, 15.0));
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket-diff".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::Objects {
+                    ids: vec![1, 2],
+                    combine: SourceCombine::Difference,
+                },
+                params: OperationParams::mill_default(),
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.stats.offset_count >= 1, "Difference produced no offsets");
+        // The cut path must include moves that are NOT in the inner box —
+        // i.e., the cutter does visit points outside the inner 20x20.
+        // A trivially-wrong implementation that pocketed only the inner
+        // box (or only the outer) would fail one of these area checks.
+        let visited_outside_inner = resp.toolpath.iter().any(|s| {
+            let in_inner = |x: f64, y: f64| x > 15.0 && x < 35.0 && y > 15.0 && y < 35.0;
+            !in_inner(s.from.x, s.from.y) || !in_inner(s.to.x, s.to.y)
+        });
+        let visited_inside_outer = resp.toolpath.iter().any(|s| {
+            let in_outer = |x: f64, y: f64| x > 0.0 && x < 50.0 && y > 0.0 && y < 50.0;
+            in_outer(s.from.x, s.from.y) && in_outer(s.to.x, s.to.y)
+        });
+        assert!(visited_outside_inner, "annulus pocket should reach outside the inner box");
+        assert!(visited_inside_outer, "annulus pocket should stay inside the outer box");
     }
 
     #[test]

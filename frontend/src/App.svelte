@@ -264,6 +264,23 @@
             <span>Show machined regions</span>
           </label>
         {/if}
+        <div class="preview-mode" title="Wireframe = toolpath lines only. Solid = simulated stock with material removed (semi-transparent + edge lines). Both = solid underneath, toolpath on top.">
+          <span class="preview-mode-label">3D preview</span>
+          <div class="pill-group" role="radiogroup" aria-label="3D preview mode">
+            {#each ['wireframe', 'solid', 'both'] as mode (mode)}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={project.settings.previewMode === mode}
+                class:active={project.settings.previewMode === mode}
+                onclick={() =>
+                  project.updateSettings({ previewMode: mode as 'wireframe' | 'solid' | 'both' })}
+              >
+                {mode}
+              </button>
+            {/each}
+          </div>
+        </div>
       </div>
     </aside>
   </main>
@@ -470,6 +487,40 @@
     font-size: 0.72rem;
     color: var(--text-muted);
     cursor: pointer;
+  }
+  .preview-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+  .preview-mode-label {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.65rem;
+  }
+  .pill-group {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--bg-elevated);
+  }
+  .pill-group button {
+    flex: 1;
+    background: transparent;
+    color: var(--text-muted);
+    border: 0;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    text-transform: capitalize;
+  }
+  .pill-group button.active {
+    background: var(--accent);
+    color: white;
   }
   footer {
     background: var(--bg-panel);

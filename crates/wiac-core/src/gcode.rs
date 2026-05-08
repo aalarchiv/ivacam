@@ -62,7 +62,93 @@ pub trait PostProcessor {
         j: Option<f64>,
     );
 
+    /// G81 simple drill: rapid to (x, y, r), feed plunge to z, dwell, retract to r.
+    /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
+    fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, dwell_sec: f64) {
+        self.move_to(Some(x), Some(y), Some(r));
+        self.linear(None, None, Some(z));
+        if dwell_sec > 0.0 {
+            self.raw(&format!("G4 P{}", fmt_dwell(dwell_sec)));
+        }
+        self.linear(None, None, Some(r));
+    }
+
+    /// G83 peck: as G81 but pecks `q` mm at a time, fully retracting to r each peck.
+    /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
+    fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+        let q = q.abs();
+        if q < 1e-9 {
+            self.drill_simple(x, y, z, r, dwell_sec);
+            return;
+        }
+        self.move_to(Some(x), Some(y), Some(r));
+        // Drill bottom is below the retract plane (z < r). Each peck
+        // descends by q from the *previous* depth (not from r) so we don't
+        // re-cut already-cleared material; full retract to r is by rapid.
+        let mut current_z = r;
+        loop {
+            // Next target: q deeper than current_z, but not past the bottom.
+            let next_z = (current_z - q).max(z);
+            self.linear(None, None, Some(next_z));
+            if dwell_sec > 0.0 {
+                self.raw(&format!("G4 P{}", fmt_dwell(dwell_sec)));
+            }
+            // Full retract to clearance plane.
+            self.move_to(None, None, Some(r));
+            current_z = next_z;
+            if current_z <= z + 1e-9 {
+                break;
+            }
+            // Re-enter to just above the previous peck depth at rapid, then
+            // continue feeding. We approximate that with a rapid back to
+            // current_z (the just-cut depth) — a real machine would step
+            // off a hair to avoid rubbing, but the manual fallback's job is
+            // just to be functionally equivalent.
+            self.move_to(None, None, Some(current_z));
+        }
+    }
+
+    /// G73 chip-break: as G83 but only retracts a small amount between pecks.
+    /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
+    fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+        let q = q.abs();
+        if q < 1e-9 {
+            self.drill_simple(x, y, z, r, dwell_sec);
+            return;
+        }
+        const CHIP_BREAK_RETRACT: f64 = 0.5;
+        self.move_to(Some(x), Some(y), Some(r));
+        let mut current_z = r;
+        loop {
+            let next_z = (current_z - q).max(z);
+            self.linear(None, None, Some(next_z));
+            if dwell_sec > 0.0 {
+                self.raw(&format!("G4 P{}", fmt_dwell(dwell_sec)));
+            }
+            current_z = next_z;
+            if current_z <= z + 1e-9 {
+                break;
+            }
+            // Small partial retract to break the chip, then continue.
+            self.linear(None, None, Some(current_z + CHIP_BREAK_RETRACT));
+        }
+        // Final retract to clearance plane.
+        self.move_to(None, None, Some(r));
+    }
+
     fn finish(&self) -> String;
+}
+
+/// Format a dwell value for `G4 P` — strip trailing zeros so the line
+/// stays readable. Mirrors the LinuxCNC post's number formatting.
+fn fmt_dwell(v: f64) -> String {
+    let s = format!("{v:.4}");
+    let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() {
+        "0".into()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// Top-level orchestrator. Walks `offsets` and emits gcode through `post`.
@@ -106,6 +192,73 @@ pub fn emit_polylines_block<P: PostProcessor>(
     for &idx in &order {
         emit_offset(setup, &offsets[idx], post, last_pos);
     }
+}
+
+/// Drill-cycle emit. Walks `offsets` whose single segment is a Point and
+/// dispatches to the [`PostProcessor`] drill_* method matching `cycle`.
+/// Used by the pipeline's per-op driver when `OperationKind::Drill`.
+///
+/// `setup.mill.depth`        → drill bottom Z (typically negative).
+/// `setup.mill.start_depth`  → R (clearance plane just above the workpiece).
+/// `setup.mill.fast_move_z`  → safe Z for rapid moves between drill sites.
+pub fn emit_drill_block<P: PostProcessor>(
+    setup: &Setup,
+    offsets: &[PolylineOffset],
+    cycle: crate::project::DrillCycle,
+    post: &mut P,
+    last_pos: &mut Point2,
+) {
+    let order = order_offsets(setup, offsets, *last_pos);
+    let z = setup.mill.depth;
+    let r = setup.mill.start_depth;
+    let fast_z = setup.mill.fast_move_z;
+    if setup.machine.mode == MachineMode::Mill {
+        post.spindle_cw(setup.tool.speed, setup.tool.pause);
+    }
+    if setup.tool.flood {
+        post.coolant_flood();
+    }
+    if setup.tool.mist {
+        post.coolant_mist();
+    }
+    post.feedrate(setup.tool.rate_v);
+    for &idx in &order {
+        let offset = &offsets[idx];
+        if offset.segments.is_empty() {
+            continue;
+        }
+        let pt = offset.segments[0].start;
+        if setup.machine.comments {
+            post.separation();
+            post.comment(&format!(
+                "drill object={} x={:.4} y={:.4} z={:.4}",
+                offset.source_object_idx, pt.x, pt.y, z
+            ));
+        }
+        // Rapid up to a safe Z above the workpiece before traversing,
+        // mirroring what emit_offset does for normal cuts.
+        post.move_to(None, None, Some(fast_z));
+        match cycle {
+            crate::project::DrillCycle::Simple { dwell_sec } => {
+                post.drill_simple(pt.x, pt.y, z, r, dwell_sec);
+            }
+            crate::project::DrillCycle::Peck {
+                peck_step_mm,
+                dwell_sec,
+            } => {
+                post.drill_peck(pt.x, pt.y, z, r, peck_step_mm, dwell_sec);
+            }
+            crate::project::DrillCycle::ChipBreak {
+                peck_step_mm,
+                dwell_sec,
+            } => {
+                post.drill_chip_break(pt.x, pt.y, z, r, peck_step_mm, dwell_sec);
+            }
+        }
+        *last_pos = pt;
+    }
+    // Lift back to safe Z so subsequent ops start clean.
+    post.move_to(None, None, Some(fast_z));
 }
 
 /// Decide the cut order for the offsets. Honors `setup.mill.objectorder`:

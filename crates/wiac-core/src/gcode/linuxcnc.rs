@@ -193,6 +193,51 @@ impl PostProcessor for Post {
         let j = j.map(|v| format!(" J{}", fmt(v))).unwrap_or_default();
         self.write(format!("G3 {body}{i}{j}").trim().to_string());
     }
+    fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, dwell_sec: f64) {
+        // LinuxCNC G81 / G82 (G82 is the dwell variant). Use G82 when dwell > 0,
+        // G81 otherwise, so machinists who watch the canned cycle code see what
+        // they expect.
+        let dwell = if dwell_sec > 0.0 {
+            format!(" P{}", fmt(dwell_sec))
+        } else {
+            String::new()
+        };
+        let g = if dwell_sec > 0.0 { "G82" } else { "G81" };
+        let body = coords(&mut self.state, Some(x), Some(y), Some(z));
+        self.write(format!("{g} {body} R{}{dwell}", fmt(r)));
+        // Canned cycles leave Z at R after each cycle, but the post state
+        // already records Z=z above. Sync it so subsequent moves don't
+        // emit redundant Z words.
+        self.state.last_z = Some(r);
+    }
+    fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+        let dwell = if dwell_sec > 0.0 {
+            format!(" P{}", fmt(dwell_sec))
+        } else {
+            String::new()
+        };
+        let body = coords(&mut self.state, Some(x), Some(y), Some(z));
+        self.write(format!(
+            "G83 {body} R{} Q{}{dwell}",
+            fmt(r),
+            fmt(q.abs())
+        ));
+        self.state.last_z = Some(r);
+    }
+    fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+        let dwell = if dwell_sec > 0.0 {
+            format!(" P{}", fmt(dwell_sec))
+        } else {
+            String::new()
+        };
+        let body = coords(&mut self.state, Some(x), Some(y), Some(z));
+        self.write(format!(
+            "G73 {body} R{} Q{}{dwell}",
+            fmt(r),
+            fmt(q.abs())
+        ));
+        self.state.last_z = Some(r);
+    }
     fn finish(&self) -> String {
         self.out.join("\n") + "\n"
     }

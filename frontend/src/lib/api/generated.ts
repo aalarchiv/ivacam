@@ -106,6 +106,37 @@ export interface components {
          * @enum {string}
          */
         CutDirection: "conventional" | "climb";
+        /** @description Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned cycles G81 / G83 / G73 from the LinuxCNC / Fanuc dialect plus the dwell-at-bottom parameter PyCAM's `Drilling.py` exposes. Posts that don't support canned cycles fall back to a manual G0/G1 expansion of the same cycle (see `PostProcessor::drill_*` defaults). */
+        DrillCycle: {
+            /**
+             * Format: double
+             * @description Dwell at bottom in seconds before retract. 0 = no dwell.
+             * @default 0
+             */
+            dwell_sec: number;
+            /** @enum {string} */
+            kind: "simple";
+        } | {
+            /**
+             * Format: double
+             * @default 0
+             */
+            dwell_sec: number;
+            /** @enum {string} */
+            kind: "peck";
+            /** Format: double */
+            peck_step_mm: number;
+        } | {
+            /**
+             * Format: double
+             * @default 0
+             */
+            dwell_sec: number;
+            /** @enum {string} */
+            kind: "chip_break";
+            /** Format: double */
+            peck_step_mm: number;
+        };
         Error: {
             details?: unknown;
             error: string;
@@ -254,6 +285,7 @@ export interface components {
             /** @enum {string} */
             type: "pocket";
         } | {
+            cycle: components["schemas"]["DrillCycle"];
             /** @enum {string} */
             type: "drill";
         } | {

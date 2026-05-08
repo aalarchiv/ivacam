@@ -131,7 +131,7 @@ impl Default for Operation {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum OperationKind {
     /// Contour cut — equivalent to today's "mill" with a parallel-offset
@@ -139,8 +139,10 @@ pub enum OperationKind {
     Profile { offset: ToolOffset },
     /// Pocket fill — cascade of inward offsets, optionally zigzag.
     Pocket { strategy: PocketStrategy },
-    /// Drill cycle — point or circle smaller than tool.
-    Drill,
+    /// Drill cycle — point or circle smaller than tool. Carries a
+    /// [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1
+    /// fallback for posts that don't support canned cycles).
+    Drill { cycle: DrillCycle },
     /// Helical thread — bore + helical thread cut.
     Thread,
     /// V-bit edge break.
@@ -151,6 +153,40 @@ pub enum OperationKind {
     DragKnife,
     /// Helical entry into a closed contour.
     Helix,
+}
+
+/// Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned
+/// cycles G81 / G83 / G73 from the LinuxCNC / Fanuc dialect plus the
+/// dwell-at-bottom parameter PyCAM's `Drilling.py` exposes. Posts that
+/// don't support canned cycles fall back to a manual G0/G1 expansion of
+/// the same cycle (see `PostProcessor::drill_*` defaults).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DrillCycle {
+    /// G81 — single plunge to depth, retract.
+    Simple {
+        /// Dwell at bottom in seconds before retract. 0 = no dwell.
+        #[serde(default)]
+        dwell_sec: f64,
+    },
+    /// G83 — peck with full retract to clearance plane between pecks.
+    Peck {
+        peck_step_mm: f64,
+        #[serde(default)]
+        dwell_sec: f64,
+    },
+    /// G73 — peck with chip-break (small partial retract between pecks).
+    ChipBreak {
+        peck_step_mm: f64,
+        #[serde(default)]
+        dwell_sec: f64,
+    },
+}
+
+impl Default for DrillCycle {
+    fn default() -> Self {
+        DrillCycle::Simple { dwell_sec: 0.0 }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]

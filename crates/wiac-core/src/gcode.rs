@@ -411,20 +411,66 @@ fn emit_offset<P: PostProcessor>(
         post.coolant_mist();
     }
     let start = offset.segments[0].start;
-    // Lead-in (straight or arc) before the first cut.
-    let approach = lead_in_point(setup, &offset.segments);
-    if let Some(pre) = approach {
-        post.move_to(Some(pre.x), Some(pre.y), Some(setup.mill.fast_move_z));
-        post.linear(None, None, Some(0.0));
-    } else {
-        post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
-        post.linear(None, None, Some(0.0));
+    // Lead-in (straight, arc, or off) before the first cut. The arc
+    // lead is a tangent roll-on at z=0 that lands the cutter on the
+    // contour with motion already aligned to the first segment's
+    // tangent — no dwell at the start point. multi_pass then plunges
+    // from z=0 to the first pass depth at segments[0].start.
+    let lead_in = lead_in_geometry(setup, &offset.segments);
+    match lead_in {
+        LeadGeometry::Straight { from } => {
+            post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            post.linear(None, None, Some(0.0));
+        }
+        LeadGeometry::Arc {
+            entry_or_exit: from,
+            center,
+            ccw,
+        } => {
+            post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            post.linear(None, None, Some(0.0));
+            // I/J are the offset from the arc's start (current XY) to
+            // its center — same convention as ezdxf / ngc / linuxcnc.
+            let i = center.x - from.x;
+            let j = center.y - from.y;
+            if ccw {
+                post.arc_ccw(Some(start.x), Some(start.y), None, Some(i), Some(j));
+            } else {
+                post.arc_cw(Some(start.x), Some(start.y), None, Some(i), Some(j));
+            }
+        }
+        LeadGeometry::None => {
+            post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
+            post.linear(None, None, Some(0.0));
+        }
     }
 
     multi_pass(setup, &offset.segments, &offset.tabs, post);
 
-    if let Some(out) = lead_out_point(setup, &offset.segments) {
-        post.linear(Some(out.x), Some(out.y), None);
+    // Lead-out happens at the FINAL pass depth — it's a real cutting
+    // motion that rolls the cutter off the contour into free space.
+    let lead_out = lead_out_geometry(setup, &offset.segments);
+    match lead_out {
+        LeadGeometry::Straight { from: to } => {
+            post.linear(Some(to.x), Some(to.y), None);
+        }
+        LeadGeometry::Arc {
+            entry_or_exit: to,
+            center,
+            ccw,
+        } => {
+            // Arc starts at the cutter's current XY (= end_pos) and
+            // ends at `to`. I/J = center - end_pos.
+            let end_pt = end_pos(offset);
+            let i = center.x - end_pt.x;
+            let j = center.y - end_pt.y;
+            if ccw {
+                post.arc_ccw(Some(to.x), Some(to.y), None, Some(i), Some(j));
+            } else {
+                post.arc_cw(Some(to.x), Some(to.y), None, Some(i), Some(j));
+            }
+        }
+        LeadGeometry::None => {}
     }
     post.linear(None, None, Some(setup.mill.fast_move_z));
 
@@ -1425,50 +1471,185 @@ fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, 
     }
 }
 
-fn lead_in_point(setup: &Setup, segments: &[Segment]) -> Option<Point2> {
-    if setup.leads.r#in == LeadKind::Off || segments.is_empty() {
-        return None;
-    }
-    let first = &segments[0];
-    let len = setup.leads.in_lenght.max(0.0);
-    if len < 1e-9 {
-        return None;
-    }
-    let theta = (first.end.y - first.start.y).atan2(first.end.x - first.start.x);
-    Some(match setup.leads.r#in {
-        LeadKind::Straight => Point2::new(
-            first.start.x - len * theta.sin(),
-            first.start.y + len * theta.cos(),
-        ),
-        LeadKind::Arc => {
-            let radius = len * 2.0 / std::f64::consts::PI;
-            let center = Point2::new(
-                first.start.x + radius * theta.sin(),
-                first.start.y - radius * theta.cos(),
-            );
-            Point2::new(
-                center.x + radius * (theta - std::f64::consts::FRAC_PI_2).sin(),
-                center.y - radius * (theta - std::f64::consts::FRAC_PI_2).cos(),
-            )
-        }
-        LeadKind::Off => unreachable!(),
-    })
+/// Geometry of a lead-in or lead-out move.
+///
+/// `Straight` keeps the legacy "perpendicular hop" lead — the approach
+/// (lead-in) or exit (lead-out) point sits `in_lenght` mm to the LEFT of
+/// the contour tangent, and the cutter travels in a straight line.
+///
+/// `Arc` is a tangent roll-on / roll-off: a quarter-circle of `in_lenght`
+/// mm radius whose center is `radius` perpendicular to the tangent on the
+/// LEFT (same convention as Straight). The arc lands tangent to the
+/// contour at the entry/exit point, so the cutter eases into / out of the
+/// cut without dwelling at the start. `entry_or_exit` is the off-contour
+/// endpoint of the arc (lead-in: WHERE we G0 to before arcing onto the
+/// contour; lead-out: WHERE we end up after arcing off the contour).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum LeadGeometry {
+    None,
+    Straight {
+        from: Point2,
+    },
+    Arc {
+        entry_or_exit: Point2,
+        center: Point2,
+        ccw: bool,
+    },
 }
 
-fn lead_out_point(setup: &Setup, segments: &[Segment]) -> Option<Point2> {
-    if setup.leads.out == LeadKind::Off || segments.is_empty() {
-        return None;
+/// Compute the unit tangent at the START of the first segment in a cut
+/// path. For a Line, this is just the direction from start→end; for an
+/// Arc / Circle, it's the radius vector rotated 90° in the arc's
+/// orientation (CCW for positive bulge, CW for negative).
+fn first_segment_start_tangent(seg: &Segment) -> Option<(f64, f64)> {
+    match seg.kind {
+        SegmentKind::Line | SegmentKind::Point => {
+            let dx = seg.end.x - seg.start.x;
+            let dy = seg.end.y - seg.start.y;
+            let n = (dx * dx + dy * dy).sqrt();
+            if n < 1e-12 {
+                None
+            } else {
+                Some((dx / n, dy / n))
+            }
+        }
+        SegmentKind::Arc | SegmentKind::Circle => {
+            let center = seg
+                .center
+                .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+            let rx = seg.start.x - center.x;
+            let ry = seg.start.y - center.y;
+            let n = (rx * rx + ry * ry).sqrt();
+            if n < 1e-12 {
+                return None;
+            }
+            // CCW (bulge > 0): tangent at start = rotate radius 90° CCW.
+            // CW: rotate 90° CW.
+            let (tx, ty) = if seg.bulge >= 0.0 {
+                (-ry / n, rx / n)
+            } else {
+                (ry / n, -rx / n)
+            };
+            Some((tx, ty))
+        }
     }
-    let last = segments.last().unwrap();
+}
+
+/// Tangent at the END of the last segment.
+fn last_segment_end_tangent(seg: &Segment) -> Option<(f64, f64)> {
+    match seg.kind {
+        SegmentKind::Line | SegmentKind::Point => {
+            let dx = seg.end.x - seg.start.x;
+            let dy = seg.end.y - seg.start.y;
+            let n = (dx * dx + dy * dy).sqrt();
+            if n < 1e-12 {
+                None
+            } else {
+                Some((dx / n, dy / n))
+            }
+        }
+        SegmentKind::Arc | SegmentKind::Circle => {
+            let center = seg
+                .center
+                .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+            let rx = seg.end.x - center.x;
+            let ry = seg.end.y - center.y;
+            let n = (rx * rx + ry * ry).sqrt();
+            if n < 1e-12 {
+                return None;
+            }
+            let (tx, ty) = if seg.bulge >= 0.0 {
+                (-ry / n, rx / n)
+            } else {
+                (ry / n, -rx / n)
+            };
+            Some((tx, ty))
+        }
+    }
+}
+
+pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeometry {
+    if setup.leads.r#in == LeadKind::Off || segments.is_empty() {
+        return LeadGeometry::None;
+    }
+    let len = setup.leads.in_lenght.max(0.0);
+    if len < 1e-9 {
+        return LeadGeometry::None;
+    }
+    let first = &segments[0];
+    let Some((tx, ty)) = first_segment_start_tangent(first) else {
+        return LeadGeometry::None;
+    };
+    // Perpendicular CCW of the tangent = "left of tangent". Same
+    // convention as the legacy lead_in_point: for an Outer profile cut
+    // post-`apply_cut_direction` (CW winding), this points OUTWARD into
+    // free space; for an Inner profile cut (CCW), it points into the
+    // open pocket interior. Climb cuts reverse the winding and the lead
+    // ends up on the wrong side — same caveat as before.
+    let (px, py) = (-ty, tx);
+    match setup.leads.r#in {
+        LeadKind::Straight => LeadGeometry::Straight {
+            from: Point2::new(first.start.x + len * px, first.start.y + len * py),
+        },
+        LeadKind::Arc => {
+            // Quarter-arc roll-on:
+            //   center    = P0 + perp_left * radius
+            //   arc_start = P0 + radius * (perp_left - tangent)
+            // CCW (G3) sweep around `center` from arc_start to P0
+            // lands tangent to (+tx, +ty) at P0.
+            let radius = len;
+            let center = Point2::new(first.start.x + radius * px, first.start.y + radius * py);
+            let arc_start = Point2::new(
+                first.start.x + radius * (px - tx),
+                first.start.y + radius * (py - ty),
+            );
+            LeadGeometry::Arc {
+                entry_or_exit: arc_start,
+                center,
+                ccw: true,
+            }
+        }
+        LeadKind::Off => LeadGeometry::None,
+    }
+}
+
+pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeometry {
+    if setup.leads.out == LeadKind::Off || segments.is_empty() {
+        return LeadGeometry::None;
+    }
     let len = setup.leads.out_lenght.max(0.0);
     if len < 1e-9 {
-        return None;
+        return LeadGeometry::None;
     }
-    let theta = (last.end.y - last.start.y).atan2(last.end.x - last.start.x);
-    Some(Point2::new(
-        last.end.x - len * theta.sin(),
-        last.end.y + len * theta.cos(),
-    ))
+    let last = segments.last().unwrap();
+    let Some((tx, ty)) = last_segment_end_tangent(last) else {
+        return LeadGeometry::None;
+    };
+    let (px, py) = (-ty, tx);
+    match setup.leads.out {
+        LeadKind::Straight => LeadGeometry::Straight {
+            from: Point2::new(last.end.x + len * px, last.end.y + len * py),
+        },
+        LeadKind::Arc => {
+            // Mirror of lead-in: the cutter is at Pn moving along +t.
+            //   center  = Pn + perp_left * radius
+            //   arc_end = Pn + radius * (perp_left + tangent)
+            // CCW (G3) sweep around `center` from Pn to arc_end leaves
+            // the contour tangentially.
+            let radius = len;
+            let center = Point2::new(last.end.x + radius * px, last.end.y + radius * py);
+            let arc_end = Point2::new(
+                last.end.x + radius * (px + tx),
+                last.end.y + radius * (py + ty),
+            );
+            LeadGeometry::Arc {
+                entry_or_exit: arc_end,
+                center,
+                ccw: true,
+            }
+        }
+        LeadKind::Off => LeadGeometry::None,
+    }
 }
 
 /// Internal state shared across post processor implementations.

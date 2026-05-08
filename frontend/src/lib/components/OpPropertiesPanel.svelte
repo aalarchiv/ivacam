@@ -12,7 +12,6 @@
     type SourceCombine,
     type CutDirection,
     type DrillCycle,
-    type PatternConfig,
   } from '../state/project.svelte';
 
   /// One-line description per cut direction for the option titles.
@@ -172,199 +171,6 @@
         }}
         title="Use the chains currently highlighted in the 2D pane"
       >Set from current selection ({project.selectedObjects.size})</button>
-    </fieldset>
-
-    <fieldset>
-      <legend>Pattern</legend>
-      <label
-        class="row"
-        title="Repeat this op as a 1D / 2D / polar array. The source geometry is translated (or rotated) per instance; instance 0 stays at its original location."
-      >
-        <span>Type</span>
-        <select
-          value={op.pattern?.kind ?? '_none_'}
-          onchange={(e) => {
-            const v = (e.currentTarget as HTMLSelectElement).value;
-            if (v === '_none_') {
-              patch('pattern', undefined);
-            } else if (v === 'linear') {
-              patch('pattern', { kind: 'linear', count: 2, dx: 20, dy: 0 } as PatternConfig);
-            } else if (v === 'grid') {
-              patch('pattern', {
-                kind: 'grid',
-                count_x: 2,
-                count_y: 2,
-                dx: 20,
-                dy: 20,
-              } as PatternConfig);
-            } else {
-              patch('pattern', {
-                kind: 'polar',
-                count: 4,
-                center_x: 0,
-                center_y: 0,
-                angle_step_deg: 90,
-              } as PatternConfig);
-            }
-          }}
-        >
-          <option value="_none_">none</option>
-          <option value="linear">linear (1D array)</option>
-          <option value="grid">grid (2D array)</option>
-          <option value="polar">polar (rotational)</option>
-        </select>
-      </label>
-      {#if op.pattern && op.pattern.kind === 'linear'}
-        <label class="row" title="Total instances along the line, including the original at i=0.">
-          <span>Count</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={op.pattern.count}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (!isNaN(v) && v >= 1 && op.pattern && op.pattern.kind === 'linear')
-                patch('pattern', { ...op.pattern, count: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Per-instance X offset. Instance i is translated by (i*dx, i*dy).">
-          <span>dX</span>
-          <input
-            type="number"
-            step="0.1"
-            value={op.pattern.dx}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && op.pattern && op.pattern.kind === 'linear')
-                patch('pattern', { ...op.pattern, dx: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Per-instance Y offset.">
-          <span>dY</span>
-          <input
-            type="number"
-            step="0.1"
-            value={op.pattern.dy}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && op.pattern && op.pattern.kind === 'linear')
-                patch('pattern', { ...op.pattern, dy: v });
-            }}
-          />
-        </label>
-      {:else if op.pattern && op.pattern.kind === 'grid'}
-        <label class="row" title="Number of columns (X direction).">
-          <span>Count X</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={op.pattern.count_x}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (!isNaN(v) && v >= 1 && op.pattern && op.pattern.kind === 'grid')
-                patch('pattern', { ...op.pattern, count_x: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Number of rows (Y direction).">
-          <span>Count Y</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={op.pattern.count_y}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (!isNaN(v) && v >= 1 && op.pattern && op.pattern.kind === 'grid')
-                patch('pattern', { ...op.pattern, count_y: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Column spacing.">
-          <span>dX</span>
-          <input
-            type="number"
-            step="0.1"
-            value={op.pattern.dx}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && op.pattern && op.pattern.kind === 'grid')
-                patch('pattern', { ...op.pattern, dx: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Row spacing.">
-          <span>dY</span>
-          <input
-            type="number"
-            step="0.1"
-            value={op.pattern.dy}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && op.pattern && op.pattern.kind === 'grid')
-                patch('pattern', { ...op.pattern, dy: v });
-            }}
-          />
-        </label>
-      {:else if op.pattern && op.pattern.kind === 'polar'}
-        <label class="row" title="Total instances around the rotation center (including instance 0).">
-          <span>Count</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={op.pattern.count}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (!isNaN(v) && v >= 1 && op.pattern && op.pattern.kind === 'polar')
-                patch('pattern', { ...op.pattern, count: v });
-            }}
-          />
-        </label>
-        <label class="row" title="X coordinate of the rotation center (project units).">
-          <span>Center X</span>
-          <input
-            type="number"
-            step="0.1"
-            value={op.pattern.center_x}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && op.pattern && op.pattern.kind === 'polar')
-                patch('pattern', { ...op.pattern, center_x: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Y coordinate of the rotation center.">
-          <span>Center Y</span>
-          <input
-            type="number"
-            step="0.1"
-            value={op.pattern.center_y}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && op.pattern && op.pattern.kind === 'polar')
-                patch('pattern', { ...op.pattern, center_y: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Degrees between consecutive instances. 360/count gives a full circle.">
-          <span>Angle step</span>
-          <input
-            type="number"
-            step="1"
-            value={op.pattern.angle_step_deg}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && op.pattern && op.pattern.kind === 'polar')
-                patch('pattern', { ...op.pattern, angle_step_deg: v });
-            }}
-          />
-        </label>
-      {/if}
     </fieldset>
 
     <fieldset>
@@ -615,6 +421,80 @@
             <option value="on">on path</option>
           </select>
         </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Leads</legend>
+        <label
+          class="row"
+          title="Lead-IN style. Off: rapid + plunge directly to the contour start. Straight: rapid to a point perpendicular to the start, then linear into the contour. Arc: tangent quarter-arc roll-on so the cutter eases into the cut without dwelling at the start."
+        >
+          <span>Lead in</span>
+          <select
+            value={op.leadInKind ?? 'off'}
+            onchange={(e) =>
+              patch('leadInKind', (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc')}
+          >
+            <option value="off">off</option>
+            <option value="straight">straight</option>
+            <option value="arc">arc (roll-on)</option>
+          </select>
+        </label>
+        {#if op.leadInKind && op.leadInKind !== 'off'}
+          <label
+            class="row"
+            title={op.leadInKind === 'arc'
+              ? 'Roll-on arc RADIUS (mm). The arc is a quarter-circle tangent to the contour at the entry point.'
+              : 'Straight-line LENGTH (mm) of the perpendicular hop into the contour.'}
+          >
+            <span>{op.leadInKind === 'arc' ? 'Radius' : 'Length'} (mm)</span>
+            <input
+              type="number"
+              step="0.5"
+              min="0"
+              value={op.leadIn ?? 5}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('leadIn', isNaN(v) || v < 0 ? 0 : v);
+              }}
+            />
+          </label>
+        {/if}
+        <label
+          class="row"
+          title="Lead-OUT style. Mirror of lead-in: how the cutter departs the contour at the END of the cut path. Arc gives a tangent roll-off; Straight a perpendicular exit; Off ends the cut at the contour end with a vertical retract."
+        >
+          <span>Lead out</span>
+          <select
+            value={op.leadOutKind ?? 'off'}
+            onchange={(e) =>
+              patch('leadOutKind', (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc')}
+          >
+            <option value="off">off</option>
+            <option value="straight">straight</option>
+            <option value="arc">arc (roll-off)</option>
+          </select>
+        </label>
+        {#if op.leadOutKind && op.leadOutKind !== 'off'}
+          <label
+            class="row"
+            title={op.leadOutKind === 'arc'
+              ? 'Roll-off arc RADIUS (mm). Quarter-circle tangent to the contour at the exit point.'
+              : 'Straight-line LENGTH (mm) of the perpendicular exit from the contour.'}
+          >
+            <span>{op.leadOutKind === 'arc' ? 'Radius' : 'Length'} (mm)</span>
+            <input
+              type="number"
+              step="0.5"
+              min="0"
+              value={op.leadOut ?? 5}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('leadOut', isNaN(v) || v < 0 ? 0 : v);
+              }}
+            />
+          </label>
+        {/if}
       </fieldset>
     {:else if op.kind === 'pocket'}
       <fieldset>

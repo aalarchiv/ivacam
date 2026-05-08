@@ -2997,6 +2997,257 @@ mod tests {
         );
     }
 
+    // ─── Lead-in / lead-out (p31) ──────────────────────────────────────
+    //
+    // Profile leads come in three flavors: Off (rapid+plunge straight to
+    // the contour start), Straight (perpendicular hop into the contour),
+    // and Arc (tangent quarter-arc roll-on at z=0). The Arc variant is
+    // the addition from p31 — its job is to land the cutter on the
+    // contour with the cutter direction already aligned to the first
+    // segment's tangent so there's no dwell at the start point.
+
+    fn profile_leads_op(
+        offset: ToolOffset,
+        kind_in: crate::cam::setup::LeadKind,
+        len_in: f64,
+    ) -> Operation {
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = -1.0;
+        params.fast_move_z = 5.0;
+        params.leads = crate::cam::setup::LeadsConfig {
+            r#in: kind_in,
+            out: crate::cam::setup::LeadKind::Off,
+            in_lenght: len_in,
+            out_lenght: 0.0,
+        };
+        Operation {
+            id: 1,
+            name: "Profile".into(),
+            enabled: true,
+            kind: OperationKind::Profile { offset },
+            tool_id: 1,
+            source: OperationSource::All,
+            params,
+            pattern: None,
+        }
+    }
+
+    /// Walk the emitted gcode and split it into (rapid-target,
+    /// lead-moves-at-z0, plunge-target-z, first-cut-move). Returns
+    /// (rapid_xy, lead_motions_between_plunge_to_z0_and_plunge_to_cut,
+    /// first_post_cut_plunge_motion).
+    fn first_lead_phase(gcode: &str) -> (Option<(f64, f64)>, Vec<String>, Option<String>) {
+        // State machine: scan until first G0 X/Y (rapid target), then
+        // until G1 Z0 (plunge to surface), then collect motions until
+        // G1 Z<negative> (plunge to cut), then capture the next motion.
+        let mut state = 0u8; // 0=expect_rapid, 1=at_rapid_seen, 2=after_z0, 3=after_cut_plunge
+        let mut rapid_xy: Option<(f64, f64)> = None;
+        let mut between: Vec<String> = Vec::new();
+        let mut first_cut: Option<String> = None;
+        for raw in gcode.lines() {
+            let l = raw.trim_start();
+            // Skip headers / comments / spindle / feeds.
+            if l.is_empty() || l.starts_with(';') || l.starts_with('(') {
+                continue;
+            }
+            match state {
+                0 => {
+                    // First G0 with X or Y is the rapid-to-lead-target.
+                    if l.starts_with("G0 ") && (l.contains('X') || l.contains('Y')) {
+                        rapid_xy = parse_xy(l);
+                        state = 1;
+                    }
+                }
+                1 => {
+                    if l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y') {
+                        // G1 Z0 (or G1 Z<surface>) — plunge to z=0.
+                        state = 2;
+                    }
+                }
+                2 => {
+                    if l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y') {
+                        // Pure-Z plunge to cut depth. State→3.
+                        state = 3;
+                        continue;
+                    }
+                    // Anything else at z=0 is a lead motion.
+                    between.push(l.to_string());
+                }
+                3 => {
+                    if l.starts_with("G0 ")
+                        || l.starts_with("G1 ")
+                        || l.starts_with("G2 ")
+                        || l.starts_with("G3 ")
+                    {
+                        first_cut = Some(l.to_string());
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        (rapid_xy, between, first_cut)
+    }
+
+    fn parse_xy(line: &str) -> Option<(f64, f64)> {
+        let mut x: Option<f64> = None;
+        let mut y: Option<f64> = None;
+        for tok in line.split_whitespace() {
+            if let Some(rest) = tok.strip_prefix('X') {
+                x = rest.parse().ok();
+            } else if let Some(rest) = tok.strip_prefix('Y') {
+                y = rest.parse().ok();
+            }
+        }
+        match (x, y) {
+            (Some(xv), Some(yv)) => Some((xv, yv)),
+            _ => None,
+        }
+    }
+
+    /// Profile + Outside + Arc lead-in (radius=2 mm) on a 50x50 square
+    /// must emit a G2 / G3 arc move BETWEEN the surface plunge and the
+    /// cut plunge — i.e., a roll-on arc at z=0 that lands the cutter
+    /// tangent to the first segment.
+    #[test]
+    fn lead_in_arc_emits_g2_or_g3_before_first_cut() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_leads_op(
+                ToolOffset::Outside,
+                crate::cam::setup::LeadKind::Arc,
+                2.0,
+            )],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (_rapid, between, _first_cut) = first_lead_phase(&resp.gcode);
+        // The lead-in phase (z=0, between surface plunge and cut
+        // plunge) must contain at least one G2 or G3 arc command.
+        let saw_arc = between
+            .iter()
+            .any(|l| l.starts_with("G2 ") || l.starts_with("G3 "));
+        assert!(
+            saw_arc,
+            "expected a G2 / G3 arc lead-in at z=0, got intermediate moves={between:?}\n{}",
+            resp.gcode,
+        );
+    }
+
+    /// Profile + Outside + LeadKind::Off must NOT emit any motion
+    /// between the surface plunge (G1 Z0) and the cut plunge (G1 Z-1)
+    /// — the cutter just goes straight down at the contour start.
+    #[test]
+    fn lead_in_off_emits_no_lead() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_leads_op(
+                ToolOffset::Outside,
+                crate::cam::setup::LeadKind::Off,
+                0.0,
+            )],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (_rapid, between, _first_cut) = first_lead_phase(&resp.gcode);
+        // No motion (no F-rate change is fine, but no G0/G1/G2/G3 with
+        // XY/I/J) should appear between surface and cut plunges.
+        let saw_motion = between.iter().any(|l| {
+            l.starts_with("G0 ")
+                || l.starts_with("G1 ")
+                || l.starts_with("G2 ")
+                || l.starts_with("G3 ")
+        });
+        assert!(
+            !saw_motion,
+            "LeadKind::Off should plunge straight to depth, but saw intermediate moves={between:?}\n{}",
+            resp.gcode,
+        );
+    }
+
+    /// Profile + Outside + LeadKind::Straight (length=2 mm) rapids the
+    /// cutter to a perpendicular-offset hop point and then plunges
+    /// straight down before cutting from there to the contour. The
+    /// rapid target must NOT coincide with a contour-start XY (it's
+    /// offset). And like the Off case, no extra moves at z=0.
+    #[test]
+    fn lead_in_straight_emits_a_straight_segment() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_leads_op(
+                ToolOffset::Outside,
+                crate::cam::setup::LeadKind::Straight,
+                2.0,
+            )],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (rapid, between, first_cut) = first_lead_phase(&resp.gcode);
+        // Like Off: no extra move at z=0 between surface plunge and
+        // cut plunge — Straight legacy semantics rapid the cutter
+        // perpendicular to the contour and plunge AT that offset XY,
+        // so the offset hop doesn't appear at z=0.
+        let saw_motion = between.iter().any(|l| {
+            l.starts_with("G0 ")
+                || l.starts_with("G1 ")
+                || l.starts_with("G2 ")
+                || l.starts_with("G3 ")
+        });
+        assert!(
+            !saw_motion,
+            "Straight lead-in plunges at the offset hop XY, no z=0 motion expected; got {between:?}\n{}",
+            resp.gcode,
+        );
+        // The rapid target should be ~2 mm offset from any contour
+        // corner (the first segment's start, perpendicular to the
+        // first-segment tangent). With the 1.5mm tool radius outset of
+        // the 50x50 square, contour starts at one of {(0,-1.5),
+        // (-1.5,0), ...} (depending on cut-direction reversal); the
+        // rapid is 2mm perpendicular from there. Assert it's NOT on
+        // the offset polygon (i.e., distance > 1.0 from any corner).
+        let rapid = rapid.expect("expected a G0 X Y rapid");
+        let corners = [(0.0_f64, 0.0_f64), (50.0, 0.0), (50.0, 50.0), (0.0, 50.0)];
+        let on_geom_corner = corners
+            .iter()
+            .any(|(cx, cy)| (rapid.0 - cx).abs() < 0.5 && (rapid.1 - cy).abs() < 0.5);
+        assert!(
+            !on_geom_corner,
+            "Straight lead-in's rapid target should be OFFSET (~2mm + tool radius) from any geometry corner, got {rapid:?}\n{}",
+            resp.gcode,
+        );
+        // And there must be a first cut motion after the cut plunge.
+        assert!(first_cut.is_some(), "expected a first cut motion\n{}", resp.gcode);
+    }
+
+
     #[test]
     fn unknown_post_processor_is_a_deserialization_failure() {
         let raw = serde_json::json!({

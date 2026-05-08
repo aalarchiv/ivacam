@@ -213,7 +213,15 @@ pub enum TabType {
 pub struct LeadsConfig {
     pub r#in: LeadKind,
     pub out: LeadKind,
+    /// Lead-in size. Interpreted by `LeadKind`:
+    /// * `Straight`: straight-line LENGTH (mm) of the approach.
+    /// * `Arc`: tangent roll-on arc RADIUS (mm). The arc sweeps a quarter
+    ///   turn from the approach point (radius away on the perpendicular)
+    ///   to the contour start, landing tangent to the first cut segment.
+    /// * `Off`: ignored.
     pub in_lenght: f64,
+    /// Lead-out size. Same interpretation as `in_lenght` but applied at
+    /// the END of the cut path (cutter rolls off the contour at Pn).
     pub out_lenght: f64,
 }
 

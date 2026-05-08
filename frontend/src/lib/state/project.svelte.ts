@@ -464,24 +464,6 @@ export type DrillCycle =
   | { kind: 'simple'; dwell_sec?: number }
   | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
   | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
-/// Pattern repetition for an op. Mirrors wiac_core::project::PatternConfig.
-/// When attached, the op runs once per pattern instance with the source
-/// geometry translated/rotated; the original geometry stays at the
-/// (0, 0) / 0° instance so a 1-instance pattern is equivalent to none.
-///   - linear:  N instances along (i*dx, i*dy)
-///   - grid:    count_x × count_y instances at (i*dx, j*dy)
-///   - polar:   N rotations around (center_x, center_y) with angle_step_deg
-export type PatternConfig =
-  | { kind: 'linear'; count: number; dx: number; dy: number }
-  | { kind: 'grid'; count_x: number; count_y: number; dx: number; dy: number }
-  | {
-      kind: 'polar';
-      count: number;
-      center_x: number;
-      center_y: number;
-      angle_step_deg: number;
-    };
-
 /// How a multi-object source selection is combined into the region(s)
 /// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
 /// Default 'auto' is containment-aware (outer + inner = annulus).
@@ -557,6 +539,20 @@ export interface OpEntry {
   /// fraction. 0.0 (default) = no reduction. 0.5 = half feed at
   /// corners. Most useful for zigzag pocket fills.
   cornerFeedReduction?: number;
+  /// Lead-in / lead-out shape for Profile (and other contour) ops.
+  /// Default Off — straight rapid + plunge to the contour start.
+  /// `straight` adds a perpendicular hop into the contour by `leadIn`
+  /// mm; `arc` rolls onto the contour with a tangent quarter-arc of
+  /// `leadIn` mm RADIUS so the cutter eases into the cut without
+  /// dwelling at the start point. `leadOut` is the symmetric size for
+  /// the roll-off motion at the end of the path.
+  leadInKind?: 'off' | 'straight' | 'arc';
+  leadOutKind?: 'off' | 'straight' | 'arc';
+  /// Lead-in size in mm. Length when `leadInKind=straight`, arc radius
+  /// when `leadInKind=arc`. Ignored when `leadInKind=off`.
+  leadIn?: number;
+  /// Lead-out size in mm. Same per-kind interpretation as `leadIn`.
+  leadOut?: number;
   /// Optional smaller step for the FINAL Z pass (cleaner bottom). Same
   /// sign convention as `step` (negative). Undefined = use `step` for
   /// every pass.
@@ -567,10 +563,6 @@ export interface OpEntry {
   /// Explicit ordered list of Z depths (negative numbers). When
   /// non-empty, overrides `step`/`finishStep`/`throughDepth`.
   depthList?: number[];
-  /// Optional pattern repetition. When set, the op runs once per
-  /// pattern instance with the source geometry translated/rotated.
-  /// Undefined = no pattern. Mirrors wiac_core::project::Operation.pattern.
-  pattern?: PatternConfig;
 }
 
 export interface ProjectFile {

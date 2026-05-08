@@ -101,6 +101,13 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
         let mut y = state.y;
         let mut z = state.z;
         let mut had_z = false;
+        // I / J / R for G2 / G3. I/J = center offset from arc start in
+        // X/Y; R = radius (alternative form). Without these the arc is
+        // implicitly treated as a chord — which the wireframe + sim
+        // would then carve as a straight line across the arc's
+        // diameter (the bug this tessellation guards against).
+        let mut i_off: Option<f64> = None;
+        let mut j_off: Option<f64> = None;
         for tok in line.split_whitespace() {
             let (head, val_str) = tok.split_at(1);
             let val: f64 = val_str.parse().unwrap_or(0.0);
@@ -122,6 +129,8 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                     z = val * unit_scale;
                     had_z = true;
                 }
+                "I" | "i" => i_off = Some(val * unit_scale),
+                "J" | "j" => j_off = Some(val * unit_scale),
                 _ => {}
             }
         }
@@ -147,6 +156,76 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
             2 | 3 => MoveKind::Arc,
             _ => MoveKind::Cut,
         };
+        if matches!(kind, MoveKind::Arc) && (i_off.is_some() || j_off.is_some()) {
+            // Tessellate G2/G3 into chord segments along the actual
+            // arc. Otherwise the previewer emits a single chord from
+            // start to end — a half-circle becomes a horizontal line
+            // across the diameter, which both the wireframe and the
+            // heightfield simulator render and carve along (visible
+            // bug: profile-Outside on a circle "looks like a cut on
+            // the source line").
+            let cx = from.x + i_off.unwrap_or(0.0);
+            let cy = from.y + j_off.unwrap_or(0.0);
+            let r = ((from.x - cx).powi(2) + (from.y - cy).powi(2)).sqrt();
+            let theta_start = (from.y - cy).atan2(from.x - cx);
+            let theta_end = (to.y - cy).atan2(to.x - cx);
+            let mut sweep = theta_end - theta_start;
+            // G2 = CW, G3 = CCW. Bring sweep into the right half-plane
+            // for the requested direction; +0/-0 sweep with X/Y
+            // co-incident becomes a full revolution (G2/G3 X<same>
+            // Y<same> I... is a full circle in many dialects).
+            const TAU: f64 = std::f64::consts::TAU;
+            let coincident = (from.x - to.x).abs() < 1e-9 && (from.y - to.y).abs() < 1e-9;
+            if active_code == 3 {
+                // CCW
+                if coincident {
+                    sweep = TAU;
+                } else if sweep <= 1e-9 {
+                    sweep += TAU;
+                }
+            } else {
+                // CW (G2)
+                if coincident {
+                    sweep = -TAU;
+                } else if sweep >= -1e-9 {
+                    sweep -= TAU;
+                }
+            }
+            // ~10° per chord — chord error r·(1-cos(5°)) ≈ 0.004·r,
+            // i.e. <0.04 mm error on a 10 mm arc. With a 4-chord
+            // minimum a quarter-circle gets at least 4 chords.
+            let n = (sweep.abs() / (10f64.to_radians())).ceil().max(4.0) as usize;
+            let dtheta = sweep / (n as f64);
+            let dz = to.z - from.z;
+            let mut prev = from;
+            let first_seg_idx = out.len() as u32;
+            for k in 1..=n {
+                let theta = theta_start + dtheta * (k as f64);
+                let nx = if k == n { to.x } else { cx + r * theta.cos() };
+                let ny = if k == n { to.y } else { cy + r * theta.sin() };
+                let nz = if k == n {
+                    to.z
+                } else {
+                    from.z + dz * (k as f64) / (n as f64)
+                };
+                let chord_to = Pose3 { x: nx, y: ny, z: nz };
+                out.push(ToolpathSegment {
+                    from: prev,
+                    to: chord_to,
+                    kind: MoveKind::Arc,
+                    gcode_line: line_no,
+                    op_id: active_op,
+                });
+                segments_to_line.push(line_no);
+                prev = chord_to;
+            }
+            // lines_to_segment points at the first chord of this arc
+            // (jumpToLine seeks to the start of the arc).
+            let last = lines_to_segment.len() - 1;
+            lines_to_segment[last] = first_seg_idx;
+            state = to;
+            continue;
+        }
         let seg_idx = out.len() as u32;
         out.push(ToolpathSegment {
             from,

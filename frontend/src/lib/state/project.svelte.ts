@@ -464,6 +464,24 @@ export type DrillCycle =
   | { kind: 'simple'; dwell_sec?: number }
   | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
   | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
+/// Pattern repetition for an op. Mirrors wiac_core::project::PatternConfig.
+/// When attached, the op runs once per pattern instance with the source
+/// geometry translated/rotated; the original geometry stays at the
+/// (0, 0) / 0° instance so a 1-instance pattern is equivalent to none.
+///   - linear:  N instances along (i*dx, i*dy)
+///   - grid:    count_x × count_y instances at (i*dx, j*dy)
+///   - polar:   N rotations around (center_x, center_y) with angle_step_deg
+export type PatternConfig =
+  | { kind: 'linear'; count: number; dx: number; dy: number }
+  | { kind: 'grid'; count_x: number; count_y: number; dx: number; dy: number }
+  | {
+      kind: 'polar';
+      count: number;
+      center_x: number;
+      center_y: number;
+      angle_step_deg: number;
+    };
+
 /// How a multi-object source selection is combined into the region(s)
 /// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
 /// Default 'auto' is containment-aware (outer + inner = annulus).
@@ -549,6 +567,10 @@ export interface OpEntry {
   /// Explicit ordered list of Z depths (negative numbers). When
   /// non-empty, overrides `step`/`finishStep`/`throughDepth`.
   depthList?: number[];
+  /// Optional pattern repetition. When set, the op runs once per
+  /// pattern instance with the source geometry translated/rotated.
+  /// Undefined = no pattern. Mirrors wiac_core::project::Operation.pattern.
+  pattern?: PatternConfig;
 }
 
 export interface ProjectFile {

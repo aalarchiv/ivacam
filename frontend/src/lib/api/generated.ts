@@ -292,6 +292,8 @@ export interface components {
             kind: components["schemas"]["OperationKind"];
             name: string;
             params: components["schemas"]["OperationParams"];
+            /** @description Optional pattern repetition. When set, the op runs once per pattern instance with the source geometry translated/rotated. See [`PatternConfig`] for the concrete pattern shapes. */
+            pattern?: components["schemas"]["PatternConfig"] | null;
             source: components["schemas"]["OperationSource"];
             /**
              * Format: uint32
@@ -447,6 +449,43 @@ export interface components {
         } | {
             /** @enum {string} */
             kind: "all";
+        };
+        /**
+         * @description Pattern repetition for an [`Operation`]. When attached, the pipeline expands the op into N instances by translating (or rotating) the source geometry per instance — useful for "drill the same hole pattern N times" or "pocket N copies of the same shape on a grid".
+         *
+         *     The original geometry stays at the (0, 0) translation / 0° rotation instance so a single-instance pattern is identical to no pattern at all.
+         */
+        PatternConfig: {
+            /** Format: uint32 */
+            count: number;
+            /** Format: double */
+            dx: number;
+            /** Format: double */
+            dy: number;
+            /** @enum {string} */
+            kind: "linear";
+        } | {
+            /** Format: uint32 */
+            count_x: number;
+            /** Format: uint32 */
+            count_y: number;
+            /** Format: double */
+            dx: number;
+            /** Format: double */
+            dy: number;
+            /** @enum {string} */
+            kind: "grid";
+        } | {
+            /** Format: double */
+            angle_step_deg: number;
+            /** Format: double */
+            center_x: number;
+            /** Format: double */
+            center_y: number;
+            /** Format: uint32 */
+            count: number;
+            /** @enum {string} */
+            kind: "polar";
         };
         PipelineStats: {
             /** Format: uint */

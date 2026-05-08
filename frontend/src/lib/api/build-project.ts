@@ -7,6 +7,7 @@ import type {
   ToolEntry as FrontToolEntry,
   OpEntry,
   MachineSettings,
+  PatternConfig,
 } from '../state/project.svelte';
 import type { GenerateRequest, ImportResponse } from './types';
 
@@ -68,6 +69,17 @@ type WireSource =
   | { kind: 'layers'; layers: string[]; combine?: WireSourceCombine }
   | { kind: 'objects'; ids: number[]; combine?: WireSourceCombine };
 
+type WirePatternConfig =
+  | { kind: 'linear'; count: number; dx: number; dy: number }
+  | { kind: 'grid'; count_x: number; count_y: number; dx: number; dy: number }
+  | {
+      kind: 'polar';
+      count: number;
+      center_x: number;
+      center_y: number;
+      angle_step_deg: number;
+    };
+
 interface WireOp {
   id: number;
   name: string;
@@ -75,6 +87,7 @@ interface WireOp {
   kind: WireOpKind;
   tool_id: number;
   source: WireSource;
+  pattern?: WirePatternConfig;
   params: {
     depth: number;
     start_depth: number;
@@ -204,7 +217,32 @@ function buildSource(op: OpEntry): WireSource {
   return { kind: 'layers', layers: op.sourceLayers, ...(combine ? { combine } : {}) };
 }
 
+function buildPattern(p: PatternConfig | undefined): WirePatternConfig | undefined {
+  if (!p) return undefined;
+  switch (p.kind) {
+    case 'linear':
+      return { kind: 'linear', count: p.count, dx: p.dx, dy: p.dy };
+    case 'grid':
+      return {
+        kind: 'grid',
+        count_x: p.count_x,
+        count_y: p.count_y,
+        dx: p.dx,
+        dy: p.dy,
+      };
+    case 'polar':
+      return {
+        kind: 'polar',
+        count: p.count,
+        center_x: p.center_x,
+        center_y: p.center_y,
+        angle_step_deg: p.angle_step_deg,
+      };
+  }
+}
+
 function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireOp {
+  const pattern = buildPattern(op.pattern);
   return {
     id: op.id,
     name: op.name,
@@ -212,6 +250,7 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
     kind: buildOpKind(op),
     tool_id: op.toolId,
     source: buildSource(op),
+    ...(pattern ? { pattern } : {}),
     params: {
       depth: op.depth,
       start_depth: op.startDepth,

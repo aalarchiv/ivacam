@@ -507,6 +507,11 @@ components:
           type: string
         params:
           $ref: '#/components/schemas/OperationParams'
+        pattern:
+          anyOf:
+          - $ref: '#/components/schemas/PatternConfig'
+          - type: 'null'
+          description: Optional pattern repetition. When set, the op runs once per pattern instance with the source geometry translated/rotated. See [`PatternConfig`] for the concrete pattern shapes.
         source:
           $ref: '#/components/schemas/OperationSource'
         tool_id:
@@ -768,6 +773,87 @@ components:
             - all
             type: string
         required:
+        - kind
+        type: object
+    PatternConfig:
+      description: |-
+        Pattern repetition for an [`Operation`]. When attached, the pipeline expands the op into N instances by translating (or rotating) the source geometry per instance — useful for "drill the same hole pattern N times" or "pocket N copies of the same shape on a grid".
+
+        The original geometry stays at the (0, 0) translation / 0° rotation instance so a single-instance pattern is identical to no pattern at all.
+      oneOf:
+      - description: 1D linear array. `count` instances total (including the original at offset (0, 0)). Each instance i is translated by (i*dx, i*dy).
+        properties:
+          count:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          dx:
+            format: double
+            type: number
+          dy:
+            format: double
+            type: number
+          kind:
+            enum:
+            - linear
+            type: string
+        required:
+        - count
+        - dx
+        - dy
+        - kind
+        type: object
+      - description: 2D rectangular grid. `count_x × count_y` instances total. Instance (i, j) is translated by (i*dx, j*dy).
+        properties:
+          count_x:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          count_y:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          dx:
+            format: double
+            type: number
+          dy:
+            format: double
+            type: number
+          kind:
+            enum:
+            - grid
+            type: string
+        required:
+        - count_x
+        - count_y
+        - dx
+        - dy
+        - kind
+        type: object
+      - description: Polar (rotational) array. `count` instances around (`center_x`, `center_y`), with `angle_step_deg` between consecutive instances. Instance i is rotated by i * angle_step_deg about that center.
+        properties:
+          angle_step_deg:
+            format: double
+            type: number
+          center_x:
+            format: double
+            type: number
+          center_y:
+            format: double
+            type: number
+          count:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          kind:
+            enum:
+            - polar
+            type: string
+        required:
+        - angle_step_deg
+        - center_x
+        - center_y
+        - count
         - kind
         type: object
     PipelineStats:

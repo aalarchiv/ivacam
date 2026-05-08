@@ -459,7 +459,25 @@ fn build_op_offsets(
                     .filter(|inner| inner.closed)
                     .map(|inner| segments_to_points(&inner.segments, 6))
                     .collect();
-                if islands.is_empty() && effective_op.params.pocket_islands {
+                // Legacy auto-island fallback: when `pocket_islands` is on
+                // and the explicit selection didn't pick any inners, fall
+                // back to the pre-selection behavior of treating ALL
+                // geometrically-nested closed children as islands. ONLY
+                // valid for source = All — under source = Layers /
+                // Objects the user has explicitly stated which geometry
+                // is in scope, so silently auto-including unselected
+                // inners contradicts the selection. Pre-fix this caused
+                // a strategy split: cascade/spiral milled around the
+                // unselected circles (they ran with the auto-filled
+                // island list) while zigzag ignored islands entirely
+                // (its code path didn't take an islands argument). The
+                // user expectation under "Selected" mode is that ONLY
+                // what's selected matters — match that here for every
+                // pocket strategy.
+                if islands.is_empty()
+                    && effective_op.params.pocket_islands
+                    && matches!(effective_op.source, OperationSource::All)
+                {
                     islands = obj
                         .inner_objects
                         .iter()
@@ -3420,6 +3438,102 @@ mod tests {
             pocket_blocks >= 1,
             "L-shape pocket should emit at least one block; got {pocket_blocks}\n{gcode}"
         );
+    }
+
+    /// Source = Selected Objects with only the outer ring selected:
+    /// inner circles inside the ring are NOT in the selection, so no
+    /// pocket strategy should treat them as islands. Pre-fix, the
+    /// `pocket_islands` legacy fallback in pipeline.rs would auto-fill
+    /// the island list with all geometrically-nested closed children,
+    /// which made cascade and spiral mill around the unselected
+    /// circles while zigzag (whose offsets path doesn't plumb islands)
+    /// ignored them — a strategy-dependent inconsistency the user
+    /// reported. The fix restricts the auto-fill to source = All.
+    ///
+    /// Test approach: for each pocket strategy, compare the toolpath
+    /// against a baseline run where the inner circles aren't even in
+    /// the segment list. A correctly-implemented "selected only"
+    /// pocket should produce IDENTICAL toolpath output regardless of
+    /// whether unselected circles happen to be present in the
+    /// document — the unselected geometry must have no influence.
+    #[test]
+    fn selected_objects_pocket_ignores_unselected_inner_circles_across_strategies() {
+        use crate::project::{PocketStrategy, SourceCombine};
+        let outer = closed_square_offset(100.0, 0.0, 0.0);
+        let inner_a = closed_circle(Point2::new(30.0, 50.0), 5.0);
+        let inner_b = closed_circle(Point2::new(70.0, 50.0), 5.0);
+        let with_inners: Vec<Segment> = outer
+            .iter()
+            .cloned()
+            .chain(inner_a.iter().cloned())
+            .chain(inner_b.iter().cloned())
+            .collect();
+        let outer_only: Vec<Segment> = outer.clone();
+        // Selection contains only object 1 (the outer ring) — same
+        // value in both runs since chaining puts the outer first.
+        let mk = |segments: Vec<Segment>, strategy: PocketStrategy, pocket_islands: bool| Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket { strategy },
+                tool_id: 1,
+                source: OperationSource::Objects {
+                    ids: vec![1],
+                    combine: SourceCombine::Auto,
+                },
+                params: OperationParams {
+                    pocket_islands,
+                    ..OperationParams::mill_default()
+                },
+                pattern: None,
+            }],
+            tabs: Default::default(),
+        };
+        let strategies = [
+            PocketStrategy::Cascade,
+            PocketStrategy::Spiral,
+            PocketStrategy::Zigzag,
+        ];
+        for strategy in strategies {
+            for pocket_islands in [false, true] {
+                let baseline = run_pipeline(
+                    PipelineRequest {
+                        project: mk(outer_only.clone(), strategy, pocket_islands),
+                        post_processor: None,
+                    },
+                    |_, _, _| {},
+                )
+                .unwrap();
+                let with_inners_run = run_pipeline(
+                    PipelineRequest {
+                        project: mk(with_inners.clone(), strategy, pocket_islands),
+                        post_processor: None,
+                    },
+                    |_, _, _| {},
+                )
+                .unwrap();
+                // Same toolpath segment count = unselected inner
+                // geometry had no influence on the cut. If the
+                // pocket_islands fallback leaks into source=Objects,
+                // the with_inners run gets extra cascade rings around
+                // each circle and the count diverges.
+                assert_eq!(
+                    baseline.toolpath.len(),
+                    with_inners_run.toolpath.len(),
+                    "strategy {:?} pocket_islands={}: with-inners toolpath has \
+                     {} segments vs baseline {} — unselected inner circles \
+                     are leaking into the pocket as auto-islands",
+                    strategy,
+                    pocket_islands,
+                    with_inners_run.toolpath.len(),
+                    baseline.toolpath.len()
+                );
+            }
+        }
     }
 
     #[test]

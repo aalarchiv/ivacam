@@ -526,6 +526,29 @@ export interface OpEntry {
   /// user can mix Rectangle pockets with Ramp profiles in one project.
   tabType?: 'rectangle' | 'ramp';
   tabRampAngleDeg?: number;
+  /// Per-op feedrate override in mm/min. When set, replaces the tool's
+  /// `feedRate` for this op (cutting feed). Useful for finishing passes
+  /// or hard materials where you don't want to edit the tool entry.
+  /// Undefined = use the tool's default.
+  feedRateOverride?: number;
+  /// Per-op plunge-rate override in mm/min. Replaces the tool's
+  /// `plungeRate` for Z descents in this op only. Undefined = use the
+  /// tool's default.
+  plungeRateOverride?: number;
+  /// When > 0, slow the feed at sharp Line→Line corners by this
+  /// fraction. 0.0 (default) = no reduction. 0.5 = half feed at
+  /// corners. Most useful for zigzag pocket fills.
+  cornerFeedReduction?: number;
+  /// Optional smaller step for the FINAL Z pass (cleaner bottom). Same
+  /// sign convention as `step` (negative). Undefined = use `step` for
+  /// every pass.
+  finishStep?: number;
+  /// Cut past `depth` by this many mm (positive). Useful for
+  /// through-cuts on edge-clamped sheet.
+  throughDepth?: number;
+  /// Explicit ordered list of Z depths (negative numbers). When
+  /// non-empty, overrides `step`/`finishStep`/`throughDepth`.
+  depthList?: number[];
 }
 
 export interface ProjectFile {

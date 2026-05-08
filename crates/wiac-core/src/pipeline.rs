@@ -727,8 +727,11 @@ fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, Pipel
         mist: matches!(tool.coolant, crate::project::Coolant::Mist),
         flood: matches!(tool.coolant, crate::project::Coolant::Flood),
         dragoff: tool.dragoff,
-        rate_v: tool.plunge_rate,
-        rate_h: tool.feed_rate,
+        // Per-op overrides win over the tool library defaults — handy
+        // for finishing passes or hard materials without editing the
+        // tool entry itself.
+        rate_v: op.params.plunge_rate_override.unwrap_or(tool.plunge_rate),
+        rate_h: op.params.feed_rate_override.unwrap_or(tool.feed_rate),
     };
     let offset = match op.kind {
         OperationKind::Profile { offset } => offset,
@@ -748,6 +751,10 @@ fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, Pipel
         offset,
         overcut: op.params.overcut,
         plunge: op.params.plunge,
+        corner_feed_reduction: op.params.corner_feed_reduction.clamp(0.0, 0.95),
+        finish_step: op.params.finish_step,
+        through_depth: op.params.through_depth.max(0.0),
+        depth_list: op.params.depth_list.clone(),
     };
     setup.pockets = match op.kind {
         OperationKind::Pocket { strategy } => PocketConfig {
@@ -787,8 +794,12 @@ fn header_setup_for(project: &Project) -> Setup {
                 mist: matches!(tool.coolant, crate::project::Coolant::Mist),
                 flood: matches!(tool.coolant, crate::project::Coolant::Flood),
                 dragoff: tool.dragoff,
-                rate_v: tool.plunge_rate,
-                rate_h: tool.feed_rate,
+                // Per-op overrides (9vr) carry through into the program-
+                // header feed too — otherwise the header emits the tool
+                // default and the user sees an extra `F800` line at the
+                // top despite the override.
+                rate_v: op.params.plunge_rate_override.unwrap_or(tool.plunge_rate),
+                rate_h: op.params.feed_rate_override.unwrap_or(tool.feed_rate),
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
@@ -2336,6 +2347,210 @@ mod tests {
             g81_count, 1,
             "expected exactly one drill cycle in selection-restricted output:\n{}",
             resp.gcode
+        );
+    }
+
+    /// finish_step (smaller than step) emits an extra Z pass at the
+    /// nominal depth from a shallower pre-finish z. Verifies the gcode
+    /// has cuts at both the pre-finish Z and the bottom Z.
+    #[test]
+    fn finish_step_emits_extra_thin_final_pass() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -2.0;
+        params.step = -1.0;
+        params.start_depth = 0.0;
+        params.finish_step = Some(-0.2);
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Expect Z-1 (pass 1), Z-1.8 (pre-finish), Z-2 (final) all to appear.
+        assert!(resp.gcode.contains("Z-1\n") || resp.gcode.contains("Z-1 "));
+        assert!(resp.gcode.contains("Z-1.8"));
+        assert!(resp.gcode.contains("Z-2\n") || resp.gcode.contains("Z-2 "));
+    }
+
+    /// through_depth extends the cut past the nominal depth so
+    /// through-cuts on edge-clamped sheet clear the bottom.
+    #[test]
+    fn through_depth_extends_final_z() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -2.0;
+        params.step = -1.0;
+        params.through_depth = 0.5;
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // total_depth becomes -2.5, so the deepest cut should reach -2.5.
+        assert!(
+            resp.gcode.contains("Z-2.5"),
+            "expected through-cut Z-2.5 in gcode",
+        );
+    }
+
+    /// depth_list overrides the step schedule. Each listed Z must appear.
+    #[test]
+    fn depth_list_overrides_step_schedule() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -3.0;
+        params.step = -1.0;
+        params.depth_list = vec![-0.5, -1.5, -3.0];
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("Z-0.5"));
+        assert!(resp.gcode.contains("Z-1.5"));
+        assert!(resp.gcode.contains("Z-3"));
+        // step-schedule values that aren't in the list should be absent.
+        assert!(!resp.gcode.contains("Z-1\n") && !resp.gcode.contains("Z-1 "));
+        assert!(!resp.gcode.contains("Z-2\n") && !resp.gcode.contains("Z-2 "));
+    }
+
+    /// Per-op feedrate overrides win over the tool's defaults.
+    #[test]
+    fn feed_rate_override_appears_in_gcode() {
+        let mut params = OperationParams::mill_default();
+        params.feed_rate_override = Some(123);
+        params.plunge_rate_override = Some(45);
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("F123"),
+            "expected feed_rate_override 123 in gcode, got:\n{}",
+            resp.gcode,
+        );
+        assert!(
+            resp.gcode.contains("F45"),
+            "expected plunge_rate_override 45 in gcode",
+        );
+        // Tool's defaults (800 / 100) should NOT appear when overridden.
+        assert!(!resp.gcode.lines().any(|l| l.trim() == "F800"));
+    }
+
+    /// Corner feed reduction emits a slower F before sharp turns.
+    /// Verified on a zigzag pocket where adjacent strokes are joined
+    /// by a 180° turn — exactly the worst-case for high-feed motion.
+    #[test]
+    fn corner_feed_reduction_emits_slower_f_at_sharp_turns() {
+        let mut params = OperationParams::mill_default();
+        params.feed_rate_override = Some(1000);
+        params.corner_feed_reduction = 0.5; // halve at corners
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Zigzag,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("F500"),
+            "expected reduced corner feed F500 (= 1000 * 0.5) in gcode",
         );
     }
 

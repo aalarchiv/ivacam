@@ -230,10 +230,27 @@ export interface components {
         MachineMode: "mill" | "laser" | "drag";
         MillConfig: {
             active: boolean;
+            /**
+             * Format: double
+             * @description When > 0, slow the feedrate at sharp line-to-line corners by this fraction so the machine doesn't dwell on the corner with high accel demand. 0.0 = no reduction (current behavior). 0.5 = half the feed at corners. Most useful for zigzag pocket fills with their many 180° turns.
+             * @default 0
+             */
+            corner_feed_reduction: number;
             /** Format: double */
             depth: number;
+            /**
+             * @description Explicit ordered list of Z depths to cut at. When non-empty, overrides the step / finish_step / through_depth schedule.
+             * @default []
+             */
+            depth_list: number[];
             /** Format: double */
             fast_move_z: number;
+            /**
+             * Format: double
+             * @description Optional smaller step for the FINAL Z pass (cleaner bottom finish). None = use `step` for every pass.
+             * @default null
+             */
+            finish_step: number | null;
             helix_mode: boolean;
             objectorder: components["schemas"]["ObjectOrder"];
             offset: components["schemas"]["ToolOffset"];
@@ -257,6 +274,12 @@ export interface components {
              * @description Per-pass z step (negative ⇒ down).
              */
             step: number;
+            /**
+             * Format: double
+             * @description Cut past `depth` by this many mm (positive). Used for through-cuts on edge-clamped sheet.
+             * @default 0
+             */
+            through_depth: number;
         };
         /** @enum {string} */
         MoveKind: "rapid" | "cut" | "plunge" | "retract" | "arc";
@@ -305,6 +328,11 @@ export interface components {
             type: "helix";
         };
         OperationParams: {
+            /**
+             * Format: double
+             * @description When > 0, slow the feed at sharp corners by this fraction so the machine doesn't dwell on the corner with high accel demand. 0.0 = no reduction (current behavior). 0.5 = half the feed at corners. Most useful for zigzag pocket fills with their many 180° turns.
+             */
+            corner_feed_reduction?: number;
             /** @description Cut direction for the main (roughing) passes. Default: Conventional. See [`CutDirection`] for the winding rules. */
             cut_direction?: components["schemas"]["CutDirection"];
             /**
@@ -312,13 +340,25 @@ export interface components {
              * @description Final cut depth (negative number — a depth, not a height).
              */
             depth: number;
+            /** @description Explicit list of Z depths for each pass, overriding the step+finish_step schedule. Useful for non-linear schedules (shallower at start for tough material, deeper later, slow finish at the end). Each entry is an absolute Z (negative number); the cutter visits them in order. Empty = use the step-down loop. */
+            depth_list?: number[];
             /**
              * Format: double
              * @description Z for rapid moves between cuts.
              */
             fast_move_z: number;
+            /**
+             * Format: uint32
+             * @description Override the tool's `feed_rate` for this op only. Some materials or finishing passes need a slower feed than the tool's default; rather than editing the tool library, set this per-op. None = use the tool's `feed_rate`. Units: mm/min.
+             */
+            feed_rate_override?: number | null;
             /** @description Cut direction for the finishing pass — the offset that defines the wall surface (Pocket level=0 ring; Profile single-pass cut). Default: Conventional, regardless of the main `cut_direction`. Surface quality on the finish wall is almost always best with conventional milling on hobby machines. */
             finish_cut_direction?: components["schemas"]["CutDirection"];
+            /**
+             * Format: double
+             * @description Optional smaller step for the FINAL Z pass, for a cleaner bottom finish. None = use the same `step` for the last pass too. Negative just like `step`.
+             */
+            finish_step?: number | null;
             /**
              * @description Helical descent inside a closed contour.
              * @default false
@@ -346,6 +386,11 @@ export interface components {
             overcut: boolean;
             /** @description How the cutter descends into material at the start of each Z pass. Default Direct (straight plunge). Ramp { angle_deg } walks forward along the path while descending Z, taking a chip in both directions simultaneously — required for non-center-cutting bits and for harder materials. */
             plunge?: components["schemas"]["PlungeStrategy"];
+            /**
+             * Format: uint32
+             * @description Override the tool's `plunge_rate` (Z feed) for this op. Useful for slowing the plunge on hard materials without changing the XY feed. Units: mm/min.
+             */
+            plunge_rate_override?: number | null;
             /** @default false */
             pocket_insideout: boolean;
             /** @default false */
@@ -377,6 +422,11 @@ export interface components {
              *     }
              */
             tabs: components["schemas"]["TabsConfig"];
+            /**
+             * Format: double
+             * @description Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
+             */
+            through_depth?: number;
             /**
              * Format: double
              * @description XY overlap between consecutive pocket cuts, as a fraction in (0, 1). Drives the cascade step (= tool_diameter * (1 - overlap)) and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a conservative default that fills tight pockets cleanly. Higher overlap = smaller step = more rings, slower cut, better finish. Lower overlap = bigger step = fewer rings, faster cut, may leave stripes. Honored only for Pocket ops; ignored elsewhere. Stored at 0.0 means "use the default" so old payloads still work.

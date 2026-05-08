@@ -102,6 +102,12 @@ interface WireOp {
       | { kind: 'ramp'; angle_deg: number }
       | { kind: 'helix'; angle_deg: number; radius_mm: number };
     xy_overlap?: number;
+    feed_rate_override?: number;
+    plunge_rate_override?: number;
+    corner_feed_reduction?: number;
+    finish_step?: number;
+    through_depth?: number;
+    depth_list?: number[];
   };
 }
 
@@ -250,6 +256,24 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
       // Only emit xy_overlap when set; the Rust default kicks in on 0.
       ...(op.xyOverlap !== undefined && op.xyOverlap > 0
         ? { xy_overlap: op.xyOverlap }
+        : {}),
+      ...(op.feedRateOverride !== undefined && op.feedRateOverride > 0
+        ? { feed_rate_override: op.feedRateOverride }
+        : {}),
+      ...(op.plungeRateOverride !== undefined && op.plungeRateOverride > 0
+        ? { plunge_rate_override: op.plungeRateOverride }
+        : {}),
+      ...(op.cornerFeedReduction !== undefined && op.cornerFeedReduction > 0
+        ? { corner_feed_reduction: op.cornerFeedReduction }
+        : {}),
+      ...(op.finishStep !== undefined && op.finishStep !== 0
+        ? { finish_step: op.finishStep }
+        : {}),
+      ...(op.throughDepth !== undefined && op.throughDepth > 0
+        ? { through_depth: op.throughDepth }
+        : {}),
+      ...(op.depthList && op.depthList.length > 0
+        ? { depth_list: op.depthList }
         : {}),
     },
   };

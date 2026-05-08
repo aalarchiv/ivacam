@@ -437,14 +437,25 @@ fn multi_pass<P: PostProcessor>(
     tabs: &[crate::cam::offsets::TabPoint],
     post: &mut P,
 ) {
-    let total_depth = setup.mill.depth;
-    let step = if setup.mill.step.abs() < 1e-9 {
+    // Build the Z schedule. depth_list (when non-empty) wins as an
+    // explicit list; otherwise use step + finish_step + through_depth
+    // to derive a step-down sequence ending at depth - through_depth.
+    let nominal_depth = setup.mill.depth;
+    let total_depth = nominal_depth - setup.mill.through_depth.max(0.0);
+    let step_raw = if setup.mill.step.abs() < 1e-9 {
         total_depth
     } else if setup.mill.step > 0.0 {
         -setup.mill.step
     } else {
         setup.mill.step
     };
+    let z_schedule = build_z_schedule(
+        setup.mill.start_depth,
+        total_depth,
+        step_raw,
+        setup.mill.finish_step,
+        &setup.mill.depth_list,
+    );
     let tabs_z = total_depth + setup.tabs.height.abs();
     let tab_radius = (setup.tool.diameter * 0.5).max(0.5);
     // Ramp profile only applies when tab_type=Ramp. ramp_length is the
@@ -506,8 +517,11 @@ fn multi_pass<P: PostProcessor>(
     // when it matters most. We track them with separate state.
     let mut prev_z: Option<f64> = None;
     let mut ramp_from: f64 = setup.mill.start_depth;
-    let mut z = (setup.mill.start_depth + step).max(total_depth);
-    loop {
+    // Walk the depth schedule. When empty (degenerate) bail.
+    if z_schedule.is_empty() {
+        return;
+    }
+    for &z in &z_schedule {
         let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
         if let (true, Some(pz)) = (helix, prev_z) {
             // Spiral from prev_z down to z while tracing the segments.
@@ -526,7 +540,13 @@ fn multi_pass<P: PostProcessor>(
             let start = segments.first().map(|s| s.start).unwrap_or(plan.center);
             post.linear(Some(start.x), Some(start.y), Some(z));
             let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-            emit_path_with_dragoff(segments, dragoff, post);
+            emit_path_with_corner_feed(
+                segments,
+                dragoff,
+                setup.tool.rate_h,
+                setup.mill.corner_feed_reduction,
+                post,
+            );
         } else if let Some(angle) = ramp_angle_deg.filter(|_| !pass_uses_tabs) {
             // Ramp plunge: descend from pz to z over the first
             // ramp_length of arc length, then continue at z for the
@@ -551,7 +571,13 @@ fn multi_pass<P: PostProcessor>(
                 post.linear(None, None, Some(z));
                 post.feedrate(setup.tool.rate_h);
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-                emit_path_with_dragoff(segments, dragoff, post);
+                emit_path_with_corner_feed(
+                    segments,
+                    dragoff,
+                    setup.tool.rate_h,
+                    setup.mill.corner_feed_reduction,
+                    post,
+                );
             }
         } else {
             post.feedrate(setup.tool.rate_v);
@@ -569,15 +595,17 @@ fn multi_pass<P: PostProcessor>(
                 );
             } else {
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-                emit_path_with_dragoff(segments, dragoff, post);
+                emit_path_with_corner_feed(
+                    segments,
+                    dragoff,
+                    setup.tool.rate_h,
+                    setup.mill.corner_feed_reduction,
+                    post,
+                );
             }
         }
         prev_z = Some(z);
         ramp_from = z;
-        if z <= total_depth + 1e-9 {
-            break;
-        }
-        z = (z + step).max(total_depth);
     }
     // Ramp plunge leaves a sloped section at the start of every pass —
     // the cells under the ramp sit at progressively descending Z, NOT
@@ -594,7 +622,13 @@ fn multi_pass<P: PostProcessor>(
     if needs_ramp_cleanup {
         post.feedrate(setup.tool.rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-        emit_path_with_dragoff(segments, dragoff, post);
+        emit_path_with_corner_feed(
+            segments,
+            dragoff,
+            setup.tool.rate_h,
+            setup.mill.corner_feed_reduction,
+            post,
+        );
     }
 }
 
@@ -1185,6 +1219,141 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
 /// `dragoff > 0`, every line→line corner is preceded by an arc that swivels
 /// the blade around the corner point so the trail aligns with the new
 /// direction. Mirrors `viaconstructor.machine_cmd.segment2machine_cmd`.
+/// Build the per-pass Z schedule for `multi_pass`. When `depth_list`
+/// is non-empty it wins as an explicit list (clamped to never go above
+/// `start_depth` so a stale list doesn't accidentally cut air).
+/// Otherwise: descend from `start_depth` by `step` (negative number)
+/// per pass until reaching `total_depth`. When `finish_step` is set
+/// and smaller in magnitude than `step`, the last pass cuts at
+/// `total_depth` from `total_depth - finish_step` instead of one full
+/// `step` higher — gives a thin finish pass for cleaner bottom finish.
+fn build_z_schedule(
+    start_depth: f64,
+    total_depth: f64,
+    step: f64,
+    finish_step: Option<f64>,
+    depth_list: &[f64],
+) -> Vec<f64> {
+    if !depth_list.is_empty() {
+        // Take the user's list verbatim (clamped above start_depth so
+        // we don't accidentally cut air).
+        return depth_list
+            .iter()
+            .copied()
+            .filter(|&z| z <= start_depth + 1e-9)
+            .collect();
+    }
+    let mut out = Vec::new();
+    if (step.abs() < 1e-9) || (start_depth - total_depth).abs() < 1e-9 {
+        out.push(total_depth);
+        return out;
+    }
+    // Negative step: start_depth + step < start_depth.
+    let mut z = (start_depth + step).max(total_depth);
+    let finish_mag = finish_step.map(f64::abs).filter(|f| *f > 1e-9);
+    loop {
+        // If the next pass would land at total_depth exactly and a
+        // finish_step is set, splice it in: emit z one step shallower
+        // than total_depth, then a final pass at total_depth.
+        if z <= total_depth + 1e-9 {
+            // Last pass.
+            if let Some(fs) = finish_mag {
+                let pre_finish = total_depth + fs;
+                if !out.is_empty() && (out.last().copied().unwrap_or(0.0) - pre_finish).abs() > 1e-9 && pre_finish < start_depth - 1e-9 {
+                    out.push(pre_finish);
+                }
+            }
+            out.push(total_depth);
+            return out;
+        }
+        out.push(z);
+        z = (z + step).max(total_depth);
+    }
+}
+
+/// Walk `segments` like `emit_path_with_dragoff` but reduce the feed
+/// at sharp line-line corners by `corner_reduction` (a fraction in
+/// [0, 1]). Skipped when `corner_reduction <= 0`, when `dragoff > 0`
+/// (drag knife trail compensation already smooths corners), or when
+/// the segment list is too short to have corners.
+///
+/// Detection threshold: the angle change at a join >= 60° (computed
+/// as the supplement of the dot product). The slowed feed is emitted
+/// before the second segment; the original feed is restored after.
+fn emit_path_with_corner_feed<P: PostProcessor>(
+    segments: &[Segment],
+    dragoff: f64,
+    base_rate: u32,
+    corner_reduction: f64,
+    post: &mut P,
+) {
+    if corner_reduction <= 1e-6 || dragoff > 1e-9 || segments.len() < 2 {
+        emit_path_with_dragoff(segments, dragoff, post);
+        return;
+    }
+    let reduced_rate = ((base_rate as f64) * (1.0 - corner_reduction)).max(1.0) as u32;
+    let cos_threshold = 0.5_f64; // 60° turn → cos(angle) <= 0.5
+    let mut feed_currently_reduced = false;
+    let mut prev_dir: Option<(f64, f64)> = None;
+    for (i, seg) in segments.iter().enumerate() {
+        // Restore feed for arcs and points — they don't have sharp
+        // corners by definition.
+        if !matches!(seg.kind, SegmentKind::Line) {
+            if feed_currently_reduced {
+                post.feedrate(base_rate);
+                feed_currently_reduced = false;
+            }
+            // Single-segment emit reusing emit_path_with_dragoff's logic
+            // would be over-engineered; just inline arc/point here.
+            match seg.kind {
+                SegmentKind::Arc | SegmentKind::Circle => {
+                    let center = seg.center.unwrap_or_else(|| {
+                        math::bulge_to_arc(seg.start, seg.end, seg.bulge).0
+                    });
+                    let cx = center.x - seg.start.x;
+                    let cy = center.y - seg.start.y;
+                    if seg.bulge > 0.0 {
+                        post.arc_ccw(Some(seg.end.x), Some(seg.end.y), None, Some(cx), Some(cy));
+                    } else {
+                        post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(cx), Some(cy));
+                    }
+                }
+                SegmentKind::Point => {
+                    post.linear(Some(seg.start.x), Some(seg.start.y), None);
+                }
+                _ => {}
+            }
+            prev_dir = None;
+            continue;
+        }
+        let dx = seg.end.x - seg.start.x;
+        let dy = seg.end.y - seg.start.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        let cur_dir = if len > 1e-9 { (dx / len, dy / len) } else { (0.0, 0.0) };
+        let needs_reduction = match prev_dir {
+            Some((px, py)) if i > 0 => {
+                // dot product < cos_threshold means the turn is
+                // sharper than ~60°.
+                let dot = px * cur_dir.0 + py * cur_dir.1;
+                dot < cos_threshold
+            }
+            _ => false,
+        };
+        if needs_reduction && !feed_currently_reduced {
+            post.feedrate(reduced_rate);
+            feed_currently_reduced = true;
+        } else if !needs_reduction && feed_currently_reduced {
+            post.feedrate(base_rate);
+            feed_currently_reduced = false;
+        }
+        post.linear(Some(seg.end.x), Some(seg.end.y), None);
+        prev_dir = Some(cur_dir);
+    }
+    if feed_currently_reduced {
+        post.feedrate(base_rate);
+    }
+}
+
 fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, post: &mut P) {
     use std::f64::consts::{FRAC_PI_2, PI};
     let mut last_motion: Option<f64> = None;

@@ -196,6 +196,61 @@
           onchange={(e) => patch('step', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
         />
       </label>
+      <label
+        class="row"
+        title="Optional smaller step for the FINAL Z pass — gives a thin finishing pass at the bottom for cleaner surface. Same sign as Step (negative). Empty = same as Step."
+      >
+        <span>Finish step</span>
+        <input
+          type="number"
+          step="0.05"
+          placeholder="same as step"
+          value={op.finishStep ?? ''}
+          onchange={(e) => {
+            const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+            patch('finishStep', isNaN(v) ? undefined : v);
+          }}
+        />
+      </label>
+      <label
+        class="row"
+        title="Cut past the nominal depth by this many mm. Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom. 0 = no extension."
+      >
+        <span>Through depth</span>
+        <input
+          type="number"
+          step="0.1"
+          min="0"
+          value={op.throughDepth ?? 0}
+          onchange={(e) => {
+            const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+            patch('throughDepth', isNaN(v) || v <= 0 ? undefined : v);
+          }}
+        />
+      </label>
+      <label
+        class="row"
+        title="Explicit comma-separated list of Z depths (negative numbers, e.g. -0.5, -1.5, -3). When non-empty, overrides Step / Finish step / Through depth. Empty = use the step-down loop."
+      >
+        <span>Depth list</span>
+        <input
+          type="text"
+          placeholder="e.g. -0.5, -1.5, -3"
+          value={op.depthList ? op.depthList.join(', ') : ''}
+          onchange={(e) => {
+            const text = (e.currentTarget as HTMLInputElement).value.trim();
+            if (text === '') {
+              patch('depthList', undefined);
+              return;
+            }
+            const parts = text
+              .split(',')
+              .map((s) => parseFloat(s.trim()))
+              .filter((n) => !isNaN(n));
+            patch('depthList', parts.length > 0 ? parts : undefined);
+          }}
+        />
+      </label>
       {#if op.kind === 'profile' || op.kind === 'pocket'}
         <label class="row" title={CUT_DIR_HELP[op.cutDirection ?? 'conventional']}>
           <span>Direction</span>
@@ -490,6 +545,54 @@
                 const cur = op.drillCycle ?? ({ kind: 'simple' } as DrillCycle);
                 patch('drillCycle', { ...cur, dwell_sec: v } as DrillCycle);
               }
+            }}
+          />
+        </label>
+      </fieldset>
+    {/if}
+
+    {#if op.kind === 'profile' || op.kind === 'pocket' || op.kind === 'engrave' || op.kind === 'drag_knife'}
+      <fieldset>
+        <legend>Feeds (overrides)</legend>
+        <label class="row" title="Override the tool's feed rate (mm/min) for this op only. Leave empty to use the tool default.">
+          <span>Feed rate</span>
+          <input
+            type="number"
+            step="50"
+            min="0"
+            placeholder="tool default"
+            value={op.feedRateOverride ?? ''}
+            onchange={(e) => {
+              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+              patch('feedRateOverride', isNaN(v) || v <= 0 ? undefined : v);
+            }}
+          />
+        </label>
+        <label class="row" title="Override the tool's plunge rate (mm/min) for Z descents in this op. Leave empty to use the tool default.">
+          <span>Plunge rate</span>
+          <input
+            type="number"
+            step="10"
+            min="0"
+            placeholder="tool default"
+            value={op.plungeRateOverride ?? ''}
+            onchange={(e) => {
+              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+              patch('plungeRateOverride', isNaN(v) || v <= 0 ? undefined : v);
+            }}
+          />
+        </label>
+        <label class="row" title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns.">
+          <span>Corner slow</span>
+          <input
+            type="number"
+            step="0.05"
+            min="0"
+            max="0.95"
+            value={op.cornerFeedReduction ?? 0}
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              patch('cornerFeedReduction', isNaN(v) ? 0 : Math.max(0, Math.min(0.95, v)));
             }}
           />
         </label>

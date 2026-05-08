@@ -71,6 +71,25 @@ pub struct MillConfig {
     /// cutter takes a chip in both Z and XY simultaneously.
     #[serde(default)]
     pub plunge: PlungeStrategy,
+    /// When > 0, slow the feedrate at sharp line-to-line corners by
+    /// this fraction so the machine doesn't dwell on the corner with
+    /// high accel demand. 0.0 = no reduction (current behavior). 0.5 =
+    /// half the feed at corners. Most useful for zigzag pocket fills
+    /// with their many 180° turns.
+    #[serde(default)]
+    pub corner_feed_reduction: f64,
+    /// Optional smaller step for the FINAL Z pass (cleaner bottom
+    /// finish). None = use `step` for every pass.
+    #[serde(default)]
+    pub finish_step: Option<f64>,
+    /// Cut past `depth` by this many mm (positive). Used for
+    /// through-cuts on edge-clamped sheet.
+    #[serde(default)]
+    pub through_depth: f64,
+    /// Explicit ordered list of Z depths to cut at. When non-empty,
+    /// overrides the step / finish_step / through_depth schedule.
+    #[serde(default)]
+    pub depth_list: Vec<f64>,
 }
 
 /// Per-pass entry strategy.
@@ -119,6 +138,10 @@ impl Default for MillConfig {
             offset: ToolOffset::None,
             overcut: false,
             plunge: PlungeStrategy::default(),
+            corner_feed_reduction: 0.0,
+            finish_step: None,
+            through_depth: 0.0,
+            depth_list: Vec::new(),
         }
     }
 }

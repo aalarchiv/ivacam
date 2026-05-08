@@ -353,6 +353,49 @@ pub struct OperationParams {
     /// and for harder materials.
     #[serde(default, skip_serializing_if = "is_default_plunge")]
     pub plunge: crate::cam::setup::PlungeStrategy,
+
+    /// Override the tool's `feed_rate` for this op only. Some materials
+    /// or finishing passes need a slower feed than the tool's default;
+    /// rather than editing the tool library, set this per-op. None =
+    /// use the tool's `feed_rate`. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_rate_override: Option<u32>,
+    /// Override the tool's `plunge_rate` (Z feed) for this op. Useful
+    /// for slowing the plunge on hard materials without changing the
+    /// XY feed. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plunge_rate_override: Option<u32>,
+    /// When > 0, slow the feed at sharp corners by this fraction so the
+    /// machine doesn't dwell on the corner with high accel demand. 0.0
+    /// = no reduction (current behavior). 0.5 = half the feed at
+    /// corners. Most useful for zigzag pocket fills with their many
+    /// 180° turns.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub corner_feed_reduction: f64,
+
+    /// Optional smaller step for the FINAL Z pass, for a cleaner bottom
+    /// finish. None = use the same `step` for the last pass too.
+    /// Negative just like `step`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_step: Option<f64>,
+    /// Cut past the nominal `depth` by this much (positive number — gets
+    /// subtracted from the working depth). Useful for through-cuts on
+    /// edge-clamped sheet so the cutter clears the bottom even with
+    /// minor stock thickness variation. 0.0 = no extension.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub through_depth: f64,
+    /// Explicit list of Z depths for each pass, overriding the
+    /// step+finish_step schedule. Useful for non-linear schedules
+    /// (shallower at start for tough material, deeper later, slow
+    /// finish at the end). Each entry is an absolute Z (negative
+    /// number); the cutter visits them in order. Empty = use the
+    /// step-down loop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depth_list: Vec<f64>,
+}
+
+fn is_zero_f64(v: &f64) -> bool {
+    v.abs() < 1e-9
 }
 
 fn is_default_plunge(p: &crate::cam::setup::PlungeStrategy) -> bool {
@@ -391,6 +434,12 @@ impl OperationParams {
             cut_direction: CutDirection::Conventional,
             finish_cut_direction: CutDirection::Conventional,
             plunge: crate::cam::setup::PlungeStrategy::Direct,
+            feed_rate_override: None,
+            plunge_rate_override: None,
+            corner_feed_reduction: 0.0,
+            finish_step: None,
+            through_depth: 0.0,
+            depth_list: Vec::new(),
         }
     }
 }

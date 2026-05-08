@@ -401,11 +401,17 @@ export type CutDirection = 'conventional' | 'climb';
 /// Plunge entry strategy. `direct` is a straight Z dive (current
 /// behavior); `ramp` walks forward along the path while descending Z so
 /// the cutter takes a chip in both directions simultaneously — required
-/// for non-center-cutting bits and for harder materials. The angle is
-/// in degrees, conservative default 3°.
+/// for non-center-cutting bits and for harder materials. `helix` is a
+/// start-of-cut spiral descent on a small circle inside the closed
+/// pocket boundary — the standard for non-center-cutting endmills and
+/// harder materials. Angles are in degrees, conservative default 3°.
+/// Helix `radius_mm` is the spiral radius; pick something larger than
+/// the tool radius so the helix carves a small clearance hole inside
+/// the pocket. Sane default: 1.5 × tool radius.
 export type PlungeStrategy =
   | { kind: 'direct' }
-  | { kind: 'ramp'; angle_deg: number };
+  | { kind: 'ramp'; angle_deg: number }
+  | { kind: 'helix'; angle_deg: number; radius_mm: number };
 /// How a multi-object source selection is combined into the region(s)
 /// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
 /// Default 'auto' is containment-aware (outer + inner = annulus).

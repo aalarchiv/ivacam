@@ -13,13 +13,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::cam::chaining::{classify_containment, segments_to_objects};
-use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::offsets::{
-    apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets,
-    parallel_offset_inward, parallel_offset_outward, pocket_for_object,
-    PolylineOffset, TabPoint,
+    apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_inward,
+    parallel_offset_outward, pocket_for_object, PolylineOffset, TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
+use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::{segments_to_points, VcObject};
 use crate::gcode::{
     emit_polylines_block, emit_program_begin, emit_program_end, grbl, hpgl, linuxcnc, preview,
@@ -130,22 +129,25 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     let header_setup = header_setup_for(&project);
     let stats_collector = std::cell::RefCell::new((0usize, 0usize, 0usize)); // (closed, offsets, _)
     let progress_ref = &progress;
-    let n_ops = project.operations.iter().filter(|o| o.enabled).count().max(1);
+    let n_ops = project
+        .operations
+        .iter()
+        .filter(|o| o.enabled)
+        .count()
+        .max(1);
     let mut warnings: Vec<PipelineWarning> = Vec::new();
 
     let gcode = match post_kind {
-        PostProcessorKind::Linuxcnc => {
-            run_per_op(
-                &project,
-                &mut objects.clone(),
-                &header_setup,
-                &mut linuxcnc::Post::new(),
-                &stats_collector,
-                progress_ref,
-                n_ops,
-                &mut warnings,
-            )?
-        }
+        PostProcessorKind::Linuxcnc => run_per_op(
+            &project,
+            &mut objects.clone(),
+            &header_setup,
+            &mut linuxcnc::Post::new(),
+            &stats_collector,
+            progress_ref,
+            n_ops,
+            &mut warnings,
+        )?,
         PostProcessorKind::Grbl => run_per_op(
             &project,
             &mut objects.clone(),
@@ -375,10 +377,8 @@ fn build_op_offsets(
             OperationKind::Pocket { strategy } => {
                 // Skip objects that are geometrically inside another
                 // selected object — they belong to that pocket as islands.
-                let contained_by_selected = obj
-                    .outer_objects
-                    .iter()
-                    .any(|o| selected_set.contains(o));
+                let contained_by_selected =
+                    obj.outer_objects.iter().any(|o| selected_set.contains(o));
                 if contained_by_selected {
                     continue;
                 }
@@ -637,11 +637,21 @@ fn synthesize_region_object(region: &CombinedRegion) -> VcObject {
     let pts = &region.boundary;
     let mut segments = Vec::with_capacity(pts.len());
     for win in pts.windows(2) {
-        segments.push(Segment::line(win[0], win[1], region.layer.clone(), region.color));
+        segments.push(Segment::line(
+            win[0],
+            win[1],
+            region.layer.clone(),
+            region.color,
+        ));
     }
     if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
         if first.distance(*last) > 1e-6 {
-            segments.push(Segment::line(*last, *first, region.layer.clone(), region.color));
+            segments.push(Segment::line(
+                *last,
+                *first,
+                region.layer.clone(),
+                region.color,
+            ));
         }
     }
     let mut obj = VcObject::new(segments, true);
@@ -667,9 +677,7 @@ fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> bool {
 /// Build a Setup that represents this single op — copy in its tool from
 /// `project.tools` and its params.kind-driven mill/pockets/tabs/leads.
 fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, PipelineError> {
-    use crate::cam::setup::{
-        MachineMode, MillConfig, PocketConfig, ToolConfig, ToolOffset,
-    };
+    use crate::cam::setup::{MachineMode, MillConfig, PocketConfig, ToolConfig, ToolOffset};
 
     let tool = project
         .tools
@@ -798,7 +806,7 @@ fn approx_pt(a: Point2, b: Point2) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::ToolOffset;
+    use crate::cam::setup::{TabType, TabsConfig, ToolOffset};
     use crate::geometry::Segment;
     use crate::project::{
         Coolant, Operation, OperationKind, OperationParams, OperationSource, SourceCombine,
@@ -874,12 +882,11 @@ mod tests {
         assert!(resp.gcode.contains("; OP 1"));
         // Cut segments carry the op id; program-header rapids carry op_id=0.
         assert!(resp.toolpath.iter().any(|s| s.op_id == 1));
-        assert!(
-            resp.toolpath
-                .iter()
-                .filter(|s| s.op_id != 0)
-                .all(|s| s.op_id == 1)
-        );
+        assert!(resp
+            .toolpath
+            .iter()
+            .filter(|s| s.op_id != 0)
+            .all(|s| s.op_id == 1));
     }
 
     #[test]
@@ -937,7 +944,10 @@ mod tests {
         .unwrap();
         let phases = phases.into_inner();
         for expected in ["import", "objects", "gcode", "preview", "done"] {
-            assert!(phases.contains(&expected.to_string()), "missing {expected} in {phases:?}");
+            assert!(
+                phases.contains(&expected.to_string()),
+                "missing {expected} in {phases:?}"
+            );
         }
     }
 
@@ -1097,7 +1107,10 @@ mod tests {
             |_, _, _| {},
         )
         .unwrap();
-        assert!(resp.stats.offset_count >= 1, "Difference produced no offsets");
+        assert!(
+            resp.stats.offset_count >= 1,
+            "Difference produced no offsets"
+        );
         // The cut path must include moves that are NOT in the inner box —
         // i.e., the cutter does visit points outside the inner 20x20.
         // A trivially-wrong implementation that pocketed only the inner
@@ -1110,8 +1123,14 @@ mod tests {
             let in_outer = |x: f64, y: f64| x > 0.0 && x < 50.0 && y > 0.0 && y < 50.0;
             in_outer(s.from.x, s.from.y) && in_outer(s.to.x, s.to.y)
         });
-        assert!(visited_outside_inner, "annulus pocket should reach outside the inner box");
-        assert!(visited_inside_outer, "annulus pocket should stay inside the outer box");
+        assert!(
+            visited_outside_inner,
+            "annulus pocket should reach outside the inner box"
+        );
+        assert!(
+            visited_inside_outer,
+            "annulus pocket should stay inside the outer box"
+        );
     }
 
     /// Climb on the main + conventional on the finishing pass: walks the
@@ -1255,7 +1274,12 @@ mod tests {
             .iter()
             .filter(|w| w.kind == "tool_too_large")
             .collect();
-        assert_eq!(too_large.len(), 1, "expected one tool_too_large warning, got {:?}", resp.warnings);
+        assert_eq!(
+            too_large.len(),
+            1,
+            "expected one tool_too_large warning, got {:?}",
+            resp.warnings
+        );
         assert_eq!(too_large[0].op_id, Some(7));
     }
 
@@ -1386,6 +1410,258 @@ mod tests {
         assert!(
             (horizontal_during_ramp - expected).abs() / expected < 0.25,
             "horizontal ramp length should be ~{expected:.2}mm, got {horizontal_during_ramp:.2}",
+        );
+    }
+
+    /// Helix entry on a 50×50 closed pocket boundary with a 3mm
+    /// endmill, helix radius 3mm, angle 3°. The first cut moves should
+    /// be `MoveKind::Arc` segments with monotonically descending Z,
+    /// completing at least one full revolution before the cutter
+    /// reaches the target depth (one revolution drops Z by
+    /// 2π·3·tan(3°) ≈ 0.99mm; for a 1mm step that's almost exactly
+    /// one revolution → we expect ≥1 full revolution before the cutter
+    /// is at -1).
+    #[test]
+    fn helix_plunge_emits_arc_arcs_descending_z() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = -1.0;
+        params.start_depth = 0.0;
+        params.plunge = crate::cam::setup::PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: 3.0,
+        };
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Helical pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Walk all op_id=1 moves until Z first reaches the cut depth.
+        // The descent portion should be exclusively Arc moves, and Z
+        // should be monotonically non-increasing (within a tiny epsilon
+        // for floating-point arc emission).
+        let path: Vec<_> = resp.toolpath.iter().filter(|s| s.op_id == 1).collect();
+        assert!(!path.is_empty(), "expected toolpath segments");
+        let mut arc_count = 0;
+        let mut last_z = f64::INFINITY;
+        let mut reached_depth = false;
+        for s in &path {
+            // Skip the initial rapid + plunge that lands the cutter
+            // above the helix start.
+            if matches!(
+                s.kind,
+                crate::gcode::preview::MoveKind::Rapid | crate::gcode::preview::MoveKind::Plunge
+            ) {
+                continue;
+            }
+            if matches!(s.kind, crate::gcode::preview::MoveKind::Arc) {
+                arc_count += 1;
+                assert!(
+                    s.to.z <= last_z + 1e-6,
+                    "helix Z should descend monotonically, but {} → {}",
+                    last_z,
+                    s.to.z,
+                );
+                last_z = s.to.z;
+            }
+            if s.to.z <= -0.999 {
+                reached_depth = true;
+                break;
+            }
+        }
+        assert!(reached_depth, "Z never reached cut depth via helix");
+        // One revolution = 2 semicircle arc moves; for ~1mm of descent
+        // at 3° / 3mm radius we expect at least one revolution → 2 arcs.
+        assert!(
+            arc_count >= 2,
+            "helix should emit ≥2 arc moves before reaching depth; got {arc_count}",
+        );
+    }
+
+    /// Helix radius < tool_radius → falls back to Ramp (and from there
+    /// to Direct if path too short). With a 6mm tool and helix
+    /// radius=1mm the helix would carve nothing the cutter doesn't
+    /// already cover, so we fall back. The first cutting move's Z
+    /// should start above the cut depth — that's the Ramp signature
+    /// (helix arcs would start at the previous Z, then descend to
+    /// depth on a small circle inside the polygon, NOT on the cut
+    /// path itself).
+    #[test]
+    fn helix_falls_back_to_ramp_when_radius_smaller_than_tool() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = -1.0;
+        params.start_depth = 0.0;
+        params.plunge = crate::cam::setup::PlungeStrategy::Helix {
+            angle_deg: 10.0,
+            radius_mm: 1.0,
+        };
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 6.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Helix-too-small".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let first_cutting = resp
+            .toolpath
+            .iter()
+            .find(|s| {
+                s.op_id == 1
+                    && matches!(
+                        s.kind,
+                        crate::gcode::preview::MoveKind::Cut | crate::gcode::preview::MoveKind::Arc
+                    )
+            })
+            .expect("expected at least one cut/arc move");
+        // Ramp signature: first cut starts at Z≈start_depth (=0), not
+        // at the cut depth. Helix entry would have its first Arc start
+        // at the helix-circle starting point inside the polygon, NOT
+        // on the cut path; here the first cut/arc is on the offset
+        // polyline (a rounded-corner outline of the square), so its
+        // XY is on that polyline. The discriminator is Z.
+        assert!(
+            first_cutting.from.z > -0.001,
+            "ramp fallback should start at Z≈0, got {}",
+            first_cutting.from.z,
+        );
+        // And the helix arcs we'd expect — a helix from start_depth
+        // to cut depth via 2 semicircle arcs each, centered well
+        // inside the polygon (tool radius 3 → boundary inset by 3 →
+        // polygon center ≈ (50, 50)) — would have arcs that DON'T
+        // touch the cut polyline. Verify there are no Arc moves at
+        // op_id=1 with from.z > -0.001 sitting near (50, 50).
+        let helix_arc_present = resp.toolpath.iter().any(|s| {
+            s.op_id == 1
+                && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                && s.from.z > -0.001
+                && (s.from.x - 50.0).hypot(s.from.y - 50.0) < 5.0
+        });
+        assert!(
+            !helix_arc_present,
+            "fallback should not emit a helix-entry arc near the polygon centroid",
+        );
+    }
+
+    /// Tabs active → helix entry isn't useful (tabs already manage Z
+    /// independently) so we fall back like Ramp does today: passes
+    /// where the path crosses tabs use the straight-plunge tabs walker.
+    #[test]
+    fn helix_with_tabs_active_falls_back() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -2.0;
+        params.step = -2.0;
+        params.start_depth = 0.0;
+        params.tabs = TabsConfig {
+            active: true,
+            width: 10.0,
+            height: 1.0,
+            tab_type: TabType::Rectangle,
+        };
+        params.plunge = crate::cam::setup::PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: 3.0,
+        };
+        let mut tabs_map: std::collections::HashMap<u32, Vec<crate::cam::offsets::TabPoint>> =
+            Default::default();
+        // Tab on the bottom edge (segment index 0 of the 100×100
+        // square). The pipeline routes tab points keyed by source
+        // segment index → owning chain object so the tab attaches to
+        // the polyline offset that's actually being cut.
+        tabs_map.insert(0, vec![crate::cam::offsets::TabPoint { x: 50.0, y: -1.5 }]);
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Helix-with-tabs".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+            }],
+            tabs: tabs_map,
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // With tabs active and a single Z pass that uses the tabs
+        // walker, the helix entry is suppressed. The first cut/arc
+        // move should NOT be an Arc — falls back to ramp (which falls
+        // back to direct because tabs disable ramp too in the same
+        // pass), so the cutter starts at depth and walks the path.
+        // With tabs active and a single Z pass that uses the tabs
+        // walker, the helix entry is suppressed. We detect this by
+        // looking for the absence of an Arc near the polygon centroid
+        // — the helix arcs would be centered there. The polygon is a
+        // 100×100 square offset Outside by tool_radius=1.5mm, so the
+        // boundary inset by -1.5 produces a 103×103 path centered at
+        // (50, 50). A helix entry arc would travel a circle of radius
+        // 3 around (50, 50); cut path arcs only appear at corners of
+        // the offset, far from (50, 50).
+        let helix_arc_present = resp.toolpath.iter().any(|s| {
+            s.op_id == 1
+                && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                && (s.from.x - 50.0).hypot(s.from.y - 50.0) < 10.0
+        });
+        assert!(
+            !helix_arc_present,
+            "tabs-active path should not emit a helical entry arc near the polygon centroid",
+        );
+        // And the gcode for the tabs-active pass should still contain
+        // the tab Z-lift (sanity check that tabs are still being
+        // honored).
+        assert!(
+            resp.gcode.contains("Z-1"),
+            "expected tab Z-lift in gcode: {}",
+            resp.gcode,
         );
     }
 
@@ -1696,7 +1972,9 @@ mod tests {
         .unwrap();
         // pocket_fill_incomplete warning must fire so the user knows.
         assert!(
-            resp.warnings.iter().any(|w| w.kind == "pocket_fill_incomplete"),
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "pocket_fill_incomplete"),
             "expected pocket_fill_incomplete warning, got {:?}",
             resp.warnings,
         );

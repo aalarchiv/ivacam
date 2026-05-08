@@ -87,6 +87,16 @@ pub enum PlungeStrategy {
     /// ramp is `step / tan(angle_deg)`. Falls back to Direct if the
     /// path is shorter than the required ramp.
     Ramp { angle_deg: f64 },
+    /// Helical descent: spiral down on a circle of `radius_mm` around
+    /// a point inside the closed pocket boundary, descending Z at
+    /// `angle_deg` per revolution. After the helix lands at the pass
+    /// depth the cutter walks to the path's actual start XY and
+    /// continues normally. Each revolution drops Z by
+    /// `2 * π * radius_mm * tan(angle_deg)`. Only meaningful for
+    /// closed pocket paths whose boundary fits the helix circle —
+    /// falls back to Ramp (and then Direct) otherwise. Standard for
+    /// non-center-cutting endmills and harder materials.
+    Helix { angle_deg: f64, radius_mm: f64 },
 }
 
 impl Default for PlungeStrategy {

@@ -722,6 +722,23 @@ components:
         - angle_deg
         - kind
         type: object
+      - description: 'Helical descent: spiral down on a circle of `radius_mm` around a point inside the closed pocket boundary, descending Z at `angle_deg` per revolution. After the helix lands at the pass depth the cutter walks to the path''s actual start XY and continues normally. Each revolution drops Z by `2 * π * radius_mm * tan(angle_deg)`. Only meaningful for closed pocket paths whose boundary fits the helix circle — falls back to Ramp (and then Direct) otherwise. Standard for non-center-cutting endmills and harder materials.'
+        properties:
+          angle_deg:
+            format: double
+            type: number
+          kind:
+            enum:
+            - helix
+            type: string
+          radius_mm:
+            format: double
+            type: number
+        required:
+        - angle_deg
+        - kind
+        - radius_mm
+        type: object
     PocketConfig:
       properties:
         active:

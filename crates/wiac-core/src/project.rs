@@ -113,6 +113,11 @@ pub struct Operation {
     pub tool_id: u32,
     pub source: OperationSource,
     pub params: OperationParams,
+    /// Optional pattern repetition. When set, the op runs once per
+    /// pattern instance with the source geometry translated/rotated.
+    /// See [`PatternConfig`] for the concrete pattern shapes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<PatternConfig>,
 }
 
 impl Default for Operation {
@@ -127,8 +132,43 @@ impl Default for Operation {
             tool_id: 1,
             source: OperationSource::All,
             params: OperationParams::default(),
+            pattern: None,
         }
     }
+}
+
+/// Pattern repetition for an [`Operation`]. When attached, the pipeline
+/// expands the op into N instances by translating (or rotating) the
+/// source geometry per instance — useful for "drill the same hole
+/// pattern N times" or "pocket N copies of the same shape on a grid".
+///
+/// The original geometry stays at the (0, 0) translation / 0° rotation
+/// instance so a single-instance pattern is identical to no pattern at
+/// all.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PatternConfig {
+    /// 1D linear array. `count` instances total (including the original
+    /// at offset (0, 0)). Each instance i is translated by (i*dx, i*dy).
+    Linear { count: u32, dx: f64, dy: f64 },
+    /// 2D rectangular grid. `count_x × count_y` instances total.
+    /// Instance (i, j) is translated by (i*dx, j*dy).
+    Grid {
+        count_x: u32,
+        count_y: u32,
+        dx: f64,
+        dy: f64,
+    },
+    /// Polar (rotational) array. `count` instances around
+    /// (`center_x`, `center_y`), with `angle_step_deg` between
+    /// consecutive instances. Instance i is rotated by
+    /// i * angle_step_deg about that center.
+    Polar {
+        count: u32,
+        center_x: f64,
+        center_y: f64,
+        angle_step_deg: f64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]

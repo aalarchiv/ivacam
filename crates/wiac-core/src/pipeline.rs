@@ -26,7 +26,8 @@ use crate::gcode::{
 };
 use crate::geometry::{Point2, Segment};
 use crate::project::{
-    Operation, OperationKind, OperationSource, PocketStrategy, Project, SourceCombine,
+    Operation, OperationKind, OperationSource, PatternConfig, PocketStrategy, Project,
+    SourceCombine,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -290,6 +291,53 @@ fn build_op_offsets(
         }
     }
 
+    // Pattern repetition (5fz): when the op carries a PatternConfig, expand
+    // the source set into N transformed clones BEFORE the per-object loops
+    // run. After expansion, every clone is "selected" (so the inner loops
+    // see them via OperationSource::All on the effective op), and tabs
+    // attached to the original objects are translated/rotated alongside
+    // the geometry so each instance keeps its tab placement.
+    let effective_op_storage: Option<Operation> = if let Some(pattern) = op.pattern {
+        let instances = pattern_offsets(pattern);
+        let mut expanded: Vec<VcObject> = Vec::with_capacity(instances.len() * objects.len());
+        let mut expanded_tabs: HashMap<usize, Vec<TabPoint>> = HashMap::new();
+        for inst in &instances {
+            for (idx, obj) in objects.iter().enumerate() {
+                if !op_includes_object(op, obj, idx) {
+                    continue;
+                }
+                let mut clone = obj.clone();
+                apply_pattern_to_segments(&mut clone.segments, *inst);
+                // Containment relationships index into the OLD object list,
+                // which doesn't match the expanded set. Drop them; the
+                // pocket-skipping logic relies on selected_set membership
+                // which is recomputed below for the expanded set.
+                clone.outer_objects.clear();
+                clone.inner_objects.clear();
+                let new_idx = expanded.len();
+                if let Some(src_tabs) = tabs_by_object.get(&idx) {
+                    let xformed: Vec<TabPoint> = src_tabs
+                        .iter()
+                        .map(|t| {
+                            let p = apply_pattern_to_point(Point2::new(t.x, t.y), *inst);
+                            TabPoint { x: p.x, y: p.y }
+                        })
+                        .collect();
+                    expanded_tabs.insert(new_idx, xformed);
+                }
+                expanded.push(clone);
+            }
+        }
+        *objects = expanded;
+        tabs_by_object = expanded_tabs;
+        let mut clone = op.clone();
+        clone.source = OperationSource::All;
+        Some(clone)
+    } else {
+        None
+    };
+    let effective_op: &Operation = effective_op_storage.as_ref().unwrap_or(op);
+
     // Apply per-op tool-offset to the chain so order_offsets / lead-in see it.
     for obj in objects.iter_mut() {
         obj.tool_offset = setup.mill.offset;
@@ -302,8 +350,8 @@ fn build_op_offsets(
     // looser for faster cuts. Clamp to a sane envelope so a stray 1.0
     // (= no advance) doesn't loop forever and a stray 0 doesn't pin to
     // the lower bound forever either.
-    let overlap = if op.params.xy_overlap > 0.0 {
-        op.params.xy_overlap.clamp(0.05, 0.95)
+    let overlap = if effective_op.params.xy_overlap > 0.0 {
+        effective_op.params.xy_overlap.clamp(0.05, 0.95)
     } else {
         0.5
     };
@@ -318,7 +366,7 @@ fn build_op_offsets(
     // selected-object set up front so the Pocket branch can consult it
     // while iterating.
     let selected_set: HashSet<usize> = (0..objects.len())
-        .filter(|i| op_includes_object(op, &objects[*i], *i))
+        .filter(|i| op_includes_object(effective_op, &objects[*i], *i))
         .collect();
 
     // Non-Auto combine modes (Union/Difference/Intersection/Xor/None) for
@@ -326,14 +374,14 @@ fn build_op_offsets(
     // combined regions once via clipper2 and emit a pocket per region.
     // Other op kinds (Profile, Engrave, DragKnife) keep their per-object
     // semantics — they cut paths, not regions.
-    if let OperationKind::Pocket { strategy } = op.kind {
-        let combine = source_combine_mode(op);
+    if let OperationKind::Pocket { strategy } = effective_op.kind {
+        let combine = source_combine_mode(effective_op);
         if !matches!(combine, SourceCombine::Auto) {
             // Preserve the user-specified selection order — Difference is
             // order-sensitive ("first minus the rest"), so we cannot iterate
             // a HashSet here. ordered_selection() walks op.source as the
             // user wrote it and returns the corresponding object indices.
-            let selected = ordered_selection(op, objects);
+            let selected = ordered_selection(effective_op, objects);
             let regions = combine_source_regions(objects, &selected, combine);
             let zigzag = matches!(strategy, PocketStrategy::Zigzag);
             for region in &regions {
@@ -346,7 +394,7 @@ fn build_op_offsets(
                 for mut o in pocket_for_object(
                     &synthetic,
                     radius,
-                    op.params.pocket_nocontour,
+                    effective_op.params.pocket_nocontour,
                     6,
                     zigzag,
                     &region.holes,
@@ -359,17 +407,17 @@ fn build_op_offsets(
             if !tabs_by_object.is_empty() {
                 attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
             }
-            if op.params.overcut {
+            if effective_op.params.overcut {
                 apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
             }
-            apply_cut_direction(&mut offsets, op, false);
-            push_tool_fit_size_warning(op, setup, closed, &offsets, warnings);
+            apply_cut_direction(&mut offsets, effective_op, false);
+            push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
             return Ok((offsets, closed));
         }
     }
 
     for (idx, obj) in objects.iter().enumerate() {
-        if !op_includes_object(op, obj, idx) {
+        if !op_includes_object(effective_op, obj, idx) {
             continue;
         }
         emitted_objects += 1;
@@ -377,7 +425,7 @@ fn build_op_offsets(
             closed += 1;
         }
 
-        match op.kind {
+        match effective_op.kind {
             OperationKind::Pocket { strategy } => {
                 // Skip objects that are geometrically inside another
                 // selected object — they belong to that pocket as islands.
@@ -402,7 +450,7 @@ fn build_op_offsets(
                     .filter(|inner| inner.closed)
                     .map(|inner| segments_to_points(&inner.segments, 6))
                     .collect();
-                if islands.is_empty() && op.params.pocket_islands {
+                if islands.is_empty() && effective_op.params.pocket_islands {
                     islands = obj
                         .inner_objects
                         .iter()
@@ -415,7 +463,7 @@ fn build_op_offsets(
                     for mut o in pocket_for_object(
                         obj,
                         radius,
-                        op.params.pocket_nocontour,
+                        effective_op.params.pocket_nocontour,
                         6,
                         zigzag,
                         &islands,
@@ -496,7 +544,7 @@ fn build_op_offsets(
                 }
             }
             OperationKind::Thread | OperationKind::Chamfer | OperationKind::Helix => {
-                return Err(PipelineError::UnimplementedKind(op.kind));
+                return Err(PipelineError::UnimplementedKind(effective_op.kind));
             }
         }
     }
@@ -505,11 +553,11 @@ fn build_op_offsets(
     if !tabs_by_object.is_empty() {
         attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
     }
-    if op.params.overcut {
+    if effective_op.params.overcut {
         apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
     }
-    apply_cut_direction(&mut offsets, op, false);
-    push_tool_fit_size_warning(op, setup, closed, &offsets, warnings);
+    apply_cut_direction(&mut offsets, effective_op, false);
+    push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
     Ok((offsets, closed))
 }
 
@@ -844,14 +892,116 @@ fn approx_pt(a: Point2, b: Point2) -> bool {
     (a.x - b.x).abs() < 1e-6 && (a.y - b.y).abs() < 1e-6
 }
 
+/// One pattern instance: translate by (dx, dy) AND rotate by `angle_rad`
+/// around (cx, cy). For Linear / Grid patterns, angle_rad is 0 and the
+/// rotation center is unused. For Polar, dx = dy = 0 and the rotation
+/// is applied around (cx, cy).
+#[derive(Debug, Clone, Copy)]
+struct PatternInstance {
+    dx: f64,
+    dy: f64,
+    cx: f64,
+    cy: f64,
+    angle_rad: f64,
+}
+
+/// Materialize a pattern config into a list of instance transforms. The
+/// first element of the returned list is always the identity transform —
+/// the source geometry stays in place at instance 0 — so a 1-instance
+/// pattern is equivalent to no pattern at all.
+fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
+    let mut out = Vec::new();
+    match pattern {
+        PatternConfig::Linear { count, dx, dy } => {
+            // count is an inclusive total. count == 0 → no instances at
+            // all (degenerate, but well-defined: the op emits nothing).
+            for i in 0..count.max(0) {
+                out.push(PatternInstance {
+                    dx: (i as f64) * dx,
+                    dy: (i as f64) * dy,
+                    cx: 0.0,
+                    cy: 0.0,
+                    angle_rad: 0.0,
+                });
+            }
+        }
+        PatternConfig::Grid {
+            count_x,
+            count_y,
+            dx,
+            dy,
+        } => {
+            for j in 0..count_y.max(0) {
+                for i in 0..count_x.max(0) {
+                    out.push(PatternInstance {
+                        dx: (i as f64) * dx,
+                        dy: (j as f64) * dy,
+                        cx: 0.0,
+                        cy: 0.0,
+                        angle_rad: 0.0,
+                    });
+                }
+            }
+        }
+        PatternConfig::Polar {
+            count,
+            center_x,
+            center_y,
+            angle_step_deg,
+        } => {
+            let step_rad = angle_step_deg.to_radians();
+            for i in 0..count.max(0) {
+                out.push(PatternInstance {
+                    dx: 0.0,
+                    dy: 0.0,
+                    cx: center_x,
+                    cy: center_y,
+                    angle_rad: (i as f64) * step_rad,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Apply a pattern instance transform to every endpoint and arc center
+/// of `segments` in place: rotate around (cx, cy) by `angle_rad`, then
+/// translate by (dx, dy). Bulge stays the same — it's a local angle
+/// ratio, invariant under rotation and translation.
+fn apply_pattern_to_segments(segments: &mut [Segment], inst: PatternInstance) {
+    let cos_a = inst.angle_rad.cos();
+    let sin_a = inst.angle_rad.sin();
+    for s in segments.iter_mut() {
+        s.start = transform_point(s.start, inst, cos_a, sin_a);
+        s.end = transform_point(s.end, inst, cos_a, sin_a);
+        if let Some(c) = s.center {
+            s.center = Some(transform_point(c, inst, cos_a, sin_a));
+        }
+    }
+}
+
+fn apply_pattern_to_point(p: Point2, inst: PatternInstance) -> Point2 {
+    let cos_a = inst.angle_rad.cos();
+    let sin_a = inst.angle_rad.sin();
+    transform_point(p, inst, cos_a, sin_a)
+}
+
+fn transform_point(p: Point2, inst: PatternInstance, cos_a: f64, sin_a: f64) -> Point2 {
+    let dx = p.x - inst.cx;
+    let dy = p.y - inst.cy;
+    let rx = inst.cx + dx * cos_a - dy * sin_a;
+    let ry = inst.cy + dx * sin_a + dy * cos_a;
+    Point2::new(rx + inst.dx, ry + inst.dy)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cam::setup::{TabType, TabsConfig, ToolOffset};
     use crate::geometry::Segment;
     use crate::project::{
-        Coolant, Operation, OperationKind, OperationParams, OperationSource, SourceCombine,
-        ToolEntry, ToolKind,
+        Coolant, Operation, OperationKind, OperationParams, OperationSource, PatternConfig,
+        SourceCombine, ToolEntry, ToolKind,
     };
 
     fn closed_square(side: f64) -> Vec<Segment> {
@@ -888,6 +1038,7 @@ mod tests {
             tool_id,
             source: OperationSource::All,
             params: OperationParams::mill_default(),
+            pattern: None,
         }
     }
 
@@ -1003,6 +1154,7 @@ mod tests {
             tool_id,
             source,
             params: OperationParams::mill_default(),
+            pattern: None,
         }
     }
 
@@ -1137,6 +1289,7 @@ mod tests {
                     combine: SourceCombine::Difference,
                 },
                 params: OperationParams::mill_default(),
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1198,6 +1351,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1299,6 +1453,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1355,6 +1510,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1394,6 +1550,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1486,6 +1643,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1571,6 +1729,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1663,6 +1822,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: tabs_map,
         };
@@ -1730,6 +1890,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1774,6 +1935,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1832,6 +1994,7 @@ mod tests {
                     tool_id: 1,
                     source: OperationSource::All,
                     params,
+                    pattern: None,
                 }],
                 tabs: Default::default(),
             };
@@ -1876,6 +2039,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -1944,6 +2108,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2001,6 +2166,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2054,6 +2220,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2125,6 +2292,7 @@ mod tests {
             tool_id,
             source: OperationSource::All,
             params,
+            pattern: None,
         }
     }
 
@@ -2317,6 +2485,7 @@ mod tests {
                     p.fast_move_z = 5.0;
                     p
                 },
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2374,6 +2543,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2413,6 +2583,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2452,6 +2623,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2491,6 +2663,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2537,6 +2710,7 @@ mod tests {
                 tool_id: 1,
                 source: OperationSource::All,
                 params,
+                pattern: None,
             }],
             tabs: Default::default(),
         };
@@ -2551,6 +2725,275 @@ mod tests {
         assert!(
             resp.gcode.contains("F500"),
             "expected reduced corner feed F500 (= 1000 * 0.5) in gcode",
+        );
+    }
+
+    // ─── Pattern repetition (5fz) ──────────────────────────────────────
+
+    /// Build a profile op with a Linear pattern attached. We deliberately
+    /// use Profile (not Pocket) so each instance produces a recognizable
+    /// outer-offset toolpath whose X / Y range is easy to assert on.
+    fn profile_op_with_pattern(pattern: PatternConfig) -> Operation {
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.pattern = Some(pattern);
+        op
+    }
+
+    /// Scan `gcode` for the X coordinate of the first cut move in each
+    /// `; OP` block — useful for verifying that pattern instances landed
+    /// at the expected offsets.
+    fn cut_x_values(gcode: &str) -> Vec<f64> {
+        let mut xs = Vec::new();
+        for line in gcode.lines() {
+            // Cut moves start with G1 and contain X<float>.
+            if !(line.starts_with("G1") || line.starts_with("G0")) {
+                continue;
+            }
+            if let Some(idx) = line.find('X') {
+                let rest = &line[idx + 1..];
+                let end = rest
+                    .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                    .unwrap_or(rest.len());
+                if let Ok(x) = rest[..end].parse::<f64>() {
+                    xs.push(x);
+                }
+            }
+        }
+        xs
+    }
+
+    #[test]
+    fn linear_pattern_emits_translated_copies() {
+        let project = project_with(
+            vec![profile_op_with_pattern(PatternConfig::Linear {
+                count: 3,
+                dx: 20.0,
+                dy: 0.0,
+            })],
+            vec![endmill(1, 3.0)],
+        );
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let xs = cut_x_values(&resp.gcode);
+        assert!(
+            !xs.is_empty(),
+            "pattern op produced no cuts:\n{}",
+            resp.gcode
+        );
+        // Source square is 0..20 with an outside offset of 1.5 mm
+        // (half a 3 mm endmill), so cuts span roughly -1.5..21.5 around
+        // the original. Two more instances at dx=20 and dx=40 give
+        // cuts roughly in 18.5..41.5 and 38.5..61.5 — distinct
+        // X-translated regions.
+        let max_x = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min_x = xs.iter().cloned().fold(f64::INFINITY, f64::min);
+        assert!(
+            max_x > 38.0,
+            "expected X to reach the third instance (>~38), got max {} in:\n{}",
+            max_x,
+            resp.gcode,
+        );
+        assert!(
+            min_x < 5.0,
+            "expected X to also touch the first instance (<5), got min {} in:\n{}",
+            min_x,
+            resp.gcode,
+        );
+        // Three instances → at least three distinct X clusters around
+        // 5, 25, 45. Sample by counting cuts in each band.
+        let near_first = xs.iter().filter(|x| **x >= -2.0 && **x <= 22.0).count();
+        let near_second = xs.iter().filter(|x| **x >= 18.0 && **x <= 42.0).count();
+        let near_third = xs.iter().filter(|x| **x >= 38.0 && **x <= 62.0).count();
+        assert!(
+            near_first > 0 && near_second > 0 && near_third > 0,
+            "expected cuts in all three instance bands ({}, {}, {}):\n{}",
+            near_first,
+            near_second,
+            near_third,
+            resp.gcode,
+        );
+    }
+
+    #[test]
+    fn grid_pattern_emits_count_xcount_y_instances() {
+        let project = project_with(
+            vec![profile_op_with_pattern(PatternConfig::Grid {
+                count_x: 2,
+                count_y: 2,
+                dx: 30.0,
+                dy: 30.0,
+            })],
+            vec![endmill(1, 3.0)],
+        );
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // 2 × 2 = 4 instances of a closed-square outline.
+        assert_eq!(
+            resp.stats.closed_object_count, 4,
+            "expected 4 closed objects from a 2x2 grid, got {}\n{}",
+            resp.stats.closed_object_count, resp.gcode
+        );
+        // Cuts should reach into both grid dimensions.
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for line in resp.gcode.lines() {
+            if !(line.starts_with("G1") || line.starts_with("G0")) {
+                continue;
+            }
+            if let Some(idx) = line.find('X') {
+                let rest = &line[idx + 1..];
+                let end = rest
+                    .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                    .unwrap_or(rest.len());
+                if let Ok(v) = rest[..end].parse::<f64>() {
+                    if v > max_x {
+                        max_x = v;
+                    }
+                }
+            }
+            if let Some(idx) = line.find('Y') {
+                let rest = &line[idx + 1..];
+                let end = rest
+                    .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                    .unwrap_or(rest.len());
+                if let Ok(v) = rest[..end].parse::<f64>() {
+                    if v > max_y {
+                        max_y = v;
+                    }
+                }
+            }
+        }
+        assert!(
+            max_x > 45.0 && max_y > 45.0,
+            "grid should extend into the second column AND the second row (X>{}, Y>{}):\n{}",
+            max_x,
+            max_y,
+            resp.gcode,
+        );
+    }
+
+    #[test]
+    fn polar_pattern_rotates_around_center() {
+        // Source square is 0..20 in X, 0..20 in Y. Polar pattern of 4
+        // around the origin with 90° step produces instances rotated
+        // by 0 / 90 / 180 / 270 — collectively their cuts should reach
+        // into all four quadrants.
+        let project = project_with(
+            vec![profile_op_with_pattern(PatternConfig::Polar {
+                count: 4,
+                center_x: 0.0,
+                center_y: 0.0,
+                angle_step_deg: 90.0,
+            })],
+            vec![endmill(1, 3.0)],
+        );
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(
+            resp.stats.closed_object_count, 4,
+            "expected 4 closed objects from a 4-instance polar pattern, got {}\n{}",
+            resp.stats.closed_object_count, resp.gcode
+        );
+        let mut quad_pos_pos = false; // X>0, Y>0
+        let mut quad_neg_pos = false; // X<0, Y>0
+        let mut quad_neg_neg = false; // X<0, Y<0
+        let mut quad_pos_neg = false; // X>0, Y<0
+        let mut last_x: Option<f64> = None;
+        let mut last_y: Option<f64> = None;
+        for line in resp.gcode.lines() {
+            if !(line.starts_with("G1") || line.starts_with("G0")) {
+                continue;
+            }
+            let mut x = last_x;
+            let mut y = last_y;
+            for (label, slot) in [('X', &mut x), ('Y', &mut y)] {
+                if let Some(idx) = line.find(label) {
+                    let rest = &line[idx + 1..];
+                    let end = rest
+                        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                        .unwrap_or(rest.len());
+                    if let Ok(v) = rest[..end].parse::<f64>() {
+                        *slot = Some(v);
+                    }
+                }
+            }
+            last_x = x;
+            last_y = y;
+            if let (Some(xv), Some(yv)) = (x, y) {
+                if xv > 5.0 && yv > 5.0 {
+                    quad_pos_pos = true;
+                }
+                if xv < -5.0 && yv > 5.0 {
+                    quad_neg_pos = true;
+                }
+                if xv < -5.0 && yv < -5.0 {
+                    quad_neg_neg = true;
+                }
+                if xv > 5.0 && yv < -5.0 {
+                    quad_pos_neg = true;
+                }
+            }
+        }
+        assert!(
+            quad_pos_pos && quad_neg_pos && quad_neg_neg && quad_pos_neg,
+            "expected polar cuts in all four quadrants (++, -+, --, +-): {} {} {} {}\n{}",
+            quad_pos_pos,
+            quad_neg_pos,
+            quad_neg_neg,
+            quad_pos_neg,
+            resp.gcode,
+        );
+    }
+
+    #[test]
+    fn pattern_none_keeps_existing_behavior() {
+        // Locks in back-compat: a Profile op with `pattern: None` must
+        // produce the exact same gcode it produced before pattern support
+        // was added (which is the same as a fresh op without the field).
+        let project_a = project_with(
+            vec![profile_op(1, 1, ToolOffset::Outside)],
+            vec![endmill(1, 3.0)],
+        );
+        let mut op_b = profile_op(1, 1, ToolOffset::Outside);
+        op_b.pattern = None;
+        let project_b = project_with(vec![op_b], vec![endmill(1, 3.0)]);
+        let resp_a = run_pipeline(
+            PipelineRequest {
+                project: project_a,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let resp_b = run_pipeline(
+            PipelineRequest {
+                project: project_b,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(
+            resp_a.gcode, resp_b.gcode,
+            "pattern: None must be byte-identical to a no-pattern op",
         );
     }
 

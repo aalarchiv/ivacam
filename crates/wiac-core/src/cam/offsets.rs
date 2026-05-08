@@ -527,29 +527,11 @@ pub fn pocket_for_object(
         }
 
         let rings = pocket_cascade_with_islands(&pts, islands, step);
-        // Cascade fallback: if the inflate produced no inward rings the
-        // tool is too wide for any concentric ring inside the boundary
-        // contour. Emit a zigzag fill on the boundary so the pocket
-        // interior still gets cleared instead of leaving a hollow cut.
-        // The fallback's stride is clamped to no more than tool_radius
-        // (= 50% overlap) so it fits even very tight boundaries.
-        if rings.is_empty() {
-            let fallback_stride = step.min(tool_radius.abs()).max(0.1);
-            let strokes = pocket_zigzag(&pts, fallback_stride, tool_radius * 2.0);
-            if !strokes.is_empty() {
-                out.push(PolylineOffset {
-                    segments: strokes,
-                    closed: false,
-                    level: 1,
-                    is_pocket: 1,
-                    layer: offset.layer.clone(),
-                    color: offset.color,
-                    source_object_idx: offset.source_object_idx,
-                    tabs: Vec::new(),
-                });
-            }
-            continue;
-        }
+        // No silent fallback to zigzag here: the user picked cascade or
+        // spiral explicitly, and substituting zigzag when no ring fits
+        // is surprising. The pocket_fill_incomplete warning fires
+        // instead, telling the user the tool is too wide and to pick a
+        // smaller tool or switch to zigzag explicitly.
         for (i, ring) in rings.iter().enumerate() {
             if ring.len() < 2 {
                 continue;

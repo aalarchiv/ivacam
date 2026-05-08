@@ -1657,22 +1657,18 @@ mod tests {
         );
     }
 
-    /// Cascade with a tool slightly too wide for an inward ring at the
-    /// requested step now falls back to zigzag fill instead of emitting
-    /// only the boundary contour. User reported "cascade and spiral
-    /// strategies do not clear inner material at all" — the project had
-    /// xy_overlap=0.05 (95% step) on a small pocket, so the cascade
-    /// inflate produced no rings. Without the fallback, only the wall
-    /// was cut; with the fallback the interior gets a zigzag fill.
+    /// Cascade with a tool too wide for any inward ring emits ONLY the
+    /// boundary contour (no silent fallback to zigzag — that was
+    /// confusing for users who picked cascade explicitly and saw
+    /// zigzag). The pocket_fill_incomplete warning fires so they know.
     #[test]
-    fn cascade_falls_back_to_zigzag_when_no_inward_rings_fit() {
+    fn cascade_with_tool_too_wide_emits_only_boundary_no_zigzag_substitute() {
         let mut params = OperationParams::mill_default();
         params.xy_overlap = 0.05; // 95% step — no inward rings will fit
         let project = Project {
-            // 14×14 — big enough that the boundary offset still leaves
-            // an interior wide enough for at least one zigzag stroke,
-            // small enough that cascade with a 95% step produces 0 rings.
-            segments: closed_square_offset(14.0, 0.0, 0.0),
+            // 6×6 with a 3mm tool: boundary inset by 1.5mm leaves a
+            // 3×3 path; cascade inflate by 2.85mm → empty → 0 rings.
+            segments: closed_square_offset(6.0, 0.0, 0.0),
             machine: Default::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
@@ -1696,25 +1692,11 @@ mod tests {
             |_, _, _| {},
         )
         .unwrap();
-        // We expect at least one cut at an interior Y row, not just the
-        // contour edges (1.5 and 12.5 for a 14x14 inset by 1.5).
-        let interior_rows: std::collections::HashSet<i32> = resp
-            .toolpath
-            .iter()
-            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
-            .filter_map(|s| {
-                let y = s.from.y.round() as i32;
-                if (3..=11).contains(&y) {
-                    Some(y)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        // pocket_fill_incomplete warning must fire so the user knows.
         assert!(
-            !interior_rows.is_empty(),
-            "expected zigzag fallback to add interior cuts; got rows {:?}",
-            interior_rows,
+            resp.warnings.iter().any(|w| w.kind == "pocket_fill_incomplete"),
+            "expected pocket_fill_incomplete warning, got {:?}",
+            resp.warnings,
         );
     }
 

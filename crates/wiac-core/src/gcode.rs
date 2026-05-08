@@ -1375,7 +1375,16 @@ fn emit_path_with_corner_feed<P: PostProcessor>(
         let dx = seg.end.x - seg.start.x;
         let dy = seg.end.y - seg.start.y;
         let len = (dx * dx + dy * dy).sqrt();
-        let cur_dir = if len > 1e-9 { (dx / len, dy / len) } else { (0.0, 0.0) };
+        // Zero-length segments don't have a direction; emit them as a
+        // plain linear and DO NOT update prev_dir so the next real
+        // segment compares against the last meaningful direction. A
+        // (0,0) cur_dir would otherwise flag dot=0 (= 90° turn) and
+        // spuriously slow the feed.
+        if len <= 1e-9 {
+            post.linear(Some(seg.end.x), Some(seg.end.y), None);
+            continue;
+        }
+        let cur_dir = (dx / len, dy / len);
         let needs_reduction = match prev_dir {
             Some((px, py)) if i > 0 => {
                 // dot product < cos_threshold means the turn is

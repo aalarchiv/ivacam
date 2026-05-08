@@ -481,7 +481,7 @@ pub fn apply_cut_direction(
             }
             OperationKind::Engrave
             | OperationKind::DragKnife
-            | OperationKind::Drill
+            | OperationKind::Drill { .. }
             | OperationKind::Thread
             | OperationKind::Chamfer
             | OperationKind::Helix => CutContext::Skip,
@@ -660,7 +660,7 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
 /// If `obj` is a single closed CIRCLE smaller than the tool, return a
 /// drill-only offset whose single segment is a zero-length POINT at the
 /// circle's center. The gcode emitter handles this as plunge + retract.
-fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
+pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
     use crate::geometry::SegmentKind;
     if !obj.closed || obj.segments.is_empty() {
         return None;

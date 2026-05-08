@@ -11,6 +11,7 @@
     type PocketStrategy,
     type SourceCombine,
     type CutDirection,
+    type DrillCycle,
   } from '../state/project.svelte';
 
   /// One-line description per cut direction for the option titles.
@@ -401,7 +402,101 @@
       </fieldset>
     {/if}
 
-    {#if op.kind === 'drill' || op.kind === 'thread' || op.kind === 'chamfer' || op.kind === 'helix'}
+    {#if op.kind === 'drill'}
+      <fieldset>
+        <legend>Drill cycle</legend>
+        <label class="row">
+          <span>Cycle</span>
+          <select
+            value={op.drillCycle?.kind ?? 'simple'}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value as
+                | 'simple'
+                | 'peck'
+                | 'chip_break';
+              const cur = op.drillCycle ?? ({ kind: 'simple', dwell_sec: 0 } as DrillCycle);
+              const dwell = cur.dwell_sec ?? 0;
+              const step =
+                cur.kind === 'peck' || cur.kind === 'chip_break'
+                  ? cur.peck_step_mm
+                  : 1.0;
+              if (v === 'simple') {
+                patch('drillCycle', { kind: 'simple', dwell_sec: dwell } as DrillCycle);
+              } else if (v === 'peck') {
+                patch('drillCycle', {
+                  kind: 'peck',
+                  peck_step_mm: step,
+                  dwell_sec: dwell,
+                } as DrillCycle);
+              } else {
+                patch('drillCycle', {
+                  kind: 'chip_break',
+                  peck_step_mm: step,
+                  dwell_sec: dwell,
+                } as DrillCycle);
+              }
+            }}
+          >
+            <option value="simple" title="G81 — single plunge to depth, retract.">
+              simple (G81)
+            </option>
+            <option
+              value="peck"
+              title="G83 — peck with full retract to clearance plane between pecks."
+            >
+              peck (G83)
+            </option>
+            <option
+              value="chip_break"
+              title="G73 — peck with chip-break (small partial retract between pecks)."
+            >
+              chip-break (G73)
+            </option>
+          </select>
+        </label>
+        {#if op.drillCycle && (op.drillCycle.kind === 'peck' || op.drillCycle.kind === 'chip_break')}
+          <label class="row">
+            <span>Peck step (mm)</span>
+            <input
+              type="number"
+              step="0.1"
+              min="0.1"
+              value={op.drillCycle.peck_step_mm}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v) && v > 0 && op.drillCycle) {
+                  const cur = op.drillCycle;
+                  if (cur.kind === 'peck' || cur.kind === 'chip_break') {
+                    patch('drillCycle', {
+                      ...cur,
+                      peck_step_mm: v,
+                    } as DrillCycle);
+                  }
+                }
+              }}
+            />
+          </label>
+        {/if}
+        <label class="row">
+          <span>Dwell (s)</span>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={op.drillCycle?.dwell_sec ?? 0}
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              if (!isNaN(v) && v >= 0) {
+                const cur = op.drillCycle ?? ({ kind: 'simple' } as DrillCycle);
+                patch('drillCycle', { ...cur, dwell_sec: v } as DrillCycle);
+              }
+            }}
+          />
+        </label>
+      </fieldset>
+    {/if}
+
+    {#if op.kind === 'thread' || op.kind === 'chamfer' || op.kind === 'helix'}
       <p class="empty">
         This operation kind is parsed but the gcode emitter for it ships
         with the next backend slice; the run will return

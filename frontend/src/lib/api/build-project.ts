@@ -41,10 +41,15 @@ interface WireMachine {
   supports_toolchange: boolean;
 }
 
+type WireDrillCycle =
+  | { kind: 'simple'; dwell_sec?: number }
+  | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
+  | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
+
 type WireOpKind =
   | { type: 'profile'; offset: 'outside' | 'inside' | 'on' | 'none' }
   | { type: 'pocket'; strategy: 'cascade' | 'zigzag' | 'spiral' }
-  | { type: 'drill' }
+  | { type: 'drill'; cycle: WireDrillCycle }
   | { type: 'thread' }
   | { type: 'chamfer' }
   | { type: 'engrave' }
@@ -148,8 +153,33 @@ function buildOpKind(op: OpEntry): WireOpKind {
       return { type: 'profile', offset: op.offset };
     case 'pocket':
       return { type: 'pocket', strategy: op.pocketStrategy ?? 'cascade' };
+    case 'drill': {
+      const cycle: WireDrillCycle = op.drillCycle
+        ? mapDrillCycle(op.drillCycle)
+        : { kind: 'simple', dwell_sec: 0 };
+      return { type: 'drill', cycle };
+    }
     default:
       return { type: op.kind } as WireOpKind;
+  }
+}
+
+function mapDrillCycle(c: NonNullable<OpEntry['drillCycle']>): WireDrillCycle {
+  switch (c.kind) {
+    case 'simple':
+      return { kind: 'simple', ...(c.dwell_sec ? { dwell_sec: c.dwell_sec } : {}) };
+    case 'peck':
+      return {
+        kind: 'peck',
+        peck_step_mm: c.peck_step_mm,
+        ...(c.dwell_sec ? { dwell_sec: c.dwell_sec } : {}),
+      };
+    case 'chip_break':
+      return {
+        kind: 'chip_break',
+        peck_step_mm: c.peck_step_mm,
+        ...(c.dwell_sec ? { dwell_sec: c.dwell_sec } : {}),
+      };
   }
 }
 

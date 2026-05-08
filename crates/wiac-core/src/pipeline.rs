@@ -15,14 +15,14 @@ use serde::{Deserialize, Serialize};
 use crate::cam::chaining::{classify_containment, segments_to_objects};
 use crate::cam::offsets::{
     apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_inward,
-    parallel_offset_outward, pocket_for_object, PolylineOffset, TabPoint,
+    parallel_offset_outward, pocket_for_object, small_circle_drill, PolylineOffset, TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
 use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::{segments_to_points, VcObject};
 use crate::gcode::{
-    emit_polylines_block, emit_program_begin, emit_program_end, grbl, hpgl, linuxcnc, preview,
-    PostProcessor,
+    emit_drill_block, emit_polylines_block, emit_program_begin, emit_program_end, grbl, hpgl,
+    linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::{Point2, Segment};
 use crate::project::{
@@ -244,7 +244,11 @@ where
         }
         post.raw(&format!("; OP {}", op.id));
         if !offsets.is_empty() {
-            emit_polylines_block(&setup, &offsets, post, &mut last_pos);
+            if let OperationKind::Drill { cycle } = op.kind {
+                emit_drill_block(&setup, &offsets, cycle, post, &mut last_pos);
+            } else {
+                emit_polylines_block(&setup, &offsets, post, &mut last_pos);
+            }
         }
         emitted_ops += 1;
         progress(
@@ -462,10 +466,36 @@ fn build_op_offsets(
                     tabs: Vec::new(),
                 });
             }
-            OperationKind::Drill
-            | OperationKind::Thread
-            | OperationKind::Chamfer
-            | OperationKind::Helix => {
+            OperationKind::Drill { .. } => {
+                // Drill picks a single XY for each selected object:
+                //   - a closed CIRCLE smaller than tool_radius → center
+                //     of the circle (the existing small_circle_drill
+                //     mechanism that pocket reuses).
+                //   - a single POINT segment → the point itself.
+                // Anything else is silently skipped (the gcode emitter
+                // can't usefully drill an open polyline). The
+                // tool_kind_mismatch warning surfaces a misuse.
+                use crate::geometry::SegmentKind;
+                if obj.segments.len() == 1
+                    && matches!(obj.segments[0].kind, SegmentKind::Point)
+                {
+                    let seg = obj.segments[0].clone();
+                    offsets.push(PolylineOffset {
+                        segments: vec![seg],
+                        closed: false,
+                        level: 0,
+                        is_pocket: 0,
+                        layer: obj.layer.clone(),
+                        color: obj.color,
+                        source_object_idx: idx,
+                        tabs: Vec::new(),
+                    });
+                } else if let Some(mut drill) = small_circle_drill(obj, radius) {
+                    drill.source_object_idx = idx;
+                    offsets.push(drill);
+                }
+            }
+            OperationKind::Thread | OperationKind::Chamfer | OperationKind::Helix => {
                 return Err(PipelineError::UnimplementedKind(op.kind));
             }
         }
@@ -2039,6 +2069,274 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ─── Drill ops ─────────────────────────────────────────────────────
+
+    /// Build the segments for a closed circle of `radius` at `center`,
+    /// matching what the DXF importer emits (two semicircle arcs).
+    fn closed_circle(center: Point2, radius: f64) -> Vec<Segment> {
+        use crate::geometry::SegmentKind;
+        let p_right = Point2::new(center.x + radius, center.y);
+        let p_left = Point2::new(center.x - radius, center.y);
+        vec![
+            Segment {
+                kind: SegmentKind::Circle,
+                start: p_right,
+                end: p_left,
+                bulge: 1.0,
+                center: Some(center),
+                layer: "0".into(),
+                color: 7,
+            },
+            Segment {
+                kind: SegmentKind::Circle,
+                start: p_left,
+                end: p_right,
+                bulge: 1.0,
+                center: Some(center),
+                layer: "0".into(),
+                color: 7,
+            },
+        ]
+    }
+
+    fn drill_op(id: u32, tool_id: u32, cycle: crate::project::DrillCycle) -> Operation {
+        let mut params = OperationParams::mill_default();
+        params.depth = -5.0;
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        Operation {
+            id,
+            name: format!("Drill {id}"),
+            enabled: true,
+            kind: OperationKind::Drill { cycle },
+            tool_id,
+            source: OperationSource::All,
+            params,
+        }
+    }
+
+    /// A 0.5mm-radius closed circle with a 3mm endmill running an
+    /// OperationKind::Drill { Simple } op should emit a recognizable
+    /// LinuxCNC G81 (or G82 for dwell) drill at the circle's center.
+    #[test]
+    fn drill_op_emits_gcode_for_circle_smaller_than_tool() {
+        let project = Project {
+            segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+            )],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("G81"),
+            "expected G81 in linuxcnc drill output:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("X5") && resp.gcode.contains("Y7"),
+            "expected drill at (5, 7):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Drill cycle Peck with a non-zero step should map to G83 in
+    /// LinuxCNC, with the per-peck Q operand carrying the step.
+    #[test]
+    fn drill_peck_emits_g83() {
+        let project = Project {
+            segments: closed_circle(Point2::new(0.0, 0.0), 0.5),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Peck {
+                    peck_step_mm: 1.0,
+                    dwell_sec: 0.0,
+                },
+            )],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("G83"),
+            "expected G83 in linuxcnc peck output:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("Q1"),
+            "expected Q1 peck step:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Drill cycle ChipBreak should map to G73 in LinuxCNC.
+    #[test]
+    fn drill_chip_break_emits_g73() {
+        let project = Project {
+            segments: closed_circle(Point2::new(0.0, 0.0), 0.5),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::ChipBreak {
+                    peck_step_mm: 1.0,
+                    dwell_sec: 0.0,
+                },
+            )],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("G73"),
+            "expected G73 in linuxcnc chip-break output:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// GRBL doesn't support canned drill cycles. The post should fall
+    /// back to the trait's default G0/G1 expansion: rapid to (x,y,r),
+    /// feed plunge to z, retract to r — no G81/G83/G73 in the output.
+    #[test]
+    fn drill_grbl_falls_back_to_g0g1_sequence() {
+        let project = Project {
+            segments: closed_circle(Point2::new(0.0, 0.0), 0.5),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Peck {
+                    peck_step_mm: 1.0,
+                    dwell_sec: 0.0,
+                },
+            )],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Grbl),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // None of the canned cycle codes should appear in GRBL output.
+        for code in ["G81", "G82", "G83", "G73"] {
+            assert!(
+                !resp.gcode.contains(code),
+                "{code} should not appear in GRBL fallback output:\n{}",
+                resp.gcode
+            );
+        }
+        // …but we should still have at least one G0 (rapid to drill XY)
+        // and at least one G1 (feed plunge / retract feeds) in the
+        // emitted block.
+        let drill_block = resp
+            .gcode
+            .lines()
+            .skip_while(|l| !l.contains("OP 1"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            drill_block.contains("G0"),
+            "expected at least one G0 (rapid) in the drill block:\n{drill_block}"
+        );
+        assert!(
+            drill_block.contains("G1"),
+            "expected at least one G1 (feed plunge) in the drill block:\n{drill_block}"
+        );
+    }
+
+    /// A Drill op with `OperationSource::Objects` selecting only one of
+    /// several drill candidates must emit gcode for *just* that one.
+    #[test]
+    fn drill_op_respects_object_selection() {
+        let mut segments = closed_circle(Point2::new(0.0, 0.0), 0.5);
+        segments.extend(closed_circle(Point2::new(20.0, 0.0), 0.5));
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Drill".into(),
+                enabled: true,
+                kind: OperationKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                },
+                tool_id: 1,
+                source: OperationSource::Objects {
+                    ids: vec![2],
+                    combine: SourceCombine::Auto,
+                },
+                params: {
+                    let mut p = OperationParams::mill_default();
+                    p.depth = -5.0;
+                    p.start_depth = 0.0;
+                    p.fast_move_z = 5.0;
+                    p
+                },
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Only the second circle (centered at x=20) should be drilled.
+        assert!(
+            resp.gcode.contains("G81"),
+            "expected G81 drill, got:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("X20"),
+            "expected drill at the second circle (x=20):\n{}",
+            resp.gcode
+        );
+        // The first circle's center is at (0, 0). The header rapid is
+        // already at X0/Y0 (defaults) so we can't simply scan for "X0";
+        // instead, count G81 lines — there should be exactly one.
+        let g81_count = resp.gcode.matches("G81").count();
+        assert_eq!(
+            g81_count, 1,
+            "expected exactly one drill cycle in selection-restricted output:\n{}",
+            resp.gcode
+        );
     }
 
     #[test]

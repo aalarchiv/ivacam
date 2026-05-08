@@ -130,6 +130,57 @@ components:
       - conventional
       - climb
       type: string
+    DrillCycle:
+      description: Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned cycles G81 / G83 / G73 from the LinuxCNC / Fanuc dialect plus the dwell-at-bottom parameter PyCAM's `Drilling.py` exposes. Posts that don't support canned cycles fall back to a manual G0/G1 expansion of the same cycle (see `PostProcessor::drill_*` defaults).
+      oneOf:
+      - description: G81 — single plunge to depth, retract.
+        properties:
+          dwell_sec:
+            default: 0.0
+            description: Dwell at bottom in seconds before retract. 0 = no dwell.
+            format: double
+            type: number
+          kind:
+            enum:
+            - simple
+            type: string
+        required:
+        - kind
+        type: object
+      - description: G83 — peck with full retract to clearance plane between pecks.
+        properties:
+          dwell_sec:
+            default: 0.0
+            format: double
+            type: number
+          kind:
+            enum:
+            - peck
+            type: string
+          peck_step_mm:
+            format: double
+            type: number
+        required:
+        - kind
+        - peck_step_mm
+        type: object
+      - description: G73 — peck with chip-break (small partial retract between pecks).
+        properties:
+          dwell_sec:
+            default: 0.0
+            format: double
+            type: number
+          kind:
+            enum:
+            - chip_break
+            type: string
+          peck_step_mm:
+            format: double
+            type: number
+        required:
+        - kind
+        - peck_step_mm
+        type: object
     Error:
       properties:
         details: true
@@ -474,13 +525,16 @@ components:
         - strategy
         - type
         type: object
-      - description: Drill cycle — point or circle smaller than tool.
+      - description: Drill cycle — point or circle smaller than tool. Carries a [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1 fallback for posts that don't support canned cycles).
         properties:
+          cycle:
+            $ref: '#/components/schemas/DrillCycle'
           type:
             enum:
             - drill
             type: string
         required:
+        - cycle
         - type
         type: object
       - description: Helical thread — bore + helical thread cut.

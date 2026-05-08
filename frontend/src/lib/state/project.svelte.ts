@@ -286,6 +286,9 @@ class ProjectState {
       step: -1,
       offset: kind === 'engrave' || kind === 'drag_knife' ? 'on' : 'outside',
       pocketStrategy: kind === 'pocket' ? 'cascade' : null,
+      ...(kind === 'drill'
+        ? { drillCycle: { kind: 'simple', dwell_sec: 0 } as DrillCycle }
+        : {}),
       cutDirection: 'conventional',
       finishCutDirection: 'conventional',
       plunge: { kind: 'direct' },
@@ -412,6 +415,14 @@ export type PlungeStrategy =
   | { kind: 'direct' }
   | { kind: 'ramp'; angle_deg: number }
   | { kind: 'helix'; angle_deg: number; radius_mm: number };
+/// Drill cycle for an OperationKind::Drill op. Mirrors wiac_core::project::DrillCycle.
+/// `simple` → G81; `peck` → G83 (full retract between pecks); `chip_break` → G73
+/// (small partial retract between pecks). `dwell_sec` is the dwell at bottom in
+/// seconds (0 = no dwell). `peck_step_mm` is the per-peck Z step.
+export type DrillCycle =
+  | { kind: 'simple'; dwell_sec?: number }
+  | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
+  | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
 /// How a multi-object source selection is combined into the region(s)
 /// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
 /// Default 'auto' is containment-aware (outer + inner = annulus).
@@ -448,6 +459,9 @@ export interface OpEntry {
   step: number;
   offset: ProfileOffset;
   pocketStrategy: PocketStrategy | null;
+  /// Drill cycle for OperationKind::Drill. Honored only when `kind === 'drill'`.
+  /// Default { kind: 'simple', dwell_sec: 0 } via addOperation.
+  drillCycle?: DrillCycle;
   /// Main / roughing cut direction. Default 'conventional'.
   cutDirection?: CutDirection;
   /// Direction for the wall-defining finishing pass. Default

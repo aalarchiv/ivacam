@@ -86,7 +86,10 @@ interface WireOp {
     leads: { in: 'off' | 'straight' | 'arc'; out: 'off' | 'straight' | 'arc'; in_lenght: number; out_lenght: number };
     cut_direction?: 'conventional' | 'climb';
     finish_cut_direction?: 'conventional' | 'climb';
-    plunge?: { kind: 'direct' } | { kind: 'ramp'; angle_deg: number };
+    plunge?:
+      | { kind: 'direct' }
+      | { kind: 'ramp'; angle_deg: number }
+      | { kind: 'helix'; angle_deg: number; radius_mm: number };
     xy_overlap?: number;
   };
 }

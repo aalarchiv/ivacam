@@ -116,11 +116,7 @@ pub fn emit_polylines_block<P: PostProcessor>(
 /// - `PerObject`  — group all offsets sharing source_object_idx, finish
 ///                  one object before starting the next; within a group
 ///                  use Nearest.
-fn order_offsets(
-    setup: &Setup,
-    offsets: &[PolylineOffset],
-    start: Point2,
-) -> Vec<usize> {
+fn order_offsets(setup: &Setup, offsets: &[PolylineOffset], start: Point2) -> Vec<usize> {
     use crate::cam::setup::ObjectOrder;
     let n = offsets.len();
     if n == 0 {
@@ -136,12 +132,10 @@ fn order_offsets(
             let mut groups: Vec<Vec<usize>> = Vec::new();
             let mut group_of: std::collections::HashMap<usize, usize> = Default::default();
             for (i, o) in offsets.iter().enumerate() {
-                let g = *group_of
-                    .entry(o.source_object_idx)
-                    .or_insert_with(|| {
-                        groups.push(Vec::new());
-                        groups.len() - 1
-                    });
+                let g = *group_of.entry(o.source_object_idx).or_insert_with(|| {
+                    groups.push(Vec::new());
+                    groups.len() - 1
+                });
                 groups[g].push(i);
             }
             let mut out = Vec::with_capacity(n);
@@ -312,9 +306,30 @@ fn multi_pass<P: PostProcessor>(
     // `step / tan(angle)`. Disabled when helix is active (the helix
     // already provides a ramped descent over the full path).
     use crate::cam::setup::PlungeStrategy;
+    // Helix-entry plunge: a start-of-cut spiral descent on a small
+    // circle inside the closed pocket boundary, distinct from the
+    // path-wide `helix_mode` above. Only meaningful for closed paths
+    // when the helix circle (radius ≥ tool_radius) fits inside the
+    // boundary polygon — otherwise we fall back to Ramp / Direct.
+    let helix_entry: Option<HelixEntry> = match setup.mill.plunge {
+        PlungeStrategy::Helix {
+            angle_deg,
+            radius_mm,
+        } if closed_path => {
+            let tool_radius = setup.tool.diameter * 0.5;
+            plan_helix_entry(segments, radius_mm, tool_radius, angle_deg)
+        }
+        _ => None,
+    };
     let ramp_angle_deg = match setup.mill.plunge {
         PlungeStrategy::Ramp { angle_deg } => Some(angle_deg.clamp(0.5, 45.0)),
-        PlungeStrategy::Direct => None,
+        PlungeStrategy::Helix { angle_deg, .. } if helix_entry.is_none() => {
+            // Helix didn't fit (radius too small or circle outside
+            // boundary) — fall back to Ramp at the same angle so the
+            // user still gets a non-vertical entry.
+            Some(angle_deg.clamp(0.5, 45.0))
+        }
+        _ => None,
     };
     let total_path_len: f64 = segments
         .iter()
@@ -337,6 +352,20 @@ fn multi_pass<P: PostProcessor>(
             // Spiral from prev_z down to z while tracing the segments.
             post.feedrate(setup.tool.rate_h);
             emit_helix_pass(segments, pz, z, post);
+        } else if let Some(plan) = helix_entry.as_ref().filter(|_| !pass_uses_tabs) {
+            // Start-of-cut helical entry: spiral down on a small
+            // circle inside the pocket boundary, then walk to the
+            // path start and continue normally. Only the descent
+            // portion is helix-driven; the rest of the pass uses the
+            // ordinary path emit at constant z.
+            let pz = ramp_from;
+            post.feedrate(setup.tool.rate_h);
+            emit_helix_entry(plan, pz, z, post);
+            // Cut from helix landing point to the path's actual start.
+            let start = segments.first().map(|s| s.start).unwrap_or(plan.center);
+            post.linear(Some(start.x), Some(start.y), Some(z));
+            let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+            emit_path_with_dragoff(segments, dragoff, post);
         } else if let Some(angle) = ramp_angle_deg.filter(|_| !pass_uses_tabs) {
             // Ramp plunge: descend from pz to z over the first
             // ramp_length of arc length, then continue at z for the
@@ -480,12 +509,7 @@ fn is_closed_path(segments: &[Segment]) -> bool {
 /// Emit one revolution around `segments` while linearly descending Z from
 /// `from_z` to `to_z`. Each segment endpoint gets the interpolated Z so
 /// the spiral stays smooth even with arc segments.
-fn emit_helix_pass<P: PostProcessor>(
-    segments: &[Segment],
-    from_z: f64,
-    to_z: f64,
-    post: &mut P,
-) {
+fn emit_helix_pass<P: PostProcessor>(segments: &[Segment], from_z: f64, to_z: f64, post: &mut P) {
     let total_len: f64 = segments
         .iter()
         .map(|s| match s.kind {
@@ -523,6 +547,281 @@ fn emit_helix_pass<P: PostProcessor>(
             }
         }
     }
+}
+
+/// Plan for a start-of-cut helical entry: where to drop, how far
+/// horizontally, how deep per revolution. Produced by
+/// `plan_helix_entry` and consumed by `emit_helix_entry`.
+#[derive(Debug, Clone, Copy)]
+struct HelixEntry {
+    /// XY center of the helix circle.
+    center: Point2,
+    /// Helix radius in mm.
+    radius: f64,
+    /// Z drop per full revolution (always positive).
+    dz_per_rev: f64,
+    /// True if the helix winds CCW around `center` when viewed from +Z.
+    /// Matches the polygon winding so the cutter spirals "into" the
+    /// material in the same direction the path will run.
+    ccw: bool,
+    /// Starting angle of the helix on the circle (radians, atan2 of
+    /// (path_start - center)). Helix returns to this angle at landing
+    /// so the post-helix walk to path_start is the shortest.
+    start_angle: f64,
+}
+
+/// Build a helix entry plan for `segments` if the geometry supports it.
+/// Returns None when:
+///   - radius < tool_radius (helix would carve nothing the cutter
+///     doesn't already cover from the path)
+///   - the helix circle doesn't fit inside the polygon (any of 8
+///     sample points lies outside the boundary)
+///   - the path is too short / not closed (caller already checks
+///     closed; this is defensive)
+///
+/// The helix center is the polygon centroid offset back toward the
+/// path start so the cutter lands near where the cut begins (and the
+/// post-helix walk to path-start is short). The helix circle must fit
+/// entirely inside the polygon — otherwise the spiral would carve into
+/// the wall on its way down.
+fn plan_helix_entry(
+    segments: &[Segment],
+    radius_mm: f64,
+    tool_radius: f64,
+    angle_deg: f64,
+) -> Option<HelixEntry> {
+    if segments.is_empty() {
+        return None;
+    }
+    if radius_mm < tool_radius - 1e-9 {
+        return None;
+    }
+    let radius = radius_mm.max(1e-6);
+    let angle = angle_deg.clamp(0.5, 45.0).to_radians();
+    let dz_per_rev = (2.0 * std::f64::consts::PI * radius * angle.tan()).abs();
+    if dz_per_rev < 1e-9 {
+        return None;
+    }
+    // Polygon vertices (line endpoints; arc endpoints, no mid-arc
+    // sampling). Sufficient for the shoelace + ray-cast checks below.
+    let verts = polygon_vertices(segments);
+    if verts.len() < 3 {
+        return None;
+    }
+    let area = polygon_signed_area(&verts);
+    let ccw = area > 0.0;
+    // Centroid as the helix center. Robust default for convex
+    // pockets; for skinny / non-convex shapes the point-in-polygon
+    // sampling below catches the bad cases and we fall back to Ramp.
+    // We don't try to pull the center toward the path start — doing so
+    // can push the helix circle into a wall on small or
+    // sharply-cornered pockets, which is exactly the failure mode we
+    // need helical entry to avoid. The post-helix walk to the path
+    // start runs at constant z through the pocket interior, which is
+    // safe because the boundary path itself is already inset from the
+    // walls by tool_radius.
+    let centroid = polygon_centroid(&verts);
+    let path_start = segments[0].start;
+    let center = centroid;
+    // Sample 8 points on the helix circle; all must be inside the
+    // polygon for the helix to be safe.
+    let samples = 8;
+    for i in 0..samples {
+        let theta = (i as f64) * std::f64::consts::TAU / (samples as f64);
+        let px = center.x + radius * theta.cos();
+        let py = center.y + radius * theta.sin();
+        if !point_in_polygon(&verts, px, py) {
+            return None;
+        }
+    }
+    // Start angle: vector from helix center toward the path start.
+    // The helix lands at (center + radius·(cosθ, sinθ)) where θ =
+    // start_angle, then walks the short remaining distance to the
+    // path start.
+    let start_angle = (path_start.y - center.y).atan2(path_start.x - center.x);
+    Some(HelixEntry {
+        center,
+        radius,
+        dz_per_rev,
+        ccw,
+        start_angle,
+    })
+}
+
+/// Polygon centroid via the shoelace formula. For a degenerate
+/// (zero-area) polygon, returns the average of the vertices.
+fn polygon_centroid(verts: &[Point2]) -> Point2 {
+    let n = verts.len();
+    if n == 0 {
+        return Point2::new(0.0, 0.0);
+    }
+    let mut a = 0.0;
+    let mut cx = 0.0;
+    let mut cy = 0.0;
+    for i in 0..n {
+        let p = verts[i];
+        let q = verts[(i + 1) % n];
+        let cross = p.x * q.y - q.x * p.y;
+        a += cross;
+        cx += (p.x + q.x) * cross;
+        cy += (p.y + q.y) * cross;
+    }
+    a *= 0.5;
+    if a.abs() < 1e-9 {
+        let mut sx = 0.0;
+        let mut sy = 0.0;
+        for p in verts {
+            sx += p.x;
+            sy += p.y;
+        }
+        return Point2::new(sx / n as f64, sy / n as f64);
+    }
+    Point2::new(cx / (6.0 * a), cy / (6.0 * a))
+}
+
+/// Emit the helical entry: descend from `from_z` to `to_z` on a circle
+/// of radius `plan.radius` around `plan.center`. Each revolution drops
+/// Z by `plan.dz_per_rev`; partial revolutions linearly interpolate Z.
+/// The final point lands at the path-start angle so the caller's
+/// follow-up `linear(start.x, start.y, to_z)` is a straight line of
+/// length zero (or near-zero in the Helix circle's tangent frame).
+fn emit_helix_entry<P: PostProcessor>(plan: &HelixEntry, from_z: f64, to_z: f64, post: &mut P) {
+    let dz = (from_z - to_z).abs();
+    if dz < 1e-9 {
+        return;
+    }
+    // Number of full revolutions needed (always at least one — if the
+    // user picks a tiny step the helix still completes a full lap so
+    // the cutter doesn't dive on a chord).
+    let revs_full = (dz / plan.dz_per_rev).ceil().max(1.0);
+    // Each revolution drops Z by dz/revs_full so the descent is
+    // distributed evenly.
+    let dz_each = -(from_z - to_z).abs() / revs_full; // negative (going down)
+    let n = revs_full as usize;
+    // Helix start: cutter at start angle, current Z = from_z.
+    let start_x = plan.center.x + plan.radius * plan.start_angle.cos();
+    let start_y = plan.center.y + plan.radius * plan.start_angle.sin();
+    // Move to start of helix at fast_move_z would be done by caller —
+    // here we assume the cutter is already above the helix start. The
+    // first emit is a linear move to the helix start at from_z so the
+    // tool steps off the path-start XY (where the rapid landed it)
+    // onto the helix circle at z=from_z.
+    post.linear(Some(start_x), Some(start_y), Some(from_z));
+    let mut cur_z = from_z;
+    for i in 0..n {
+        let next_z = if i + 1 == n { to_z } else { cur_z + dz_each };
+        // Each revolution is two semicircles so a single G2/G3 with
+        // i, j vector to center stays within the post processor's
+        // arc capabilities (some posts reject full-circle arcs whose
+        // endpoint == startpoint).
+        let half_dz = (next_z - cur_z) * 0.5;
+        let mid_angle = plan.start_angle + std::f64::consts::PI;
+        let mid_x = plan.center.x + plan.radius * mid_angle.cos();
+        let mid_y = plan.center.y + plan.radius * mid_angle.sin();
+        // Arc 1: start → midpoint (semicircle). i, j are the offset
+        // from the arc's start point to the helix center.
+        let i1 = -plan.radius * plan.start_angle.cos();
+        let j1 = -plan.radius * plan.start_angle.sin();
+        if plan.ccw {
+            post.arc_ccw(
+                Some(mid_x),
+                Some(mid_y),
+                Some(cur_z + half_dz),
+                Some(i1),
+                Some(j1),
+            );
+        } else {
+            post.arc_cw(
+                Some(mid_x),
+                Some(mid_y),
+                Some(cur_z + half_dz),
+                Some(i1),
+                Some(j1),
+            );
+        }
+        // Arc 2: midpoint → start (semicircle, completing the lap).
+        let i2 = -plan.radius * mid_angle.cos();
+        let j2 = -plan.radius * mid_angle.sin();
+        let end_x = plan.center.x + plan.radius * plan.start_angle.cos();
+        let end_y = plan.center.y + plan.radius * plan.start_angle.sin();
+        if plan.ccw {
+            post.arc_ccw(Some(end_x), Some(end_y), Some(next_z), Some(i2), Some(j2));
+        } else {
+            post.arc_cw(Some(end_x), Some(end_y), Some(next_z), Some(i2), Some(j2));
+        }
+        cur_z = next_z;
+    }
+}
+
+/// Extract polygon vertices from a segment chain (line endpoints; arc
+/// endpoints — arc midpoints aren't sampled, the polygon is just the
+/// segment endpoint list). Used for signed-area + point-in-polygon
+/// checks during helix planning. The returned list is the closed
+/// polygon's vertex sequence with no duplicate closing vertex.
+fn polygon_vertices(segments: &[Segment]) -> Vec<Point2> {
+    let mut v: Vec<Point2> = Vec::with_capacity(segments.len() + 1);
+    if segments.is_empty() {
+        return v;
+    }
+    v.push(segments[0].start);
+    for seg in segments {
+        // Push the end of each segment; duplicates with the next
+        // segment's start are filtered by the dedupe at the end.
+        if matches!(seg.kind, SegmentKind::Point) {
+            continue;
+        }
+        v.push(seg.end);
+    }
+    // Drop a duplicate trailing vertex (closed path: last == first).
+    if v.len() >= 2 && v.first().unwrap().distance(*v.last().unwrap()) < 1e-6 {
+        v.pop();
+    }
+    v
+}
+
+/// Shoelace signed area of a polygon given as a vertex list. Positive
+/// = CCW, negative = CW. Mirrors `cam::offsets::object_signed_area`
+/// but operates on vertices instead of a `VcObject`.
+fn polygon_signed_area(verts: &[Point2]) -> f64 {
+    let n = verts.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        sum += a.x * b.y - b.x * a.y;
+    }
+    sum * 0.5
+}
+
+/// Even-odd ray-cast point-in-polygon test (horizontal ray to +X).
+/// Edges are treated as half-open [lo.y, hi.y) so vertex hits don't
+/// double-count. Sufficient for the helix-fit sanity check.
+fn point_in_polygon(verts: &[Point2], x: f64, y: f64) -> bool {
+    let n = verts.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        if (a.y - b.y).abs() < 1e-12 {
+            continue;
+        }
+        let (lo, hi) = if a.y < b.y { (a, b) } else { (b, a) };
+        if y < lo.y - 1e-12 || y >= hi.y - 1e-12 {
+            continue;
+        }
+        let t = (y - lo.y) / (hi.y - lo.y);
+        let xi = lo.x + t * (hi.x - lo.x);
+        if xi > x {
+            inside = !inside;
+        }
+    }
+    inside
 }
 
 fn arc_length(seg: &Segment) -> f64 {
@@ -656,11 +955,7 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
 /// `dragoff > 0`, every line→line corner is preceded by an arc that swivels
 /// the blade around the corner point so the trail aligns with the new
 /// direction. Mirrors `viaconstructor.machine_cmd.segment2machine_cmd`.
-fn emit_path_with_dragoff<P: PostProcessor>(
-    segments: &[Segment],
-    dragoff: f64,
-    post: &mut P,
-) {
+fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, post: &mut P) {
     use std::f64::consts::{FRAC_PI_2, PI};
     let mut last_motion: Option<f64> = None;
     for seg in segments {
@@ -863,7 +1158,10 @@ mod tests {
             .lines()
             .filter(|l| l.starts_with("G1"))
             .any(|l| l.contains('X') && l.contains('Z'));
-        assert!(combined_xyz, "helix mode should combine XY moves with Z descent");
+        assert!(
+            combined_xyz,
+            "helix mode should combine XY moves with Z descent"
+        );
     }
 
     #[test]

@@ -18,11 +18,13 @@
     conventional: 'Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.',
     climb: 'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
   };
-  const PLUNGE_HELP: Record<'direct' | 'ramp', string> = {
+  const PLUNGE_HELP: Record<'direct' | 'ramp' | 'helix', string> = {
     direct:
       'Straight Z plunge into material. Safe for center-cutting end mills on shallow steps; risky on harder materials.',
     ramp:
       'Ramped descent: cutter walks forward along the path while Z descends, taking a chip in both directions. Required for non-center-cutting bits.',
+    helix:
+      'Helical entry: cutter spirals down on a small circle inside the closed pocket boundary, then walks to the path start. Standard for non-center-cutting endmills and harder materials. Falls back to ramp on open paths or when the helix circle does not fit.',
   };
 
   /// Tooltip blurb per combine mode — kept short so it fits in a native
@@ -221,6 +223,17 @@
                   kind: 'ramp',
                   angle_deg: op.plunge && op.plunge.kind === 'ramp' ? op.plunge.angle_deg : 3,
                 });
+              } else if (v === 'helix') {
+                // Pick a sane default helix radius from the selected
+                // tool's diameter (1.5 × tool radius). Falls back to
+                // 3mm if the tool can't be resolved.
+                const tool = project.tools.find((t) => t.id === op?.toolId);
+                const defaultRadius = tool ? Math.max(0.1, tool.diameter * 0.75) : 3;
+                patch('plunge', {
+                  kind: 'helix',
+                  angle_deg: op.plunge && op.plunge.kind === 'helix' ? op.plunge.angle_deg : 3,
+                  radius_mm: op.plunge && op.plunge.kind === 'helix' ? op.plunge.radius_mm : defaultRadius,
+                });
               } else {
                 patch('plunge', { kind: 'direct' });
               }
@@ -228,6 +241,7 @@
           >
             <option value="direct" title={PLUNGE_HELP.direct}>direct</option>
             <option value="ramp" title={PLUNGE_HELP.ramp}>ramp</option>
+            <option value="helix" title={PLUNGE_HELP.helix}>helix</option>
           </select>
         </label>
         {#if op.plunge && op.plunge.kind === 'ramp'}
@@ -243,6 +257,45 @@
                 const v = parseFloat((e.currentTarget as HTMLInputElement).value);
                 if (!isNaN(v))
                   patch('plunge', { kind: 'ramp', angle_deg: Math.max(0.5, Math.min(45, v)) });
+              }}
+            />
+          </label>
+        {:else if op.plunge && op.plunge.kind === 'helix'}
+          <label class="row" title="Helix descent angle in degrees. 1°–5° is gentle, 10°+ is aggressive. Each revolution drops Z by 2π·radius·tan(angle).">
+            <span>Helix angle</span>
+            <input
+              type="number"
+              step="0.5"
+              min="0.5"
+              max="45"
+              value={op.plunge.angle_deg}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
+                  patch('plunge', {
+                    kind: 'helix',
+                    angle_deg: Math.max(0.5, Math.min(45, v)),
+                    radius_mm: op.plunge.radius_mm,
+                  });
+              }}
+            />
+          </label>
+          <label class="row" title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral.">
+            <span>Helix radius</span>
+            <input
+              type="number"
+              step="0.1"
+              min="0.1"
+              max="50"
+              value={op.plunge.radius_mm}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
+                  patch('plunge', {
+                    kind: 'helix',
+                    angle_deg: op.plunge.angle_deg,
+                    radius_mm: Math.max(0.1, Math.min(50, v)),
+                  });
               }}
             />
           </label>

@@ -395,6 +395,13 @@ export interface components {
             angle_deg: number;
             /** @enum {string} */
             kind: "ramp";
+        } | {
+            /** Format: double */
+            angle_deg: number;
+            /** @enum {string} */
+            kind: "helix";
+            /** Format: double */
+            radius_mm: number;
         };
         PocketConfig: {
             active: boolean;

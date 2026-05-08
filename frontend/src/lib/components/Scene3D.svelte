@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { project } from '../state/project.svelte';
+  import { project, playheadToSegment } from '../state/project.svelte';
   import { HeightfieldDriver } from '../sim/driver';
 
   let host: HTMLDivElement;
@@ -463,7 +463,19 @@
   function applyToolpathFade() {
     if (!linesObject || toolpathColors.length === 0) return;
     const total = toolpathColors.length;
-    const head = Math.max(0, Math.min(total, Math.round(project.playhead * total)));
+    // Arc-length mapping: head = segIdx + 1 so the segment currently
+    // under the cutter (segIdx) is rendered as "past" (fully colored)
+    // and everything strictly after is faded — matches the count-based
+    // behavior at segment boundaries while keeping playback uniform
+    // across short connectors and long edges.
+    const { segIdx } = playheadToSegment(
+      project.playhead,
+      project.toolpathCumLen,
+      project.toolpathTotalLen,
+    );
+    const head = segIdx < 0
+      ? Math.max(0, Math.min(total, Math.round(project.playhead * total)))
+      : Math.max(0, Math.min(total, segIdx + 1));
     if (head === appliedHead) return;
     const attr = linesObject.geometry.attributes.color as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
@@ -648,11 +660,22 @@
       return;
     }
     const total = gen.toolpath.length;
-    const headIdx = Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
+    const mapped = playheadToSegment(
+      project.playhead,
+      project.toolpathCumLen,
+      project.toolpathTotalLen,
+    );
+    // Fall back to the count-based mapping only if the cum-length table
+    // hasn't been built yet (race between setGenerated and the first
+    // updateTool tick).
+    const headIdx = mapped.segIdx >= 0
+      ? Math.max(0, Math.min(total - 1, mapped.segIdx))
+      : Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
     const seg = gen.toolpath[headIdx];
     if (!seg) return;
-    const subT = project.playhead * total - headIdx;
-    const t = Math.max(0, Math.min(1, subT));
+    const t = mapped.segIdx >= 0
+      ? Math.max(0, Math.min(1, mapped.segT))
+      : Math.max(0, Math.min(1, project.playhead * total - headIdx));
     const px = seg.from.x + (seg.to.x - seg.from.x) * t;
     const py = seg.from.y + (seg.to.y - seg.from.y) * t;
     const pz = seg.from.z + (seg.to.z - seg.from.z) * t;
@@ -1016,8 +1039,17 @@
       if (owner.objectId > 0) project.toggleObject(owner.objectId, e.shiftKey);
       else if (!e.shiftKey) project.clearSelection();
     } else {
-      const total = project.generated?.toolpath.length ?? 0;
-      if (total > 0) project.playhead = (owner.segIdx + 1) / total;
+      // Set playhead so the arc-length mapping lands at the end of the
+      // picked segment (so the cutter sits there and gcode-panel
+      // scrolls to the matching line).
+      const cum = project.toolpathCumLen;
+      const total = project.toolpathTotalLen;
+      const segs = project.generated?.toolpath.length ?? 0;
+      if (cum && total > 0 && owner.segIdx >= 0 && owner.segIdx < cum.length) {
+        project.playhead = Math.min(1, cum[owner.segIdx] / total);
+      } else if (segs > 0) {
+        project.playhead = (owner.segIdx + 1) / segs;
+      }
     }
   }
 

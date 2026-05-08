@@ -509,12 +509,24 @@ pub fn apply_cut_direction(
 /// smaller than the tool radius, we can't carve a pocket — emit a drill
 /// at center instead (a zero-length cut that the gcode emitter will turn
 /// into a plunge).
+/// Pocket emission strategy. Chosen by the caller based on the user's
+/// `PocketStrategy` setting. Cascade emits N concentric closed rings;
+/// Zigzag emits a back-and-forth raster fill; Spiral threads the
+/// cascade rings into ONE continuous open polyline so the cutter never
+/// lifts between rings (cleaner finish, slightly faster than cascade).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PocketEmit {
+    Cascade,
+    Zigzag,
+    Spiral,
+}
+
 pub fn pocket_for_object(
     obj: &VcObject,
     tool_radius: f64,
     nocontour: bool,
     interpolate: usize,
-    zigzag: bool,
+    emit: PocketEmit,
     islands: &[Vec<Point2>],
     xy_step: f64,
 ) -> Vec<PolylineOffset> {
@@ -543,24 +555,52 @@ pub fn pocket_for_object(
         }
         let pts = segments_to_points(&offset.segments, interpolate);
 
-        if zigzag {
-            // Zigzag stride is the same step semantics — distance between
-            // raster lines. Old default was 0.9 * diameter (10% overlap);
-            // the new default lands closer to 50% overlap for cleaner fill.
-            let strokes = pocket_zigzag(&pts, step.max(0.1), tool_radius * 2.0);
-            if !strokes.is_empty() {
-                out.push(PolylineOffset {
-                    segments: strokes,
-                    closed: false,
-                    level: 1,
-                    is_pocket: 1,
-                    layer: offset.layer.clone(),
-                    color: offset.color,
-                    source_object_idx: offset.source_object_idx,
-                    tabs: Vec::new(),
-                });
+        match emit {
+            PocketEmit::Zigzag => {
+                // Zigzag stride is the same step semantics — distance
+                // between raster lines. Default ~50% overlap.
+                let strokes = pocket_zigzag(&pts, step.max(0.1), tool_radius * 2.0);
+                if !strokes.is_empty() {
+                    out.push(PolylineOffset {
+                        segments: strokes,
+                        closed: false,
+                        level: 1,
+                        is_pocket: 1,
+                        layer: offset.layer.clone(),
+                        color: offset.color,
+                        source_object_idx: offset.source_object_idx,
+                        tabs: Vec::new(),
+                    });
+                }
+                continue;
             }
-            continue;
+            PocketEmit::Spiral => {
+                // Spiral: thread the cascade rings into ONE continuous
+                // open polyline. Each ring's start point is rotated so
+                // it's nearest to the previous ring's end point; that
+                // shortens the bridge segment between rings and gives
+                // the path a natural "spiral inward" shape. Approximates
+                // an Archimedean spiral well enough for pocket clearing.
+                let rings = pocket_cascade_with_islands(&pts, islands, step);
+                if rings.is_empty() {
+                    continue;
+                }
+                let segs = stitch_rings_to_spiral(&rings, &offset.layer, offset.color);
+                if !segs.is_empty() {
+                    out.push(PolylineOffset {
+                        segments: segs,
+                        closed: false,
+                        level: 1,
+                        is_pocket: 2,
+                        layer: offset.layer.clone(),
+                        color: offset.color,
+                        source_object_idx: offset.source_object_idx,
+                        tabs: Vec::new(),
+                    });
+                }
+                continue;
+            }
+            PocketEmit::Cascade => {}
         }
 
         let rings = pocket_cascade_with_islands(&pts, islands, step);
@@ -594,6 +634,54 @@ pub fn pocket_for_object(
                 tabs: Vec::new(),
             });
         }
+    }
+    out
+}
+
+/// Thread cascade rings into one continuous spiral polyline. For each
+/// ring after the first: rotate the ring's start so it's nearest to
+/// the previous ring's end point, walk the ring forward, repeat. The
+/// bridge between rings is a straight Line segment (the cutter steps
+/// inward by ~one xy_step).
+fn stitch_rings_to_spiral(rings: &[Vec<Point2>], layer: &str, color: i32) -> Vec<Segment> {
+    let mut out: Vec<Segment> = Vec::new();
+    let mut last_end: Option<Point2> = None;
+    for ring in rings {
+        if ring.len() < 3 {
+            continue;
+        }
+        // Pick the ring's start vertex so it's closest to last_end.
+        let start_idx = if let Some(end) = last_end {
+            let mut best = 0usize;
+            let mut best_d = f64::INFINITY;
+            for (i, p) in ring.iter().enumerate() {
+                let d = p.distance(end);
+                if d < best_d {
+                    best_d = d;
+                    best = i;
+                }
+            }
+            best
+        } else {
+            0
+        };
+        // Walk the ring forward starting at start_idx, wrapping around.
+        let n = ring.len();
+        let first = ring[start_idx];
+        if let Some(end) = last_end {
+            // Bridge from the previous ring's end to this ring's start.
+            if end.distance(first) > 1e-6 {
+                out.push(Segment::line(end, first, layer, color));
+            }
+        }
+        for k in 0..n {
+            let a = ring[(start_idx + k) % n];
+            let b = ring[(start_idx + k + 1) % n];
+            if a.distance(b) > 1e-9 {
+                out.push(Segment::line(a, b, layer, color));
+            }
+        }
+        last_end = Some(first); // we walked back to the start, so end = first
     }
     out
 }
@@ -928,7 +1016,7 @@ mod tests {
             color: 7,
         };
         let obj = VcObject::new(vec![half1, half2], true);
-        let offsets = pocket_for_object(&obj, 1.5, false, 6, false, &[], 1.5);
+        let offsets = pocket_for_object(&obj, 1.5, false, 6, PocketEmit::Cascade, &[], 1.5);
         assert_eq!(offsets.len(), 1);
         assert_eq!(offsets[0].segments.len(), 1);
         assert!(matches!(

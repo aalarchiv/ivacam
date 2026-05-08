@@ -12,7 +12,9 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
-use wiac_core::cam::offsets::{apply_overcut_to_offsets, pocket_for_object, PolylineOffset};
+use wiac_core::cam::offsets::{
+    apply_overcut_to_offsets, pocket_for_object, PocketEmit, PolylineOffset,
+};
 use wiac_core::cam::setup::{Setup, ToolOffset};
 use wiac_core::cam::VcObject;
 use wiac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
@@ -192,7 +194,7 @@ fn build_offsets(
         }
         let pocket = obj.setup.pockets.active && obj.closed;
         if pocket {
-            for mut o in pocket_for_object(obj, radius, false, 6, false, &[], radius) {
+            for mut o in pocket_for_object(obj, radius, false, 6, PocketEmit::Cascade, &[], radius) {
                 o.source_object_idx = idx;
                 offsets.push(o);
             }

@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::cam::chaining::{classify_containment, segments_to_objects};
 use crate::cam::offsets::{
     apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_inward,
-    parallel_offset_outward, pocket_for_object, small_circle_drill, PolylineOffset, TabPoint,
+    parallel_offset_outward, pocket_for_object, small_circle_drill, PocketEmit, PolylineOffset,
+    TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
 use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
@@ -383,7 +384,11 @@ fn build_op_offsets(
             // user wrote it and returns the corresponding object indices.
             let selected = ordered_selection(effective_op, objects);
             let regions = combine_source_regions(objects, &selected, combine);
-            let zigzag = matches!(strategy, PocketStrategy::Zigzag);
+            let pocket_emit = match strategy {
+                PocketStrategy::Zigzag => PocketEmit::Zigzag,
+                PocketStrategy::Spiral => PocketEmit::Spiral,
+                PocketStrategy::Cascade => PocketEmit::Cascade,
+            };
             for region in &regions {
                 if region.boundary.len() < 3 {
                     continue;
@@ -396,7 +401,7 @@ fn build_op_offsets(
                     radius,
                     effective_op.params.pocket_nocontour,
                     6,
-                    zigzag,
+                    pocket_emit,
                     &region.holes,
                     xy_step,
                 ) {
@@ -434,7 +439,11 @@ fn build_op_offsets(
                 if contained_by_selected {
                     continue;
                 }
-                let zigzag = matches!(strategy, PocketStrategy::Zigzag);
+                let pocket_emit = match strategy {
+                    PocketStrategy::Zigzag => PocketEmit::Zigzag,
+                    PocketStrategy::Spiral => PocketEmit::Spiral,
+                    PocketStrategy::Cascade => PocketEmit::Cascade,
+                };
                 // Islands = nested closed objects that are *also* in this
                 // op's selection. Honored unconditionally so the user gets
                 // an annulus pocket from "outer + inner" without having to
@@ -465,7 +474,7 @@ fn build_op_offsets(
                         radius,
                         effective_op.params.pocket_nocontour,
                         6,
-                        zigzag,
+                        pocket_emit,
                         &islands,
                         xy_step,
                     ) {
@@ -3247,6 +3256,64 @@ mod tests {
         assert!(first_cut.is_some(), "expected a first cut motion\n{}", resp.gcode);
     }
 
+
+    /// PocketStrategy::Spiral now emits ONE continuous open polyline
+    /// instead of N concentric closed rings. Verified by counting
+    /// distinct `; OP / level / pocket` blocks in the gcode — Spiral
+    /// gives one is_pocket=2 emit per object, Cascade gives N.
+    #[test]
+    fn spiral_emits_one_continuous_polyline_not_concentric_rings() {
+        fn count_pocket_blocks(gcode: &str) -> usize {
+            gcode
+                .lines()
+                .filter(|l| l.contains("pocket=2 segments="))
+                .count()
+        }
+        let cascade_project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+        };
+        let mut spiral_project = cascade_project.clone();
+        spiral_project.operations[0].kind = OperationKind::Pocket {
+            strategy: crate::project::PocketStrategy::Spiral,
+        };
+        let cascade_gcode = run_pipeline(
+            PipelineRequest {
+                project: cascade_project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .gcode;
+        let spiral_gcode = run_pipeline(
+            PipelineRequest {
+                project: spiral_project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .gcode;
+        let cascade_blocks = count_pocket_blocks(&cascade_gcode);
+        let spiral_blocks = count_pocket_blocks(&spiral_gcode);
+        assert!(cascade_blocks > 1, "cascade should emit many ring blocks, got {cascade_blocks}");
+        assert_eq!(spiral_blocks, 1, "spiral should emit exactly one continuous block, got {spiral_blocks}");
+    }
 
     #[test]
     fn unknown_post_processor_is_a_deserialization_failure() {

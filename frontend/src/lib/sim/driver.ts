@@ -244,14 +244,52 @@ export class HeightfieldDriver {
 
   /// Advance the simulation to `headFraction` (a number in [0, 1] —
   /// project.playhead). Returns true if the mesh was modified.
+  ///
+  /// `cumLen` / `totalLen` are the arc-length cumulative table built
+  /// alongside the toolpath. Without them this falls back to plain
+  /// index-fraction mapping (round(playhead × N segments)), but the
+  /// 3D tool mesh and the gcode panel both use arc-length mapping —
+  /// when the heightfield uses index-fraction here, mixed long-cut /
+  /// short-rapid programs show a sync gap between the tool tip and
+  /// the carved surface (the tool floats over un-carved material, or
+  /// the carve runs ahead of the tip). With cumLen/totalLen they
+  /// agree.
   advanceTo(
     headFraction: number,
     segments: ToolpathSegment[],
     tool: ToolEntry,
+    cumLen?: Float64Array | null,
+    totalLen?: number,
   ): boolean {
     if (!this.sim || !this.mesh) return false;
     const total = segments.length;
-    const newHead = Math.max(0, Math.min(total, Math.round(headFraction * total)));
+    let newHead: number;
+    if (cumLen && cumLen.length === total && totalLen && totalLen > 0) {
+      const target = Math.max(0, Math.min(1, headFraction)) * totalLen;
+      // Binary search for smallest i where cumLen[i] >= target.
+      let lo = 0;
+      let hi = cumLen.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (cumLen[mid] < target) lo = mid + 1;
+        else hi = mid;
+      }
+      const segIdx = lo;
+      const segEndLen = cumLen[segIdx];
+      const segStartLen = segIdx === 0 ? 0 : cumLen[segIdx - 1];
+      const segLen = segEndLen - segStartLen;
+      const segT = segLen > 1e-12 ? (target - segStartLen) / segLen : 0;
+      // Include the in-progress segment when the tool is more than
+      // halfway through it. With segT ∈ [0, 0.5) the carve stops at
+      // segIdx (matching the tool sitting near segment start); with
+      // segT ∈ [0.5, 1] the carve advances to segIdx+1 (matching the
+      // tool sitting near segment end). Worst-case carve-vs-tool
+      // mismatch is then ½ segment of arc length, regardless of
+      // segment count distribution.
+      newHead = Math.max(0, Math.min(total, segIdx + Math.round(segT)));
+    } else {
+      newHead = Math.max(0, Math.min(total, Math.round(headFraction * total)));
+    }
     if (newHead === this.appliedHead) return false;
     if (newHead < this.appliedHead) {
       // Backward scrub: can't undo cuts, replay from zero.

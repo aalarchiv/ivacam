@@ -396,7 +396,13 @@
           lastSimKey = key;
           // Replay 0..head so we see the carved state immediately (not
           // an unmilled stock we have to scrub forward through).
-          driver.advanceTo(project.playhead, generated.toolpath, tool);
+          driver.advanceTo(
+            project.playhead,
+            generated.toolpath,
+            tool,
+            project.toolpathCumLen,
+            project.toolpathTotalLen,
+          );
           requestRender();
         })
         .catch((e) => {
@@ -424,7 +430,13 @@
     const tool =
       project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
     if (!generated || !tool) return;
-    driver.advanceTo(project.playhead, generated.toolpath, tool);
+    driver.advanceTo(
+      project.playhead,
+      generated.toolpath,
+      tool,
+      project.toolpathCumLen,
+      project.toolpathTotalLen,
+    );
   });
 
   /// Live-apply cosmetic settings (color / opacity).

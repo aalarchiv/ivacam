@@ -457,6 +457,14 @@ export interface OpEntry {
   /// = 50% overlap. Higher = tighter cascade = better fill on small
   /// pockets. Honored only by Pocket ops.
   xyOverlap?: number;
+  /// Tab geometry. `tabType=rectangle` (default) is a straight Z lift
+  /// over each tab; `tabType=ramp` runs a sloped ramp up to the tab top
+  /// at `tabRampAngleDeg` (default 30°), holds the flat top, then ramps
+  /// back down. The actual tab placements live on `project.tabs`; this
+  /// just controls the shape of the cut over each tab. Per-op so a
+  /// user can mix Rectangle pockets with Ramp profiles in one project.
+  tabType?: 'rectangle' | 'ramp';
+  tabRampAngleDeg?: number;
 }
 
 export interface ProjectFile {

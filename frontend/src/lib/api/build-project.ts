@@ -82,7 +82,13 @@ interface WireOp {
     pocket_islands: boolean;
     pocket_nocontour: boolean;
     pocket_insideout: boolean;
-    tabs: { active: boolean; width: number; height: number; tab_type: 'rectangle' | 'ramp' };
+    tabs: {
+      active: boolean;
+      width: number;
+      height: number;
+      tab_type: 'rectangle' | 'ramp';
+      ramp_angle_deg?: number;
+    };
     leads: { in: 'off' | 'straight' | 'arc'; out: 'off' | 'straight' | 'arc'; in_lenght: number; out_lenght: number };
     cut_direction?: 'conventional' | 'climb';
     finish_cut_direction?: 'conventional' | 'climb';
@@ -184,7 +190,18 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
       pocket_islands: true,
       pocket_nocontour: false,
       pocket_insideout: false,
-      tabs: { active: anyTabs, width: 10, height: 1, tab_type: 'rectangle' },
+      tabs: {
+        active: anyTabs,
+        width: 10,
+        height: 1,
+        tab_type: op.tabType ?? 'rectangle',
+        // Only emit ramp_angle_deg when ≠ default (30°) so old payloads
+        // and the Rust serde default match — the field is
+        // skip_serializing_if=is_default_ramp_angle on the wire too.
+        ...(op.tabType === 'ramp' && op.tabRampAngleDeg !== undefined && op.tabRampAngleDeg !== 30
+          ? { ramp_angle_deg: op.tabRampAngleDeg }
+          : {}),
+      },
       leads: { in: 'off', out: 'off', in_lenght: 5, out_lenght: 5 },
       // Only emit when ≠ conventional so the wire stays small and the
       // Rust side falls back to the serde default.

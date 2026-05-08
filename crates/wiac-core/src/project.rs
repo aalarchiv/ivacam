@@ -344,6 +344,7 @@ impl OperationParams {
                 width: 10.0,
                 height: 1.0,
                 tab_type: TabType::Rectangle,
+                ramp_angle_deg: 30.0,
             },
             leads: LeadsConfig {
                 r#in: LeadKind::Off,

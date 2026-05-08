@@ -300,6 +300,14 @@ fn multi_pass<P: PostProcessor>(
     };
     let tabs_z = total_depth + setup.tabs.height.abs();
     let tab_radius = (setup.tool.diameter * 0.5).max(0.5);
+    // Ramp profile only applies when tab_type=Ramp. ramp_length is the
+    // horizontal distance over which Z transitions between cut_z and
+    // tabs_z at the configured angle. Computed once per pass below.
+    use crate::cam::setup::TabType;
+    let tab_ramp_angle_deg = match setup.tabs.tab_type {
+        TabType::Ramp => Some(setup.tabs.ramp_angle_deg.clamp(0.5, 89.0)),
+        TabType::Rectangle => None,
+    };
 
     // Helix mode replaces the straight Z plunge between passes with a
     // spiral down the contour — gentler on small-diameter tools and
@@ -368,7 +376,15 @@ fn multi_pass<P: PostProcessor>(
             post.linear(None, None, Some(z));
             post.feedrate(setup.tool.rate_h);
             if pass_uses_tabs {
-                emit_path_with_tabs(segments, tabs, tabs_z, z, tab_radius, post);
+                emit_path_with_tabs(
+                    segments,
+                    tabs,
+                    tabs_z,
+                    z,
+                    tab_radius,
+                    tab_ramp_angle_deg,
+                    post,
+                );
             } else {
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
                 emit_path_with_dragoff(segments, dragoff, post);
@@ -538,21 +554,35 @@ fn arc_length(seg: &Segment) -> f64 {
 /// Emit the cut path with tab interruptions. For each LINE segment that
 /// crosses a tab's `tab_radius` neighborhood, the cut is split: cut up to
 /// the entry, lift Z to `tabs_z`, traverse to the exit, drop back to
-/// `cut_z`, continue cutting. Arcs through tabs are tab-skipped wholesale
-/// for now (rectangle-tab on arc is a follow-up).
+/// `cut_z`, continue cutting (Rectangle); or ramp up / flat / ramp down
+/// when `ramp_angle_deg` is `Some` (Ramp).
+///
+/// Arcs through tabs are tab-skipped with a straight Z lift even when
+/// Ramp is requested — ramping along a curved path is a v2 follow-up.
 fn emit_path_with_tabs<P: PostProcessor>(
     segments: &[Segment],
     tabs: &[crate::cam::offsets::TabPoint],
     tabs_z: f64,
     cut_z: f64,
     tab_radius: f64,
+    ramp_angle_deg: Option<f64>,
     post: &mut P,
 ) {
     for seg in segments {
         match seg.kind {
-            SegmentKind::Line => emit_line_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, post),
+            SegmentKind::Line => emit_line_with_tabs(
+                seg,
+                tabs,
+                tabs_z,
+                cut_z,
+                tab_radius,
+                ramp_angle_deg,
+                post,
+            ),
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
+                // v2: ramp along arcs. For now arcs through tabs always
+                // do a straight Z lift, regardless of tab_type=Ramp.
                 let crosses = tabs.iter().any(|t| {
                     let mid_x = (seg.start.x + seg.end.x) * 0.5;
                     let mid_y = (seg.start.y + seg.end.y) * 0.5;
@@ -585,6 +615,7 @@ fn emit_line_with_tabs<P: PostProcessor>(
     tabs_z: f64,
     cut_z: f64,
     tab_radius: f64,
+    ramp_angle_deg: Option<f64>,
     post: &mut P,
 ) {
     let dx = seg.end.x - seg.start.x;
@@ -626,18 +657,64 @@ fn emit_line_with_tabs<P: PostProcessor>(
         }
         merged.push((a, b));
     }
-    // Emit: cut up to each interval, lift, traverse, drop, repeat.
+    // Ramp horizontal length: flat = (tabs_z - cut_z) / tan(angle). When
+    // 2*ramp_length > tab_width we collapse to a triangle (no flat top).
+    let dz = (tabs_z - cut_z).abs();
+    let ramp_length = ramp_angle_deg.map(|a| {
+        if dz < 1e-9 {
+            0.0
+        } else {
+            dz / a.to_radians().tan()
+        }
+    });
+    // Emit: cut up to each interval, lift / ramp, traverse, drop / ramp,
+    // repeat.
     let mut cursor = 0.0;
     for (t_in, t_out) in merged {
         if t_in > cursor + 1e-6 {
             let p = lerp(seg, t_in);
             post.linear(Some(p.0), Some(p.1), None);
         }
-        // Lift over the tab.
-        post.linear(None, None, Some(tabs_z));
-        let p_out = lerp(seg, t_out);
-        post.linear(Some(p_out.0), Some(p_out.1), None);
-        post.linear(None, None, Some(cut_z));
+        match ramp_length {
+            Some(rl) if rl > 1e-9 => {
+                let tab_world_len = (t_out - t_in) * len;
+                if tab_world_len < 2.0 * rl {
+                    // Triangle: ramp directly to tabs_z at tab center,
+                    // then ramp back down to cut_z at tab exit. Cutter
+                    // never reaches a flat top — the tab is too narrow
+                    // for the configured angle to fit its full slope.
+                    let t_mid = 0.5 * (t_in + t_out);
+                    let mid = lerp(seg, t_mid);
+                    post.linear(Some(mid.0), Some(mid.1), Some(tabs_z));
+                    let exit = lerp(seg, t_out);
+                    post.linear(Some(exit.0), Some(exit.1), Some(cut_z));
+                } else {
+                    // Trapezoid: ramp up over rl, run flat, ramp down
+                    // over rl. Translate ramp_length back into t-space
+                    // along the segment.
+                    let dt_ramp = rl / len;
+                    let t_up_end = t_in + dt_ramp;
+                    let t_down_start = t_out - dt_ramp;
+                    let up_end = lerp(seg, t_up_end);
+                    let down_start = lerp(seg, t_down_start);
+                    let exit = lerp(seg, t_out);
+                    // Ramp up: cut + climb to tabs_z.
+                    post.linear(Some(up_end.0), Some(up_end.1), Some(tabs_z));
+                    // Flat top across the tab's interior at tabs_z.
+                    post.linear(Some(down_start.0), Some(down_start.1), None);
+                    // Ramp down: descend back to cut_z by tab exit.
+                    post.linear(Some(exit.0), Some(exit.1), Some(cut_z));
+                }
+            }
+            _ => {
+                // Rectangle (or zero-height tab): straight Z lift, run
+                // across, drop. Original behavior.
+                post.linear(None, None, Some(tabs_z));
+                let p_out = lerp(seg, t_out);
+                post.linear(Some(p_out.0), Some(p_out.1), None);
+                post.linear(None, None, Some(cut_z));
+            }
+        }
         cursor = t_out;
     }
     if cursor < 1.0 - 1e-6 {
@@ -891,6 +968,186 @@ mod tests {
         assert!(g.contains("Z-1"), "expected lift to tabs_z=-1 in: {g}");
         // Both Z=-2 (cut depth) and Z=-1 (tabs_z) should appear.
         assert!(g.contains("Z-2"), "expected cut at depth -2 in: {g}");
+    }
+
+    #[test]
+    fn ramped_tab_emits_trapezoid_z_profile() {
+        use crate::cam::setup::TabType;
+        use crate::gcode::preview::{interpret, MoveKind};
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.tabs.active = true;
+        setup.tabs.height = 0.5;
+        setup.tabs.tab_type = TabType::Ramp;
+        setup.tabs.ramp_angle_deg = 30.0;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        // Single 20mm long line cut along +X with one tab in the middle.
+        // tab_radius = max(3.0/2, 0.5) = 1.5 → tab_world_len = 3mm.
+        // ramp_length = 0.5 / tan(30°) ≈ 0.866mm. 2*ramp_length ≈ 1.73mm
+        // < 3mm tab width → trapezoid (ramp_up / flat / ramp_down).
+        let line_offset = PolylineOffset {
+            segments: vec![Segment::line(p(0.0, 0.0), p(20.0, 0.0), "0", 7)],
+            closed: false,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0 }],
+        };
+
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[line_offset], &mut post);
+        let segments = interpret(&g);
+
+        // Only inspect Cut moves along the path (skip Plunge/Retract,
+        // which legitimately are pure-Z and bracket the path).
+        let cut_z = -1.0_f64;
+        let tabs_z = -0.5_f64;
+        let mut waypoints: Vec<(f64, f64)> = Vec::new();
+        for s in &segments {
+            if !matches!(s.kind, MoveKind::Cut) {
+                continue;
+            }
+            if s.from.y.abs() > 1e-3 || s.to.y.abs() > 1e-3 {
+                continue;
+            }
+            if waypoints.is_empty() {
+                waypoints.push((s.from.x, s.from.z));
+            }
+            waypoints.push((s.to.x, s.to.z));
+        }
+
+        // Expect a walk that starts and ends at cut_z, climbs to
+        // tabs_z mid-path on a sloped ramp, holds tabs_z for the flat,
+        // then descends on a sloped ramp.
+        assert!(waypoints.len() >= 5, "expected ≥5 waypoints, got {waypoints:?}");
+
+        // Trapezoid signature: a flat-top run at tabs_z (consecutive
+        // tabs_z waypoints with ΔX>0).
+        let flat_pairs = waypoints
+            .windows(2)
+            .filter(|w| {
+                (w[0].1 - tabs_z).abs() < 1e-6
+                    && (w[1].1 - tabs_z).abs() < 1e-6
+                    && w[1].0 - w[0].0 > 1e-6
+            })
+            .count();
+        assert!(flat_pairs >= 1, "expected ≥1 flat-top run at tabs_z; waypoints={waypoints:?}");
+
+        // Sloped ramps in and out (Z changes while X advances).
+        let has_ramp_up = waypoints.windows(2).any(|w| {
+            (w[0].1 - cut_z).abs() < 1e-6
+                && (w[1].1 - tabs_z).abs() < 1e-6
+                && (w[1].0 - w[0].0).abs() > 1e-3
+        });
+        let has_ramp_down = waypoints.windows(2).any(|w| {
+            (w[0].1 - tabs_z).abs() < 1e-6
+                && (w[1].1 - cut_z).abs() < 1e-6
+                && (w[1].0 - w[0].0).abs() > 1e-3
+        });
+        assert!(has_ramp_up, "expected a ramp-up (cut_z→tabs_z with ΔX>0); waypoints={waypoints:?}");
+        assert!(has_ramp_down, "expected a ramp-down (tabs_z→cut_z with ΔX>0); waypoints={waypoints:?}");
+
+        // No pure vertical Z step inside the cut path (Rectangle would
+        // emit ΔX==0 transitions between cut_z and tabs_z).
+        let pure_vertical = waypoints.windows(2).any(|w| {
+            (w[0].1 - w[1].1).abs() > 1e-6 && (w[1].0 - w[0].0).abs() < 1e-9
+        });
+        assert!(!pure_vertical, "ramped tab must not emit pure-Z lifts; waypoints={waypoints:?}");
+    }
+
+    #[test]
+    fn ramped_tab_with_too_narrow_width_uses_triangle() {
+        use crate::cam::setup::TabType;
+        use crate::gcode::preview::{interpret, MoveKind};
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -2.0;
+        setup.mill.step = -2.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.tabs.active = true;
+        setup.tabs.height = 1.5; // tabs_z = -0.5
+        setup.tabs.tab_type = TabType::Ramp;
+        setup.tabs.ramp_angle_deg = 30.0;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        // tab_radius = 1.5 → tab_world_len = 3mm.
+        // ramp_length = 1.5 / tan(30°) ≈ 2.598mm. 2*ramp_length ≈ 5.2mm
+        // > 3mm tab width → triangle (ramp up directly to tabs_z at tab
+        // center, then ramp down — no flat top).
+        let line_offset = PolylineOffset {
+            segments: vec![Segment::line(p(0.0, 0.0), p(20.0, 0.0), "0", 7)],
+            closed: false,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0 }],
+        };
+
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[line_offset], &mut post);
+        let segments = interpret(&g);
+
+        let cut_z = -2.0_f64;
+        let tabs_z = -0.5_f64;
+        let mut waypoints: Vec<(f64, f64)> = Vec::new();
+        for s in &segments {
+            if !matches!(s.kind, MoveKind::Cut) {
+                continue;
+            }
+            if s.from.y.abs() > 1e-3 || s.to.y.abs() > 1e-3 {
+                continue;
+            }
+            if waypoints.is_empty() {
+                waypoints.push((s.from.x, s.from.z));
+            }
+            waypoints.push((s.to.x, s.to.z));
+        }
+
+        // Triangle profile: ramp-up directly to tabs_z, then ramp-down
+        // back to cut_z, with NO consecutive-tabs_z (flat top) pair.
+        let flat_pairs = waypoints
+            .windows(2)
+            .filter(|w| {
+                (w[0].1 - tabs_z).abs() < 1e-6
+                    && (w[1].1 - tabs_z).abs() < 1e-6
+                    && w[1].0 - w[0].0 > 1e-6
+            })
+            .count();
+        assert_eq!(flat_pairs, 0, "triangle must not have a flat top; waypoints={waypoints:?}");
+
+        // Apex at tabs_z exists.
+        assert!(
+            waypoints.iter().any(|w| (w.1 - tabs_z).abs() < 1e-6),
+            "expected apex at tabs_z; waypoints={waypoints:?}"
+        );
+
+        // Both ramp segments are sloped (ΔX>0 + ΔZ != 0).
+        let has_ramp_up = waypoints.windows(2).any(|w| {
+            (w[0].1 - cut_z).abs() < 1e-6
+                && (w[1].1 - tabs_z).abs() < 1e-6
+                && (w[1].0 - w[0].0).abs() > 1e-3
+        });
+        let has_ramp_down = waypoints.windows(2).any(|w| {
+            (w[0].1 - tabs_z).abs() < 1e-6
+                && (w[1].1 - cut_z).abs() < 1e-6
+                && (w[1].0 - w[0].0).abs() > 1e-3
+        });
+        assert!(has_ramp_up, "expected ramp-up; waypoints={waypoints:?}");
+        assert!(has_ramp_down, "expected ramp-down; waypoints={waypoints:?}");
     }
 
     #[test]

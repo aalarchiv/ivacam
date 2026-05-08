@@ -136,8 +136,24 @@ pub struct PocketConfig {
 pub struct TabsConfig {
     pub active: bool,
     pub width: f64,
+    /// Z height the cutter lifts to over a tab (positive distance above
+    /// the cut floor). The actual tab Z is `mill.depth + tabs.height`.
     pub height: f64,
     pub tab_type: TabType,
+    /// Ramp angle in degrees, used only when `tab_type == Ramp`. The
+    /// horizontal length of each ramp into / out of a tab is
+    /// `tabs.height / tan(ramp_angle_deg)`. 30° gives a 1:√3 slope.
+    /// Ignored for Rectangle tabs.
+    #[serde(default = "default_ramp_angle", skip_serializing_if = "is_default_ramp_angle")]
+    pub ramp_angle_deg: f64,
+}
+
+fn default_ramp_angle() -> f64 {
+    30.0
+}
+
+fn is_default_ramp_angle(angle: &f64) -> bool {
+    (angle - 30.0).abs() < 1e-9
 }
 
 impl Default for TabsConfig {
@@ -147,6 +163,7 @@ impl Default for TabsConfig {
             width: 10.0,
             height: 1.0,
             tab_type: TabType::Rectangle,
+            ramp_angle_deg: default_ramp_angle(),
         }
     }
 }

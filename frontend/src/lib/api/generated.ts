@@ -503,8 +503,16 @@ export interface components {
         TabType: "rectangle" | "ramp";
         TabsConfig: {
             active: boolean;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Z height the cutter lifts to over a tab (positive distance above the cut floor). The actual tab Z is `mill.depth + tabs.height`.
+             */
             height: number;
+            /**
+             * Format: double
+             * @description Ramp angle in degrees, used only when `tab_type == Ramp`. The horizontal length of each ramp into / out of a tab is `tabs.height / tan(ramp_angle_deg)`. 30° gives a 1:√3 slope. Ignored for Rectangle tabs.
+             */
+            ramp_angle_deg?: number;
             tab_type: components["schemas"]["TabType"];
             /** Format: double */
             width: number;

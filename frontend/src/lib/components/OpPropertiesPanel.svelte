@@ -24,6 +24,12 @@
     ramp:
       'Ramped descent: cutter walks forward along the path while Z descends, taking a chip in both directions. Required for non-center-cutting bits.',
   };
+  const TAB_TYPE_HELP: Record<'rectangle' | 'ramp', string> = {
+    rectangle:
+      'Straight Z lift over each tab: cutter pops up to tab height, runs across, drops back down. Simple and fast.',
+    ramp:
+      'Sloped entry/exit: cutter ramps UP at the configured angle, holds tab height for the flat top, then ramps DOWN. Smoother machine motion and cleaner tab transitions.',
+  };
 
   /// Tooltip blurb per combine mode — kept short so it fits in a native
   /// option's `title` attribute (most browsers cut after ~2 lines).
@@ -249,6 +255,48 @@
         {/if}
       {/if}
     </fieldset>
+
+    {#if op.kind === 'profile' || op.kind === 'pocket'}
+      <fieldset>
+        <legend>Tabs</legend>
+        <label class="row" title={TAB_TYPE_HELP[op.tabType ?? 'rectangle']}>
+          <span>Type</span>
+          <select
+            value={op.tabType ?? 'rectangle'}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value as 'rectangle' | 'ramp';
+              patch('tabType', v);
+              if (v === 'ramp' && op?.tabRampAngleDeg === undefined) {
+                patch('tabRampAngleDeg', 30);
+              }
+            }}
+          >
+            <option value="rectangle" title={TAB_TYPE_HELP.rectangle}>rectangle</option>
+            <option value="ramp" title={TAB_TYPE_HELP.ramp}>ramp</option>
+          </select>
+        </label>
+        {#if op.tabType === 'ramp'}
+          <label
+            class="row"
+            title="Ramp angle in degrees. 30° (default) gives a 1:√3 slope. Smaller = gentler, longer ramps; larger = steeper, more like a Rectangle tab. Horizontal ramp length = tabs.height / tan(angle)."
+          >
+            <span>Ramp angle</span>
+            <input
+              type="number"
+              step="1"
+              min="1"
+              max="89"
+              value={op.tabRampAngleDeg ?? 30}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v))
+                  patch('tabRampAngleDeg', Math.max(1, Math.min(89, v)));
+              }}
+            />
+          </label>
+        {/if}
+      </fieldset>
+    {/if}
 
     {#if op.kind === 'profile'}
       <fieldset>

@@ -85,8 +85,26 @@ class ProjectState {
   selectedEntities = $state<Set<number>>(new Set());
 
   /// Toolpath scrub position in [0, 1]. Read by Scene3D for the tool-tip
-  /// indicator and by PlaybackBar for the slider.
+  /// indicator and by PlaybackBar for the slider. Interpreted as a
+  /// fraction of total ARC LENGTH (not segment count), so cutter speed
+  /// stays consistent across short connectors and long edges. The
+  /// playhead → segment mapping uses `toolpathCumLen` below.
   playhead = $state(1.0);
+
+  /// Cumulative arc length per toolpath segment, computed when
+  /// `setGenerated` is called. Index `i` holds the length-up-through
+  /// segment `i` (so cumLen[total-1] = total arc length, cumLen[0] =
+  /// length of segment 0). Used by `playheadToSegment` to map
+  /// playhead → segment index by arc length so playback feels uniform
+  /// across segment densities (a 50 mm boundary edge and a 1.5 mm
+  /// zigzag connector each take time proportional to length, instead
+  /// of both consuming 1/total_segments of playback).
+  ///
+  /// Arcs (MoveKind::Arc) are approximated as their straight-line
+  /// chord here — slight underestimate but fine for visual playback
+  /// since we don't have I/J center data on the frontend.
+  toolpathCumLen = $state<Float64Array | null>(null);
+  toolpathTotalLen = $state(0.0);
 
   /// Tab placements per imported segment index. Each tab is a position
   /// where the cutter lifts to clear the workpiece. The CAM core honors
@@ -199,6 +217,8 @@ class ProjectState {
   setImported(r: ImportResponse) {
     this.imported = r;
     this.generated = null;
+    this.toolpathCumLen = null;
+    this.toolpathTotalLen = 0;
     this.dirty = true;
     this.error = null;
     this.visibleLayers = new Set(r.layers.map((l) => l.name));
@@ -221,6 +241,27 @@ class ProjectState {
 
   setGenerated(r: GenerateResponse) {
     this.generated = r;
+    // Pre-compute cumulative arc length over the toolpath so playback
+    // can advance by physical distance instead of segment count. See
+    // `playheadToSegment` for the inverse lookup.
+    const tp = r.toolpath;
+    if (tp.length > 0) {
+      const cum = new Float64Array(tp.length);
+      let acc = 0;
+      for (let i = 0; i < tp.length; i++) {
+        const s = tp[i];
+        const dx = s.to.x - s.from.x;
+        const dy = s.to.y - s.from.y;
+        const dz = s.to.z - s.from.z;
+        acc += Math.hypot(dx, dy, dz);
+        cum[i] = acc;
+      }
+      this.toolpathCumLen = cum;
+      this.toolpathTotalLen = acc;
+    } else {
+      this.toolpathCumLen = null;
+      this.toolpathTotalLen = 0;
+    }
     this.dirty = false;
     this.error = null;
     this.playhead = 1.0;
@@ -487,3 +528,38 @@ export interface ProjectFile {
 }
 
 export const project = new ProjectState();
+
+/// Map `playhead ∈ [0,1]` (fraction of total arc length) to a segment
+/// index + parametric position within that segment. Returns
+/// `{ segIdx, segT }` where `segT ∈ [0,1]` is the fractional distance
+/// along segment `segIdx`. Returns `{ segIdx: -1, segT: 0 }` when the
+/// toolpath is empty or there is no length to traverse.
+///
+/// Arc-length-based mapping is what makes playback feel uniform: a
+/// 50 mm boundary edge takes ~33× longer than a 1.5 mm zigzag connector
+/// at the same `speed`, instead of both consuming `1/total_segments`
+/// of playback time.
+export function playheadToSegment(
+  playhead: number,
+  cumLen: Float64Array | null,
+  totalLen: number,
+): { segIdx: number; segT: number } {
+  if (!cumLen || cumLen.length === 0 || totalLen <= 0) {
+    return { segIdx: -1, segT: 0 };
+  }
+  const clamped = Math.max(0, Math.min(1, playhead));
+  const target = clamped * totalLen;
+  // Binary search for the smallest i where cumLen[i] >= target.
+  let lo = 0;
+  let hi = cumLen.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (cumLen[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  const segEndLen = cumLen[lo];
+  const segStartLen = lo === 0 ? 0 : cumLen[lo - 1];
+  const segLen = segEndLen - segStartLen;
+  const segT = segLen > 1e-12 ? (target - segStartLen) / segLen : 0;
+  return { segIdx: lo, segT };
+}

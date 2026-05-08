@@ -1,8 +1,11 @@
 <script lang="ts">
-  // 3D toolpath scrubber. Drives `project.playhead` (a fraction in [0,1])
-  // which Scene3D reads to position a tool tip cone along the path.
+  // 3D toolpath scrubber. Drives `project.playhead` (a fraction in
+  // [0,1] of total ARC LENGTH — not segment count) which Scene3D and
+  // GcodePanel read via `playheadToSegment` to position the tool tip
+  // and active line. Arc-length interpretation keeps cutter speed
+  // visually consistent across short connectors and long edges.
 
-  import { project } from '../state/project.svelte';
+  import { project, playheadToSegment } from '../state/project.svelte';
 
   let speed = $state(1.0);
   let playing = $state(false);
@@ -21,6 +24,9 @@
     if (!playing) return;
     const dt = (now - lastTs) / 1000;
     lastTs = now;
+    // 0.1 fraction of total arc length per second at speed=1. Keeps
+    // the same "feels right for short programs" cadence as before
+    // while now scaling to physical distance, not segment count.
     let next = project.playhead + dt * 0.1 * speed;
     if (next >= 1) {
       next = 1;
@@ -67,8 +73,20 @@
       /></label
     >
     <span class="counter">
-      {Math.round(project.playhead * project.generated.toolpath.length)}/{project.generated
-        .toolpath.length}
+      {(() => {
+        const total = project.generated.toolpath.length;
+        const mapped = playheadToSegment(
+          project.playhead,
+          project.toolpathCumLen,
+          project.toolpathTotalLen,
+        );
+        // +1 so the counter reads "N of total" (1-based) when fully
+        // played out, matching the previous count-based display.
+        const shown = mapped.segIdx >= 0
+          ? Math.min(total, mapped.segIdx + 1)
+          : Math.round(project.playhead * total);
+        return `${shown}/${total}`;
+      })()}
     </span>
   </div>
 {/if}

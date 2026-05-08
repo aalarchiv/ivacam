@@ -9,7 +9,7 @@
   /// Powered by project.generated.gcode_index (lines_to_segment +
   /// segments_to_line) emitted by wiac_core::gcode::preview.
 
-  import { project } from '../state/project.svelte';
+  import { project, playheadToSegment } from '../state/project.svelte';
   import { _ } from 'svelte-i18n';
 
   type GcodeIndex = {
@@ -25,12 +25,21 @@
   );
 
   // Active gcode line = the line of the segment the playhead currently
-  // points at. 1-based per preview::interpret.
+  // points at. 1-based per preview::interpret. The playhead → segment
+  // mapping goes via arc length so dense connectors don't blow past
+  // the gcode-panel highlight faster than long boundary edges.
   const activeLine = $derived.by<number | null>(() => {
     const gen = project.generated;
     if (!gen || gen.toolpath.length === 0 || !idx) return null;
     const total = gen.toolpath.length;
-    const headIdx = Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
+    const mapped = playheadToSegment(
+      project.playhead,
+      project.toolpathCumLen,
+      project.toolpathTotalLen,
+    );
+    const headIdx = mapped.segIdx >= 0
+      ? Math.max(0, Math.min(total - 1, mapped.segIdx))
+      : Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
     const line = idx.segments_to_line[headIdx];
     return typeof line === 'number' && line > 0 ? line : null;
   });
@@ -59,8 +68,17 @@
     while (probe >= 0 && idx.lines_to_segment[probe] === NO_SEGMENT) probe--;
     if (probe < 0) return;
     const segIdx = idx.lines_to_segment[probe];
-    const total = gen.toolpath.length;
-    if (total > 0) project.playhead = (segIdx + 1) / total;
+    // Map segIdx → playhead via cumulative arc length so the
+    // arc-length playback consumer (Scene3D, this panel) lands on the
+    // same segment.
+    const cum = project.toolpathCumLen;
+    const total = project.toolpathTotalLen;
+    const segs = gen.toolpath.length;
+    if (cum && total > 0 && segIdx < cum.length) {
+      project.playhead = Math.min(1, cum[segIdx] / total);
+    } else if (segs > 0) {
+      project.playhead = (segIdx + 1) / segs;
+    }
   }
 </script>
 

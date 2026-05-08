@@ -40,6 +40,7 @@ export class HeightfieldMesh {
   private readonly cols: number;
   private readonly rows: number;
   private edgeThresholdDeg: number;
+  private readonly cellSize: number;
 
   private readonly solidGeometry: THREE.PlaneGeometry;
   private readonly solidMaterial: THREE.MeshStandardMaterial;
@@ -52,6 +53,7 @@ export class HeightfieldMesh {
   constructor(opts: HeightfieldOptions) {
     this.cols = opts.cols;
     this.rows = opts.rows;
+    this.cellSize = opts.cellSize;
     this.edgeThresholdDeg = opts.edgeThresholdDeg ?? 30;
 
     // PlaneGeometry width = (cols - 1) * cellSize so the vertex-to-vertex
@@ -133,9 +135,65 @@ export class HeightfieldMesh {
       }
     }
     this.solidGeometry.attributes.position.needsUpdate = true;
-    // Full normal recompute is fine for v1; debouncing or restricting to
-    // the AABB neighborhood is a follow-up if profiling demands it.
-    this.solidGeometry.computeVertexNormals();
+    // Partial-AABB normal recompute: re-derive normals only for the
+    // dirty vertex range plus a 1-cell halo. Full computeVertexNormals
+    // on a 1k×1k grid was ~40 ms / frame; this is O(AABB area).
+    //
+    // Heightfield normal at (ix, iy): finite-difference gradient of Z.
+    //   dz/dx = (z(ix+1, iy) - z(ix-1, iy)) / (2 * cellSize)
+    //   dz/dy = (z(ix, iy+1) - z(ix, iy-1)) / (2 * cellSize)
+    //   normal = normalize(-dz/dx, -dz/dy, 1)
+    //
+    // The Y component is in PLANE-LOCAL coords. PlaneGeometry's iy axis
+    // is flipped (vertex iy=0 at +halfHeight = top), but we wrote data
+    // with the flip already applied (vertRow = (rows-1-iy)*cols), so
+    // the local-Y gradient direction matches the heightmap's iy
+    // direction by construction — no extra negation here.
+    this.refreshNormalsAabb(ix0, iy0, ix1, iy1);
+  }
+
+  private refreshNormalsAabb(ix0: number, iy0: number, ix1: number, iy1: number): void {
+    const positions = this.solidGeometry.attributes.position.array as Float32Array;
+    const normalAttr = this.solidGeometry.attributes.normal as THREE.BufferAttribute;
+    const normals = normalAttr.array as Float32Array;
+    const cols = this.cols;
+    const rows = this.rows;
+    const lastRow = rows - 1;
+    const inv2cell = 1.0 / (2.0 * this.cellSize);
+    // Halo of 1 in vertex index terms — neighbors needed for central
+    // differences. Clamp to [0, n].
+    const lo_ix = Math.max(0, ix0 - 1);
+    const lo_iy = Math.max(0, iy0 - 1);
+    const hi_ix = Math.min(cols, ix1 + 1);
+    const hi_iy = Math.min(rows, iy1 + 1);
+    // Geometry vertex index for heightmap cell (ix, iy_data) is
+    // (lastRow - iy_data) * cols + ix (the same flip the upload uses).
+    // We iterate in heightmap (iy_data) coords so the gradient sign is
+    // straightforward: +iy_data → +Y_world.
+    const z = (ix: number, iy: number): number => {
+      const v = (lastRow - iy) * cols + ix;
+      return positions[v * 3 + 2];
+    };
+    for (let iy = lo_iy; iy < hi_iy; iy++) {
+      const ip1 = Math.min(rows - 1, iy + 1);
+      const im1 = Math.max(0, iy - 1);
+      for (let ix = lo_ix; ix < hi_ix; ix++) {
+        const jp1 = Math.min(cols - 1, ix + 1);
+        const jm1 = Math.max(0, ix - 1);
+        const dzdx = (z(jp1, iy) - z(jm1, iy)) * inv2cell;
+        const dzdy = (z(ix, ip1) - z(ix, im1)) * inv2cell;
+        const nx = -dzdx;
+        const ny = -dzdy;
+        const nz = 1.0;
+        const inv_len = 1.0 / Math.sqrt(nx * nx + ny * ny + nz * nz);
+        const v = (lastRow - iy) * cols + ix;
+        const off = v * 3;
+        normals[off] = nx * inv_len;
+        normals[off + 1] = ny * inv_len;
+        normals[off + 2] = nz * inv_len;
+      }
+    }
+    normalAttr.needsUpdate = true;
   }
 
   rebuildEdges(): void {

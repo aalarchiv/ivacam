@@ -869,12 +869,36 @@ fn plan_helix_entry(
     // start runs at constant z through the pocket interior, which is
     // safe because the boundary path itself is already inset from the
     // walls by tool_radius.
-    let centroid = polygon_centroid(&verts);
     let path_start = segments[0].start;
-    let center = centroid;
-    // Sample 8 points on the helix circle; all must be inside the
-    // polygon for the helix to be safe.
-    let samples = 8;
+    // Pick the helix center as the point inside the polygon with the
+    // largest clearance to the boundary (a "pole of inaccessibility"
+    // approximation). The centroid works for convex pockets but for L /
+    // U / + shapes it lands outside the polygon — and even when it
+    // doesn't, a thin pocket's centroid may be too close to a wall for
+    // the helix circle to fit. Picking the max-clearance point ensures
+    // the helix circle has the most room to fit.
+    //
+    // We require the chosen center's clearance to exceed `radius +
+    // tool_radius` so the helix circle clears the pocket walls by at
+    // least a tool radius. If no interior point meets that bar the
+    // helix can't fit and we fall back to Ramp.
+    let center = match polygon_pole_of_inaccessibility(&verts, radius + tool_radius) {
+        Some(p) => p,
+        None => {
+            tracing::debug!(
+                "helix entry: no interior point with clearance > {:.3}, falling back to Ramp",
+                radius + tool_radius
+            );
+            return None;
+        }
+    };
+    // Sample 16 points on the helix circle as a final safety check;
+    // all must be inside the polygon. The pole-of-inaccessibility
+    // search above already guarantees the center has > radius +
+    // tool_radius clearance, so this should always pass — it's a
+    // backstop against numerical edge cases (e.g. polygon edges that
+    // graze the helix circle at the clearance limit).
+    let samples = 16;
     for i in 0..samples {
         let theta = (i as f64) * std::f64::consts::TAU / (samples as f64);
         let px = center.x + radius * theta.cos();
@@ -895,6 +919,103 @@ fn plan_helix_entry(
         ccw,
         start_angle,
     })
+}
+
+/// Approximate "pole of inaccessibility" — the point inside the polygon
+/// with the largest clearance to the boundary. Used to seat the helix
+/// entry circle in pockets where the centroid sits outside (L / U / +)
+/// or too close to a wall.
+///
+/// Algorithm: bbox-grid sample at ~64 cells per axis. For each interior
+/// sample, compute the min distance to any polygon edge (line-segment
+/// distance, not vertex distance — a long edge midway between two
+/// vertices is what bites a helix circle). Return the sample with the
+/// largest such distance, but only if it exceeds `min_clearance`.
+///
+/// Returns None when no interior sample meets `min_clearance` — caller
+/// treats this as "helix can't fit, fall back to Ramp."
+fn polygon_pole_of_inaccessibility(verts: &[Point2], min_clearance: f64) -> Option<Point2> {
+    let n = verts.len();
+    if n < 3 {
+        return None;
+    }
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for p in verts {
+        if p.x < min_x { min_x = p.x; }
+        if p.y < min_y { min_y = p.y; }
+        if p.x > max_x { max_x = p.x; }
+        if p.y > max_y { max_y = p.y; }
+    }
+    let width = max_x - min_x;
+    let height = max_y - min_y;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    // 64 cells per axis is a balance: enough resolution to find pockets
+    // ≥ 1/32 the bbox side; cheap enough for big pockets (~4096 grid
+    // points × n_edges edge-distance calls).
+    let cells = 64usize;
+    let dx = width / (cells as f64);
+    let dy = height / (cells as f64);
+    let mut best: Option<(Point2, f64)> = None;
+    // Try the centroid first as a likely candidate (skip the grid scan
+    // entirely when it's already a great fit, e.g. a circular pocket).
+    let centroid = polygon_centroid(verts);
+    if point_in_polygon(verts, centroid.x, centroid.y) {
+        let cd = polygon_min_distance_to_boundary(verts, centroid.x, centroid.y);
+        if cd > min_clearance {
+            best = Some((centroid, cd));
+        }
+    }
+    for j in 0..cells {
+        let py = min_y + (j as f64 + 0.5) * dy;
+        for i in 0..cells {
+            let px = min_x + (i as f64 + 0.5) * dx;
+            if !point_in_polygon(verts, px, py) {
+                continue;
+            }
+            let d = polygon_min_distance_to_boundary(verts, px, py);
+            match best {
+                Some((_, bd)) if d <= bd => {}
+                _ => best = Some((Point2::new(px, py), d)),
+            }
+        }
+    }
+    match best {
+        Some((p, d)) if d > min_clearance => Some(p),
+        _ => None,
+    }
+}
+
+/// Minimum distance from (x, y) to any edge of the polygon, treated as
+/// a closed line-segment chain. Segment-to-point distance, not just
+/// vertex-to-point distance — important for long pocket walls.
+fn polygon_min_distance_to_boundary(verts: &[Point2], x: f64, y: f64) -> f64 {
+    let n = verts.len();
+    let mut best = f64::INFINITY;
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        let ex = b.x - a.x;
+        let ey = b.y - a.y;
+        let len_sq = ex * ex + ey * ey;
+        let d = if len_sq < 1e-18 {
+            ((x - a.x) * (x - a.x) + (y - a.y) * (y - a.y)).sqrt()
+        } else {
+            let t = (((x - a.x) * ex) + ((y - a.y) * ey)) / len_sq;
+            let t = t.clamp(0.0, 1.0);
+            let px = a.x + t * ex;
+            let py = a.y + t * ey;
+            ((x - px) * (x - px) + (y - py) * (y - py)).sqrt()
+        };
+        if d < best {
+            best = d;
+        }
+    }
+    best
 }
 
 /// Polygon centroid via the shoelace formula. For a degenerate
@@ -1113,8 +1234,6 @@ fn emit_path_with_tabs<P: PostProcessor>(
             ),
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
-                // v2: ramp along arcs. For now arcs through tabs always
-                // do a straight Z lift, regardless of tab_type=Ramp.
                 let crosses = tabs.iter().any(|t| {
                     let mid_x = (seg.start.x + seg.end.x) * 0.5;
                     let mid_y = (seg.start.y + seg.end.y) * 0.5;
@@ -1125,15 +1244,33 @@ fn emit_path_with_tabs<P: PostProcessor>(
                     .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
                 let i = center.x - seg.start.x;
                 let j = center.y - seg.start.y;
-                if crosses {
-                    post.linear(None, None, Some(tabs_z));
-                }
-                if seg.bulge > 0.0 {
-                    post.arc_ccw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
+                if !crosses {
+                    // No tab on this arc — emit as G2/G3.
+                    if seg.bulge > 0.0 {
+                        post.arc_ccw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
+                    } else {
+                        post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
+                    }
+                } else if let Some(ramp) = ramp_angle_deg {
+                    // Ramped tab crossing an arc: discretize the arc
+                    // into chord segments and apply the line-tab ramp
+                    // logic per chord. The arc itself is replaced by
+                    // short G1 segments through the tab — necessary
+                    // because G2/G3 generally don't support varying Z
+                    // mid-arc on most controllers (LinuxCNC's G2.1/G3.1
+                    // do, but they're a single helix delta over the
+                    // whole arc, not a trapezoid). Chord-error stays
+                    // small with ~32 chords per arc.
+                    emit_arc_chord_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, ramp, post);
                 } else {
-                    post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
-                }
-                if crosses {
+                    // Rectangle tab on arc: keep the v1 step-pulse Z
+                    // lift — works, just harsher on the spindle.
+                    post.linear(None, None, Some(tabs_z));
+                    if seg.bulge > 0.0 {
+                        post.arc_ccw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
+                    } else {
+                        post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
+                    }
                     post.linear(None, None, Some(cut_z));
                 }
             }
@@ -1259,6 +1396,86 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
         seg.start.x + t * (seg.end.x - seg.start.x),
         seg.start.y + t * (seg.end.y - seg.start.y),
     )
+}
+
+/// Emit a tab-crossing arc by discretizing it into short chord
+/// segments and reusing the line-tab ramp logic per chord. The chord
+/// chain replaces the original G2/G3 with G1 moves that can carry the
+/// trapezoid Z profile. Used only when an arc actually crosses a tab
+/// and the tab type is Ramp.
+fn emit_arc_chord_with_tabs<P: PostProcessor>(
+    seg: &Segment,
+    tabs: &[crate::cam::offsets::TabPoint],
+    tabs_z: f64,
+    cut_z: f64,
+    tab_radius: f64,
+    ramp_angle_deg: f64,
+    post: &mut P,
+) {
+    let center = seg
+        .center
+        .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+    let r = (seg.start.x - center.x).hypot(seg.start.y - center.y);
+    if r < 1e-9 {
+        // Degenerate arc — just emit the endpoints as a line.
+        let line = Segment::line(seg.start, seg.end, &seg.layer, seg.color);
+        emit_line_with_tabs(
+            &line,
+            tabs,
+            tabs_z,
+            cut_z,
+            tab_radius,
+            Some(ramp_angle_deg),
+            post,
+        );
+        return;
+    }
+    let theta_start = (seg.start.y - center.y).atan2(seg.start.x - center.x);
+    let theta_end = (seg.end.y - center.y).atan2(seg.end.x - center.x);
+    // Bulge sign: positive ⇒ CCW (signed sweep > 0). Total swept angle
+    // satisfies sweep = 4·atan(bulge), preserving sign.
+    let sweep = 4.0 * seg.bulge.atan();
+    // Chord count: 32 chords for a full circle is plenty (chord error
+    // ~ r·(1 - cos(π/32)) ≈ r·0.005; on a 10 mm arc that's 0.05 mm —
+    // visually identical and well under typical tab tolerances). Scale
+    // chords linearly with sweep magnitude, with a 4-chord minimum.
+    let n_chords = (32.0 * sweep.abs() / std::f64::consts::TAU)
+        .ceil()
+        .max(4.0) as usize;
+    let dtheta = sweep / (n_chords as f64);
+    let mut prev_theta = theta_start;
+    for k in 0..n_chords {
+        let next_theta = if k + 1 == n_chords {
+            // Snap last endpoint to the original arc end so
+            // floating-point error doesn't leave a gap.
+            theta_end
+        } else {
+            theta_start + dtheta * ((k + 1) as f64)
+        };
+        let a = Point2::new(
+            center.x + r * prev_theta.cos(),
+            center.y + r * prev_theta.sin(),
+        );
+        let b = if k + 1 == n_chords {
+            seg.end
+        } else {
+            Point2::new(
+                center.x + r * next_theta.cos(),
+                center.y + r * next_theta.sin(),
+            )
+        };
+        let chord = Segment::line(a, b, &seg.layer, seg.color);
+        emit_line_with_tabs(
+            &chord,
+            tabs,
+            tabs_z,
+            cut_z,
+            tab_radius,
+            Some(ramp_angle_deg),
+            post,
+        );
+        prev_theta = next_theta;
+    }
 }
 
 /// Emit segments with optional drag-knife trailing offset. When

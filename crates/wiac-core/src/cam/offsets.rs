@@ -585,20 +585,35 @@ pub fn pocket_for_object(
                 if rings.is_empty() {
                     continue;
                 }
-                let segs = stitch_rings_to_spiral(&rings, &offset.layer, offset.color);
-                if !segs.is_empty() {
-                    out.push(PolylineOffset {
-                        segments: segs,
-                        closed: false,
-                        level: 1,
-                        is_pocket: 2,
-                        layer: offset.layer.clone(),
-                        color: offset.color,
-                        source_object_idx: offset.source_object_idx,
-                        tabs: Vec::new(),
-                    });
+                // Containment guard (bd w91): straight bridges between
+                // consecutive cascade rings can cross a re-entrant pocket
+                // wall on non-convex shapes (L / U / +). The outer ring
+                // (rings[0] = inset boundary) defines the safe interior;
+                // every bridge must stay inside it. If any bridge fails
+                // the test we abandon spiral and let the caller fall back
+                // to cascade emission, which doesn't cut bridges.
+                match stitch_rings_to_spiral(&rings, &offset.layer, offset.color) {
+                    Some(segs) if !segs.is_empty() => {
+                        out.push(PolylineOffset {
+                            segments: segs,
+                            closed: false,
+                            level: 1,
+                            is_pocket: 2,
+                            layer: offset.layer.clone(),
+                            color: offset.color,
+                            source_object_idx: offset.source_object_idx,
+                            tabs: Vec::new(),
+                        });
+                        continue;
+                    }
+                    _ => {
+                        tracing::debug!(
+                            "spiral pocket: bridge crosses pocket boundary in non-convex shape, falling back to cascade"
+                        );
+                        // Fall through to cascade emission below using
+                        // the rings we already computed.
+                    }
                 }
-                continue;
             }
             PocketEmit::Cascade => {}
         }
@@ -643,7 +658,23 @@ pub fn pocket_for_object(
 /// the previous ring's end point, walk the ring forward, repeat. The
 /// bridge between rings is a straight Line segment (the cutter steps
 /// inward by ~one xy_step).
-fn stitch_rings_to_spiral(rings: &[Vec<Point2>], layer: &str, color: i32) -> Vec<Segment> {
+///
+/// Returns None when a bridge between rings would cross the pocket
+/// boundary — happens on non-convex shapes (L / U / +) where a
+/// straight bridge can leave the safe interior. The caller should fall
+/// back to cascade emission (separate closed rings, no bridges).
+fn stitch_rings_to_spiral(
+    rings: &[Vec<Point2>],
+    layer: &str,
+    color: i32,
+) -> Option<Vec<Segment>> {
+    if rings.is_empty() {
+        return Some(Vec::new());
+    }
+    // The outermost ring is the inset pocket boundary; all subsequent
+    // rings live strictly inside it. A bridge that exits this boundary
+    // is a bridge that crosses a pocket wall.
+    let outer = &rings[0];
     let mut out: Vec<Segment> = Vec::new();
     let mut last_end: Option<Point2> = None;
     for ring in rings {
@@ -671,6 +702,9 @@ fn stitch_rings_to_spiral(rings: &[Vec<Point2>], layer: &str, color: i32) -> Vec
         if let Some(end) = last_end {
             // Bridge from the previous ring's end to this ring's start.
             if end.distance(first) > 1e-6 {
+                if !bridge_stays_inside_polygon(end, first, outer) {
+                    return None;
+                }
                 out.push(Segment::line(end, first, layer, color));
             }
         }
@@ -683,7 +717,57 @@ fn stitch_rings_to_spiral(rings: &[Vec<Point2>], layer: &str, color: i32) -> Vec
         }
         last_end = Some(first); // we walked back to the start, so end = first
     }
-    out
+    Some(out)
+}
+
+/// Sample along the bridge segment (a, b) and verify every interior
+/// sample lies inside the polygon. The endpoint a typically sits
+/// exactly on `polygon` (it's the ring start vertex from a cascade
+/// ring), so we skip it under the half-open ray-cast convention by
+/// sampling at strictly interior parameters t ∈ (0, 1). 8 samples is
+/// enough to catch a bridge crossing through a re-entrant corner of a
+/// reasonable pocket; the failure mode this guards against is a
+/// straight line that exits and re-enters the polygon, which spans a
+/// finite arc inside the gap.
+fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point2]) -> bool {
+    if polygon.len() < 3 {
+        return true;
+    }
+    let samples = 8;
+    for i in 1..samples {
+        let t = (i as f64) / (samples as f64);
+        let px = a.x + (b.x - a.x) * t;
+        let py = a.y + (b.y - a.y) * t;
+        if !point_in_polygon_pts(polygon, px, py) {
+            return false;
+        }
+    }
+    true
+}
+
+fn point_in_polygon_pts(verts: &[Point2], x: f64, y: f64) -> bool {
+    let n = verts.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        if (a.y - b.y).abs() < 1e-12 {
+            continue;
+        }
+        let (lo, hi) = if a.y < b.y { (a, b) } else { (b, a) };
+        if y < lo.y - 1e-12 || y >= hi.y - 1e-12 {
+            continue;
+        }
+        let t = (y - lo.y) / (hi.y - lo.y);
+        let xi = lo.x + t * (hi.x - lo.x);
+        if xi > x {
+            inside = !inside;
+        }
+    }
+    inside
 }
 
 // ─── conversions ────────────────────────────────────────────────────────────

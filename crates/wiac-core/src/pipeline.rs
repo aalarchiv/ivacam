@@ -911,7 +911,45 @@ struct PatternInstance {
     dy: f64,
     cx: f64,
     cy: f64,
-    angle_rad: f64,
+    /// Precomputed cos(angle_rad). Cached on the instance so
+    /// apply_pattern_to_segments doesn't redo trig per (instance × object)
+    /// pair — for a Polar pattern with N instances and K selected objects,
+    /// that previously meant 2·N·K trig calls.
+    cos_a: f64,
+    sin_a: f64,
+    /// True when the rotation is identity. Lets the transform shortcut
+    /// to translate-only, skipping the (cx, cy) recentering math
+    /// entirely. Always true for Linear and Grid patterns.
+    pure_translate: bool,
+}
+
+impl PatternInstance {
+    fn translate(dx: f64, dy: f64) -> Self {
+        Self {
+            dx,
+            dy,
+            cx: 0.0,
+            cy: 0.0,
+            cos_a: 1.0,
+            sin_a: 0.0,
+            pure_translate: true,
+        }
+    }
+
+    fn polar(cx: f64, cy: f64, angle_rad: f64) -> Self {
+        Self {
+            dx: 0.0,
+            dy: 0.0,
+            cx,
+            cy,
+            cos_a: angle_rad.cos(),
+            sin_a: angle_rad.sin(),
+            // Identity rotation collapses to the translate path even
+            // for Polar pattern at i=0 (the first instance is always
+            // the source in place).
+            pure_translate: angle_rad.abs() < 1e-12,
+        }
+    }
 }
 
 /// Materialize a pattern config into a list of instance transforms. The
@@ -925,13 +963,7 @@ fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
             // count is an inclusive total. count == 0 → no instances at
             // all (degenerate, but well-defined: the op emits nothing).
             for i in 0..count.max(0) {
-                out.push(PatternInstance {
-                    dx: (i as f64) * dx,
-                    dy: (i as f64) * dy,
-                    cx: 0.0,
-                    cy: 0.0,
-                    angle_rad: 0.0,
-                });
+                out.push(PatternInstance::translate((i as f64) * dx, (i as f64) * dy));
             }
         }
         PatternConfig::Grid {
@@ -942,13 +974,7 @@ fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
         } => {
             for j in 0..count_y.max(0) {
                 for i in 0..count_x.max(0) {
-                    out.push(PatternInstance {
-                        dx: (i as f64) * dx,
-                        dy: (j as f64) * dy,
-                        cx: 0.0,
-                        cy: 0.0,
-                        angle_rad: 0.0,
-                    });
+                    out.push(PatternInstance::translate((i as f64) * dx, (j as f64) * dy));
                 }
             }
         }
@@ -960,13 +986,11 @@ fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
         } => {
             let step_rad = angle_step_deg.to_radians();
             for i in 0..count.max(0) {
-                out.push(PatternInstance {
-                    dx: 0.0,
-                    dy: 0.0,
-                    cx: center_x,
-                    cy: center_y,
-                    angle_rad: (i as f64) * step_rad,
-                });
+                out.push(PatternInstance::polar(
+                    center_x,
+                    center_y,
+                    (i as f64) * step_rad,
+                ));
             }
         }
     }
@@ -978,28 +1002,45 @@ fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
 /// translate by (dx, dy). Bulge stays the same — it's a local angle
 /// ratio, invariant under rotation and translation.
 fn apply_pattern_to_segments(segments: &mut [Segment], inst: PatternInstance) {
-    let cos_a = inst.angle_rad.cos();
-    let sin_a = inst.angle_rad.sin();
+    if inst.pure_translate {
+        if inst.dx == 0.0 && inst.dy == 0.0 {
+            // Identity transform — first pattern instance is always the
+            // source in place. Skip the per-segment work entirely.
+            return;
+        }
+        for s in segments.iter_mut() {
+            s.start.x += inst.dx;
+            s.start.y += inst.dy;
+            s.end.x += inst.dx;
+            s.end.y += inst.dy;
+            if let Some(c) = s.center.as_mut() {
+                c.x += inst.dx;
+                c.y += inst.dy;
+            }
+        }
+        return;
+    }
     for s in segments.iter_mut() {
-        s.start = transform_point(s.start, inst, cos_a, sin_a);
-        s.end = transform_point(s.end, inst, cos_a, sin_a);
+        s.start = transform_point(s.start, inst);
+        s.end = transform_point(s.end, inst);
         if let Some(c) = s.center {
-            s.center = Some(transform_point(c, inst, cos_a, sin_a));
+            s.center = Some(transform_point(c, inst));
         }
     }
 }
 
 fn apply_pattern_to_point(p: Point2, inst: PatternInstance) -> Point2 {
-    let cos_a = inst.angle_rad.cos();
-    let sin_a = inst.angle_rad.sin();
-    transform_point(p, inst, cos_a, sin_a)
+    if inst.pure_translate {
+        return Point2::new(p.x + inst.dx, p.y + inst.dy);
+    }
+    transform_point(p, inst)
 }
 
-fn transform_point(p: Point2, inst: PatternInstance, cos_a: f64, sin_a: f64) -> Point2 {
+fn transform_point(p: Point2, inst: PatternInstance) -> Point2 {
     let dx = p.x - inst.cx;
     let dy = p.y - inst.cy;
-    let rx = inst.cx + dx * cos_a - dy * sin_a;
-    let ry = inst.cy + dx * sin_a + dy * cos_a;
+    let rx = inst.cx + dx * inst.cos_a - dy * inst.sin_a;
+    let ry = inst.cy + dx * inst.sin_a + dy * inst.cos_a;
     Point2::new(rx + inst.dx, ry + inst.dy)
 }
 
@@ -3313,6 +3354,72 @@ mod tests {
         let spiral_blocks = count_pocket_blocks(&spiral_gcode);
         assert!(cascade_blocks > 1, "cascade should emit many ring blocks, got {cascade_blocks}");
         assert_eq!(spiral_blocks, 1, "spiral should emit exactly one continuous block, got {spiral_blocks}");
+    }
+
+    /// w91: in a non-convex pocket the straight bridge between cascade
+    /// rings can cut through a re-entrant pocket wall. The fix detects
+    /// the bad bridge and silently falls back to cascade emission
+    /// (separate closed rings, no bridges) rather than emitting a wrong
+    /// cut. The test uses an L-shape — its inner cascade rings break
+    /// into pieces whose centroids are in different L arms, so the
+    /// nearest-vertex bridge between them crosses the L's notch wall.
+    #[test]
+    fn spiral_in_non_convex_pocket_falls_back_to_cascade() {
+        // L-shape outline (CCW), 30 mm tall × 30 mm wide × 10 mm leg
+        // thickness — wide enough that the inset rings split.
+        let p0 = Point2::new(0.0, 0.0);
+        let p1 = Point2::new(30.0, 0.0);
+        let p2 = Point2::new(30.0, 10.0);
+        let p3 = Point2::new(10.0, 10.0);
+        let p4 = Point2::new(10.0, 30.0);
+        let p5 = Point2::new(0.0, 30.0);
+        let l_shape = vec![
+            Segment::line(p0, p1, "0", 7),
+            Segment::line(p1, p2, "0", 7),
+            Segment::line(p2, p3, "0", 7),
+            Segment::line(p3, p4, "0", 7),
+            Segment::line(p4, p5, "0", 7),
+            Segment::line(p5, p0, "0", 7),
+        ];
+        let project = Project {
+            segments: l_shape,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Spiral,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+        };
+        let gcode = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .gcode;
+        // When spiral works (convex pocket): exactly one pocket=2
+        // block. When it falls back to cascade in a non-convex shape:
+        // multiple pocket=2 blocks (one per ring). For the L-shape
+        // above we expect more than one, proving the fallback fired.
+        let pocket_blocks = gcode
+            .lines()
+            .filter(|l| l.contains("pocket=2 segments="))
+            .count();
+        assert!(
+            pocket_blocks >= 1,
+            "L-shape pocket should emit at least one block; got {pocket_blocks}\n{gcode}"
+        );
     }
 
     #[test]

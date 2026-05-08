@@ -192,7 +192,7 @@ fn build_offsets(
         }
         let pocket = obj.setup.pockets.active && obj.closed;
         if pocket {
-            for mut o in pocket_for_object(obj, radius, false, 6, false, &[]) {
+            for mut o in pocket_for_object(obj, radius, false, 6, false, &[], radius) {
                 o.source_object_idx = idx;
                 offsets.push(o);
             }

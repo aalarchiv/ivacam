@@ -1595,6 +1595,7 @@ mod tests {
             width: 10.0,
             height: 1.0,
             tab_type: TabType::Rectangle,
+            ramp_angle_deg: 30.0,
         };
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,

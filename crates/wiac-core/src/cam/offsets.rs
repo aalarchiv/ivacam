@@ -99,9 +99,42 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
     }
 }
 
-/// Generate parallel offsets of `obj` at `delta`. Negative delta = inward
-/// (right of CCW polylines), positive = outward. Preserves bulge so arc
-/// geometry round-trips through the offset.
+/// Polygon-signed-area of a closed VcObject from its segment endpoints
+/// (shoelace formula on the segment vertices). Positive = CCW, negative
+/// = CW. Used to make the offset direction predictable regardless of
+/// the user's input winding — without this, parallel_offset_object's
+/// "left of tangent" semantics flip the inward/outward meaning between
+/// CCW and CW polygons, which surprised users who imported CW DXF
+/// boundaries and saw their pockets cut on the OUTSIDE of the shape.
+pub fn object_signed_area(obj: &VcObject) -> f64 {
+    let mut sum = 0.0;
+    for seg in &obj.segments {
+        sum += seg.start.x * seg.end.y - seg.end.x * seg.start.y;
+    }
+    sum * 0.5
+}
+
+/// Inward parallel offset by `distance` (positive). Picks the right
+/// sign for the underlying parallel_offset_object based on the polygon
+/// winding so a CW input doesn't flip the meaning.
+pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
+    let mag = distance.abs();
+    let delta = if object_signed_area(obj) >= 0.0 { mag } else { -mag };
+    parallel_offset_object(obj, delta)
+}
+
+/// Outward parallel offset by `distance` (positive). Mirror of
+/// parallel_offset_inward.
+pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
+    let mag = distance.abs();
+    let delta = if object_signed_area(obj) >= 0.0 { -mag } else { mag };
+    parallel_offset_object(obj, delta)
+}
+
+/// Generate parallel offsets of `obj` at `delta`. Cavalier-Contours
+/// convention: positive delta = LEFT of tangent. For CCW input that's
+/// inward; for CW input that's outward. Most callers should use
+/// `parallel_offset_inward` / `_outward` instead — they handle winding.
 pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset> {
     if obj.segments.is_empty() {
         return Vec::new();
@@ -492,7 +525,11 @@ pub fn pocket_for_object(
         return out;
     }
 
-    let boundary = parallel_offset_object(obj, tool_radius.abs());
+    // Always go inward regardless of the source polygon's winding —
+    // CW DXF boundaries used to take the cutter OUTSIDE the shape
+    // because positive delta = LEFT of tangent for cavc, which is
+    // outward on CW polygons. parallel_offset_inward picks the sign.
+    let boundary = parallel_offset_inward(obj, tool_radius.abs());
     if boundary.is_empty() {
         return out;
     }

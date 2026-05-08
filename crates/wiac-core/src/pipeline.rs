@@ -16,7 +16,7 @@ use crate::cam::chaining::{classify_containment, segments_to_objects};
 use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::offsets::{
     apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets,
-    parallel_offset_object, pocket_for_object,
+    parallel_offset_inward, parallel_offset_outward, pocket_for_object,
     PolylineOffset, TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
@@ -423,27 +423,29 @@ fn build_op_offsets(
                 }
             }
             OperationKind::Profile { .. } => {
-                let delta = match setup.mill.offset {
-                    ToolOffset::None | ToolOffset::On => 0.0,
-                    ToolOffset::Outside => -radius,
-                    ToolOffset::Inside => radius,
-                };
-                if delta.abs() < 1e-9 {
-                    offsets.push(PolylineOffset {
-                        segments: obj.segments.clone(),
-                        closed: obj.closed,
-                        level: 0,
-                        is_pocket: 0,
-                        layer: obj.layer.clone(),
-                        color: obj.color,
-                        source_object_idx: idx,
-                        tabs: Vec::new(),
-                    });
-                } else {
-                    for mut o in parallel_offset_object(obj, delta) {
-                        o.source_object_idx = idx;
-                        offsets.push(o);
+                // Sign-correct offsets: parallel_offset_inward / outward
+                // pick the cavalier delta sign based on the polygon's
+                // signed area, so a CW input doesn't put the cutter on
+                // the wrong side.
+                let new_offsets = match setup.mill.offset {
+                    ToolOffset::None | ToolOffset::On => {
+                        vec![PolylineOffset {
+                            segments: obj.segments.clone(),
+                            closed: obj.closed,
+                            level: 0,
+                            is_pocket: 0,
+                            layer: obj.layer.clone(),
+                            color: obj.color,
+                            source_object_idx: idx,
+                            tabs: Vec::new(),
+                        }]
                     }
+                    ToolOffset::Outside => parallel_offset_outward(obj, radius),
+                    ToolOffset::Inside => parallel_offset_inward(obj, radius),
+                };
+                for mut o in new_offsets {
+                    o.source_object_idx = idx;
+                    offsets.push(o);
                 }
             }
             OperationKind::Engrave | OperationKind::DragKnife => {
@@ -1698,6 +1700,66 @@ mod tests {
             "expected pocket_fill_incomplete warning, got {:?}",
             resp.warnings,
         );
+    }
+
+    /// CW-wound input must still pocket INWARD. Cavalier-Contours
+    /// treats positive delta as left-of-tangent, which is the polygon
+    /// interior for CCW but the EXTERIOR for CW. The user reported
+    /// (test.vc-project.json) a CW DXF where the pocket was being cut
+    /// outside the boundary, enlarging the shape by the tool diameter.
+    /// parallel_offset_inward now picks the right sign per winding.
+    #[test]
+    fn pocket_on_cw_polygon_cuts_inside_not_outside() {
+        // Build a 50×50 square wound CW (clockwise from above): walk
+        // (0,0)→(0,50)→(50,50)→(50,0)→(0,0). signed_area would be
+        // negative for this winding.
+        let s = 50.0;
+        let segments = vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(0.0, s), "0", 7),
+            Segment::line(Point2::new(0.0, s), Point2::new(s, s), "0", 7),
+            Segment::line(Point2::new(s, s), Point2::new(s, 0.0), "0", 7),
+            Segment::line(Point2::new(s, 0.0), Point2::new(0.0, 0.0), "0", 7),
+        ];
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Every cut must stay INSIDE the polygon's bounding box —
+        // outside cuts mean the cutter went the wrong way.
+        for s in &resp.toolpath {
+            if !matches!(s.kind, crate::gcode::preview::MoveKind::Cut) {
+                continue;
+            }
+            for pt in [s.from, s.to] {
+                assert!(
+                    pt.x >= -0.01 && pt.x <= 50.01 && pt.y >= -0.01 && pt.y <= 50.01,
+                    "cut went outside the CW pocket boundary: ({}, {})",
+                    pt.x,
+                    pt.y,
+                );
+            }
+        }
     }
 
     #[test]

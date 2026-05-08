@@ -1,0 +1,700 @@
+{
+  "kind": "wiac-project",
+  "version": 1,
+  "imported": {
+    "filename": "test.dxf",
+    "format": "dxf",
+    "segments": [
+      {
+        "type": "LINE",
+        "start": {
+          "x": 17.118176,
+          "y": 23.086905
+        },
+        "end": {
+          "x": 18.437819,
+          "y": 22.617968
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 18.437819,
+          "y": 22.617968
+        },
+        "end": {
+          "x": 19.636411,
+          "y": 21.950877
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 19.636411,
+          "y": 21.950877
+        },
+        "end": {
+          "x": 20.697053,
+          "y": 21.107561
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 20.697053,
+          "y": 21.107561
+        },
+        "end": {
+          "x": 21.602845,
+          "y": 20.109943
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 21.602845,
+          "y": 20.109943
+        },
+        "end": {
+          "x": 22.336888,
+          "y": 18.979952
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 22.336888,
+          "y": 18.979952
+        },
+        "end": {
+          "x": 22.882283,
+          "y": 17.739512
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 22.882283,
+          "y": 17.739512
+        },
+        "end": {
+          "x": 23.222129,
+          "y": 16.410552
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 23.222129,
+          "y": 16.410552
+        },
+        "end": {
+          "x": 23.339528,
+          "y": 15.014995
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 23.339528,
+          "y": 15.014995
+        },
+        "end": {
+          "x": 23.17758,
+          "y": 13.378131
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 23.17758,
+          "y": 13.378131
+        },
+        "end": {
+          "x": 22.703828,
+          "y": 11.819095
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 22.703828,
+          "y": 11.819095
+        },
+        "end": {
+          "x": 21.936419,
+          "y": 10.381695
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 21.936419,
+          "y": 10.381695
+        },
+        "end": {
+          "x": 20.893498,
+          "y": 9.109742
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 20.893498,
+          "y": 9.109742
+        },
+        "end": {
+          "x": 19.621544,
+          "y": 8.066821
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 19.621544,
+          "y": 8.066821
+        },
+        "end": {
+          "x": 18.184145,
+          "y": 7.299412
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 18.184145,
+          "y": 7.299412
+        },
+        "end": {
+          "x": 16.625109,
+          "y": 6.82566
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 16.625109,
+          "y": 6.82566
+        },
+        "end": {
+          "x": 14.988245,
+          "y": 6.663712
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 14.988245,
+          "y": 6.663712
+        },
+        "end": {
+          "x": 13.351381,
+          "y": 6.82566
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 13.351381,
+          "y": 6.82566
+        },
+        "end": {
+          "x": 11.792345,
+          "y": 7.299412
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 11.792345,
+          "y": 7.299412
+        },
+        "end": {
+          "x": 10.354945,
+          "y": 8.066821
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 10.354945,
+          "y": 8.066821
+        },
+        "end": {
+          "x": 9.082992,
+          "y": 9.109742
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 9.082992,
+          "y": 9.109742
+        },
+        "end": {
+          "x": 8.040071,
+          "y": 10.381695
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 8.040071,
+          "y": 10.381695
+        },
+        "end": {
+          "x": 7.272661,
+          "y": 11.819095
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 7.272661,
+          "y": 11.819095
+        },
+        "end": {
+          "x": 6.798909,
+          "y": 13.378131
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 6.798909,
+          "y": 13.378131
+        },
+        "end": {
+          "x": 6.636962,
+          "y": 15.014995
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 6.636962,
+          "y": 15.014995
+        },
+        "end": {
+          "x": 6.753861,
+          "y": 16.406657
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 6.753861,
+          "y": 16.406657
+        },
+        "end": {
+          "x": 7.092021,
+          "y": 17.732245
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 7.092021,
+          "y": 17.732245
+        },
+        "end": {
+          "x": 7.634714,
+          "y": 18.969982
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 7.634714,
+          "y": 18.969982
+        },
+        "end": {
+          "x": 8.365214,
+          "y": 20.09809
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 8.365214,
+          "y": 20.09809
+        },
+        "end": {
+          "x": 9.266792,
+          "y": 21.094792
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 9.266792,
+          "y": 21.094792
+        },
+        "end": {
+          "x": 10.322722,
+          "y": 21.938309
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 10.322722,
+          "y": 21.938309
+        },
+        "end": {
+          "x": 11.516275,
+          "y": 22.606865
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 11.516275,
+          "y": 22.606865
+        },
+        "end": {
+          "x": 12.830725,
+          "y": 23.078682
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 12.830725,
+          "y": 23.078682
+        },
+        "end": {
+          "x": 13.135753,
+          "y": 22.60727
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 13.135753,
+          "y": 22.60727
+        },
+        "end": {
+          "x": 13.625087,
+          "y": 22.23958
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 13.625087,
+          "y": 22.23958
+        },
+        "end": {
+          "x": 14.252818,
+          "y": 22.000545
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 14.252818,
+          "y": 22.000545
+        },
+        "end": {
+          "x": 14.97304,
+          "y": 21.915101
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 14.97304,
+          "y": 21.915101
+        },
+        "end": {
+          "x": 15.696111,
+          "y": 22.001312
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 15.696111,
+          "y": 22.001312
+        },
+        "end": {
+          "x": 16.325569,
+          "y": 22.242236
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 16.325569,
+          "y": 22.242236
+        },
+        "end": {
+          "x": 16.815047,
+          "y": 22.612543
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      },
+      {
+        "type": "LINE",
+        "start": {
+          "x": 16.815047,
+          "y": 22.612543
+        },
+        "end": {
+          "x": 17.118176,
+          "y": 23.086905
+        },
+        "bulge": 0,
+        "layer": "Ebene_1",
+        "color": 10
+      }
+    ],
+    "layers": [
+      {
+        "name": "Ebene_1",
+        "color": 10,
+        "segment_count": 40
+      }
+    ],
+    "bbox": {
+      "min_x": 6.636962,
+      "min_y": 6.663712,
+      "max_x": 23.339528,
+      "max_y": 23.086905
+    },
+    "unit_scale": 1,
+    "warnings": [],
+    "objects": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "object_meta": [
+      {
+        "id": 1,
+        "closed": true,
+        "layer": "Ebene_1",
+        "color": 10,
+        "bbox": {
+          "min_x": 6.636962,
+          "min_y": 6.663712,
+          "max_x": 23.339528,
+          "max_y": 23.086905
+        }
+      }
+    ]
+  },
+  "visibleLayers": [
+    "Ebene_1"
+  ],
+  "selectedEntities": [],
+  "tabs": {},
+  "stock": {
+    "visible": true,
+    "mode": "auto",
+    "margin": 5,
+    "thickness": 5,
+    "customX": 100,
+    "customY": 100
+  },
+  "tools": [
+    {
+      "id": 1,
+      "name": "3 mm endmill",
+      "kind": "endmill",
+      "diameter": 3,
+      "flutes": 2,
+      "speed": 18000,
+      "plungeRate": 100,
+      "feedRate": 800,
+      "coolant": "off"
+    }
+  ],
+  "machine": {
+    "unit": "mm",
+    "mode": "mill",
+    "comments": true,
+    "arcs": true,
+    "supportsToolchange": false,
+    "fastMoveZ": 5
+  },
+  "operations": [
+    {
+      "id": 1,
+      "name": "Pocket",
+      "enabled": true,
+      "kind": "pocket",
+      "toolId": 1,
+      "sourceCombine": "auto",
+      "sourceLayers": null,
+      "depth": -2,
+      "startDepth": 0,
+      "step": -1,
+      "offset": "outside",
+      "pocketStrategy": "spiral",
+      "cutDirection": "conventional",
+      "finishCutDirection": "conventional",
+      "plunge": {
+        "kind": "direct"
+      },
+      "xyOverlap": 0.5,
+      "sourceObjects": [
+        1
+      ]
+    }
+  ]
+}

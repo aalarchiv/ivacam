@@ -503,31 +503,90 @@
           <span>Strategy</span>
           <select
             value={op.pocketStrategy ?? 'cascade'}
-            onchange={(e) => patch('pocketStrategy', (e.currentTarget as HTMLSelectElement).value as PocketStrategy)}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value as PocketStrategy;
+              const patches: Partial<OpEntry> = { pocketStrategy: v };
+              if (v === 'trochoidal') {
+                if (op?.engagementAngleDeg === undefined) patches.engagementAngleDeg = 30;
+                if (op?.loopRadiusFactor === undefined) patches.loopRadiusFactor = 0.6;
+              }
+              if (op) project.updateOperation(op.id, patches);
+            }}
           >
             <option value="cascade">cascade (concentric)</option>
             <option value="zigzag">zigzag (raster fill)</option>
             <option value="spiral">spiral</option>
+            <option value="trochoidal">Trochoidal (load-limiting)</option>
           </select>
         </label>
-        <label
-          class="row"
-          title="XY overlap between consecutive pocket cuts. 0.5 = 50% overlap (step is half the tool diameter, the standard default). Higher = tighter cascade rings, cleaner fill on small pockets but slower; lower = bigger steps, faster but may leave stripes."
-        >
-          <span>XY overlap</span>
-          <input
-            type="number"
-            step="0.05"
-            min="0.05"
-            max="0.95"
-            value={op.xyOverlap ?? 0.5}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v))
-                patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
-            }}
-          />
-        </label>
+        {#if op.pocketStrategy === 'trochoidal'}
+          <label
+            class="row"
+            title="Engagement arc angle in degrees. Lower = lighter cut, more loops; higher = aggressive. Drives centerline pitch."
+          >
+            <span>Engagement angle (°)</span>
+            <input
+              type="range"
+              min="5"
+              max="90"
+              step="1"
+              value={op.engagementAngleDeg ?? 30}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v)) patch('engagementAngleDeg', Math.max(5, Math.min(90, v)));
+              }}
+            />
+            <span class="num">{op.engagementAngleDeg ?? 30}°</span>
+          </label>
+          <label
+            class="row"
+            title="Loop radius as a fraction of tool radius. 0.6 is a balanced default; 0.3 = tiny loops (very light), 1.0 = loops as large as the cutter."
+          >
+            <span>Loop radius factor</span>
+            <input
+              type="range"
+              min="0.3"
+              max="1.0"
+              step="0.05"
+              value={op.loopRadiusFactor ?? 0.6}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v)) patch('loopRadiusFactor', Math.max(0.3, Math.min(1.0, v)));
+              }}
+            />
+            <span class="num">{(op.loopRadiusFactor ?? 0.6).toFixed(2)}</span>
+          </label>
+          {#if op.cutDirection === 'climb' || op.cutDirection === undefined || op.cutDirection === 'conventional'}
+            {#if (op.cutDirection ?? 'conventional') === 'conventional'}
+              <p class="hint warn">Trochoidal usually pairs with climb.</p>
+            {/if}
+          {/if}
+          {#if op.plunge && op.plunge.kind !== 'helix'}
+            <p class="hint warn">Trochoidal will override plunge to Helix.</p>
+          {/if}
+          {#if Object.values(project.tabs ?? {}).some((t) => t.length > 0)}
+            <p class="hint warn">Tabs ignored on trochoidal pockets.</p>
+          {/if}
+        {:else}
+          <label
+            class="row"
+            title="XY overlap between consecutive pocket cuts. 0.5 = 50% overlap (step is half the tool diameter, the standard default). Higher = tighter cascade rings, cleaner fill on small pockets but slower; lower = bigger steps, faster but may leave stripes."
+          >
+            <span>XY overlap</span>
+            <input
+              type="number"
+              step="0.05"
+              min="0.05"
+              max="0.95"
+              value={op.xyOverlap ?? 0.5}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v))
+                  patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
+              }}
+            />
+          </label>
+        {/if}
       </fieldset>
     {/if}
 
@@ -755,6 +814,20 @@
     margin: 0.2rem 0 0;
     font-size: 0.72rem;
     color: var(--text-muted);
+  }
+  .hint.warn {
+    color: var(--warn, #b86f00);
+    background: var(--warn-bg, rgba(184, 111, 0, 0.08));
+    border-left: 2px solid var(--warn, #b86f00);
+    padding: 0.15rem 0.4rem;
+    border-radius: 2px;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    min-width: 3em;
+    text-align: right;
   }
   .from-selection {
     margin-top: 0.3rem;

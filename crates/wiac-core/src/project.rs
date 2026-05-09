@@ -229,13 +229,119 @@ impl Default for DrillCycle {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+/// Pocket strategy selector. Cascade / Zigzag / Spiral serialize as
+/// bare strings (`"cascade"`, `"zigzag"`, `"spiral"`) for wire
+/// compatibility with pre-Trochoidal payloads. Trochoidal serializes
+/// as a tagged object
+/// `{ "kind": "trochoidal", "engagement_angle_deg": ..., "loop_radius_factor": ... }`
+/// since it carries parameters.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PocketStrategy {
-    #[default]
     Cascade,
     Zigzag,
     Spiral,
+    Trochoidal {
+        engagement_angle_deg: f64,
+        loop_radius_factor: f64,
+    },
+}
+
+impl Default for PocketStrategy {
+    fn default() -> Self {
+        Self::Cascade
+    }
+}
+
+impl Serialize for PocketStrategy {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        match *self {
+            Self::Cascade => ser.serialize_str("cascade"),
+            Self::Zigzag => ser.serialize_str("zigzag"),
+            Self::Spiral => ser.serialize_str("spiral"),
+            Self::Trochoidal {
+                engagement_angle_deg,
+                loop_radius_factor,
+            } => {
+                let mut s = ser.serialize_struct("Trochoidal", 3)?;
+                s.serialize_field("kind", "trochoidal")?;
+                s.serialize_field("engagement_angle_deg", &engagement_angle_deg)?;
+                s.serialize_field("loop_radius_factor", &loop_radius_factor)?;
+                s.end()
+            }
+        }
+    }
+}
+
+impl JsonSchema for PocketStrategy {
+    fn schema_name() -> String {
+        "PocketStrategy".to_string()
+    }
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let s = serde_json::json!({
+            "oneOf": [
+                {
+                    "type": "string",
+                    "enum": ["cascade", "zigzag", "spiral"]
+                },
+                {
+                    "type": "object",
+                    "required": ["kind", "engagement_angle_deg", "loop_radius_factor"],
+                    "properties": {
+                        "kind": { "type": "string", "enum": ["trochoidal"] },
+                        "engagement_angle_deg": { "type": "number", "format": "double" },
+                        "loop_radius_factor": { "type": "number", "format": "double" }
+                    }
+                }
+            ]
+        });
+        serde_json::from_value(s).expect("static PocketStrategy schema")
+    }
+}
+
+impl<'de> Deserialize<'de> for PocketStrategy {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Str(String),
+            Obj {
+                kind: String,
+                #[serde(default)]
+                engagement_angle_deg: Option<f64>,
+                #[serde(default)]
+                loop_radius_factor: Option<f64>,
+            },
+        }
+        match Repr::deserialize(de)? {
+            Repr::Str(s) => match s.as_str() {
+                "cascade" => Ok(Self::Cascade),
+                "zigzag" => Ok(Self::Zigzag),
+                "spiral" => Ok(Self::Spiral),
+                other => Err(serde::de::Error::unknown_variant(
+                    other,
+                    &["cascade", "zigzag", "spiral", "trochoidal"],
+                )),
+            },
+            Repr::Obj {
+                kind,
+                engagement_angle_deg,
+                loop_radius_factor,
+            } => match kind.as_str() {
+                "cascade" => Ok(Self::Cascade),
+                "zigzag" => Ok(Self::Zigzag),
+                "spiral" => Ok(Self::Spiral),
+                "trochoidal" => Ok(Self::Trochoidal {
+                    engagement_angle_deg: engagement_angle_deg.unwrap_or(30.0),
+                    loop_radius_factor: loop_radius_factor.unwrap_or(0.6),
+                }),
+                other => Err(serde::de::Error::unknown_variant(
+                    other,
+                    &["cascade", "zigzag", "spiral", "trochoidal"],
+                )),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

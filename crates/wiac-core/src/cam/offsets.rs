@@ -514,11 +514,20 @@ pub fn apply_cut_direction(
 /// Zigzag emits a back-and-forth raster fill; Spiral threads the
 /// cascade rings into ONE continuous open polyline so the cutter never
 /// lifts between rings (cleaner finish, slightly faster than cascade).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Trochoidal walks a stitched centerline (the cascade rings, joined)
+/// while looping the cutter on small circles to bound radial engagement
+/// — used for hard-material stock removal on hobby-rigidity machines.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PocketEmit {
     Cascade,
     Zigzag,
     Spiral,
+    Trochoidal {
+        engagement_angle_deg: f64,
+        loop_radius_factor: f64,
+        /// True = climb (CCW loops). False = conventional (CW loops).
+        climb: bool,
+    },
 }
 
 pub fn pocket_for_object(
@@ -615,6 +624,36 @@ pub fn pocket_for_object(
                     }
                 }
             }
+            PocketEmit::Trochoidal {
+                engagement_angle_deg,
+                loop_radius_factor,
+                climb,
+            } => {
+                if let Some(segs) = crate::cam::trochoidal::pocket_trochoidal(
+                    &pts,
+                    islands,
+                    tool_radius,
+                    engagement_angle_deg,
+                    loop_radius_factor,
+                    climb,
+                    &offset.layer,
+                    offset.color,
+                ) {
+                    if !segs.is_empty() {
+                        out.push(PolylineOffset {
+                            segments: segs,
+                            closed: false,
+                            level: 1,
+                            is_pocket: 2,
+                            layer: offset.layer.clone(),
+                            color: offset.color,
+                            source_object_idx: offset.source_object_idx,
+                            tabs: Vec::new(),
+                        });
+                    }
+                }
+                continue;
+            }
             PocketEmit::Cascade => {}
         }
 
@@ -668,20 +707,34 @@ fn stitch_rings_to_spiral(
     layer: &str,
     color: i32,
 ) -> Option<Vec<Segment>> {
+    let pts = stitch_rings_to_polyline(rings)?;
+    let mut out: Vec<Segment> = Vec::with_capacity(pts.len().saturating_sub(1));
+    for w in pts.windows(2) {
+        if w[0].distance(w[1]) > 1e-9 {
+            out.push(Segment::line(w[0], w[1], layer, color));
+        }
+    }
+    Some(out)
+}
+
+/// Stitch cascade rings into one continuous polyline of points (the
+/// shared core of `stitch_rings_to_spiral` and the trochoidal
+/// centerline). Rotates each ring's start vertex to be nearest the
+/// previous ring's end so bridges between rings are short. Returns
+/// None when any bridge would cross the outer ring (the inset pocket
+/// boundary) — same containment guard that protects the spiral
+/// strategy on non-convex shapes.
+pub(crate) fn stitch_rings_to_polyline(rings: &[Vec<Point2>]) -> Option<Vec<Point2>> {
     if rings.is_empty() {
         return Some(Vec::new());
     }
-    // The outermost ring is the inset pocket boundary; all subsequent
-    // rings live strictly inside it. A bridge that exits this boundary
-    // is a bridge that crosses a pocket wall.
     let outer = &rings[0];
-    let mut out: Vec<Segment> = Vec::new();
+    let mut out: Vec<Point2> = Vec::new();
     let mut last_end: Option<Point2> = None;
     for ring in rings {
         if ring.len() < 3 {
             continue;
         }
-        // Pick the ring's start vertex so it's closest to last_end.
         let start_idx = if let Some(end) = last_end {
             let mut best = 0usize;
             let mut best_d = f64::INFINITY;
@@ -696,26 +749,27 @@ fn stitch_rings_to_spiral(
         } else {
             0
         };
-        // Walk the ring forward starting at start_idx, wrapping around.
         let n = ring.len();
         let first = ring[start_idx];
         if let Some(end) = last_end {
-            // Bridge from the previous ring's end to this ring's start.
             if end.distance(first) > 1e-6 {
                 if !bridge_stays_inside_polygon(end, first, outer) {
                     return None;
                 }
-                out.push(Segment::line(end, first, layer, color));
+                out.push(first);
+            }
+        } else {
+            out.push(first);
+        }
+        for k in 1..=n {
+            let p = ring[(start_idx + k) % n];
+            if let Some(prev) = out.last() {
+                if prev.distance(p) > 1e-9 {
+                    out.push(p);
+                }
             }
         }
-        for k in 0..n {
-            let a = ring[(start_idx + k) % n];
-            let b = ring[(start_idx + k + 1) % n];
-            if a.distance(b) > 1e-9 {
-                out.push(Segment::line(a, b, layer, color));
-            }
-        }
-        last_end = Some(first); // we walked back to the start, so end = first
+        last_end = Some(first);
     }
     Some(out)
 }
@@ -729,7 +783,7 @@ fn stitch_rings_to_spiral(
 /// reasonable pocket; the failure mode this guards against is a
 /// straight line that exits and re-enters the polygon, which spans a
 /// finite arc inside the gap.
-fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point2]) -> bool {
+pub(crate) fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point2]) -> bool {
     if polygon.len() < 3 {
         return true;
     }
@@ -745,7 +799,7 @@ fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point2]) -> bool
     true
 }
 
-fn point_in_polygon_pts(verts: &[Point2], x: f64, y: f64) -> bool {
+pub(crate) fn point_in_polygon_pts(verts: &[Point2], x: f64, y: f64) -> bool {
     let n = verts.len();
     if n < 3 {
         return false;

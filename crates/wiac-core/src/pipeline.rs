@@ -19,7 +19,7 @@ use crate::cam::offsets::{
     TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
-use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
+use crate::cam::source_combine::{build_frame, combine_source_regions, CombinedRegion};
 use crate::cam::{segments_to_points, VcObject};
 use crate::gcode::{
     emit_drill_block, emit_polylines_block, emit_program_begin, emit_program_end, grbl, hpgl,
@@ -201,6 +201,39 @@ fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionP
         if !matches!(op.kind, OperationKind::Pocket { .. }) {
             continue;
         }
+        // Pocket-Outside (rt1.3) preview: when the op declares a frame,
+        // mirror the build_op_offsets injection so the preview matches the
+        // toolpath the user will see.
+        if let Some(frame_shape) = op.params.frame_shape {
+            let selected_indices = ordered_selection(op, objects);
+            if selected_indices.is_empty() {
+                continue;
+            }
+            let mut local_objects = objects.to_vec();
+            let frame_selection: Vec<&VcObject> =
+                selected_indices.iter().map(|&i| &local_objects[i]).collect();
+            let frame = build_frame(
+                &frame_selection,
+                frame_shape,
+                op.params.frame_padding_mm.unwrap_or(0.0).max(0.0),
+                op.params.frame_corner_radius_mm,
+            );
+            let frame_idx = local_objects.len();
+            local_objects.push(frame);
+            let mut ordered: Vec<usize> = Vec::with_capacity(selected_indices.len() + 1);
+            ordered.push(frame_idx);
+            ordered.extend(selected_indices);
+            let regions =
+                combine_source_regions(&local_objects, &ordered, SourceCombine::Difference);
+            for r in regions {
+                out.push(RegionPreview {
+                    op_id: op.id,
+                    outer: r.boundary,
+                    holes: r.holes,
+                });
+            }
+            continue;
+        }
         let selected = ordered_selection(op, objects);
         let mode = source_combine_mode(op);
         let regions = combine_source_regions(objects, &selected, mode);
@@ -349,7 +382,54 @@ fn build_op_offsets(
     } else {
         None
     };
-    let effective_op: &Operation = effective_op_storage.as_ref().unwrap_or(op);
+    // Pocket-Outside (rt1.3): when an op carries `frame_shape`, the
+    // pipeline auto-prepends a synthetic frame VcObject derived from
+    // the op's current selection and rewrites the op source to put the
+    // frame's id FIRST, with SourceCombine::Difference. The frame is not
+    // persisted on the project (no Frame_<n> layer) so there's nothing
+    // stale to clean up — recomputed every generate from the op params.
+    let frame_op_storage: Option<Operation> = {
+        let cur_op: &Operation = effective_op_storage.as_ref().unwrap_or(op);
+        if let Some(frame_shape) = cur_op.params.frame_shape {
+            let selected_indices: Vec<usize> = (0..objects.len())
+                .filter(|i| op_includes_object(cur_op, &objects[*i], *i))
+                .collect();
+            if selected_indices.is_empty() {
+                None
+            } else {
+                let frame = {
+                    let frame_selection: Vec<&VcObject> =
+                        selected_indices.iter().map(|&i| &objects[i]).collect();
+                    let padding = cur_op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
+                    build_frame(
+                        &frame_selection,
+                        frame_shape,
+                        padding,
+                        cur_op.params.frame_corner_radius_mm,
+                    )
+                };
+                let frame_idx = objects.len();
+                objects.push(frame);
+                let mut ordered_ids: Vec<u32> = Vec::with_capacity(selected_indices.len() + 1);
+                ordered_ids.push((frame_idx as u32) + 1);
+                for i in &selected_indices {
+                    ordered_ids.push((*i as u32) + 1);
+                }
+                let mut clone = cur_op.clone();
+                clone.source = OperationSource::Objects {
+                    ids: ordered_ids,
+                    combine: SourceCombine::Difference,
+                };
+                Some(clone)
+            }
+        } else {
+            None
+        }
+    };
+    let effective_op: &Operation = frame_op_storage
+        .as_ref()
+        .or(effective_op_storage.as_ref())
+        .unwrap_or(op);
 
     // Apply per-op tool-offset to the chain so order_offsets / lead-in see it.
     for obj in objects.iter_mut() {
@@ -1572,6 +1652,85 @@ mod tests {
         assert!(
             visited_inside_outer,
             "annulus pocket should stay inside the outer box"
+        );
+    }
+
+    /// Pocket-Outside (rt1.3): a Pocket op carrying `frame_shape` should
+    /// auto-prepend a frame around the selection at pipeline time and
+    /// emit a toolpath that fills the area BETWEEN the frame and the
+    /// selection — not the area inside the selection.
+    #[test]
+    fn pocket_outside_carves_between_frame_and_selection() {
+        let segments = closed_square_offset(50.0, 0.0, 0.0);
+        let mut params = OperationParams::mill_default();
+        params.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
+        params.frame_padding_mm = Some(10.0);
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket-Outside".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::Objects {
+                    ids: vec![1],
+                    combine: SourceCombine::Difference,
+                },
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.stats.offset_count >= 1,
+            "Pocket-Outside produced no offsets",
+        );
+        // The cutter should reach OUTSIDE the 50x50 inner square (in the
+        // padding region) AND must NOT cut deep inside the inner square's
+        // interior (the source selection is the high part).
+        let cuts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .collect();
+        // Cuts in the padding region: x or y outside [0, 50].
+        let visited_padding = cuts.iter().any(|s| {
+            let in_inner = |x: f64, y: f64| x >= 0.0 && x <= 50.0 && y >= 0.0 && y <= 50.0;
+            !in_inner(s.from.x, s.from.y) || !in_inner(s.to.x, s.to.y)
+        });
+        assert!(
+            visited_padding,
+            "Pocket-Outside should cut in the padding region between frame and selection",
+        );
+        // Cuts deep inside the source square (≥ tool_radius from the wall)
+        // should not happen — the inner is the "raised" area, not carved.
+        let inner_carve_min = 5.0;
+        let inner_carve_max = 45.0;
+        let cut_inside_inner = cuts.iter().any(|s| {
+            let deep_inside = |x: f64, y: f64| {
+                x > inner_carve_min
+                    && x < inner_carve_max
+                    && y > inner_carve_min
+                    && y < inner_carve_max
+            };
+            deep_inside(s.from.x, s.from.y) && deep_inside(s.to.x, s.to.y)
+        });
+        assert!(
+            !cut_inside_inner,
+            "Pocket-Outside should NOT cut deep inside the source selection",
         );
     }
 

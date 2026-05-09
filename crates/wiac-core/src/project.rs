@@ -16,6 +16,7 @@ use crate::cam::offsets::TabPoint;
 use crate::cam::setup::{
     LeadKind, LeadsConfig, MachineConfig, ObjectOrder, TabType, TabsConfig, ToolOffset,
 };
+use crate::cam::source_combine::FrameShape;
 use crate::geometry::Segment;
 
 // ─── top level ─────────────────────────────────────────────────────────────
@@ -568,6 +569,20 @@ pub struct OperationParams {
     /// fell short of the geometric target depth. Off by default.
     #[serde(default)]
     pub multi_pass_refine: bool,
+
+    /// Pocket-Outside wrapper: shape of the synthetic frame the pipeline
+    /// auto-prepends around `source` before pocketing. Set only on ops
+    /// created via the Pocket-Outside UX. None = no frame (regular Pocket).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_shape: Option<FrameShape>,
+    /// Padding added on every side of the selection bbox to size the
+    /// frame. Honored only when `frame_shape` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_padding_mm: Option<f64>,
+    /// Corner radius for `FrameShape::RoundedRectangle`. None ⇒ defaults
+    /// to `frame_padding_mm` inside the frame builder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_corner_radius_mm: Option<f64>,
 }
 
 fn is_zero_f64(v: &f64) -> bool {
@@ -618,6 +633,9 @@ impl OperationParams {
             depth_list: Vec::new(),
             carve_max_width_mm: None,
             multi_pass_refine: false,
+            frame_shape: None,
+            frame_padding_mm: None,
+            frame_corner_radius_mm: None,
         }
     }
 }

@@ -483,6 +483,10 @@ export type SourceCombine =
   | 'xor'
   | 'none';
 
+/// Pocket-Outside frame shape. Mirrors wiac_core::cam::source_combine::FrameShape.
+/// Oval and TightOutline are explicit follow-ups — not in v1.
+export type FrameShape = 'rectangle' | 'rounded_rectangle';
+
 /// Thin frontend mirror of wiac_core::project::Operation. Tracks just
 /// what the UI needs to show + edit; the wire format expands to the
 /// full Operation when Generate ships.
@@ -582,6 +586,18 @@ export interface OpEntry {
   carveMaxWidthMm?: number;
   /// V-Carve refinement pass toggle. Default false.
   multiPassRefine?: boolean;
+  /// Pocket-Outside (rt1.3): when set, the op carves the area between a
+  /// synthetic frame and the source selection. The frame is computed in
+  /// the pipeline from these params — not persisted as project geometry.
+  /// Set by the "Pocket Outside" entry in OperationsList.
+  frameShape?: FrameShape;
+  /// Padding (mm) added on every side of the selection bbox to size the
+  /// frame. Auto-defaulted to 3 × tool diameter when the wrapper creates
+  /// the op; once the user types a value it stays manual.
+  framePaddingMm?: number;
+  /// Corner radius (mm) for `frameShape === 'rounded_rectangle'`. Ignored
+  /// otherwise. Undefined ⇒ backend defaults to `framePaddingMm`.
+  frameCornerRadiusMm?: number;
 }
 
 export interface ProjectFile {

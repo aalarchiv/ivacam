@@ -125,6 +125,13 @@ interface WireOp {
     /// V-Carve: when true, run a refinement pass that re-cuts the
     /// points whose first pass was depth-limited. Off by default.
     multi_pass_refine?: boolean;
+    /// Pocket-Outside (rt1.3): when set, the pipeline auto-prepends a
+    /// synthetic frame VcObject around the op's selection and runs
+    /// SourceCombine::Difference. The frame is computed at generate time
+    /// from these params — not persisted as project geometry.
+    frame_shape?: 'rectangle' | 'rounded_rectangle';
+    frame_padding_mm?: number;
+    frame_corner_radius_mm?: number;
   };
 }
 
@@ -316,6 +323,13 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
         ? { carve_max_width_mm: op.carveMaxWidthMm }
         : {}),
       ...(op.multiPassRefine ? { multi_pass_refine: true } : {}),
+      ...(op.frameShape !== undefined ? { frame_shape: op.frameShape } : {}),
+      ...(op.framePaddingMm !== undefined
+        ? { frame_padding_mm: op.framePaddingMm }
+        : {}),
+      ...(op.frameCornerRadiusMm !== undefined
+        ? { frame_corner_radius_mm: op.frameCornerRadiusMm }
+        : {}),
     },
   };
 }

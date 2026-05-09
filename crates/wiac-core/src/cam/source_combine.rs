@@ -23,10 +23,115 @@ use clipper2_rust::{
     boolean_op_tree_d, intersect_d, union_subjects_d, xor_d, ClipType, FillRule, PathD, PathsD,
     Point as ClipperPoint, PolyTreeD,
 };
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
+use crate::cam::setup::ToolOffset;
 use crate::cam::{segments_to_points, VcObject};
-use crate::geometry::Point2;
+use crate::geometry::{Point2, Segment};
 use crate::project::SourceCombine;
+
+/// Shape of the synthetic frame built around a Pocket-Outside selection.
+/// Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox
+/// with a quarter-arc bulge at each corner. Oval and TightOutline are
+/// explicit follow-ups — not in v1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FrameShape {
+    #[default]
+    Rectangle,
+    RoundedRectangle,
+}
+
+/// 90° quarter-arc bulge for a CCW rectangle corner: tan(π/8) =
+/// √2 − 1. Used by RoundedRectangle to round the four corners.
+const QUARTER_ARC_BULGE: f64 = std::f64::consts::SQRT_2 - 1.0;
+
+/// Build a synthetic frame VcObject around `selection`, padded by
+/// `padding_mm` on every side. The result is a closed VcObject with
+/// `tool_offset = Inside` (the cutter sits inside this outer boundary)
+/// on layer "Frame", color 6 (cyan). For RoundedRectangle, `corner_radius_mm`
+/// defaults to `padding_mm` when None.
+pub fn build_frame(
+    selection: &[&VcObject],
+    shape: FrameShape,
+    padding_mm: f64,
+    corner_radius_mm: Option<f64>,
+) -> VcObject {
+    // Endpoint bbox of every segment in the selection. Bulged arcs whose
+    // midpoint extends past the chord are a v1 limitation noted in the
+    // bd issue — endpoints-only is good enough for typical text/plaque
+    // selections.
+    let mut bbox = crate::geometry::BBox::EMPTY;
+    for obj in selection {
+        for s in &obj.segments {
+            bbox.extend_point(s.start);
+            bbox.extend_point(s.end);
+        }
+    }
+    if !bbox.is_finite() {
+        bbox = crate::geometry::BBox {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 0.0,
+            max_y: 0.0,
+        };
+    }
+    let pad = padding_mm.max(0.0);
+    let min_x = bbox.min_x - pad;
+    let min_y = bbox.min_y - pad;
+    let max_x = bbox.max_x + pad;
+    let max_y = bbox.max_y + pad;
+
+    let layer = "Frame";
+    let color = 6;
+    let segments = match shape {
+        FrameShape::Rectangle => {
+            let p_bl = Point2::new(min_x, min_y);
+            let p_br = Point2::new(max_x, min_y);
+            let p_tr = Point2::new(max_x, max_y);
+            let p_tl = Point2::new(min_x, max_y);
+            vec![
+                Segment::line(p_bl, p_br, layer, color),
+                Segment::line(p_br, p_tr, layer, color),
+                Segment::line(p_tr, p_tl, layer, color),
+                Segment::line(p_tl, p_bl, layer, color),
+            ]
+        }
+        FrameShape::RoundedRectangle => {
+            let r = corner_radius_mm.unwrap_or(pad).max(0.0);
+            // Clamp radius to half the smaller side so the arcs don't
+            // overlap on a tiny frame.
+            let max_r = ((max_x - min_x).min(max_y - min_y) * 0.5).max(0.0);
+            let r = r.min(max_r);
+            // CCW winding: bottom edge → right edge → top edge → left edge,
+            // with a quarter-arc bulge at each turn.
+            let s_bl_h = Point2::new(min_x + r, min_y);
+            let s_br_h = Point2::new(max_x - r, min_y);
+            let s_br_v = Point2::new(max_x, min_y + r);
+            let s_tr_v = Point2::new(max_x, max_y - r);
+            let s_tr_h = Point2::new(max_x - r, max_y);
+            let s_tl_h = Point2::new(min_x + r, max_y);
+            let s_tl_v = Point2::new(min_x, max_y - r);
+            let s_bl_v = Point2::new(min_x, min_y + r);
+            vec![
+                Segment::line(s_bl_h, s_br_h, layer, color),
+                Segment::arc(s_br_h, s_br_v, QUARTER_ARC_BULGE, None, layer, color),
+                Segment::line(s_br_v, s_tr_v, layer, color),
+                Segment::arc(s_tr_v, s_tr_h, QUARTER_ARC_BULGE, None, layer, color),
+                Segment::line(s_tr_h, s_tl_h, layer, color),
+                Segment::arc(s_tl_h, s_tl_v, QUARTER_ARC_BULGE, None, layer, color),
+                Segment::line(s_tl_v, s_bl_v, layer, color),
+                Segment::arc(s_bl_v, s_bl_h, QUARTER_ARC_BULGE, None, layer, color),
+            ]
+        }
+    };
+    let mut frame = VcObject::new(segments, true);
+    frame.layer = layer.into();
+    frame.color = color;
+    frame.tool_offset = ToolOffset::Inside;
+    frame
+}
 
 /// One machined region: an outer boundary plus zero or more holes
 /// (islands the cutter must avoid).
@@ -375,6 +480,68 @@ mod tests {
             hole_area,
             outer_area - hole_area,
         );
+    }
+
+    #[test]
+    fn build_frame_rectangle() {
+        // Single 10x10 box at origin, padding=10 → 30x30 frame whose
+        // bbox spans (-10,-10) to (20,20), centered on the source bbox
+        // center (5, 5).
+        let objs = build_objects(vec![closed_box(10.0, 0.0, 0.0)]);
+        let selection: Vec<&VcObject> = objs.iter().collect();
+        let frame = build_frame(&selection, FrameShape::Rectangle, 10.0, None);
+        assert!(frame.closed);
+        assert_eq!(frame.segments.len(), 4);
+        assert_eq!(frame.layer, "Frame");
+        assert_eq!(frame.color, 6);
+        assert!(matches!(frame.tool_offset, ToolOffset::Inside));
+        let mut bbox = crate::geometry::BBox::EMPTY;
+        for s in &frame.segments {
+            bbox.extend_point(s.start);
+            bbox.extend_point(s.end);
+        }
+        assert!((bbox.min_x - -10.0).abs() < 1e-9);
+        assert!((bbox.min_y - -10.0).abs() < 1e-9);
+        assert!((bbox.max_x - 20.0).abs() < 1e-9);
+        assert!((bbox.max_y - 20.0).abs() < 1e-9);
+        assert!((bbox.width() - 30.0).abs() < 1e-9);
+        assert!((bbox.height() - 30.0).abs() < 1e-9);
+        let cx = (bbox.min_x + bbox.max_x) * 0.5;
+        let cy = (bbox.min_y + bbox.max_y) * 0.5;
+        assert!((cx - 5.0).abs() < 1e-9);
+        assert!((cy - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_frame_rounded_rectangle() {
+        // 10x10 box at origin + padding 10 → 30x30 outer envelope with
+        // 4 lines + 4 quarter-arc corners = 8 segments total.
+        let objs = build_objects(vec![closed_box(10.0, 0.0, 0.0)]);
+        let selection: Vec<&VcObject> = objs.iter().collect();
+        let frame = build_frame(&selection, FrameShape::RoundedRectangle, 10.0, None);
+        assert!(frame.closed);
+        assert_eq!(frame.segments.len(), 8);
+        let lines = frame
+            .segments
+            .iter()
+            .filter(|s| matches!(s.kind, crate::geometry::SegmentKind::Line))
+            .count();
+        let arcs = frame
+            .segments
+            .iter()
+            .filter(|s| matches!(s.kind, crate::geometry::SegmentKind::Arc))
+            .count();
+        assert_eq!(lines, 4);
+        assert_eq!(arcs, 4);
+        for s in &frame.segments {
+            if matches!(s.kind, crate::geometry::SegmentKind::Arc) {
+                assert!(
+                    (s.bulge - QUARTER_ARC_BULGE).abs() < 1e-9,
+                    "arc bulge expected ≈ tan(π/8), got {}",
+                    s.bulge,
+                );
+            }
+        }
     }
 
     #[test]

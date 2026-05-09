@@ -12,6 +12,7 @@
     type SourceCombine,
     type CutDirection,
     type DrillCycle,
+    type FrameShape,
   } from '../state/project.svelte';
 
   /// One-line description per cut direction for the option titles.
@@ -497,6 +498,52 @@
         {/if}
       </fieldset>
     {:else if op.kind === 'pocket'}
+      {#if op.frameShape != null}
+        {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
+        <fieldset>
+          <legend>Frame</legend>
+          <label class="row" title="Shape of the synthetic frame the pipeline derives from your selection at generate time.">
+            <span>Shape</span>
+            <select
+              value={op.frameShape}
+              onchange={(e) =>
+                patch('frameShape', (e.currentTarget as HTMLSelectElement).value as FrameShape)}
+            >
+              <option value="rectangle">rectangle</option>
+              <option value="rounded_rectangle">rounded rectangle</option>
+            </select>
+          </label>
+          <label class="row" title="Padding (mm) added on every side of the selection bbox to size the frame. Default is 3 × tool diameter; once you type a value it stays manual.">
+            <span>Padding (mm)</span>
+            <input
+              type="number"
+              step="0.5"
+              min="0"
+              value={op.framePaddingMm ?? (opTool ? opTool.diameter * 3 : 9)}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('framePaddingMm', isNaN(v) || v < 0 ? 0 : v);
+              }}
+            />
+          </label>
+          {#if op.frameShape === 'rounded_rectangle'}
+            <label class="row" title="Corner radius (mm) for the rounded rectangle. Empty = same as padding.">
+              <span>Corner radius</span>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                placeholder="same as padding"
+                value={op.frameCornerRadiusMm ?? ''}
+                onchange={(e) => {
+                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                  patch('frameCornerRadiusMm', isNaN(v) || v < 0 ? undefined : v);
+                }}
+              />
+            </label>
+          {/if}
+        </fieldset>
+      {/if}
       <fieldset>
         <legend>Pocket</legend>
         <label class="row">

@@ -7,6 +7,10 @@
   import { project, type OpEntry, type OpKind } from '../state/project.svelte';
   import OpPropertiesPanel from './OpPropertiesPanel.svelte';
 
+  /// Synthetic kind for the "Pocket Outside" picker entry — wraps a
+  /// regular Pocket op with frame_shape + difference combine pre-filled.
+  type PickerKind = OpKind | 'pocket_outside';
+
   const KIND_LABEL: Record<OpKind, string> = {
     profile: 'Profile',
     pocket: 'Pocket',
@@ -29,9 +33,32 @@
     helix: '◎',
     vcarve: '⌃',
   };
-  const ALL_KINDS: OpKind[] = [
-    'profile', 'pocket', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'helix', 'vcarve',
+  const ALL_KINDS: PickerKind[] = [
+    'profile', 'pocket', 'pocket_outside', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'helix', 'vcarve',
   ];
+
+  const PICKER_LABEL: Record<PickerKind, string> = {
+    ...KIND_LABEL,
+    pocket_outside: 'Pocket Outside',
+  };
+  const PICKER_ICON: Record<PickerKind, string> = {
+    ...KIND_ICON,
+    pocket_outside: '⊞',
+  };
+  const PICKER_HELP: Record<PickerKind, string> = {
+    profile: '',
+    pocket: '',
+    pocket_outside: 'Pocket the area BETWEEN a frame and the selection. Useful for raised text/graphics where the surrounding area is removed. Requires at least one selected object.',
+    drill: '',
+    thread: '',
+    chamfer: '',
+    engrave: '',
+    drag_knife: '',
+    helix: '',
+    vcarve: '',
+  };
+
+  const pocketOutsideDisabled = $derived(project.selectedObjects.size === 0);
 
   let pickerOpen = $state(false);
   let dragId = $state<number | null>(null);
@@ -89,9 +116,33 @@
     project.selectedOpId = project.selectedOpId === id ? null : id;
   }
 
-  function pick(kind: OpKind) {
-    project.addOperation(kind);
+  function pick(kind: PickerKind) {
+    if (kind === 'pocket_outside') {
+      addPocketOutside();
+    } else {
+      project.addOperation(kind);
+    }
     pickerOpen = false;
+  }
+
+  /// Wrapper around addOperation('pocket') that pre-wires the
+  /// SourceCombine::Difference + frame_shape params so the pipeline
+  /// auto-derives the outer frame from the selection at generate time.
+  function addPocketOutside() {
+    if (project.selectedObjects.size === 0) return;
+    const endmill = project.tools.find((t) => t.kind === 'endmill') ?? project.tools[0];
+    const toolDiameter = endmill?.diameter ?? 3;
+    const op = project.addOperation('pocket');
+    project.updateOperation(op.id, {
+      name: 'Pocket Outside',
+      toolId: endmill?.id ?? op.toolId,
+      sourceLayers: null,
+      sourceObjects: [...project.selectedObjects],
+      sourceCombine: 'difference',
+      frameShape: 'rectangle',
+      framePaddingMm: 3 * toolDiameter,
+      frameCornerRadiusMm: undefined,
+    });
   }
 
   function onDragStart(e: DragEvent, id: number) {
@@ -127,9 +178,18 @@
   {#if pickerOpen}
     <div class="picker" role="menu">
       {#each ALL_KINDS as k (k)}
-        <button class="kind" role="menuitem" onclick={() => pick(k)}>
-          <span class="ico" aria-hidden="true">{KIND_ICON[k]}</span>
-          <span>{KIND_LABEL[k]}</span>
+        {@const disabled = k === 'pocket_outside' && pocketOutsideDisabled}
+        <button
+          class="kind"
+          role="menuitem"
+          onclick={() => pick(k)}
+          {disabled}
+          title={disabled
+            ? 'Select one or more objects in the canvas first.'
+            : PICKER_HELP[k] || ''}
+        >
+          <span class="ico" aria-hidden="true">{PICKER_ICON[k]}</span>
+          <span>{PICKER_LABEL[k]}</span>
         </button>
       {/each}
     </div>
@@ -245,9 +305,13 @@
     cursor: pointer;
     text-align: left;
   }
-  .kind:hover {
+  .kind:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     border-color: var(--accent);
+  }
+  .kind:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .ico {
     font-size: 0.95rem;

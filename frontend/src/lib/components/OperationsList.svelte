@@ -16,6 +16,7 @@
     engrave: 'Engrave',
     drag_knife: 'Drag-knife',
     helix: 'Helix',
+    vcarve: 'V-Carve',
   };
   const KIND_ICON: Record<OpKind, string> = {
     profile: '▢',
@@ -26,9 +27,10 @@
     engrave: '✎',
     drag_knife: '✁',
     helix: '◎',
+    vcarve: '⌃',
   };
   const ALL_KINDS: OpKind[] = [
-    'profile', 'pocket', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'helix',
+    'profile', 'pocket', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'helix', 'vcarve',
   ];
 
   let pickerOpen = $state(false);

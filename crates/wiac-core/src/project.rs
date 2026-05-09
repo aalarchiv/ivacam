@@ -48,6 +48,12 @@ pub struct ToolEntry {
     /// V-bit tip diameter (None for endmill / ball nose / drag knife).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tip_diameter: Option<f64>,
+    /// V-bit full included tip angle in degrees (apex angle of the cone).
+    /// Drives the V-Carve depth-from-width relationship
+    /// `z = -R / tan(tip_angle / 2)`. Validated to (0, 180); defaults to
+    /// 60° for the most common engraving V-bit.
+    #[serde(default = "default_tip_angle_deg")]
+    pub tip_angle_deg: f64,
     /// Drag-knife trailing offset (None for everything else).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dragoff: Option<f64>,
@@ -68,6 +74,7 @@ impl Default for ToolEntry {
             kind: ToolKind::Endmill,
             diameter: 3.0,
             tip_diameter: None,
+            tip_angle_deg: default_tip_angle_deg(),
             dragoff: None,
             flutes: 2,
             speed: 18_000,
@@ -193,6 +200,16 @@ pub enum OperationKind {
     DragKnife,
     /// Helical entry into a closed contour.
     Helix,
+    /// V-Carve: drives a V-bit along the medial axis of a closed region,
+    /// with depth varying per point so the V's tip dips deepest where the
+    /// region is widest. The depth at each point is
+    /// `z = -R_inscribed / tan(tip_angle / 2)` for the inscribed-circle
+    /// radius `R_inscribed` at that point of the medial axis.
+    VCarve,
+}
+
+fn default_tip_angle_deg() -> f64 {
+    60.0
 }
 
 /// Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned
@@ -432,6 +449,19 @@ pub struct OperationParams {
     /// step-down loop.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depth_list: Vec<f64>,
+
+    /// V-Carve cap on the inscribed-circle radius (mm). When set, any
+    /// medial-axis point with `R_inscribed > carve_max_width_mm` clips
+    /// to the cap — the V doesn't carve any wider than the bit's
+    /// usable diameter. None = no cap (use the geometric inscribed
+    /// circle directly).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carve_max_width_mm: Option<f64>,
+    /// V-Carve "second-pass" toggle. When true, the emitter runs a
+    /// refinement pass that re-cuts only the points whose first pass
+    /// fell short of the geometric target depth. Off by default.
+    #[serde(default)]
+    pub multi_pass_refine: bool,
 }
 
 fn is_zero_f64(v: &f64) -> bool {
@@ -480,6 +510,8 @@ impl OperationParams {
             finish_step: None,
             through_depth: 0.0,
             depth_list: Vec::new(),
+            carve_max_width_mm: None,
+            multi_pass_refine: false,
         }
     }
 }

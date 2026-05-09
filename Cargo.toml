@@ -54,6 +54,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Internal crates.
 wiac-core = { path = "crates/wiac-core" }
 
+# Pure-Rust Voronoi/Delaunay (MIT) — used by the V-Carve operation to
+# build the medial axis of densified region boundaries. We disable the
+# default `rayon` feature so we don't pull a thread pool into the wasm
+# build for the sake of a one-time triangulation.
+voronator = { version = "0.2", default-features = false }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

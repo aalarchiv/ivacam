@@ -30,6 +30,7 @@ ttf-parser = "0.25"
 # as text-to-paths-already, which is fine for CAM input where
 # text-to-stroke conversion happens upstream.
 usvg = { version = "0.45", default-features = false }
+voronator = { workspace = true }
 
 [dev-dependencies]
 ttf-parser = "0.25"

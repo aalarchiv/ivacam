@@ -194,6 +194,50 @@ pub fn emit_polylines_block<P: PostProcessor>(
     }
 }
 
+/// V-Carve emit. Walks a list of XYZ polylines (each one already
+/// ratchet-deepened by [`crate::cam::vcarve_emit::ratchet_emit`]) and
+/// emits them as G1 cuts, with G0 lifts to safe Z between polylines.
+/// `start_depth` is honored as the plunge entry plane; per-point Z is
+/// already absolute.
+pub fn emit_vcarve_block<P: PostProcessor>(
+    setup: &Setup,
+    polylines: &[Vec<(f64, f64, f64)>],
+    post: &mut P,
+    last_pos: &mut Point2,
+) {
+    if polylines.is_empty() {
+        return;
+    }
+    let fast_z = setup.mill.fast_move_z;
+    if setup.machine.mode == MachineMode::Mill {
+        post.spindle_cw(setup.tool.speed, setup.tool.pause);
+    }
+    if setup.tool.flood {
+        post.coolant_flood();
+    }
+    if setup.tool.mist {
+        post.coolant_mist();
+    }
+    for poly in polylines {
+        if poly.len() < 2 {
+            continue;
+        }
+        let (sx, sy, _) = poly[0];
+        // Travel: lift to safe Z, fly to the start XY, drop to start_depth.
+        post.move_to(None, None, Some(fast_z));
+        post.move_to(Some(sx), Some(sy), None);
+        post.feedrate(setup.tool.rate_v);
+        post.linear(None, None, Some(setup.mill.start_depth));
+        post.feedrate(setup.tool.rate_h);
+        for &(x, y, z) in poly.iter() {
+            post.linear(Some(x), Some(y), Some(z));
+        }
+        let (lx, ly, _) = *poly.last().unwrap();
+        *last_pos = Point2::new(lx, ly);
+    }
+    post.move_to(None, None, Some(fast_z));
+}
+
 /// Drill-cycle emit. Walks `offsets` whose single segment is a Point and
 /// dispatches to the [`PostProcessor`] drill_* method matching `cycle`.
 /// Used by the pipeline's per-op driver when `OperationKind::Drill`.

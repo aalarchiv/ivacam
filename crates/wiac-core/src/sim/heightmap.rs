@@ -236,6 +236,7 @@ mod tests {
             kind,
             diameter,
             tip_diameter: None,
+            tip_angle_deg: 60.0,
             dragoff: None,
             flutes: 2,
             speed: 18_000,

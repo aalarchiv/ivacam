@@ -25,6 +25,9 @@ interface WireToolEntry {
   kind: WireToolKind;
   diameter: number;
   tip_diameter?: number;
+  /// V-bit full apex angle in degrees. Required by V-Carve to compute
+  /// `z = -R / tan(tip_angle / 2)`. Default 60 in the Rust struct.
+  tip_angle_deg?: number;
   dragoff?: number;
   flutes: number;
   speed: number;
@@ -54,7 +57,8 @@ type WireOpKind =
   | { type: 'chamfer' }
   | { type: 'engrave' }
   | { type: 'drag_knife' }
-  | { type: 'helix' };
+  | { type: 'helix' }
+  | { type: 'v_carve' };
 
 type WireSourceCombine =
   | 'auto'
@@ -108,6 +112,13 @@ interface WireOp {
     finish_step?: number;
     through_depth?: number;
     depth_list?: number[];
+    /// V-Carve: optional cap on the inscribed-circle radius. None = no
+    /// cap. When set, the V-bit doesn't carve any wider than this even
+    /// where the medial axis would call for it.
+    carve_max_width_mm?: number;
+    /// V-Carve: when true, run a refinement pass that re-cuts the
+    /// points whose first pass was depth-limited. Off by default.
+    multi_pass_refine?: boolean;
   };
 }
 
@@ -144,6 +155,7 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     kind: t.kind,
     diameter: t.diameter,
     ...(t.tipDiameter !== undefined ? { tip_diameter: t.tipDiameter } : {}),
+    ...(t.tipAngleDeg !== undefined ? { tip_angle_deg: t.tipAngleDeg } : {}),
     ...(t.dragoff !== undefined ? { dragoff: t.dragoff } : {}),
     flutes: t.flutes,
     speed: t.speed,
@@ -165,6 +177,8 @@ function buildOpKind(op: OpEntry): WireOpKind {
         : { kind: 'simple', dwell_sec: 0 };
       return { type: 'drill', cycle };
     }
+    case 'vcarve':
+      return { type: 'v_carve' };
     default:
       return { type: op.kind } as WireOpKind;
   }
@@ -280,6 +294,10 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
       ...(op.depthList && op.depthList.length > 0
         ? { depth_list: op.depthList }
         : {}),
+      ...(op.carveMaxWidthMm !== undefined && op.carveMaxWidthMm > 0
+        ? { carve_max_width_mm: op.carveMaxWidthMm }
+        : {}),
+      ...(op.multiPassRefine ? { multi_pass_refine: true } : {}),
     },
   };
 }

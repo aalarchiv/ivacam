@@ -673,6 +673,46 @@
       </fieldset>
     {/if}
 
+    {#if op.kind === 'vcarve'}
+      {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
+      <fieldset>
+        <legend>V-Carve</legend>
+        {#if opTool && opTool.kind !== 'v_bit'}
+          <p class="warn-chip" title="V-Carve assumes a V-bit cone — pick a V-bit in the tool library or the carve depth math won't match the actual cutter.">
+            Tool kind mismatch — V-Carve needs a V-bit.
+          </p>
+        {/if}
+        <label
+          class="row"
+          title="Optional cap on the inscribed-circle radius (mm). Leave empty for no cap. Useful when a wide region would otherwise drive the V deeper than the bit's usable shoulder."
+        >
+          <span>Max width (mm)</span>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            placeholder="no cap"
+            value={op.carveMaxWidthMm ?? ''}
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              patch('carveMaxWidthMm', isNaN(v) || v <= 0 ? undefined : v);
+            }}
+          />
+        </label>
+        <label
+          class="row"
+          title="When on, run a refinement pass that re-cuts only the points whose first pass fell short of the geometric target depth. Off by default."
+        >
+          <span>Refine pass</span>
+          <input
+            type="checkbox"
+            checked={op.multiPassRefine ?? false}
+            onchange={(e) => patch('multiPassRefine', (e.currentTarget as HTMLInputElement).checked)}
+          />
+        </label>
+      </fieldset>
+    {/if}
+
     {#if op.kind === 'thread' || op.kind === 'chamfer' || op.kind === 'helix'}
       <p class="empty">
         This operation kind is parsed but the gcode emitter for it ships
@@ -770,5 +810,14 @@
   .from-selection:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  .warn-chip {
+    margin: 0.2rem 0;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--warn) 14%, transparent);
+    color: var(--warn);
+    border: 1px solid var(--warn);
+    font-size: 0.72rem;
   }
 </style>

@@ -484,7 +484,8 @@ pub fn apply_cut_direction(
             | OperationKind::Drill { .. }
             | OperationKind::Thread
             | OperationKind::Chamfer
-            | OperationKind::Helix => CutContext::Skip,
+            | OperationKind::Helix
+            | OperationKind::VCarve => CutContext::Skip,
         }
     };
     for offset in offsets.iter_mut() {

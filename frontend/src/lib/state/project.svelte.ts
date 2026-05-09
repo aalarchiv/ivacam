@@ -334,6 +334,7 @@ class ProjectState {
       finishCutDirection: 'conventional',
       plunge: { kind: 'direct' },
       xyOverlap: 0.5,
+      ...(kind === 'vcarve' ? { multiPassRefine: false } : {}),
     };
     this.operations = [...this.operations, op];
     this.selectedOpId = op.id;
@@ -380,6 +381,7 @@ function prettyOpKind(kind: OpKind): string {
     case 'engrave': return 'Engraving';
     case 'drag_knife': return 'Drag-knife';
     case 'helix': return 'Helix';
+    case 'vcarve': return 'V-Carve';
   }
 }
 
@@ -406,6 +408,11 @@ export interface ToolEntry {
   kind: ToolKind;
   diameter: number;
   tipDiameter?: number;
+  /// V-bit full apex angle in degrees. Drives the V-Carve depth math
+  /// (`z = -R / tan(tipAngleDeg / 2)`); ignored for non-V tools.
+  /// Optional in TS for back-compat with old project files; the wire
+  /// payload omits it when undefined and the Rust side defaults to 60°.
+  tipAngleDeg?: number;
   dragoff?: number;
   flutes: number;
   speed: number;
@@ -431,7 +438,8 @@ export type OpKind =
   | 'chamfer'
   | 'engrave'
   | 'drag_knife'
-  | 'helix';
+  | 'helix'
+  | 'vcarve';
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral';
@@ -563,6 +571,12 @@ export interface OpEntry {
   /// Explicit ordered list of Z depths (negative numbers). When
   /// non-empty, overrides `step`/`finishStep`/`throughDepth`.
   depthList?: number[];
+  /// V-Carve cap on the inscribed-circle radius (mm). Undefined =
+  /// no cap; the V-bit reaches the geometric medial axis. Useful for
+  /// keeping the carve narrower than the bit's usable shoulder.
+  carveMaxWidthMm?: number;
+  /// V-Carve refinement pass toggle. Default false.
+  multiPassRefine?: boolean;
 }
 
 export interface ProjectFile {

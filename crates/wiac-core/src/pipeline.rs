@@ -237,6 +237,17 @@ where
     let mut emitted_ops = 0usize;
     for op in project.operations.iter().filter(|o| o.enabled) {
         let setup = synthesize_op_setup(op, project)?;
+        if matches!(op.kind, OperationKind::VCarve) {
+            post.raw(&format!("; OP {}", op.id));
+            run_vcarve_op(op, project, &objects, &setup, post, &mut last_pos, warnings)?;
+            emitted_ops += 1;
+            progress(
+                "gcode",
+                0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
+                &format!("emitted op {}", op.id),
+            );
+            continue;
+        }
         let (offsets, closed_count) =
             build_op_offsets(op, project, &mut objects.clone(), &setup, warnings)?;
         {
@@ -573,6 +584,13 @@ fn build_op_offsets(
             OperationKind::Thread | OperationKind::Chamfer | OperationKind::Helix => {
                 return Err(PipelineError::UnimplementedKind(effective_op.kind));
             }
+            OperationKind::VCarve => {
+                // V-Carve runs through `run_vcarve_op` from the per-op
+                // driver; it should never reach this offset-cascade
+                // path. Skip silently rather than erroring so a stray
+                // call here doesn't crash the program — the dedicated
+                // dispatcher already produced the toolpath.
+            }
         }
     }
     let _ = emitted_objects;
@@ -586,6 +604,101 @@ fn build_op_offsets(
     apply_cut_direction(&mut offsets, effective_op, false);
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
     Ok((offsets, closed))
+}
+
+/// V-Carve op driver. Builds the medial axis of the source region(s)
+/// and emits a per-axis ratchet sweep with depth varying from
+/// `start_depth` to the geometric V-bit depth at each point.
+fn run_vcarve_op<P: PostProcessor>(
+    op: &Operation,
+    project: &Project,
+    objects: &[VcObject],
+    setup: &Setup,
+    post: &mut P,
+    last_pos: &mut Point2,
+    warnings: &mut Vec<PipelineWarning>,
+) -> Result<(), PipelineError> {
+    push_tool_fit_kind_warnings(op, project, setup, warnings);
+    let tool = project
+        .tools
+        .iter()
+        .find(|t| t.id == op.tool_id)
+        .ok_or(PipelineError::UnknownTool(op.id, op.tool_id))?;
+    if !matches!(tool.kind, crate::project::ToolKind::VBit) {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "tool_kind_mismatch".into(),
+            message: format!(
+                "V-Carve op '{}' uses tool '{}' which is not a V-bit. The carve depth is computed from the V-bit cone angle; engraver / endmill geometry won't produce a true V-groove.",
+                op.name, tool.name
+            ),
+        });
+    }
+    // Tip angle clamp — the wire payload may carry an out-of-range
+    // value from a hand-crafted project file. (0, 180) is the
+    // physically meaningful range for a cone apex.
+    let tip_angle_deg = tool.tip_angle_deg.clamp(1.0, 179.0);
+    let tip_angle_rad = tip_angle_deg.to_radians();
+
+    // Materialize the source region(s) the same way the Pocket op does
+    // — Auto for `All`, the user-picked combine mode otherwise.
+    let selected = ordered_selection(op, objects);
+    let combine = source_combine_mode(op);
+    let regions = combine_source_regions(objects, &selected, combine);
+    if regions.is_empty() {
+        return Ok(());
+    }
+
+    let r_cap = op.params.carve_max_width_mm;
+    let z_cap = if op.params.depth.abs() > 1e-9 {
+        Some(op.params.depth)
+    } else {
+        None
+    };
+    let dpp = op.params.step.abs().max(0.05);
+
+    let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    let mut any_depth_limited = false;
+
+    for region in &regions {
+        if region.boundary.len() < 3 {
+            continue;
+        }
+        let vc_region = crate::cam::vcarve::VcRegion {
+            outer: region.boundary.clone(),
+            holes: region.holes.clone(),
+        };
+        let axes = crate::cam::vcarve::medial_axis(&vc_region);
+        for axis in &axes {
+            let (z_axis, depth_limited) =
+                crate::cam::vcarve::polyline_to_z(axis, tip_angle_rad, r_cap, z_cap);
+            if depth_limited {
+                any_depth_limited = true;
+            }
+            let path = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
+            if path.len() >= 2 {
+                polylines.push(path);
+            }
+        }
+    }
+
+    if any_depth_limited {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "vcarve_depth_limited".into(),
+            message: format!(
+                "V-Carve op '{}' was depth-limited: the V-bit can't reach the geometric corner because depth and/or carve_max_width caps clipped the inscribed-circle radius.",
+                op.name
+            ),
+        });
+    }
+
+    if polylines.is_empty() {
+        return Ok(());
+    }
+
+    crate::gcode::emit_vcarve_block(setup, &polylines, post, last_pos);
+    Ok(())
 }
 
 /// Sanity warnings that don't depend on whether the offset cascade
@@ -1088,6 +1201,7 @@ mod tests {
             kind: ToolKind::Endmill,
             diameter,
             tip_diameter: None,
+            tip_angle_deg: 60.0,
             dragoff: None,
             flutes: 2,
             speed: 18_000,
@@ -1557,6 +1671,7 @@ mod tests {
             kind: ToolKind::Drill,
             diameter: 1.0,
             tip_diameter: None,
+            tip_angle_deg: 60.0,
             dragoff: None,
             flutes: 2,
             speed: 18_000,
@@ -3891,5 +4006,106 @@ mod tests {
         });
         let res: Result<PipelineRequest, _> = serde_json::from_value(raw);
         assert!(res.is_err());
+    }
+
+    /// VCarve op produces a non-empty toolpath whose deepest cutting
+    /// move sits well below `start_depth - 0.1` — proves the medial
+    /// axis ratchet actually plunges into the slot rather than just
+    /// tracing the boundary at z=0.
+    #[test]
+    fn vcarve_op_emits_cutting_moves_below_start_depth() {
+        let vbit = ToolEntry {
+            id: 1,
+            name: "60° V".into(),
+            kind: ToolKind::VBit,
+            diameter: 6.35,
+            tip_diameter: Some(0.1),
+            tip_angle_deg: 60.0,
+            dragoff: None,
+            flutes: 2,
+            speed: 18_000,
+            plunge_rate: 200,
+            feed_rate: 1200,
+            coolant: Coolant::Off,
+        };
+        let op = Operation {
+            id: 7,
+            name: "Carve".into(),
+            enabled: true,
+            kind: OperationKind::VCarve,
+            tool_id: 1,
+            source: OperationSource::All,
+            params: OperationParams {
+                depth: -10.0,
+                start_depth: 0.0,
+                step: -1.0,
+                fast_move_z: 5.0,
+                ..OperationParams::default()
+            },
+            pattern: None,
+        };
+        let project = Project {
+            // 20 mm equilateral-ish triangle: (0,0) (20,0) (10, 17.32)
+            segments: vec![
+                Segment::line(Point2::new(0.0, 0.0), Point2::new(20.0, 0.0), "0", 7),
+                Segment::line(
+                    Point2::new(20.0, 0.0),
+                    Point2::new(10.0, 17.320_508),
+                    "0",
+                    7,
+                ),
+                Segment::line(Point2::new(10.0, 17.320_508), Point2::new(0.0, 0.0), "0", 7),
+            ],
+            machine: Default::default(),
+            tools: vec![vbit],
+            operations: vec![op],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline ran");
+        assert!(!resp.gcode.is_empty(), "gcode should not be empty");
+        let any_deep = resp
+            .toolpath
+            .iter()
+            .any(|s| s.to.z < -0.1 && !matches!(s.kind, crate::gcode::preview::MoveKind::Rapid));
+        assert!(
+            any_deep,
+            "expected at least one cutting move below start_depth - 0.1; got {} toolpath segs",
+            resp.toolpath.len()
+        );
+    }
+
+    #[test]
+    fn vcarve_op_round_trips_through_serde_json() {
+        let op = Operation {
+            id: 11,
+            name: "Sign carve".into(),
+            enabled: true,
+            kind: OperationKind::VCarve,
+            tool_id: 1,
+            source: OperationSource::All,
+            params: OperationParams {
+                depth: -8.0,
+                start_depth: 0.0,
+                step: -0.8,
+                fast_move_z: 6.0,
+                carve_max_width_mm: Some(4.0),
+                multi_pass_refine: true,
+                ..OperationParams::default()
+            },
+            pattern: None,
+        };
+        let json = serde_json::to_string(&op).expect("serialize");
+        let back: Operation = serde_json::from_str(&json).expect("deserialize");
+        assert!(matches!(back.kind, OperationKind::VCarve));
+        assert_eq!(back.params.carve_max_width_mm, Some(4.0));
+        assert!(back.params.multi_pass_refine);
+        assert_eq!(back.params.depth, -8.0);
     }
 }

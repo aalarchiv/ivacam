@@ -61,6 +61,15 @@
   function patch<K extends keyof OpEntry>(key: K, value: OpEntry[K]) {
     if (op) project.updateOperation(op.id, { [key]: value } as Partial<OpEntry>);
   }
+
+  // Remembers the last manual radius the user typed so toggling Auto
+  // off restores it instead of jumping back to the default.
+  let lastManualHelixRadius = $state<number>(3);
+  $effect(() => {
+    if (op?.plunge?.kind === 'helix' && op.plunge.radius_mm != null) {
+      lastManualHelixRadius = op.plunge.radius_mm;
+    }
+  });
 </script>
 
 <aside class="props" class:embedded>
@@ -342,25 +351,50 @@
               }}
             />
           </label>
-          <label class="row" title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral.">
-            <span>Helix radius</span>
+          <label class="row" title="Auto-fit the helix circle to the largest inscribed circle inside the pocket boundary. Falls back to ramp when no helix circle fits.">
+            <span>Auto-fit helix</span>
             <input
-              type="number"
-              step="0.1"
-              min="0.1"
-              max="50"
-              value={op.plunge.radius_mm}
+              type="checkbox"
+              checked={op.plunge.radius_mm === null}
               onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
+                const checked = (e.currentTarget as HTMLInputElement).checked;
+                if (op.plunge && op.plunge.kind === 'helix') {
                   patch('plunge', {
                     kind: 'helix',
                     angle_deg: op.plunge.angle_deg,
-                    radius_mm: Math.max(0.1, Math.min(50, v)),
+                    radius_mm: checked ? null : lastManualHelixRadius,
                   });
+                }
               }}
             />
           </label>
+          {#if op.plunge.radius_mm === null}
+            <!-- rt1.2: deferred-feedback choice — actual auto fit happens at gcode generation; see follow-up issue. -->
+            <div class="row" title="Auto-fit picks the helix radius from the pocket geometry at gcode generation time.">
+              <span>Helix radius</span>
+              <em class="placeholder">Auto (will fit at generation)</em>
+            </div>
+          {:else}
+            <label class="row" title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral.">
+              <span>Helix radius</span>
+              <input
+                type="number"
+                step="0.1"
+                min="0.1"
+                max="50"
+                value={op.plunge.radius_mm}
+                onchange={(e) => {
+                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                  if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
+                    patch('plunge', {
+                      kind: 'helix',
+                      angle_deg: op.plunge.angle_deg,
+                      radius_mm: Math.max(0.1, Math.min(50, v)),
+                    });
+                }}
+              />
+            </label>
+          {/if}
         {/if}
       {/if}
     </fieldset>
@@ -810,6 +844,11 @@
   .empty {
     color: var(--text-faint);
     font-size: 0.78rem;
+  }
+  .placeholder {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    font-style: italic;
   }
   .row {
     display: grid;

@@ -16,11 +16,88 @@
 //! glyph is a network of thin curves, not a filled shape). See
 //! `is_single_line_font` for the threshold + tests.
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use ttf_parser::{Face, OutlineBuilder};
 
 use crate::error::Error;
 use crate::geometry::{Point2, Segment};
 use crate::math;
+
+/// Request payload for the cross-transport `/text` endpoint. The frontend
+/// hands us TTF bytes (uploaded by the user or pulled from
+/// `frontend/public/fonts/`) plus a string + placement parameters; we
+/// return flattened [`Segment`]s and a single-line / outline classification
+/// the dialog uses to drive the engraving warning chip.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RenderTextRequest {
+    /// The font file as bytes (TTF / OTF). Encoded as a JSON `Vec<u8>`
+    /// (i.e. an array of byte values) so the contract works equally well
+    /// over HTTP/Tauri/WASM without picking a base64 layer.
+    pub font_bytes: Vec<u8>,
+    pub text: String,
+    pub origin: Point2,
+    pub height_mm: f64,
+    #[serde(default = "default_layer")]
+    pub layer: String,
+    #[serde(default = "default_color")]
+    pub color: i32,
+}
+
+fn default_layer() -> String {
+    "TEXT".into()
+}
+fn default_color() -> i32 {
+    7
+}
+
+/// Response payload — the rendered geometry plus metadata the dialog uses
+/// to warn the user when an outline font is paired with the Engraving
+/// style.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RenderTextResponse {
+    pub segments: Vec<Segment>,
+    /// True if the font is a single-line / engraving / Hershey-port
+    /// style font. Drives the dialog's "use a single-line font" chip.
+    pub single_line: bool,
+    /// Family / style names (best-effort). Useful for showing what the
+    /// user actually loaded next to the dropdown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_name: Option<String>,
+}
+
+/// Cross-transport entry point: parses the font, renders, returns
+/// segments + the single-line classification. Errors map to the standard
+/// [`Error::Malformed`] when the bytes don't parse as a font.
+pub fn render_text_api(req: &RenderTextRequest) -> crate::Result<RenderTextResponse> {
+    let face = Face::parse(&req.font_bytes, 0).map_err(|e| Error::Malformed(format!("ttf: {e}")))?;
+    let single_line = is_single_line_font(&face);
+    let family_name = face_family_name(&face);
+    let segments = render_text(
+        &req.font_bytes,
+        &req.text,
+        req.origin,
+        req.height_mm,
+        &req.layer,
+        req.color,
+    )?;
+    Ok(RenderTextResponse {
+        segments,
+        single_line,
+        family_name,
+    })
+}
+
+fn face_family_name(face: &Face) -> Option<String> {
+    for entry in face.names() {
+        if entry.name_id == ttf_parser::name_id::FAMILY {
+            if let Some(s) = entry.to_string() {
+                return Some(s);
+            }
+        }
+    }
+    None
+}
 
 /// Outline-builder accumulator. Splits cubic/quadratic Béziers into line
 /// segments via fixed-step subdivision.
@@ -369,6 +446,34 @@ mod tests {
             !is_single_line_font(&face),
             "DejaVuSans should NOT auto-detect as single-line"
         );
+    }
+
+    #[test]
+    fn render_text_api_returns_classification() {
+        let bytes = std::fs::read(fixture("DejaVuSans.ttf")).expect("DejaVuSans.ttf");
+        let req = RenderTextRequest {
+            font_bytes: bytes,
+            text: "AB".into(),
+            origin: Point2::new(0.0, 0.0),
+            height_mm: 12.0,
+            layer: "TEXT".into(),
+            color: 7,
+        };
+        let resp = render_text_api(&req).expect("render");
+        assert!(!resp.segments.is_empty());
+        assert!(!resp.single_line, "DejaVu should classify as outline");
+
+        let rhss = std::fs::read(fixture("RhSS.ttf")).expect("RhSS.ttf");
+        let req2 = RenderTextRequest {
+            font_bytes: rhss,
+            text: "AB".into(),
+            origin: Point2::new(0.0, 0.0),
+            height_mm: 12.0,
+            layer: "TEXT".into(),
+            color: 7,
+        };
+        let resp2 = render_text_api(&req2).expect("render rhss");
+        assert!(resp2.single_line, "RhSS should classify as single-line");
     }
 
     #[test]

@@ -6,6 +6,8 @@ import type {
   GenerateRequest,
   GenerateResponse,
   ImportResponse,
+  RenderTextRequest,
+  RenderTextResponse,
   VersionResponse,
 } from './types';
 
@@ -58,6 +60,24 @@ export class HttpWiacClient implements WiacClient {
       throw new Error(`/generate returned ${res.status}: ${JSON.stringify(detail)}`);
     }
     return (await res.json()) as GenerateResponse;
+  }
+
+  async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {
+    const res = await fetch(`${this.base}/text`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) {
+      let detail: unknown;
+      try {
+        detail = await res.json();
+      } catch {
+        detail = await res.text();
+      }
+      throw new Error(`/text returned ${res.status}: ${JSON.stringify(detail)}`);
+    }
+    return (await res.json()) as RenderTextResponse;
   }
 
   /**
@@ -189,6 +209,7 @@ class WasmClientLazy {
       generate: (req) => ensure().then((c) => c.generate(req)),
       generateStream: (req, cb) =>
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
+      renderText: (req) => ensure().then((c) => c.renderText(req)),
     };
   }
 }
@@ -217,6 +238,7 @@ class TauriClientLazy {
       generate: (req) => ensure().then((c) => c.generate(req)),
       generateStream: (req, cb) =>
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
+      renderText: (req) => ensure().then((c) => c.renderText(req)),
     };
   }
 }

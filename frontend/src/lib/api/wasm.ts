@@ -8,6 +8,8 @@ import type {
   GenerateRequest,
   GenerateResponse,
   ImportResponse,
+  RenderTextRequest,
+  RenderTextResponse,
   VersionResponse,
 } from './types';
 
@@ -17,6 +19,7 @@ type WasmModule = {
   version: () => VersionResponse;
   importBytes: (filename: string, bytes: Uint8Array) => ImportResponse;
   generate: (request: GenerateRequest) => GenerateResponse;
+  renderText: (request: RenderTextRequest) => RenderTextResponse;
 };
 
 let modPromise: Promise<WasmModule> | null = null;
@@ -67,5 +70,10 @@ export class WasmWiacClient implements WiacClient {
     const r = await this.generate(request);
     onProgress({ phase: 'done', fraction: 1.0, message: 'complete' });
     return r;
+  }
+
+  async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {
+    const m = await loadModule();
+    return m.renderText(request);
   }
 }

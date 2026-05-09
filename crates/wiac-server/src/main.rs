@@ -23,6 +23,7 @@ use tokio_stream::StreamExt;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
+use wiac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
 use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
 
 #[tokio::main]
@@ -48,6 +49,7 @@ async fn main() -> Result<()> {
         .route("/import", post(import))
         .route("/generate", post(generate))
         .route("/generate/stream", post(generate_stream))
+        .route("/text", post(render_text_handler))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -234,6 +236,20 @@ async fn generate(
     Json(req): Json<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, AppError> {
     run_pipeline(req, |_phase, _fraction, _msg| {})
+        .map(Json)
+        .map_err(AppError::from)
+}
+
+/// Render a TTF font + string → segments. Cross-transport entry point used
+/// by the AddTextDialog; the WASM and Tauri transports expose the same
+/// shape so the frontend's `WiacClient.renderText` is transport-agnostic.
+async fn render_text_handler(
+    State(_state): State<Arc<AppState>>,
+    Json(req): Json<RenderTextRequest>,
+) -> Result<Json<RenderTextResponse>, AppError> {
+    tokio::task::spawn_blocking(move || render_text_api(&req))
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))?
         .map(Json)
         .map_err(AppError::from)
 }

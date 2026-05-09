@@ -91,6 +91,31 @@ paths:
                 $ref: '#/components/schemas/GenerateResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+  /text:
+    post:
+      summary: Render TTF text into geometry segments
+      operationId: renderText
+      description: |
+        Tessellates a TTF/OTF font + a string into the project's standard
+        Segment shape. Used by the Add-Text dialog. The response also
+        carries a `single_line` flag derived by `is_single_line_font` so
+        the dialog can warn when a filled-outline font is paired with the
+        Engraving style.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenderTextRequest'
+      responses:
+        '200':
+          description: Rendered text geometry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderTextResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 components:
   schemas:
     BBox:
@@ -189,6 +214,12 @@ components:
       required:
       - error
       type: object
+    FrameShape:
+      description: Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox with a quarter-arc bulge at each corner. Oval and TightOutline are explicit follow-ups — not in v1.
+      enum:
+      - rectangle
+      - rounded_rectangle
+      type: string
     GcodeIndex:
       description: 'Lookup table the frontend uses to wire the gcode text panel to the 3D toolpath: line N in the gcode corresponds to `segments[lines_to_segment[N]]`, and `segments_to_line[i]` is the 1-based gcode line that produced segment `i`. Both vectors are dense — gcode lines that don''t move the tool map to `usize::MAX` so callers can detect the gap.'
       properties:
@@ -613,8 +644,23 @@ components:
         required:
         - type
         type: object
+      - description: 'V-Carve: drives a V-bit along the medial axis of a closed region, with depth varying per point so the V''s tip dips deepest where the region is widest. The depth at each point is `z = -R_inscribed / tan(tip_angle / 2)` for the inscribed-circle radius `R_inscribed` at that point of the medial axis.'
+        properties:
+          type:
+            enum:
+            - v_carve
+            type: string
+        required:
+        - type
+        type: object
     OperationParams:
       properties:
+        carve_max_width_mm:
+          description: V-Carve cap on the inscribed-circle radius (mm). When set, any medial-axis point with `R_inscribed > carve_max_width_mm` clips to the cap — the V doesn't carve any wider than the bit's usable diameter. None = no cap (use the geometric inscribed circle directly).
+          format: double
+          type:
+          - number
+          - 'null'
         corner_feed_reduction:
           description: When > 0, slow the feed at sharp corners by this fraction so the machine doesn't dwell on the corner with high accel demand. 0.0 = no reduction (current behavior). 0.5 = half the feed at corners. Most useful for zigzag pocket fills with their many 180° turns.
           format: double
@@ -654,6 +700,23 @@ components:
           type:
           - number
           - 'null'
+        frame_corner_radius_mm:
+          description: Corner radius for `FrameShape::RoundedRectangle`. None ⇒ defaults to `frame_padding_mm` inside the frame builder.
+          format: double
+          type:
+          - number
+          - 'null'
+        frame_padding_mm:
+          description: Padding added on every side of the selection bbox to size the frame. Honored only when `frame_shape` is set.
+          format: double
+          type:
+          - number
+          - 'null'
+        frame_shape:
+          anyOf:
+          - $ref: '#/components/schemas/FrameShape'
+          - type: 'null'
+          description: 'Pocket-Outside wrapper: shape of the synthetic frame the pipeline auto-prepends around `source` before pocketing. Set only on ops created via the Pocket-Outside UX. None = no frame (regular Pocket).'
         helix:
           default: false
           description: Helical descent inside a closed contour.
@@ -667,6 +730,10 @@ components:
             out: off
             out_lenght: 5.0
           description: Lead-in / lead-out shape for this op.
+        multi_pass_refine:
+          default: false
+          description: V-Carve "second-pass" toggle. When true, the emitter runs a refinement pass that re-cuts only the points whose first pass fell short of the geometric target depth. Off by default.
+          type: boolean
         objectorder:
           allOf:
           - $ref: '#/components/schemas/ObjectOrder'
@@ -705,9 +772,11 @@ components:
           format: double
           type: number
         step:
-          description: Per-pass step (negative ⇒ down).
+          description: Per-pass step (negative ⇒ down). None = inherit from `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to mean "unset"; the deserializer maps that to None.
           format: double
-          type: number
+          type:
+          - number
+          - 'null'
         tabs:
           allOf:
           - $ref: '#/components/schemas/TabsConfig'
@@ -730,7 +799,6 @@ components:
       - depth
       - fast_move_z
       - start_depth
-      - step
       type: object
     OperationSource:
       oneOf:
@@ -922,7 +990,7 @@ components:
         - angle_deg
         - kind
         type: object
-      - description: 'Helical descent: spiral down on a circle of `radius_mm` around a point inside the closed pocket boundary, descending Z at `angle_deg` per revolution. After the helix lands at the pass depth the cutter walks to the path''s actual start XY and continues normally. Each revolution drops Z by `2 * π * radius_mm * tan(angle_deg)`. Only meaningful for closed pocket paths whose boundary fits the helix circle — falls back to Ramp (and then Direct) otherwise. Standard for non-center-cutting endmills and harder materials.'
+      - description: 'Helical descent: spiral down on a circle of `radius_mm` around a point inside the closed pocket boundary, descending Z at `angle_deg` per revolution. `radius_mm = None` ⇒ auto-fit to the largest inscribed circle inside the pocket boundary at gcode-emission time. Falls back to Ramp (and then Direct) when the helix circle can''t fit.'
         properties:
           angle_deg:
             format: double
@@ -933,11 +1001,12 @@ components:
             type: string
           radius_mm:
             format: double
-            type: number
+            type:
+            - number
+            - 'null'
         required:
         - angle_deg
         - kind
-        - radius_mm
         type: object
     PocketConfig:
       properties:
@@ -1108,6 +1177,55 @@ components:
       required:
       - op_id
       - outer
+      type: object
+    RenderTextRequest:
+      description: Request payload for the cross-transport `/text` endpoint. The frontend hands us TTF bytes (uploaded by the user or pulled from `frontend/public/fonts/`) plus a string + placement parameters; we return flattened [`Segment`]s and a single-line / outline classification the dialog uses to drive the engraving warning chip.
+      properties:
+        color:
+          default: 7
+          format: int32
+          type: integer
+        font_bytes:
+          description: The font file as bytes (TTF / OTF). Encoded as a JSON `Vec<u8>` (i.e. an array of byte values) so the contract works equally well over HTTP/Tauri/WASM without picking a base64 layer.
+          items:
+            format: uint8
+            minimum: 0.0
+            type: integer
+          type: array
+        height_mm:
+          format: double
+          type: number
+        layer:
+          default: TEXT
+          type: string
+        origin:
+          $ref: '#/components/schemas/Point2'
+        text:
+          type: string
+      required:
+      - font_bytes
+      - height_mm
+      - origin
+      - text
+      type: object
+    RenderTextResponse:
+      description: Response payload — the rendered geometry plus metadata the dialog uses to warn the user when an outline font is paired with the Engraving style.
+      properties:
+        family_name:
+          description: Family / style names (best-effort). Useful for showing what the user actually loaded next to the dropdown.
+          type:
+          - string
+          - 'null'
+        segments:
+          items:
+            $ref: '#/components/schemas/Segment'
+          type: array
+        single_line:
+          description: True if the font is a single-line / engraving / Hershey-port style font. Drives the dialog's "use a single-line font" chip.
+          type: boolean
+      required:
+      - segments
+      - single_line
       type: object
     Segment:
       description: A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
@@ -1286,6 +1404,12 @@ components:
       properties:
         coolant:
           $ref: '#/components/schemas/Coolant'
+        default_step:
+          description: Default depth-per-pass (negative, mm). Operations using this tool inherit this when their own `step` is unset. None = no default.
+          format: double
+          type:
+          - number
+          - 'null'
         diameter:
           format: double
           type: number
@@ -1321,6 +1445,11 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        tip_angle_deg:
+          default: 60.0
+          description: V-bit full included tip angle in degrees (apex angle of the cone). Drives the V-Carve depth-from-width relationship `z = -R / tan(tip_angle / 2)`. Validated to (0, 180); defaults to 60° for the most common engraving V-bit.
+          format: double
+          type: number
         tip_diameter:
           description: V-bit tip diameter (None for endmill / ball nose / drag knife).
           format: double

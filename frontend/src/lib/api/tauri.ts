@@ -10,6 +10,8 @@ import type {
   GenerateRequest,
   GenerateResponse,
   ImportResponse,
+  RenderTextRequest,
+  RenderTextResponse,
   VersionResponse,
 } from './types';
 
@@ -71,5 +73,9 @@ export class TauriWiacClient implements WiacClient {
     const r = await invoke<GenerateResponse>('generate', { request });
     onProgress({ phase: 'done', fraction: 1.0, message: 'complete' });
     return r;
+  }
+
+  async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {
+    return invoke<RenderTextResponse>('render_text', { request });
   }
 }

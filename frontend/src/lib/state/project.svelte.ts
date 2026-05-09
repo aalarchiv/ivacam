@@ -1,7 +1,13 @@
 // Global project state, Svelte 5 runes.
 // Holds the most recently imported geometry plus UI flags.
 
-import type { GenerateResponse, ImportResponse, Point2 } from '../api/types';
+import type {
+  GenerateResponse,
+  ImportResponse,
+  ImportedObject,
+  Point2,
+  Segment,
+} from '../api/types';
 
 const SETTINGS_KEY = 'wiac.settings';
 const LEGACY_THEME_KEY = 'wiac.theme';
@@ -309,6 +315,136 @@ class ProjectState {
     this.selectedOpId = null;
   }
 
+  /// Append the rendered segments from AddTextDialog to the imported
+  /// geometry layer and return the 1-based object ids the chaining pass
+  /// produced for them. The chaining pass owns object id assignment, so
+  /// after appending we re-run the lightweight client-side approximation:
+  /// each closed contour gets a fresh contiguous id higher than any
+  /// existing one. This keeps the dialog's "use these objects as the op's
+  /// source" wiring correct without round-tripping through /import.
+  ///
+  /// `singleLine` — when true, segments are open polylines (engraving
+  /// strokes) and should NOT be treated as closed objects; they go in as
+  /// id 0 (unchained), but we still return an array of ids so callers
+  /// can use the same flow.
+  appendImportedSegments(
+    segments: Segment[],
+    layerName: string,
+    singleLine: boolean,
+  ): number[] {
+    if (!this.imported) {
+      const empty: ImportResponse = {
+        filename: 'text',
+        format: 'text',
+        bbox: { min_x: 0, min_y: 0, max_x: 0, max_y: 0 },
+        layers: [],
+        segments: [],
+        unit_scale: 1,
+        warnings: [],
+        objects: [],
+        object_meta: [],
+      };
+      this.setImported(empty);
+    }
+    const cur = this.imported!;
+    const baseObjId = (cur.objects ?? []).reduce((m, o) => Math.max(m, o), 0);
+
+    // Group consecutive segments by closed contour heuristic: each chain
+    // of head→tail-touching segments becomes one object. Open polylines
+    // (single_line) get id 0 (unchained).
+    const newObjects: number[] = [];
+    const newMeta: ImportedObject[] = [];
+    if (singleLine) {
+      newObjects.push(...new Array(segments.length).fill(0));
+    } else {
+      let nextId = baseObjId;
+      let curId: number | null = null;
+      let prevEnd: { x: number; y: number } | null = null;
+      const close = 1e-6;
+      const eq = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+        Math.abs(a.x - b.x) < close && Math.abs(a.y - b.y) < close;
+      for (const s of segments) {
+        if (curId == null || prevEnd == null || !eq(prevEnd, s.start)) {
+          nextId += 1;
+          curId = nextId;
+        }
+        newObjects.push(curId);
+        prevEnd = s.end;
+      }
+      // Build minimal object metadata. closed=true as a hint; the
+      // backend will reclassify on next /generate. This is enough for
+      // the OperationsList / canvas selection wiring to recognize the
+      // ids without a round trip.
+      const ids = Array.from(new Set(newObjects.filter((i) => i > baseObjId)));
+      for (const id of ids) {
+        const owned = segments.filter((_, i) => newObjects[i] === id);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const s of owned) {
+          minX = Math.min(minX, s.start.x, s.end.x);
+          minY = Math.min(minY, s.start.y, s.end.y);
+          maxX = Math.max(maxX, s.start.x, s.end.x);
+          maxY = Math.max(maxY, s.start.y, s.end.y);
+        }
+        newMeta.push({
+          id,
+          closed: true,
+          layer: layerName,
+          color: owned[0]?.color ?? 7,
+          bbox: { min_x: minX, min_y: minY, max_x: maxX, max_y: maxY },
+        });
+      }
+    }
+
+    // Recompute layer summary.
+    const layers = [...cur.layers];
+    let layerEntry = layers.find((l) => l.name === layerName);
+    if (!layerEntry) {
+      layerEntry = { name: layerName, color: segments[0]?.color ?? 7, segment_count: 0 };
+      layers.push(layerEntry);
+    }
+    layerEntry.segment_count += segments.length;
+
+    // Expand bbox to enclose appended geometry.
+    let bbox = { ...cur.bbox };
+    for (const s of segments) {
+      bbox.min_x = Math.min(bbox.min_x, s.start.x, s.end.x);
+      bbox.min_y = Math.min(bbox.min_y, s.start.y, s.end.y);
+      bbox.max_x = Math.max(bbox.max_x, s.start.x, s.end.x);
+      bbox.max_y = Math.max(bbox.max_y, s.start.y, s.end.y);
+    }
+    if (cur.segments.length === 0) {
+      // First import — bbox starts from the appended geometry only.
+      bbox = {
+        min_x: Math.min(...segments.flatMap((s) => [s.start.x, s.end.x])),
+        min_y: Math.min(...segments.flatMap((s) => [s.start.y, s.end.y])),
+        max_x: Math.max(...segments.flatMap((s) => [s.start.x, s.end.x])),
+        max_y: Math.max(...segments.flatMap((s) => [s.start.y, s.end.y])),
+      };
+    }
+
+    this.imported = {
+      ...cur,
+      segments: [...cur.segments, ...segments],
+      objects: [...(cur.objects ?? []), ...newObjects],
+      object_meta: [...(cur.object_meta ?? []), ...newMeta],
+      layers,
+      bbox,
+    };
+    this.visibleLayers = new Set([...this.visibleLayers, layerName]);
+    this.dirty = true;
+
+    // Return the de-duplicated set of new object ids (in insertion order).
+    const distinct: number[] = [];
+    const seen = new Set<number>();
+    for (const id of newObjects) {
+      if (id > 0 && !seen.has(id)) {
+        seen.add(id);
+        distinct.push(id);
+      }
+    }
+    return distinct;
+  }
+
   // ── operation helpers ────────────────────────────────────────────────
 
   addOperation(kind: OpKind): OpEntry {
@@ -399,7 +535,9 @@ export interface StockConfig {
   customY: number;
 }
 
-export type ToolKind = 'endmill' | 'ball_nose' | 'v_bit' | 'engraver' | 'drag_knife' | 'drill' | 'laser_beam';
+export type { ToolKind, OpKind, ProfileOffset, SourceCombine, FrameShape } from './op_types';
+import type { FrameShape, OpKind, ProfileOffset, SourceCombine, ToolKind } from './op_types';
+
 export type CoolantMode = 'off' | 'mist' | 'flood';
 
 export interface ToolEntry {
@@ -433,18 +571,6 @@ export interface MachineSettings {
   fastMoveZ: number;
 }
 
-export type OpKind =
-  | 'profile'
-  | 'pocket'
-  | 'drill'
-  | 'thread'
-  | 'chamfer'
-  | 'engrave'
-  | 'drag_knife'
-  | 'helix'
-  | 'vcarve';
-
-export type ProfileOffset = 'outside' | 'inside' | 'on';
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal';
 /// Cut direction for milling. `conventional` is the safer default —
 /// cutter rotation opposes the feed at the contact point so chip starts
@@ -476,20 +602,6 @@ export type DrillCycle =
   | { kind: 'simple'; dwell_sec?: number }
   | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
   | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
-/// How a multi-object source selection is combined into the region(s)
-/// the operation actually consumes. Mirrors wiac_core::project::SourceCombine.
-/// Default 'auto' is containment-aware (outer + inner = annulus).
-export type SourceCombine =
-  | 'auto'
-  | 'union'
-  | 'difference'
-  | 'intersection'
-  | 'xor'
-  | 'none';
-
-/// Pocket-Outside frame shape. Mirrors wiac_core::cam::source_combine::FrameShape.
-/// Oval and TightOutline are explicit follow-ups — not in v1.
-export type FrameShape = 'rectangle' | 'rounded_rectangle';
 
 /// Thin frontend mirror of wiac_core::project::Operation. Tracks just
 /// what the UI needs to show + edit; the wire format expands to the

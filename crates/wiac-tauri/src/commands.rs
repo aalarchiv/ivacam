@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use wiac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
 use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
 use wiac_core::{ImportOptions, ImportOutput};
 
@@ -56,6 +57,14 @@ pub async fn import_path(path: String) -> Result<ImportOutput, String> {
 #[tauri::command]
 pub async fn generate(request: PipelineRequest) -> Result<PipelineResponse, String> {
     tokio::task::spawn_blocking(move || run_pipeline(request, |_p, _f, _m| {}))
+        .await
+        .map_err(|e| format!("join error: {e}"))?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn render_text(request: RenderTextRequest) -> Result<RenderTextResponse, String> {
+    tokio::task::spawn_blocking(move || render_text_api(&request))
         .await
         .map_err(|e| format!("join error: {e}"))?
         .map_err(|e| e.to_string())

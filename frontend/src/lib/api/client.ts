@@ -6,6 +6,8 @@ import type {
   GenerateRequest,
   GenerateResponse,
   ImportResponse,
+  RenderTextRequest,
+  RenderTextResponse,
   VersionResponse,
 } from './types';
 
@@ -25,6 +27,11 @@ export interface WiacClient {
     request: GenerateRequest,
     onProgress: (e: ProgressEvent) => void,
   ): Promise<GenerateResponse>;
+  /**
+   * Render TTF font + string → segments. Used by the AddTextDialog to
+   * stage geometry before adding it to the project.
+   */
+  renderText(request: RenderTextRequest): Promise<RenderTextResponse>;
 }
 
 export interface ProgressEvent {

@@ -100,6 +100,8 @@ pub fn components_schemas() -> Value {
     insert::<GenerateRequest>(&mut schemas, "GenerateRequest");
     insert::<GenerateResponse>(&mut schemas, "GenerateResponse");
     insert::<GenerateStats>(&mut schemas, "GenerateStats");
+    insert::<crate::input::text::RenderTextRequest>(&mut schemas, "RenderTextRequest");
+    insert::<crate::input::text::RenderTextResponse>(&mut schemas, "RenderTextResponse");
     insert::<ErrorResponse>(&mut schemas, "Error");
 
     let mut value = Value::Object(schemas);

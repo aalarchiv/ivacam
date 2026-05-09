@@ -11,6 +11,7 @@
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+use wiac_core::input::text::{render_text_api, RenderTextRequest};
 use wiac_core::pipeline::{run_pipeline, PipelineRequest};
 use wiac_core::ImportOptions;
 
@@ -67,6 +68,14 @@ pub fn generate(request: JsValue) -> Result<JsValue, JsValue> {
         serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
     let resp = run_pipeline(req, |_phase, _fraction, _msg| {})
         .map_err(|e| into_js_error(e.to_string()))?;
+    serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+}
+
+#[wasm_bindgen(js_name = renderText)]
+pub fn render_text(request: JsValue) -> Result<JsValue, JsValue> {
+    let req: RenderTextRequest =
+        serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
+    let resp = render_text_api(&req).map_err(|e| into_js_error(e.to_string()))?;
     serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
 }
 

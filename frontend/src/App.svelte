@@ -15,10 +15,12 @@
   import MachineDialog from './lib/components/MachineDialog.svelte';
   import ToolLibraryDialog from './lib/components/ToolLibraryDialog.svelte';
   import SettingsDialog from './lib/components/SettingsDialog.svelte';
+  import AddTextDialog from './lib/components/AddTextDialog.svelte';
 
   let machineOpen = $state(false);
   let toolsOpen = $state(false);
   let settingsOpen = $state(false);
+  let addTextOpen = $state(false);
 
   // G-code panel visibility. The playback bar always sits below the
   // 3D canvas; the gcode panel opens as an extra row beneath it so
@@ -145,6 +147,17 @@
     if (e.key === 'Escape') {
       if (project.tabMode) project.tabMode = false;
       else if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
+      return;
+    }
+    // Keyboard shortcut: T = Add Text. Skip when typing in any text input
+    // and skip when modifier keys are held so it doesn't shadow Ctrl-T etc.
+    if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName ?? '';
+      const editable = (t as HTMLElement | null)?.isContentEditable;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || editable) return;
+      addTextOpen = true;
+      e.preventDefault();
     }
   }
 </script>
@@ -156,6 +169,30 @@
     <h1>{$_('app.title')}</h1>
     <span class="tagline">{$_('app.tagline')}</span>
     <div class="spacer"></div>
+    <button
+      class="config-btn icon"
+      onclick={() => (addTextOpen = true)}
+      title="Add Text (T)"
+      aria-label="Add Text"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+        <path d="M2 2l7.586 7.586"></path>
+        <circle cx="11" cy="11" r="2"></circle>
+      </svg>
+      <span>Text</span>
+    </button>
     <button class="config-btn" onclick={() => (toolsOpen = true)} title="Tool library">
       Tools…
     </button>
@@ -297,6 +334,7 @@
   <MachineDialog open={machineOpen} onClose={() => (machineOpen = false)} />
   <ToolLibraryDialog open={toolsOpen} onClose={() => (toolsOpen = false)} />
   <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
+  <AddTextDialog open={addTextOpen} onClose={() => (addTextOpen = false)} />
 
   <footer>
     {#if project.imported}
@@ -361,7 +399,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.3rem 0.45rem;
+    gap: 0.35rem;
+    padding: 0.3rem 0.55rem;
   }
   .tool-toggle {
     background: var(--bg-elevated);

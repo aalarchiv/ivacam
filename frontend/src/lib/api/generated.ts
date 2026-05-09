@@ -81,6 +81,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render TTF text into geometry segments
+         * @description Tessellates a TTF/OTF font + a string into the project's standard
+         *     Segment shape. Used by the Add-Text dialog. The response also
+         *     carries a `single_line` flag derived by `is_single_line_font` so
+         *     the dialog can warn when a filled-outline font is paired with the
+         *     Engraving style.
+         */
+        post: operations["renderText"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -141,6 +165,11 @@ export interface components {
             details?: unknown;
             error: string;
         };
+        /**
+         * @description Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox with a quarter-arc bulge at each corner. Oval and TightOutline are explicit follow-ups — not in v1.
+         * @enum {string}
+         */
+        FrameShape: "rectangle" | "rounded_rectangle";
         /** @description Lookup table the frontend uses to wire the gcode text panel to the 3D toolpath: line N in the gcode corresponds to `segments[lines_to_segment[N]]`, and `segments_to_line[i]` is the 1-based gcode line that produced segment `i`. Both vectors are dense — gcode lines that don't move the tool map to `usize::MAX` so callers can detect the gap. */
         GcodeIndex: {
             lines_to_segment: number[];
@@ -334,8 +363,16 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "helix";
+        } | {
+            /** @enum {string} */
+            type: "v_carve";
         };
         OperationParams: {
+            /**
+             * Format: double
+             * @description V-Carve cap on the inscribed-circle radius (mm). When set, any medial-axis point with `R_inscribed > carve_max_width_mm` clips to the cap — the V doesn't carve any wider than the bit's usable diameter. None = no cap (use the geometric inscribed circle directly).
+             */
+            carve_max_width_mm?: number | null;
             /**
              * Format: double
              * @description When > 0, slow the feed at sharp corners by this fraction so the machine doesn't dwell on the corner with high accel demand. 0.0 = no reduction (current behavior). 0.5 = half the feed at corners. Most useful for zigzag pocket fills with their many 180° turns.
@@ -368,6 +405,18 @@ export interface components {
              */
             finish_step?: number | null;
             /**
+             * Format: double
+             * @description Corner radius for `FrameShape::RoundedRectangle`. None ⇒ defaults to `frame_padding_mm` inside the frame builder.
+             */
+            frame_corner_radius_mm?: number | null;
+            /**
+             * Format: double
+             * @description Padding added on every side of the selection bbox to size the frame. Honored only when `frame_shape` is set.
+             */
+            frame_padding_mm?: number | null;
+            /** @description Pocket-Outside wrapper: shape of the synthetic frame the pipeline auto-prepends around `source` before pocketing. Set only on ops created via the Pocket-Outside UX. None = no frame (regular Pocket). */
+            frame_shape?: components["schemas"]["FrameShape"] | null;
+            /**
              * @description Helical descent inside a closed contour.
              * @default false
              */
@@ -382,6 +431,11 @@ export interface components {
              *     }
              */
             leads: components["schemas"]["LeadsConfig"];
+            /**
+             * @description V-Carve "second-pass" toggle. When true, the emitter runs a refinement pass that re-cuts only the points whose first pass fell short of the geometric target depth. Off by default.
+             * @default false
+             */
+            multi_pass_refine: boolean;
             /**
              * @description Cut-order strategy for multiple objects.
              * @default nearest
@@ -417,9 +471,9 @@ export interface components {
             start_depth: number;
             /**
              * Format: double
-             * @description Per-pass step (negative ⇒ down).
+             * @description Per-pass step (negative ⇒ down). None = inherit from `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to mean "unset"; the deserializer maps that to None.
              */
-            step: number;
+            step?: number | null;
             /**
              * @description Per-op tabs config. The Project's `tabs` map carries the actual placement points; this controls width / height / type.
              * @default {
@@ -528,7 +582,7 @@ export interface components {
             /** @enum {string} */
             kind: "helix";
             /** Format: double */
-            radius_mm: number;
+            radius_mm?: number | null;
         };
         PocketConfig: {
             active: boolean;
@@ -601,6 +655,30 @@ export interface components {
             /** Format: uint32 */
             op_id: number;
             outer: components["schemas"]["Point2"][];
+        };
+        /** @description Request payload for the cross-transport `/text` endpoint. The frontend hands us TTF bytes (uploaded by the user or pulled from `frontend/public/fonts/`) plus a string + placement parameters; we return flattened [`Segment`]s and a single-line / outline classification the dialog uses to drive the engraving warning chip. */
+        RenderTextRequest: {
+            /**
+             * Format: int32
+             * @default 7
+             */
+            color: number;
+            /** @description The font file as bytes (TTF / OTF). Encoded as a JSON `Vec<u8>` (i.e. an array of byte values) so the contract works equally well over HTTP/Tauri/WASM without picking a base64 layer. */
+            font_bytes: number[];
+            /** Format: double */
+            height_mm: number;
+            /** @default TEXT */
+            layer: string;
+            origin: components["schemas"]["Point2"];
+            text: string;
+        };
+        /** @description Response payload — the rendered geometry plus metadata the dialog uses to warn the user when an outline font is paired with the Engraving style. */
+        RenderTextResponse: {
+            /** @description Family / style names (best-effort). Useful for showing what the user actually loaded next to the dropdown. */
+            family_name?: string | null;
+            segments: components["schemas"]["Segment"][];
+            /** @description True if the font is a single-line / engraving / Hershey-port style font. Drives the dialog's "use a single-line font" chip. */
+            single_line: boolean;
         };
         /** @description A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`). */
         Segment: {
@@ -689,6 +767,11 @@ export interface components {
         };
         ToolEntry: {
             coolant: components["schemas"]["Coolant"];
+            /**
+             * Format: double
+             * @description Default depth-per-pass (negative, mm). Operations using this tool inherit this when their own `step` is unset. None = no default.
+             */
+            default_step?: number | null;
             /** Format: double */
             diameter: number;
             /**
@@ -714,6 +797,12 @@ export interface components {
             plunge_rate: number;
             /** Format: uint32 */
             speed: number;
+            /**
+             * Format: double
+             * @description V-bit full included tip angle in degrees (apex angle of the cone). Drives the V-Carve depth-from-width relationship `z = -R / tan(tip_angle / 2)`. Validated to (0, 180); defaults to 60° for the most common engraving V-bit.
+             * @default 60
+             */
+            tip_angle_deg: number;
             /**
              * Format: double
              * @description V-bit tip diameter (None for endmill / ball nose / drag knife).
@@ -891,6 +980,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerateResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    renderText: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderTextRequest"];
+            };
+        };
+        responses: {
+            /** @description Rendered text geometry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderTextResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];

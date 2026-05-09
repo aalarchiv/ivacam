@@ -49,9 +49,15 @@ type WireDrillCycle =
   | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
   | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
 
+type WirePocketStrategy =
+  | 'cascade'
+  | 'zigzag'
+  | 'spiral'
+  | { kind: 'trochoidal'; engagement_angle_deg: number; loop_radius_factor: number };
+
 type WireOpKind =
   | { type: 'profile'; offset: 'outside' | 'inside' | 'on' | 'none' }
-  | { type: 'pocket'; strategy: 'cascade' | 'zigzag' | 'spiral' }
+  | { type: 'pocket'; strategy: WirePocketStrategy }
   | { type: 'drill'; cycle: WireDrillCycle }
   | { type: 'thread' }
   | { type: 'chamfer' }
@@ -169,8 +175,20 @@ function buildOpKind(op: OpEntry): WireOpKind {
   switch (op.kind) {
     case 'profile':
       return { type: 'profile', offset: op.offset };
-    case 'pocket':
-      return { type: 'pocket', strategy: op.pocketStrategy ?? 'cascade' };
+    case 'pocket': {
+      const strategy = op.pocketStrategy ?? 'cascade';
+      if (strategy === 'trochoidal') {
+        return {
+          type: 'pocket',
+          strategy: {
+            kind: 'trochoidal',
+            engagement_angle_deg: op.engagementAngleDeg ?? 30,
+            loop_radius_factor: op.loopRadiusFactor ?? 0.6,
+          },
+        };
+      }
+      return { type: 'pocket', strategy };
+    }
     case 'drill': {
       const cycle: WireDrillCycle = op.drillCycle
         ? mapDrillCycle(op.drillCycle)

@@ -15,6 +15,7 @@ pub mod chaining;
 pub mod offsets;
 pub mod setup;
 pub mod source_combine;
+pub mod trochoidal;
 pub mod vcarve;
 pub mod vcarve_emit;
 

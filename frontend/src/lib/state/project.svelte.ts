@@ -442,7 +442,7 @@ export type OpKind =
   | 'vcarve';
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
-export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral';
+export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal';
 /// Cut direction for milling. `conventional` is the safer default —
 /// cutter rotation opposes the feed at the contact point so chip starts
 /// thin and grows; works on machines with backlash. `climb` is rotation
@@ -526,6 +526,11 @@ export interface OpEntry {
   /// = 50% overlap. Higher = tighter cascade = better fill on small
   /// pockets. Honored only by Pocket ops.
   xyOverlap?: number;
+  /// Trochoidal engagement angle in degrees. Drives the centerline
+  /// pitch (step_main = tool_d * sin(eng/2)). Default 30°.
+  engagementAngleDeg?: number;
+  /// Trochoidal loop radius as a fraction of tool radius. Default 0.6.
+  loopRadiusFactor?: number;
   /// Tab geometry. `tabType=rectangle` (default) is a straight Z lift
   /// over each tab; `tabType=ramp` runs a sloped ramp up to the tab top
   /// at `tabRampAngleDeg` (default 30°), holds the flat top, then ramps

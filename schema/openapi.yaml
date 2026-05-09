@@ -370,11 +370,13 @@ components:
         in:
           $ref: '#/components/schemas/LeadKind'
         in_lenght:
+          description: 'Lead-in size. Interpreted by `LeadKind`: * `Straight`: straight-line LENGTH (mm) of the approach. * `Arc`: tangent roll-on arc RADIUS (mm). The arc sweeps a quarter turn from the approach point (radius away on the perpendicular) to the contour start, landing tangent to the first cut segment. * `Off`: ignored.'
           format: double
           type: number
         out:
           $ref: '#/components/schemas/LeadKind'
         out_lenght:
+          description: Lead-out size. Same interpretation as `in_lenght` but applied at the END of the cut path (cutter rolls off the contour at Pn).
           format: double
           type: number
       required:
@@ -958,11 +960,28 @@ components:
       - zigzag
       type: object
     PocketStrategy:
-      enum:
-      - cascade
-      - zigzag
-      - spiral
-      type: string
+      oneOf:
+      - enum:
+        - cascade
+        - zigzag
+        - spiral
+        type: string
+      - properties:
+          engagement_angle_deg:
+            format: double
+            type: number
+          kind:
+            enum:
+            - trochoidal
+            type: string
+          loop_radius_factor:
+            format: double
+            type: number
+        required:
+        - engagement_angle_deg
+        - kind
+        - loop_radius_factor
+        type: object
     Point2:
       properties:
         x:

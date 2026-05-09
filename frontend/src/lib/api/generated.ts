@@ -212,10 +212,16 @@ export interface components {
         LeadKind: "off" | "straight" | "arc";
         LeadsConfig: {
             in: components["schemas"]["LeadKind"];
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Lead-in size. Interpreted by `LeadKind`: * `Straight`: straight-line LENGTH (mm) of the approach. * `Arc`: tangent roll-on arc RADIUS (mm). The arc sweeps a quarter turn from the approach point (radius away on the perpendicular) to the contour start, landing tangent to the first cut segment. * `Off`: ignored.
+             */
             in_lenght: number;
             out: components["schemas"]["LeadKind"];
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Lead-out size. Same interpretation as `in_lenght` but applied at the END of the cut path (cutter rolls off the contour at Pn).
+             */
             out_lenght: number;
         };
         MachineConfig: {
@@ -532,8 +538,14 @@ export interface components {
             nocontour: boolean;
             zigzag: boolean;
         };
-        /** @enum {string} */
-        PocketStrategy: "cascade" | "zigzag" | "spiral";
+        PocketStrategy: ("cascade" | "zigzag" | "spiral") | {
+            /** Format: double */
+            engagement_angle_deg: number;
+            /** @enum {string} */
+            kind: "trochoidal";
+            /** Format: double */
+            loop_radius_factor: number;
+        };
         Point2: {
             /** Format: double */
             x: number;

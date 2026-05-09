@@ -28,7 +28,7 @@ use crate::gcode::{
 use crate::geometry::{Point2, Segment};
 use crate::project::{
     Operation, OperationKind, OperationSource, PatternConfig, PocketStrategy, Project,
-    SourceCombine,
+    SourceCombine, ToolEntry,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -269,7 +269,7 @@ where
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
     for op in project.operations.iter().filter(|o| o.enabled) {
-        let setup = synthesize_op_setup(op, project)?;
+        let setup = synthesize_op_setup(op, project, warnings)?;
         if matches!(op.kind, OperationKind::VCarve) {
             post.raw(&format!("; OP {}", op.id));
             run_vcarve_op(op, project, &objects, &setup, post, &mut last_pos, warnings)?;
@@ -723,7 +723,10 @@ fn run_vcarve_op<P: PostProcessor>(
     } else {
         None
     };
-    let dpp = op.params.step.abs().max(0.05);
+    let dpp = effective_step(op, tool)
+        .map(|s| s.abs())
+        .unwrap_or(1.0)
+        .max(0.05);
 
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut any_depth_limited = false;
@@ -1014,9 +1017,29 @@ fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> bool {
     }
 }
 
+/// Resolve the per-pass Z step: op override wins, otherwise the tool's
+/// `default_step`. Both must be negative (a depth, not a height); a
+/// non-negative value or two Nones produces a `step_unspecified`
+/// warning.
+pub(crate) fn effective_step(op: &Operation, tool: &ToolEntry) -> Result<f64, PipelineWarning> {
+    op.params
+        .step
+        .or(tool.default_step)
+        .filter(|v| *v < 0.0)
+        .ok_or_else(|| PipelineWarning {
+            op_id: Some(op.id),
+            kind: "step_unspecified".into(),
+            message: "depth-per-pass not set on the operation or its tool's default_step".into(),
+        })
+}
+
 /// Build a Setup that represents this single op — copy in its tool from
 /// `project.tools` and its params.kind-driven mill/pockets/tabs/leads.
-fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, PipelineError> {
+fn synthesize_op_setup(
+    op: &Operation,
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) -> Result<Setup, PipelineError> {
     use crate::cam::setup::{MachineMode, MillConfig, PocketConfig, ToolConfig, ToolOffset};
 
     let tool = project
@@ -1024,6 +1047,13 @@ fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, Pipel
         .iter()
         .find(|t| t.id == op.tool_id)
         .ok_or(PipelineError::UnknownTool(op.id, op.tool_id))?;
+    let step = match effective_step(op, tool) {
+        Ok(v) => v,
+        Err(w) => {
+            warnings.push(w);
+            0.0
+        }
+    };
 
     let mut setup = Setup {
         machine: project.machine.clone(),
@@ -1072,7 +1102,7 @@ fn synthesize_op_setup(op: &Operation, project: &Project) -> Result<Setup, Pipel
         active: true,
         depth: op.params.depth,
         start_depth: op.params.start_depth,
-        step: op.params.step,
+        step,
         fast_move_z: op.params.fast_move_z,
         helix_mode: op.params.helix,
         reverse: op.params.reverse,
@@ -1354,6 +1384,7 @@ mod tests {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            default_step: None,
         }
     }
 
@@ -1903,6 +1934,7 @@ mod tests {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            default_step: None,
         };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
@@ -1941,7 +1973,7 @@ mod tests {
     fn ramp_plunge_descends_z_during_first_cuts() {
         let mut params = OperationParams::mill_default();
         params.depth = -1.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.start_depth = 0.0;
         params.plunge = crate::cam::setup::PlungeStrategy::Ramp { angle_deg: 10.0 };
         let project = Project {
@@ -2031,7 +2063,7 @@ mod tests {
     fn helix_plunge_emits_arc_arcs_descending_z() {
         let mut params = OperationParams::mill_default();
         params.depth = -1.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.start_depth = 0.0;
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
@@ -2117,7 +2149,7 @@ mod tests {
     fn helix_falls_back_to_ramp_when_radius_smaller_than_tool() {
         let mut params = OperationParams::mill_default();
         params.depth = -1.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.start_depth = 0.0;
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 10.0,
@@ -2196,7 +2228,7 @@ mod tests {
     fn helix_with_tabs_active_falls_back() {
         let mut params = OperationParams::mill_default();
         params.depth = -2.0;
-        params.step = -2.0;
+        params.step = Some(-2.0);
         params.start_depth = 0.0;
         params.tabs = TabsConfig {
             active: true,
@@ -2282,7 +2314,7 @@ mod tests {
         // the cut depth (the plunge happens before XY travel starts).
         let mut params = OperationParams::mill_default();
         params.depth = -1.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         // params.plunge defaults to Direct.
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
@@ -2499,7 +2531,7 @@ mod tests {
     fn ramp_plunge_cleans_up_with_a_final_constant_depth_pass() {
         let mut params = OperationParams::mill_default();
         params.depth = -1.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.start_depth = 0.0;
         params.plunge = crate::cam::setup::PlungeStrategy::Ramp { angle_deg: 10.0 };
         let project = Project {
@@ -2934,7 +2966,7 @@ mod tests {
     fn finish_step_emits_extra_thin_final_pass() {
         let mut params = OperationParams::mill_default();
         params.depth = -2.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.start_depth = 0.0;
         params.finish_step = Some(-0.2);
         let project = Project {
@@ -2975,7 +3007,7 @@ mod tests {
     fn through_depth_extends_final_z() {
         let mut params = OperationParams::mill_default();
         params.depth = -2.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.through_depth = 0.5;
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
@@ -3015,7 +3047,7 @@ mod tests {
     fn depth_list_overrides_step_schedule() {
         let mut params = OperationParams::mill_default();
         params.depth = -3.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.depth_list = vec![-0.5, -1.5, -3.0];
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
@@ -3421,7 +3453,7 @@ mod tests {
     ) -> Operation {
         let mut params = OperationParams::mill_default();
         params.depth = -1.0;
-        params.step = -1.0;
+        params.step = Some(-1.0);
         params.fast_move_z = 5.0;
         params.leads = crate::cam::setup::LeadsConfig {
             r#in: kind_in,
@@ -4437,6 +4469,7 @@ mod tests {
             plunge_rate: 200,
             feed_rate: 1200,
             coolant: Coolant::Off,
+            default_step: None,
         };
         let op = Operation {
             id: 7,
@@ -4448,14 +4481,13 @@ mod tests {
             params: OperationParams {
                 depth: -10.0,
                 start_depth: 0.0,
-                step: -1.0,
+                step: Some(-1.0),
                 fast_move_z: 5.0,
                 ..OperationParams::default()
             },
             pattern: None,
         };
         let project = Project {
-            // 20 mm equilateral-ish triangle: (0,0) (20,0) (10, 17.32)
             segments: vec![
                 Segment::line(Point2::new(0.0, 0.0), Point2::new(20.0, 0.0), "0", 7),
                 Segment::line(
@@ -4492,6 +4524,63 @@ mod tests {
     }
 
     #[test]
+    fn effective_step_op_override_wins() {
+        let mut tool = endmill(1, 3.0);
+        tool.default_step = Some(-0.5);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-0.3);
+        assert_eq!(effective_step(&op, &tool).unwrap(), -0.3);
+    }
+
+    #[test]
+    fn effective_step_falls_back_to_tool_default() {
+        let mut tool = endmill(1, 3.0);
+        tool.default_step = Some(-0.5);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = None;
+        assert_eq!(effective_step(&op, &tool).unwrap(), -0.5);
+    }
+
+    #[test]
+    fn effective_step_warns_when_both_unset() {
+        let tool = endmill(1, 3.0);
+        let mut op = profile_op(7, 1, ToolOffset::Outside);
+        op.params.step = None;
+        let w = effective_step(&op, &tool).unwrap_err();
+        assert_eq!(w.kind, "step_unspecified");
+        assert_eq!(w.op_id, Some(7));
+    }
+
+    #[test]
+    fn effective_step_rejects_non_negative() {
+        let mut tool = endmill(1, 3.0);
+        tool.default_step = Some(0.5);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(0.0);
+        assert!(effective_step(&op, &tool).is_err());
+    }
+
+    #[test]
+    fn run_pipeline_emits_step_unspecified_warning() {
+        let tool = endmill(1, 3.0);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = None;
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: project_with(vec![op], vec![tool]),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "step_unspecified"),
+            "expected step_unspecified warning, got {:?}",
+            resp.warnings
+        );
+    }
+
+    #[test]
     fn vcarve_op_round_trips_through_serde_json() {
         let op = Operation {
             id: 11,
@@ -4503,7 +4592,7 @@ mod tests {
             params: OperationParams {
                 depth: -8.0,
                 start_depth: 0.0,
-                step: -0.8,
+                step: Some(-0.8),
                 fast_move_z: 6.0,
                 carve_max_width_mm: Some(4.0),
                 multi_pass_refine: true,
@@ -4517,5 +4606,38 @@ mod tests {
         assert_eq!(back.params.carve_max_width_mm, Some(4.0));
         assert!(back.params.multi_pass_refine);
         assert_eq!(back.params.depth, -8.0);
+    }
+
+    #[test]
+    fn op_step_and_tool_default_step_emit_identical_gcode() {
+        let mut tool_a = endmill(1, 3.0);
+        tool_a.default_step = None;
+        let mut op_a = profile_op(1, 1, ToolOffset::Outside);
+        op_a.params.step = Some(-0.5);
+
+        let mut tool_b = endmill(1, 3.0);
+        tool_b.default_step = Some(-0.5);
+        let mut op_b = profile_op(1, 1, ToolOffset::Outside);
+        op_b.params.step = None;
+
+        let resp_a = run_pipeline(
+            PipelineRequest {
+                project: project_with(vec![op_a], vec![tool_a]),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let resp_b = run_pipeline(
+            PipelineRequest {
+                project: project_with(vec![op_b], vec![tool_b]),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(resp_a.gcode, resp_b.gcode);
+        assert!(resp_a.warnings.iter().all(|w| w.kind != "step_unspecified"));
+        assert!(resp_b.warnings.iter().all(|w| w.kind != "step_unspecified"));
     }
 }

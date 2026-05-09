@@ -86,6 +86,7 @@
             <span>speed</span>
             <span>feed</span>
             <span>plunge</span>
+            <span title="Default Z step (depth-per-pass) for ops using this tool. Negative number, mm. Empty = no default — every op must set its own.">dflt step</span>
             <span>coolant</span>
             <span></span>
           </div>
@@ -145,6 +146,24 @@
                 step="50"
                 value={tool.plungeRate}
                 onchange={(e) => updateField(i, 'plungeRate', parseInt((e.currentTarget as HTMLInputElement).value, 10) || 0)}
+              />
+              <input
+                type="number"
+                step="0.05"
+                max="0"
+                value={tool.defaultStep ?? ''}
+                placeholder="—"
+                title="Operations using this tool inherit this when they don't specify their own. Negative number, mm."
+                class:invalid={tool.defaultStep !== undefined && tool.defaultStep >= 0}
+                onchange={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  if (v === '') {
+                    updateField(i, 'defaultStep', undefined);
+                    return;
+                  }
+                  const n = parseFloat(v);
+                  updateField(i, 'defaultStep', isNaN(n) || n >= 0 ? undefined : n);
+                }}
               />
               <select
                 value={tool.coolant}
@@ -226,10 +245,13 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 2.5rem minmax(0, 1.6fr) minmax(0, 1fr) 4.5rem 4.5rem 3.5rem 5rem 5rem 5rem minmax(0, 1fr) 2rem;
+    grid-template-columns: 2.5rem minmax(0, 1.6fr) minmax(0, 1fr) 4.5rem 4.5rem 3.5rem 5rem 5rem 5rem 4.5rem minmax(0, 1fr) 2rem;
     gap: 0.3rem;
     align-items: center;
     font-size: 0.78rem;
+  }
+  input.invalid {
+    border-color: var(--danger, #c44);
   }
   .row.head {
     color: var(--text-muted);

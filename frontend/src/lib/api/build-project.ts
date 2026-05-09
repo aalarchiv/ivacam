@@ -34,6 +34,7 @@ interface WireToolEntry {
   plunge_rate: number;
   feed_rate: number;
   coolant: 'off' | 'mist' | 'flood';
+  default_step?: number;
 }
 
 interface WireMachine {
@@ -88,7 +89,7 @@ interface WireOp {
   params: {
     depth: number;
     start_depth: number;
-    step: number;
+    step?: number;
     fast_move_z: number;
     helix: boolean;
     reverse: boolean;
@@ -175,6 +176,7 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     plunge_rate: t.plungeRate,
     feed_rate: t.feedRate,
     coolant: t.coolant,
+    ...(t.defaultStep !== undefined ? { default_step: t.defaultStep } : {}),
   };
 }
 
@@ -254,7 +256,7 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
     params: {
       depth: op.depth,
       start_depth: op.startDepth,
-      step: op.step,
+      ...(op.step !== null && op.step !== undefined ? { step: op.step } : {}),
       fast_move_z: machine.fastMoveZ,
       helix: false,
       reverse: false,

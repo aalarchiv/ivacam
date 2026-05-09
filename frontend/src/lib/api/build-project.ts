@@ -111,7 +111,7 @@ interface WireOp {
     plunge?:
       | { kind: 'direct' }
       | { kind: 'ramp'; angle_deg: number }
-      | { kind: 'helix'; angle_deg: number; radius_mm: number };
+      | { kind: 'helix'; angle_deg: number; radius_mm: number | null };
     xy_overlap?: number;
     feed_rate_override?: number;
     plunge_rate_override?: number;

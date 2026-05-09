@@ -108,14 +108,56 @@ pub enum PlungeStrategy {
     Ramp { angle_deg: f64 },
     /// Helical descent: spiral down on a circle of `radius_mm` around
     /// a point inside the closed pocket boundary, descending Z at
-    /// `angle_deg` per revolution. After the helix lands at the pass
-    /// depth the cutter walks to the path's actual start XY and
-    /// continues normally. Each revolution drops Z by
-    /// `2 * π * radius_mm * tan(angle_deg)`. Only meaningful for
-    /// closed pocket paths whose boundary fits the helix circle —
-    /// falls back to Ramp (and then Direct) otherwise. Standard for
-    /// non-center-cutting endmills and harder materials.
-    Helix { angle_deg: f64, radius_mm: f64 },
+    /// `angle_deg` per revolution. `radius_mm = None` ⇒ auto-fit to
+    /// the largest inscribed circle inside the pocket boundary at
+    /// gcode-emission time. Falls back to Ramp (and then Direct)
+    /// when the helix circle can't fit.
+    Helix {
+        angle_deg: f64,
+        #[serde(deserialize_with = "deserialize_helix_radius")]
+        radius_mm: Option<f64>,
+    },
+}
+
+/// Accept the new `null` form AND the legacy bare-number form
+/// (`"radius_mm": 5.0`) saved by pre-rt1.2 projects. Required for
+/// project-file backward compatibility.
+fn deserialize_helix_radius<'de, D>(de: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct HelixRadiusVisitor;
+    impl<'de> Visitor<'de> for HelixRadiusVisitor {
+        type Value = Option<f64>;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a number, null, or an absent field")
+        }
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+            d.deserialize_any(HelixRadiusVisitor)
+        }
+        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(Some(v))
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(v as f64))
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v as f64))
+        }
+        fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
+            Err(de::Error::custom("radius_mm must be a number or null"))
+        }
+    }
+    de.deserialize_any(HelixRadiusVisitor)
 }
 
 impl Default for PlungeStrategy {

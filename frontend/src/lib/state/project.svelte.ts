@@ -462,11 +462,12 @@ export type CutDirection = 'conventional' | 'climb';
 /// harder materials. Angles are in degrees, conservative default 3°.
 /// Helix `radius_mm` is the spiral radius; pick something larger than
 /// the tool radius so the helix carves a small clearance hole inside
-/// the pocket. Sane default: 1.5 × tool radius.
+/// the pocket. Sane default: 1.5 × tool radius. Set to null to auto-fit
+/// the helix to the largest inscribed circle of the pocket boundary.
 export type PlungeStrategy =
   | { kind: 'direct' }
   | { kind: 'ramp'; angle_deg: number }
-  | { kind: 'helix'; angle_deg: number; radius_mm: number };
+  | { kind: 'helix'; angle_deg: number; radius_mm: number | null };
 /// Drill cycle for an OperationKind::Drill op. Mirrors wiac_core::project::DrillCycle.
 /// `simple` → G81; `peck` → G83 (full retract between pecks); `chip_break` → G73
 /// (small partial retract between pecks). `dwell_sec` is the dwell at bottom in

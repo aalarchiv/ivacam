@@ -576,7 +576,7 @@ fn multi_pass<P: PostProcessor>(
     let helix_entry: Option<HelixEntry> = match setup.mill.plunge {
         PlungeStrategy::Helix {
             angle_deg,
-            radius_mm,
+            radius_mm: Some(radius_mm),
         } if closed_path => {
             let tool_radius = setup.tool.diameter * 0.5;
             plan_helix_entry(segments, radius_mm, tool_radius, angle_deg)

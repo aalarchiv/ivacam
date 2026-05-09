@@ -269,7 +269,8 @@ where
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
     for op in project.operations.iter().filter(|o| o.enabled) {
-        let setup = synthesize_op_setup(op, project, warnings)?;
+        let mut setup = synthesize_op_setup(op, project, warnings)?;
+        resolve_auto_helix_radius(op, objects, &mut setup, warnings);
         if matches!(op.kind, OperationKind::VCarve) {
             post.raw(&format!("; OP {}", op.id));
             run_vcarve_op(op, project, &objects, &setup, post, &mut last_pos, warnings)?;
@@ -1093,7 +1094,7 @@ fn synthesize_op_setup(
     {
         crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
-            radius_mm: tool.diameter * 0.75,
+            radius_mm: Some(tool.diameter * 0.75),
         }
     } else {
         op.params.plunge
@@ -1136,6 +1137,60 @@ fn synthesize_op_setup(
         setup.machine.mode = MachineMode::Drag;
     }
     Ok(setup)
+}
+
+/// Resolve `PlungeStrategy::Helix { radius_mm: None }` (auto-fit) into
+/// a concrete radius by picking the largest inscribed circle across the
+/// op's source regions. When no fit is possible we leave `radius_mm` as
+/// None so the gcode emitter falls through to Ramp, and emit a
+/// `helix_radius_unfittable` info warning so the user understands why
+/// the helix didn't apply.
+fn resolve_auto_helix_radius(
+    op: &Operation,
+    objects: &[VcObject],
+    setup: &mut Setup,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    use crate::cam::setup::PlungeStrategy;
+    let angle_deg = match setup.mill.plunge {
+        PlungeStrategy::Helix {
+            angle_deg,
+            radius_mm: None,
+        } => angle_deg,
+        _ => return,
+    };
+    let tool_radius = setup.tool.diameter * 0.5;
+    let selected = ordered_selection(op, objects);
+    let mode = source_combine_mode(op);
+    let regions = combine_source_regions(objects, &selected, mode);
+    let mut best: Option<f64> = None;
+    for region in &regions {
+        if region.boundary.len() < 3 {
+            continue;
+        }
+        let vc_region = crate::cam::vcarve::VcRegion {
+            outer: region.boundary.clone(),
+            holes: region.holes.clone(),
+        };
+        if let Some((_, _, r)) = crate::cam::inscribed::inscribed_circle(&vc_region, tool_radius) {
+            best = Some(best.map_or(r, |prev| prev.max(r)));
+        }
+    }
+    if let Some(r) = best {
+        setup.mill.plunge = PlungeStrategy::Helix {
+            angle_deg,
+            radius_mm: Some(r),
+        };
+    } else {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "helix_radius_unfittable".into(),
+            message: format!(
+                "op '{}': auto helix radius could not be fit (pocket too small for tool); falling back to Ramp.",
+                op.name
+            ),
+        });
+    }
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────
@@ -2067,7 +2122,7 @@ mod tests {
         params.start_depth = 0.0;
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
-            radius_mm: 3.0,
+            radius_mm: Some(3.0),
         };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
@@ -2153,7 +2208,7 @@ mod tests {
         params.start_depth = 0.0;
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 10.0,
-            radius_mm: 1.0,
+            radius_mm: Some(1.0),
         };
         let project = Project {
             segments: closed_square_offset(100.0, 0.0, 0.0),
@@ -2221,6 +2276,170 @@ mod tests {
         );
     }
 
+    /// Auto-fit helix radius (radius_mm = None) on a pocket too small
+    /// for the tool: the resolver finds no fit, emits the
+    /// `helix_radius_unfittable` warning, and falls through to Ramp —
+    /// no helix-entry arcs near the centroid.
+    #[test]
+    fn auto_helix_falls_back_when_pocket_too_small() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = crate::cam::setup::PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: None,
+        };
+        let project = Project {
+            segments: closed_square_offset(8.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 6.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Auto-helix-tight".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let warned = resp
+            .warnings
+            .iter()
+            .any(|w| w.kind == "helix_radius_unfittable" && w.op_id == Some(1));
+        assert!(
+            warned,
+            "expected helix_radius_unfittable warning; got: {:?}",
+            resp.warnings,
+        );
+        let helix_arc_present = resp.toolpath.iter().any(|s| {
+            s.op_id == 1
+                && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                && s.from.z > -0.001
+                && (s.from.x - 4.0).hypot(s.from.y - 4.0) < 3.0
+        });
+        assert!(
+            !helix_arc_present,
+            "auto-fit should not emit a helix arc when pocket is too small",
+        );
+    }
+
+    /// Auto-fit helix on a roomy pocket: the resolver picks a radius,
+    /// gcode emits descending helix arcs at that radius around the
+    /// inscribed-circle center. Uses a tiny tool because
+    /// `plan_helix_entry` enforces `radius + tool_radius` clearance to
+    /// the cut path (which is itself `tool_radius` inset from the
+    /// source), so the brief's `inscribed - tool_radius - 0.5` formula
+    /// only fits in `plan_helix_entry` when `tool_radius ≤ 0.5`.
+    #[test]
+    fn auto_helix_emits_arcs_when_pocket_fits() {
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = crate::cam::setup::PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: None,
+        };
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 0.5)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Auto-helix-roomy".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let arc_count = resp
+            .toolpath
+            .iter()
+            .filter(|s| {
+                s.op_id == 1 && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                    && s.to.z <= s.from.z
+                    && s.from.z > -0.999
+            })
+            .count();
+        assert!(
+            arc_count >= 2,
+            "auto-fit roomy pocket should emit helix arcs; got {arc_count}",
+        );
+        assert!(
+            !resp.warnings.iter().any(|w| w.kind == "helix_radius_unfittable"),
+            "no unfit warning expected: {:?}",
+            resp.warnings,
+        );
+    }
+
+    /// Project save/load round-trip: a Helix plunge with `radius_mm: null`
+    /// serializes to JSON and parses back identically. Also verify the
+    /// legacy bare-number form still loads.
+    #[test]
+    fn helix_radius_null_round_trip_and_legacy_compat() {
+        use crate::cam::setup::PlungeStrategy;
+
+        let plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: None,
+        };
+        let json = serde_json::to_string(&plunge).unwrap();
+        assert!(
+            json.contains("\"radius_mm\":null"),
+            "expected radius_mm:null in serialized form: {json}",
+        );
+        let parsed: PlungeStrategy = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, plunge);
+
+        let legacy = r#"{"kind":"helix","angle_deg":3.0,"radius_mm":5.0}"#;
+        let parsed: PlungeStrategy = serde_json::from_str(legacy).unwrap();
+        assert_eq!(
+            parsed,
+            PlungeStrategy::Helix {
+                angle_deg: 3.0,
+                radius_mm: Some(5.0),
+            },
+        );
+
+        let new_form = r#"{"kind":"helix","angle_deg":3.0,"radius_mm":null}"#;
+        let parsed: PlungeStrategy = serde_json::from_str(new_form).unwrap();
+        assert_eq!(
+            parsed,
+            PlungeStrategy::Helix {
+                angle_deg: 3.0,
+                radius_mm: None,
+            },
+        );
+    }
+
     /// Tabs active → helix entry isn't useful (tabs already manage Z
     /// independently) so we fall back like Ramp does today: passes
     /// where the path crosses tabs use the straight-plunge tabs walker.
@@ -2239,7 +2458,7 @@ mod tests {
         };
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
-            radius_mm: 3.0,
+            radius_mm: Some(3.0),
         };
         let mut tabs_map: std::collections::HashMap<u32, Vec<crate::cam::offsets::TabPoint>> =
             Default::default();
@@ -4281,7 +4500,7 @@ mod tests {
                 params: OperationParams {
                     plunge: crate::cam::setup::PlungeStrategy::Helix {
                         angle_deg: 3.0,
-                        radius_mm: 4.5,
+                        radius_mm: Some(4.5),
                     },
                     ..OperationParams::mill_default()
                 },
@@ -4347,7 +4566,7 @@ mod tests {
         params.tabs.active = true;
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
-            radius_mm: 4.5,
+            radius_mm: Some(4.5),
         };
         let project = Project {
             segments,

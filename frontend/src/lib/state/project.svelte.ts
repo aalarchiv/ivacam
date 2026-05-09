@@ -412,6 +412,9 @@ export interface ToolEntry {
   plungeRate: number;
   feedRate: number;
   coolant: CoolantMode;
+  /// Default depth-per-pass (negative, mm). Operations using this tool
+  /// inherit this when their own `step` is unset.
+  defaultStep?: number;
 }
 
 export interface MachineSettings {
@@ -497,7 +500,10 @@ export interface OpEntry {
   sourceCombine?: SourceCombine;
   depth: number;
   startDepth: number;
-  step: number;
+  /// Per-pass Z step in mm (negative). null = inherit from the assigned
+  /// tool's `defaultStep`; if that's also unset the backend warns
+  /// `step_unspecified`.
+  step: number | null;
   offset: ProfileOffset;
   pocketStrategy: PocketStrategy | null;
   /// Drill cycle for OperationKind::Drill. Honored only when `kind === 'drill'`.

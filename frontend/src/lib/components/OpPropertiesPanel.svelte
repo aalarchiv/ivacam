@@ -58,6 +58,18 @@
       : project.operations.find((o) => o.id === project.selectedOpId) ?? null,
   );
 
+  /// Resolve the assigned tool's defaultStep for the current op so the
+  /// Step / pass input can fall back to it. null when no assignment.
+  const toolDefaultStep = $derived<number | null>(
+    op == null
+      ? null
+      : project.tools.find((t) => t.id === op.toolId)?.defaultStep ?? null,
+  );
+  const stepInheriting = $derived(op != null && (op.step === null || op.step === undefined));
+  const stepMissing = $derived(
+    stepInheriting && (toolDefaultStep === null || toolDefaultStep >= 0),
+  );
+
   function patch<K extends keyof OpEntry>(key: K, value: OpEntry[K]) {
     if (op) project.updateOperation(op.id, { [key]: value } as Partial<OpEntry>);
   }
@@ -191,11 +203,39 @@
       </label>
       <label class="row">
         <span>Step / pass</span>
-        <input
-          type="number" step="0.1" value={op.step}
-          onchange={(e) => patch('step', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
-        />
+        <div class="step-cell">
+          <input
+            type="number"
+            step="0.1"
+            value={op.step ?? ''}
+            placeholder={stepInheriting && toolDefaultStep !== null && toolDefaultStep < 0
+              ? `${toolDefaultStep} (from tool)`
+              : '—'}
+            class:inherit={stepInheriting && toolDefaultStep !== null && toolDefaultStep < 0}
+            class:invalid={stepMissing}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLInputElement).value;
+              if (v === '') {
+                patch('step', null);
+                return;
+              }
+              const n = parseFloat(v);
+              patch('step', isNaN(n) ? null : n);
+            }}
+          />
+          {#if !stepInheriting}
+            <button
+              type="button"
+              class="reset-link"
+              title="Clear the override and inherit the tool's default Z step."
+              onclick={() => patch('step', null)}
+            >reset to inherit</button>
+          {/if}
+        </div>
       </label>
+      {#if stepMissing}
+        <p class="step-error">Step required (set per-op or in the tool library).</p>
+      {/if}
       <label
         class="row"
         title="Optional smaller step for the FINAL Z pass — gives a thin finishing pass at the bottom for cleaner surface. Same sign as Step (negative). Empty = same as Step."
@@ -770,5 +810,42 @@
   .from-selection:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  .step-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+  .step-cell input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  input.inherit::placeholder {
+    font-style: italic;
+    color: var(--text-faint);
+  }
+  input.invalid {
+    border-color: var(--danger, #c44);
+  }
+  .reset-link {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    white-space: nowrap;
+  }
+  .step-error {
+    margin: 0.1rem 0 0.2rem;
+    padding: 0.15rem 0.4rem;
+    background: color-mix(in srgb, var(--danger, #c44) 18%, transparent);
+    color: var(--danger, #c44);
+    border: 1px solid var(--danger, #c44);
+    border-radius: 3px;
+    font-size: 0.72rem;
+    width: max-content;
   }
 </style>

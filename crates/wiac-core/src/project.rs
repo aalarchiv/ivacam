@@ -58,6 +58,10 @@ pub struct ToolEntry {
     /// Cutting feedrate (mm/min).
     pub feed_rate: u32,
     pub coolant: Coolant,
+    /// Default depth-per-pass (negative, mm). Operations using this tool
+    /// inherit this when their own `step` is unset. None = no default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_step: Option<f64>,
 }
 
 impl Default for ToolEntry {
@@ -74,6 +78,7 @@ impl Default for ToolEntry {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            default_step: None,
         }
     }
 }
@@ -329,8 +334,15 @@ pub struct OperationParams {
     pub depth: f64,
     /// Z at which the first pass starts.
     pub start_depth: f64,
-    /// Per-pass step (negative ⇒ down).
-    pub step: f64,
+    /// Per-pass step (negative ⇒ down). None = inherit from
+    /// `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to
+    /// mean "unset"; the deserializer maps that to None.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_step",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub step: Option<f64>,
     /// Z for rapid moves between cuts.
     pub fast_move_z: f64,
     /// XY overlap between consecutive pocket cuts, as a fraction in
@@ -442,13 +454,23 @@ fn is_default_plunge(p: &crate::cam::setup::PlungeStrategy) -> bool {
     matches!(p, crate::cam::setup::PlungeStrategy::Direct)
 }
 
+/// Accept legacy bare-number `step` (including `0.0` as the unset
+/// sentinel) alongside the new `null`/missing forms.
+fn deserialize_optional_step<'de, D>(de: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Option::<f64>::deserialize(de)?;
+    Ok(v.filter(|x| x.abs() >= 1e-9))
+}
+
 impl OperationParams {
     /// Defaults that line up with a "first profile cut on a 2 mm sheet".
     pub fn mill_default() -> Self {
         Self {
             depth: -2.0,
             start_depth: 0.0,
-            step: -1.0,
+            step: Some(-1.0),
             fast_move_z: 5.0,
             xy_overlap: 0.5,
             helix: false,
@@ -507,5 +529,80 @@ mod tests {
         ));
         assert!(matches!(op.source, OperationSource::All));
         assert!(op.enabled);
+    }
+
+    #[test]
+    fn legacy_step_zero_deserializes_to_none() {
+        let json = r#"{"depth":-2.0,"start_depth":0.0,"step":0.0,"fast_move_z":5.0}"#;
+        let p: OperationParams = serde_json::from_str(json).unwrap();
+        assert_eq!(p.step, None);
+    }
+
+    #[test]
+    fn legacy_step_negative_deserializes_to_some() {
+        let json = r#"{"depth":-2.0,"start_depth":0.0,"step":-1.0,"fast_move_z":5.0}"#;
+        let p: OperationParams = serde_json::from_str(json).unwrap();
+        assert_eq!(p.step, Some(-1.0));
+    }
+
+    #[test]
+    fn missing_step_deserializes_to_none() {
+        let json = r#"{"depth":-2.0,"start_depth":0.0,"fast_move_z":5.0}"#;
+        let p: OperationParams = serde_json::from_str(json).unwrap();
+        assert_eq!(p.step, None);
+    }
+
+    #[test]
+    fn null_step_deserializes_to_none() {
+        let json = r#"{"depth":-2.0,"start_depth":0.0,"step":null,"fast_move_z":5.0}"#;
+        let p: OperationParams = serde_json::from_str(json).unwrap();
+        assert_eq!(p.step, None);
+    }
+
+    #[test]
+    fn step_none_skips_field_on_serialize() {
+        let mut p = OperationParams::mill_default();
+        p.step = None;
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(!json.contains("\"step\""), "step=None should be skipped: {json}");
+    }
+
+    #[test]
+    fn step_some_writes_bare_number_on_serialize() {
+        let mut p = OperationParams::mill_default();
+        p.step = Some(-0.5);
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("\"step\":-0.5"), "step=Some(-0.5) should write bare number: {json}");
+    }
+
+    #[test]
+    fn fixture_step_values_round_trip_through_shim() {
+        // The .vc-project.json files on disk are the frontend's camelCase
+        // shape; the wire `OperationParams` (snake_case, nested under
+        // `params`) is a transformed view. We still want a sanity check
+        // that every `step` value those files carry survives our shim,
+        // so synthesize a minimal wire payload per op and round-trip it.
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = manifest.parent().unwrap().parent().unwrap();
+        for name in ["test.vc-project.json", "Epropulsion_SpiritEvo_Batteriestecker_01.vc-project.json"] {
+            let path = root.join(name);
+            if !path.exists() {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+            let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
+            let ops = v.get("operations").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+            for (i, op) in ops.iter().enumerate() {
+                let step_val = op.get("step").cloned().unwrap_or(serde_json::Value::Null);
+                let wire = serde_json::json!({
+                    "depth": -2.0,
+                    "start_depth": 0.0,
+                    "step": step_val,
+                    "fast_move_z": 5.0,
+                });
+                let _: OperationParams = serde_json::from_value(wire)
+                    .unwrap_or_else(|e| panic!("op #{i} step in {path:?}: {e}"));
+            }
+        }
     }
 }

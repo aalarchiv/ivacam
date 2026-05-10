@@ -5,6 +5,8 @@ import { CancelledError, type PipelineEvent, type ProgressEvent, type WiacClient
 import type {
   GenerateRequest,
   GenerateResponse,
+  HelixRadiusRequest,
+  HelixRadiusResponse,
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
@@ -78,6 +80,24 @@ export class HttpWiacClient implements WiacClient {
       throw new Error(`/text returned ${res.status}: ${JSON.stringify(detail)}`);
     }
     return (await res.json()) as RenderTextResponse;
+  }
+
+  async computeHelixRadius(request: HelixRadiusRequest): Promise<HelixRadiusResponse> {
+    const res = await fetch(`${this.base}/helix-radius`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) {
+      let detail: unknown;
+      try {
+        detail = await res.json();
+      } catch {
+        detail = await res.text();
+      }
+      throw new Error(`/helix-radius returned ${res.status}: ${JSON.stringify(detail)}`);
+    }
+    return (await res.json()) as HelixRadiusResponse;
   }
 
   /**
@@ -322,6 +342,7 @@ class WasmClientLazy {
             : c.generate(req),
         ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
+      computeHelixRadius: (req) => ensure().then((c) => c.computeHelixRadius(req)),
     };
   }
 }
@@ -357,6 +378,7 @@ class TauriClientLazy {
             : c.generate(req),
         ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
+      computeHelixRadius: (req) => ensure().then((c) => c.computeHelixRadius(req)),
     };
   }
 }

@@ -22,7 +22,9 @@ use wasm_bindgen::prelude::*;
 
 use wiac_core::input::text::{render_text_api, RenderTextRequest};
 use wiac_core::pipeline::{generate_streaming, run_pipeline, CancelToken, PipelineRequest};
-use wiac_core::ImportOptions;
+use wiac_core::{
+    compute_helix_radius as core_compute_helix_radius, HelixRadiusRequest, ImportOptions,
+};
 
 pub mod sim;
 
@@ -66,15 +68,14 @@ pub fn version() -> Result<JsValue, JsValue> {
 #[wasm_bindgen(js_name = importBytes)]
 pub fn import_bytes(filename: &str, bytes: &[u8]) -> Result<JsValue, JsValue> {
     let opts = ImportOptions::default();
-    let out = wiac_core::input::import_bytes(filename, bytes, &opts)
-        .map_err(structured_error_to_js)?;
+    let out =
+        wiac_core::input::import_bytes(filename, bytes, &opts).map_err(structured_error_to_js)?;
     serde_wasm_bindgen::to_value(&out).map_err(into_js_error)
 }
 
 #[wasm_bindgen]
 pub fn generate(request: JsValue) -> Result<JsValue, JsValue> {
-    let req: PipelineRequest =
-        serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
+    let req: PipelineRequest = serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
     let project = req.project.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run_pipeline(req, |_phase, _fraction, _msg| {})
@@ -104,8 +105,7 @@ pub fn generate_streaming_wasm(
     request: JsValue,
     on_event: js_sys::Function,
 ) -> Result<JsValue, JsValue> {
-    let req: PipelineRequest =
-        serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
+    let req: PipelineRequest = serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
     let cancel = CancelToken::new();
     let project = req.project.clone();
     let mut sink = |ev| {
@@ -132,9 +132,15 @@ pub fn generate_streaming_wasm(
 
 #[wasm_bindgen(js_name = renderText)]
 pub fn render_text(request: JsValue) -> Result<JsValue, JsValue> {
-    let req: RenderTextRequest =
-        serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
+    let req: RenderTextRequest = serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
     let resp = render_text_api(&req).map_err(structured_error_to_js)?;
+    serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+}
+
+#[wasm_bindgen(js_name = computeHelixRadius)]
+pub fn compute_helix_radius(request: JsValue) -> Result<JsValue, JsValue> {
+    let req: HelixRadiusRequest = serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
+    let resp = core_compute_helix_radius(req);
     serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
 }
 

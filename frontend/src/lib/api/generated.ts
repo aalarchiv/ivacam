@@ -105,6 +105,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/helix-radius": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview the auto-fit helix radius for a pocket selection
+         * @description Runs the same inscribed-circle search the gcode generator does at
+         *     run time, so the OpPropertiesPanel can display the detected radius
+         *     (or a short fallback reason) before the user clicks Generate.
+         */
+        post: operations["computeHelixRadius"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -281,6 +303,24 @@ export interface components {
         };
         HealthResponse: {
             ok: boolean;
+        };
+        /** @description Cross-transport request for the helix auto-fit preview. The frontend sends imported segments + the operation's selected object ids + the active tool diameter; the backend walks the same chaining/combine pipeline the gcode generator does and returns the largest inscribed circle that fits inside the resulting pocket boundary. */
+        HelixRadiusRequest: {
+            /** @description Object ids from the import that should participate in the pocket boundary computation. Same shape as `OperationSource::Objects.ids`. Empty = "use all segments as one region". */
+            object_ids: number[];
+            /** @description Source segments to derive the closed-pocket boundary from. */
+            segments: components["schemas"]["Segment"][];
+            /** Format: double */
+            tool_diameter_mm: number;
+        };
+        HelixRadiusResponse: {
+            /** @description Short reason string when None (so the UI can show "Pocket too small for tool" instead of just an empty Auto state). */
+            fallback_reason?: string | null;
+            /**
+             * Format: double
+             * @description Some(r) when an inscribed circle fits; None when the auto path would fall back to Ramp/Direct.
+             */
+            radius_mm?: number | null;
         };
         /** @description Geometry of the tool holder above the shank. The holder is treated as cylindrically symmetric around the tool axis (Z), so set-screw flats / asymmetric ER nuts get approximated by their bounding cylinder/cone — good enough to flag clear collisions, conservative on tight cases. */
         HolderShape: {
@@ -1277,6 +1317,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RenderTextResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    computeHelixRadius: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HelixRadiusRequest"];
+            };
+        };
+        responses: {
+            /** @description Detected helix radius or a fallback reason */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelixRadiusResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];

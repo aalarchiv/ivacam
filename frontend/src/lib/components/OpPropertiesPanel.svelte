@@ -14,6 +14,11 @@
     type DrillCycle,
     type FrameShape,
   } from '../state/project.svelte';
+  import { defaultClient } from '../api/http';
+  import type { HelixRadiusResponse } from '../api/types';
+
+  const apiClient = defaultClient();
+  const HELIX_PREVIEW_DEBOUNCE_MS = 300;
 
   /// One-line description per cut direction for the option titles.
   const CUT_DIR_HELP: Record<CutDirection, string> = {
@@ -82,6 +87,67 @@
     if (op?.plunge?.kind === 'helix' && op.plunge.radius_mm != null) {
       lastManualHelixRadius = op.plunge.radius_mm;
     }
+  });
+
+  // Auto-fit helix preview: when the checkbox is on, the panel shows
+  // "Auto (detected: X mm)" — the same inscribed-circle search the
+  // generator runs at gcode time, surfaced ahead of Generate so the user
+  // can sanity-check before kicking off a full run.
+  // Debounced 300ms so rapid selection / tool edits don't spam the
+  // transport; the computation is fast (medial-axis on a small
+  // polygon), so any value in the 100-500ms range works — 300 keeps the
+  // UI feeling instant without thrashing.
+  let helixPreview = $state<HelixRadiusResponse | null>(null);
+  let helixPreviewLoading = $state(false);
+
+  const helixToolDiameter = $derived<number | null>(
+    op == null ? null : project.tools.find((t) => t.id === op.toolId)?.diameter ?? null,
+  );
+  const helixAutoActive = $derived(
+    op != null
+      && op.plunge != null
+      && op.plunge.kind === 'helix'
+      && op.plunge.radius_mm === null,
+  );
+  const helixHasGeometry = $derived(
+    project.imported != null && (project.imported.segments?.length ?? 0) > 0,
+  );
+  const helixHasSelection = $derived(
+    op != null && (op.sourceObjects?.length ?? 0) > 0,
+  );
+
+  $effect(() => {
+    if (!helixAutoActive || !helixHasGeometry || !helixHasSelection || helixToolDiameter == null) {
+      helixPreview = null;
+      helixPreviewLoading = false;
+      return;
+    }
+    const opIdAtStart = op?.id;
+    const segments = project.imported?.segments ?? [];
+    const objectIds = op?.sourceObjects ?? [];
+    const toolD = helixToolDiameter;
+    helixPreviewLoading = true;
+    const timer = window.setTimeout(() => {
+      apiClient
+        .computeHelixRadius({
+          segments,
+          object_ids: objectIds,
+          tool_diameter_mm: toolD,
+        })
+        .then((resp) => {
+          if (op?.id !== opIdAtStart) return;
+          helixPreview = resp;
+          helixPreviewLoading = false;
+        })
+        .catch(() => {
+          if (op?.id !== opIdAtStart) return;
+          helixPreview = null;
+          helixPreviewLoading = false;
+        });
+    }, HELIX_PREVIEW_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
   });
 </script>
 
@@ -410,10 +476,21 @@
             />
           </label>
           {#if op.plunge.radius_mm === null}
-            <!-- rt1.2: deferred-feedback choice — actual auto fit happens at gcode generation; see follow-up issue. -->
-            <div class="row" title="Auto-fit picks the helix radius from the pocket geometry at gcode generation time.">
+            <div class="row" title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at gcode time.">
               <span>Helix radius</span>
-              <em class="placeholder">Auto (will fit at generation)</em>
+              {#if helixPreview?.radius_mm != null}
+                <em class="placeholder">Auto (detected: {helixPreview.radius_mm.toFixed(1)} mm)</em>
+              {:else if helixPreview && helixPreview.radius_mm == null}
+                <em class="placeholder"
+                  >Auto (no fit — will Ramp instead{helixPreview.fallback_reason
+                    ? `: ${helixPreview.fallback_reason}`
+                    : ''})</em
+                >
+              {:else if helixPreviewLoading}
+                <em class="placeholder">Auto (will fit at generation)</em>
+              {:else}
+                <em class="placeholder">Auto (will fit at generation)</em>
+              {/if}
             </div>
           {:else}
             <label class="row" title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral.">

@@ -12,6 +12,7 @@ import type {
   SimSeverity,
 } from '../api/types';
 import { History } from './history';
+import { workspace } from './workspace.svelte';
 import {
   addFixtureCommand,
   addOperationCommand,
@@ -252,8 +253,51 @@ class ProjectState {
   /// it can't be a $state itself).
   historyVersion = $state(0);
 
+  /// Absolute path of the currently-open project, or null if the user
+  /// hasn't loaded one yet. Drives the per-project workspace state
+  /// look-up; set explicitly via `setActiveProjectPath` from the
+  /// open-project flows. Not part of `snapshot()` — workspace state
+  /// follows the path, the path is per-machine.
+  activeProjectPath = $state<string | null>(null);
+
   constructor() {
     this.history.subscribe(() => { this.historyVersion = this.history.version; });
+  }
+
+  /// Switch the active project path and apply the persisted per-project
+  /// workspace state (visible_layers / selected_op_id / playhead). Call
+  /// AFTER `setImported` / `restore` so the layer set is already populated
+  /// — we filter the saved layer names against what the import actually
+  /// contains.
+  setActiveProjectPath(path: string | null) {
+    this.activeProjectPath = path;
+    if (path == null) return;
+    const saved = workspace.get().per_project[path];
+    if (!saved) return;
+    if (this.imported && saved.visible_layers.length > 0) {
+      const valid = new Set(this.imported.layers.map((l) => l.name));
+      const restored = saved.visible_layers.filter((n) => valid.has(n));
+      if (restored.length > 0) this.visibleLayers = new Set(restored);
+    }
+    if (saved.selected_op_id != null && this.operations.some((o) => o.id === saved.selected_op_id)) {
+      this.selectedOpId = saved.selected_op_id;
+    }
+    if (typeof saved.playhead === 'number') {
+      this.playhead = Math.max(0, Math.min(1, saved.playhead));
+    }
+  }
+
+  /// Persist the current per-project view state. Called from $effects in
+  /// App.svelte when `visibleLayers` / `selectedOpId` / `playhead` change.
+  /// No-op when no path is active (browser uploads, samples, etc.).
+  persistPerProjectState() {
+    const path = this.activeProjectPath;
+    if (!path) return;
+    workspace.setPerProject(path, {
+      visible_layers: [...this.visibleLayers],
+      selected_op_id: this.selectedOpId,
+      playhead: this.playhead,
+    });
   }
 
   /// Cast to `CommandTarget` for command builders. Single helper so the

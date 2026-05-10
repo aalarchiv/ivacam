@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use wiac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
 use wiac_core::pipeline::{
@@ -148,5 +148,47 @@ pub async fn render_text(request: RenderTextRequest) -> Result<RenderTextRespons
         .await
         .map_err(|e| format!("join error: {e}"))?
         .map_err(|e| e.to_string())
+}
+
+/// Resolve the absolute path to the workspace JSON, ensuring the parent
+/// directory exists. The frontend never sees the path — it just reads /
+/// writes opaque blobs through the two commands below.
+fn workspace_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    let dir = dir.join("wiaconstructor");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all {}: {e}", dir.display()))?;
+    Ok(dir.join("workspace.json"))
+}
+
+/// Read the workspace JSON file. Returns `Ok(None)` when the file does
+/// not exist yet (first launch) — the frontend treats that as "use
+/// defaults". Other I/O errors propagate as `Err` so the user sees
+/// them in the toast.
+#[tauri::command]
+pub async fn read_workspace_file(app: AppHandle) -> Result<Option<String>, String> {
+    let path = workspace_path(&app)?;
+    match tokio::fs::read_to_string(&path).await {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("read {}: {e}", path.display())),
+    }
+}
+
+/// Atomic write: stage to `<path>.tmp`, then rename. Avoids leaving a
+/// half-written workspace.json behind on a crash mid-write.
+#[tauri::command]
+pub async fn write_workspace_file(app: AppHandle, json: String) -> Result<(), String> {
+    let path = workspace_path(&app)?;
+    let tmp = path.with_extension("json.tmp");
+    tokio::fs::write(&tmp, &json)
+        .await
+        .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    tokio::fs::rename(&tmp, &path)
+        .await
+        .map_err(|e| format!("rename {} → {}: {e}", tmp.display(), path.display()))?;
+    Ok(())
 }
 

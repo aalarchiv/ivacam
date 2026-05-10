@@ -326,6 +326,18 @@ pub struct MachineConfig {
     /// Set to false for the legacy length/feed-only estimator.
     #[serde(default = "default_use_kinematic", skip_serializing_if = "is_default_use_kinematic")]
     pub use_kinematic_time_estimate: bool,
+    /// Maximum deviation (mm) between the fitted G2/G3 arc and the
+    /// original chord polyline. None ⇒ 0.01 mm. Only consulted when
+    /// `arcs == true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arc_fit_tolerance_mm: Option<f64>,
+}
+
+impl MachineConfig {
+    /// Effective polyline→arc fit tolerance. Falls back to 0.01 mm.
+    pub fn effective_arc_tolerance(&self) -> f64 {
+        self.arc_fit_tolerance_mm.unwrap_or(0.01).max(0.0)
+    }
 }
 
 fn default_toolchange_s() -> f64 {
@@ -357,6 +369,7 @@ impl Default for MachineConfig {
             toolchange_s: default_toolchange_s(),
             rapid_speed: None,
             use_kinematic_time_estimate: default_use_kinematic(),
+            arc_fit_tolerance_mm: None,
         }
     }
 }

@@ -12,6 +12,7 @@ use crate::cam::setup::{LeadKind, MachineMode, Setup, ToolOffset, UnitSystem};
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
 
+pub mod arc_fit;
 pub mod grbl;
 pub mod hpgl;
 pub mod linuxcnc;
@@ -681,8 +682,9 @@ fn multi_pass<P: PostProcessor>(
             let start = segments.first().map(|s| s.start).unwrap_or(plan.center);
             post.linear(Some(start.x), Some(start.y), Some(z));
             let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+            let fitted = fit_line_runs(segments, setup);
             emit_path_with_corner_feed(
-                segments,
+                &fitted,
                 dragoff,
                 setup.tool.rate_h,
                 setup.mill.corner_feed_reduction,
@@ -712,8 +714,9 @@ fn multi_pass<P: PostProcessor>(
                 post.linear(None, None, Some(z));
                 post.feedrate(setup.tool.rate_h);
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+                let fitted = fit_line_runs(segments, setup);
                 emit_path_with_corner_feed(
-                    segments,
+                    &fitted,
                     dragoff,
                     setup.tool.rate_h,
                     setup.mill.corner_feed_reduction,
@@ -736,8 +739,9 @@ fn multi_pass<P: PostProcessor>(
                 );
             } else {
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+                let fitted = fit_line_runs(segments, setup);
                 emit_path_with_corner_feed(
-                    segments,
+                    &fitted,
                     dragoff,
                     setup.tool.rate_h,
                     setup.mill.corner_feed_reduction,
@@ -763,8 +767,9 @@ fn multi_pass<P: PostProcessor>(
     if needs_ramp_cleanup {
         post.feedrate(setup.tool.rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+        let fitted = fit_line_runs(segments, setup);
         emit_path_with_corner_feed(
-            segments,
+            &fitted,
             dragoff,
             setup.tool.rate_h,
             setup.mill.corner_feed_reduction,
@@ -1631,6 +1636,97 @@ fn build_z_schedule(
 
 /// Walk `segments` like `emit_path_with_dragoff` but reduce the feed
 /// at sharp line-line corners by `corner_reduction` (a fraction in
+/// Polyline → arc collapse on emit. When `machine.arcs == true`, walks
+/// `segments` and replaces consecutive `Line` runs (≥3 points) with the
+/// fewest G2/G3 arcs that approximate the chord chain within
+/// `effective_arc_tolerance()`. Pre-existing `Arc` / `Circle` / `Point`
+/// segments are passed through verbatim — only line runs are eligible.
+/// When `machine.arcs == false`, returns the input untouched.
+fn fit_line_runs(segments: &[Segment], setup: &Setup) -> Vec<Segment> {
+    if !setup.machine.arcs || segments.is_empty() {
+        return segments.to_vec();
+    }
+    let tol = setup.machine.effective_arc_tolerance();
+    let mut out: Vec<Segment> = Vec::with_capacity(segments.len());
+    let layer = segments[0].layer.clone();
+    let color = segments[0].color;
+    let mut run_pts: Vec<Point2> = Vec::new();
+    let mut run_layer = layer.clone();
+    let mut run_color = color;
+
+    let flush_run = |run_pts: &mut Vec<Point2>,
+                     run_layer: &str,
+                     run_color: i32,
+                     out: &mut Vec<Segment>| {
+        if run_pts.len() < 2 {
+            run_pts.clear();
+            return;
+        }
+        match crate::gcode::arc_fit::fit_arc_run(run_pts, tol) {
+            crate::gcode::arc_fit::FitOutput::Lines(pts) => {
+                for w in pts.windows(2) {
+                    out.push(Segment::line(w[0], w[1], run_layer, run_color));
+                }
+            }
+            crate::gcode::arc_fit::FitOutput::Arcs(arcs) => {
+                let mut cursor = run_pts[0];
+                for a in arcs {
+                    let (_, _, bulge) = arc_bulge_from_center(cursor, a.end, a.center, a.ccw);
+                    out.push(Segment::arc(
+                        cursor,
+                        a.end,
+                        bulge,
+                        Some(a.center),
+                        run_layer,
+                        run_color,
+                    ));
+                    cursor = a.end;
+                }
+            }
+        }
+        run_pts.clear();
+    };
+
+    for seg in segments {
+        if matches!(seg.kind, SegmentKind::Line) {
+            if run_pts.is_empty() {
+                run_pts.push(seg.start);
+                run_layer = seg.layer.clone();
+                run_color = seg.color;
+            }
+            run_pts.push(seg.end);
+        } else {
+            flush_run(&mut run_pts, &run_layer, run_color, &mut out);
+            out.push(seg.clone());
+        }
+    }
+    flush_run(&mut run_pts, &run_layer, run_color, &mut out);
+    out
+}
+
+/// Derive a polyline `bulge` from a known arc geometry (start, end,
+/// absolute center, direction). The sign of `bulge` matches our
+/// convention: positive ⇒ CCW (G3), negative ⇒ CW (G2).
+fn arc_bulge_from_center(
+    start: Point2,
+    end: Point2,
+    center: Point2,
+    ccw: bool,
+) -> (Point2, f64, f64) {
+    let a0 = (start.y - center.y).atan2(start.x - center.x);
+    let a1 = (end.y - center.y).atan2(end.x - center.x);
+    let mut sweep = if ccw { a1 - a0 } else { a0 - a1 };
+    while sweep < 0.0 {
+        sweep += std::f64::consts::TAU;
+    }
+    while sweep > std::f64::consts::TAU {
+        sweep -= std::f64::consts::TAU;
+    }
+    let signed_sweep = if ccw { sweep } else { -sweep };
+    let bulge = (signed_sweep * 0.25).tan();
+    (center, sweep, bulge)
+}
+
 /// [0, 1]). Skipped when `corner_reduction <= 0`, when `dragoff > 0`
 /// (drag knife trail compensation already smooths corners), or when
 /// the segment list is too short to have corners.
@@ -2298,6 +2394,67 @@ mod tests {
         assert!(
             arc_count >= 3,
             "expected at least 3 swivel arcs at square corners; got {arc_count}\n{g}"
+        );
+    }
+
+    #[test]
+    fn profile_circle_gcode_smaller_with_arc_fitting() {
+        // Closed circle, tessellated into 128 chord segments at radius 10.
+        // Sagitta of each chord ≈ r·(1 − cos(π/n)) ≈ 0.003 mm at n=128 —
+        // well within the default 0.01 mm fit tolerance. With arc
+        // fitting OFF the post emits 128 G1 lines per pass; with it ON
+        // the polyline collapses to a small number of G2/G3 arcs. The
+        // fitted program must contain at least one G2 or G3 token and
+        // be < 1/5 the size of the unfitted program.
+        let mut segs: Vec<Segment> = Vec::new();
+        let n = 128usize;
+        let r = 10.0_f64;
+        let mut prev = p(r, 0.0);
+        for i in 1..=n {
+            let t = (i as f64) * std::f64::consts::TAU / (n as f64);
+            let next = p(r * t.cos(), r * t.sin());
+            segs.push(Segment::line(prev, next, "0", 7));
+            prev = next;
+        }
+        let offset = PolylineOffset {
+            segments: segs,
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+        };
+
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        setup.machine.arcs = true;
+        let mut post = linuxcnc::Post::new();
+        let g_arcs = emit_polylines(&setup, &[offset.clone()], &mut post);
+
+        setup.machine.arcs = false;
+        let mut post2 = linuxcnc::Post::new();
+        let g_lines = emit_polylines(&setup, &[offset], &mut post2);
+
+        let has_arc =
+            g_arcs.lines().any(|l| l.starts_with("G2 ") || l.starts_with("G3 "));
+        assert!(has_arc, "fitted program must contain G2 or G3; got:\n{g_arcs}");
+        assert!(
+            g_arcs.len() * 5 <= g_lines.len(),
+            "arc-fitted program ({} bytes) should be ≥5x smaller than unfitted ({} bytes)",
+            g_arcs.len(),
+            g_lines.len(),
         );
     }
 

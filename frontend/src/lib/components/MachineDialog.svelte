@@ -83,6 +83,23 @@
           <input type="checkbox" bind:checked={draft.arcs} />
           Emit G2 / G3 arc moves
         </label>
+        <label
+          class:disabled={!draft.arcs}
+          title="How far the fitted arc may deviate from the original polyline. Smaller = tighter, more arcs split. Typical values 0.005-0.05 mm."
+        >
+          Arc fitting tolerance (mm)
+          <input
+            type="number"
+            min="0"
+            step="0.001"
+            disabled={!draft.arcs}
+            value={draft.arcFitToleranceMm ?? 0.01}
+            oninput={(e) => {
+              const v = (e.target as HTMLInputElement).valueAsNumber;
+              draft.arcFitToleranceMm = isFinite(v) && v >= 0 ? v : undefined;
+            }}
+          />
+        </label>
         <label class="check">
           <input type="checkbox" bind:checked={draft.supportsToolchange} />
           Machine supports tool changes (M6)
@@ -195,6 +212,10 @@
   label.check {
     grid-template-columns: auto 1fr;
     gap: 0.4rem;
+  }
+  label.disabled {
+    color: var(--text-muted);
+    opacity: 0.6;
   }
   input[type='number'],
   select {

@@ -69,6 +69,7 @@ interface WireMachine {
   jerk?: WireAxisLimits;
   toolchange_s?: number;
   rapid_speed?: number;
+  arc_fit_tolerance_mm?: number;
 }
 
 type WireDrillCycle =
@@ -209,6 +210,7 @@ function buildMachine(m: MachineSettings): WireMachine {
     ...(m.jerk ? { jerk: { x: m.jerk.x, y: m.jerk.y, z: m.jerk.z } } : {}),
     ...(m.toolchangeS !== undefined && m.toolchangeS !== 5 ? { toolchange_s: m.toolchangeS } : {}),
     ...(m.rapidSpeed !== undefined ? { rapid_speed: m.rapidSpeed } : {}),
+    ...(m.arcFitToleranceMm !== undefined ? { arc_fit_tolerance_mm: m.arcFitToleranceMm } : {}),
   };
 }
 

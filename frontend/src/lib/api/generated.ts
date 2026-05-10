@@ -366,6 +366,11 @@ export interface components {
         MachineConfig: {
             /** @description Per-axis acceleration in mm/s². When None the kinematic time estimator falls back to 250 mm/s² per axis (LinuxCNC default). */
             accel?: components["schemas"]["AxisLimits"] | null;
+            /**
+             * Format: double
+             * @description Maximum deviation (mm) between the fitted G2/G3 arc and the original chord polyline. None ⇒ 0.01 mm. Only consulted when `arcs == true`.
+             */
+            arc_fit_tolerance_mm?: number | null;
             /** @description Whether the machine emits arc commands (G2/G3). */
             arcs: boolean;
             comments: boolean;

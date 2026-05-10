@@ -993,6 +993,10 @@ export interface MachineSettings {
   toolchangeS?: number;
   /// Rapid (G0) speed in mm/min (default 5000).
   rapidSpeed?: number;
+  /// Maximum chord-to-arc deviation (mm) when collapsing line runs into
+  /// G2/G3 on emit. Only consulted when `arcs == true`. undefined ⇒
+  /// 0.01 mm (the backend default).
+  arcFitToleranceMm?: number;
 }
 
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal';

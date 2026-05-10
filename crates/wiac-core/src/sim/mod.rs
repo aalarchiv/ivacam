@@ -4,6 +4,7 @@
 
 pub mod diagnostics;
 pub mod heightmap;
+pub mod rapid_check;
 pub mod sweep;
 pub mod timing;
 

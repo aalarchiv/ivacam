@@ -6,7 +6,8 @@
 //!
 //! Move kinds:
 //! * Cut / Plunge / Retract / Arc — carve.
-//! * Rapid — skip (cutter at safe Z above the stock).
+//! * Rapid — no cut; checked against stock by `rapid_check` and emits
+//!   a `RapidThroughMaterial` warning if it would slam into material.
 //!
 //! Arcs come through the gcode preview already tessellated into chord
 //! `ToolpathSegment`s; v1 treats them like lines (chord-only). The
@@ -27,20 +28,19 @@ use crate::project::Fixture;
 use crate::sim::diagnostics::{SimDiagnostics, SimWarning};
 use crate::sim::fixture_check::{check_segment_against_fixtures, FixtureCheck};
 use crate::sim::heightmap::{Heightmap, ToolProfile};
+use crate::sim::rapid_check::{check_rapid_against_stock, RapidCheck};
 
 /// Apply a single toolpath segment to `heightmap`, lowering every cell
-/// the cutter sweeps over. Returns the number of cells touched (useful
-/// for tests and progress reporting). Rapid moves are skipped.
+/// the cutter sweeps over. Returns the number of cells touched.
 ///
-/// `diagnostics` collects per-segment runtime warnings (rapid-through-
-/// material, fixture/holder collisions, engagement overload, …). This
-/// pass plumbs the parameter; the rs8.1/2/3 children populate it.
+/// Rapid moves don't carve; they run through `rapid_check` and emit a
+/// `RapidThroughMaterial` warning when the cutter would pass through
+/// material at rapid speed. Every segment (rapid included) also runs
+/// through `fixture_check` against any declared fixtures.
 ///
-/// `segment_idx` is the segment's position in the toolpath stream — used
-/// when emitting `SimWarning` entries so the playbar / scene can mark
-/// the offending segment. `fixtures` is the project's declared obstacle
-/// set; the cutter is checked against each one (rapid included). Pass
-/// `&[]` when the project has no fixtures.
+/// `segment_idx` is the segment's position in the toolpath stream so
+/// emitted SimWarnings link back to the offending segment; pass `&[]`
+/// for `fixtures` when the project has none.
 pub fn sweep_segment(
     heightmap: &mut Heightmap,
     segment: &ToolpathSegment,
@@ -61,6 +61,21 @@ pub fn sweep_segment(
         }
     }
     if matches!(segment.kind, MoveKind::Rapid) {
+        if let RapidCheck::Collision {
+            worst_x,
+            worst_y,
+            worst_cell_z,
+            rapid_pz,
+        } = check_rapid_against_stock(heightmap, segment, profile)
+        {
+            diagnostics.push(SimWarning::RapidThroughMaterial {
+                segment_idx,
+                worst_x,
+                worst_y,
+                worst_cell_z,
+                rapid_pz,
+            });
+        }
         return 0;
     }
     if r_tool <= 0.0 {
@@ -74,19 +89,71 @@ pub fn sweep_segment(
         return 0;
     }
 
-    // Segment AABB inflated by tool radius (in world units).
+    let layout = HeightmapLayout::of(heightmap);
+    let mut touched = 0u32;
+    for_each_swept_cell(&layout, segment, profile, |ix, iy, _r, cutter_pz, dz| {
+        let surface_z = cutter_pz as f32 + dz;
+        heightmap.lower_at(ix, iy, surface_z);
+        touched += 1;
+    });
+    touched
+}
+
+/// Owned snapshot of a heightmap's grid layout — origin/cell/dim only,
+/// no `data` borrow. Lets `for_each_swept_cell` walk the grid while a
+/// caller (e.g. `sweep_segment`) keeps a `&mut Heightmap` for writes.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct HeightmapLayout {
+    pub origin_x: f64,
+    pub origin_y: f64,
+    pub cell: f64,
+    pub cols: u32,
+    pub rows: u32,
+}
+
+impl HeightmapLayout {
+    pub(super) fn of(h: &Heightmap) -> Self {
+        Self {
+            origin_x: h.origin.x,
+            origin_y: h.origin.y,
+            cell: h.cell,
+            cols: h.cols,
+            rows: h.rows,
+        }
+    }
+}
+
+/// Walk every cell inside `segment`'s swept footprint (XY AABB inflated
+/// by the tool radius, clamped to the heightmap), invoking `body` with
+/// the per-cell `(ix, iy, r, cutter_pz, dz)` so callers can either lower
+/// the cell (sweep) or compare against it (rapid check). Cells outside
+/// the cutter footprint or outside the tool's profile are skipped before
+/// `body` ever sees them.
+pub(super) fn for_each_swept_cell<F>(
+    layout: &HeightmapLayout,
+    segment: &ToolpathSegment,
+    profile: ToolProfile,
+    mut body: F,
+) where
+    F: FnMut(u32, u32, f32, f64, f32),
+{
+    let r_tool = profile.radius() as f64;
+    if r_tool <= 0.0 {
+        return;
+    }
+    let from = &segment.from;
+    let to = &segment.to;
+
     let min_x = from.x.min(to.x) - r_tool;
     let max_x = from.x.max(to.x) + r_tool;
     let min_y = from.y.min(to.y) - r_tool;
     let max_y = from.y.max(to.y) + r_tool;
 
-    // Convert to cell index range (inclusive bounds, then clamped).
-    let (ix0, iy0, ix1, iy1) = match world_aabb_to_cells(heightmap, min_x, min_y, max_x, max_y) {
+    let (ix0, iy0, ix1, iy1) = match world_aabb_to_cells(layout, min_x, min_y, max_x, max_y) {
         Some(t) => t,
-        None => return 0,
+        None => return,
     };
 
-    // Pre-compute segment direction in XY for the projection.
     let dx = to.x - from.x;
     let dy = to.y - from.y;
     let len_sq = dx * dx + dy * dy;
@@ -96,22 +163,18 @@ pub fn sweep_segment(
     let pure_plunge = len_sq < 1e-12;
     let plunge_z = from.z.min(to.z);
 
-    let cell = heightmap.cell;
+    let cell = layout.cell;
     let r_tool_sq = r_tool * r_tool;
 
-    let mut touched = 0u32;
     for iy in iy0..=iy1 {
         for ix in ix0..=ix1 {
-            // Cell center in world coords.
-            let cx = heightmap.origin.x + (ix as f64 + 0.5) * cell;
-            let cy = heightmap.origin.y + (iy as f64 + 0.5) * cell;
+            let cx = layout.origin_x + (ix as f64 + 0.5) * cell;
+            let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
             let (r_sq, cutter_pz) = if pure_plunge {
                 let ex = cx - from.x;
                 let ey = cy - from.y;
                 (ex * ex + ey * ey, plunge_z)
             } else {
-                // Project (cx, cy) onto the segment in XY → recover the
-                // parameter t along the segment and the radial offset r.
                 let mut t = ((cx - from.x) * dx + (cy - from.y) * dy) / len_sq;
                 if t < 0.0 {
                     t = 0.0;
@@ -132,12 +195,9 @@ pub fn sweep_segment(
                 Some(v) => v,
                 None => continue,
             };
-            let surface_z = cutter_pz as f32 + dz;
-            heightmap.lower_at(ix, iy, surface_z);
-            touched += 1;
+            body(ix, iy, r, cutter_pz, dz);
         }
     }
-    touched
 }
 
 /// Apply every segment in `segments[from_idx..to_idx]` to the heightmap.
@@ -165,24 +225,24 @@ pub fn sweep_range(
 /// Convert a world-space AABB to the inclusive cell-index range it
 /// covers. Returns None when the AABB is fully outside the heightmap.
 fn world_aabb_to_cells(
-    heightmap: &Heightmap,
+    layout: &HeightmapLayout,
     min_x: f64,
     min_y: f64,
     max_x: f64,
     max_y: f64,
 ) -> Option<(u32, u32, u32, u32)> {
-    let cell = heightmap.cell;
+    let cell = layout.cell;
     let inv = 1.0 / cell;
-    let max_col = heightmap.cols.saturating_sub(1);
-    let max_row = heightmap.rows.saturating_sub(1);
-    let fx0 = (min_x - heightmap.origin.x) * inv;
-    let fy0 = (min_y - heightmap.origin.y) * inv;
-    let fx1 = (max_x - heightmap.origin.x) * inv;
-    let fy1 = (max_y - heightmap.origin.y) * inv;
+    let max_col = layout.cols.saturating_sub(1);
+    let max_row = layout.rows.saturating_sub(1);
+    let fx0 = (min_x - layout.origin_x) * inv;
+    let fy0 = (min_y - layout.origin_y) * inv;
+    let fx1 = (max_x - layout.origin_x) * inv;
+    let fy1 = (max_y - layout.origin_y) * inv;
     if fx1 < 0.0 || fy1 < 0.0 {
         return None;
     }
-    if fx0 > heightmap.cols as f64 || fy0 > heightmap.rows as f64 {
+    if fx0 > layout.cols as f64 || fy0 > layout.rows as f64 {
         return None;
     }
     let ix0 = fx0.floor().max(0.0) as u32;
@@ -239,7 +299,8 @@ mod tests {
         assert_eq!(touched, 0);
         assert!(map.data.iter().all(|z| (*z - 0.0).abs() < 1e-6));
         assert!(map.dirty_aabb().is_none());
-        assert!(d.is_clean());
+        // top_z = 0, rapid is at -10 through uncut stock — collision expected.
+        assert_eq!(d.count("rapid_through_material"), 1);
     }
 
     #[test]
@@ -343,6 +404,7 @@ mod tests {
         let mut d = diag();
         let segments = vec![
             seg(MoveKind::Cut, pose(5.0, 10.0, -1.0), pose(15.0, 10.0, -1.0)),
+            // Rapid stays at z=5 above top_z=0 — no collision.
             seg(MoveKind::Rapid, pose(15.0, 10.0, 5.0), pose(20.0, 20.0, 5.0)),
             seg(MoveKind::Plunge, pose(20.0, 20.0, 0.0), pose(20.0, 20.0, -1.0)),
         ];
@@ -363,6 +425,8 @@ mod tests {
         assert!((cell(&map, 20, 20) - -1.0).abs() < 1e-5);
         // Untouched cell stays at top_z.
         assert!((cell(&map, 35, 35) - 0.0).abs() < 1e-5);
+        // The above-stock rapid is clear.
+        assert!(d.is_clean());
     }
 
     #[test]

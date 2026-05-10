@@ -3,7 +3,7 @@
   // tree lives in SetupPanel and feeds project.setup.
 
   import { defaultClient } from '../api/http';
-  import { CancelledError } from '../api/client';
+  import { CancelledError, tryParseStructuredError } from '../api/client';
   import { isTauri } from '../api/env';
   import {
     project,
@@ -60,17 +60,12 @@
   }
 
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);
-  let criticalCount = $derived(
-    warnings.filter((w) => simWarningSeverity(w) === 'critical').length,
-  );
+  let criticalCount = $derived(warnings.filter((w) => simWarningSeverity(w) === 'critical').length);
   let isClean = $derived(warnings.length === 0);
 
   async function run() {
     if (!project.imported) return;
-    if (
-      project.settings.blockOnCriticalSimWarnings &&
-      criticalCount > 0
-    ) {
+    if (project.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
       project.setError(
         `Sim has ${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} — fix or disable the safety check in Settings`,
       );
@@ -126,8 +121,7 @@
                   opIdx: project.pipelineProgress.opIdx + 1,
                 };
                 progressFrac =
-                  project.pipelineProgress.opIdx /
-                  Math.max(1, project.pipelineProgress.opTotal);
+                  project.pipelineProgress.opIdx / Math.max(1, project.pipelineProgress.opTotal);
               }
             } else if (ev.kind === 'done') {
               progressFrac = 1;
@@ -152,7 +146,9 @@
       if (e instanceof CancelledError) {
         project.pipelineState = 'idle';
       } else {
-        project.setError(e instanceof Error ? e.message : String(e));
+        const raw = e instanceof Error ? e.message : String(e);
+        const structured = tryParseStructuredError(raw);
+        project.setError(structured ?? raw);
         project.pipelineState = 'idle';
       }
     } finally {

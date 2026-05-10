@@ -111,6 +111,10 @@ pub fn components_schemas() -> Value {
     insert::<crate::input::text::RenderTextRequest>(&mut schemas, "RenderTextRequest");
     insert::<crate::input::text::RenderTextResponse>(&mut schemas, "RenderTextResponse");
     insert::<ErrorResponse>(&mut schemas, "Error");
+    insert::<crate::errors::Error>(&mut schemas, "WiacError");
+    insert::<crate::errors::ErrorKind>(&mut schemas, "WiacErrorKind");
+    insert::<crate::errors::AutoFix>(&mut schemas, "WiacAutoFix");
+    insert::<crate::errors::SourceSpan>(&mut schemas, "WiacSourceSpan");
 
     let mut value = Value::Object(schemas);
     rewrite_refs(&mut value);

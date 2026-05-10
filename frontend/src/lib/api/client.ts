@@ -9,6 +9,7 @@ import type {
   RenderTextRequest,
   RenderTextResponse,
   VersionResponse,
+  WiacError,
 } from './types';
 
 export interface WiacClient {
@@ -66,4 +67,35 @@ export class CancelledError extends Error {
     super('pipeline cancelled');
     this.name = 'CancelledError';
   }
+}
+
+/// Best-effort parser for a structured `WiacError` JSON payload that the
+/// Tauri/WASM transports stuff into Error.message. Returns the parsed
+/// object when the input looks like a `WiacError` (has `kind` + `message`
+/// and a known `kind` value), or null when it doesn't — callers should
+/// then fall back to the plain string message.
+export function tryParseStructuredError(input: unknown): WiacError | null {
+  let candidate: unknown = input;
+  if (typeof candidate === 'string') {
+    const trimmed = candidate.trim();
+    if (trimmed.length === 0 || trimmed[0] !== '{') return null;
+    try {
+      candidate = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (candidate == null || typeof candidate !== 'object') return null;
+  const obj = candidate as Record<string, unknown>;
+  if (typeof obj.kind !== 'string' || typeof obj.message !== 'string') return null;
+  const knownKinds = new Set([
+    'bad_input',
+    'misconfigured',
+    'limit',
+    'unsupported',
+    'io',
+    'internal',
+  ]);
+  if (!knownKinds.has(obj.kind)) return null;
+  return obj as unknown as WiacError;
 }

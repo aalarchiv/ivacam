@@ -25,3 +25,10 @@ export type ImportedObject = components['schemas']['ImportedObject'];
 export type SimWarning = components['schemas']['SimWarning'];
 export type SimDiagnostics = components['schemas']['SimDiagnostics'];
 export type SimSeverity = components['schemas']['SimSeverity'];
+
+/// Structured backend error: kind + message + optional recovery hint + optional auto-fix.
+/// Surfaced through `project.error`; rendered by `ErrorToast.svelte`.
+export type WiacError = components['schemas']['WiacError'];
+export type WiacErrorKind = components['schemas']['WiacErrorKind'];
+export type WiacAutoFix = components['schemas']['WiacAutoFix'];
+export type WiacSourceSpan = components['schemas']['WiacSourceSpan'];

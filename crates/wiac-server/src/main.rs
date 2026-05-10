@@ -388,12 +388,18 @@ impl IntoResponse for AppError {
 
 impl From<wiac_core::Error> for AppError {
     fn from(e: wiac_core::Error) -> Self {
-        match e {
-            wiac_core::Error::UnsupportedFormat(_) => Self::bad_request(e.to_string()),
-            _ => Self {
-                status: StatusCode::UNPROCESSABLE_ENTITY,
-                message: e.to_string(),
-            },
+        use wiac_core::ErrorKind;
+        let status = match e.kind {
+            ErrorKind::BadInput | ErrorKind::Unsupported | ErrorKind::Misconfigured => {
+                StatusCode::BAD_REQUEST
+            }
+            ErrorKind::Limit => StatusCode::PAYLOAD_TOO_LARGE,
+            ErrorKind::Io => StatusCode::UNPROCESSABLE_ENTITY,
+            ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        Self {
+            status,
+            message: e.to_string(),
         }
     }
 }
@@ -402,13 +408,11 @@ impl From<wiac_core::pipeline::PipelineError> for AppError {
     fn from(e: wiac_core::pipeline::PipelineError) -> Self {
         use wiac_core::pipeline::PipelineError;
         match e {
-            PipelineError::UnknownPostProcessor(_)
-            | PipelineError::UnknownTool(_, _)
-            | PipelineError::UnimplementedKind(_) => Self::bad_request(e.to_string()),
             PipelineError::Cancelled => Self {
                 status: StatusCode::REQUEST_TIMEOUT,
                 message: e.to_string(),
             },
+            other => Self::bad_request(other.to_string()),
         }
     }
 }

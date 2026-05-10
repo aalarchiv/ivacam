@@ -6,7 +6,7 @@
 #![forbid(unsafe_code)]
 
 pub mod cam;
-pub mod error;
+pub mod errors;
 pub mod gcode;
 pub mod geometry;
 pub mod input;
@@ -17,7 +17,7 @@ pub mod schema;
 pub mod sim;
 pub mod testing;
 
-pub use error::{Error, Result};
+pub use errors::{AutoFix, Error, ErrorKind, Result, SourceSpan};
 pub use geometry::{BBox, Layer, Point2, Segment, SegmentKind};
 pub use input::{ImportOptions, ImportOutput};
 pub use sim::heightmap::{Heightmap, ToolProfile};

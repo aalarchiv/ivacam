@@ -132,6 +132,75 @@ pub enum PipelineError {
     Cancelled,
 }
 
+impl PipelineError {
+    /// Lift the enum into the structured frontend `Error`. Project context
+    /// fills in actionable auto-fix targets (e.g. the first tool id for an
+    /// `UnknownTool`); pass `None` when no project is available and the
+    /// auto-fix is dropped.
+    pub fn to_structured(&self, project: Option<&Project>) -> Option<crate::Error> {
+        use crate::errors::{AutoFix, Error as Structured};
+        match self {
+            PipelineError::Cancelled => None,
+            PipelineError::UnknownPostProcessor(name) => Some(
+                Structured::misconfigured(format!("unknown post_processor: {name}"))
+                    .with_hint("Pick a known post: linuxcnc, grbl, or hpgl."),
+            ),
+            PipelineError::UnknownTool(op_id, tool_id) => {
+                let mut e = Structured::misconfigured(format!(
+                    "op {op_id} references missing tool {tool_id}"
+                ))
+                .with_hint("Pick a tool from the library.");
+                if let Some(suggested) = project.and_then(|p| p.tools.first().map(|t| t.id)) {
+                    e = e.with_auto_fix(AutoFix::AssignTool {
+                        op_id: *op_id,
+                        suggested_tool_id: suggested,
+                    });
+                }
+                Some(e)
+            }
+            PipelineError::UnimplementedKind(kind) => Some(
+                Structured::unsupported(format!("operation kind {kind:?} is not implemented yet"))
+                    .with_hint("This op kind is not available yet — disable it or pick another."),
+            ),
+        }
+    }
+}
+
+/// Run the pipeline with panic safety. Captures the panic and surfaces it
+/// as `Error::internal(...)` so the frontend gets a structured error
+/// rather than a renderer crash. Cancellation is preserved as `None` to
+/// match the existing transport-layer pattern matching.
+pub fn run_pipeline_safe(
+    request: PipelineRequest,
+) -> std::result::Result<PipelineResponse, Option<crate::Error>> {
+    let project = request.project.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_pipeline(request, |_p, _f, _m| {})
+    }));
+    match result {
+        Ok(Ok(resp)) => Ok(resp),
+        Ok(Err(PipelineError::Cancelled)) => Err(None),
+        Ok(Err(e)) => Err(e.to_structured(Some(&project))),
+        Err(panic) => {
+            let msg = panic_message(&panic);
+            Err(Some(
+                crate::Error::internal(format!("panic: {msg}"))
+                    .with_hint("Please report this bug — see the toast for details."),
+            ))
+        }
+    }
+}
+
+fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
+}
+
 /// Cooperative-cancellation handle. Cloned cheaply; the inner flag is
 /// shared. Long inner loops in CAM primitives consult `is_cancelled`
 /// at a coarse-enough granularity to bail within ≤200 ms p95.
@@ -5296,5 +5365,61 @@ mod tests {
             !evs.iter().any(|e| matches!(e, PipelineEvent::Done { .. })),
             "should not emit Done after Cancelled",
         );
+    }
+
+    #[test]
+    fn missing_tool_returns_structured_error() {
+        let project = project_with(
+            vec![profile_op(1, 99, ToolOffset::Outside)],
+            vec![endmill(7, 3.0)],
+        );
+        let err = run_pipeline(
+            PipelineRequest {
+                project: project.clone(),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .expect_err("missing tool should fail");
+        let structured = err
+            .to_structured(Some(&project))
+            .expect("UnknownTool should lift to a structured Error");
+        assert_eq!(structured.kind, crate::errors::ErrorKind::Misconfigured);
+        match structured.auto_fix {
+            Some(crate::errors::AutoFix::AssignTool {
+                op_id,
+                suggested_tool_id,
+            }) => {
+                assert_eq!(op_id, 1);
+                assert_eq!(suggested_tool_id, 7);
+            }
+            other => panic!("expected AssignTool auto_fix, got {other:?}"),
+        }
+        assert!(structured.recovery_hint.is_some());
+    }
+
+    #[test]
+    fn unsupported_op_kind_returns_structured_error() {
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.kind = OperationKind::Thread;
+        let project = project_with(vec![op], vec![endmill(1, 3.0)]);
+        let err = run_pipeline(
+            PipelineRequest {
+                project: project.clone(),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .expect_err("Thread op should fail");
+        let structured = err
+            .to_structured(Some(&project))
+            .expect("UnimplementedKind should lift to a structured Error");
+        assert_eq!(structured.kind, crate::errors::ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn cancelled_lifts_to_none() {
+        let err = PipelineError::Cancelled;
+        assert!(err.to_structured(None).is_none());
     }
 }

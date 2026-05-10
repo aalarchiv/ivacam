@@ -118,6 +118,67 @@ paths:
           $ref: '#/components/responses/BadRequest'
 components:
   schemas:
+    AutoFix:
+      oneOf:
+      - properties:
+          kind:
+            enum:
+            - assign_tool
+            type: string
+          op_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          suggested_tool_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - op_id
+        - suggested_tool_id
+        type: object
+      - properties:
+          kind:
+            enum:
+            - lower_sim_resolution
+            type: string
+          suggested_cell_mm:
+            format: double
+            type: number
+        required:
+        - kind
+        - suggested_cell_mm
+        type: object
+      - properties:
+          kind:
+            enum:
+            - disable_op
+            type: string
+          op_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - op_id
+        type: object
+      - properties:
+          kind:
+            enum:
+            - change_profile_offset
+            type: string
+          op_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          suggested:
+            $ref: '#/components/schemas/ToolOffset'
+        required:
+        - kind
+        - op_id
+        - suggested
+        type: object
     AxisLimits:
       properties:
         x:
@@ -230,6 +291,15 @@ components:
       required:
       - error
       type: object
+    ErrorKind:
+      enum:
+      - bad_input
+      - misconfigured
+      - limit
+      - unsupported
+      - io
+      - internal
+      type: string
     Fixture:
       description: A user-declared physical obstacle on the stock the cutter must miss. Lives in stock-relative XY (same frame as the imported geometry) and occupies a Z range; the sim collision test gates on that range first then falls back to a per-shape XY swept-region check.
       properties:
@@ -422,6 +492,69 @@ components:
       required:
       - ok
       type: object
+    HolderShape:
+      description: Geometry of the tool holder above the shank. The holder is treated as cylindrically symmetric around the tool axis (Z), so set-screw flats / asymmetric ER nuts get approximated by their bounding cylinder/cone — good enough to flag clear collisions, conservative on tight cases.
+      oneOf:
+      - properties:
+          diameter_mm:
+            format: double
+            type: number
+          kind:
+            enum:
+            - cylinder
+            type: string
+          length_mm:
+            format: double
+            type: number
+        required:
+        - diameter_mm
+        - kind
+        - length_mm
+        type: object
+      - properties:
+          bottom_diameter_mm:
+            format: double
+            type: number
+          kind:
+            enum:
+            - cone
+            type: string
+          length_mm:
+            format: double
+            type: number
+          top_diameter_mm:
+            format: double
+            type: number
+        required:
+        - bottom_diameter_mm
+        - kind
+        - length_mm
+        - top_diameter_mm
+        type: object
+      - properties:
+          cone_length_mm:
+            format: double
+            type: number
+          cone_top_diameter_mm:
+            format: double
+            type: number
+          cylinder_diameter_mm:
+            format: double
+            type: number
+          cylinder_length_mm:
+            format: double
+            type: number
+          kind:
+            enum:
+            - stepped
+            type: string
+        required:
+        - cone_length_mm
+        - cone_top_diameter_mm
+        - cylinder_diameter_mm
+        - cylinder_length_mm
+        - kind
+        type: object
     ImportResponse:
       properties:
         bbox:
@@ -1592,6 +1725,23 @@ components:
         enum:
         - none
         type: string
+    SourceSpan:
+      properties:
+        column:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        file:
+          type: string
+        line:
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - column
+      - file
+      - line
+      type: object
     TabPoint:
       properties:
         x:
@@ -1740,10 +1890,21 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        flute_length_mm:
+          description: Length of cutting flutes (mm). None = treat entire tool as cutting.
+          format: double
+          type:
+          - number
+          - 'null'
         flutes:
           format: uint8
           minimum: 0.0
           type: integer
+        holder:
+          anyOf:
+          - $ref: '#/components/schemas/HolderShape'
+          - type: 'null'
+          description: Holder geometry above the shank. None = no holder check.
         id:
           format: uint32
           minimum: 0.0
@@ -1762,6 +1923,12 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        shank_diameter_mm:
+          description: Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
+          format: double
+          type:
+          - number
+          - 'null'
         speed:
           format: uint32
           minimum: 0.0
@@ -1917,6 +2084,115 @@ components:
       - capabilities
       - transport
       - version
+      type: object
+    WiacAutoFix:
+      oneOf:
+      - properties:
+          kind:
+            enum:
+            - assign_tool
+            type: string
+          op_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          suggested_tool_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - op_id
+        - suggested_tool_id
+        type: object
+      - properties:
+          kind:
+            enum:
+            - lower_sim_resolution
+            type: string
+          suggested_cell_mm:
+            format: double
+            type: number
+        required:
+        - kind
+        - suggested_cell_mm
+        type: object
+      - properties:
+          kind:
+            enum:
+            - disable_op
+            type: string
+          op_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - op_id
+        type: object
+      - properties:
+          kind:
+            enum:
+            - change_profile_offset
+            type: string
+          op_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          suggested:
+            $ref: '#/components/schemas/ToolOffset'
+        required:
+        - kind
+        - op_id
+        - suggested
+        type: object
+    WiacError:
+      properties:
+        auto_fix:
+          anyOf:
+          - $ref: '#/components/schemas/AutoFix'
+          - type: 'null'
+        kind:
+          $ref: '#/components/schemas/ErrorKind'
+        message:
+          type: string
+        recovery_hint:
+          type:
+          - string
+          - 'null'
+        span:
+          anyOf:
+          - $ref: '#/components/schemas/SourceSpan'
+          - type: 'null'
+      required:
+      - kind
+      - message
+      type: object
+    WiacErrorKind:
+      enum:
+      - bad_input
+      - misconfigured
+      - limit
+      - unsupported
+      - io
+      - internal
+      type: string
+    WiacSourceSpan:
+      properties:
+        column:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        file:
+          type: string
+        line:
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - column
+      - file
+      - line
       type: object
   responses:
     BadRequest:

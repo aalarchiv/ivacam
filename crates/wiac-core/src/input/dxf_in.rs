@@ -16,7 +16,7 @@ use dxf::entities::{
 use dxf::enums::Units;
 use dxf::Drawing;
 
-use crate::error::Error;
+use crate::errors::{Error, SourceSpan};
 use crate::geometry::{BBox, Point2, Segment};
 use crate::input::nurbs;
 use crate::input::{summarize_layers, ImportOptions, ImportOutput};
@@ -31,7 +31,10 @@ const CAMCFG_LAYER: &str = "_CAMCFG";
 
 /// Top-level entry: read a DXF file from disk and tessellate to segments.
 pub fn import_dxf_path(path: &Path, opts: &ImportOptions) -> crate::Result<ImportOutput> {
-    let bytes = std::fs::read(path)?;
+    let bytes = std::fs::read(path).map_err(|e| {
+        Error::io(format!("read {}: {e}", path.display()))
+            .with_hint("Check the file exists and is readable.")
+    })?;
     let filename = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -49,7 +52,14 @@ pub fn import_dxf_bytes(
     bytes: &[u8],
     opts: &ImportOptions,
 ) -> crate::Result<ImportOutput> {
-    let drawing = Drawing::load(&mut std::io::Cursor::new(bytes)).map_err(Error::Dxf)?;
+    let drawing = Drawing::load(&mut std::io::Cursor::new(bytes)).map_err(|e| {
+        let mut err = Error::bad_input(format!("dxf parse: {e}"))
+            .with_hint("File is not a valid DXF — try re-exporting from your CAD tool.");
+        if let Some(span) = parse_error_span(&filename, &e) {
+            err = err.with_span(span);
+        }
+        err
+    })?;
     let mut out = import_drawing(&drawing, filename, opts)?;
 
     // HATCH boundary recovery pass — only meaningful for text-mode DXFs.
@@ -847,6 +857,22 @@ impl Transform2D {
     }
 }
 
+/// dxf-rs surfaces line numbers in its `Display` text but not as a
+/// structured field. Pull a "line N" hint when present so the frontend
+/// can point at the offending line.
+fn parse_error_span(filename: &str, err: &dxf::DxfError) -> Option<SourceSpan> {
+    let s = err.to_string();
+    let line = s
+        .split(|c: char| !c.is_ascii_digit())
+        .filter_map(|t| t.parse::<u32>().ok())
+        .find(|n| *n > 0)?;
+    Some(SourceSpan {
+        file: filename.to_string(),
+        line,
+        column: 0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -885,6 +911,26 @@ mod tests {
             out.segments.len() > 50,
             "all.dxf with text rendering: got {} segments",
             out.segments.len()
+        );
+    }
+
+    #[test]
+    fn bad_dxf_returns_structured_io_error() {
+        let opts = ImportOptions::default();
+        let err = import_dxf_bytes("garbage.dxf".into(), b"not a dxf file at all", &opts)
+            .expect_err("bad dxf should error");
+        assert!(
+            matches!(
+                err.kind,
+                crate::errors::ErrorKind::BadInput | crate::errors::ErrorKind::Io
+            ),
+            "kind={:?}",
+            err.kind
+        );
+        assert!(
+            err.message.to_lowercase().contains("dxf"),
+            "message={}",
+            err.message
         );
     }
 }

@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ttf_parser::{Face, OutlineBuilder};
 
-use crate::error::Error;
+use crate::errors::Error;
 use crate::geometry::{Point2, Segment};
 use crate::math;
 
@@ -68,9 +68,14 @@ pub struct RenderTextResponse {
 
 /// Cross-transport entry point: parses the font, renders, returns
 /// segments + the single-line classification. Errors map to the standard
-/// [`Error::Malformed`] when the bytes don't parse as a font.
+/// structured [`Error`] (kind=Misconfigured) when the bytes don't parse
+/// as a font — the user can recover by picking a different font or
+/// installing one.
 pub fn render_text_api(req: &RenderTextRequest) -> crate::Result<RenderTextResponse> {
-    let face = Face::parse(&req.font_bytes, 0).map_err(|e| Error::Malformed(format!("ttf: {e}")))?;
+    let face = Face::parse(&req.font_bytes, 0).map_err(|e| {
+        Error::misconfigured(format!("ttf parse: {e}"))
+            .with_hint("Pick a different font or install one.")
+    })?;
     let single_line = is_single_line_font(&face);
     let family_name = face_family_name(&face);
     let segments = render_text(
@@ -207,7 +212,10 @@ pub fn render_text(
     layer: &str,
     color: i32,
 ) -> crate::Result<Vec<Segment>> {
-    let face = Face::parse(font_bytes, 0).map_err(|e| Error::Malformed(format!("ttf: {e}")))?;
+    let face = Face::parse(font_bytes, 0).map_err(|e| {
+        Error::misconfigured(format!("ttf parse: {e}"))
+            .with_hint("Pick a different font or install one.")
+    })?;
     let units = face.units_per_em().max(1) as f64;
     let scale = height / units;
     let single_line = is_single_line_font(&face);

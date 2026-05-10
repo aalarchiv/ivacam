@@ -1,10 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { defaultClient } from '../api/http';
+  import { tryParseStructuredError } from '../api/client';
   import { isTauri } from '../api/env';
   import { project } from '../state/project.svelte';
   import type { ImportResponse } from '../api/types';
   import { pushRecent, readRecent, type RecentEntry } from '../recent';
+  import ErrorToast from './ErrorToast.svelte';
+
+  /// Bridge: catch handlers across this file may receive a stringified
+  /// structured error from Tauri/WASM. Delegate the parse so the toast
+  /// can render it in full fidelity instead of as raw JSON text.
+  function reportError(input: unknown) {
+    const raw = input instanceof Error ? input.message : String(input);
+    const structured = tryParseStructuredError(raw);
+    project.setError(structured ?? raw);
+  }
 
   const client = defaultClient();
   let dragOver = $state(false);
@@ -87,9 +98,7 @@
     const { open } = await import('@tauri-apps/plugin-dialog');
     const selected = await open({
       multiple: false,
-      filters: [
-        { name: 'CAD/CAM input', extensions: ['dxf', 'svg', 'hpgl', 'plt', 'ngc', 'stl'] },
-      ],
+      filters: [{ name: 'CAD/CAM input', extensions: ['dxf', 'svg', 'hpgl', 'plt', 'ngc', 'stl'] }],
     });
     if (typeof selected !== 'string') return;
     await loadFromPath(selected);
@@ -105,7 +114,7 @@
       const filename = path.split(/[\\/]/).pop() ?? path;
       await recordRecent(path, filename);
     } catch (e) {
-      project.setError(e instanceof Error ? e.message : String(e));
+      reportError(e);
     } finally {
       project.loading = false;
     }
@@ -116,9 +125,7 @@
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
     const selected = await open({
       multiple: false,
-      filters: [
-        { name: 'wiaConstructor project', extensions: ['vc-project.json', 'json'] },
-      ],
+      filters: [{ name: 'wiaConstructor project', extensions: ['vc-project.json', 'json'] }],
     });
     if (typeof selected !== 'string') return;
     project.loading = true;
@@ -140,7 +147,7 @@
       const result = await client.importFile(file);
       project.setImported(result);
     } catch (e) {
-      project.setError(e instanceof Error ? e.message : String(e));
+      reportError(e);
     } finally {
       project.loading = false;
     }
@@ -310,7 +317,7 @@
     </span>
   {/if}
   {#if project.error}
-    <span class="error">{project.error}</span>
+    <ErrorToast error={project.error} />
   {/if}
 </div>
 
@@ -394,12 +401,5 @@
   .loaded {
     font-size: 0.8rem;
     color: var(--success);
-  }
-
-  /* The status pill grows to fill remaining row space and ellipsizes long
-     filenames so the toolbar stays a single row at typical widths. */
-  .error {
-    font-size: 0.8rem;
-    color: var(--error);
   }
 </style>

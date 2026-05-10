@@ -18,7 +18,7 @@ use usvg::{
     Node, Tree,
 };
 
-use crate::error::{Error, Result};
+use crate::errors::{Error, Result};
 use crate::geometry::{Point2, Segment};
 use crate::input::{summarize_layers, ImportOptions, ImportOutput};
 use crate::BBox;
@@ -31,8 +31,10 @@ pub fn import_svg_bytes(
     bytes: &[u8],
     opts: &ImportOptions,
 ) -> Result<ImportOutput> {
-    let tree = Tree::from_data(bytes, &usvg::Options::default())
-        .map_err(|e| Error::Parse(format!("svg: {e}")))?;
+    let tree = Tree::from_data(bytes, &usvg::Options::default()).map_err(|e| {
+        Error::bad_input(format!("svg parse: {e}"))
+            .with_hint("File is not a valid SVG — check for malformed XML or unsupported features.")
+    })?;
 
     let unit_scale = if opts.scale > 0.0 { opts.scale } else { 1.0 };
     let mut ctx = SvgCtx {

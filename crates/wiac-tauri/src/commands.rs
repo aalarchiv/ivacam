@@ -20,7 +20,7 @@ use wiac_core::pipeline::{
     generate_streaming, run_pipeline, CancelToken, PipelineEvent, PipelineRequest,
     PipelineResponse,
 };
-use wiac_core::{ImportOptions, ImportOutput};
+use wiac_core::{Error as WiacError, ImportOptions, ImportOutput};
 
 #[derive(Serialize)]
 pub struct HealthResponse {
@@ -57,16 +57,31 @@ pub async fn import_path(path: String) -> Result<ImportOutput, String> {
     let opts = ImportOptions::default();
     tokio::task::spawn_blocking(move || wiac_core::input::import_path(&path, &opts))
         .await
-        .map_err(|e| format!("join error: {e}"))?
-        .map_err(|e| format!("{e}"))
+        .map_err(|e| internal(format!("join error: {e}")))?
+        .map_err(serialize_error)
 }
 
 #[tauri::command]
 pub async fn generate(request: PipelineRequest) -> Result<PipelineResponse, String> {
-    tokio::task::spawn_blocking(move || run_pipeline(request, |_p, _f, _m| {}))
-        .await
-        .map_err(|e| format!("join error: {e}"))?
-        .map_err(|e| e.to_string())
+    let project = request.project.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_pipeline(request, |_p, _f, _m| {})
+        }))
+    })
+    .await
+    .map_err(|e| internal(format!("join error: {e}")))?;
+    match result {
+        Ok(Ok(resp)) => Ok(resp),
+        Ok(Err(e)) => match e.to_structured(Some(&project)) {
+            Some(structured) => Err(serialize_error(structured)),
+            None => Err(internal("cancelled")),
+        },
+        Err(panic) => Err(serialize_error(
+            WiacError::internal(format!("panic: {}", panic_message(&panic)))
+                .with_hint("Please report this bug — see the toast for details."),
+        )),
+    }
 }
 
 fn token_registry() -> &'static Mutex<HashMap<u32, CancelToken>> {
@@ -105,22 +120,36 @@ pub async fn generate_streaming_cmd(
     let error_channel = format!("generate-error:{token_id}");
     let cancelled_channel = format!("generate-cancelled:{token_id}");
 
+    let project = request.project.clone();
     std::thread::spawn(move || {
         let app_for_events = app.clone();
         let mut sink = move |ev: PipelineEvent| {
             let _ = app_for_events.emit(&event_channel, ev);
         };
-        let res = generate_streaming(request, &cancel, &mut sink);
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            generate_streaming(request, &cancel, &mut sink)
+        }));
         let _ = token_registry().lock().map(|mut m| m.remove(&token_id));
         match res {
-            Ok(resp) => {
+            Ok(Ok(resp)) => {
                 let _ = app.emit(&result_channel, resp);
             }
-            Err(wiac_core::pipeline::PipelineError::Cancelled) => {
+            Ok(Err(wiac_core::pipeline::PipelineError::Cancelled)) => {
                 let _ = app.emit(&cancelled_channel, token_id);
             }
-            Err(e) => {
-                let _ = app.emit(&error_channel, e.to_string());
+            Ok(Err(e)) => {
+                let payload = match e.to_structured(Some(&project)) {
+                    Some(s) => serialize_error(s),
+                    None => internal("cancelled"),
+                };
+                let _ = app.emit(&error_channel, payload);
+            }
+            Err(panic) => {
+                let payload = serialize_error(
+                    WiacError::internal(format!("panic: {}", panic_message(&panic)))
+                        .with_hint("Please report this bug — see the toast for details."),
+                );
+                let _ = app.emit(&error_channel, payload);
             }
         }
     });
@@ -146,7 +175,29 @@ pub fn cancel_generate(token_id: u32) -> Result<(), String> {
 pub async fn render_text(request: RenderTextRequest) -> Result<RenderTextResponse, String> {
     tokio::task::spawn_blocking(move || render_text_api(&request))
         .await
-        .map_err(|e| format!("join error: {e}"))?
-        .map_err(|e| e.to_string())
+        .map_err(|e| internal(format!("join error: {e}")))?
+        .map_err(serialize_error)
+}
+
+/// Serialize a structured `wiac_core::Error` to JSON the frontend can
+/// detect and parse via `tryParseStructuredError`. The string remains
+/// the Tauri error type (per existing API), but its content is now JSON
+/// for the frontend to introspect.
+fn serialize_error(err: WiacError) -> String {
+    serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())
+}
+
+fn internal(msg: impl Into<String>) -> String {
+    serialize_error(WiacError::internal(msg))
+}
+
+fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }
 

@@ -98,7 +98,8 @@ pub fn import_path(path: &Path, opts: &ImportOptions) -> Result<ImportOutput> {
                 .to_string();
             svg_in::import_svg_bytes(filename, &bytes, opts)
         }
-        other => Err(crate::error::Error::UnsupportedFormat(other.into())),
+        other => Err(crate::Error::unsupported(format!("file format '{other}'"))
+            .with_hint("Supported import formats: DXF, SVG.")),
     }
 }
 
@@ -113,7 +114,8 @@ pub fn import_bytes(filename: &str, bytes: &[u8], opts: &ImportOptions) -> Resul
     match suffix.as_str() {
         "dxf" => dxf_in::import_dxf_bytes(filename.to_string(), bytes, opts),
         "svg" => svg_in::import_svg_bytes(filename.to_string(), bytes, opts),
-        other => Err(crate::error::Error::UnsupportedFormat(other.into())),
+        other => Err(crate::Error::unsupported(format!("file format '{other}'"))
+            .with_hint("Supported import formats: DXF, SVG.")),
     }
 }
 

@@ -10,9 +10,14 @@ import {
   addTabCommand,
   addToolCommand,
   appendImportedCommand,
+  assignToolCommand,
+  autoFixToCommand,
+  changeProfileOffsetCommand,
   clearTabsCommand,
   deleteOperationCommand,
   deleteToolCommand,
+  disableOpCommand,
+  lowerSimResolutionCommand,
   removeFixtureCommand,
   removeTabCommand,
   reorderOperationCommand,
@@ -24,13 +29,7 @@ import {
   updateOperationCommand,
   type CommandTarget,
 } from './commands';
-import type {
-  Fixture,
-  MachineSettings,
-  OpEntry,
-  StockConfig,
-  ToolEntry,
-} from './project.svelte';
+import type { Fixture, MachineSettings, OpEntry, StockConfig, ToolEntry } from './project.svelte';
 
 function blankTarget(): CommandTarget {
   return {
@@ -268,12 +267,25 @@ describe('tabs', () => {
 
   it('removeTabCommand restores at position', () => {
     const t = blankTarget();
-    t.tabs = { 5: [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }] };
+    t.tabs = {
+      5: [
+        { x: 1, y: 1 },
+        { x: 2, y: 2 },
+        { x: 3, y: 3 },
+      ],
+    };
     const cmd = removeTabCommand(5, 1);
     cmd.apply(t);
-    expect(t.tabs[5]).toEqual([{ x: 1, y: 1 }, { x: 3, y: 3 }]);
+    expect(t.tabs[5]).toEqual([
+      { x: 1, y: 1 },
+      { x: 3, y: 3 },
+    ]);
     cmd.revert(t);
-    expect(t.tabs[5]).toEqual([{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }]);
+    expect(t.tabs[5]).toEqual([
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+      { x: 3, y: 3 },
+    ]);
   });
 
   it('clearTabsCommand restores all', () => {
@@ -332,5 +344,115 @@ describe('appendImportedCommand', () => {
     expect(t.imported!.bbox.max_x).toBe(10);
     cmd.revert(t);
     expect(t.imported).toBeNull();
+  });
+});
+
+describe('assignToolCommand', () => {
+  it('apply sets toolId, revert restores it', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1)];
+    const cmd = assignToolCommand(1, 42);
+    cmd.apply(t);
+    expect(t.operations[0].toolId).toBe(42);
+    cmd.revert(t);
+    expect(t.operations[0].toolId).toBe(1);
+  });
+});
+
+describe('disableOpCommand', () => {
+  it('toggles enabled and round-trips', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1)];
+    const cmd = disableOpCommand(1);
+    cmd.apply(t);
+    expect(t.operations[0].enabled).toBe(false);
+    cmd.revert(t);
+    expect(t.operations[0].enabled).toBe(true);
+  });
+});
+
+describe('changeProfileOffsetCommand', () => {
+  it('swaps offset and round-trips', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1)];
+    const cmd = changeProfileOffsetCommand(1, 'inside');
+    cmd.apply(t);
+    expect(t.operations[0].offset).toBe('inside');
+    cmd.revert(t);
+    expect(t.operations[0].offset).toBe('outside');
+  });
+});
+
+describe('lowerSimResolutionCommand', () => {
+  it('switches to manual mode + sets cellMm; revert restores', () => {
+    const t = blankTarget();
+    t.settings = {
+      ...(t.settings as CommandTarget['settings']),
+      cellResolutionMode: 'auto',
+      cellResolutionMm: 0.2,
+    };
+    const cmd = lowerSimResolutionCommand(0.5);
+    cmd.apply(t);
+    expect(t.settings.cellResolutionMode).toBe('manual');
+    expect(t.settings.cellResolutionMm).toBe(0.5);
+    cmd.revert(t);
+    expect(t.settings.cellResolutionMode).toBe('auto');
+    expect(t.settings.cellResolutionMm).toBe(0.2);
+  });
+});
+
+describe('autoFixToCommand', () => {
+  it('AssignTool dispatches assignToolCommand', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(2)];
+    const cmd = autoFixToCommand({
+      kind: 'assign_tool',
+      op_id: 2,
+      suggested_tool_id: 9,
+    });
+    cmd.apply(t);
+    expect(t.operations[0].toolId).toBe(9);
+    cmd.revert(t);
+    expect(t.operations[0].toolId).toBe(1);
+  });
+
+  it('DisableOp dispatches disableOpCommand', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(3)];
+    const cmd = autoFixToCommand({ kind: 'disable_op', op_id: 3 });
+    cmd.apply(t);
+    expect(t.operations[0].enabled).toBe(false);
+    cmd.revert(t);
+    expect(t.operations[0].enabled).toBe(true);
+  });
+
+  it('ChangeProfileOffset dispatches changeProfileOffsetCommand', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(4)];
+    const cmd = autoFixToCommand({
+      kind: 'change_profile_offset',
+      op_id: 4,
+      suggested: 'inside',
+    });
+    cmd.apply(t);
+    expect(t.operations[0].offset).toBe('inside');
+    cmd.revert(t);
+    expect(t.operations[0].offset).toBe('outside');
+  });
+
+  it('LowerSimResolution dispatches lowerSimResolutionCommand', () => {
+    const t = blankTarget();
+    t.settings = {
+      ...(t.settings as CommandTarget['settings']),
+      cellResolutionMode: 'auto',
+      cellResolutionMm: 0.1,
+    };
+    const cmd = autoFixToCommand({
+      kind: 'lower_sim_resolution',
+      suggested_cell_mm: 0.3,
+    });
+    cmd.apply(t);
+    expect(t.settings.cellResolutionMm).toBe(0.3);
+    expect(t.settings.cellResolutionMode).toBe('manual');
   });
 });

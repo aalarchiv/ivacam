@@ -10,6 +10,7 @@ import type {
   SimDiagnostics,
   SimWarning,
   SimSeverity,
+  WiacError,
 } from '../api/types';
 import { History } from './history';
 import {
@@ -108,7 +109,10 @@ class ProjectState {
   generated = $state<GenerateResponse | null>(null);
   loading = $state(false);
   generating = $state(false);
-  error = $state<string | null>(null);
+  /// Last error surfaced to the user. `string` for legacy paths (file
+  /// upload, save dialogs, etc.); `WiacError` for backend pipeline /
+  /// import errors so the toast can render recovery hints + auto-fix.
+  error = $state<string | WiacError | null>(null);
   visibleLayers = $state<Set<string>>(new Set());
 
   /// Streaming pipeline state. `idle` between runs; `running` while the
@@ -193,8 +197,17 @@ class ProjectState {
   /// (the legacy setup path is still wired) but they're persisted via
   /// .vc-project so the user can curate a stable set across sessions.
   tools = $state<ToolEntry[]>([
-    { id: 1, name: '3 mm endmill', kind: 'endmill', diameter: 3, flutes: 2,
-      speed: 18000, plungeRate: 100, feedRate: 800, coolant: 'off' },
+    {
+      id: 1,
+      name: '3 mm endmill',
+      kind: 'endmill',
+      diameter: 3,
+      flutes: 2,
+      speed: 18000,
+      plungeRate: 100,
+      feedRate: 800,
+      coolant: 'off',
+    },
   ]);
 
   /// Project-scoped machine settings. Same story as tools — duplicates
@@ -253,7 +266,9 @@ class ProjectState {
   historyVersion = $state(0);
 
   constructor() {
-    this.history.subscribe(() => { this.historyVersion = this.history.version; });
+    this.history.subscribe(() => {
+      this.historyVersion = this.history.version;
+    });
   }
 
   /// Cast to `CommandTarget` for command builders. Single helper so the
@@ -262,12 +277,28 @@ class ProjectState {
     return this as unknown as CommandTarget;
   }
 
-  undo(): boolean { return this.history.undo(this.target()); }
-  redo(): boolean { return this.history.redo(this.target()); }
-  canUndo(): boolean { void this.historyVersion; return this.history.undoSize > 0; }
-  canRedo(): boolean { void this.historyVersion; return this.history.redoSize > 0; }
-  undoLabel(): string | null { void this.historyVersion; return this.history.undoLabel(); }
-  redoLabel(): string | null { void this.historyVersion; return this.history.redoLabel(); }
+  undo(): boolean {
+    return this.history.undo(this.target());
+  }
+  redo(): boolean {
+    return this.history.redo(this.target());
+  }
+  canUndo(): boolean {
+    void this.historyVersion;
+    return this.history.undoSize > 0;
+  }
+  canRedo(): boolean {
+    void this.historyVersion;
+    return this.history.redoSize > 0;
+  }
+  undoLabel(): string | null {
+    void this.historyVersion;
+    return this.history.undoLabel();
+  }
+  redoLabel(): string | null {
+    void this.historyVersion;
+    return this.history.redoLabel();
+  }
 
   setSimDiagnostics(d: SimDiagnostics | null) {
     this.simDiagnostics = d;
@@ -291,10 +322,7 @@ class ProjectState {
   }
 
   addTab(segmentIdx: number, position: Point2) {
-    this.history.exec(
-      addTabCommand(segmentIdx, { x: position.x, y: position.y }),
-      this.target(),
-    );
+    this.history.exec(addTabCommand(segmentIdx, { x: position.x, y: position.y }), this.target());
   }
 
   removeTab(segmentIdx: number, tabIdx: number) {
@@ -402,8 +430,12 @@ class ProjectState {
     this.playhead = 1.0;
   }
 
-  setError(msg: string) {
-    this.error = msg;
+  setError(err: string | WiacError) {
+    this.error = err;
+  }
+
+  clearError() {
+    this.error = null;
   }
 
   toggleLayer(name: string) {
@@ -461,14 +493,8 @@ class ProjectState {
   /// strokes) and should NOT be treated as closed objects; they go in as
   /// id 0 (unchained), but we still return an array of ids so callers
   /// can use the same flow.
-  appendImportedSegments(
-    segments: Segment[],
-    layerName: string,
-    singleLine: boolean,
-  ): number[] {
-    const before: ImportResponse | null = this.imported
-      ? structuredClone(this.imported)
-      : null;
+  appendImportedSegments(segments: Segment[], layerName: string, singleLine: boolean): number[] {
+    const before: ImportResponse | null = this.imported ? structuredClone(this.imported) : null;
     if (!this.imported) {
       const empty: ImportResponse = {
         filename: 'text',
@@ -515,7 +541,10 @@ class ProjectState {
       const ids = Array.from(new Set(newObjects.filter((i) => i > baseObjId)));
       for (const id of ids) {
         const owned = segments.filter((_, i) => newObjects[i] === id);
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let minX = Infinity,
+          minY = Infinity,
+          maxX = -Infinity,
+          maxY = -Infinity;
         for (const s of owned) {
           minX = Math.min(minX, s.start.x, s.end.x);
           minY = Math.min(minY, s.start.y, s.end.y);
@@ -602,9 +631,7 @@ class ProjectState {
       step: -1,
       offset: kind === 'engrave' || kind === 'drag_knife' ? 'on' : 'outside',
       pocketStrategy: kind === 'pocket' ? 'cascade' : null,
-      ...(kind === 'drill'
-        ? { drillCycle: { kind: 'simple', dwell_sec: 0 } as DrillCycle }
-        : {}),
+      ...(kind === 'drill' ? { drillCycle: { kind: 'simple', dwell_sec: 0 } as DrillCycle } : {}),
       cutDirection: 'conventional',
       finishCutDirection: 'conventional',
       plunge: { kind: 'direct' },
@@ -672,15 +699,24 @@ class ProjectState {
 
 function prettyOpKind(kind: OpKind): string {
   switch (kind) {
-    case 'profile': return 'Profile';
-    case 'pocket': return 'Pocket';
-    case 'drill': return 'Drill';
-    case 'thread': return 'Thread';
-    case 'chamfer': return 'Chamfer';
-    case 'engrave': return 'Engraving';
-    case 'drag_knife': return 'Drag-knife';
-    case 'helix': return 'Helix';
-    case 'vcarve': return 'V-Carve';
+    case 'profile':
+      return 'Profile';
+    case 'pocket':
+      return 'Pocket';
+    case 'drill':
+      return 'Drill';
+    case 'thread':
+      return 'Thread';
+    case 'chamfer':
+      return 'Chamfer';
+    case 'engrave':
+      return 'Engraving';
+    case 'drag_knife':
+      return 'Drag-knife';
+    case 'helix':
+      return 'Helix';
+    case 'vcarve':
+      return 'V-Carve';
   }
 }
 

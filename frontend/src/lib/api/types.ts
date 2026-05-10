@@ -18,6 +18,7 @@ export type ToolpathSegment = components['schemas']['ToolpathSegment'];
 export type ToolpathKind = NonNullable<ToolpathSegment['kind']>;
 export type Pose3 = components['schemas']['Pose3'];
 export type GenerateStats = components['schemas']['GenerateStats'];
+export type TimeEstimate = components['schemas']['TimeEstimate'];
 export type RenderTextRequest = components['schemas']['RenderTextRequest'];
 export type RenderTextResponse = components['schemas']['RenderTextResponse'];
 export type ImportedObject = components['schemas']['ImportedObject'];

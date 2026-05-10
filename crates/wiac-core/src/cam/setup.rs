@@ -287,6 +287,19 @@ pub enum LeadKind {
     Arc,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AxisLimits {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+impl AxisLimits {
+    pub const fn uniform(v: f64) -> Self {
+        Self { x: v, y: v, z: v }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MachineConfig {
     pub unit: UnitSystem,
@@ -295,6 +308,40 @@ pub struct MachineConfig {
     /// Whether the machine emits arc commands (G2/G3).
     pub arcs: bool,
     pub supports_toolchange: bool,
+    /// Per-axis acceleration in mm/s². When None the kinematic time
+    /// estimator falls back to 250 mm/s² per axis (LinuxCNC default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accel: Option<AxisLimits>,
+    /// Per-axis jerk in mm/s³. None ⇒ trapezoidal-only profiling
+    /// (S-curve refinement is Phase 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jerk: Option<AxisLimits>,
+    /// Tool-change time in seconds.
+    #[serde(default = "default_toolchange_s", skip_serializing_if = "is_default_toolchange_s")]
+    pub toolchange_s: f64,
+    /// Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rapid_speed: Option<f64>,
+    /// When true (the default), use the accel/jerk-aware integrator.
+    /// Set to false for the legacy length/feed-only estimator.
+    #[serde(default = "default_use_kinematic", skip_serializing_if = "is_default_use_kinematic")]
+    pub use_kinematic_time_estimate: bool,
+}
+
+fn default_toolchange_s() -> f64 {
+    5.0
+}
+
+fn is_default_toolchange_s(v: &f64) -> bool {
+    (v - 5.0).abs() < 1e-9
+}
+
+fn default_use_kinematic() -> bool {
+    true
+}
+
+fn is_default_use_kinematic(v: &bool) -> bool {
+    *v
 }
 
 impl Default for MachineConfig {
@@ -305,6 +352,11 @@ impl Default for MachineConfig {
             comments: true,
             arcs: true,
             supports_toolchange: false,
+            accel: None,
+            jerk: None,
+            toolchange_s: default_toolchange_s(),
+            rapid_speed: None,
+            use_kinematic_time_estimate: default_use_kinematic(),
         }
     }
 }

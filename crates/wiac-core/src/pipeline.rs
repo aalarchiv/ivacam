@@ -67,6 +67,12 @@ pub struct PipelineResponse {
     /// and a sidebar list; the gcode is still emitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<PipelineWarning>,
+    /// Acceleration- and jerk-aware program-time estimate. See
+    /// [`crate::sim::timing`] for the integrator. The total accounts for
+    /// motion under the trapezoidal profile, tool-change time
+    /// (`MachineConfig.toolchange_s` × number of M6s), and per-tool
+    /// spindle pauses summed across used tools.
+    pub time_estimate: crate::sim::timing::TimeEstimate,
 }
 
 /// One non-fatal warning attached to (optionally) a specific op.
@@ -176,6 +182,15 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     progress("preview", 0.92, "interpreting toolpath");
     let (toolpath, gcode_index) = preview::interpret_with_index(&gcode);
     let regions = build_region_previews(&project, &objects);
+    let tool_changes = count_tool_changes(&gcode);
+    let spindle_warmup_s = spindle_warmup_seconds(&project);
+    let time_estimate = crate::sim::timing::estimate_from_gcode(
+        &gcode,
+        &toolpath,
+        &project.machine,
+        tool_changes,
+        spindle_warmup_s,
+    );
     progress("done", 1.0, "complete");
     Ok(PipelineResponse {
         stats: PipelineStats {
@@ -188,7 +203,34 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
         gcode_index,
         regions,
         warnings,
+        time_estimate,
     })
+}
+
+fn count_tool_changes(gcode: &str) -> u32 {
+    let mut n = 0u32;
+    for line in gcode.lines() {
+        let stripped = line.split(';').next().unwrap_or("");
+        for tok in stripped.split_whitespace() {
+            if tok.eq_ignore_ascii_case("M6") {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+fn spindle_warmup_seconds(project: &Project) -> f64 {
+    let mut used: HashSet<u32> = HashSet::new();
+    for op in project.operations.iter().filter(|o| o.enabled) {
+        used.insert(op.tool_id);
+    }
+    project
+        .tools
+        .iter()
+        .filter(|t| used.contains(&t.id))
+        .map(|t| t.pause as f64)
+        .sum()
 }
 
 /// Compute the filled-region preview for every enabled Pocket op. Auto
@@ -1440,6 +1482,7 @@ mod tests {
             feed_rate: 800,
             coolant: Coolant::Off,
             default_step: None,
+            pause: 1,
         }
     }
 
@@ -1990,6 +2033,7 @@ mod tests {
             feed_rate: 800,
             coolant: Coolant::Off,
             default_step: None,
+            pause: 1,
         };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
@@ -4689,6 +4733,7 @@ mod tests {
             feed_rate: 1200,
             coolant: Coolant::Off,
             default_step: None,
+            pause: 1,
         };
         let op = Operation {
             id: 7,

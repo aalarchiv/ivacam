@@ -5,5 +5,6 @@
 pub mod diagnostics;
 pub mod heightmap;
 pub mod sweep;
+pub mod timing;
 
 pub use diagnostics::{kind_str, severity, Severity, SimDiagnostics, SimWarning};

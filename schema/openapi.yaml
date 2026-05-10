@@ -118,6 +118,22 @@ paths:
           $ref: '#/components/responses/BadRequest'
 components:
   schemas:
+    AxisLimits:
+      properties:
+        x:
+          format: double
+          type: number
+        y:
+          format: double
+          type: number
+        z:
+          format: double
+          type: number
+      required:
+      - x
+      - y
+      - z
+      type: object
     BBox:
       properties:
         max_x:
@@ -265,6 +281,10 @@ components:
           type: array
         stats:
           $ref: '#/components/schemas/PipelineStats'
+        time_estimate:
+          allOf:
+          - $ref: '#/components/schemas/TimeEstimate'
+          description: Acceleration- and jerk-aware program-time estimate. See [`crate::sim::timing`] for the integrator. The total accounts for motion under the trapezoidal profile, tool-change time (`MachineConfig.toolchange_s` × number of M6s), and per-tool spindle pauses summed across used tools.
         toolpath:
           items:
             $ref: '#/components/schemas/ToolpathSegment'
@@ -278,6 +298,7 @@ components:
       - gcode
       - gcode_index
       - stats
+      - time_estimate
       - toolpath
       type: object
     GenerateStats:
@@ -418,17 +439,40 @@ components:
       type: object
     MachineConfig:
       properties:
+        accel:
+          anyOf:
+          - $ref: '#/components/schemas/AxisLimits'
+          - type: 'null'
+          description: Per-axis acceleration in mm/s². When None the kinematic time estimator falls back to 250 mm/s² per axis (LinuxCNC default).
         arcs:
           description: Whether the machine emits arc commands (G2/G3).
           type: boolean
         comments:
           type: boolean
+        jerk:
+          anyOf:
+          - $ref: '#/components/schemas/AxisLimits'
+          - type: 'null'
+          description: Per-axis jerk in mm/s³. None ⇒ trapezoidal-only profiling (S-curve refinement is Phase 2).
         mode:
           $ref: '#/components/schemas/MachineMode'
+        rapid_speed:
+          description: Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
+          format: double
+          type:
+          - number
+          - 'null'
         supports_toolchange:
           type: boolean
+        toolchange_s:
+          description: Tool-change time in seconds.
+          format: double
+          type: number
         unit:
           $ref: '#/components/schemas/UnitSystem'
+        use_kinematic_time_estimate:
+          description: When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator.
+          type: boolean
       required:
       - arcs
       - comments
@@ -1488,6 +1532,42 @@ components:
       - tab_type
       - width
       type: object
+    TimeEstimate:
+      properties:
+        arc_s:
+          format: double
+          type: number
+        cut_s:
+          format: double
+          type: number
+        plunge_s:
+          format: double
+          type: number
+        rapid_s:
+          format: double
+          type: number
+        retract_s:
+          format: double
+          type: number
+        spindle_warmup_s:
+          format: double
+          type: number
+        toolchange_s:
+          format: double
+          type: number
+        total_s:
+          format: double
+          type: number
+      required:
+      - arc_s
+      - cut_s
+      - plunge_s
+      - rapid_s
+      - retract_s
+      - spindle_warmup_s
+      - toolchange_s
+      - total_s
+      type: object
     ToolConfig:
       properties:
         diameter:
@@ -1572,6 +1652,11 @@ components:
           $ref: '#/components/schemas/ToolKind'
         name:
           type: string
+        pause:
+          description: Spindle warm-up pause in seconds applied once per used tool by the time estimator. Mirrors `ToolConfig.pause`.
+          format: uint32
+          minimum: 0.0
+          type: integer
         plunge_rate:
           description: Plunge feedrate (mm/min).
           format: uint32

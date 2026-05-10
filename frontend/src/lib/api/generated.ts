@@ -109,6 +109,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AxisLimits: {
+            /** Format: double */
+            x: number;
+            /** Format: double */
+            y: number;
+            /** Format: double */
+            z: number;
+        };
         BBox: {
             /** Format: double */
             max_x: number;
@@ -186,6 +194,8 @@ export interface components {
             /** @description Filled-area preview for Pocket ops: the actual region the cutter will machine, computed via the per-op SourceCombine mode (Auto by default — outer + inner = annulus). The frontend paints these as translucent fills so the user sees what they're cutting before reading the toolpath. Empty for non-Pocket ops. */
             regions?: components["schemas"]["RegionPreview"][];
             stats: components["schemas"]["PipelineStats"];
+            /** @description Acceleration- and jerk-aware program-time estimate. See [`crate::sim::timing`] for the integrator. The total accounts for motion under the trapezoidal profile, tool-change time (`MachineConfig.toolchange_s` × number of M6s), and per-tool spindle pauses summed across used tools. */
+            time_estimate: components["schemas"]["TimeEstimate"];
             toolpath: components["schemas"]["ToolpathSegment"][];
             /** @description Non-fatal warnings raised during planning — mostly tool-fit problems (cutter doesn't fit the geometry, kind mismatch, …). The frontend surfaces these in the operations list status badge and a sidebar list; the gcode is still emitted. */
             warnings?: components["schemas"]["PipelineWarning"][];
@@ -254,12 +264,28 @@ export interface components {
             out_lenght: number;
         };
         MachineConfig: {
+            /** @description Per-axis acceleration in mm/s². When None the kinematic time estimator falls back to 250 mm/s² per axis (LinuxCNC default). */
+            accel?: components["schemas"]["AxisLimits"] | null;
             /** @description Whether the machine emits arc commands (G2/G3). */
             arcs: boolean;
             comments: boolean;
+            /** @description Per-axis jerk in mm/s³. None ⇒ trapezoidal-only profiling (S-curve refinement is Phase 2). */
+            jerk?: components["schemas"]["AxisLimits"] | null;
             mode: components["schemas"]["MachineMode"];
+            /**
+             * Format: double
+             * @description Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
+             */
+            rapid_speed?: number | null;
             supports_toolchange: boolean;
+            /**
+             * Format: double
+             * @description Tool-change time in seconds.
+             */
+            toolchange_s?: number;
             unit: components["schemas"]["UnitSystem"];
+            /** @description When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator. */
+            use_kinematic_time_estimate?: boolean;
         };
         /** @enum {string} */
         MachineMode: "mill" | "laser" | "drag";
@@ -792,6 +818,24 @@ export interface components {
             /** Format: double */
             width: number;
         };
+        TimeEstimate: {
+            /** Format: double */
+            arc_s: number;
+            /** Format: double */
+            cut_s: number;
+            /** Format: double */
+            plunge_s: number;
+            /** Format: double */
+            rapid_s: number;
+            /** Format: double */
+            retract_s: number;
+            /** Format: double */
+            spindle_warmup_s: number;
+            /** Format: double */
+            toolchange_s: number;
+            /** Format: double */
+            total_s: number;
+        };
         ToolConfig: {
             /** Format: double */
             diameter: number;
@@ -847,6 +891,11 @@ export interface components {
             id: number;
             kind: components["schemas"]["ToolKind"];
             name: string;
+            /**
+             * Format: uint32
+             * @description Spindle warm-up pause in seconds applied once per used tool by the time estimator. Mirrors `ToolConfig.pause`.
+             */
+            pause?: number;
             /**
              * Format: uint32
              * @description Plunge feedrate (mm/min).

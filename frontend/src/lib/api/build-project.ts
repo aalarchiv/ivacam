@@ -19,6 +19,19 @@ type WireToolKind =
   | 'drill'
   | 'laser_beam';
 
+/// Wire-side holder shape. Mirrors `wiac_core::project::HolderShape`'s
+/// `#[serde(tag = "kind")]` discriminator.
+export type WireHolderShape =
+  | { kind: 'cylinder'; diameter_mm: number; length_mm: number }
+  | { kind: 'cone'; bottom_diameter_mm: number; top_diameter_mm: number; length_mm: number }
+  | {
+      kind: 'stepped';
+      cylinder_diameter_mm: number;
+      cylinder_length_mm: number;
+      cone_top_diameter_mm: number;
+      cone_length_mm: number;
+    };
+
 interface WireToolEntry {
   id: number;
   name: string;
@@ -35,6 +48,9 @@ interface WireToolEntry {
   feed_rate: number;
   coolant: 'off' | 'mist' | 'flood';
   default_step?: number;
+  flute_length_mm?: number;
+  shank_diameter_mm?: number;
+  holder?: WireHolderShape;
 }
 
 interface WireAxisLimits {
@@ -211,6 +227,9 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     feed_rate: t.feedRate,
     coolant: t.coolant,
     ...(t.defaultStep !== undefined ? { default_step: t.defaultStep } : {}),
+    ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
+    ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
+    ...(t.holder !== undefined ? { holder: t.holder } : {}),
   };
 }
 

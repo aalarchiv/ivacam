@@ -24,6 +24,7 @@ use wiac_core::gcode::preview::ToolpathSegment;
 use wiac_core::project::{Fixture, ToolEntry};
 use wiac_core::sim::diagnostics::SimDiagnostics;
 use wiac_core::sim::heightmap::{Heightmap, ToolProfile};
+use wiac_core::sim::holder::HolderProfile;
 use wiac_core::sim::sweep::sweep_range;
 
 use crate::into_js_error;
@@ -178,6 +179,7 @@ impl Simulator {
         self.heightmap.clear_dirty();
         self.last_diagnostics = SimDiagnostics::new();
         let profile = ToolProfile::from_tool(tool);
+        let holder = HolderProfile::from_tool(tool);
         let _touched = sweep_range(
             &mut self.heightmap,
             segments,
@@ -185,6 +187,7 @@ impl Simulator {
             to_idx as usize,
             profile,
             &self.fixtures,
+            holder.as_ref(),
             &mut self.last_diagnostics,
         );
         match self.heightmap.dirty_aabb() {
@@ -232,6 +235,9 @@ mod tests {
             coolant: Coolant::Off,
             default_step: None,
             pause: 1,
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
         }
     }
 

@@ -665,7 +665,30 @@ export interface ToolEntry {
   /// Default depth-per-pass (negative, mm). Operations using this tool
   /// inherit this when their own `step` is unset.
   defaultStep?: number;
+  /// Length of cutting flutes in mm. Undefined = treat the entire tool
+  /// as cutting (legacy behavior — no holder collision check is done).
+  fluteLengthMm?: number;
+  /// Shank diameter in mm. Undefined = same as `diameter`
+  /// (parallel-shank bit). Drives the holder/shank collision sweep.
+  shankDiameterMm?: number;
+  /// Holder geometry above the shank. Undefined = no holder check.
+  holder?: HolderShape;
 }
+
+/// Tool holder geometry above the shank. Mirrors
+/// `wiac_core::project::HolderShape`. v1 treats every holder as
+/// cylindrically symmetric — set-screw flats and asymmetric ER nuts
+/// are bounded by their enclosing cylinder/cone.
+export type HolderShape =
+  | { kind: 'cylinder'; diameter_mm: number; length_mm: number }
+  | { kind: 'cone'; bottom_diameter_mm: number; top_diameter_mm: number; length_mm: number }
+  | {
+      kind: 'stepped';
+      cylinder_diameter_mm: number;
+      cylinder_length_mm: number;
+      cone_top_diameter_mm: number;
+      cone_length_mm: number;
+    };
 
 export interface AxisLimits {
   x: number;

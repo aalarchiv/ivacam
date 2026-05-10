@@ -992,17 +992,21 @@
     const dragoff = tool?.dragoff;
     const tipDiameter = tool?.tipDiameter;
     const kind = tool?.kind ?? 'endmill';
+    const fluteLen = tool?.fluteLengthMm;
+    const shankDia = tool?.shankDiameterMm;
+    const holder = tool?.holder;
 
     // Cache key — anything that changes the geometry shape. Color is NOT
     // part of the key; we only mutate material.color on the cached mesh
-    // for that.
-    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${dragoff ?? ''}`;
+    // for that. Holder fields are JSON-stringified so the key updates
+    // whenever any part of the holder spec changes.
+    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${dragoff ?? ''}|${fluteLen ?? ''}|${shankDia ?? ''}|${holder ? JSON.stringify(holder) : ''}`;
     if (key !== toolMeshKey || !toolMesh) {
       if (toolMesh) {
         toolGroup.remove(toolMesh);
         disposeMesh(toolMesh);
       }
-      toolMesh = buildToolMesh(kind, mode, diameter, tipDiameter, dragoff, colorHex);
+      toolMesh = buildToolMesh(kind, mode, diameter, tipDiameter, dragoff, colorHex, fluteLen, shankDia, holder);
       toolGroup.add(toolMesh);
       toolMeshKey = key;
     } else {
@@ -1031,6 +1035,9 @@
     tipDiameter: number | undefined,
     dragoff: number | undefined,
     colorHex: number,
+    fluteLen?: number,
+    shankDia?: number,
+    holder?: import('../state/project.svelte').HolderShape,
   ): THREE.Mesh {
     const radius = diameter * 0.5;
     const mat = new THREE.MeshBasicMaterial({
@@ -1080,13 +1087,98 @@
       const merged = mergeBufferGeometries([body, ball]);
       return new THREE.Mesh(merged, mat);
     }
-    // Endmill: a flat-ended cylinder. No cone — the cutting edge is the
-    // bottom face. Tip lands at z=0; body extends +Z.
-    const bodyLen = Math.max(diameter * 6, 8);
-    const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
-    body.rotateX(Math.PI / 2);
-    body.translate(0, 0, bodyLen / 2);
-    return new THREE.Mesh(body, mat);
+    // Endmill / generic: stack flutes + (optional) shank + (optional) holder.
+    return buildEndmillStack(diameter, mat, fluteLen, shankDia, holder);
+  }
+
+  /// Build a stacked tool envelope for endmill-like cutters. When the
+  /// tool entry has flute length / shank / holder fields set, render
+  /// each region as a distinct cylinder/cone segment so the user sees
+  /// the same envelope the holder-collision sweep uses. When everything
+  /// is default, falls back to the legacy single-cylinder body.
+  function buildEndmillStack(
+    diameter: number,
+    mat: THREE.MeshBasicMaterial,
+    fluteLen?: number,
+    shankDia?: number,
+    holder?: import('../state/project.svelte').HolderShape,
+  ): THREE.Mesh {
+    const radius = diameter * 0.5;
+    if (fluteLen === undefined && shankDia === undefined && !holder) {
+      const bodyLen = Math.max(diameter * 6, 8);
+      const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
+      body.rotateX(Math.PI / 2);
+      body.translate(0, 0, bodyLen / 2);
+      return new THREE.Mesh(body, mat);
+    }
+    const pieces: THREE.BufferGeometry[] = [];
+    const shankR = ((shankDia ?? diameter) * 0.5);
+    let zCursor = 0;
+    const fLen = Math.max(0, fluteLen ?? Math.max(diameter * 4, 6));
+    if (fLen > 0) {
+      const flutes = new THREE.CylinderGeometry(radius, radius, fLen, 24);
+      flutes.rotateX(Math.PI / 2);
+      flutes.translate(0, 0, zCursor + fLen / 2);
+      pieces.push(flutes);
+      zCursor += fLen;
+    }
+    // Shank: from top of flutes up to the bottom of the holder. When the
+    // holder is undefined, give the shank a sensible default length so
+    // the user can still see "this is the non-cutting part of the tool"
+    // sticking out.
+    const shankLen = holder ? Math.max(diameter * 2, 4) : Math.max(diameter * 4, 6);
+    if (shankR > 0 && shankLen > 0) {
+      const shank = new THREE.CylinderGeometry(shankR, shankR, shankLen, 18);
+      shank.rotateX(Math.PI / 2);
+      shank.translate(0, 0, zCursor + shankLen / 2);
+      pieces.push(shank);
+      zCursor += shankLen;
+    }
+    if (holder) {
+      if (holder.kind === 'cylinder') {
+        const r = holder.diameter_mm * 0.5;
+        const len = holder.length_mm;
+        if (r > 0 && len > 0) {
+          const g = new THREE.CylinderGeometry(r, r, len, 18);
+          g.rotateX(Math.PI / 2);
+          g.translate(0, 0, zCursor + len / 2);
+          pieces.push(g);
+        }
+      } else if (holder.kind === 'cone') {
+        const rb = holder.bottom_diameter_mm * 0.5;
+        const rt = holder.top_diameter_mm * 0.5;
+        const len = holder.length_mm;
+        if (Math.max(rb, rt) > 0 && len > 0) {
+          // CylinderGeometry: first arg is +Y (upper) radius, second arg is
+          // -Y (lower) radius. After rotateX(π/2): +Y → -Z, -Y → +Z. So we
+          // pass (top, bottom) swapped to keep the bottom at z = zCursor.
+          const g = new THREE.CylinderGeometry(rt, rb, len, 18);
+          g.rotateX(Math.PI / 2);
+          g.translate(0, 0, zCursor + len / 2);
+          pieces.push(g);
+        }
+      } else if (holder.kind === 'stepped') {
+        const cylR = holder.cylinder_diameter_mm * 0.5;
+        const cylLen = holder.cylinder_length_mm;
+        const coneTopR = holder.cone_top_diameter_mm * 0.5;
+        const coneLen = holder.cone_length_mm;
+        if (cylR > 0 && cylLen > 0) {
+          const g = new THREE.CylinderGeometry(cylR, cylR, cylLen, 18);
+          g.rotateX(Math.PI / 2);
+          g.translate(0, 0, zCursor + cylLen / 2);
+          pieces.push(g);
+          zCursor += cylLen;
+        }
+        if (Math.max(cylR, coneTopR) > 0 && coneLen > 0) {
+          const g = new THREE.CylinderGeometry(coneTopR, cylR, coneLen, 18);
+          g.rotateX(Math.PI / 2);
+          g.translate(0, 0, zCursor + coneLen / 2);
+          pieces.push(g);
+        }
+      }
+    }
+    const merged = pieces.length === 1 ? pieces[0] : mergeBufferGeometries(pieces);
+    return new THREE.Mesh(merged, mat);
   }
 
   /// Tiny helper because three.js's BufferGeometryUtils requires a separate

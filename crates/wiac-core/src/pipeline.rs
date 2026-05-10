@@ -1483,6 +1483,9 @@ mod tests {
             coolant: Coolant::Off,
             default_step: None,
             pause: 1,
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
         }
     }
 
@@ -2041,6 +2044,9 @@ mod tests {
             coolant: Coolant::Off,
             default_step: None,
             pause: 1,
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
         };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
@@ -4778,6 +4784,9 @@ mod tests {
             coolant: Coolant::Off,
             default_step: None,
             pause: 1,
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
         };
         let op = Operation {
             id: 7,

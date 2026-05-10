@@ -4,7 +4,7 @@
   /// pipeline reads these from the Project; until that wires up the
   /// values are also mirrored into setup.machine via SetupPanel so the
   /// legacy Generate path keeps working.
-  import { project, type MachineSettings } from '../state/project.svelte';
+  import { project, type MachineSettings, type AxisLimits } from '../state/project.svelte';
 
   interface Props {
     open: boolean;
@@ -13,14 +13,35 @@
   let { open, onClose }: Props = $props();
 
   // Local working copy so the user can cancel without committing.
-  let draft = $state<MachineSettings>({ ...project.machine });
+  let draft = $state<MachineSettings>(cloneSettings(project.machine));
+
+  // Jerk fields — toggled by a single checkbox, default off (trapezoidal
+  // profile only; S-curve refinement is Phase 2).
+  let jerkEnabled = $state(!!project.machine.jerk);
+  let jerkDraft = $state<AxisLimits>(project.machine.jerk ?? { x: 100, y: 100, z: 50 });
 
   $effect(() => {
-    if (open) draft = { ...project.machine };
+    if (open) {
+      draft = cloneSettings(project.machine);
+      jerkEnabled = !!project.machine.jerk;
+      jerkDraft = project.machine.jerk
+        ? { ...project.machine.jerk }
+        : { x: 100, y: 100, z: 50 };
+    }
   });
 
+  function cloneSettings(m: MachineSettings): MachineSettings {
+    return {
+      ...m,
+      accel: m.accel ? { ...m.accel } : { x: 250, y: 250, z: 250 },
+      jerk: m.jerk ? { ...m.jerk } : undefined,
+    };
+  }
+
   function commit() {
-    project.machine = { ...draft };
+    const out: MachineSettings = { ...draft };
+    out.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
+    project.machine = out;
     onClose();
   }
 
@@ -66,6 +87,47 @@
           <input type="checkbox" bind:checked={draft.supportsToolchange} />
           Machine supports tool changes (M6)
         </label>
+
+        <div class="section-title">Kinematics</div>
+        <label>Rapid speed (mm/min)
+          <input type="number" min="0" step="100" bind:value={draft.rapidSpeed} />
+        </label>
+        <label>Tool-change time (s)
+          <input type="number" min="0" step="0.5" bind:value={draft.toolchangeS} />
+        </label>
+        <div class="triplet-label">Acceleration X / Y / Z (mm/s²)</div>
+        <div class="triplet">
+          <input type="number" min="0" step="10"
+            value={draft.accel?.x ?? 250}
+            oninput={(e) => {
+              const v = (e.target as HTMLInputElement).valueAsNumber;
+              draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), x: isFinite(v) ? v : 250 };
+            }} />
+          <input type="number" min="0" step="10"
+            value={draft.accel?.y ?? 250}
+            oninput={(e) => {
+              const v = (e.target as HTMLInputElement).valueAsNumber;
+              draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), y: isFinite(v) ? v : 250 };
+            }} />
+          <input type="number" min="0" step="10"
+            value={draft.accel?.z ?? 250}
+            oninput={(e) => {
+              const v = (e.target as HTMLInputElement).valueAsNumber;
+              draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), z: isFinite(v) ? v : 250 };
+            }} />
+        </div>
+        <label class="check">
+          <input type="checkbox" bind:checked={jerkEnabled} />
+          Enable jerk limits (S-curve, Phase 2)
+        </label>
+        {#if jerkEnabled}
+          <div class="triplet-label">Jerk X / Y / Z (mm/s³)</div>
+          <div class="triplet">
+            <input type="number" min="0" step="10" bind:value={jerkDraft.x} />
+            <input type="number" min="0" step="10" bind:value={jerkDraft.y} />
+            <input type="number" min="0" step="10" bind:value={jerkDraft.z} />
+          </div>
+        {/if}
       </div>
 
       <footer>
@@ -145,6 +207,28 @@
   }
   input[type='checkbox'] {
     accent-color: var(--accent);
+  }
+  .section-title {
+    grid-column: 1 / -1;
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+  .triplet-label {
+    font-size: 0.8rem;
+    color: var(--text);
+  }
+  .triplet {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.3rem;
+  }
+  .triplet input[type='number'] {
+    width: 100%;
   }
   footer {
     display: flex;

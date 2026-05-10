@@ -154,6 +154,9 @@ class ProjectState {
     arcs: true,
     supportsToolchange: false,
     fastMoveZ: 5,
+    accel: { x: 250, y: 250, z: 250 },
+    toolchangeS: 5,
+    rapidSpeed: 5000,
   });
 
   /// Ordered list of operations the program runs. Each op has a kind, a
@@ -562,6 +565,12 @@ export interface ToolEntry {
   defaultStep?: number;
 }
 
+export interface AxisLimits {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface MachineSettings {
   unit: 'mm' | 'inch';
   mode: 'mill' | 'laser' | 'drag';
@@ -569,6 +578,16 @@ export interface MachineSettings {
   arcs: boolean;
   supportsToolchange: boolean;
   fastMoveZ: number;
+  /// Per-axis acceleration (mm/s²). Optional — empty means defaults
+  /// (250 mm/s² per axis, LinuxCNC convention).
+  accel?: AxisLimits;
+  /// Per-axis jerk (mm/s³). Optional — empty means trapezoidal-only
+  /// profiling (S-curve is Phase 2).
+  jerk?: AxisLimits;
+  /// Tool-change time in seconds (default 5).
+  toolchangeS?: number;
+  /// Rapid (G0) speed in mm/min (default 5000).
+  rapidSpeed?: number;
 }
 
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal';

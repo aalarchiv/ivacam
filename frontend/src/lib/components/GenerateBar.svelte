@@ -6,7 +6,38 @@
   import { isTauri } from '../api/env';
   import { project } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
+  import type { TimeEstimate } from '../api/types';
   import { _ } from 'svelte-i18n';
+
+  // Format a duration in seconds as HH:MM:SS (always two digits per
+  // unit). Negative / NaN inputs render as 00:00:00.
+  function formatHms(s: number | undefined): string {
+    if (!s || !isFinite(s) || s < 0) return '00:00:00';
+    const total = Math.round(s);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = total % 60;
+    return [h, m, sec].map((n) => String(n).padStart(2, '0')).join(':');
+  }
+
+  // Short form for breakdown items: M:SS for sub-hour, just seconds for
+  // tiny values. Returns "—" for zero / undefined.
+  function formatShort(s: number | undefined): string {
+    if (s === undefined || !isFinite(s)) return '—';
+    if (s <= 0.05) return '0s';
+    if (s < 60) return `${s.toFixed(1)}s`;
+    if (s < 3600) {
+      const m = Math.floor(s / 60);
+      const sec = Math.round(s % 60);
+      return `${m}:${String(sec).padStart(2, '0')}`;
+    }
+    return formatHms(s);
+  }
+
+  function timeEstimate(): TimeEstimate | null {
+    const r = project.generated as { time_estimate?: TimeEstimate } | null;
+    return r?.time_estimate ?? null;
+  }
 
   const client = defaultClient();
   let post: 'linuxcnc' | 'grbl' | 'hpgl' = $state('linuxcnc');
@@ -115,6 +146,15 @@
         },
       })}
     </span>
+    {#if timeEstimate()}
+      {@const t = timeEstimate()!}
+      <span
+        class="time"
+        title={`Cut: ${formatShort(t.cut_s)}\nArc: ${formatShort(t.arc_s)}\nPlunge: ${formatShort(t.plunge_s)}\nRetract: ${formatShort(t.retract_s)}\nRapid: ${formatShort(t.rapid_s)}\nTool change: ${formatShort(t.toolchange_s)}\nSpindle warm-up: ${formatShort(t.spindle_warmup_s)}`}
+      >
+        ⏱ {formatHms(t.total_s)}
+      </span>
+    {/if}
   {/if}
 </div>
 
@@ -172,6 +212,12 @@
     white-space: nowrap;
     flex: 1;
     min-width: 0;
+  }
+  .time {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: pre;
+    cursor: help;
   }
   .progress {
     position: relative;

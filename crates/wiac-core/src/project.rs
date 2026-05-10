@@ -69,6 +69,18 @@ pub struct ToolEntry {
     /// inherit this when their own `step` is unset. None = no default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_step: Option<f64>,
+    /// Spindle warm-up pause in seconds applied once per used tool by
+    /// the time estimator. Mirrors `ToolConfig.pause`.
+    #[serde(default = "default_tool_pause", skip_serializing_if = "is_default_tool_pause")]
+    pub pause: u32,
+}
+
+fn default_tool_pause() -> u32 {
+    1
+}
+
+fn is_default_tool_pause(v: &u32) -> bool {
+    *v == 1
 }
 
 impl Default for ToolEntry {
@@ -87,6 +99,7 @@ impl Default for ToolEntry {
             feed_rate: 800,
             coolant: Coolant::Off,
             default_step: None,
+            pause: default_tool_pause(),
         }
     }
 }

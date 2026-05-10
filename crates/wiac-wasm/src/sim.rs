@@ -197,6 +197,7 @@ mod tests {
             feed_rate: 800,
             coolant: Coolant::Off,
             default_step: None,
+            pause: 1,
         }
     }
 

@@ -37,12 +37,22 @@ interface WireToolEntry {
   default_step?: number;
 }
 
+interface WireAxisLimits {
+  x: number;
+  y: number;
+  z: number;
+}
+
 interface WireMachine {
   unit: 'mm' | 'inch';
   mode: 'mill' | 'laser' | 'drag';
   comments: boolean;
   arcs: boolean;
   supports_toolchange: boolean;
+  accel?: WireAxisLimits;
+  jerk?: WireAxisLimits;
+  toolchange_s?: number;
+  rapid_speed?: number;
 }
 
 type WireDrillCycle =
@@ -159,6 +169,10 @@ function buildMachine(m: MachineSettings): WireMachine {
     comments: m.comments,
     arcs: m.arcs,
     supports_toolchange: m.supportsToolchange,
+    ...(m.accel ? { accel: { x: m.accel.x, y: m.accel.y, z: m.accel.z } } : {}),
+    ...(m.jerk ? { jerk: { x: m.jerk.x, y: m.jerk.y, z: m.jerk.z } } : {}),
+    ...(m.toolchangeS !== undefined && m.toolchangeS !== 5 ? { toolchange_s: m.toolchangeS } : {}),
+    ...(m.rapidSpeed !== undefined ? { rapid_speed: m.rapidSpeed } : {}),
   };
 }
 

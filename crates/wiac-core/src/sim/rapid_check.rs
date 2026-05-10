@@ -210,7 +210,7 @@ mod tests {
                 op_id: 0,
             },
         ];
-        let touched = sweep_range(&mut map, &segments, 0, segments.len(), endmill(), &[], &mut d);
+        let touched = sweep_range(&mut map, &segments, 0, segments.len(), endmill(), &[], None, &mut d);
         assert!(touched > 0, "cuts/plunges should still carve");
         assert_eq!(d.count("rapid_through_material"), 1);
         match &d.warnings[0] {

@@ -118,6 +118,9 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
     plunge_rate: t.plungeRate,
     feed_rate: t.feedRate,
     coolant: t.coolant,
+    ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
+    ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
+    ...(t.holder !== undefined ? { holder: t.holder } : {}),
   };
 }
 

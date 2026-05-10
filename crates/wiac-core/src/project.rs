@@ -119,6 +119,39 @@ pub struct ToolEntry {
     /// the time estimator. Mirrors `ToolConfig.pause`.
     #[serde(default = "default_tool_pause", skip_serializing_if = "is_default_tool_pause")]
     pub pause: u32,
+    /// Length of cutting flutes (mm). None = treat entire tool as cutting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flute_length_mm: Option<f64>,
+    /// Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shank_diameter_mm: Option<f64>,
+    /// Holder geometry above the shank. None = no holder check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<HolderShape>,
+}
+
+/// Geometry of the tool holder above the shank. The holder is treated as
+/// cylindrically symmetric around the tool axis (Z), so set-screw flats /
+/// asymmetric ER nuts get approximated by their bounding cylinder/cone —
+/// good enough to flag clear collisions, conservative on tight cases.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HolderShape {
+    Cylinder {
+        diameter_mm: f64,
+        length_mm: f64,
+    },
+    Cone {
+        bottom_diameter_mm: f64,
+        top_diameter_mm: f64,
+        length_mm: f64,
+    },
+    Stepped {
+        cylinder_diameter_mm: f64,
+        cylinder_length_mm: f64,
+        cone_top_diameter_mm: f64,
+        cone_length_mm: f64,
+    },
 }
 
 fn default_tool_pause() -> u32 {
@@ -146,6 +179,9 @@ impl Default for ToolEntry {
             coolant: Coolant::Off,
             default_step: None,
             pause: default_tool_pause(),
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
         }
     }
 }
@@ -897,5 +933,87 @@ mod tests {
                     .unwrap_or_else(|e| panic!("op #{i} step in {path:?}: {e}"));
             }
         }
+    }
+
+    #[test]
+    fn holder_round_trip() {
+        // Each HolderShape variant survives JSON serialize/deserialize.
+        let shapes = vec![
+            HolderShape::Cylinder { diameter_mm: 20.0, length_mm: 30.0 },
+            HolderShape::Cone {
+                bottom_diameter_mm: 25.0,
+                top_diameter_mm: 40.0,
+                length_mm: 35.0,
+            },
+            HolderShape::Stepped {
+                cylinder_diameter_mm: 18.0,
+                cylinder_length_mm: 12.0,
+                cone_top_diameter_mm: 30.0,
+                cone_length_mm: 22.0,
+            },
+        ];
+        for s in shapes {
+            let mut tool = ToolEntry::default();
+            tool.flute_length_mm = Some(15.0);
+            tool.shank_diameter_mm = Some(6.0);
+            tool.holder = Some(s);
+            let json = serde_json::to_string(&tool).expect("serialize");
+            let back: ToolEntry = serde_json::from_str(&json).expect("deserialize");
+            match (s, back.holder.expect("holder survives")) {
+                (
+                    HolderShape::Cylinder { diameter_mm: d0, length_mm: l0 },
+                    HolderShape::Cylinder { diameter_mm: d1, length_mm: l1 },
+                ) => {
+                    assert!((d0 - d1).abs() < 1e-9 && (l0 - l1).abs() < 1e-9);
+                }
+                (
+                    HolderShape::Cone {
+                        bottom_diameter_mm: b0, top_diameter_mm: t0, length_mm: l0,
+                    },
+                    HolderShape::Cone {
+                        bottom_diameter_mm: b1, top_diameter_mm: t1, length_mm: l1,
+                    },
+                ) => {
+                    assert!(
+                        (b0 - b1).abs() < 1e-9
+                            && (t0 - t1).abs() < 1e-9
+                            && (l0 - l1).abs() < 1e-9
+                    );
+                }
+                (
+                    HolderShape::Stepped {
+                        cylinder_diameter_mm: cd0,
+                        cylinder_length_mm: cl0,
+                        cone_top_diameter_mm: ct0,
+                        cone_length_mm: cn0,
+                    },
+                    HolderShape::Stepped {
+                        cylinder_diameter_mm: cd1,
+                        cylinder_length_mm: cl1,
+                        cone_top_diameter_mm: ct1,
+                        cone_length_mm: cn1,
+                    },
+                ) => {
+                    assert!(
+                        (cd0 - cd1).abs() < 1e-9
+                            && (cl0 - cl1).abs() < 1e-9
+                            && (ct0 - ct1).abs() < 1e-9
+                            && (cn0 - cn1).abs() < 1e-9
+                    );
+                }
+                _ => panic!("variant mismatch after round trip"),
+            }
+            assert_eq!(back.flute_length_mm, Some(15.0));
+            assert_eq!(back.shank_diameter_mm, Some(6.0));
+        }
+    }
+
+    #[test]
+    fn tool_holder_fields_skip_when_none() {
+        let tool = ToolEntry::default();
+        let json = serde_json::to_string(&tool).expect("serialize");
+        assert!(!json.contains("flute_length_mm"));
+        assert!(!json.contains("shank_diameter_mm"));
+        assert!(!json.contains("\"holder\""));
     }
 }

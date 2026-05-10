@@ -245,6 +245,9 @@ mod tests {
             coolant: Coolant::Off,
             default_step: None,
             pause: 1,
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
         }
     }
 

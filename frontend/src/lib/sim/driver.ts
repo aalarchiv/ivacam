@@ -20,7 +20,7 @@ import type {
   SimDiagnostics,
   ToolpathSegment,
 } from '../api/types';
-import type { ToolEntry, AppSettings } from '../state/project.svelte';
+import type { AppSettings, Fixture, ToolEntry } from '../state/project.svelte';
 
 interface SimulatorWasm {
   new (
@@ -38,6 +38,7 @@ interface SimulatorWasm {
     from_idx: number,
     to_idx: number,
   ): Uint32Array;
+  set_fixtures(fixtures: unknown): void;
   take_diagnostics(): SimDiagnostics;
   cols(): number;
   rows(): number;
@@ -206,6 +207,7 @@ export class HeightfieldDriver {
     tool: ToolEntry | null;
     stock: { mode: 'auto' | 'manual'; margin: number; thickness: number; customX: number; customY: number };
     settings: AppSettings;
+    fixtures?: Fixture[];
   }) {
     if (!this.wasm || !input.imported || !input.generated || !input.tool) {
       this.dispose();
@@ -245,6 +247,24 @@ export class HeightfieldDriver {
       edgeOpacity: input.settings.edgeOpacity,
     });
     this.group.add(this.mesh.group);
+    if (input.fixtures && input.fixtures.length > 0) {
+      this.sim.set_fixtures(input.fixtures);
+    } else {
+      this.sim.set_fixtures([]);
+    }
+    this.appliedHead = 0;
+    this.diagnostics = { warnings: [] };
+    this.notifyDiagnostics();
+    this.refreshHeightView();
+  }
+
+  /// Replace the simulator's fixture set without rebuilding the mesh.
+  /// Triggers a reset so the next advanceTo() call replays from segment
+  /// 0 with the new obstacle list.
+  setFixtures(fixtures: Fixture[]) {
+    if (!this.sim) return;
+    this.sim.set_fixtures(fixtures);
+    this.sim.reset();
     this.appliedHead = 0;
     this.diagnostics = { warnings: [] };
     this.notifyDiagnostics();

@@ -129,6 +129,13 @@ class ProjectState {
   /// purely visual + persisted in .vc-project.json.
   tabs = $state<Record<number, Tab[]>>({});
 
+  /// Project fixtures (clamps, dogs, vise jaws). Threaded into the
+  /// sim's collision check so the cutter can't run them over.
+  fixtures = $state<Fixture[]>([]);
+  /// 2D / 3D selection of the currently-edited fixture (id). Drives
+  /// the highlight + the sidebar's edit form.
+  selectedFixtureId = $state<number | null>(null);
+
   /// UI mode for placing tabs by clicking in the 2D canvas.
   tabMode = $state(false);
 
@@ -243,6 +250,46 @@ class ProjectState {
     this.dirty = true;
   }
 
+  // ── fixtures ─────────────────────────────────────────────────────────
+
+  addFixture(
+    kind: FixtureKind,
+    origin: [number, number],
+    z_bottom: number,
+    z_top: number,
+    name?: string,
+  ): Fixture {
+    const nextId = this.fixtures.reduce((m, f) => Math.max(m, f.id), 0) + 1;
+    const f: Fixture = {
+      id: nextId,
+      name: name ?? defaultFixtureName(kind, nextId),
+      kind,
+      origin,
+      z_bottom,
+      z_top,
+      color: DEFAULT_FIXTURE_COLOR,
+    };
+    this.fixtures = [...this.fixtures, f];
+    this.selectedFixtureId = f.id;
+    this.dirty = true;
+    return f;
+  }
+
+  updateFixture(id: number, patch: Partial<Fixture>) {
+    this.fixtures = this.fixtures.map((f) => (f.id === id ? { ...f, ...patch } : f));
+    this.dirty = true;
+  }
+
+  removeFixture(id: number) {
+    this.fixtures = this.fixtures.filter((f) => f.id !== id);
+    if (this.selectedFixtureId === id) this.selectedFixtureId = null;
+    this.dirty = true;
+  }
+
+  selectFixture(id: number | null) {
+    this.selectedFixtureId = id;
+  }
+
   setImported(r: ImportResponse) {
     this.imported = r;
     this.generated = null;
@@ -320,6 +367,7 @@ class ProjectState {
       tools: this.tools,
       machine: this.machine,
       operations: this.operations,
+      fixtures: this.fixtures,
     };
   }
 
@@ -335,6 +383,8 @@ class ProjectState {
     if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
     if (file.machine) this.machine = { ...this.machine, ...file.machine };
     if (Array.isArray(file.operations)) this.operations = file.operations;
+    this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
+    this.selectedFixtureId = null;
     this.selectedOpId = null;
   }
 
@@ -547,6 +597,38 @@ function prettyOpKind(kind: OpKind): string {
 export interface Tab {
   x: number;
   y: number;
+}
+
+/// Mirrors `wiac_core::project::FixtureKind`. The `shape` discriminator
+/// is the wire-side serde tag; vertex coords for `polygon` are local
+/// (origin-relative) so the fixture can be moved by editing `origin`.
+export type FixtureKind =
+  | { shape: 'box'; width: number; depth: number }
+  | { shape: 'cylinder'; radius: number }
+  | { shape: 'polygon'; vertices: [number, number][] };
+
+export interface Fixture {
+  id: number;
+  name: string;
+  kind: FixtureKind;
+  origin: [number, number];
+  z_bottom: number;
+  z_top: number;
+  color?: number;
+}
+
+/// Default packed RGBA color: amber, ~75% alpha.
+export const DEFAULT_FIXTURE_COLOR = 0xffa050c0;
+
+function defaultFixtureName(kind: FixtureKind, id: number): string {
+  switch (kind.shape) {
+    case 'box':
+      return `Clamp ${id}`;
+    case 'cylinder':
+      return `Dog ${id}`;
+    case 'polygon':
+      return `Fixture ${id}`;
+  }
 }
 
 export interface StockConfig {
@@ -769,6 +851,7 @@ export interface ProjectFile {
   tools?: ToolEntry[];
   machine?: MachineSettings;
   operations?: OpEntry[];
+  fixtures?: Fixture[];
 }
 
 export const project = new ProjectState();

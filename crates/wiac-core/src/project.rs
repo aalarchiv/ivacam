@@ -36,6 +36,52 @@ pub struct Project {
     /// legacy PipelineRequest.tabs.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tabs: HashMap<u32, Vec<TabPoint>>,
+
+    /// Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must
+    /// avoid throughout the entire program — including rapids. The sim
+    /// pass tests every toolpath segment against this set and emits
+    /// `SimWarning::FixtureCollision` on overlap. Default empty: a
+    /// project with no fixtures behaves exactly as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixtures: Vec<Fixture>,
+}
+
+// ─── fixtures ─────────────────────────────────────────────────────────────
+
+/// A user-declared physical obstacle on the stock the cutter must miss.
+/// Lives in stock-relative XY (same frame as the imported geometry) and
+/// occupies a Z range; the sim collision test gates on that range first
+/// then falls back to a per-shape XY swept-region check.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Fixture {
+    pub id: u32,
+    pub name: String,
+    pub kind: FixtureKind,
+    /// Center of the fixture in stock XY (mm).
+    pub origin: (f64, f64),
+    /// Z range the fixture occupies (relative to stock-top = 0). Typically
+    /// `z_top` is positive (a clamp standing above stock); both can be
+    /// negative for cleats below.
+    pub z_bottom: f64,
+    pub z_top: f64,
+    /// Visual color in 2D / 3D previews, packed RGBA (0xRRGGBBAA).
+    #[serde(default = "default_fixture_color")]
+    pub color: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "shape", rename_all = "snake_case")]
+pub enum FixtureKind {
+    /// Axis-aligned rectangle centered on `origin`.
+    Box { width: f64, depth: f64 },
+    /// Cylinder centered on `origin`.
+    Cylinder { radius: f64 },
+    /// Polygon outline in fixture-local coordinates (origin-relative).
+    Polygon { vertices: Vec<(f64, f64)> },
+}
+
+fn default_fixture_color() -> u32 {
+    0xFFA0_50C0
 }
 
 // ─── tools ────────────────────────────────────────────────────────────────
@@ -742,6 +788,84 @@ mod tests {
         p.step = Some(-0.5);
         let json = serde_json::to_string(&p).unwrap();
         assert!(json.contains("\"step\":-0.5"), "step=Some(-0.5) should write bare number: {json}");
+    }
+
+    #[test]
+    fn fixtures_round_trip() {
+        let p = Project {
+            fixtures: vec![
+                Fixture {
+                    id: 1,
+                    name: "front clamp".into(),
+                    kind: FixtureKind::Box { width: 30.0, depth: 50.0 },
+                    origin: (15.0, -25.0),
+                    z_bottom: 0.0,
+                    z_top: 12.0,
+                    color: 0xFFA0_50C0,
+                },
+                Fixture {
+                    id: 2,
+                    name: "dog".into(),
+                    kind: FixtureKind::Cylinder { radius: 6.0 },
+                    origin: (-10.0, 40.0),
+                    z_bottom: -1.0,
+                    z_top: 8.0,
+                    color: default_fixture_color(),
+                },
+                Fixture {
+                    id: 3,
+                    name: "L-bracket".into(),
+                    kind: FixtureKind::Polygon {
+                        vertices: vec![
+                            (0.0, 0.0),
+                            (20.0, 0.0),
+                            (20.0, 5.0),
+                            (5.0, 5.0),
+                            (5.0, 25.0),
+                            (0.0, 25.0),
+                        ],
+                    },
+                    origin: (60.0, 60.0),
+                    z_bottom: 0.0,
+                    z_top: 6.0,
+                    color: 0x8080_8080,
+                },
+            ],
+            ..Project::default()
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Project = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.fixtures.len(), 3);
+        assert!(matches!(
+            back.fixtures[0].kind,
+            FixtureKind::Box { width, depth }
+                if (width - 30.0).abs() < 1e-9 && (depth - 50.0).abs() < 1e-9
+        ));
+        assert!(matches!(
+            back.fixtures[1].kind,
+            FixtureKind::Cylinder { radius } if (radius - 6.0).abs() < 1e-9
+        ));
+        match &back.fixtures[2].kind {
+            FixtureKind::Polygon { vertices } => assert_eq!(vertices.len(), 6),
+            _ => panic!("expected Polygon"),
+        }
+    }
+
+    #[test]
+    fn fixture_default_color_when_absent() {
+        let json = r#"{
+            "id": 5, "name": "x", "kind": {"shape": "cylinder", "radius": 3.0},
+            "origin": [1.0, 2.0], "z_bottom": 0.0, "z_top": 5.0
+        }"#;
+        let f: Fixture = serde_json::from_str(json).unwrap();
+        assert_eq!(f.color, default_fixture_color());
+    }
+
+    #[test]
+    fn project_with_no_fixtures_skips_field_on_serialize() {
+        let p = Project::default();
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(!json.contains("\"fixtures\""), "empty fixtures should be skipped: {json}");
     }
 
     #[test]

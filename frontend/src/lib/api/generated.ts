@@ -173,6 +173,51 @@ export interface components {
             details?: unknown;
             error: string;
         };
+        /** @description A user-declared physical obstacle on the stock the cutter must miss. Lives in stock-relative XY (same frame as the imported geometry) and occupies a Z range; the sim collision test gates on that range first then falls back to a per-shape XY swept-region check. */
+        Fixture: {
+            /**
+             * Format: uint32
+             * @description Visual color in 2D / 3D previews, packed RGBA (0xRRGGBBAA).
+             * @default 4288696512
+             */
+            color: number;
+            /** Format: uint32 */
+            id: number;
+            kind: components["schemas"]["FixtureKind"];
+            name: string;
+            /** @description Center of the fixture in stock XY (mm). */
+            origin: [
+                number,
+                number
+            ];
+            /**
+             * Format: double
+             * @description Z range the fixture occupies (relative to stock-top = 0). Typically `z_top` is positive (a clamp standing above stock); both can be negative for cleats below.
+             */
+            z_bottom: number;
+            /** Format: double */
+            z_top: number;
+        };
+        FixtureKind: {
+            /** Format: double */
+            depth: number;
+            /** @enum {string} */
+            shape: "box";
+            /** Format: double */
+            width: number;
+        } | {
+            /** Format: double */
+            radius: number;
+            /** @enum {string} */
+            shape: "cylinder";
+        } | {
+            /** @enum {string} */
+            shape: "polygon";
+            vertices: [
+                number,
+                number
+            ][];
+        };
         /**
          * @description Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox with a quarter-arc bulge at each corner. Oval and TightOutline are explicit follow-ups — not in v1.
          * @enum {string}
@@ -665,6 +710,8 @@ export interface components {
         /** @enum {string} */
         PostProcessorKind: "linuxcnc" | "grbl" | "hpgl";
         Project: {
+            /** @description Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must avoid throughout the entire program — including rapids. The sim pass tests every toolpath segment against this set and emits `SimWarning::FixtureCollision` on overlap. Default empty: a project with no fixtures behaves exactly as before. */
+            fixtures?: components["schemas"]["Fixture"][];
             machine: components["schemas"]["MachineConfig"];
             operations: components["schemas"]["Operation"][];
             /** @description Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained. */

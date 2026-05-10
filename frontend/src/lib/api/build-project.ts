@@ -146,12 +146,31 @@ interface WireOp {
   };
 }
 
+/// Fixture wire shape mirrors `wiac_core::project::FixtureKind` (snake_case
+/// `shape` discriminator). Vertices for `polygon` are origin-relative, the
+/// other shapes carry their dims directly.
+export type WireFixtureKind =
+  | { shape: 'box'; width: number; depth: number }
+  | { shape: 'cylinder'; radius: number }
+  | { shape: 'polygon'; vertices: [number, number][] };
+
+export interface WireFixture {
+  id: number;
+  name: string;
+  kind: WireFixtureKind;
+  origin: [number, number];
+  z_bottom: number;
+  z_top: number;
+  color?: number;
+}
+
 export interface WireProject {
   segments: ImportResponse['segments'];
   machine: WireMachine;
   tools: WireToolEntry[];
   operations: WireOp[];
   tabs: Record<number, { x: number; y: number }[]>;
+  fixtures?: WireFixture[];
 }
 
 interface ProjectStateView {
@@ -160,6 +179,7 @@ interface ProjectStateView {
   tools: FrontToolEntry[];
   operations: OpEntry[];
   tabs: Record<number, { x: number; y: number }[]>;
+  fixtures?: WireFixture[];
 }
 
 function buildMachine(m: MachineSettings): WireMachine {
@@ -363,6 +383,7 @@ export function buildProject(state: ProjectStateView): WireProject | null {
     tools: state.tools.map(buildTool),
     operations: state.operations.map((op) => buildOp(op, state.machine, anyTabs)),
     tabs: state.tabs,
+    ...(state.fixtures && state.fixtures.length > 0 ? { fixtures: state.fixtures } : {}),
   };
 }
 

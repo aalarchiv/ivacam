@@ -3,8 +3,10 @@
 //! cutter surface reaches how far down at a given radial offset.
 
 pub mod diagnostics;
+pub mod fixture_check;
 pub mod heightmap;
 pub mod sweep;
 pub mod timing;
 
 pub use diagnostics::{kind_str, severity, Severity, SimDiagnostics, SimWarning};
+pub use fixture_check::{check_segment_against_fixtures, FixtureCheck};

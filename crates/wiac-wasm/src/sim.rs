@@ -21,7 +21,7 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
 use wiac_core::gcode::preview::ToolpathSegment;
-use wiac_core::project::ToolEntry;
+use wiac_core::project::{Fixture, ToolEntry};
 use wiac_core::sim::diagnostics::SimDiagnostics;
 use wiac_core::sim::heightmap::{Heightmap, ToolProfile};
 use wiac_core::sim::sweep::sweep_range;
@@ -41,6 +41,10 @@ pub struct Simulator {
     /// the playbar / scene can mark offending segments. Reset on every
     /// `advance()` so each call's payload is self-contained.
     last_diagnostics: SimDiagnostics,
+    /// Project-level fixtures threaded into every advance() so the
+    /// fixture-collision check fires per segment. Set via
+    /// `set_fixtures(...)`; default empty.
+    fixtures: Vec<Fixture>,
 }
 
 #[wasm_bindgen]
@@ -61,6 +65,7 @@ impl Simulator {
         Self {
             heightmap: Heightmap::from_bbox(min_x, min_y, max_x, max_y, cell_size, top_z),
             last_diagnostics: SimDiagnostics::new(),
+            fixtures: Vec::new(),
         }
     }
 
@@ -70,6 +75,17 @@ impl Simulator {
     pub fn reset(&mut self) {
         self.heightmap.reset();
         self.last_diagnostics = SimDiagnostics::new();
+    }
+
+    /// Replace the simulator's fixture set. Pass the project's fixtures
+    /// array (serialized as `Vec<Fixture>`) so subsequent `advance()`
+    /// calls can emit `FixtureCollision` warnings. Pass an empty array
+    /// to clear.
+    pub fn set_fixtures(&mut self, fixtures: JsValue) -> Result<(), JsValue> {
+        let parsed: Vec<Fixture> =
+            serde_wasm_bindgen::from_value(fixtures).map_err(into_js_error)?;
+        self.fixtures = parsed;
+        Ok(())
     }
 
     /// Pull and clear the diagnostics collected by the most recent
@@ -168,6 +184,7 @@ impl Simulator {
             from_idx as usize,
             to_idx as usize,
             profile,
+            &self.fixtures,
             &mut self.last_diagnostics,
         );
         match self.heightmap.dirty_aabb() {

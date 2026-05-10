@@ -1506,6 +1506,7 @@ mod tests {
             tools,
             operations: ops,
             tabs: Default::default(),
+            fixtures: Default::default(),
         }
     }
 
@@ -1661,6 +1662,7 @@ mod tests {
                 },
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let annulus_project = Project {
             segments,
@@ -1675,6 +1677,7 @@ mod tests {
                 },
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let baseline = run_pipeline(
             PipelineRequest {
@@ -1749,6 +1752,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1814,6 +1818,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1890,6 +1895,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1992,6 +1998,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2052,6 +2059,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2092,6 +2100,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2185,6 +2194,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2271,6 +2281,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2351,6 +2362,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2415,6 +2427,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2528,6 +2541,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: tabs_map,
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2596,6 +2610,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2641,6 +2656,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2700,6 +2716,7 @@ mod tests {
                     pattern: None,
                 }],
                 tabs: Default::default(),
+                fixtures: Default::default(),
             };
             run_pipeline(
                 PipelineRequest {
@@ -2745,6 +2762,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2814,6 +2832,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2872,6 +2891,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2926,6 +2946,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3014,6 +3035,7 @@ mod tests {
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3052,6 +3074,7 @@ mod tests {
                 },
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3089,6 +3112,7 @@ mod tests {
                 },
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3123,6 +3147,7 @@ mod tests {
                 },
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3191,6 +3216,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3249,6 +3275,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3289,6 +3316,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3329,6 +3357,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3369,6 +3398,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3416,6 +3446,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3825,6 +3856,7 @@ mod tests {
                 2.0,
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3862,6 +3894,7 @@ mod tests {
                 0.0,
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3904,6 +3937,7 @@ mod tests {
                 2.0,
             )],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3980,6 +4014,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let mut spiral_project = cascade_project.clone();
         spiral_project.operations[0].kind = OperationKind::Pocket {
@@ -4051,6 +4086,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let gcode = run_pipeline(
             PipelineRequest {
@@ -4127,6 +4163,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let strategies = [
             PocketStrategy::Cascade,
@@ -4197,6 +4234,7 @@ mod tests {
                 tools: vec![endmill(1, 3.0)],
                 operations: vec![profile_op(1, 1, offset)],
                 tabs: Default::default(),
+                fixtures: Default::default(),
             };
             let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
                 toolpath
@@ -4268,6 +4306,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4420,6 +4459,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         for offset in [ToolOffset::Outside, ToolOffset::Inside] {
             let resp = run_pipeline(
@@ -4463,6 +4503,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -4551,6 +4592,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let cut_total = |toolpath: &[preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -4632,6 +4674,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4679,6 +4722,7 @@ mod tests {
                 pattern: None,
             }],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4766,6 +4810,7 @@ mod tests {
             tools: vec![vbit],
             operations: vec![op],
             tabs: Default::default(),
+            fixtures: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {

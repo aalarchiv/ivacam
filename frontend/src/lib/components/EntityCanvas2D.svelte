@@ -64,6 +64,8 @@
     void project.generated;
     void project.selectedOpId;
     void project.regionsVisible;
+    void project.fixtures;
+    void project.selectedFixtureId;
     void hoverIdx;
     draw();
   });
@@ -253,16 +255,74 @@
       return;
     }
 
+    // Fixture hit-test runs before segment selection so clicking a fixture
+    // outline snaps the right-hand panel's edit form to it.
+    const fixId = fixtureHit(cx, cy);
+    if (fixId != null) {
+      project.selectFixture(fixId);
+      return;
+    }
+
     const idx = pixelHit(cx, cy);
     const additive = e.ctrlKey || e.metaKey || e.shiftKey;
     if (idx == null) {
-      if (!additive) project.clearSelection();
+      if (!additive) {
+        project.clearSelection();
+        project.selectFixture(null);
+      }
       return;
     }
     // Map segment index → its 1-based object id from the chaining pass.
     const objId = project.imported?.objects?.[idx] ?? 0;
     if (objId === 0) return;
     project.toggleObject(objId, additive);
+  }
+
+  /// Returns the id of the fixture under the cursor, or null. Hit-test
+  /// runs in data coordinates: a click is "inside" a Box / Cylinder if
+  /// the point is inside their AABB / disc, and inside a Polygon by
+  /// even-odd ray-cast.
+  function fixtureHit(canvasX: number, canvasY: number): number | null {
+    if (!lastTransform) return null;
+    const { scale, offX, offY } = lastTransform;
+    const dataX = (canvasX - offX) / scale;
+    const dataY = (offY - canvasY) / scale;
+    for (const f of project.fixtures) {
+      const [ox, oy] = f.origin;
+      if (f.kind.shape === 'box') {
+        const hw = f.kind.width / 2;
+        const hd = f.kind.depth / 2;
+        if (Math.abs(dataX - ox) <= hw && Math.abs(dataY - oy) <= hd) return f.id;
+      } else if (f.kind.shape === 'cylinder') {
+        const dx = dataX - ox;
+        const dy = dataY - oy;
+        if (dx * dx + dy * dy <= f.kind.radius * f.kind.radius) return f.id;
+      } else if (f.kind.shape === 'polygon') {
+        // Translate point into local frame then even-odd test.
+        const lx = dataX - ox;
+        const ly = dataY - oy;
+        if (pointInPolygonLocal(f.kind.vertices, lx, ly)) return f.id;
+      }
+    }
+    return null;
+  }
+
+  function pointInPolygonLocal(verts: [number, number][], px: number, py: number): boolean {
+    if (verts.length < 3) return false;
+    let inside = false;
+    const n = verts.length;
+    let j = n - 1;
+    for (let i = 0; i < n; i++) {
+      const [pix, piy] = verts[i];
+      const [pjx, pjy] = verts[j];
+      const crosses = (piy > py) !== (pjy > py);
+      if (crosses) {
+        const xAt = pix + ((py - piy) * (pjx - pix)) / (pjy - piy);
+        if (px < xAt) inside = !inside;
+      }
+      j = i;
+    }
+    return inside;
   }
 
   function closestPointOnSegment(
@@ -383,7 +443,65 @@
       drawSegment(ctx, seg, project2);
     }
 
+    drawFixtures(ctx, project2);
     drawTabs(ctx, project2);
+  }
+
+  /// Paint each fixture as a translucent filled outline in its declared
+  /// color. Selected fixture gets a thicker accent stroke so it's
+  /// obvious which one the sidebar is editing.
+  function drawFixtures(
+    ctx: CanvasRenderingContext2D,
+    p: (x: number, y: number) => [number, number],
+  ) {
+    if (!project.fixtures || project.fixtures.length === 0) return;
+    const accent = themeVar('--accent', '#2d6cdf');
+    for (const f of project.fixtures) {
+      const colorPacked = f.color ?? 0xffa050c0;
+      const r = (colorPacked >>> 24) & 0xff;
+      const g = (colorPacked >>> 16) & 0xff;
+      const b = (colorPacked >>> 8) & 0xff;
+      const a = colorPacked & 0xff;
+      const fill = `rgba(${r}, ${g}, ${b}, ${Math.max(0.15, (a / 255) * 0.5)})`;
+      const stroke = `rgb(${r}, ${g}, ${b})`;
+      const isSel = project.selectedFixtureId === f.id;
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = isSel ? accent : stroke;
+      ctx.lineWidth = isSel ? 2.4 : 1.4;
+      const [ox, oy] = f.origin;
+      if (f.kind.shape === 'box') {
+        const hw = f.kind.width / 2;
+        const hd = f.kind.depth / 2;
+        const [x0, y0] = p(ox - hw, oy - hd);
+        const [x1, y1] = p(ox + hw, oy + hd);
+        const xMin = Math.min(x0, x1);
+        const yMin = Math.min(y0, y1);
+        const w = Math.abs(x1 - x0);
+        const h = Math.abs(y1 - y0);
+        ctx.fillRect(xMin, yMin, w, h);
+        ctx.strokeRect(xMin, yMin, w, h);
+      } else if (f.kind.shape === 'cylinder') {
+        const [cx, cy] = p(ox, oy);
+        const [edgeX] = p(ox + f.kind.radius, oy);
+        const rPx = Math.abs(edgeX - cx);
+        ctx.beginPath();
+        ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (f.kind.shape === 'polygon') {
+        if (f.kind.vertices.length < 2) continue;
+        ctx.beginPath();
+        const [vx0, vy0] = p(ox + f.kind.vertices[0][0], oy + f.kind.vertices[0][1]);
+        ctx.moveTo(vx0, vy0);
+        for (let i = 1; i < f.kind.vertices.length; i++) {
+          const [vx, vy] = p(ox + f.kind.vertices[i][0], oy + f.kind.vertices[i][1]);
+          ctx.lineTo(vx, vy);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
   }
 
   /// Path2D cache for region previews. Tracing each region's polygons by

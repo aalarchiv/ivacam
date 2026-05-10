@@ -230,6 +230,101 @@ components:
       required:
       - error
       type: object
+    Fixture:
+      description: A user-declared physical obstacle on the stock the cutter must miss. Lives in stock-relative XY (same frame as the imported geometry) and occupies a Z range; the sim collision test gates on that range first then falls back to a per-shape XY swept-region check.
+      properties:
+        color:
+          default: 4288696512
+          description: Visual color in 2D / 3D previews, packed RGBA (0xRRGGBBAA).
+          format: uint32
+          minimum: 0.0
+          type: integer
+        id:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        kind:
+          $ref: '#/components/schemas/FixtureKind'
+        name:
+          type: string
+        origin:
+          description: Center of the fixture in stock XY (mm).
+          items:
+          - format: double
+            type: number
+          - format: double
+            type: number
+          maxItems: 2
+          minItems: 2
+          type: array
+        z_bottom:
+          description: Z range the fixture occupies (relative to stock-top = 0). Typically `z_top` is positive (a clamp standing above stock); both can be negative for cleats below.
+          format: double
+          type: number
+        z_top:
+          format: double
+          type: number
+      required:
+      - id
+      - kind
+      - name
+      - origin
+      - z_bottom
+      - z_top
+      type: object
+    FixtureKind:
+      oneOf:
+      - description: Axis-aligned rectangle centered on `origin`.
+        properties:
+          depth:
+            format: double
+            type: number
+          shape:
+            enum:
+            - box
+            type: string
+          width:
+            format: double
+            type: number
+        required:
+        - depth
+        - shape
+        - width
+        type: object
+      - description: Cylinder centered on `origin`.
+        properties:
+          radius:
+            format: double
+            type: number
+          shape:
+            enum:
+            - cylinder
+            type: string
+        required:
+        - radius
+        - shape
+        type: object
+      - description: Polygon outline in fixture-local coordinates (origin-relative).
+        properties:
+          shape:
+            enum:
+            - polygon
+            type: string
+          vertices:
+            items:
+              items:
+              - format: double
+                type: number
+              - format: double
+                type: number
+              maxItems: 2
+              minItems: 2
+              type: array
+            type: array
+        required:
+        - shape
+        - vertices
+        type: object
     FrameShape:
       description: Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox with a quarter-arc bulge at each corner. Oval and TightOutline are explicit follow-ups — not in v1.
       enum:
@@ -1173,6 +1268,11 @@ components:
       type: string
     Project:
       properties:
+        fixtures:
+          description: 'Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must avoid throughout the entire program — including rapids. The sim pass tests every toolpath segment against this set and emits `SimWarning::FixtureCollision` on overlap. Default empty: a project with no fixtures behaves exactly as before.'
+          items:
+            $ref: '#/components/schemas/Fixture'
+          type: array
         machine:
           $ref: '#/components/schemas/MachineConfig'
         operations:

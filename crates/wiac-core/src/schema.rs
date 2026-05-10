@@ -95,6 +95,8 @@ pub fn components_schemas() -> Value {
     insert::<crate::project::ToolEntry>(&mut schemas, "ToolEntry");
     insert::<crate::project::ToolKind>(&mut schemas, "ToolKind");
     insert::<crate::project::Coolant>(&mut schemas, "Coolant");
+    insert::<crate::project::Fixture>(&mut schemas, "Fixture");
+    insert::<crate::project::FixtureKind>(&mut schemas, "FixtureKind");
 
     insert::<SimWarning>(&mut schemas, "SimWarning");
     insert::<SimDiagnostics>(&mut schemas, "SimDiagnostics");

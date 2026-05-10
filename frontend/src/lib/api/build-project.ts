@@ -161,7 +161,7 @@ export interface WireFixture {
   origin: [number, number];
   z_bottom: number;
   z_top: number;
-  color?: number;
+  color: number;
 }
 
 export interface WireProject {

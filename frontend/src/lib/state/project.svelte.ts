@@ -614,7 +614,7 @@ export interface Fixture {
   origin: [number, number];
   z_bottom: number;
   z_top: number;
-  color?: number;
+  color: number;
 }
 
 /// Default packed RGBA color: amber, ~75% alpha.

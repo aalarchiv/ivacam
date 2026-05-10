@@ -77,9 +77,15 @@
         project.setError('Add at least one operation to generate gcode.');
         return;
       }
+      // The hand-rolled WireProject in build-project.ts trims the
+      // openapi-generated request shape: every serde-default field on
+      // the Rust side appears as required in the generated TS, while
+      // we omit them when they match defaults. Cast through `unknown`
+      // — the runtime payload is correct; the structural mismatch is
+      // purely about which fields are optional.
       const req: GenerateRequestWithProject = {
         post_processor: post,
-        project: opProject,
+        project: opProject as unknown as GenerateRequestWithProject['project'],
       };
       const r = client.generateStream
         ? await client.generateStream(req, (ev) => {

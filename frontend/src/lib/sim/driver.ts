@@ -89,7 +89,7 @@ async function loadWasm(): Promise<WasmHandle> {
       // bundled app. Without the ignore, vite splits this into a chunk,
       // copies wiac_wasm_bg.wasm with a hashed name, and rewrites the
       // js's `import.meta.url`-relative .wasm fetch to match.
-      const mod = (await import('wiac-wasm')) as WasmModule;
+      const mod = (await import('wiac-wasm')) as unknown as WasmModule;
       if (typeof mod.default !== 'function') {
         throw new Error('wiac-wasm pkg missing default init export');
       }

@@ -21,3 +21,6 @@ export type GenerateStats = components['schemas']['GenerateStats'];
 export type RenderTextRequest = components['schemas']['RenderTextRequest'];
 export type RenderTextResponse = components['schemas']['RenderTextResponse'];
 export type ImportedObject = components['schemas']['ImportedObject'];
+export type SimWarning = components['schemas']['SimWarning'];
+export type SimDiagnostics = components['schemas']['SimDiagnostics'];
+export type SimSeverity = components['schemas']['SimSeverity'];

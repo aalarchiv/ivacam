@@ -17,6 +17,7 @@ import { HeightfieldMesh } from './heightfield_mesh';
 import type {
   GenerateResponse,
   ImportResponse,
+  SimDiagnostics,
   ToolpathSegment,
 } from '../api/types';
 import type { ToolEntry, AppSettings } from '../state/project.svelte';
@@ -37,6 +38,7 @@ interface SimulatorWasm {
     from_idx: number,
     to_idx: number,
   ): Uint32Array;
+  take_diagnostics(): SimDiagnostics;
   cols(): number;
   rows(): number;
   cell_size(): number;
@@ -171,6 +173,11 @@ export class HeightfieldDriver {
   /// WASM linear memory. Re-taken after every advance.
   private heightView: Float32Array | null = null;
   private appliedHead = 0;
+  /// Cumulative sim warnings collected since the last replay. Cleared on
+  /// dispose / reset; merged-into on every forward advance() so the UI
+  /// can mark the offending segments as the user scrubs.
+  private diagnostics: SimDiagnostics = { warnings: [] };
+  private onDiagnosticsChange: ((d: SimDiagnostics) => void) | null = null;
   /// Edges rebuild is expensive; debounce to avoid stalling on every
   /// playhead frame. Tracks the last time edges were rebuilt; the
   /// driver only triggers a rebuild every EDGE_REBUILD_MS or at the
@@ -239,7 +246,23 @@ export class HeightfieldDriver {
     });
     this.group.add(this.mesh.group);
     this.appliedHead = 0;
+    this.diagnostics = { warnings: [] };
+    this.notifyDiagnostics();
     this.refreshHeightView();
+  }
+
+  /// Subscribe to diagnostics changes. Called with the current snapshot
+  /// after every forward advance() that returns warnings, and after
+  /// reset/dispose so listeners can clear stale UI markers.
+  onDiagnostics(cb: (d: SimDiagnostics) => void) {
+    this.onDiagnosticsChange = cb;
+    cb(this.diagnostics);
+  }
+
+  /// Latest cumulative diagnostics snapshot. The UI may also subscribe
+  /// via `onDiagnostics` for a push-based update.
+  getDiagnostics(): SimDiagnostics {
+    return this.diagnostics;
   }
 
   /// Advance the simulation to `headFraction` (a number in [0, 1] —
@@ -295,11 +318,14 @@ export class HeightfieldDriver {
       // Backward scrub: can't undo cuts, replay from zero.
       this.sim.reset();
       this.appliedHead = 0;
+      this.diagnostics = { warnings: [] };
+      this.notifyDiagnostics();
     }
     if (newHead > this.appliedHead) {
       const wireTool = toWireTool(tool);
       const aabb = this.sim.advance(segments, wireTool, this.appliedHead, newHead);
       this.appliedHead = newHead;
+      this.collectDiagnostics();
       // Memory may have grown — re-take the view before reading cells.
       this.refreshHeightView();
       if (this.heightView && aabb.length === 4) {
@@ -317,6 +343,7 @@ export class HeightfieldDriver {
       const wireTool = toWireTool(tool);
       this.sim.advance(segments, wireTool, 0, newHead);
       this.appliedHead = newHead;
+      this.collectDiagnostics();
     }
     this.refreshHeightView();
     if (this.heightView) this.mesh.updateHeights(this.heightView);
@@ -361,11 +388,29 @@ export class HeightfieldDriver {
     }
     this.heightView = null;
     this.appliedHead = 0;
+    if (this.diagnostics.warnings.length > 0) {
+      this.diagnostics = { warnings: [] };
+      this.notifyDiagnostics();
+    }
   }
 
   destroy() {
     this.dispose();
     this.opts.scene.remove(this.group);
+  }
+
+  private collectDiagnostics() {
+    if (!this.sim) return;
+    const fresh = this.sim.take_diagnostics();
+    if (!fresh || !Array.isArray(fresh.warnings) || fresh.warnings.length === 0) return;
+    this.diagnostics = {
+      warnings: [...this.diagnostics.warnings, ...fresh.warnings],
+    };
+    this.notifyDiagnostics();
+  }
+
+  private notifyDiagnostics() {
+    this.onDiagnosticsChange?.(this.diagnostics);
   }
 
   private refreshHeightView() {

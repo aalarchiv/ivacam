@@ -226,6 +226,33 @@
             memory + redraw time.
           </p>
         </section>
+
+        <section>
+          <h3>Sim safety</h3>
+          <div class="grid">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={project.settings.blockOnCriticalSimWarnings}
+                onchange={(e) => update('blockOnCriticalSimWarnings', (e.currentTarget as HTMLInputElement).checked)}
+              />
+              <span>Block G-code generation on critical sim warnings</span>
+            </label>
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={project.settings.autoRunSimOnSave}
+                onchange={(e) => update('autoRunSimOnSave', (e.currentTarget as HTMLInputElement).checked)}
+              />
+              <span>Auto-run sim on every project save</span>
+            </label>
+          </div>
+          <p class="hint">
+            "Critical" warnings are collisions and rapids cutting through
+            material. With the block enabled, fixing them — or disabling
+            the safety check — is required before downloading G-code.
+          </p>
+        </section>
       </div>
 
       <footer>

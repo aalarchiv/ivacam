@@ -4,8 +4,19 @@
   // GcodePanel read via `playheadToSegment` to position the tool tip
   // and active line. Arc-length interpretation keeps cutter speed
   // visually consistent across short connectors and long edges.
+  //
+  // Renders sim-warning markers along the timeline at the segment
+  // positions where they fired. Critical = red, warning = yellow.
+  // Click a marker to scrub the playhead onto it.
 
-  import { project, playheadToSegment } from '../state/project.svelte';
+  import {
+    project,
+    playheadToSegment,
+    simWarningSeverity,
+    simWarningSegmentIdx,
+    simWarningSummary,
+  } from '../state/project.svelte';
+  import type { SimWarning } from '../api/types';
 
   let speed = $state(1.0);
   let playing = $state(false);
@@ -24,9 +35,6 @@
     if (!playing) return;
     const dt = (now - lastTs) / 1000;
     lastTs = now;
-    // 0.1 fraction of total arc length per second at speed=1. Keeps
-    // the same "feels right for short programs" cadence as before
-    // while now scaling to physical distance, not segment count.
     let next = project.playhead + dt * 0.1 * speed;
     if (next >= 1) {
       next = 1;
@@ -47,6 +55,28 @@
     project.playhead = isNaN(v) ? 0 : v;
     playing = false;
   }
+
+  /// Map a segment index to its [0..1] arc-length position so warning
+  /// markers line up with the slider. Returns null when there's no
+  /// length table yet.
+  function segIdxToFraction(segIdx: number): number | null {
+    const cum = project.toolpathCumLen;
+    const total = project.toolpathTotalLen;
+    if (!cum || cum.length === 0 || total <= 0) return null;
+    const i = Math.max(0, Math.min(cum.length - 1, segIdx));
+    return Math.max(0, Math.min(1, cum[i] / total));
+  }
+
+  function onMarkerClick(w: SimWarning) {
+    const segIdx = simWarningSegmentIdx(w);
+    const f = segIdxToFraction(segIdx);
+    if (f != null) {
+      project.playhead = f;
+      playing = false;
+    }
+  }
+
+  let warnings = $derived(project.simDiagnostics?.warnings ?? []);
 </script>
 
 {#if project.generated && project.generated.toolpath.length > 0}
@@ -54,14 +84,33 @@
     <button onclick={togglePlay} disabled={!project.generated}>
       {playing ? '❚❚' : '▶'}
     </button>
-    <input
-      type="range"
-      min="0"
-      max="1"
-      step="0.001"
-      value={project.playhead}
-      oninput={onScrub}
-    />
+    <div class="track">
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.001"
+        value={project.playhead}
+        oninput={onScrub}
+      />
+      {#if warnings.length > 0}
+        <div class="markers" aria-hidden="true">
+          {#each warnings as w (w)}
+            {@const f = segIdxToFraction(simWarningSegmentIdx(w))}
+            {#if f != null}
+              <button
+                class="marker {simWarningSeverity(w)}"
+                style:left={`${(f * 100).toFixed(2)}%`}
+                title={simWarningSummary(w)}
+                onclick={() => onMarkerClick(w)}
+                type="button"
+                aria-label={simWarningSummary(w)}
+              ></button>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+    </div>
     <label
       >×<input
         type="number"
@@ -80,8 +129,6 @@
           project.toolpathCumLen,
           project.toolpathTotalLen,
         );
-        // +1 so the counter reads "N of total" (1-based) when fully
-        // played out, matching the previous count-based display.
         const shown = mapped.segIdx >= 0
           ? Math.min(total, mapped.segIdx + 1)
           : Math.round(project.playhead * total);
@@ -112,9 +159,45 @@
     cursor: pointer;
     min-width: 2.2rem;
   }
+  .track {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+  }
   input[type='range'] {
     flex: 1;
     accent-color: var(--accent);
+    position: relative;
+    z-index: 1;
+  }
+  .markers {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .marker {
+    position: absolute;
+    top: 50%;
+    width: 0.55rem;
+    height: 0.9rem;
+    transform: translate(-50%, -50%);
+    padding: 0;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    border-radius: 1px;
+    cursor: pointer;
+    pointer-events: auto;
+    min-width: 0;
+    z-index: 2;
+  }
+  .marker.critical {
+    background: #e54848;
+  }
+  .marker.warning {
+    background: #f0c020;
+  }
+  .marker.info {
+    background: #4a8df0;
   }
   input[type='number'] {
     width: 4rem;

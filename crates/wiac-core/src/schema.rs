@@ -18,6 +18,7 @@ use crate::cam::offsets::PolylineOffset;
 use crate::cam::VcObject;
 use crate::gcode::preview::ToolpathSegment;
 use crate::geometry::{BBox, Layer, Point2, Segment};
+use crate::sim::diagnostics::{Severity, SimDiagnostics, SimWarning};
 use crate::ImportOutput;
 
 // ─── HTTP envelope types ──────────────────────────────────────────────────
@@ -94,6 +95,10 @@ pub fn components_schemas() -> Value {
     insert::<crate::project::ToolEntry>(&mut schemas, "ToolEntry");
     insert::<crate::project::ToolKind>(&mut schemas, "ToolKind");
     insert::<crate::project::Coolant>(&mut schemas, "Coolant");
+
+    insert::<SimWarning>(&mut schemas, "SimWarning");
+    insert::<SimDiagnostics>(&mut schemas, "SimDiagnostics");
+    insert::<Severity>(&mut schemas, "SimSeverity");
 
     insert::<HealthResponse>(&mut schemas, "HealthResponse");
     insert::<VersionResponse>(&mut schemas, "VersionResponse");

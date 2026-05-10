@@ -1285,6 +1285,142 @@ components:
       - tabs
       - tool
       type: object
+    SimDiagnostics:
+      properties:
+        warnings:
+          items:
+            $ref: '#/components/schemas/SimWarning'
+          type: array
+      required:
+      - warnings
+      type: object
+    SimSeverity:
+      enum:
+      - critical
+      - warning
+      - info
+      type: string
+    SimWarning:
+      oneOf:
+      - properties:
+          kind:
+            enum:
+            - rapid_through_material
+            type: string
+          rapid_pz:
+            format: double
+            type: number
+          segment_idx:
+            format: uint
+            minimum: 0.0
+            type: integer
+          worst_cell_z:
+            format: float
+            type: number
+          worst_x:
+            format: double
+            type: number
+          worst_y:
+            format: double
+            type: number
+        required:
+        - kind
+        - rapid_pz
+        - segment_idx
+        - worst_cell_z
+        - worst_x
+        - worst_y
+        type: object
+      - properties:
+          fixture_id:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          kind:
+            enum:
+            - fixture_collision
+            type: string
+          nearest_x:
+            format: double
+            type: number
+          nearest_y:
+            format: double
+            type: number
+          segment_idx:
+            format: uint
+            minimum: 0.0
+            type: integer
+        required:
+        - fixture_id
+        - kind
+        - nearest_x
+        - nearest_y
+        - segment_idx
+        type: object
+      - properties:
+          kind:
+            enum:
+            - holder_collision
+            type: string
+          required_clearance_mm:
+            format: float
+            type: number
+          segment_idx:
+            format: uint
+            minimum: 0.0
+            type: integer
+          wall_z:
+            format: float
+            type: number
+          worst_x:
+            format: double
+            type: number
+          worst_y:
+            format: double
+            type: number
+        required:
+        - kind
+        - required_clearance_mm
+        - segment_idx
+        - wall_z
+        - worst_x
+        - worst_y
+        type: object
+      - properties:
+          engagement_pct:
+            format: float
+            type: number
+          kind:
+            enum:
+            - engagement_overload
+            type: string
+          segment_idx:
+            format: uint
+            minimum: 0.0
+            type: integer
+        required:
+        - engagement_pct
+        - kind
+        - segment_idx
+        type: object
+      - properties:
+          count:
+            format: uint
+            minimum: 0.0
+            type: integer
+          first_segment_idx:
+            format: uint
+            minimum: 0.0
+            type: integer
+          kind:
+            enum:
+            - dragging_rapids
+            type: string
+        required:
+        - count
+        - first_segment_idx
+        - kind
+        type: object
     SourceCombine:
       description: How a multi-object source selection is combined into the region(s) the operation actually consumes. Default is `Auto` — containment-based, which gives the user "outer + inner = annulus" behavior with no extra thought. The other modes are clipper2-driven boolean ops; `None` keeps each selected object as its own boundary (the pre-combine behavior, surfaced for callers who really want it).
       oneOf:

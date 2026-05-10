@@ -4,17 +4,39 @@
 
   import { defaultClient } from '../api/http';
   import { isTauri } from '../api/env';
-  import { project } from '../state/project.svelte';
+  import {
+    project,
+    simWarningSeverity,
+    simWarningSegmentIdx,
+    simWarningSummary,
+  } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
+  import type { SimWarning } from '../api/types';
   import { _ } from 'svelte-i18n';
 
   const client = defaultClient();
   let post: 'linuxcnc' | 'grbl' | 'hpgl' = $state('linuxcnc');
   let progressMsg = $state<string>('');
   let progressFrac = $state<number>(0);
+  let warningPanelOpen = $state(false);
+
+  let warnings = $derived(project.simDiagnostics?.warnings ?? []);
+  let criticalCount = $derived(
+    warnings.filter((w) => simWarningSeverity(w) === 'critical').length,
+  );
+  let isClean = $derived(warnings.length === 0);
 
   async function run() {
     if (!project.imported) return;
+    if (
+      project.settings.blockOnCriticalSimWarnings &&
+      criticalCount > 0
+    ) {
+      project.setError(
+        `Sim has ${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} — fix or disable the safety check in Settings`,
+      );
+      return;
+    }
     project.generating = true;
     project.error = null;
     progressMsg = '';
@@ -74,6 +96,33 @@
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  function flyToWarning(w: SimWarning) {
+    const segIdx = simWarningSegmentIdx(w);
+    const cum = project.toolpathCumLen;
+    const total = project.toolpathTotalLen;
+    if (cum && total > 0 && segIdx >= 0 && segIdx < cum.length) {
+      project.playhead = Math.min(1, cum[segIdx] / total);
+    } else {
+      const segs = project.generated?.toolpath.length ?? 0;
+      if (segs > 0) project.playhead = Math.min(1, (segIdx + 1) / segs);
+    }
+  }
+
+  function chipClass(): string {
+    if (criticalCount > 0) return 'sim-chip critical';
+    if (warnings.length > 0) return 'sim-chip warning';
+    return 'sim-chip clean';
+  }
+
+  function chipLabel(): string {
+    if (project.simDiagnostics == null) return 'Sim: not run';
+    if (isClean) return 'Sim clean';
+    if (criticalCount > 0) {
+      return `Sim: ${warnings.length} warning${warnings.length === 1 ? '' : 's'} (${criticalCount} critical)`;
+    }
+    return `Sim: ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`;
+  }
 </script>
 
 <div class="bar">
@@ -116,7 +165,45 @@
       })}
     </span>
   {/if}
+  {#if project.simDiagnostics != null || warnings.length > 0}
+    <button
+      class={chipClass()}
+      onclick={() => (warningPanelOpen = !warningPanelOpen)}
+      type="button"
+      title="Click for details"
+      aria-expanded={warningPanelOpen}
+    >
+      {#if isClean}<span class="ok">✓</span>{/if}
+      {chipLabel()}
+    </button>
+  {/if}
 </div>
+
+{#if warningPanelOpen}
+  <div class="panel" role="dialog" aria-label="Sim warnings">
+    <header>
+      <h3>Sim warnings ({warnings.length})</h3>
+      <button class="close" onclick={() => (warningPanelOpen = false)} aria-label="Close">×</button>
+    </header>
+    <div class="list">
+      {#if warnings.length === 0}
+        <p class="empty">No warnings — sim is clean.</p>
+      {:else}
+        {#each warnings as w, i (i)}
+          <button
+            class="row severity-{simWarningSeverity(w)}"
+            onclick={() => flyToWarning(w)}
+            type="button"
+          >
+            <span class="dot" aria-hidden="true"></span>
+            <span class="kind">{w.kind}</span>
+            <span class="msg">{simWarningSummary(w)}</span>
+          </button>
+        {/each}
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <style>
   .bar {
@@ -198,5 +285,120 @@
     color: var(--text-strong);
     pointer-events: none;
     text-shadow: 0 0 4px var(--bg-app);
+  }
+  .sim-chip {
+    border-radius: 999px;
+    padding: 0.18rem 0.65rem;
+    font-size: 0.74rem;
+    border: 1px solid transparent;
+    color: var(--text-strong);
+  }
+  .sim-chip.clean {
+    background: rgba(95, 208, 110, 0.18);
+    color: #5fd06e;
+    border-color: rgba(95, 208, 110, 0.4);
+  }
+  .sim-chip.warning {
+    background: rgba(240, 192, 32, 0.18);
+    color: #f0c020;
+    border-color: rgba(240, 192, 32, 0.4);
+  }
+  .sim-chip.critical {
+    background: rgba(229, 72, 72, 0.18);
+    color: #e54848;
+    border-color: rgba(229, 72, 72, 0.4);
+  }
+  .sim-chip .ok {
+    margin-right: 0.2rem;
+    font-weight: bold;
+  }
+  .panel {
+    position: absolute;
+    right: 1rem;
+    top: 3rem;
+    width: min(420px, 90vw);
+    max-height: 60vh;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated);
+  }
+  .panel h3 {
+    font-size: 0.85rem;
+    margin: 0;
+    color: var(--text-strong);
+  }
+  .panel .close {
+    background: transparent;
+    color: var(--text-muted);
+    border: 0;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 0.3rem;
+  }
+  .panel .list {
+    overflow: auto;
+    padding: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .panel .empty {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    margin: 0.5rem;
+    text-align: center;
+  }
+  .panel .row {
+    display: grid;
+    grid-template-columns: 0.8rem 8rem 1fr;
+    align-items: center;
+    gap: 0.5rem;
+    text-align: left;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.74rem;
+  }
+  .panel .row:hover {
+    background: var(--bg-hover, var(--bg-input));
+  }
+  .panel .row .dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+  }
+  .panel .row.severity-critical .dot {
+    background: #e54848;
+  }
+  .panel .row.severity-warning .dot {
+    background: #f0c020;
+  }
+  .panel .row.severity-info .dot {
+    background: #4a8df0;
+  }
+  .panel .row .kind {
+    font-family: ui-monospace, monospace;
+    color: var(--text-muted);
+  }
+  .panel .row .msg {
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

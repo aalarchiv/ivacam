@@ -7,6 +7,9 @@ import type {
   ImportedObject,
   Point2,
   Segment,
+  SimDiagnostics,
+  SimWarning,
+  SimSeverity,
 } from '../api/types';
 
 const SETTINGS_KEY = 'wiac.settings';
@@ -25,6 +28,12 @@ export interface AppSettings {
   cellResolutionMm: number;
   solidPreviewByDefault: boolean;
   maxSimulationCells: number;
+  /// When true, GenerateBar refuses to emit gcode while the most recent
+  /// sim run reported critical warnings (collisions, rapid-through-stock).
+  blockOnCriticalSimWarnings: boolean;
+  /// When true, the sim driver keeps the playhead replayed to 1.0 after
+  /// every project save / regenerate so warnings surface immediately.
+  autoRunSimOnSave: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -39,6 +48,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cellResolutionMm: 0.2,
   solidPreviewByDefault: false,
   maxSimulationCells: 4_000_000,
+  blockOnCriticalSimWarnings: false,
+  autoRunSimOnSave: true,
 };
 
 /// Load persisted settings, deep-merging stored values over defaults so
@@ -180,6 +191,15 @@ class ProjectState {
   /// The SettingsDialog owns the UX; consumers (theme application, i18n
   /// init, future cutting-preview rendering) read from here.
   settings = $state<AppSettings>(loadSettings());
+
+  /// Most recent sim diagnostics, written through by the sim driver
+  /// after each forward advance(). Null = no sim run yet (or the
+  /// preview is in pure wireframe mode and no driver is built).
+  simDiagnostics = $state<SimDiagnostics | null>(null);
+
+  setSimDiagnostics(d: SimDiagnostics | null) {
+    this.simDiagnostics = d;
+  }
 
   /// Persist `settings` to localStorage. Cheap (one JSON.stringify on a
   /// tiny object) so we just call it on every mutation rather than
@@ -733,6 +753,45 @@ export interface ProjectFile {
 }
 
 export const project = new ProjectState();
+
+/// Severity mapping for a sim warning. Mirrors
+/// `wiac_core::sim::diagnostics::severity` so the UI can color-code
+/// without a round-trip.
+export function simWarningSeverity(w: SimWarning): SimSeverity {
+  switch (w.kind) {
+    case 'rapid_through_material':
+    case 'fixture_collision':
+    case 'holder_collision':
+      return 'critical';
+    case 'engagement_overload':
+    case 'dragging_rapids':
+      return 'warning';
+  }
+}
+
+/// Segment index a warning attaches to. `dragging_rapids` reports a
+/// run; we anchor it at the first segment in the run for marker
+/// placement.
+export function simWarningSegmentIdx(w: SimWarning): number {
+  if (w.kind === 'dragging_rapids') return w.first_segment_idx;
+  return w.segment_idx;
+}
+
+/// Short human-readable line for tooltips / list rows.
+export function simWarningSummary(w: SimWarning): string {
+  switch (w.kind) {
+    case 'rapid_through_material':
+      return `Rapid through material at segment ${w.segment_idx}, x=${w.worst_x.toFixed(1)} y=${w.worst_y.toFixed(1)}`;
+    case 'fixture_collision':
+      return `Fixture #${w.fixture_id} collision at segment ${w.segment_idx}`;
+    case 'holder_collision':
+      return `Tool holder hits wall at segment ${w.segment_idx} (clearance ${w.required_clearance_mm.toFixed(2)} mm)`;
+    case 'engagement_overload':
+      return `Engagement ${w.engagement_pct.toFixed(0)}% at segment ${w.segment_idx}`;
+    case 'dragging_rapids':
+      return `Dragging rapids: ${w.count} consecutive rapids from segment ${w.first_segment_idx}`;
+  }
+}
 
 /// Map `playhead ∈ [0,1]` (fraction of total arc length) to a segment
 /// index + parametric position within that segment. Returns

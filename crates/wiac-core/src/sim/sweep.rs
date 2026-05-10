@@ -23,19 +23,21 @@
 )]
 
 use crate::gcode::preview::{MoveKind, ToolpathSegment};
+use crate::sim::diagnostics::SimDiagnostics;
 use crate::sim::heightmap::{Heightmap, ToolProfile};
 
 /// Apply a single toolpath segment to `heightmap`, lowering every cell
 /// the cutter sweeps over. Returns the number of cells touched (useful
 /// for tests and progress reporting). Rapid moves are skipped.
 ///
-/// `cell_drift_eps` is a tolerance on the segment's "bulge" check that
-/// keeps us from sweeping beyond the heightmap when the segment lies on
-/// the boundary.
+/// `diagnostics` collects per-segment runtime warnings (rapid-through-
+/// material, fixture/holder collisions, engagement overload, …). This
+/// pass plumbs the parameter; the rs8.1/2/3 children populate it.
 pub fn sweep_segment(
     heightmap: &mut Heightmap,
     segment: &ToolpathSegment,
     profile: ToolProfile,
+    _diagnostics: &mut SimDiagnostics,
 ) -> u32 {
     if matches!(segment.kind, MoveKind::Rapid) {
         return 0;
@@ -126,12 +128,13 @@ pub fn sweep_range(
     from_idx: usize,
     to_idx: usize,
     profile: ToolProfile,
+    diagnostics: &mut SimDiagnostics,
 ) -> u32 {
     let lo = from_idx.min(segments.len());
     let hi = to_idx.min(segments.len());
     let mut total = 0u32;
     for seg in &segments[lo..hi] {
-        total += sweep_segment(heightmap, seg, profile);
+        total += sweep_segment(heightmap, seg, profile, diagnostics);
     }
     total
 }
@@ -200,31 +203,39 @@ mod tests {
         map.data[(iy as usize) * (map.cols as usize) + ix as usize]
     }
 
+    fn diag() -> SimDiagnostics {
+        SimDiagnostics::new()
+    }
+
     #[test]
     fn rapid_move_does_not_carve() {
         let mut map = fresh_map(20, 20);
+        let mut d = diag();
         let s = seg(MoveKind::Rapid, pose(0.0, 0.0, -10.0), pose(10.0, 10.0, -10.0));
-        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 });
+        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, &mut d);
         assert_eq!(touched, 0);
         assert!(map.data.iter().all(|z| (*z - 0.0).abs() < 1e-6));
         assert!(map.dirty_aabb().is_none());
+        assert!(d.is_clean());
     }
 
     #[test]
     fn cutter_above_stock_does_not_carve() {
         let mut map = fresh_map(20, 20);
+        let mut d = diag();
         // Both endpoints above the stock surface (z = 0). Cutter is in air.
         let s = seg(MoveKind::Cut, pose(5.0, 5.0, 0.5), pose(8.0, 8.0, 0.5));
-        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 });
+        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, &mut d);
         assert_eq!(touched, 0);
     }
 
     #[test]
     fn endmill_plunge_lowers_circular_patch() {
         let mut map = fresh_map(40, 40);
+        let mut d = diag();
         // Plunge at (10, 10) from z=0 to z=-1 with R=2.
         let s = seg(MoveKind::Plunge, pose(10.0, 10.0, 0.0), pose(10.0, 10.0, -1.0));
-        sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 });
+        sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, &mut d);
         // Cell directly under the tool tip should be at -1.
         assert!((cell(&map, 10, 10) - -1.0).abs() < 1e-5);
         // Cell ~2 cells away (≈2 mm) is on the boundary of the cutter; let it pass either way.
@@ -239,10 +250,11 @@ mod tests {
     #[test]
     fn horizontal_cut_carves_4mm_stripe() {
         let mut map = fresh_map(60, 60);
+        let mut d = diag();
         let r = 2.0_f32;
         // Cut from (5, 25) to (55, 25) at z=-1 with R=2.
         let s = seg(MoveKind::Cut, pose(5.0, 25.0, -1.0), pose(55.0, 25.0, -1.0));
-        sweep_segment(&mut map, &s, ToolProfile::Endmill { r });
+        sweep_segment(&mut map, &s, ToolProfile::Endmill { r }, &mut d);
         // Center of the stripe should be at -1 along the path.
         for ix in 6..=54 {
             assert!(
@@ -262,6 +274,7 @@ mod tests {
     #[test]
     fn vbit_plunge_lowers_in_conical_pattern() {
         let mut map = fresh_map(40, 40);
+        let mut d = diag();
         // 60° included angle = 30° half-angle. R=2, no flat tip.
         let half = 30f32.to_radians();
         let profile = ToolProfile::VBit {
@@ -272,7 +285,7 @@ mod tests {
         // Plunge AT a cell center so r=0 at cell (10, 10) and r=1 at
         // cell (11, 10) — keeps the analytic check simple.
         let s = seg(MoveKind::Plunge, pose(10.5, 10.5, 0.0), pose(10.5, 10.5, -2.0));
-        sweep_segment(&mut map, &s, profile);
+        sweep_segment(&mut map, &s, profile, &mut d);
         let apex = cell(&map, 10, 10);
         let mid = cell(&map, 11, 10);
         // Apex sits at the plunge depth (-2). Cell at r=1 sits higher
@@ -289,11 +302,12 @@ mod tests {
     #[test]
     fn lower_at_only_writes_on_descent_not_re_pass() {
         let mut map = fresh_map(20, 20);
+        let mut d = diag();
         let plunge = seg(MoveKind::Plunge, pose(10.0, 10.0, 0.0), pose(10.0, 10.0, -2.0));
-        sweep_segment(&mut map, &plunge, ToolProfile::Endmill { r: 2.0 });
+        sweep_segment(&mut map, &plunge, ToolProfile::Endmill { r: 2.0 }, &mut d);
         // Now sweep a SHALLOWER cut over the same cell — should NOT raise.
         let shallow = seg(MoveKind::Cut, pose(8.0, 10.0, -0.5), pose(12.0, 10.0, -0.5));
-        sweep_segment(&mut map, &shallow, ToolProfile::Endmill { r: 2.0 });
+        sweep_segment(&mut map, &shallow, ToolProfile::Endmill { r: 2.0 }, &mut d);
         assert!(
             (cell(&map, 10, 10) - -2.0).abs() < 1e-5,
             "later shallower pass must not raise the cell",
@@ -303,13 +317,20 @@ mod tests {
     #[test]
     fn sweep_range_walks_each_segment() {
         let mut map = fresh_map(40, 40);
+        let mut d = diag();
         let segments = vec![
             seg(MoveKind::Cut, pose(5.0, 10.0, -1.0), pose(15.0, 10.0, -1.0)),
             seg(MoveKind::Rapid, pose(15.0, 10.0, 5.0), pose(20.0, 20.0, 5.0)),
             seg(MoveKind::Plunge, pose(20.0, 20.0, 0.0), pose(20.0, 20.0, -1.0)),
         ];
-        let touched =
-            sweep_range(&mut map, &segments, 0, segments.len(), ToolProfile::Endmill { r: 2.0 });
+        let touched = sweep_range(
+            &mut map,
+            &segments,
+            0,
+            segments.len(),
+            ToolProfile::Endmill { r: 2.0 },
+            &mut d,
+        );
         assert!(touched > 0);
         // First segment carved the (5..15, 10) stripe.
         assert!((cell(&map, 10, 10) - -1.0).abs() < 1e-5);
@@ -323,9 +344,10 @@ mod tests {
     #[test]
     fn sweep_outside_heightmap_is_silently_skipped() {
         let mut map = fresh_map(20, 20);
+        let mut d = diag();
         // Segment fully to the right of the heightmap (origin 0..20).
         let s = seg(MoveKind::Cut, pose(50.0, 10.0, -1.0), pose(60.0, 10.0, -1.0));
-        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 });
+        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, &mut d);
         assert_eq!(touched, 0);
         // Heightmap untouched.
         assert!(map.dirty_aabb().is_none());
@@ -334,9 +356,10 @@ mod tests {
     #[test]
     fn sweep_partial_overlap_clamps_to_grid() {
         let mut map = fresh_map(20, 20);
+        let mut d = diag();
         // Segment crosses the right edge — half inside, half outside.
         let s = seg(MoveKind::Cut, pose(15.0, 10.0, -1.0), pose(25.0, 10.0, -1.0));
-        sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 });
+        sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, &mut d);
         // Cells inside the grid along the path should be lowered.
         for ix in 16..=19 {
             assert!(

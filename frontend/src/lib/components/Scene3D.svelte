@@ -2,8 +2,14 @@
   import { onMount, onDestroy } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { project, playheadToSegment } from '../state/project.svelte';
+  import {
+    project,
+    playheadToSegment,
+    simWarningSeverity,
+    simWarningSegmentIdx,
+  } from '../state/project.svelte';
   import { HeightfieldDriver } from '../sim/driver';
+  import type { SimWarning } from '../api/types';
 
   let host: HTMLDivElement;
   let renderer: THREE.WebGLRenderer | undefined;
@@ -104,6 +110,10 @@
   let toolpathColors: ToolpathColor[] = [];
   /// Head index the toolpath fade currently reflects.
   let appliedHead = -1;
+  /// Per-segment override colors driven by sim warnings. Consumed by
+  /// applyToolpathFade so the affected segment is painted in the
+  /// severity color regardless of past/future state.
+  let warningSegmentColors = new Map<number, [number, number, number]>();
 
   /// Persistent tool-tip mesh + the spec it was built for. updateTool()
   /// fires every playhead change (60×/sec while playing), so creating a
@@ -460,6 +470,7 @@
         if (!scene) return;
         const d = new HeightfieldDriver({ scene, requestRender });
         await d.init();
+        d.onDiagnostics((diag) => project.setSimDiagnostics(diag));
         driver = d;
       })();
     }
@@ -472,6 +483,36 @@
   /// new head so a 60fps playback is O(playhead delta) per tick, not
   /// O(toolpath length). Replaces the per-frame full rebuild that
   /// previously also reset the camera and broke pan/zoom during play.
+  function rebuildWarningSegmentColors() {
+    warningSegmentColors = new Map();
+    const warnings = project.simDiagnostics?.warnings ?? [];
+    for (const w of warnings) {
+      const idx = simWarningSegmentIdx(w);
+      const sev = simWarningSeverity(w);
+      // Critical wins over warning if both fired on the same segment.
+      const existing = warningSegmentColors.get(idx);
+      if (existing && sev !== 'critical') continue;
+      const tint: [number, number, number] =
+        sev === 'critical' ? [0.9, 0.28, 0.28] : [0.94, 0.75, 0.13];
+      warningSegmentColors.set(idx, tint);
+      if (w.kind === 'dragging_rapids') {
+        for (let i = 1; i < w.count; i++) {
+          if (!warningSegmentColors.has(idx + i)) {
+            warningSegmentColors.set(idx + i, tint);
+          }
+        }
+      }
+    }
+  }
+
+  $effect(() => {
+    void project.simDiagnostics;
+    rebuildWarningSegmentColors();
+    appliedHead = -1;
+    applyToolpathFade();
+    requestRender();
+  });
+
   function applyToolpathFade() {
     if (!linesObject || toolpathColors.length === 0) return;
     const total = toolpathColors.length;
@@ -498,9 +539,19 @@
     for (let i = lo; i < hi; i++) {
       const tc = toolpathColors[i];
       const past = i < head;
-      const r = past ? tc.base[0] : tc.base[0] * f + fade_offset;
-      const g = past ? tc.base[1] : tc.base[1] * f + fade_offset;
-      const b = past ? tc.base[2] : tc.base[2] * f + fade_offset;
+      const tint = warningSegmentColors.get(i);
+      let r: number;
+      let g: number;
+      let b: number;
+      if (tint) {
+        r = past ? tint[0] : tint[0] * f + fade_offset;
+        g = past ? tint[1] : tint[1] * f + fade_offset;
+        b = past ? tint[2] : tint[2] * f + fade_offset;
+      } else {
+        r = past ? tc.base[0] : tc.base[0] * f + fade_offset;
+        g = past ? tc.base[1] : tc.base[1] * f + fade_offset;
+        b = past ? tc.base[2] : tc.base[2] * f + fade_offset;
+      }
       const off = tc.start * 3;
       arr[off] = r;
       arr[off + 1] = g;
@@ -557,6 +608,72 @@
 
   let tabsGroup: THREE.Group | undefined;
   let stockGroup: THREE.Group | undefined;
+  /// Sim-warning markers (one mesh per critical / holder warning). Lazy
+  /// rebuilt whenever project.simDiagnostics changes.
+  let warningGroup: THREE.Group | undefined;
+
+  function warningMarkerColor(w: SimWarning): number {
+    return simWarningSeverity(w) === 'critical' ? 0xe54848 : 0xf0c020;
+  }
+
+  function warningPosition(w: SimWarning): { x: number; y: number; z: number } | null {
+    if (w.kind === 'rapid_through_material') {
+      return { x: w.worst_x, y: w.worst_y, z: w.worst_cell_z };
+    }
+    if (w.kind === 'fixture_collision') {
+      return { x: w.nearest_x, y: w.nearest_y, z: 0 };
+    }
+    if (w.kind === 'holder_collision') {
+      return { x: w.worst_x, y: w.worst_y, z: w.wall_z };
+    }
+    // Engagement / dragging are span-shaped, not point-shaped — fall
+    // back to the toolpath segment endpoint so the marker still appears.
+    const segIdx = simWarningSegmentIdx(w);
+    const tp = project.generated?.toolpath;
+    const seg = tp ? tp[segIdx] : undefined;
+    if (!seg) return null;
+    return { x: seg.from.x, y: seg.from.y, z: seg.from.z };
+  }
+
+  function rebuildWarningMarkers() {
+    if (!scene) return;
+    if (!warningGroup) {
+      warningGroup = new THREE.Group();
+      scene.add(warningGroup);
+    }
+    while (warningGroup.children.length > 0) {
+      const child = warningGroup.children[0];
+      warningGroup.remove(child);
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        const m = child.material as THREE.Material | THREE.Material[];
+        if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
+        else m.dispose();
+      }
+    }
+    const warnings = project.simDiagnostics?.warnings ?? [];
+    if (warnings.length === 0) return;
+    const radius = Math.max(0.5, sceneRadius * 0.012);
+    const geom = new THREE.TetrahedronGeometry(radius, 0);
+    for (const w of warnings) {
+      const pos = warningPosition(w);
+      if (!pos) continue;
+      const mat = new THREE.MeshBasicMaterial({
+        color: warningMarkerColor(w),
+        transparent: true,
+        opacity: 0.9,
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set(pos.x, pos.y, pos.z + radius);
+      warningGroup.add(mesh);
+    }
+  }
+
+  $effect(() => {
+    void project.simDiagnostics;
+    rebuildWarningMarkers();
+    requestRender();
+  });
 
   /// Translucent stock box + its wireframe. The Z extents go from
   /// setup.mill.depth (or stock.thickness for `manual` mode) up to 0.

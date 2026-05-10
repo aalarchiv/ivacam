@@ -709,6 +709,63 @@ export interface components {
             tabs: components["schemas"]["TabsConfig"];
             tool: components["schemas"]["ToolConfig"];
         };
+        SimDiagnostics: {
+            warnings: components["schemas"]["SimWarning"][];
+        };
+        /** @enum {string} */
+        SimSeverity: "critical" | "warning" | "info";
+        SimWarning: {
+            /** @enum {string} */
+            kind: "rapid_through_material";
+            /** Format: double */
+            rapid_pz: number;
+            /** Format: uint */
+            segment_idx: number;
+            /** Format: float */
+            worst_cell_z: number;
+            /** Format: double */
+            worst_x: number;
+            /** Format: double */
+            worst_y: number;
+        } | {
+            /** Format: uint32 */
+            fixture_id: number;
+            /** @enum {string} */
+            kind: "fixture_collision";
+            /** Format: double */
+            nearest_x: number;
+            /** Format: double */
+            nearest_y: number;
+            /** Format: uint */
+            segment_idx: number;
+        } | {
+            /** @enum {string} */
+            kind: "holder_collision";
+            /** Format: float */
+            required_clearance_mm: number;
+            /** Format: uint */
+            segment_idx: number;
+            /** Format: float */
+            wall_z: number;
+            /** Format: double */
+            worst_x: number;
+            /** Format: double */
+            worst_y: number;
+        } | {
+            /** Format: float */
+            engagement_pct: number;
+            /** @enum {string} */
+            kind: "engagement_overload";
+            /** Format: uint */
+            segment_idx: number;
+        } | {
+            /** Format: uint */
+            count: number;
+            /** Format: uint */
+            first_segment_idx: number;
+            /** @enum {string} */
+            kind: "dragging_rapids";
+        };
         /** @description How a multi-object source selection is combined into the region(s) the operation actually consumes. Default is `Auto` — containment-based, which gives the user "outer + inner = annulus" behavior with no extra thought. The other modes are clipper2-driven boolean ops; `None` keeps each selected object as its own boundary (the pre-combine behavior, surfaced for callers who really want it). */
         SourceCombine: "auto" | "union" | "difference" | "intersection" | "xor" | "none";
         TabPoint: {

@@ -22,6 +22,7 @@ use wasm_bindgen::prelude::*;
 
 use wiac_core::gcode::preview::ToolpathSegment;
 use wiac_core::project::ToolEntry;
+use wiac_core::sim::diagnostics::SimDiagnostics;
 use wiac_core::sim::heightmap::{Heightmap, ToolProfile};
 use wiac_core::sim::sweep::sweep_range;
 
@@ -35,6 +36,11 @@ use crate::into_js_error;
 #[derive(Debug)]
 pub struct Simulator {
     heightmap: Heightmap,
+    /// Warnings collected by the most recent `advance()` call. The JS
+    /// driver pulls these via `take_diagnostics()` after each frame so
+    /// the playbar / scene can mark offending segments. Reset on every
+    /// `advance()` so each call's payload is self-contained.
+    last_diagnostics: SimDiagnostics,
 }
 
 #[wasm_bindgen]
@@ -54,6 +60,7 @@ impl Simulator {
     ) -> Self {
         Self {
             heightmap: Heightmap::from_bbox(min_x, min_y, max_x, max_y, cell_size, top_z),
+            last_diagnostics: SimDiagnostics::new(),
         }
     }
 
@@ -62,6 +69,14 @@ impl Simulator {
     /// was tracking.
     pub fn reset(&mut self) {
         self.heightmap.reset();
+        self.last_diagnostics = SimDiagnostics::new();
+    }
+
+    /// Pull and clear the diagnostics collected by the most recent
+    /// `advance()` call. Returns a JSON-shaped `SimDiagnostics`.
+    pub fn take_diagnostics(&mut self) -> Result<JsValue, JsValue> {
+        let taken = std::mem::take(&mut self.last_diagnostics);
+        serde_wasm_bindgen::to_value(&taken).map_err(into_js_error)
     }
 
     /// Apply sweeps for toolpath segments `[from_idx, to_idx)`. Returns
@@ -145,6 +160,7 @@ impl Simulator {
         to_idx: u32,
     ) -> Vec<u32> {
         self.heightmap.clear_dirty();
+        self.last_diagnostics = SimDiagnostics::new();
         let profile = ToolProfile::from_tool(tool);
         let _touched = sweep_range(
             &mut self.heightmap,
@@ -152,6 +168,7 @@ impl Simulator {
             from_idx as usize,
             to_idx as usize,
             profile,
+            &mut self.last_diagnostics,
         );
         match self.heightmap.dirty_aabb() {
             Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],

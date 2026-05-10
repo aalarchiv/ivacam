@@ -2,5 +2,8 @@
 //! the stock footprint and tool Z-profiles describe what radius of the
 //! cutter surface reaches how far down at a given radial offset.
 
+pub mod diagnostics;
 pub mod heightmap;
 pub mod sweep;
+
+pub use diagnostics::{kind_str, severity, Severity, SimDiagnostics, SimWarning};

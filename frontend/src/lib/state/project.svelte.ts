@@ -11,6 +11,26 @@ import type {
   SimWarning,
   SimSeverity,
 } from '../api/types';
+import { History } from './history';
+import {
+  addFixtureCommand,
+  addOperationCommand,
+  addTabCommand,
+  addToolCommand,
+  appendImportedCommand,
+  clearTabsCommand,
+  deleteOperationCommand,
+  deleteToolCommand,
+  removeFixtureCommand,
+  removeTabCommand,
+  reorderOperationCommand,
+  replaceToolsCommand,
+  setMachineCommand,
+  setStockCommand,
+  updateFixtureCommand,
+  updateOperationCommand,
+  type CommandTarget,
+} from './commands';
 
 const SETTINGS_KEY = 'wiac.settings';
 const LEGACY_THEME_KEY = 'wiac.theme';
@@ -222,6 +242,33 @@ class ProjectState {
   /// preview is in pure wireframe mode and no driver is built).
   simDiagnostics = $state<SimDiagnostics | null>(null);
 
+  /// Undo / redo. Per-session only; not serialized to .vc-project.json.
+  /// View-state (selection, playhead, layer visibility, settings) is
+  /// excluded — see history.ts for the full list.
+  history = new History();
+
+  /// Reactive mirror of `history.version` so $derived expressions in the
+  /// UI re-run when the stacks change (the History class is plain TS so
+  /// it can't be a $state itself).
+  historyVersion = $state(0);
+
+  constructor() {
+    this.history.subscribe(() => { this.historyVersion = this.history.version; });
+  }
+
+  /// Cast to `CommandTarget` for command builders. Single helper so the
+  /// `as unknown as` dance lives in one place.
+  private target(): CommandTarget {
+    return this as unknown as CommandTarget;
+  }
+
+  undo(): boolean { return this.history.undo(this.target()); }
+  redo(): boolean { return this.history.redo(this.target()); }
+  canUndo(): boolean { void this.historyVersion; return this.history.undoSize > 0; }
+  canRedo(): boolean { void this.historyVersion; return this.history.redoSize > 0; }
+  undoLabel(): string | null { void this.historyVersion; return this.history.undoLabel(); }
+  redoLabel(): string | null { void this.historyVersion; return this.history.redoLabel(); }
+
   setSimDiagnostics(d: SimDiagnostics | null) {
     this.simDiagnostics = d;
   }
@@ -244,25 +291,21 @@ class ProjectState {
   }
 
   addTab(segmentIdx: number, position: Point2) {
-    const next = { ...this.tabs };
-    next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: position.x, y: position.y }];
-    this.tabs = next;
-    this.dirty = true;
+    this.history.exec(
+      addTabCommand(segmentIdx, { x: position.x, y: position.y }),
+      this.target(),
+    );
   }
 
   removeTab(segmentIdx: number, tabIdx: number) {
     const list = this.tabs[segmentIdx];
-    if (!list) return;
-    const next = { ...this.tabs };
-    next[segmentIdx] = list.filter((_, i) => i !== tabIdx);
-    if (next[segmentIdx].length === 0) delete next[segmentIdx];
-    this.tabs = next;
-    this.dirty = true;
+    if (!list || tabIdx < 0 || tabIdx >= list.length) return;
+    this.history.exec(removeTabCommand(segmentIdx, tabIdx), this.target());
   }
 
   clearTabs() {
-    this.tabs = {};
-    this.dirty = true;
+    if (Object.keys(this.tabs).length === 0) return;
+    this.history.exec(clearTabsCommand(), this.target());
   }
 
   // ── fixtures ─────────────────────────────────────────────────────────
@@ -284,21 +327,19 @@ class ProjectState {
       z_top,
       color: DEFAULT_FIXTURE_COLOR,
     };
-    this.fixtures = [...this.fixtures, f];
+    this.history.exec(addFixtureCommand(f), this.target());
     this.selectedFixtureId = f.id;
-    this.dirty = true;
     return f;
   }
 
   updateFixture(id: number, patch: Partial<Fixture>) {
-    this.fixtures = this.fixtures.map((f) => (f.id === id ? { ...f, ...patch } : f));
-    this.dirty = true;
+    this.history.exec(updateFixtureCommand(id, patch), this.target());
   }
 
   removeFixture(id: number) {
-    this.fixtures = this.fixtures.filter((f) => f.id !== id);
+    if (!this.fixtures.some((f) => f.id === id)) return;
+    this.history.exec(removeFixtureCommand(id), this.target());
     if (this.selectedFixtureId === id) this.selectedFixtureId = null;
-    this.dirty = true;
   }
 
   selectFixture(id: number | null) {
@@ -317,6 +358,9 @@ class ProjectState {
     this.selectedObjects = new Set();
     this.hoverSegment = null;
     this.tabs = {};
+    // Imports cross a project boundary; undoing back across that boundary
+    // would mix incompatible geometry/op state, so drop history here.
+    this.history.clear();
   }
 
   toggleObject(id: number, additive = false) {
@@ -401,6 +445,8 @@ class ProjectState {
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
     this.selectedFixtureId = null;
     this.selectedOpId = null;
+    // Loading a project resets to a clean undo baseline.
+    this.history.clear();
   }
 
   /// Append the rendered segments from AddTextDialog to the imported
@@ -420,6 +466,9 @@ class ProjectState {
     layerName: string,
     singleLine: boolean,
   ): number[] {
+    const before: ImportResponse | null = this.imported
+      ? structuredClone(this.imported)
+      : null;
     if (!this.imported) {
       const empty: ImportResponse = {
         filename: 'text',
@@ -432,7 +481,7 @@ class ProjectState {
         objects: [],
         object_meta: [],
       };
-      this.setImported(empty);
+      this.imported = empty;
     }
     const cur = this.imported!;
     const baseObjId = (cur.objects ?? []).reduce((m, o) => Math.max(m, o), 0);
@@ -510,7 +559,7 @@ class ProjectState {
       };
     }
 
-    this.imported = {
+    const after: ImportResponse = {
       ...cur,
       segments: [...cur.segments, ...segments],
       objects: [...(cur.objects ?? []), ...newObjects],
@@ -518,8 +567,10 @@ class ProjectState {
       layers,
       bbox,
     };
+    // If we just synthesized an empty import above, fold that into the
+    // command's `before` so a single undo wipes the whole "Add Text" run.
+    this.history.exec(appendImportedCommand({ before, after }), this.target());
     this.visibleLayers = new Set([...this.visibleLayers, layerName]);
-    this.dirty = true;
 
     // Return the de-duplicated set of new object ids (in insertion order).
     const distinct: number[] = [];
@@ -560,21 +611,20 @@ class ProjectState {
       xyOverlap: 0.5,
       ...(kind === 'vcarve' ? { multiPassRefine: false } : {}),
     };
-    this.operations = [...this.operations, op];
+    this.history.exec(addOperationCommand(op), this.target());
     this.selectedOpId = op.id;
-    this.dirty = true;
     return op;
   }
 
   removeOperation(id: number) {
-    this.operations = this.operations.filter((o) => o.id !== id);
+    if (!this.operations.some((o) => o.id === id)) return;
+    this.history.exec(deleteOperationCommand(id), this.target());
     if (this.selectedOpId === id) this.selectedOpId = null;
-    this.dirty = true;
   }
 
   updateOperation(id: number, patch: Partial<OpEntry>) {
-    this.operations = this.operations.map((o) => (o.id === id ? { ...o, ...patch } : o));
-    this.dirty = true;
+    if (!this.operations.some((o) => o.id === id)) return;
+    this.history.exec(updateOperationCommand(id, patch), this.target());
   }
 
   /// Reorder. Skipped when source and target index are the same so a
@@ -587,11 +637,36 @@ class ProjectState {
     if (cur < 0) return;
     const clamped = Math.max(0, Math.min(toIndex, this.operations.length - 1));
     if (clamped === cur) return;
-    const next = [...this.operations];
-    const [op] = next.splice(cur, 1);
-    next.splice(clamped, 0, op);
-    this.operations = next;
-    this.dirty = true;
+    this.history.exec(reorderOperationCommand(id, clamped), this.target());
+  }
+
+  // ── tool library ─────────────────────────────────────────────────────
+
+  /// Replace the entire tool library in one undoable step. Used by the
+  /// Tool library dialog's commit button.
+  replaceTools(nextTools: ToolEntry[]) {
+    if (nextTools.length === 0) return;
+    this.history.exec(replaceToolsCommand(nextTools), this.target());
+  }
+
+  addTool(tool: ToolEntry) {
+    this.history.exec(addToolCommand(tool), this.target());
+  }
+
+  removeTool(id: number) {
+    if (!this.tools.some((t) => t.id === id)) return;
+    this.history.exec(deleteToolCommand(id), this.target());
+  }
+
+  // ── machine / stock ──────────────────────────────────────────────────
+
+  setMachine(next: MachineSettings) {
+    this.history.exec(setMachineCommand(next), this.target());
+  }
+
+  setStock(patch: Partial<StockConfig>) {
+    if (Object.keys(patch).length === 0) return;
+    this.history.exec(setStockCommand(patch), this.target());
   }
 }
 

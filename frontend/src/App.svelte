@@ -143,7 +143,43 @@
     Object.values(project.tabs).reduce((n, list) => n + list.length, 0),
   );
 
+  /// Bumped to `performance.now()` whenever an undo/redo is attempted on
+  /// an empty stack — drives the shake animation on the Edit-menu items.
+  let undoShakeAt = $state(0);
+  let redoShakeAt = $state(0);
+  function shake(which: 'undo' | 'redo') {
+    if (which === 'undo') undoShakeAt = performance.now();
+    else redoShakeAt = performance.now();
+  }
+
+  function isTypingTarget(t: EventTarget | null): boolean {
+    const el = t as HTMLElement | null;
+    if (!el) return false;
+    const tag = el.tagName ?? '';
+    const editable = el.isContentEditable;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!editable;
+  }
+
   function onKeyDown(e: KeyboardEvent) {
+    // Ctrl/Cmd+Z = undo, Ctrl+Y / Ctrl+Shift+Z / Cmd+Shift+Z = redo.
+    // Skip when a text input is focused so the browser's native field-
+    // level undo still works.
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) {
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        if (!project.undo()) shake('undo');
+        return;
+      }
+      if ((k === 'y' && !e.shiftKey) || (k === 'z' && e.shiftKey)) {
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        if (!project.redo()) shake('redo');
+        return;
+      }
+    }
     if (e.key === 'Escape') {
       if (project.tabMode) project.tabMode = false;
       else if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
@@ -152,13 +188,26 @@
     // Keyboard shortcut: T = Add Text. Skip when typing in any text input
     // and skip when modifier keys are held so it doesn't shadow Ctrl-T etc.
     if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName ?? '';
-      const editable = (t as HTMLElement | null)?.isContentEditable;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || editable) return;
+      if (isTypingTarget(e.target)) return;
       addTextOpen = true;
       e.preventDefault();
     }
+  }
+
+  const undoLabel = $derived(project.undoLabel());
+  const redoLabel = $derived(project.redoLabel());
+  const canUndo = $derived(project.canUndo());
+  const canRedo = $derived(project.canRedo());
+  let editMenuOpen = $state(false);
+  function toggleEditMenu() { editMenuOpen = !editMenuOpen; }
+  function closeEditMenu() { editMenuOpen = false; }
+  function doUndo() {
+    closeEditMenu();
+    if (!project.undo()) shake('undo');
+  }
+  function doRedo() {
+    closeEditMenu();
+    if (!project.redo()) shake('redo');
   }
 </script>
 
@@ -169,6 +218,52 @@
     <h1>{$_('app.title')}</h1>
     <span class="tagline">{$_('app.tagline')}</span>
     <div class="spacer"></div>
+    <div class="edit-menu" class:open={editMenuOpen}>
+      <button
+        type="button"
+        class="config-btn"
+        onclick={toggleEditMenu}
+        title="Edit menu (Undo / Redo)"
+        aria-haspopup="menu"
+        aria-expanded={editMenuOpen}
+      >Edit ▾</button>
+      {#if editMenuOpen}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="edit-dropdown"
+          role="menu"
+          tabindex="-1"
+          onmouseleave={closeEditMenu}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            class="edit-item"
+            class:shake={undoShakeAt > 0}
+            onanimationend={() => (undoShakeAt = 0)}
+            disabled={!canUndo}
+            onclick={doUndo}
+            title="Ctrl+Z"
+          >
+            <span class="edit-label">Undo{undoLabel ? `: ${undoLabel}` : ''}</span>
+            <span class="edit-kbd">Ctrl+Z</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="edit-item"
+            class:shake={redoShakeAt > 0}
+            onanimationend={() => (redoShakeAt = 0)}
+            disabled={!canRedo}
+            onclick={doRedo}
+            title="Ctrl+Y / Ctrl+Shift+Z"
+          >
+            <span class="edit-label">Redo{redoLabel ? `: ${redoLabel}` : ''}</span>
+            <span class="edit-kbd">Ctrl+Y</span>
+          </button>
+        </div>
+      {/if}
+    </div>
     <button
       class="config-btn icon"
       onclick={() => (addTextOpen = true)}
@@ -401,6 +496,70 @@
     justify-content: center;
     gap: 0.35rem;
     padding: 0.3rem 0.55rem;
+  }
+  .edit-menu {
+    position: relative;
+    display: inline-block;
+  }
+  .edit-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 240px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    padding: 0.2rem;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .edit-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .edit-item:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .edit-item:disabled {
+    color: var(--text-faint);
+    cursor: not-allowed;
+  }
+  .edit-kbd {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .edit-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px;
+  }
+  /* 100ms shake when undo/redo is invoked on an empty stack — surfaces
+     the "no-op" without throwing an error popup at the user. */
+  @keyframes wiac-undo-shake {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    50% { transform: translateX(3px); }
+    75% { transform: translateX(-2px); }
+    100% { transform: translateX(0); }
+  }
+  .edit-item.shake {
+    animation: wiac-undo-shake 100ms ease-in-out;
   }
   .tool-toggle {
     background: var(--bg-elevated);

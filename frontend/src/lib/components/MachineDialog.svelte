@@ -41,7 +41,7 @@
   function commit() {
     const out: MachineSettings = { ...draft };
     out.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
-    project.machine = out;
+    project.setMachine(out);
     onClose();
   }
 

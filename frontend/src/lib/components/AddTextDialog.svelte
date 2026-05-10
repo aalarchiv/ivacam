@@ -189,6 +189,7 @@
   async function apply() {
     busy = true;
     errorMsg = null;
+    let txOpen = false;
     try {
       // Make sure the latest inputs are reflected before applying.
       await renderPreview();
@@ -196,6 +197,10 @@
       if (!segs || segs.length === 0) {
         throw new Error('No geometry produced — check the text and font.');
       }
+      // Wrap the geometry append + op insert in a single undo step so
+      // one Ctrl+Z reverts both halves of the text-add flow.
+      project.history.beginTransaction('Add text');
+      txOpen = true;
       const ids = project.appendImportedSegments(
         segs,
         'TEXT',
@@ -204,8 +209,11 @@
       if (style !== 'plain') {
         applyStyle(ids);
       }
+      project.history.commitTransaction();
+      txOpen = false;
       onClose();
     } catch (e) {
+      if (txOpen) project.history.cancelTransaction(project as unknown as never);
       errorMsg = e instanceof Error ? e.message : String(e);
     } finally {
       busy = false;

@@ -132,17 +132,25 @@
     if (project.selectedObjects.size === 0) return;
     const endmill = project.tools.find((t) => t.kind === 'endmill') ?? project.tools[0];
     const toolDiameter = endmill?.diameter ?? 3;
-    const op = project.addOperation('pocket');
-    project.updateOperation(op.id, {
-      name: 'Pocket Outside',
-      toolId: endmill?.id ?? op.toolId,
-      sourceLayers: null,
-      sourceObjects: [...project.selectedObjects],
-      sourceCombine: 'difference',
-      frameShape: 'rectangle',
-      framePaddingMm: 3 * toolDiameter,
-      frameCornerRadiusMm: undefined,
-    });
+    // One Ctrl+Z reverts the whole "Pocket Outside" insert.
+    project.history.beginTransaction('Add Pocket Outside');
+    try {
+      const op = project.addOperation('pocket');
+      project.updateOperation(op.id, {
+        name: 'Pocket Outside',
+        toolId: endmill?.id ?? op.toolId,
+        sourceLayers: null,
+        sourceObjects: [...project.selectedObjects],
+        sourceCombine: 'difference',
+        frameShape: 'rectangle',
+        framePaddingMm: 3 * toolDiameter,
+        frameCornerRadiusMm: undefined,
+      });
+      project.history.commitTransaction();
+    } catch (e) {
+      project.history.cancelTransaction(project as unknown as never);
+      throw e;
+    }
   }
 
   function onDragStart(e: DragEvent, id: number) {

@@ -31,7 +31,7 @@
   });
 
   function commit() {
-    if (draft.length > 0) project.tools = draft.map((t) => ({ ...t }));
+    if (draft.length > 0) project.replaceTools(draft.map((t) => ({ ...t })));
     onClose();
   }
 

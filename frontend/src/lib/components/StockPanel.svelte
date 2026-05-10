@@ -4,7 +4,7 @@
 
   let visible = $derived(project.stock.visible);
   function patch(p: Partial<typeof project.stock>) {
-    project.stock = { ...project.stock, ...p };
+    project.setStock(p);
   }
 
   let showAddMenu = $state(false);

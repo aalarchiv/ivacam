@@ -109,6 +109,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AutoFix: {
+            /** @enum {string} */
+            kind: "assign_tool";
+            /** Format: uint32 */
+            op_id: number;
+            /** Format: uint32 */
+            suggested_tool_id: number;
+        } | {
+            /** @enum {string} */
+            kind: "lower_sim_resolution";
+            /** Format: double */
+            suggested_cell_mm: number;
+        } | {
+            /** @enum {string} */
+            kind: "disable_op";
+            /** Format: uint32 */
+            op_id: number;
+        } | {
+            /** @enum {string} */
+            kind: "change_profile_offset";
+            /** Format: uint32 */
+            op_id: number;
+            suggested: components["schemas"]["ToolOffset"];
+        };
         AxisLimits: {
             /** Format: double */
             x: number;
@@ -173,6 +197,8 @@ export interface components {
             details?: unknown;
             error: string;
         };
+        /** @enum {string} */
+        ErrorKind: "bad_input" | "misconfigured" | "limit" | "unsupported" | "io" | "internal";
         /** @description A user-declared physical obstacle on the stock the cutter must miss. Lives in stock-relative XY (same frame as the imported geometry) and occupies a Z range; the sim collision test gates on that range first then falls back to a per-shape XY swept-region check. */
         Fixture: {
             /**
@@ -255,6 +281,35 @@ export interface components {
         };
         HealthResponse: {
             ok: boolean;
+        };
+        /** @description Geometry of the tool holder above the shank. The holder is treated as cylindrically symmetric around the tool axis (Z), so set-screw flats / asymmetric ER nuts get approximated by their bounding cylinder/cone — good enough to flag clear collisions, conservative on tight cases. */
+        HolderShape: {
+            /** Format: double */
+            diameter_mm: number;
+            /** @enum {string} */
+            kind: "cylinder";
+            /** Format: double */
+            length_mm: number;
+        } | {
+            /** Format: double */
+            bottom_diameter_mm: number;
+            /** @enum {string} */
+            kind: "cone";
+            /** Format: double */
+            length_mm: number;
+            /** Format: double */
+            top_diameter_mm: number;
+        } | {
+            /** Format: double */
+            cone_length_mm: number;
+            /** Format: double */
+            cone_top_diameter_mm: number;
+            /** Format: double */
+            cylinder_diameter_mm: number;
+            /** Format: double */
+            cylinder_length_mm: number;
+            /** @enum {string} */
+            kind: "stepped";
         };
         ImportResponse: {
             bbox: components["schemas"]["BBox"];
@@ -841,6 +896,13 @@ export interface components {
         };
         /** @description How a multi-object source selection is combined into the region(s) the operation actually consumes. Default is `Auto` — containment-based, which gives the user "outer + inner = annulus" behavior with no extra thought. The other modes are clipper2-driven boolean ops; `None` keeps each selected object as its own boundary (the pre-combine behavior, surfaced for callers who really want it). */
         SourceCombine: "auto" | "union" | "difference" | "intersection" | "xor" | "none";
+        SourceSpan: {
+            /** Format: uint32 */
+            column: number;
+            file: string;
+            /** Format: uint32 */
+            line: number;
+        };
         TabPoint: {
             /** Format: double */
             x: number;
@@ -932,8 +994,15 @@ export interface components {
              * @description Cutting feedrate (mm/min).
              */
             feed_rate: number;
+            /**
+             * Format: double
+             * @description Length of cutting flutes (mm). None = treat entire tool as cutting.
+             */
+            flute_length_mm?: number | null;
             /** Format: uint8 */
             flutes: number;
+            /** @description Holder geometry above the shank. None = no holder check. */
+            holder?: components["schemas"]["HolderShape"] | null;
             /** Format: uint32 */
             id: number;
             kind: components["schemas"]["ToolKind"];
@@ -948,6 +1017,11 @@ export interface components {
              * @description Plunge feedrate (mm/min).
              */
             plunge_rate: number;
+            /**
+             * Format: double
+             * @description Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
+             */
+            shank_diameter_mm?: number | null;
             /** Format: uint32 */
             speed: number;
             /**
@@ -1013,6 +1087,46 @@ export interface components {
             capabilities: string[];
             transport: components["schemas"]["TransportKind"];
             version: string;
+        };
+        WiacAutoFix: {
+            /** @enum {string} */
+            kind: "assign_tool";
+            /** Format: uint32 */
+            op_id: number;
+            /** Format: uint32 */
+            suggested_tool_id: number;
+        } | {
+            /** @enum {string} */
+            kind: "lower_sim_resolution";
+            /** Format: double */
+            suggested_cell_mm: number;
+        } | {
+            /** @enum {string} */
+            kind: "disable_op";
+            /** Format: uint32 */
+            op_id: number;
+        } | {
+            /** @enum {string} */
+            kind: "change_profile_offset";
+            /** Format: uint32 */
+            op_id: number;
+            suggested: components["schemas"]["ToolOffset"];
+        };
+        WiacError: {
+            auto_fix?: components["schemas"]["AutoFix"] | null;
+            kind: components["schemas"]["ErrorKind"];
+            message: string;
+            recovery_hint?: string | null;
+            span?: components["schemas"]["SourceSpan"] | null;
+        };
+        /** @enum {string} */
+        WiacErrorKind: "bad_input" | "misconfigured" | "limit" | "unsupported" | "io" | "internal";
+        WiacSourceSpan: {
+            /** Format: uint32 */
+            column: number;
+            file: string;
+            /** Format: uint32 */
+            line: number;
         };
     };
     responses: {

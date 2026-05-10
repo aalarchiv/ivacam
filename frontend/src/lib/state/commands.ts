@@ -18,7 +18,8 @@ import type {
   Tab,
   ToolEntry,
 } from './project.svelte';
-import type { ImportResponse } from '../api/types';
+import type { ImportResponse, WiacAutoFix } from '../api/types';
+import type { ProfileOffset } from './op_types';
 
 /// The shape of the project state Commands operate on. Kept narrow so
 /// commands.ts doesn't pull in the Svelte-runtime class itself; only
@@ -91,16 +92,12 @@ export function updateOperationCommand(opId: number, patch: Partial<OpEntry>): C
       for (const k of Object.keys(patch) as (keyof OpEntry)[]) {
         (prevPatch as Record<string, unknown>)[k as string] = cur[k];
       }
-      t.operations = t.operations.map((o) =>
-        o.id === opId ? { ...o, ...patch } : o,
-      );
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, ...patch } : o));
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
-      t.operations = t.operations.map((o) =>
-        o.id === opId ? { ...o, ...prevPatch } : o,
-      );
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, ...prevPatch } : o));
       t.dirty = true;
     },
     coalesce_key: coalesceKeyForPatch(opId, patch),
@@ -122,18 +119,14 @@ export function setOpFieldCommand<K extends keyof OpEntry>(
       const cur = t.operations.find((o) => o.id === opId);
       if (!cur) return;
       prev = cur[key];
-      t.operations = t.operations.map((o) =>
-        o.id === opId ? { ...o, [key]: value } : o,
-      );
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, [key]: value } : o));
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
       if (prev === undefined) return;
       const restore = prev;
-      t.operations = t.operations.map((o) =>
-        o.id === opId ? { ...o, [key]: restore } : o,
-      );
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, [key]: restore } : o));
       t.dirty = true;
     },
     coalesce_key: `setOpField:${opId}:${String(key)}`,
@@ -467,3 +460,125 @@ function coalesceKeyForStockPatch(patch: Partial<StockConfig>): string | undefin
 }
 
 export type FixtureKindForBuilder = FixtureKind;
+
+// ── auto-fix commands (from structured backend errors) ───────────────
+
+/// Reassign an op's tool. Used by the AssignTool auto-fix when the user
+/// clicks "Apply fix" on a misconfigured-tool error toast.
+export function assignToolCommand(opId: number, toolId: number): Command {
+  let prev: number | undefined;
+  return {
+    label: 'Assign tool',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      const cur = t.operations.find((o) => o.id === opId);
+      if (!cur) return;
+      prev = cur.toolId;
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, toolId } : o));
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      if (prev === undefined) return;
+      const restore = prev;
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, toolId: restore } : o));
+      t.dirty = true;
+    },
+  };
+}
+
+/// Disable an op (sets enabled=false). The DisableOp auto-fix.
+export function disableOpCommand(opId: number): Command {
+  let prev: boolean | undefined;
+  return {
+    label: 'Disable operation',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      const cur = t.operations.find((o) => o.id === opId);
+      if (!cur) return;
+      prev = cur.enabled;
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, enabled: false } : o));
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      if (prev === undefined) return;
+      const restore = prev;
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, enabled: restore } : o));
+      t.dirty = true;
+    },
+  };
+}
+
+/// Change a Profile op's offset. The ChangeProfileOffset auto-fix.
+export function changeProfileOffsetCommand(opId: number, offset: ProfileOffset): Command {
+  let prev: ProfileOffset | undefined;
+  return {
+    label: 'Change profile offset',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      const cur = t.operations.find((o) => o.id === opId);
+      if (!cur) return;
+      prev = cur.offset;
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, offset } : o));
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      if (prev === undefined) return;
+      const restore = prev;
+      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, offset: restore } : o));
+      t.dirty = true;
+    },
+  };
+}
+
+/// Lower the simulation cell resolution to bring the cell count back
+/// under the configured cap. The LowerSimResolution auto-fix.
+export function lowerSimResolutionCommand(suggestedCellMm: number): Command {
+  let prev: { mode: 'auto' | 'manual'; cellMm: number } | null = null;
+  return {
+    label: 'Lower simulation resolution',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      prev = {
+        mode: t.settings.cellResolutionMode,
+        cellMm: t.settings.cellResolutionMm,
+      };
+      t.settings = {
+        ...t.settings,
+        cellResolutionMode: 'manual',
+        cellResolutionMm: suggestedCellMm,
+      };
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      if (!prev) return;
+      const restore = prev;
+      t.settings = {
+        ...t.settings,
+        cellResolutionMode: restore.mode,
+        cellResolutionMm: restore.cellMm,
+      };
+      t.dirty = true;
+    },
+  };
+}
+
+/// Map a structured AutoFix value (from `WiacError.auto_fix`) to the
+/// matching Command. The frontend's ErrorToast calls this and pipes the
+/// result into `project.history.exec(cmd, project)` so the fix participates
+/// in undo/redo like any other edit.
+export function autoFixToCommand(fix: WiacAutoFix): Command {
+  switch (fix.kind) {
+    case 'assign_tool':
+      return assignToolCommand(fix.op_id, fix.suggested_tool_id);
+    case 'disable_op':
+      return disableOpCommand(fix.op_id);
+    case 'change_profile_offset':
+      return changeProfileOffsetCommand(fix.op_id, fix.suggested as ProfileOffset);
+    case 'lower_sim_resolution':
+      return lowerSimResolutionCommand(fix.suggested_cell_mm);
+  }
+}

@@ -67,7 +67,7 @@ pub fn version() -> Result<JsValue, JsValue> {
 pub fn import_bytes(filename: &str, bytes: &[u8]) -> Result<JsValue, JsValue> {
     let opts = ImportOptions::default();
     let out = wiac_core::input::import_bytes(filename, bytes, &opts)
-        .map_err(|e| into_js_error(format!("{e}")))?;
+        .map_err(structured_error_to_js)?;
     serde_wasm_bindgen::to_value(&out).map_err(into_js_error)
 }
 
@@ -75,9 +75,21 @@ pub fn import_bytes(filename: &str, bytes: &[u8]) -> Result<JsValue, JsValue> {
 pub fn generate(request: JsValue) -> Result<JsValue, JsValue> {
     let req: PipelineRequest =
         serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
-    let resp = run_pipeline(req, |_phase, _fraction, _msg| {})
-        .map_err(|e| into_js_error(e.to_string()))?;
-    serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+    let project = req.project.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_pipeline(req, |_phase, _fraction, _msg| {})
+    }));
+    match result {
+        Ok(Ok(resp)) => serde_wasm_bindgen::to_value(&resp).map_err(into_js_error),
+        Ok(Err(e)) => match e.to_structured(Some(&project)) {
+            Some(structured) => Err(structured_error_to_js(structured)),
+            None => Err(JsValue::from_str("cancelled")),
+        },
+        Err(panic) => Err(structured_error_to_js(
+            wiac_core::Error::internal(format!("panic: {}", panic_message(&panic)))
+                .with_hint("Please report this bug — see the toast for details."),
+        )),
+    }
 }
 
 /// Streaming variant: invokes `on_event` once per
@@ -95,15 +107,26 @@ pub fn generate_streaming_wasm(
     let req: PipelineRequest =
         serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
     let cancel = CancelToken::new();
+    let project = req.project.clone();
     let mut sink = |ev| {
         if let Ok(js) = serde_wasm_bindgen::to_value(&ev) {
             let _ = on_event.call1(&JsValue::NULL, &js);
         }
     };
-    match generate_streaming(req, &cancel, &mut sink) {
-        Ok(resp) => serde_wasm_bindgen::to_value(&resp).map_err(into_js_error),
-        Err(wiac_core::pipeline::PipelineError::Cancelled) => Ok(JsValue::NULL),
-        Err(e) => Err(into_js_error(e.to_string())),
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        generate_streaming(req, &cancel, &mut sink)
+    }));
+    match result {
+        Ok(Ok(resp)) => serde_wasm_bindgen::to_value(&resp).map_err(into_js_error),
+        Ok(Err(wiac_core::pipeline::PipelineError::Cancelled)) => Ok(JsValue::NULL),
+        Ok(Err(e)) => match e.to_structured(Some(&project)) {
+            Some(structured) => Err(structured_error_to_js(structured)),
+            None => Ok(JsValue::NULL),
+        },
+        Err(panic) => Err(structured_error_to_js(
+            wiac_core::Error::internal(format!("panic: {}", panic_message(&panic)))
+                .with_hint("Please report this bug — see the toast for details."),
+        )),
     }
 }
 
@@ -111,10 +134,28 @@ pub fn generate_streaming_wasm(
 pub fn render_text(request: JsValue) -> Result<JsValue, JsValue> {
     let req: RenderTextRequest =
         serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
-    let resp = render_text_api(&req).map_err(|e| into_js_error(e.to_string()))?;
+    let resp = render_text_api(&req).map_err(structured_error_to_js)?;
     serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
 }
 
 pub(crate) fn into_js_error<E: std::fmt::Display>(err: E) -> JsValue {
     JsValue::from_str(&err.to_string())
+}
+
+/// Serialize a structured `wiac_core::Error` to a JS value the frontend
+/// can detect (object with a `kind` field) and render through
+/// `ErrorToast.svelte`. Falls back to the message string if serialization
+/// somehow fails — the frontend's plain-string path catches that.
+pub(crate) fn structured_error_to_js(err: wiac_core::Error) -> JsValue {
+    serde_wasm_bindgen::to_value(&err).unwrap_or_else(|_| JsValue::from_str(&err.to_string()))
+}
+
+fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }

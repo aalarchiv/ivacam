@@ -31,6 +31,8 @@ ttf-parser = "0.25"
 # text-to-stroke conversion happens upstream.
 usvg = { version = "0.45", default-features = false }
 voronator = { workspace = true }
+seahash = "4"
+lru = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 ttf-parser = "0.25"

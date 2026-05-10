@@ -1,7 +1,7 @@
 //! LinuxCNC post-processor. Mirrors output_plugins/gcode_linuxcnc.py.
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
-use crate::gcode::{PostProcessor, PostState};
+use crate::gcode::{CapturedPostState, PostProcessor, PostState};
 
 #[derive(Debug, Default)]
 pub struct Post {
@@ -240,5 +240,41 @@ impl PostProcessor for Post {
     }
     fn finish(&self) -> String {
         self.out.join("\n") + "\n"
+    }
+    fn out_lines_count(&self) -> usize {
+        self.out.len()
+    }
+    fn out_lines_clone_from(&self, start: usize) -> Vec<String> {
+        if start >= self.out.len() {
+            Vec::new()
+        } else {
+            self.out[start..].to_vec()
+        }
+    }
+    fn out_extend_lines(&mut self, lines: &[String]) {
+        self.out.extend_from_slice(lines);
+    }
+    fn reset_state(&mut self) {
+        self.state.last_x = None;
+        self.state.last_y = None;
+        self.state.last_z = None;
+        self.state.last_rate = None;
+        self.state.last_speed = None;
+    }
+    fn capture_state(&self) -> CapturedPostState {
+        CapturedPostState {
+            last_x: self.state.last_x,
+            last_y: self.state.last_y,
+            last_z: self.state.last_z,
+            last_rate: self.state.last_rate,
+            last_speed: self.state.last_speed,
+        }
+    }
+    fn restore_state(&mut self, s: &CapturedPostState) {
+        self.state.last_x = s.last_x;
+        self.state.last_y = s.last_y;
+        self.state.last_z = s.last_z;
+        self.state.last_rate = s.last_rate;
+        self.state.last_speed = s.last_speed;
     }
 }

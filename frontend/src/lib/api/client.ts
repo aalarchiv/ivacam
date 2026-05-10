@@ -57,7 +57,7 @@ export interface ProgressEvent {
 export type PipelineEvent =
   | { kind: 'op_started'; op_id: number; idx: number; total: number; name: string }
   | { kind: 'op_progress'; op_id: number; fraction: number; message: string }
-  | { kind: 'op_completed'; op_id: number }
+  | { kind: 'op_completed'; op_id: number; cached: boolean }
   | { kind: 'cancelled' }
   | { kind: 'done'; op_count: number; total_time_s: number };
 

@@ -137,6 +137,57 @@ pub trait PostProcessor {
     }
 
     fn finish(&self) -> String;
+
+    /// Number of buffered output lines so far. Used by the per-op
+    /// pipeline cache to slice each operation's contribution.
+    fn out_lines_count(&self) -> usize {
+        0
+    }
+
+    /// Clone the buffered output lines starting at `start` (inclusive).
+    /// Returns an empty Vec when `start >= out_lines_count()`.
+    fn out_lines_clone_from(&self, _start: usize) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Append a pre-rendered batch of output lines verbatim. Used on
+    /// cache hits — the lines were captured from a prior run and are
+    /// already absolute-coordinate (see [`reset_state`]), so they're
+    /// safe to splice in regardless of the current delta-encoding
+    /// state.
+    fn out_extend_lines(&mut self, _lines: &[String]) {}
+
+    /// Reset the delta-encoding state so the next emitted move writes
+    /// every coordinate explicitly (no `last_x`-based suppression).
+    /// Used at op boundaries by the per-op pipeline cache so each op's
+    /// captured output is self-contained and reusable across runs.
+    fn reset_state(&mut self) {}
+
+    /// Capture the current delta-encoding state (last_x/y/z + rates).
+    /// Paired with [`PostProcessor::restore_state`] so a cache hit can
+    /// resume from the same state a fresh run would have left the post
+    /// in. Default returns zeroed/None fields — posts that delta-encode
+    /// override this.
+    fn capture_state(&self) -> CapturedPostState {
+        CapturedPostState::default()
+    }
+
+    /// Restore a previously-captured delta-encoding state. Used on
+    /// cache hits to splice cached gcode lines and resume as if those
+    /// lines had been emitted live.
+    fn restore_state(&mut self, _state: &CapturedPostState) {}
+}
+
+/// Public projection of [`PostState`] used by the per-op cache. Mirrors
+/// the fields that affect delta-encoded output emission; the cache stores
+/// one of these per op and restores it on a hit.
+#[derive(Debug, Clone, Default)]
+pub struct CapturedPostState {
+    pub last_x: Option<f64>,
+    pub last_y: Option<f64>,
+    pub last_z: Option<f64>,
+    pub last_rate: Option<u32>,
+    pub last_speed: Option<u32>,
 }
 
 /// Format a dwell value for `G4 P` — strip trailing zeros so the line

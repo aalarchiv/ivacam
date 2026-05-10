@@ -4,7 +4,7 @@
 //! - Coolant mist (M7) often unsupported; we still emit it for symmetry.
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
-use crate::gcode::{linuxcnc, PostProcessor};
+use crate::gcode::{linuxcnc, CapturedPostState, PostProcessor};
 
 #[derive(Debug, Default)]
 pub struct Post {
@@ -98,5 +98,23 @@ impl PostProcessor for Post {
     }
     fn finish(&self) -> String {
         self.inner.finish()
+    }
+    fn out_lines_count(&self) -> usize {
+        self.inner.out_lines_count()
+    }
+    fn out_lines_clone_from(&self, start: usize) -> Vec<String> {
+        self.inner.out_lines_clone_from(start)
+    }
+    fn out_extend_lines(&mut self, lines: &[String]) {
+        self.inner.out_extend_lines(lines);
+    }
+    fn reset_state(&mut self) {
+        self.inner.reset_state();
+    }
+    fn capture_state(&self) -> CapturedPostState {
+        self.inner.capture_state()
+    }
+    fn restore_state(&mut self, s: &CapturedPostState) {
+        self.inner.restore_state(s);
     }
 }

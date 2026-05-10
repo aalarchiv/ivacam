@@ -4,6 +4,7 @@
   import { tryParseStructuredError } from '../api/client';
   import { isTauri } from '../api/env';
   import { project } from '../state/project.svelte';
+  import { workspace } from '../state/workspace.svelte';
   import type { ImportResponse } from '../api/types';
   import { pushRecent, readRecent, type RecentEntry } from '../recent';
   import ErrorToast from './ErrorToast.svelte';
@@ -113,6 +114,8 @@
       project.setImported(result);
       const filename = path.split(/[\\/]/).pop() ?? path;
       await recordRecent(path, filename);
+      workspace.addRecentProject(path, filename);
+      project.setActiveProjectPath(path);
     } catch (e) {
       reportError(e);
     } finally {
@@ -133,6 +136,10 @@
     try {
       const text = await readTextFile(selected);
       project.restore(JSON.parse(text));
+      const filename = selected.split(/[\\/]/).pop() ?? selected;
+      await recordRecent(selected, filename);
+      workspace.addRecentProject(selected, filename);
+      project.setActiveProjectPath(selected);
     } catch (e) {
       project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

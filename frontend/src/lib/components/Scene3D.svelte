@@ -8,6 +8,7 @@
     simWarningSeverity,
     simWarningSegmentIdx,
   } from '../state/project.svelte';
+  import { workspace } from '../state/workspace.svelte';
   import { HeightfieldDriver } from '../sim/driver';
   import type { SimWarning } from '../api/types';
 
@@ -39,6 +40,47 @@
   let needsRender = true;
   function requestRender() {
     needsRender = true;
+  }
+
+  /// Camera persistence. The OrbitControls 'change' event fires every
+  /// damping tick (60 Hz during a drag, then ~30 frames after release as
+  /// damping settles), so we coalesce writes to the workspace store with
+  /// a 500 ms tail. Workspace state is global (not per-project) — if the
+  /// user wants different angles per project, they can save it as part
+  /// of a project file on top.
+  let cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  function onCameraChanged() {
+    if (cameraSaveTimer) clearTimeout(cameraSaveTimer);
+    cameraSaveTimer = setTimeout(() => {
+      cameraSaveTimer = null;
+      if (!camera || !controls) return;
+      workspace.update({
+        camera: {
+          px: camera.position.x,
+          py: camera.position.y,
+          pz: camera.position.z,
+          tx: controls.target.x,
+          ty: controls.target.y,
+          tz: controls.target.z,
+        },
+      });
+    }, 500);
+  }
+
+  /// Apply the saved camera pose, if any. Run once after the initial
+  /// fit-to-view so the saved view supersedes the auto-fit; subsequent
+  /// 'change' events overwrite the saved value.
+  let restoredFromWorkspace = false;
+  function maybeRestoreSavedCamera() {
+    if (restoredFromWorkspace) return;
+    if (!camera || !controls) return;
+    const saved = workspace.get().camera;
+    if (!saved) return;
+    camera.position.set(saved.px, saved.py, saved.pz);
+    controls.target.set(saved.tx, saved.ty, saved.tz);
+    controls.update();
+    requestRender();
+    restoredFromWorkspace = true;
   }
 
   function tickFrame() {
@@ -175,6 +217,7 @@
     // user drag, zoom, pan, AND each damping tick after release. Hooking
     // it is enough to keep the scene rendering until damping settles.
     controls.addEventListener('change', requestRender);
+    controls.addEventListener('change', onCameraChanged);
 
     // Z-up grid on the XY plane. Colors track the active theme.
     const gridMajor = cssColor('--grid-major', 0x262626);
@@ -269,6 +312,11 @@
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
     }
     controls?.removeEventListener('change', requestRender);
+    controls?.removeEventListener('change', onCameraChanged);
+    if (cameraSaveTimer) {
+      clearTimeout(cameraSaveTimer);
+      cameraSaveTimer = null;
+    }
     controls?.dispose();
     if (toolMesh) {
       disposeMesh(toolMesh);
@@ -1376,6 +1424,10 @@
     camera.far = distance * 10;
     camera.updateProjectionMatrix();
     controls.update();
+    // Workspace-saved camera (if any) overrides the auto-fit on first
+    // load. Subsequent project switches still snap to the new bbox
+    // since `restoredFromWorkspace` is one-shot.
+    maybeRestoreSavedCamera();
     requestRender();
   }
 

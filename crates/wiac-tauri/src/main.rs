@@ -80,6 +80,8 @@ fn run() -> tauri::Result<()> {
             commands::generate_streaming_cmd,
             commands::cancel_generate,
             commands::render_text,
+            commands::read_workspace_file,
+            commands::write_workspace_file,
         ])
         .run(tauri::generate_context!())
 }

@@ -28,6 +28,7 @@
   // simultaneously and can drive each from the others.
   let gcodeOpen = $state(false);
   import { project } from './lib/state/project.svelte';
+  import { workspace } from './lib/state/workspace.svelte';
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { setLocale, locale } from './lib/i18n';
@@ -49,7 +50,93 @@
     if (isTauri()) {
       void wireMenuEvents();
     }
+    void loadWorkspaceAndMaybeReopen();
   });
+
+  /// Pull persisted workspace state at startup. After load completes,
+  /// prune any per-project / recent entries pointing at files that have
+  /// disappeared (Tauri only — browser localStorage has no fs probe).
+  /// On Tauri, optionally prompt the user to reopen the last project so
+  /// they don't have to navigate the file picker every launch. Browser
+  /// builds skip the prompt because we have no path-based load there.
+  async function loadWorkspaceAndMaybeReopen() {
+    try {
+      await workspace.load();
+    } catch {
+      // ignore — defaults are fine.
+    }
+    if (isTauri()) {
+      void workspace.pruneMissingProjects();
+      const last = workspace.get().last_project;
+      if (last) {
+        const filename = last.split(/[\\/]/).pop() ?? last;
+        if (window.confirm(`Reopen ${filename}?`)) {
+          await openProjectPath(last);
+        }
+      }
+    }
+  }
+
+  /// Load a project by absolute path. Picks the import path vs.
+  /// .vc-project loader by the file extension. Mirrors what
+  /// FileUpload.svelte's loadFromPath / openProjectNative flows do —
+  /// kept here so the recent-projects submenu and the reopen prompt
+  /// can drive loads without poking at FileUpload's internals.
+  async function openProjectPath(path: string) {
+    if (!isTauri()) return;
+    const isProjectFile = /\.vc-project\.json$|\.json$/i.test(path);
+    project.loading = true;
+    project.error = null;
+    try {
+      if (isProjectFile) {
+        const { readTextFile } = await import('@tauri-apps/plugin-fs');
+        const text = await readTextFile(path);
+        project.restore(JSON.parse(text));
+      } else {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const result = await invoke('import_path', { path });
+        project.setImported(result as Parameters<typeof project.setImported>[0]);
+      }
+      const filename = path.split(/[\\/]/).pop() ?? path;
+      workspace.addRecentProject(path, filename);
+      project.setActiveProjectPath(path);
+    } catch (e) {
+      project.setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      project.loading = false;
+    }
+  }
+
+  /// Persist per-project workspace state when the user adjusts visible
+  /// layers / selected op / playhead. Skipped when no project path is
+  /// known (samples, browser drag-and-drop) — there's no key to store
+  /// against. The store debounces writes, so this fires often.
+  $effect(() => {
+    void project.visibleLayers;
+    void project.selectedOpId;
+    void project.playhead;
+    if (project.activeProjectPath) {
+      project.persistPerProjectState();
+    }
+  });
+
+  let fileMenuOpen = $state(false);
+  function toggleFileMenu() { fileMenuOpen = !fileMenuOpen; }
+  function closeFileMenu() { fileMenuOpen = false; }
+  /// Reactive view of the workspace recent list. `void workspace.version`
+  /// subscribes the derived to the store's mutation counter.
+  const recentProjects = $derived.by(() => {
+    void workspace.version;
+    return workspace.get().recent_projects;
+  });
+  function clickRecent(path: string) {
+    closeFileMenu();
+    void openProjectPath(path);
+  }
+  function clickClearRecents() {
+    closeFileMenu();
+    workspace.clearRecentProjects();
+  }
 
   /**
    * Bridge native menu actions emitted from crates/wiac-tauri/src/menu.rs.
@@ -218,6 +305,53 @@
     <h1>{$_('app.title')}</h1>
     <span class="tagline">{$_('app.tagline')}</span>
     <div class="spacer"></div>
+    <div class="edit-menu" class:open={fileMenuOpen}>
+      <button
+        type="button"
+        class="config-btn"
+        onclick={toggleFileMenu}
+        title="File menu (Recent projects)"
+        aria-haspopup="menu"
+        aria-expanded={fileMenuOpen}
+      >File ▾</button>
+      {#if fileMenuOpen}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="edit-dropdown"
+          role="menu"
+          tabindex="-1"
+          onmouseleave={closeFileMenu}
+        >
+          <div class="recent-heading">Recent Projects</div>
+          {#if recentProjects.length === 0}
+            <div class="recent-empty">No recent projects</div>
+          {:else}
+            {#each recentProjects as r (r.path)}
+              <button
+                type="button"
+                role="menuitem"
+                class="edit-item"
+                onclick={() => clickRecent(r.path)}
+                title={r.path}
+              >
+                <span class="edit-label">{r.filename}</span>
+              </button>
+            {/each}
+          {/if}
+          <div class="menu-divider"></div>
+          <button
+            type="button"
+            role="menuitem"
+            class="edit-item"
+            disabled={recentProjects.length === 0}
+            onclick={clickClearRecents}
+            title="Clear the recent projects list"
+          >
+            <span class="edit-label">Clear recent projects</span>
+          </button>
+        </div>
+      {/if}
+    </div>
     <div class="edit-menu" class:open={editMenuOpen}>
       <button
         type="button"
@@ -560,6 +694,24 @@
   }
   .edit-item.shake {
     animation: wiac-undo-shake 100ms ease-in-out;
+  }
+  .recent-heading {
+    padding: 0.25rem 0.55rem 0.1rem;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .recent-empty {
+    padding: 0.25rem 0.55rem;
+    font-size: 0.75rem;
+    color: var(--text-faint);
+    font-style: italic;
+  }
+  .menu-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.2rem 0.1rem;
   }
   .tool-toggle {
     background: var(--bg-elevated);

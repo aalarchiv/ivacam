@@ -14,6 +14,8 @@
 
 use voronator::delaunator::{triangulate, Point as VPointXy, INVALID_INDEX};
 
+use crate::pipeline::CancelToken;
+
 use crate::cam::{is_inside_polygon, segments_to_points, VcObject};
 use crate::geometry::Point2;
 
@@ -91,6 +93,18 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 /// Vertices outside the region are excluded; edges with at least one
 /// outside endpoint are dropped.
 pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
+    medial_axis_cancellable(region, None)
+}
+
+/// Cancellable wrapper around [`medial_axis`]. Checks `cancel` after
+/// every Voronoi-vertex traversal; on cancellation returns whatever
+/// chains have been emitted so far (often empty). Callers should also
+/// inspect the cancel flag after this call to bail out cleanly.
+pub fn medial_axis_cancellable(
+    region: &VcRegion,
+    cancel: Option<&CancelToken>,
+) -> Vec<Vec<VPoint>> {
+    let is_cancelled = || cancel.map(|c| c.is_cancelled()).unwrap_or(false);
     // Densify all boundaries (outer + holes) into a single sample list.
     // Voronoi-of-points needs >= 3 samples to triangulate at all.
     let mut samples: Vec<Point2> = Vec::new();
@@ -183,6 +197,9 @@ pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
 
     // Drain endpoint walks first.
     for start in 0..n_tri {
+        if is_cancelled() {
+            return polylines;
+        }
         if inside[start].is_none() || adj[start].len() != 1 {
             continue;
         }
@@ -222,6 +239,9 @@ pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
     // Cycles + leftover branches: any remaining unvisited edge starts a
     // new chain.
     for start in 0..n_tri {
+        if is_cancelled() {
+            return polylines;
+        }
         if inside[start].is_none() {
             continue;
         }

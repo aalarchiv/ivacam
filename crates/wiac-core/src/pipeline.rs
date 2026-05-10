@@ -6,8 +6,22 @@
 //! right `op_id` on every resulting [`preview::ToolpathSegment`]. The
 //! whole program shares a single header/footer; cut blocks concatenate
 //! between them.
+//!
+//! ## Streaming + cancellation
+//!
+//! [`generate_streaming`] is a parallel entry point that reports
+//! per-operation progress and supports cooperative cancellation via a
+//! [`CancelToken`]. The pipeline is CPU-bound and synchronous; the
+//! caller is expected to drive it on a background thread (Tauri spawns
+//! a `std::thread`, the HTTP server uses `tokio::task::spawn_blocking`,
+//! and WASM runs it on the JS event loop and yields between events).
+//!
+//! WASM threading (web workers + COOP/COEP) is out of scope for v1 — the
+//! WASM bridge ships single-threaded and pumps events synchronously.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -114,6 +128,53 @@ pub enum PipelineError {
     UnknownTool(u32, u32),
     #[error("operation kind {0:?} is not implemented yet")]
     UnimplementedKind(OperationKind),
+    #[error("pipeline cancelled")]
+    Cancelled,
+}
+
+/// Cooperative-cancellation handle. Cloned cheaply; the inner flag is
+/// shared. Long inner loops in CAM primitives consult `is_cancelled`
+/// at a coarse-enough granularity to bail within ≤200 ms p95.
+#[derive(Debug, Clone, Default)]
+pub struct CancelToken(Arc<AtomicBool>);
+
+impl CancelToken {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+/// Streaming pipeline event — one per phase boundary or per op.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PipelineEvent {
+    OpStarted {
+        op_id: u32,
+        idx: usize,
+        total: usize,
+        name: String,
+    },
+    OpProgress {
+        op_id: u32,
+        fraction: f64,
+        message: String,
+    },
+    OpCompleted {
+        op_id: u32,
+    },
+    Cancelled,
+    Done {
+        op_count: usize,
+        total_time_s: f64,
+    },
 }
 
 /// Run the full CAM pipeline. `progress(phase, fraction, message)` is
@@ -123,12 +184,55 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     req: PipelineRequest,
     progress: F,
 ) -> Result<PipelineResponse, PipelineError> {
+    let mut no_events = |_e: PipelineEvent| {};
+    run_pipeline_impl(req, &progress, &mut no_events, None)
+}
+
+/// Streaming entry point: walks ops one at a time, emitting
+/// `PipelineEvent`s through `sink` and consulting `cancel` between ops
+/// (and inside long inner loops). On cancellation, emits
+/// `PipelineEvent::Cancelled` and returns `Err(PipelineError::Cancelled)`
+/// — partial work is discarded.
+pub fn generate_streaming(
+    request: PipelineRequest,
+    cancel: &CancelToken,
+    sink: &mut dyn FnMut(PipelineEvent),
+) -> Result<PipelineResponse, PipelineError> {
+    let progress = |_p: &str, _f: f64, _m: &str| {};
+    match run_pipeline_impl(request, &progress, sink, Some(cancel)) {
+        Ok(resp) => {
+            sink(PipelineEvent::Done {
+                op_count: resp.stats.offset_count,
+                total_time_s: resp.time_estimate.total_s,
+            });
+            Ok(resp)
+        }
+        Err(PipelineError::Cancelled) => {
+            sink(PipelineEvent::Cancelled);
+            Err(PipelineError::Cancelled)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
+    req: PipelineRequest,
+    progress: &F,
+    sink: &mut dyn FnMut(PipelineEvent),
+    cancel: Option<&CancelToken>,
+) -> Result<PipelineResponse, PipelineError> {
     progress("import", 0.05, "preparing project");
+    if cancelled(cancel) {
+        return Err(PipelineError::Cancelled);
+    }
     let project = req.project;
 
     let mut objects = segments_to_objects(&project.segments);
     classify_containment(&mut objects);
     progress("objects", 0.20, "chained segments into objects");
+    if cancelled(cancel) {
+        return Err(PipelineError::Cancelled);
+    }
 
     let post_kind = req.post_processor.unwrap_or_default();
     // Use the first enabled op's setup as the program-level header /
@@ -136,7 +240,6 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     // a real op rather than a synthetic default.
     let header_setup = header_setup_for(&project);
     let stats_collector = std::cell::RefCell::new((0usize, 0usize, 0usize)); // (closed, offsets, _)
-    let progress_ref = &progress;
     let n_ops = project
         .operations
         .iter()
@@ -152,9 +255,11 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
             &header_setup,
             &mut linuxcnc::Post::new(),
             &stats_collector,
-            progress_ref,
+            progress,
             n_ops,
             &mut warnings,
+            sink,
+            cancel,
         )?,
         PostProcessorKind::Grbl => run_per_op(
             &project,
@@ -162,9 +267,11 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
             &header_setup,
             &mut grbl::Post::new(),
             &stats_collector,
-            progress_ref,
+            progress,
             n_ops,
             &mut warnings,
+            sink,
+            cancel,
         )?,
         PostProcessorKind::Hpgl => run_per_op(
             &project,
@@ -172,14 +279,19 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
             &header_setup,
             &mut hpgl::Post::new(),
             &stats_collector,
-            progress_ref,
+            progress,
             n_ops,
             &mut warnings,
+            sink,
+            cancel,
         )?,
     };
     let (total_closed, total_offsets, _) = *stats_collector.borrow();
 
     progress("preview", 0.92, "interpreting toolpath");
+    if cancelled(cancel) {
+        return Err(PipelineError::Cancelled);
+    }
     let (toolpath, gcode_index) = preview::interpret_with_index(&gcode);
     let regions = build_region_previews(&project, &objects);
     let tool_changes = count_tool_changes(&gcode);
@@ -205,6 +317,11 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
         warnings,
         time_estimate,
     })
+}
+
+#[inline]
+fn cancelled(cancel: Option<&CancelToken>) -> bool {
+    cancel.map(|c| c.is_cancelled()).unwrap_or(false)
 }
 
 fn count_tool_changes(gcode: &str) -> u32 {
@@ -293,6 +410,7 @@ fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionP
 /// Per-post-processor monomorphisation of the per-op driver. Pulled out
 /// so we don't need to type-erase PostProcessor (its methods take Sized
 /// `&mut self` so the trait object dance was painful).
+#[allow(clippy::too_many_arguments)]
 fn run_per_op<P, F>(
     project: &Project,
     objects: &mut Vec<VcObject>,
@@ -302,6 +420,8 @@ fn run_per_op<P, F>(
     progress: &F,
     n_ops: usize,
     warnings: &mut Vec<PipelineWarning>,
+    sink: &mut dyn FnMut(PipelineEvent),
+    cancel: Option<&CancelToken>,
 ) -> Result<String, PipelineError>
 where
     P: PostProcessor,
@@ -310,22 +430,43 @@ where
     emit_program_begin(header_setup, post);
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
-    for op in project.operations.iter().filter(|o| o.enabled) {
+    let enabled_ops: Vec<&Operation> = project.operations.iter().filter(|o| o.enabled).collect();
+    let total_ops = enabled_ops.len();
+    for (idx, op) in enabled_ops.iter().enumerate() {
+        if cancelled(cancel) {
+            return Err(PipelineError::Cancelled);
+        }
+        sink(PipelineEvent::OpStarted {
+            op_id: op.id,
+            idx,
+            total: total_ops,
+            name: op.name.clone(),
+        });
         let mut setup = synthesize_op_setup(op, project, warnings)?;
         resolve_auto_helix_radius(op, objects, &mut setup, warnings);
         if matches!(op.kind, OperationKind::VCarve) {
             post.raw(&format!("; OP {}", op.id));
-            run_vcarve_op(op, project, &objects, &setup, post, &mut last_pos, warnings)?;
+            run_vcarve_op(
+                op,
+                project,
+                objects,
+                &setup,
+                post,
+                &mut last_pos,
+                warnings,
+                cancel,
+            )?;
             emitted_ops += 1;
             progress(
                 "gcode",
                 0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
                 &format!("emitted op {}", op.id),
             );
+            sink(PipelineEvent::OpCompleted { op_id: op.id });
             continue;
         }
         let (offsets, closed_count) =
-            build_op_offsets(op, project, &mut objects.clone(), &setup, warnings)?;
+            build_op_offsets(op, project, &mut objects.clone(), &setup, warnings, cancel)?;
         {
             let mut s = stats.borrow_mut();
             s.0 += closed_count;
@@ -345,6 +486,7 @@ where
             0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
             &format!("emitted op {}", op.id),
         );
+        sink(PipelineEvent::OpCompleted { op_id: op.id });
     }
     emit_program_end(header_setup, post);
     Ok(post.finish())
@@ -360,7 +502,11 @@ fn build_op_offsets(
     objects: &mut Vec<VcObject>,
     setup: &Setup,
     warnings: &mut Vec<PipelineWarning>,
+    cancel: Option<&CancelToken>,
 ) -> Result<(Vec<PolylineOffset>, usize), PipelineError> {
+    if cancelled(cancel) {
+        return Err(PipelineError::Cancelled);
+    }
     // Up-front sanity checks that don't depend on whether the cascade
     // succeeds. push_tool_fit_kind_warnings populates `warnings` for
     // tool-kind / op-kind mismatches and impossible tool geometry.
@@ -521,6 +667,9 @@ fn build_op_offsets(
             let regions = combine_source_regions(objects, &selected, combine);
             let pocket_emit = pocket_emit_for(strategy, effective_op);
             for region in &regions {
+                if cancelled(cancel) {
+                    return Err(PipelineError::Cancelled);
+                }
                 if region.boundary.len() < 3 {
                     continue;
                 }
@@ -553,6 +702,9 @@ fn build_op_offsets(
     }
 
     for (idx, obj) in objects.iter().enumerate() {
+        if cancelled(cancel) {
+            return Err(PipelineError::Cancelled);
+        }
         if !op_includes_object(effective_op, obj, idx) {
             continue;
         }
@@ -733,6 +885,7 @@ fn run_vcarve_op<P: PostProcessor>(
     post: &mut P,
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
+    cancel: Option<&CancelToken>,
 ) -> Result<(), PipelineError> {
     push_tool_fit_kind_warnings(op, project, setup, warnings);
     let tool = project
@@ -775,6 +928,9 @@ fn run_vcarve_op<P: PostProcessor>(
     let mut any_depth_limited = false;
 
     for region in &regions {
+        if cancelled(cancel) {
+            return Err(PipelineError::Cancelled);
+        }
         if region.boundary.len() < 3 {
             continue;
         }
@@ -782,7 +938,10 @@ fn run_vcarve_op<P: PostProcessor>(
             outer: region.boundary.clone(),
             holes: region.holes.clone(),
         };
-        let axes = crate::cam::vcarve::medial_axis(&vc_region);
+        let axes = crate::cam::vcarve::medial_axis_cancellable(&vc_region, cancel);
+        if cancelled(cancel) {
+            return Err(PipelineError::Cancelled);
+        }
         for axis in &axes {
             let (z_axis, depth_limited) =
                 crate::cam::vcarve::polyline_to_z(axis, tip_angle_rad, r_cap, z_cap);
@@ -4957,5 +5116,185 @@ mod tests {
         assert_eq!(resp_a.gcode, resp_b.gcode);
         assert!(resp_a.warnings.iter().all(|w| w.kind != "step_unspecified"));
         assert!(resp_b.warnings.iter().all(|w| w.kind != "step_unspecified"));
+    }
+
+    fn vbit() -> ToolEntry {
+        ToolEntry {
+            id: 1,
+            name: "60° V".into(),
+            kind: ToolKind::VBit,
+            diameter: 6.35,
+            tip_diameter: Some(0.1),
+            tip_angle_deg: 60.0,
+            dragoff: None,
+            flutes: 2,
+            speed: 18_000,
+            plunge_rate: 200,
+            feed_rate: 1200,
+            coolant: Coolant::Off,
+            default_step: None,
+            pause: 1,
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
+        }
+    }
+
+    #[test]
+    fn generate_streaming_emits_op_events_in_order() {
+        let project = Project {
+            segments: closed_square(20.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 1, ToolOffset::Inside),
+                profile_op(3, 1, ToolOffset::On),
+            ],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let cancel = CancelToken::new();
+        let mut events: Vec<PipelineEvent> = Vec::new();
+        let resp = generate_streaming(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            &cancel,
+            &mut |e| events.push(e),
+        )
+        .expect("streaming pipeline ran");
+
+        let mut started: Vec<u32> = Vec::new();
+        let mut completed: Vec<u32> = Vec::new();
+        let mut done_count = 0usize;
+        for ev in &events {
+            match ev {
+                PipelineEvent::OpStarted { op_id, .. } => started.push(*op_id),
+                PipelineEvent::OpCompleted { op_id } => completed.push(*op_id),
+                PipelineEvent::Done { .. } => done_count += 1,
+                PipelineEvent::Cancelled => panic!("unexpected Cancelled event"),
+                PipelineEvent::OpProgress { .. } => {}
+            }
+        }
+        assert_eq!(started, vec![1, 2, 3], "OpStarted fires once per op in order");
+        assert_eq!(completed, vec![1, 2, 3], "OpCompleted fires once per op in order");
+        assert_eq!(done_count, 1, "exactly one Done event at the end");
+        assert!(!resp.gcode.is_empty());
+    }
+
+    #[test]
+    fn generate_streaming_done_event_carries_aggregated_stats() {
+        let project = Project {
+            segments: closed_square(20.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let cancel = CancelToken::new();
+        let mut last: Option<PipelineEvent> = None;
+        let resp = generate_streaming(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            &cancel,
+            &mut |e| last = Some(e),
+        )
+        .expect("streaming pipeline ran");
+        match last {
+            Some(PipelineEvent::Done { total_time_s, op_count }) => {
+                assert!((total_time_s - resp.time_estimate.total_s).abs() < 1e-9);
+                assert_eq!(op_count, resp.stats.offset_count);
+            }
+            other => panic!("expected Done event last, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn generate_streaming_cancellation() {
+        // V-Carve a triangle on a background thread; from the main
+        // thread set the cancel flag immediately. We expect the
+        // streaming run to bail with Err(Cancelled) and emit a
+        // Cancelled event within ≤200 ms.
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+
+        let project = Project {
+            segments: vec![
+                Segment::line(Point2::new(0.0, 0.0), Point2::new(20.0, 0.0), "0", 7),
+                Segment::line(
+                    Point2::new(20.0, 0.0),
+                    Point2::new(10.0, 17.320_508),
+                    "0",
+                    7,
+                ),
+                Segment::line(
+                    Point2::new(10.0, 17.320_508),
+                    Point2::new(0.0, 0.0),
+                    "0",
+                    7,
+                ),
+            ],
+            machine: Default::default(),
+            tools: vec![vbit()],
+            operations: vec![Operation {
+                id: 9,
+                name: "Carve".into(),
+                enabled: true,
+                kind: OperationKind::VCarve,
+                tool_id: 1,
+                source: OperationSource::All,
+                params: OperationParams {
+                    depth: -10.0,
+                    start_depth: 0.0,
+                    step: Some(-1.0),
+                    fast_move_z: 5.0,
+                    ..OperationParams::default()
+                },
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let cancel = CancelToken::new();
+        let cancel_clone = cancel.clone();
+        let events: Arc<Mutex<Vec<PipelineEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = Arc::clone(&events);
+        let request = PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        };
+        cancel_clone.cancel();
+        let start = Instant::now();
+        let result = std::thread::spawn(move || {
+            generate_streaming(request, &cancel_clone, &mut |e| {
+                events_clone.lock().unwrap().push(e);
+            })
+        })
+        .join()
+        .expect("worker thread panicked");
+        let elapsed = start.elapsed();
+        assert!(
+            matches!(result, Err(PipelineError::Cancelled)),
+            "expected Err(Cancelled), got {result:?}"
+        );
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "cancellation took too long: {elapsed:?}"
+        );
+        let evs = events.lock().unwrap();
+        assert!(
+            evs.iter()
+                .any(|e| matches!(e, PipelineEvent::Cancelled)),
+            "expected a Cancelled event in stream, got {evs:?}"
+        );
+        assert!(
+            !evs.iter().any(|e| matches!(e, PipelineEvent::Done { .. })),
+            "should not emit Done after Cancelled",
+        );
     }
 }

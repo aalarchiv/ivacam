@@ -25,6 +25,7 @@ use crate::cam::offsets::{
     stitch_rings_to_polyline,
 };
 use crate::geometry::{Point2, Segment};
+use crate::pipeline::CancelToken;
 
 pub fn pocket_trochoidal(
     boundary_pts: &[Point2],
@@ -36,6 +37,32 @@ pub fn pocket_trochoidal(
     layer: &str,
     color: i32,
 ) -> Option<Vec<Segment>> {
+    pocket_trochoidal_cancellable(
+        boundary_pts,
+        islands,
+        tool_radius,
+        engagement_angle_deg,
+        loop_radius_factor,
+        climb,
+        layer,
+        color,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn pocket_trochoidal_cancellable(
+    boundary_pts: &[Point2],
+    islands: &[Vec<Point2>],
+    tool_radius: f64,
+    engagement_angle_deg: f64,
+    loop_radius_factor: f64,
+    climb: bool,
+    layer: &str,
+    color: i32,
+    cancel: Option<&CancelToken>,
+) -> Option<Vec<Segment>> {
+    let is_cancelled = || cancel.map(|c| c.is_cancelled()).unwrap_or(false);
     if boundary_pts.len() < 3 || tool_radius <= 0.0 {
         return Some(Vec::new());
     }
@@ -70,6 +97,9 @@ pub fn pocket_trochoidal(
     let mut prev_exit: Option<Point2> = None;
 
     for i in 0..centerline.len() {
+        if is_cancelled() {
+            return Some(out);
+        }
         let p = centerline[i];
         // Step direction: tangent of the segment AFTER p when present,
         // otherwise the segment INTO p. Used to pick the loop-center

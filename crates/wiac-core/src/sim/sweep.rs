@@ -24,6 +24,7 @@
 )]
 
 use crate::gcode::preview::{MoveKind, ToolpathSegment};
+use crate::pipeline::CancelToken;
 use crate::project::Fixture;
 use crate::sim::diagnostics::{SimDiagnostics, SimWarning};
 use crate::sim::fixture_check::{check_segment_against_fixtures, FixtureCheck};
@@ -236,10 +237,42 @@ pub fn sweep_range(
     holder: Option<&HolderProfile>,
     diagnostics: &mut SimDiagnostics,
 ) -> u32 {
+    sweep_range_cancellable(
+        heightmap,
+        segments,
+        from_idx,
+        to_idx,
+        profile,
+        fixtures,
+        holder,
+        diagnostics,
+        None,
+    )
+}
+
+/// Cancellable variant of [`sweep_range`]. Checks `cancel` every ~100
+/// segments; on cancellation returns the running total (heightmap is
+/// left in whatever partial state has been written so far — sim
+/// callers discard it).
+#[allow(clippy::too_many_arguments)]
+pub fn sweep_range_cancellable(
+    heightmap: &mut Heightmap,
+    segments: &[ToolpathSegment],
+    from_idx: usize,
+    to_idx: usize,
+    profile: ToolProfile,
+    fixtures: &[Fixture],
+    holder: Option<&HolderProfile>,
+    diagnostics: &mut SimDiagnostics,
+    cancel: Option<&CancelToken>,
+) -> u32 {
     let lo = from_idx.min(segments.len());
     let hi = to_idx.min(segments.len());
     let mut total = 0u32;
     for (offset, seg) in segments[lo..hi].iter().enumerate() {
+        if offset % 100 == 0 && cancel.map(|c| c.is_cancelled()).unwrap_or(false) {
+            return total;
+        }
         total += sweep_segment(
             heightmap,
             seg,

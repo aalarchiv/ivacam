@@ -1,7 +1,7 @@
 // HTTP implementation of WiacClient. Talks to wiac-server (axum) over the
 // JSON contract in schema/openapi.yaml.
 
-import type { ProgressEvent, WiacClient } from './client';
+import { CancelledError, type PipelineEvent, type ProgressEvent, type WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -151,6 +151,112 @@ export class HttpWiacClient implements WiacClient {
     }
     return result;
   }
+
+  /**
+   * Per-op streaming with cancellation. The /generate/stream SSE stream
+   * carries a `token` event up front, then `pipeline` events for each
+   * PipelineEvent, and finally `result` (or `cancelled` / `error`).
+   * Aborting `cancelToken` POSTs to `/generate/cancel/<token>` so the
+   * server flips the shared cancel flag.
+   */
+  async generateStreaming(
+    request: GenerateRequest,
+    onEvent: (event: PipelineEvent) => void,
+    cancelToken?: AbortSignal,
+  ): Promise<GenerateResponse> {
+    const res = await fetch(`${this.base}/generate/stream`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok || !res.body) {
+      let detail: unknown;
+      try {
+        detail = await res.json();
+      } catch {
+        detail = await res.text();
+      }
+      throw new Error(`/generate/stream returned ${res.status}: ${JSON.stringify(detail)}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let result: GenerateResponse | undefined;
+    let cancelled = false;
+    let errorPayload: { status: number; message: string } | undefined;
+    let tokenId: number | undefined;
+    let abortHandler: (() => void) | undefined;
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let i: number;
+        while ((i = buffer.indexOf('\n\n')) >= 0) {
+          const frame = buffer.slice(0, i);
+          buffer = buffer.slice(i + 2);
+          let eventName = 'message';
+          const dataLines: string[] = [];
+          for (const line of frame.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+          }
+          if (dataLines.length === 0) continue;
+          const data = dataLines.join('\n');
+          try {
+            if (eventName === 'token') {
+              const t = JSON.parse(data) as { token_id: number };
+              tokenId = t.token_id;
+              if (cancelToken) {
+                if (cancelToken.aborted) {
+                  void this.cancelGenerate(tokenId);
+                } else {
+                  abortHandler = () => {
+                    if (tokenId !== undefined) void this.cancelGenerate(tokenId);
+                  };
+                  cancelToken.addEventListener('abort', abortHandler);
+                }
+              }
+            } else if (eventName === 'pipeline') {
+              onEvent(JSON.parse(data) as PipelineEvent);
+            } else if (eventName === 'result') {
+              result = JSON.parse(data) as GenerateResponse;
+            } else if (eventName === 'cancelled') {
+              cancelled = true;
+              onEvent({ kind: 'cancelled' });
+            } else if (eventName === 'error') {
+              errorPayload = JSON.parse(data) as { status: number; message: string };
+            }
+          } catch {
+            // Malformed frame — drop and keep reading.
+          }
+        }
+      }
+    } finally {
+      if (cancelToken && abortHandler) {
+        cancelToken.removeEventListener('abort', abortHandler);
+      }
+    }
+
+    if (cancelled) throw new CancelledError();
+    if (errorPayload) {
+      throw new Error(`/generate/stream errored ${errorPayload.status}: ${errorPayload.message}`);
+    }
+    if (!result) {
+      throw new Error('/generate/stream closed before emitting a result');
+    }
+    return result;
+  }
+
+  private async cancelGenerate(tokenId: number): Promise<void> {
+    try {
+      await fetch(`${this.base}/generate/cancel/${tokenId}`, { method: 'POST' });
+    } catch {
+      // Cancellation is best-effort — ignore network failures.
+    }
+  }
 }
 
 export function defaultClient(): WiacClient {
@@ -209,6 +315,12 @@ class WasmClientLazy {
       generate: (req) => ensure().then((c) => c.generate(req)),
       generateStream: (req, cb) =>
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
+      generateStreaming: (req, onEvent, signal) =>
+        ensure().then((c) =>
+          c.generateStreaming
+            ? c.generateStreaming(req, onEvent, signal)
+            : c.generate(req),
+        ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
     };
   }
@@ -238,6 +350,12 @@ class TauriClientLazy {
       generate: (req) => ensure().then((c) => c.generate(req)),
       generateStream: (req, cb) =>
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
+      generateStreaming: (req, onEvent, signal) =>
+        ensure().then((c) =>
+          c.generateStreaming
+            ? c.generateStreaming(req, onEvent, signal)
+            : c.generate(req),
+        ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
     };
   }

@@ -3,6 +3,7 @@
   // tree lives in SetupPanel and feeds project.setup.
 
   import { defaultClient } from '../api/http';
+  import { CancelledError } from '../api/client';
   import { isTauri } from '../api/env';
   import {
     project,
@@ -13,6 +14,7 @@
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
   import type { SimWarning, TimeEstimate } from '../api/types';
   import { _ } from 'svelte-i18n';
+  import GenerateProgress from './GenerateProgress.svelte';
 
   // Format a duration in seconds as HH:MM:SS (always two digits per
   // unit). Negative / NaN inputs render as 00:00:00.
@@ -49,6 +51,13 @@
   let progressMsg = $state<string>('');
   let progressFrac = $state<number>(0);
   let warningPanelOpen = $state(false);
+  let abortController: AbortController | null = null;
+
+  function cancelRun() {
+    if (project.pipelineState !== 'running') return;
+    project.pipelineState = 'cancelling';
+    abortController?.abort();
+  }
 
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);
   let criticalCount = $derived(
@@ -68,9 +77,12 @@
       return;
     }
     project.generating = true;
+    project.pipelineState = 'running';
+    project.pipelineProgress = null;
     project.error = null;
     progressMsg = '';
     progressFrac = 0;
+    abortController = new AbortController();
     try {
       const opProject = buildProject(project);
       if (!opProject) {
@@ -87,17 +99,66 @@
         post_processor: post,
         project: opProject as unknown as GenerateRequestWithProject['project'],
       };
-      const r = client.generateStream
-        ? await client.generateStream(req, (ev) => {
-            progressMsg = ev.message;
-            progressFrac = ev.fraction;
-          })
-        : await client.generate(req);
+      let r;
+      if (client.generateStreaming) {
+        r = await client.generateStreaming(
+          req,
+          (ev) => {
+            if (ev.kind === 'op_started') {
+              project.pipelineProgress = {
+                opIdx: ev.idx,
+                opTotal: ev.total,
+                opFraction: 0,
+                opName: ev.name,
+              };
+              progressMsg = ev.name;
+              progressFrac = ev.idx / Math.max(1, ev.total);
+            } else if (ev.kind === 'op_progress') {
+              if (project.pipelineProgress) {
+                project.pipelineProgress = { ...project.pipelineProgress, opFraction: ev.fraction };
+              }
+              progressMsg = ev.message;
+            } else if (ev.kind === 'op_completed') {
+              if (project.pipelineProgress) {
+                project.pipelineProgress = {
+                  ...project.pipelineProgress,
+                  opFraction: 1,
+                  opIdx: project.pipelineProgress.opIdx + 1,
+                };
+                progressFrac =
+                  project.pipelineProgress.opIdx /
+                  Math.max(1, project.pipelineProgress.opTotal);
+              }
+            } else if (ev.kind === 'done') {
+              progressFrac = 1;
+            }
+          },
+          abortController.signal,
+        );
+      } else if (client.generateStream) {
+        r = await client.generateStream(req, (ev) => {
+          progressMsg = ev.message;
+          progressFrac = ev.fraction;
+        });
+      } else {
+        r = await client.generate(req);
+      }
       project.setGenerated(r);
+      project.pipelineState = 'completed';
+      setTimeout(() => {
+        if (project.pipelineState === 'completed') project.pipelineState = 'idle';
+      }, 1000);
     } catch (e) {
-      project.setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof CancelledError) {
+        project.pipelineState = 'idle';
+      } else {
+        project.setError(e instanceof Error ? e.message : String(e));
+        project.pipelineState = 'idle';
+      }
     } finally {
       project.generating = false;
+      project.pipelineProgress = null;
+      abortController = null;
       progressMsg = '';
       progressFrac = 0;
     }
@@ -171,21 +232,12 @@
       <option value="hpgl">HPGL</option>
     </select>
   </label>
-  <button onclick={run} disabled={!project.imported || project.generating}>
-    {project.generating ? $_('generate.running') : $_('generate.run')}
-  </button>
-  {#if project.generating}
-    <div
-      class="progress"
-      role="progressbar"
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow={Math.round(progressFrac * 100)}
-      title={progressMsg}
-    >
-      <div class="bar-fill" style="width: {Math.round(progressFrac * 100)}%"></div>
-      <span class="progress-text">{progressMsg || $_('generate.starting')}</span>
-    </div>
+  {#if project.pipelineState === 'running' || project.pipelineState === 'cancelling'}
+    <GenerateProgress onCancel={cancelRun} />
+  {:else}
+    <button onclick={run} disabled={!project.imported || project.generating}>
+      {project.generating ? $_('generate.running') : $_('generate.run')}
+    </button>
   {/if}
   {#if project.generated}
     <button onclick={downloadGcode} class="download">

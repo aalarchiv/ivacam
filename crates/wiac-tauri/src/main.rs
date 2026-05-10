@@ -77,6 +77,8 @@ fn run() -> tauri::Result<()> {
             commands::version,
             commands::import_path,
             commands::generate,
+            commands::generate_streaming_cmd,
+            commands::cancel_generate,
             commands::render_text,
         ])
         .run(tauri::generate_context!())

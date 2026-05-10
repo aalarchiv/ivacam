@@ -1,14 +1,16 @@
 //! `wiac-server` — axum HTTP server exposing the JSON contract from
 //! `schema/openapi.yaml`.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
-use axum::extract::{DefaultBodyLimit, Multipart, State};
+use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -24,7 +26,10 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use wiac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
-use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
+use wiac_core::pipeline::{
+    generate_streaming, run_pipeline, CancelToken, PipelineError, PipelineEvent, PipelineRequest,
+    PipelineResponse,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -49,6 +54,7 @@ async fn main() -> Result<()> {
         .route("/import", post(import))
         .route("/generate", post(generate))
         .route("/generate/stream", post(generate_stream))
+        .route("/generate/cancel/:token_id", post(generate_cancel))
         .route("/text", post(render_text_handler))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
@@ -126,7 +132,15 @@ fn build_cors_layer() -> CorsLayer {
 }
 
 #[derive(Default)]
-struct AppState {}
+struct AppState {
+    cancel_tokens: Mutex<HashMap<u32, CancelToken>>,
+}
+
+static TOKEN_COUNTER: AtomicU32 = AtomicU32::new(1);
+
+fn next_token_id() -> u32 {
+    TOKEN_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 
 // ─── DTOs ──────────────────────────────────────────────────────────────────
 
@@ -254,39 +268,60 @@ async fn render_text_handler(
         .map_err(AppError::from)
 }
 
-/// SSE variant: emits `{phase, fraction, message}` progress events as the
-/// pipeline advances and a final `result` event carrying the full
-/// `GenerateResponse`. Frontend reads via `EventSource.addEventListener`.
+/// SSE variant: emits a `token` event with the cancellation handle the
+/// client posts to `/generate/cancel/<token>`, followed by per-op
+/// `PipelineEvent`s, and finally a `result` (or `cancelled` / `error`)
+/// frame. Frontend reads via `fetch` + a hand-rolled SSE parser
+/// because EventSource is GET-only.
 async fn generate_stream(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<GenerateRequest>,
 ) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-    let (tx, rx) = tokio::sync::mpsc::channel::<SseEvent>(16);
+    let (tx, rx) = tokio::sync::mpsc::channel::<SseEvent>(64);
+    let token_id = next_token_id();
+    let cancel = CancelToken::new();
+    if let Ok(mut map) = state.cancel_tokens.lock() {
+        map.insert(token_id, cancel.clone());
+    }
+    let state_for_worker = Arc::clone(&state);
+
+    let _ = tx
+        .send(
+            SseEvent::default()
+                .event("token")
+                .json_data(serde_json::json!({ "token_id": token_id }))
+                .expect("token payload"),
+        )
+        .await;
 
     tokio::task::spawn_blocking(move || {
         let send = |ev: SseEvent| {
-            // Best-effort: if the client hung up we just stop emitting.
             let _ = tx.blocking_send(ev);
         };
-        let progress = |phase: &str, fraction: f64, message: &str| {
-            let payload = serde_json::json!({
-                "phase": phase,
-                "fraction": fraction,
-                "message": message,
-            });
+        let mut sink = |pe: PipelineEvent| {
             send(
                 SseEvent::default()
-                    .event("progress")
-                    .json_data(payload)
-                    .expect("progress payload"),
+                    .event("pipeline")
+                    .json_data(&pe)
+                    .expect("pipeline payload"),
             );
         };
-        match run_pipeline(req, progress) {
+        let outcome = generate_streaming(req, &cancel, &mut sink);
+        if let Ok(mut map) = state_for_worker.cancel_tokens.lock() {
+            map.remove(&token_id);
+        }
+        match outcome {
             Ok(resp) => send(
                 SseEvent::default()
                     .event("result")
                     .json_data(&resp)
                     .expect("result payload"),
+            ),
+            Err(PipelineError::Cancelled) => send(
+                SseEvent::default()
+                    .event("cancelled")
+                    .json_data(serde_json::json!({ "token_id": token_id }))
+                    .expect("cancelled payload"),
             ),
             Err(err) => {
                 let app_err = AppError::from(err);
@@ -306,6 +341,19 @@ async fn generate_stream(
 
     let stream = ReceiverStream::new(rx).map(Ok);
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+async fn generate_cancel(
+    State(state): State<Arc<AppState>>,
+    Path(token_id): Path<u32>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if let Ok(map) = state.cancel_tokens.lock() {
+        if let Some(token) = map.get(&token_id) {
+            token.cancel();
+            return Ok(Json(serde_json::json!({ "ok": true })));
+        }
+    }
+    Ok(Json(serde_json::json!({ "ok": false, "reason": "unknown_token" })))
 }
 
 // ─── error type ────────────────────────────────────────────────────────────
@@ -357,6 +405,10 @@ impl From<wiac_core::pipeline::PipelineError> for AppError {
             PipelineError::UnknownPostProcessor(_)
             | PipelineError::UnknownTool(_, _)
             | PipelineError::UnimplementedKind(_) => Self::bad_request(e.to_string()),
+            PipelineError::Cancelled => Self {
+                status: StatusCode::REQUEST_TIMEOUT,
+                message: e.to_string(),
+            },
         }
     }
 }

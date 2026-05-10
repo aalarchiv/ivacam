@@ -91,6 +91,21 @@ class ProjectState {
   error = $state<string | null>(null);
   visibleLayers = $state<Set<string>>(new Set());
 
+  /// Streaming pipeline state. `idle` between runs; `running` while the
+  /// pipeline is actively emitting per-op events; `cancelling` after
+  /// the user clicked Cancel and we're waiting for the worker to bail;
+  /// `completed` for a brief beat after success so the UI can flash
+  /// the success state before reverting to idle.
+  pipelineState = $state<'idle' | 'running' | 'cancelling' | 'completed'>('idle');
+  /// Last per-op progress event for the GenerateProgress UI. Reset to
+  /// null when `pipelineState` returns to idle.
+  pipelineProgress = $state<{
+    opIdx: number;
+    opTotal: number;
+    opFraction: number;
+    opName: string;
+  } | null>(null);
+
   /// Per-segment hover indicator (single segment, not the chain).
   hoverSegment = $state<number | null>(null);
   /// Object-level selection. Each id is a 1-based chain id from

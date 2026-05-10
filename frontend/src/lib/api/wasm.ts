@@ -3,7 +3,7 @@
 // demos and CI smoke tests; the same JSON contract the HTTP / Tauri
 // transports speak.
 
-import type { ProgressEvent, WiacClient } from './client';
+import { CancelledError, type PipelineEvent, type ProgressEvent, type WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -19,6 +19,10 @@ type WasmModule = {
   version: () => VersionResponse;
   importBytes: (filename: string, bytes: Uint8Array) => ImportResponse;
   generate: (request: GenerateRequest) => GenerateResponse;
+  generateStreaming?: (
+    request: GenerateRequest,
+    onEvent: (event: PipelineEvent) => void,
+  ) => GenerateResponse | null;
   renderText: (request: RenderTextRequest) => RenderTextResponse;
 };
 
@@ -69,6 +73,38 @@ export class WasmWiacClient implements WiacClient {
     onProgress({ phase: 'import', fraction: 0.05, message: 'in-browser core' });
     const r = await this.generate(request);
     onProgress({ phase: 'done', fraction: 1.0, message: 'complete' });
+    return r;
+  }
+
+  /**
+   * WASM v1 is single-threaded — the Rust call holds the JS event
+   * loop, so the cancel signal cannot fire mid-run. We still emit the
+   * per-op event stream so the progress UI updates between ops, and
+   * yield with `await Promise.resolve()` between events would require
+   * the Rust→JS bridge to suspend (it can't here). Cancel support
+   * arrives with web-worker threading in v2.
+   */
+  async generateStreaming(
+    request: GenerateRequest,
+    onEvent: (event: PipelineEvent) => void,
+    cancelToken?: AbortSignal,
+  ): Promise<GenerateResponse> {
+    if (cancelToken?.aborted) throw new CancelledError();
+    const m = await loadModule();
+    if (!m.generateStreaming) {
+      const r = m.generate(request);
+      onEvent({ kind: 'done', op_count: r.stats?.offset_count ?? 0, total_time_s: 0 });
+      return r;
+    }
+    const buffered: PipelineEvent[] = [];
+    const r = m.generateStreaming(request, (ev) => {
+      buffered.push(ev);
+    });
+    for (const ev of buffered) onEvent(ev);
+    if (r === null) {
+      onEvent({ kind: 'cancelled' });
+      throw new CancelledError();
+    }
     return r;
   }
 

@@ -4,8 +4,9 @@
 // Rust commands defined in crates/wiac-tauri/src/commands.rs.
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import type { ProgressEvent, WiacClient } from './client';
+import { CancelledError, type PipelineEvent, type ProgressEvent, type WiacClient } from './client';
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -73,6 +74,69 @@ export class TauriWiacClient implements WiacClient {
     const r = await invoke<GenerateResponse>('generate', { request });
     onProgress({ phase: 'done', fraction: 1.0, message: 'complete' });
     return r;
+  }
+
+  /**
+   * Per-op streaming with cancellation. The Rust side spawns a worker
+   * thread, returns immediately with a token id, and emits per-op
+   * events on `generate-event:<token>`. The terminal frame lands on
+   * `generate-result:<token>` (success), `generate-cancelled:<token>`
+   * (cancellation), or `generate-error:<token>` (pipeline error).
+   */
+  async generateStreaming(
+    request: GenerateRequest,
+    onEvent: (event: PipelineEvent) => void,
+    cancelToken?: AbortSignal,
+  ): Promise<GenerateResponse> {
+    const { token_id } = await invoke<{ token_id: number }>('generate_streaming_cmd', { request });
+
+    let abortHandler: (() => void) | undefined;
+    const unlistens: UnlistenFn[] = [];
+    return new Promise<GenerateResponse>((resolve, reject) => {
+      const cleanup = () => {
+        for (const u of unlistens) {
+          try {
+            u();
+          } catch {
+            // Best-effort.
+          }
+        }
+        if (cancelToken && abortHandler) {
+          cancelToken.removeEventListener('abort', abortHandler);
+        }
+      };
+
+      void listen<PipelineEvent>(`generate-event:${token_id}`, (msg) => {
+        onEvent(msg.payload);
+      }).then((u) => unlistens.push(u));
+
+      void listen<GenerateResponse>(`generate-result:${token_id}`, (msg) => {
+        cleanup();
+        resolve(msg.payload);
+      }).then((u) => unlistens.push(u));
+
+      void listen<number>(`generate-cancelled:${token_id}`, () => {
+        cleanup();
+        onEvent({ kind: 'cancelled' });
+        reject(new CancelledError());
+      }).then((u) => unlistens.push(u));
+
+      void listen<string>(`generate-error:${token_id}`, (msg) => {
+        cleanup();
+        reject(new Error(msg.payload));
+      }).then((u) => unlistens.push(u));
+
+      if (cancelToken) {
+        if (cancelToken.aborted) {
+          void invoke('cancel_generate', { tokenId: token_id });
+        } else {
+          abortHandler = () => {
+            void invoke('cancel_generate', { tokenId: token_id });
+          };
+          cancelToken.addEventListener('abort', abortHandler);
+        }
+      }
+    });
   }
 
   async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {

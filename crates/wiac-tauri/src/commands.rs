@@ -7,12 +7,19 @@
 //! `wiac_core::pipeline::run_pipeline` for the actual CAM work; the only
 //! per-transport code is request/response serialization.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 use wiac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
-use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
+use wiac_core::pipeline::{
+    generate_streaming, run_pipeline, CancelToken, PipelineEvent, PipelineRequest,
+    PipelineResponse,
+};
 use wiac_core::{ImportOptions, ImportOutput};
 
 #[derive(Serialize)]
@@ -60,6 +67,79 @@ pub async fn generate(request: PipelineRequest) -> Result<PipelineResponse, Stri
         .await
         .map_err(|e| format!("join error: {e}"))?
         .map_err(|e| e.to_string())
+}
+
+fn token_registry() -> &'static Mutex<HashMap<u32, CancelToken>> {
+    static REG: OnceLock<Mutex<HashMap<u32, CancelToken>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn next_token_id() -> u32 {
+    static COUNTER: AtomicU32 = AtomicU32::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Serialize, Clone)]
+pub struct GenerateStreamingResponse {
+    pub token_id: u32,
+}
+
+/// Streaming generate: returns immediately with a `token_id` the caller
+/// can hand to `cancel_generate`. Pipeline events are pushed via the
+/// `generate-event:<token_id>` Tauri event; the final result lands on
+/// `generate-result:<token_id>` (or `generate-error:<token_id>` on
+/// failure / `generate-cancelled:<token_id>` on cancellation).
+#[tauri::command]
+pub async fn generate_streaming_cmd(
+    app: AppHandle,
+    request: PipelineRequest,
+) -> Result<GenerateStreamingResponse, String> {
+    let token_id = next_token_id();
+    let cancel = CancelToken::new();
+    token_registry()
+        .lock()
+        .map_err(|e| format!("token registry poisoned: {e}"))?
+        .insert(token_id, cancel.clone());
+    let event_channel = format!("generate-event:{token_id}");
+    let result_channel = format!("generate-result:{token_id}");
+    let error_channel = format!("generate-error:{token_id}");
+    let cancelled_channel = format!("generate-cancelled:{token_id}");
+
+    std::thread::spawn(move || {
+        let app_for_events = app.clone();
+        let mut sink = move |ev: PipelineEvent| {
+            let _ = app_for_events.emit(&event_channel, ev);
+        };
+        let res = generate_streaming(request, &cancel, &mut sink);
+        let _ = token_registry().lock().map(|mut m| m.remove(&token_id));
+        match res {
+            Ok(resp) => {
+                let _ = app.emit(&result_channel, resp);
+            }
+            Err(wiac_core::pipeline::PipelineError::Cancelled) => {
+                let _ = app.emit(&cancelled_channel, token_id);
+            }
+            Err(e) => {
+                let _ = app.emit(&error_channel, e.to_string());
+            }
+        }
+    });
+
+    Ok(GenerateStreamingResponse { token_id })
+}
+
+/// Flip the cancel flag for a previously-issued token. The streaming
+/// worker thread consults the flag at coarse granularity inside the
+/// pipeline. No-op if the token id is unknown (already completed).
+#[tauri::command]
+pub fn cancel_generate(token_id: u32) -> Result<(), String> {
+    let reg = token_registry()
+        .lock()
+        .map_err(|e| format!("token registry poisoned: {e}"))?;
+    if let Some(token) = reg.get(&token_id) {
+        token.cancel();
+    }
+    Ok(())
 }
 
 #[tauri::command]

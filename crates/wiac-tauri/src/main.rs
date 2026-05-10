@@ -89,6 +89,7 @@ fn run() -> tauri::Result<()> {
             commands::generate_streaming_cmd,
             commands::cancel_generate,
             commands::render_text,
+            commands::compute_helix_radius_cmd,
             commands::read_workspace_file,
             commands::write_workspace_file,
             commands::watch_source_paths,

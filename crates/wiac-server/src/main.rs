@@ -12,6 +12,7 @@ use std::time::Duration;
 use anyhow::Result;
 use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
 use axum::http::StatusCode;
+use axum::http::{HeaderValue, Method};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -19,7 +20,6 @@ use axum::{Json, Router};
 use futures::stream::Stream;
 use serde::Serialize;
 use tokio::net::TcpListener;
-use axum::http::{HeaderValue, Method};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -30,6 +30,7 @@ use wiac_core::pipeline::{
     generate_streaming, run_pipeline, CancelToken, PipelineError, PipelineEvent, PipelineRequest,
     PipelineResponse,
 };
+use wiac_core::{compute_helix_radius, HelixRadiusRequest, HelixRadiusResponse};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -56,6 +57,7 @@ async fn main() -> Result<()> {
         .route("/generate/stream", post(generate_stream))
         .route("/generate/cancel/:token_id", post(generate_cancel))
         .route("/text", post(render_text_handler))
+        .route("/helix-radius", post(helix_radius_handler))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -193,7 +195,6 @@ async fn version() -> Json<VersionResponse> {
     })
 }
 
-
 async fn import(
     State(_state): State<Arc<AppState>>,
     mut multipart: Multipart,
@@ -227,11 +228,9 @@ async fn import(
     let tmp = tempfile_path(&suffix)?;
     tokio::fs::write(&tmp, &bytes).await?;
     let opts = wiac_core::ImportOptions::default();
-    let result = tokio::task::spawn_blocking(move || {
-        wiac_core::input::import_path(&tmp, &opts)
-    })
-    .await
-    .map_err(|e| AppError::internal(e.to_string()))??;
+    let result = tokio::task::spawn_blocking(move || wiac_core::input::import_path(&tmp, &opts))
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))??;
 
     let resp = ImportResponse {
         filename: &result.filename,
@@ -266,6 +265,19 @@ async fn render_text_handler(
         .map_err(|e| AppError::internal(e.to_string()))?
         .map(Json)
         .map_err(AppError::from)
+}
+
+/// Helix auto-fit preview — runs the same inscribed-circle search the
+/// generator does at run time, so the OpPropertiesPanel can show the
+/// detected radius before the user clicks Generate.
+async fn helix_radius_handler(
+    State(_state): State<Arc<AppState>>,
+    Json(req): Json<HelixRadiusRequest>,
+) -> Result<Json<HelixRadiusResponse>, AppError> {
+    let resp = tokio::task::spawn_blocking(move || compute_helix_radius(req))
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(Json(resp))
 }
 
 /// SSE variant: emits a `token` event with the cancellation handle the
@@ -353,7 +365,9 @@ async fn generate_cancel(
             return Ok(Json(serde_json::json!({ "ok": true })));
         }
     }
-    Ok(Json(serde_json::json!({ "ok": false, "reason": "unknown_token" })))
+    Ok(Json(
+        serde_json::json!({ "ok": false, "reason": "unknown_token" }),
+    ))
 }
 
 // ─── error type ────────────────────────────────────────────────────────────

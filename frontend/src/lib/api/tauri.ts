@@ -10,6 +10,8 @@ import { CancelledError, type PipelineEvent, type ProgressEvent, type WiacClient
 import type {
   GenerateRequest,
   GenerateResponse,
+  HelixRadiusRequest,
+  HelixRadiusResponse,
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
@@ -141,6 +143,10 @@ export class TauriWiacClient implements WiacClient {
 
   async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {
     return invoke<RenderTextResponse>('render_text', { request });
+  }
+
+  async computeHelixRadius(request: HelixRadiusRequest): Promise<HelixRadiusResponse> {
+    return invoke<HelixRadiusResponse>('compute_helix_radius_cmd', { req: request });
   }
 }
 

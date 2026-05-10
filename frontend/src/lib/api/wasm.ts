@@ -7,6 +7,8 @@ import { CancelledError, type PipelineEvent, type ProgressEvent, type WiacClient
 import type {
   GenerateRequest,
   GenerateResponse,
+  HelixRadiusRequest,
+  HelixRadiusResponse,
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
@@ -24,6 +26,7 @@ type WasmModule = {
     onEvent: (event: PipelineEvent) => void,
   ) => GenerateResponse | null;
   renderText: (request: RenderTextRequest) => RenderTextResponse;
+  computeHelixRadius: (request: HelixRadiusRequest) => HelixRadiusResponse;
 };
 
 let modPromise: Promise<WasmModule> | null = null;
@@ -111,5 +114,10 @@ export class WasmWiacClient implements WiacClient {
   async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {
     const m = await loadModule();
     return m.renderText(request);
+  }
+
+  async computeHelixRadius(request: HelixRadiusRequest): Promise<HelixRadiusResponse> {
+    const m = await loadModule();
+    return m.computeHelixRadius(request);
   }
 }

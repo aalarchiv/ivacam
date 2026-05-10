@@ -17,10 +17,12 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use wiac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
 use wiac_core::pipeline::{
-    generate_streaming, run_pipeline, CancelToken, PipelineEvent, PipelineRequest,
-    PipelineResponse,
+    generate_streaming, run_pipeline, CancelToken, PipelineEvent, PipelineRequest, PipelineResponse,
 };
-use wiac_core::{Error as WiacError, ImportOptions, ImportOutput};
+use wiac_core::{
+    compute_helix_radius, Error as WiacError, HelixRadiusRequest, HelixRadiusResponse,
+    ImportOptions, ImportOutput,
+};
 
 use crate::watcher::ProjectWatcher;
 
@@ -186,6 +188,15 @@ pub async fn render_text(request: RenderTextRequest) -> Result<RenderTextRespons
         .map_err(serialize_error)
 }
 
+#[tauri::command]
+pub async fn compute_helix_radius_cmd(
+    req: HelixRadiusRequest,
+) -> Result<HelixRadiusResponse, String> {
+    tokio::task::spawn_blocking(move || compute_helix_radius(req))
+        .await
+        .map_err(|e| internal(format!("join error: {e}")))
+}
+
 /// Serialize a structured `wiac_core::Error` to JSON the frontend can
 /// detect and parse via `tryParseStructuredError`. The string remains
 /// the Tauri error type (per existing API), but its content is now JSON
@@ -275,4 +286,3 @@ pub async fn unwatch_all(state: tauri::State<'_, AppState>) -> Result<(), String
         .map_err(|e| format!("watcher mutex poisoned: {e}"))?
         .unwatch_all()
 }
-

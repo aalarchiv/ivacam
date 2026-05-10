@@ -5,6 +5,8 @@
 import type {
   GenerateRequest,
   GenerateResponse,
+  HelixRadiusRequest,
+  HelixRadiusResponse,
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
@@ -47,6 +49,13 @@ export interface WiacClient {
    * stage geometry before adding it to the project.
    */
   renderText(request: RenderTextRequest): Promise<RenderTextResponse>;
+  /**
+   * Helix auto-fit preview — returns the largest inscribed-circle radius
+   * for the given selection + tool diameter, or a fallback reason when no
+   * helix circle fits. Lets the OpPropertiesPanel show
+   * `Auto (detected: …)` before gcode generation.
+   */
+  computeHelixRadius(request: HelixRadiusRequest): Promise<HelixRadiusResponse>;
 }
 
 export interface ProgressEvent {

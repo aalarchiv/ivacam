@@ -107,6 +107,8 @@ pub fn components_schemas() -> Value {
     insert::<GenerateRequest>(&mut schemas, "GenerateRequest");
     insert::<GenerateResponse>(&mut schemas, "GenerateResponse");
     insert::<GenerateStats>(&mut schemas, "GenerateStats");
+    insert::<crate::HelixRadiusRequest>(&mut schemas, "HelixRadiusRequest");
+    insert::<crate::HelixRadiusResponse>(&mut schemas, "HelixRadiusResponse");
     insert::<crate::sim::timing::TimeEstimate>(&mut schemas, "TimeEstimate");
     insert::<crate::input::text::RenderTextRequest>(&mut schemas, "RenderTextRequest");
     insert::<crate::input::text::RenderTextResponse>(&mut schemas, "RenderTextResponse");

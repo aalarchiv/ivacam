@@ -22,6 +22,13 @@ use wiac_core::pipeline::{
 };
 use wiac_core::{Error as WiacError, ImportOptions, ImportOutput};
 
+use crate::watcher::ProjectWatcher;
+
+#[derive(Debug)]
+pub struct AppState {
+    pub watcher: Mutex<ProjectWatcher>,
+}
+
 #[derive(Serialize)]
 pub struct HealthResponse {
     pub ok: bool,
@@ -241,5 +248,31 @@ pub async fn write_workspace_file(app: AppHandle, json: String) -> Result<(), St
         .await
         .map_err(|e| format!("rename {} → {}: {e}", tmp.display(), path.display()))?;
     Ok(())
+}
+
+/// Replace the active source-file watch set. Subsequent modifications
+/// to any of these paths emit `source-file-changed` events the frontend
+/// listens for. Called on project load / when sources change.
+#[tauri::command]
+pub async fn watch_source_paths(
+    state: tauri::State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    state
+        .watcher
+        .lock()
+        .map_err(|e| format!("watcher mutex poisoned: {e}"))?
+        .set_paths(paths)
+}
+
+/// Drop every watch slot. Called on project close.
+#[tauri::command]
+pub async fn unwatch_all(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state
+        .watcher
+        .lock()
+        .map_err(|e| format!("watcher mutex poisoned: {e}"))?
+        .unwatch_all()
 }
 

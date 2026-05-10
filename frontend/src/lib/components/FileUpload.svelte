@@ -111,7 +111,7 @@
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<ImportResponse>('import_path', { path });
-      project.setImported(result);
+      project.setImported(result, path);
       const filename = path.split(/[\\/]/).pop() ?? path;
       await recordRecent(path, filename);
       workspace.addRecentProject(path, filename);

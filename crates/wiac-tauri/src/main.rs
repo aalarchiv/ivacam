@@ -8,8 +8,14 @@
 
 mod commands;
 mod menu;
+mod watcher;
+
+use std::sync::Mutex;
 
 use tauri::{Emitter, Manager};
+
+use commands::AppState;
+use watcher::ProjectWatcher;
 
 fn main() {
     if let Err(err) = run() {
@@ -49,6 +55,9 @@ fn run() -> tauri::Result<()> {
         )
         .setup(|app| {
             let handle = app.handle().clone();
+            app.manage(AppState {
+                watcher: Mutex::new(ProjectWatcher::new(handle.clone())),
+            });
             let m = menu::build_menu(&handle)?;
             app.set_menu(m)?;
             app.on_menu_event(move |app, event| menu::handle_menu_event(app, event.id().as_ref()));
@@ -82,6 +91,8 @@ fn run() -> tauri::Result<()> {
             commands::render_text,
             commands::read_workspace_file,
             commands::write_workspace_file,
+            commands::watch_source_paths,
+            commands::unwatch_all,
         ])
         .run(tauri::generate_context!())
 }

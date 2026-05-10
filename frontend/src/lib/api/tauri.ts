@@ -143,3 +143,29 @@ export class TauriWiacClient implements WiacClient {
     return invoke<RenderTextResponse>('render_text', { request });
   }
 }
+
+/// Replace the active source-file watch set on the desktop shell. The
+/// backend (crates/wiac-tauri/src/watcher.rs) emits `source-file-changed`
+/// events whenever any of the supplied paths is rewritten.
+export async function watchSourcePaths(paths: string[]): Promise<void> {
+  await invoke('watch_source_paths', { paths });
+}
+
+/// Drop every watch slot. Called on project close.
+export async function unwatchAll(): Promise<void> {
+  await invoke('unwatch_all');
+}
+
+export interface SourceFileChangedPayload {
+  path: string;
+}
+
+/// Subscribe to backend "source rewritten" notifications. Returns the
+/// unlisten fn so callers can drop the subscription on project close.
+export async function onSourceFileChanged(
+  handler: (payload: SourceFileChangedPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<SourceFileChangedPayload>('source-file-changed', (e) =>
+    handler(e.payload),
+  );
+}

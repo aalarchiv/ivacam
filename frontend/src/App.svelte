@@ -16,6 +16,7 @@
   import ToolLibraryDialog from './lib/components/ToolLibraryDialog.svelte';
   import SettingsDialog from './lib/components/SettingsDialog.svelte';
   import AddTextDialog from './lib/components/AddTextDialog.svelte';
+  import SourceStaleToast from './lib/components/SourceStaleToast.svelte';
 
   let machineOpen = $state(false);
   let toolsOpen = $state(false);
@@ -48,8 +49,26 @@
 
     if (isTauri()) {
       void wireMenuEvents();
+      void wireSourceWatch();
     }
   });
+
+  /// Subscribe to backend `source-file-changed` events emitted by the
+  /// project watcher. With auto-reload enabled, swap the geometry in
+  /// silently as a single undoable transaction; otherwise surface the
+  /// "Reload?" toast. The unlisten fn is intentionally not stored —
+  /// the watch lives for the lifetime of the window.
+  async function wireSourceWatch() {
+    const { onSourceFileChanged } = await import('./lib/api/tauri');
+    await onSourceFileChanged(async ({ path }) => {
+      if (path !== project.lastImportPath) return;
+      if (project.settings.autoReloadSources) {
+        await project.reimportFromPath(path);
+      } else {
+        project.sourceFileStaleNotice = { path, auto_reload: false };
+      }
+    });
+  }
 
   /**
    * Bridge native menu actions emitted from crates/wiac-tauri/src/menu.rs.
@@ -430,6 +449,7 @@
   <ToolLibraryDialog open={toolsOpen} onClose={() => (toolsOpen = false)} />
   <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
   <AddTextDialog open={addTextOpen} onClose={() => (addTextOpen = false)} />
+  <SourceStaleToast onReload={async (p) => { await project.reimportFromPath(p); }} />
 
   <footer>
     {#if project.imported}

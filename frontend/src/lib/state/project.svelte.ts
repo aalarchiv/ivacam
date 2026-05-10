@@ -12,6 +12,12 @@ import type {
   SimSeverity,
 } from '../api/types';
 import { History } from './history';
+import { isTauri as isTauriEnv } from '../api/env';
+
+function isAbsolutePath(p: string): boolean {
+  return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
+}
+
 import {
   addFixtureCommand,
   addOperationCommand,
@@ -54,6 +60,11 @@ export interface AppSettings {
   /// When true, the sim driver keeps the playhead replayed to 1.0 after
   /// every project save / regenerate so warnings surface immediately.
   autoRunSimOnSave: boolean;
+  /// Tauri-only: when true, source DXF/SVG/image files are reloaded
+  /// automatically when their on-disk content changes (e.g. the user
+  /// hits Ctrl+S in their CAD app). When false the user gets a
+  /// "Reload?" toast instead.
+  autoReloadSources: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -70,6 +81,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxSimulationCells: 4_000_000,
   blockOnCriticalSimWarnings: false,
   autoRunSimOnSave: true,
+  autoReloadSources: true,
 };
 
 /// Load persisted settings, deep-merging stored values over defaults so
@@ -252,6 +264,21 @@ class ProjectState {
   /// it can't be a $state itself).
   historyVersion = $state(0);
 
+  /// Absolute path of the source file backing the current `imported`
+  /// payload, when it was loaded from disk via `loadFromPath`. Drives
+  /// the auto-reload watcher and the "Reload?" toast.
+  lastImportPath = $state<string | null>(null);
+
+  /// Absolute path of the currently-open .vc-project.json, when one was
+  /// loaded via `openProjectNative`. Included in the watch set so we
+  /// pick up out-of-band edits (purely advisory — no auto-reload).
+  activeProjectPath = $state<string | null>(null);
+
+  /// Source-file change indicator. Populated when the watcher fires and
+  /// the user has `autoReloadSources` disabled. SourceStaleToast renders
+  /// from this and clears it on Reload / Ignore. Auto-reloads bypass it.
+  sourceFileStaleNotice = $state<{ path: string; auto_reload: boolean } | null>(null);
+
   constructor() {
     this.history.subscribe(() => { this.historyVersion = this.history.version; });
   }
@@ -346,7 +373,7 @@ class ProjectState {
     this.selectedFixtureId = id;
   }
 
-  setImported(r: ImportResponse) {
+  setImported(r: ImportResponse, sourcePath?: string | null) {
     this.imported = r;
     this.generated = null;
     this.toolpathCumLen = null;
@@ -358,9 +385,92 @@ class ProjectState {
     this.selectedObjects = new Set();
     this.hoverSegment = null;
     this.tabs = {};
+    if (sourcePath !== undefined) this.lastImportPath = sourcePath;
+    this.sourceFileStaleNotice = null;
     // Imports cross a project boundary; undoing back across that boundary
     // would mix incompatible geometry/op state, so drop history here.
     this.history.clear();
+    void this.refreshSourceWatch();
+  }
+
+  setActiveProjectPath(path: string | null) {
+    this.activeProjectPath = path;
+    void this.refreshSourceWatch();
+  }
+
+  /// Refresh the desktop file-system watcher to track every absolute
+  /// source path the project depends on. No-op outside Tauri; failure
+  /// surfaces as a console warning so the rest of the app isn't blocked
+  /// when the watcher backend is unavailable (e.g. inotify quota hit).
+  async refreshSourceWatch(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    if (!isTauriEnv()) return;
+    const paths = new Set<string>();
+    if (this.lastImportPath && isAbsolutePath(this.lastImportPath)) {
+      paths.add(this.lastImportPath);
+    }
+    if (this.activeProjectPath && isAbsolutePath(this.activeProjectPath)) {
+      paths.add(this.activeProjectPath);
+    }
+    try {
+      const mod = await import('../api/tauri');
+      await mod.watchSourcePaths(Array.from(paths));
+    } catch (e) {
+      console.warn('source watch:', e);
+    }
+  }
+
+  /// Drop every active watch slot. Called when the project closes.
+  async stopSourceWatch(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    if (!isTauriEnv()) return;
+    try {
+      const mod = await import('../api/tauri');
+      await mod.unwatchAll();
+    } catch (e) {
+      console.warn('source watch stop:', e);
+    }
+  }
+
+  /// Re-import the named source path and swap it in. Wraps the swap as a
+  /// single-step undoable transaction so Ctrl+Z reverts to the prior
+  /// geometry. Used by both the auto-reload effect and the manual
+  /// "Reload" button on SourceStaleToast.
+  ///
+  /// After the swap, ops whose `sourceObjects` reference object ids no
+  /// longer present in the new geometry are flagged via console.warn —
+  /// richer recovery is a follow-up. Returns true on success.
+  async reimportFromPath(path: string): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    if (!isTauriEnv()) return false;
+    const before = this.imported ? structuredClone(this.imported) : null;
+    let after: ImportResponse;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      after = await invoke<ImportResponse>('import_path', { path });
+    } catch (e) {
+      this.setError(`reload: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
+    this.history.beginTransaction('Reload source');
+    try {
+      this.history.exec(appendImportedCommand({ before, after }), this.target());
+    } finally {
+      this.history.commitTransaction();
+    }
+    this.lastImportPath = path;
+    this.sourceFileStaleNotice = null;
+    const presentIds = new Set(after.objects ?? []);
+    for (const op of this.operations) {
+      if (!Array.isArray(op.sourceObjects) || op.sourceObjects.length === 0) continue;
+      const orphans = op.sourceObjects.filter((id) => !presentIds.has(id));
+      if (orphans.length > 0) {
+        console.warn(
+          `op "${op.name}" (#${op.id}): source geometry missing for ids ${orphans.join(', ')}`,
+        );
+      }
+    }
+    return true;
   }
 
   toggleObject(id: number, additive = false) {
@@ -434,7 +544,7 @@ class ProjectState {
     if (file.kind !== 'wiac-project') {
       throw new Error('not a wiaConstructor project file');
     }
-    if (file.imported) this.setImported(file.imported);
+    if (file.imported) this.setImported(file.imported, null);
     this.visibleLayers = new Set(file.visibleLayers ?? []);
     this.selectedEntities = new Set(file.selectedEntities ?? []);
     this.tabs = file.tabs ?? {};

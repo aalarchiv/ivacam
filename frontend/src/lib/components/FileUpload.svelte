@@ -101,7 +101,7 @@
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<ImportResponse>('import_path', { path });
-      project.setImported(result);
+      project.setImported(result, path);
       const filename = path.split(/[\\/]/).pop() ?? path;
       await recordRecent(path, filename);
     } catch (e) {
@@ -126,6 +126,7 @@
     try {
       const text = await readTextFile(selected);
       project.restore(JSON.parse(text));
+      project.setActiveProjectPath(selected);
     } catch (e) {
       project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

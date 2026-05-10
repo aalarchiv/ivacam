@@ -253,6 +253,28 @@
             the safety check — is required before downloading G-code.
           </p>
         </section>
+
+        <section>
+          <h3>Source files</h3>
+          <div class="grid">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={project.settings.autoReloadSources}
+                onchange={(e) => update('autoReloadSources', (e.currentTarget as HTMLInputElement).checked)}
+              />
+              <span>Auto-reload imported DXF / SVG when changed externally</span>
+            </label>
+          </div>
+          <p class="hint">
+            Desktop only. Watches the source file backing the current
+            import and re-runs it when the CAD app saves a new version
+            (one undoable step). Disable to get a "Reload?" toast
+            instead. Network and OneDrive-synced paths can drop events
+            silently — manually re-import if a save doesn't show up
+            within a few seconds.
+          </p>
+        </section>
       </div>
 
       <footer>

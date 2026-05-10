@@ -24,6 +24,9 @@
       : '',
   );
   let cancelling = $derived(project.pipelineState === 'cancelling');
+  let cachedHint = $derived(
+    project.lastGenerateCachedCount > 0 ? ` (${project.lastGenerateCachedCount} cached)` : '',
+  );
 </script>
 
 <div class="progress-row" role="status" aria-live="polite">
@@ -40,7 +43,7 @@
       {#if cancelling}
         {$_('generate.cancelling') || 'Cancelling…'}
       {:else}
-        {label || $_('generate.starting')}
+        {label || $_('generate.starting')}<span class="cached-hint">{cachedHint}</span>
       {/if}
     </span>
   </div>
@@ -99,5 +102,10 @@
   button.cancel:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+  .cached-hint {
+    opacity: 0.65;
+    font-style: italic;
+    margin-left: 0.25rem;
   }
 </style>

@@ -80,6 +80,8 @@
     project.pipelineState = 'running';
     project.pipelineProgress = null;
     project.error = null;
+    project.lastGenerateCachedCount = 0;
+    project.lastGenerateOpCount = 0;
     progressMsg = '';
     progressFrac = 0;
     abortController = new AbortController();
@@ -119,6 +121,8 @@
               }
               progressMsg = ev.message;
             } else if (ev.kind === 'op_completed') {
+              project.lastGenerateOpCount += 1;
+              if (ev.cached) project.lastGenerateCachedCount += 1;
               if (project.pipelineProgress) {
                 project.pipelineProgress = {
                   ...project.pipelineProgress,
@@ -251,6 +255,11 @@
           moves: project.generated.toolpath.length,
         },
       })}
+      {#if project.lastGenerateCachedCount > 0}
+        <span class="cached-tag"
+          >· {project.lastGenerateCachedCount} of {project.lastGenerateOpCount} cached</span
+        >
+      {/if}
     </span>
     {#if timeEstimate()}
       {@const t = timeEstimate()!}
@@ -362,6 +371,11 @@
     font-variant-numeric: tabular-nums;
     white-space: pre;
     cursor: help;
+  }
+  .cached-tag {
+    color: var(--text-muted);
+    margin-left: 0.4rem;
+    font-style: italic;
   }
   .progress {
     position: relative;

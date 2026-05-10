@@ -21,7 +21,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,7 @@ use crate::gcode::{
     linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::{Point2, Segment};
+use crate::pipeline_cache::{op_cache_key, OpCacheValue, PipelineCache};
 use crate::project::{
     Operation, OperationKind, OperationSource, PatternConfig, PocketStrategy, Project,
     SourceCombine, ToolEntry,
@@ -169,12 +170,33 @@ pub enum PipelineEvent {
     },
     OpCompleted {
         op_id: u32,
+        /// True when this op was served from the per-op result cache
+        /// (see [`crate::pipeline_cache`]) rather than recomputed.
+        #[serde(default)]
+        cached: bool,
     },
     Cancelled,
     Done {
         op_count: usize,
         total_time_s: f64,
     },
+}
+
+/// Process-global toolpath result cache. Lazily initialized on first
+/// generate. Bounded LRU; capacity is sized for ≈ 5 ops × 10 recent
+/// project states = 50, doubled for headroom.
+static GLOBAL_CACHE: OnceLock<PipelineCache> = OnceLock::new();
+
+fn global_cache() -> &'static PipelineCache {
+    GLOBAL_CACHE.get_or_init(|| PipelineCache::new(200))
+}
+
+/// Clear the process-global pipeline cache. Exposed for tests and for
+/// transports that want to flush after a project-wide reload.
+pub fn clear_pipeline_cache() {
+    if let Some(cache) = GLOBAL_CACHE.get() {
+        cache.clear();
+    }
 }
 
 /// Run the full CAM pipeline. `progress(phase, fraction, message)` is
@@ -185,7 +207,7 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     progress: F,
 ) -> Result<PipelineResponse, PipelineError> {
     let mut no_events = |_e: PipelineEvent| {};
-    run_pipeline_impl(req, &progress, &mut no_events, None)
+    run_pipeline_impl(req, &progress, &mut no_events, None, Some(global_cache()))
 }
 
 /// Streaming entry point: walks ops one at a time, emitting
@@ -199,7 +221,7 @@ pub fn generate_streaming(
     sink: &mut dyn FnMut(PipelineEvent),
 ) -> Result<PipelineResponse, PipelineError> {
     let progress = |_p: &str, _f: f64, _m: &str| {};
-    match run_pipeline_impl(request, &progress, sink, Some(cancel)) {
+    match run_pipeline_impl(request, &progress, sink, Some(cancel), Some(global_cache())) {
         Ok(resp) => {
             sink(PipelineEvent::Done {
                 op_count: resp.stats.offset_count,
@@ -220,6 +242,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     progress: &F,
     sink: &mut dyn FnMut(PipelineEvent),
     cancel: Option<&CancelToken>,
+    cache: Option<&PipelineCache>,
 ) -> Result<PipelineResponse, PipelineError> {
     progress("import", 0.05, "preparing project");
     if cancelled(cancel) {
@@ -248,6 +271,11 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         .max(1);
     let mut warnings: Vec<PipelineWarning> = Vec::new();
 
+    let post_tag: u8 = match post_kind {
+        PostProcessorKind::Linuxcnc => 0,
+        PostProcessorKind::Grbl => 1,
+        PostProcessorKind::Hpgl => 2,
+    };
     let gcode = match post_kind {
         PostProcessorKind::Linuxcnc => run_per_op(
             &project,
@@ -260,6 +288,8 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
             &mut warnings,
             sink,
             cancel,
+            cache,
+            post_tag,
         )?,
         PostProcessorKind::Grbl => run_per_op(
             &project,
@@ -272,6 +302,8 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
             &mut warnings,
             sink,
             cancel,
+            cache,
+            post_tag,
         )?,
         PostProcessorKind::Hpgl => run_per_op(
             &project,
@@ -284,6 +316,8 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
             &mut warnings,
             sink,
             cancel,
+            cache,
+            post_tag,
         )?,
     };
     let (total_closed, total_offsets, _) = *stats_collector.borrow();
@@ -422,6 +456,8 @@ fn run_per_op<P, F>(
     warnings: &mut Vec<PipelineWarning>,
     sink: &mut dyn FnMut(PipelineEvent),
     cancel: Option<&CancelToken>,
+    cache: Option<&PipelineCache>,
+    post_tag: u8,
 ) -> Result<String, PipelineError>
 where
     P: PostProcessor,
@@ -442,8 +478,59 @@ where
             total: total_ops,
             name: op.name.clone(),
         });
+
+        // Reset the post's delta-encoding state at every op boundary so
+        // the captured body lines are independent of whatever state the
+        // previous op (cached or fresh) left behind. Both fresh-emit
+        // and cache-hit paths see the same entry state — the only
+        // difference is whether the body comes from re-emission or
+        // from the cache. Exit state is captured/restored separately.
+        post.reset_state();
+        let body_marker = post.out_lines_count();
+
+        // Cache lookup. We skip caching when no cache is provided.
+        let cache_key = cache.and_then(|_| {
+            let tool = project.tools.iter().find(|t| t.id == op.tool_id)?;
+            Some(op_cache_key(
+                op,
+                tool,
+                &project.machine,
+                &resolve_op_segments(op, &project.segments),
+                &project.fixtures,
+                &project.tabs,
+                post_tag,
+            ))
+        });
+
+        if let (Some(c), Some(key)) = (cache, cache_key) {
+            if let Some(cached) = c.get(key) {
+                let lines: Vec<String> = cached.gcode_body.lines().map(|s| s.to_string()).collect();
+                post.out_extend_lines(&lines);
+                post.restore_state(&cached.exit_state);
+                last_pos = Point2::new(cached.exit_xy.0, cached.exit_xy.1);
+                {
+                    let mut s = stats.borrow_mut();
+                    s.0 += cached.closed_count;
+                    s.1 += cached.offset_count;
+                }
+                emitted_ops += 1;
+                progress(
+                    "gcode",
+                    0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
+                    &format!("emitted op {} (cached)", op.id),
+                );
+                sink(PipelineEvent::OpCompleted {
+                    op_id: op.id,
+                    cached: true,
+                });
+                continue;
+            }
+        }
+
         let mut setup = synthesize_op_setup(op, project, warnings)?;
         resolve_auto_helix_radius(op, objects, &mut setup, warnings);
+        let mut closed_count_emitted: usize = 0;
+        let mut offset_count_emitted: usize = 0;
         if matches!(op.kind, OperationKind::VCarve) {
             post.raw(&format!("; OP {}", op.id));
             run_vcarve_op(
@@ -456,29 +543,40 @@ where
                 warnings,
                 cancel,
             )?;
-            emitted_ops += 1;
-            progress(
-                "gcode",
-                0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
-                &format!("emitted op {}", op.id),
-            );
-            sink(PipelineEvent::OpCompleted { op_id: op.id });
-            continue;
-        }
-        let (offsets, closed_count) =
-            build_op_offsets(op, project, &mut objects.clone(), &setup, warnings, cancel)?;
-        {
-            let mut s = stats.borrow_mut();
-            s.0 += closed_count;
-            s.1 += offsets.len();
-        }
-        post.raw(&format!("; OP {}", op.id));
-        if !offsets.is_empty() {
-            if let OperationKind::Drill { cycle } = op.kind {
-                emit_drill_block(&setup, &offsets, cycle, post, &mut last_pos);
-            } else {
-                emit_polylines_block(&setup, &offsets, post, &mut last_pos);
+        } else {
+            let (offsets, closed_count) =
+                build_op_offsets(op, project, &mut objects.clone(), &setup, warnings, cancel)?;
+            closed_count_emitted = closed_count;
+            offset_count_emitted = offsets.len();
+            {
+                let mut s = stats.borrow_mut();
+                s.0 += closed_count;
+                s.1 += offsets.len();
             }
+            post.raw(&format!("; OP {}", op.id));
+            if !offsets.is_empty() {
+                if let OperationKind::Drill { cycle } = op.kind {
+                    emit_drill_block(&setup, &offsets, cycle, post, &mut last_pos);
+                } else {
+                    emit_polylines_block(&setup, &offsets, post, &mut last_pos);
+                }
+            }
+        }
+        if let (Some(c), Some(key)) = (cache, cache_key) {
+            let lines = post.out_lines_clone_from(body_marker);
+            let body = lines.join("\n");
+            let (toolpath, _idx) = preview::interpret_with_index(&format!("; OP {}\n{body}", op.id));
+            c.put(
+                key,
+                OpCacheValue {
+                    toolpath,
+                    gcode_body: body,
+                    closed_count: closed_count_emitted,
+                    offset_count: offset_count_emitted,
+                    exit_state: post.capture_state(),
+                    exit_xy: (last_pos.x, last_pos.y),
+                },
+            );
         }
         emitted_ops += 1;
         progress(
@@ -486,10 +584,32 @@ where
             0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
             &format!("emitted op {}", op.id),
         );
-        sink(PipelineEvent::OpCompleted { op_id: op.id });
+        sink(PipelineEvent::OpCompleted {
+            op_id: op.id,
+            cached: false,
+        });
     }
     emit_program_end(header_setup, post);
     Ok(post.finish())
+}
+
+/// Slice the project's segments down to the subset this op consumes.
+/// Used by the cache key — hashing the relevant segments only keeps the
+/// hit rate up when the user adds unrelated geometry on a different
+/// layer. For OperationSource::Objects we conservatively hash all
+/// segments because mapping object ids back to original segments
+/// requires running `segments_to_objects` again, which the cache
+/// shouldn't bear.
+fn resolve_op_segments(op: &Operation, all: &[Segment]) -> Vec<Segment> {
+    match &op.source {
+        OperationSource::All => all.to_vec(),
+        OperationSource::Layers { layers, .. } => all
+            .iter()
+            .filter(|s| layers.iter().any(|l| l == &s.layer))
+            .cloned()
+            .collect(),
+        OperationSource::Objects { .. } => all.to_vec(),
+    }
 }
 
 // ─── per-op offset building ───────────────────────────────────────────────
@@ -5172,7 +5292,7 @@ mod tests {
         for ev in &events {
             match ev {
                 PipelineEvent::OpStarted { op_id, .. } => started.push(*op_id),
-                PipelineEvent::OpCompleted { op_id } => completed.push(*op_id),
+                PipelineEvent::OpCompleted { op_id, .. } => completed.push(*op_id),
                 PipelineEvent::Done { .. } => done_count += 1,
                 PipelineEvent::Cancelled => panic!("unexpected Cancelled event"),
                 PipelineEvent::OpProgress { .. } => {}
@@ -5296,5 +5416,141 @@ mod tests {
             !evs.iter().any(|e| matches!(e, PipelineEvent::Done { .. })),
             "should not emit Done after Cancelled",
         );
+    }
+
+    fn collect_cached_flags(project: Project) -> Vec<(u32, bool)> {
+        let cancel = CancelToken::new();
+        let mut flags: Vec<(u32, bool)> = Vec::new();
+        let _ = generate_streaming(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            &cancel,
+            &mut |e| {
+                if let PipelineEvent::OpCompleted { op_id, cached } = e {
+                    flags.push((op_id, cached));
+                }
+            },
+        )
+        .expect("pipeline ran");
+        flags
+    }
+
+    /// Generating twice with no edits should serve every op from cache
+    /// on the second run.
+    #[test]
+    fn regenerate_with_no_edits_hits_cache() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(91, 3.0)],
+            operations: vec![Operation {
+                id: 91,
+                name: "Profile cache test".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 91,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        clear_pipeline_cache();
+        let first = collect_cached_flags(project.clone());
+        assert_eq!(first, vec![(91, false)], "first run misses cache");
+        let second = collect_cached_flags(project);
+        assert_eq!(second, vec![(91, true)], "second run hits cache");
+    }
+
+    /// Editing one op of many should miss only that op; the others
+    /// should still hit the cache.
+    #[test]
+    fn edit_one_op_misses_only_that() {
+        // Five profile ops, distinct tool ids so each gets its own
+        // cache slot regardless of segments (they all share the same
+        // square geometry).
+        let tools: Vec<ToolEntry> = (1..=5).map(|i| endmill(100 + i, 3.0)).collect();
+        let ops: Vec<Operation> = (1..=5)
+            .map(|i| Operation {
+                id: 100 + i,
+                name: format!("Profile {i}"),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 100 + i,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            })
+            .collect();
+        let mut project = Project {
+            segments: closed_square_offset(30.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools,
+            operations: ops,
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        clear_pipeline_cache();
+        let first = collect_cached_flags(project.clone());
+        assert!(
+            first.iter().all(|(_, c)| !c),
+            "first run should miss every op: {first:?}"
+        );
+        // Edit op 3's depth — only it should miss on the second run.
+        project.operations[2].params.depth -= 0.1;
+        let second = collect_cached_flags(project);
+        let edited_id = 100 + 3;
+        let expected: Vec<(u32, bool)> = (1..=5)
+            .map(|i| (100 + i as u32, (100 + i) != edited_id))
+            .collect();
+        assert_eq!(second, expected, "only op {edited_id} should miss");
+    }
+
+    /// Cache hit must reproduce the same gcode + toolpath as a fresh
+    /// run. Asserted by clearing the cache, running once, then running
+    /// again with the cache primed.
+    #[test]
+    fn cache_hit_produces_identical_response() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(77, 3.0)],
+            operations: vec![Operation {
+                id: 77,
+                name: "Profile identity".into(),
+                enabled: true,
+                kind: OperationKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 77,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        clear_pipeline_cache();
+        let req = || PipelineRequest {
+            project: project.clone(),
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        };
+        let r1 = run_pipeline(req(), |_, _, _| {}).expect("first run");
+        let r2 = run_pipeline(req(), |_, _, _| {}).expect("cached run");
+        assert_eq!(r1.gcode, r2.gcode, "gcode must match across cache hit");
+        assert_eq!(
+            r1.toolpath.len(),
+            r2.toolpath.len(),
+            "toolpath segment count must match"
+        );
+        assert_eq!(r1.stats.offset_count, r2.stats.offset_count);
+        assert_eq!(r1.stats.closed_object_count, r2.stats.closed_object_count);
     }
 }

@@ -125,6 +125,12 @@ class ProjectState {
     opFraction: number;
     opName: string;
   } | null>(null);
+  /// Stats from the most recent generate run: how many ops were served
+  /// from the per-op result cache vs recomputed. Surfaced in the
+  /// GenerateBar as "N of M cached" so the user can see when re-Generate
+  /// hit cache instead of recomputing. Reset on each new generate.
+  lastGenerateCachedCount = $state<number>(0);
+  lastGenerateOpCount = $state<number>(0);
 
   /// Per-segment hover indicator (single segment, not the chain).
   hoverSegment = $state<number | null>(null);

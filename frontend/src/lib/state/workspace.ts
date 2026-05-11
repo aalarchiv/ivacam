@@ -45,6 +45,7 @@ export interface WorkspaceState {
   camera: CameraState | null;
   panels: PanelLayout;
   per_project: Record<string, PerProjectState>;
+  last_post_processor: string;
 }
 
 export const DEFAULT_WORKSPACE: WorkspaceState = {
@@ -54,6 +55,7 @@ export const DEFAULT_WORKSPACE: WorkspaceState = {
   camera: null,
   panels: { left_width: 0, right_width: 360, bottom_height: 240 },
   per_project: {},
+  last_post_processor: 'linuxcnc',
 };
 
 function defaultsClone(): WorkspaceState {
@@ -120,6 +122,9 @@ export function parseWorkspace(raw: string | null | undefined): WorkspaceState {
       right_width: typeof p.right_width === 'number' ? p.right_width : DEFAULT_WORKSPACE.panels.right_width,
       bottom_height: typeof p.bottom_height === 'number' ? p.bottom_height : DEFAULT_WORKSPACE.panels.bottom_height,
     };
+  }
+  if (typeof obj.last_post_processor === 'string') {
+    out.last_post_processor = obj.last_post_processor;
   }
   if (obj.per_project && typeof obj.per_project === 'object') {
     const pp = obj.per_project as Record<string, unknown>;
@@ -249,6 +254,13 @@ export class WorkspaceStore {
       ...this.state,
       per_project: { ...this.state.per_project, [path]: next },
     };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  setLastPostProcessor(post: string) {
+    if (this.state.last_post_processor === post) return;
+    this.state = { ...this.state, last_post_processor: post };
     this.notify();
     this.scheduleSave();
   }

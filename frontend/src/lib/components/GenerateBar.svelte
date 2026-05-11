@@ -15,6 +15,7 @@
   import type { SimWarning, TimeEstimate } from '../api/types';
   import { _ } from 'svelte-i18n';
   import GenerateProgress from './GenerateProgress.svelte';
+  import { workspace } from '../state/workspace.svelte';
 
   // Format a duration in seconds as HH:MM:SS (always two digits per
   // unit). Negative / NaN inputs render as 00:00:00.
@@ -47,7 +48,14 @@
   }
 
   const client = defaultClient();
-  let post: 'linuxcnc' | 'grbl' | 'hpgl' = $state('linuxcnc');
+  type PostId = 'linuxcnc' | 'grbl' | 'hpgl';
+  function coercePost(v: string): PostId {
+    return v === 'grbl' || v === 'hpgl' ? v : 'linuxcnc';
+  }
+  let post: PostId = $state(coercePost(workspace.get().last_post_processor));
+  $effect(() => {
+    workspace.setLastPostProcessor(post);
+  });
   let progressMsg = $state<string>('');
   let progressFrac = $state<number>(0);
   let warningPanelOpen = $state(false);
@@ -207,19 +215,30 @@
   }
 
   function chipClass(): string {
+    if (project.simDiagnostics == null) return 'sim-chip idle';
     if (criticalCount > 0) return 'sim-chip critical';
     if (warnings.length > 0) return 'sim-chip warning';
     return 'sim-chip clean';
   }
 
   function chipLabel(): string {
-    if (project.simDiagnostics == null) return 'Sim: not run';
+    if (project.simDiagnostics == null) return 'Sim: not run yet — Generate first';
     if (isClean) return 'Sim clean';
     if (criticalCount > 0) {
       return `Sim: ${warnings.length} warning${warnings.length === 1 ? '' : 's'} (${criticalCount} critical)`;
     }
     return `Sim: ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`;
   }
+
+  function chipGlyph(): string {
+    if (project.simDiagnostics == null) return '🛡';
+    if (isClean) return '✓';
+    if (criticalCount > 0) return '⛔';
+    return '⚠';
+  }
+
+  const SIM_IDLE_HINT =
+    'Sim verification runs after Generate. Catches rapid moves through stock, fixture collisions, and cutter holder collisions before you cut.';
 </script>
 
 <div class="bar">
@@ -259,15 +278,30 @@
     </span>
     {#if timeEstimate()}
       {@const t = timeEstimate()!}
-      <span
-        class="time"
-        title={`Cut: ${formatShort(t.cut_s)}\nArc: ${formatShort(t.arc_s)}\nPlunge: ${formatShort(t.plunge_s)}\nRetract: ${formatShort(t.retract_s)}\nRapid: ${formatShort(t.rapid_s)}\nTool change: ${formatShort(t.toolchange_s)}\nSpindle warm-up: ${formatShort(t.spindle_warmup_s)}`}
-      >
-        ⏱ {formatHms(t.total_s)}
+      <span class="time-chip" tabindex="0" role="button" aria-label="Time breakdown">
+        <span class="time">⏱ {formatHms(t.total_s)}</span>
+        <div class="time-breakdown" role="tooltip">
+          <table>
+            <tbody>
+              <tr><th>Total</th><td>{formatHms(t.total_s)}</td></tr>
+              <tr><th>Cut</th><td>{formatShort(t.cut_s)}</td></tr>
+              <tr><th>Rapid</th><td>{formatShort(t.rapid_s)}</td></tr>
+              <tr><th>Plunge</th><td>{formatShort(t.plunge_s)}</td></tr>
+              <tr><th>Retract</th><td>{formatShort(t.retract_s)}</td></tr>
+              <tr><th>Arc</th><td>{formatShort(t.arc_s)}</td></tr>
+              <tr><th>Tool change</th><td>{formatShort(t.toolchange_s)}</td></tr>
+              <tr><th>Spindle warm-up</th><td>{formatShort(t.spindle_warmup_s)}</td></tr>
+            </tbody>
+          </table>
+        </div>
       </span>
     {/if}
   {/if}
-  {#if project.simDiagnostics != null || warnings.length > 0}
+  {#if project.simDiagnostics == null && project.generated == null}
+    <span class="sim-chip idle" title={SIM_IDLE_HINT}>
+      🛡 {chipLabel()}
+    </span>
+  {:else if project.simDiagnostics != null || warnings.length > 0}
     <button
       class={chipClass()}
       onclick={() => (warningPanelOpen = !warningPanelOpen)}
@@ -275,7 +309,7 @@
       title="Click for details"
       aria-expanded={warningPanelOpen}
     >
-      {#if isClean}<span class="ok">✓</span>{/if}
+      <span class="glyph" aria-hidden="true">{chipGlyph()}</span>
       {chipLabel()}
     </button>
   {/if}
@@ -362,11 +396,54 @@
     flex: 1;
     min-width: 0;
   }
+  .time-chip {
+    position: relative;
+    display: inline-block;
+    cursor: help;
+    outline: none;
+  }
+  .time-chip:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent);
+    border-radius: 3px;
+  }
   .time {
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     white-space: pre;
-    cursor: help;
+  }
+  .time-breakdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 50;
+    background: var(--bg-panel);
+    outline: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    padding: 0.4rem 0.55rem;
+    font-size: 0.74rem;
+    white-space: nowrap;
+  }
+  .time-chip:hover .time-breakdown,
+  .time-chip:focus-within .time-breakdown {
+    display: block;
+  }
+  .time-breakdown table {
+    border-collapse: collapse;
+  }
+  .time-breakdown th {
+    color: var(--text-muted);
+    text-align: right;
+    font-weight: normal;
+    padding: 0.08rem 0.6rem 0.08rem 0;
+  }
+  .time-breakdown td {
+    color: var(--text-strong);
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+    padding: 0.08rem 0;
   }
   .cached-tag {
     color: var(--text-muted);
@@ -406,23 +483,30 @@
     border: 1px solid transparent;
     color: var(--text-strong);
   }
+  .sim-chip.idle {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border-color: var(--border);
+    font-style: italic;
+    cursor: help;
+  }
   .sim-chip.clean {
-    background: rgba(95, 208, 110, 0.18);
-    color: #5fd06e;
-    border-color: rgba(95, 208, 110, 0.4);
+    background: var(--sim-clean-bg);
+    color: var(--sim-clean-fg);
+    border-color: color-mix(in srgb, var(--success) 40%, transparent);
   }
   .sim-chip.warning {
-    background: rgba(240, 192, 32, 0.18);
-    color: #f0c020;
-    border-color: rgba(240, 192, 32, 0.4);
+    background: var(--sim-warn-bg);
+    color: var(--sim-warn-fg);
+    border-color: color-mix(in srgb, var(--warn) 40%, transparent);
   }
   .sim-chip.critical {
-    background: rgba(229, 72, 72, 0.18);
-    color: #e54848;
-    border-color: rgba(229, 72, 72, 0.4);
+    background: var(--sim-critical-bg);
+    color: var(--sim-critical-fg);
+    border-color: color-mix(in srgb, var(--error) 40%, transparent);
   }
-  .sim-chip .ok {
-    margin-right: 0.2rem;
+  .sim-chip .glyph {
+    margin-right: 0.25rem;
     font-weight: bold;
   }
   .panel {
@@ -496,13 +580,13 @@
     border-radius: 50%;
   }
   .panel .row.severity-critical .dot {
-    background: #e54848;
+    background: var(--marker-critical);
   }
   .panel .row.severity-warning .dot {
-    background: #f0c020;
+    background: var(--marker-warn);
   }
   .panel .row.severity-info .dot {
-    background: #4a8df0;
+    background: var(--marker-info);
   }
   .panel .row .kind {
     font-family: ui-monospace, monospace;

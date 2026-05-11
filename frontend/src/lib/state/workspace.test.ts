@@ -108,6 +108,27 @@ describe('WorkspaceStore', () => {
     expect(w.panels).toEqual(DEFAULT_WORKSPACE.panels);
   });
 
+  it('last_post_processor_round_trip', async () => {
+    const t = new MemoryTransport();
+    const s = await freshLoaded(t);
+    expect(s.get().last_post_processor).toBe('linuxcnc');
+    s.setLastPostProcessor('grbl');
+    expect(s.get().last_post_processor).toBe('grbl');
+    await s.save();
+
+    const s2 = await freshLoaded(t);
+    expect(s2.get().last_post_processor).toBe('grbl');
+
+    // Setting to the current value is a no-op (no spurious save / notify).
+    let bumps = 0;
+    s2.subscribe(() => { bumps += 1; });
+    s2.setLastPostProcessor('grbl');
+    expect(bumps).toBe(0);
+    s2.setLastPostProcessor('hpgl');
+    expect(bumps).toBe(1);
+    expect(s2.get().last_post_processor).toBe('hpgl');
+  });
+
   it('clear_recent_empties', async () => {
     const t = new MemoryTransport();
     const s = await freshLoaded(t);

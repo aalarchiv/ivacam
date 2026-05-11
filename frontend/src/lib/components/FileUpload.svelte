@@ -71,6 +71,7 @@
 
   async function loadProjectFile(file: File) {
     project.loading = true;
+    project.loadingMessage = 'Loading project…';
     project.error = null;
     try {
       const text = await file.text();
@@ -80,6 +81,7 @@
       project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       project.loading = false;
+      project.loadingMessage = null;
     }
   }
 
@@ -107,6 +109,7 @@
 
   async function loadFromPath(path: string) {
     project.loading = true;
+    project.loadingMessage = pathToLoadingMessage(path);
     project.error = null;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -120,6 +123,26 @@
       reportError(e);
     } finally {
       project.loading = false;
+      project.loadingMessage = null;
+    }
+  }
+
+  function pathToLoadingMessage(path: string): string {
+    const ext = path.toLowerCase().split('.').pop() ?? '';
+    switch (ext) {
+      case 'dxf':
+        return 'Parsing DXF…';
+      case 'svg':
+        return 'Parsing SVG…';
+      case 'hpgl':
+      case 'plt':
+        return 'Parsing HPGL…';
+      case 'ngc':
+        return 'Parsing G-code…';
+      case 'stl':
+        return 'Parsing STL…';
+      default:
+        return 'Loading file…';
     }
   }
 
@@ -132,6 +155,7 @@
     });
     if (typeof selected !== 'string') return;
     project.loading = true;
+    project.loadingMessage = 'Loading project…';
     project.error = null;
     try {
       const text = await readTextFile(selected);
@@ -144,11 +168,13 @@
       project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       project.loading = false;
+      project.loadingMessage = null;
     }
   }
 
   async function load(file: File) {
     project.loading = true;
+    project.loadingMessage = pathToLoadingMessage(file.name);
     project.error = null;
     try {
       const result = await client.importFile(file);
@@ -157,11 +183,13 @@
       reportError(e);
     } finally {
       project.loading = false;
+      project.loadingMessage = null;
     }
   }
 
   async function loadSample(url: string) {
     project.loading = true;
+    project.loadingMessage = 'Loading sample…';
     project.error = null;
     try {
       const res = await fetch(url);
@@ -172,6 +200,7 @@
       project.setError(e instanceof Error ? e.message : String(e));
     } finally {
       project.loading = false;
+      project.loadingMessage = null;
     }
   }
 
@@ -194,6 +223,7 @@
 
   async function loadSampleWithGenerate(sampleUrl: string, generatedUrl: string) {
     project.loading = true;
+    project.loadingMessage = 'Loading sample…';
     try {
       const [imp, gen] = await Promise.all([
         fetch(sampleUrl).then((r) => r.json()),
@@ -205,6 +235,7 @@
       project.setError(e instanceof Error ? e.message : String(e));
     } finally {
       project.loading = false;
+      project.loadingMessage = null;
     }
   }
 

@@ -43,7 +43,7 @@
   "tools.save_as": "Save as",
   "tools.save_hint": "Save the current tool config under this name",
   "tools.load_hint": "Load a saved tool preset",
-  "tools.placeholder": "3mm endmill",
+  "tools.placeholder": "3mm Endmill",
   "tools.save_button": "save",
 
   "layers.title": "Layers",
@@ -57,7 +57,7 @@
 
   "op.help.cut_direction.conventional": "Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.",
   "op.help.cut_direction.climb": "Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.",
-  "op.help.plunge.direct": "Straight Z plunge into material. Safe for center-cutting end mills on shallow steps; risky on harder materials.",
+  "op.help.plunge.direct": "Straight Z plunge into material. Safe for center-cutting endmills on shallow steps; risky on harder materials.",
   "op.help.plunge.ramp": "Ramped descent: cutter walks forward along the path while Z descends, taking a chip in both directions. Required for non-center-cutting bits.",
   "op.help.plunge.helix": "Helical entry: cutter spirals down on a small circle inside the closed pocket boundary, then walks to the path start. Standard for non-center-cutting endmills and harder materials. Falls back to ramp on open paths or when the helix circle does not fit.",
   "op.help.tab_type.rectangle": "Straight Z lift over each tab: cutter pops up to tab height, runs across, drops back down. Simple and fast.",

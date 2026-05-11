@@ -18,6 +18,7 @@
   import AddTextDialog from './lib/components/AddTextDialog.svelte';
   import SourceStaleToast from './lib/components/SourceStaleToast.svelte';
   import ShortcutHelp from './lib/components/ShortcutHelp.svelte';
+  import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
 
   let machineOpen = $state(false);
   let toolsOpen = $state(false);
@@ -99,6 +100,7 @@
     if (!isTauri()) return;
     const isProjectFile = /\.vc-project\.json$|\.json$/i.test(path);
     project.loading = true;
+    project.loadingMessage = isProjectFile ? 'Loading project…' : 'Parsing file…';
     project.error = null;
     try {
       if (isProjectFile) {
@@ -117,6 +119,7 @@
       project.setError(e instanceof Error ? e.message : String(e));
     } finally {
       project.loading = false;
+      project.loadingMessage = null;
     }
   }
 
@@ -534,6 +537,7 @@
         {:else if activePane === '3d'}
           <p class="loading-3d">Loading 3D…</p>
         {/if}
+        <LoadingOverlay visible={project.loading} message={project.loadingMessage} />
       </div>
       {#if project.generated}
         <PlaybackBar />
@@ -541,7 +545,7 @@
           <button
             class:active={gcodeOpen}
             onclick={() => (gcodeOpen = !gcodeOpen)}
-            title="Show / hide the gcode text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
+            title="Show / hide the G-code text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
           >
             {gcodeOpen ? '▼' : '▶'} {$_('bottom.gcode') ?? 'G-code'}
             <span class="hint">{project.generated.gcode.split('\n').length} lines</span>
@@ -556,7 +560,7 @@
     </section>
     <aside class="sidebar">
       <div class="layers-host">
-        <LayerList />
+        <LayerList onOpenFileClick={() => (document.querySelector('button.open-file') as HTMLButtonElement | null)?.click()} />
       </div>
       <div class="ops-host">
         <OperationsList />
@@ -567,7 +571,7 @@
           <StockPanel />
         </details>
         {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
-          <label class="region-toggle" title="Show / hide the translucent fill that marks each pocket op's machined region.">
+          <label class="region-toggle" title="Show / hide the translucent fill that marks each pocket operation's machined region.">
             <input
               type="checkbox"
               checked={project.regionsVisible}

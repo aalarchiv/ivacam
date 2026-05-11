@@ -299,16 +299,16 @@
         </fieldset>
 
         <label>
-          <span>Size (mm)</span>
-          <input type="number" bind:value={sizeMm} step="0.5" min="0.1" />
+          <span>Size</span>
+          <span class="field"><input type="number" bind:value={sizeMm} step="0.5" min="0.1" /><span class="unit">mm</span></span>
         </label>
         <label>
           <span>Position X</span>
-          <input type="number" bind:value={posX} step="1" />
+          <span class="field"><input type="number" bind:value={posX} step="1" /><span class="unit">mm</span></span>
         </label>
         <label>
           <span>Position Y</span>
-          <input type="number" bind:value={posY} step="1" />
+          <span class="field"><input type="number" bind:value={posY} step="1" /><span class="unit">mm</span></span>
         </label>
 
         <fieldset class="full styles">
@@ -346,8 +346,8 @@
 
         {#if STYLE_TABLE[style].defaultDepth != null}
           <label>
-            <span>Depth (mm)</span>
-            <input type="number" bind:value={depth} step="0.1" />
+            <span>Depth</span>
+            <span class="field"><input type="number" bind:value={depth} step="0.1" /><span class="unit">mm</span></span>
           </label>
         {/if}
 
@@ -418,6 +418,17 @@
     padding: 0.2rem 0.4rem;
     font-size: 0.8rem;
     font-family: inherit;
+  }
+  .field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .field input[type='number'] {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
   }
   textarea {
     resize: vertical;

@@ -127,6 +127,7 @@ class ProjectState {
   imported = $state<ImportResponse | null>(null);
   generated = $state<GenerateResponse | null>(null);
   loading = $state(false);
+  loadingMessage = $state<string | null>(null);
   generating = $state(false);
   /// Last error surfaced to the user. `string` for legacy paths (file
   /// upload, save dialogs, etc.); `WiacError` for backend pipeline /

@@ -73,11 +73,11 @@
           </select>
         </label>
         <label>Fast-move Z
-          <input type="number" bind:value={draft.fastMoveZ} step="0.1" />
+          <span class="field"><input type="number" bind:value={draft.fastMoveZ} step="0.1" /><span class="unit">mm</span></span>
         </label>
         <label class="check">
           <input type="checkbox" bind:checked={draft.comments} />
-          Emit comments in g-code
+          Emit comments in G-code
         </label>
         <label class="check">
           <input type="checkbox" bind:checked={draft.arcs} />
@@ -87,8 +87,8 @@
           class:disabled={!draft.arcs}
           title="How far the fitted arc may deviate from the original polyline. Smaller = tighter, more arcs split. Typical values 0.005-0.05 mm."
         >
-          Arc fitting tolerance (mm)
-          <input
+          Arc fitting tolerance
+          <span class="field"><input
             type="number"
             min="0"
             step="0.001"
@@ -98,7 +98,7 @@
               const v = (e.target as HTMLInputElement).valueAsNumber;
               draft.arcFitToleranceMm = isFinite(v) && v >= 0 ? v : undefined;
             }}
-          />
+          /><span class="unit">mm</span></span>
         </label>
         <label class="check">
           <input type="checkbox" bind:checked={draft.supportsToolchange} />
@@ -106,27 +106,30 @@
         </label>
 
         <div class="section-title">Kinematics</div>
-        <label>Rapid speed (mm/min)
-          <input type="number" min="0" step="100" bind:value={draft.rapidSpeed} />
+        <label>Rapid speed
+          <span class="field"><input type="number" min="0" step="100" bind:value={draft.rapidSpeed} /><span class="unit">mm/min</span></span>
         </label>
-        <label>Tool-change time (s)
-          <input type="number" min="0" step="0.5" bind:value={draft.toolchangeS} />
+        <label>Tool-change time
+          <span class="field"><input type="number" min="0" step="0.5" bind:value={draft.toolchangeS} /><span class="unit">s</span></span>
         </label>
-        <div class="triplet-label">Acceleration X / Y / Z (mm/s²)</div>
+        <div class="triplet-label">Acceleration X / Y / Z <span class="unit">mm/s²</span></div>
         <div class="triplet">
           <input type="number" min="0" step="10"
+            aria-label="Acceleration X (mm/s²)"
             value={draft.accel?.x ?? 250}
             oninput={(e) => {
               const v = (e.target as HTMLInputElement).valueAsNumber;
               draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), x: isFinite(v) ? v : 250 };
             }} />
           <input type="number" min="0" step="10"
+            aria-label="Acceleration Y (mm/s²)"
             value={draft.accel?.y ?? 250}
             oninput={(e) => {
               const v = (e.target as HTMLInputElement).valueAsNumber;
               draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), y: isFinite(v) ? v : 250 };
             }} />
           <input type="number" min="0" step="10"
+            aria-label="Acceleration Z (mm/s²)"
             value={draft.accel?.z ?? 250}
             oninput={(e) => {
               const v = (e.target as HTMLInputElement).valueAsNumber;
@@ -138,11 +141,11 @@
           Enable jerk limits (S-curve, Phase 2)
         </label>
         {#if jerkEnabled}
-          <div class="triplet-label">Jerk X / Y / Z (mm/s³)</div>
+          <div class="triplet-label">Jerk X / Y / Z <span class="unit">mm/s³</span></div>
           <div class="triplet">
-            <input type="number" min="0" step="10" bind:value={jerkDraft.x} />
-            <input type="number" min="0" step="10" bind:value={jerkDraft.y} />
-            <input type="number" min="0" step="10" bind:value={jerkDraft.z} />
+            <input type="number" min="0" step="10" aria-label="Jerk X (mm/s³)" bind:value={jerkDraft.x} />
+            <input type="number" min="0" step="10" aria-label="Jerk Y (mm/s³)" bind:value={jerkDraft.y} />
+            <input type="number" min="0" step="10" aria-label="Jerk Z (mm/s³)" bind:value={jerkDraft.z} />
           </div>
         {/if}
       </div>
@@ -204,6 +207,16 @@
     border-radius: 3px;
     padding: 0.2rem 0.4rem;
     font-size: 0.8rem;
+  }
+  .field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .field input[type='number'] {
+    flex: 1;
+    min-width: 0;
   }
   input[type='checkbox'] {
     accent-color: var(--accent);

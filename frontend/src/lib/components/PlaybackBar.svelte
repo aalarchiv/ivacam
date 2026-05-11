@@ -81,7 +81,12 @@
 
 {#if project.generated && project.generated.toolpath.length > 0}
   <div class="bar">
-    <button onclick={togglePlay} disabled={!project.generated}>
+    <button
+      onclick={togglePlay}
+      disabled={!project.generated}
+      aria-label={playing ? 'Pause' : 'Play'}
+      title={playing ? 'Pause' : 'Play'}
+    >
       {playing ? '❚❚' : '▶'}
     </button>
     <div class="track">
@@ -119,6 +124,7 @@
         min="0.1"
         max="10"
         title="Playback speed"
+        aria-label="Playback speed multiplier"
       /></label
     >
     <span class="counter">
@@ -183,7 +189,7 @@
     height: 0.9rem;
     transform: translate(-50%, -50%);
     padding: 0;
-    border: 1px solid rgba(0, 0, 0, 0.35);
+    border: 1px solid color-mix(in srgb, var(--bg-app) 60%, transparent);
     border-radius: 1px;
     cursor: pointer;
     pointer-events: auto;
@@ -191,13 +197,38 @@
     z-index: 2;
   }
   .marker.critical {
-    background: #e54848;
+    background: var(--marker-critical);
   }
   .marker.warning {
-    background: #f0c020;
+    background: var(--marker-warn);
   }
   .marker.info {
-    background: #4a8df0;
+    background: var(--marker-info);
+  }
+  .marker::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+  }
+  .marker.critical::before {
+    content: '✕';
+    color: #fff;
+    font-size: 0.55rem;
+    line-height: 0.9rem;
+    text-align: center;
+    font-weight: 700;
+  }
+  .marker.warning::before {
+    content: '!';
+    color: #000;
+    font-size: 0.6rem;
+    line-height: 0.9rem;
+    text-align: center;
+    font-weight: 700;
   }
   input[type='number'] {
     width: 4rem;

@@ -91,7 +91,7 @@
     try {
       const opProject = buildProject(project);
       if (!opProject) {
-        project.setError('Add at least one operation to generate gcode.');
+        project.setError('Add at least one operation to generate G-code.');
         return;
       }
       // The hand-rolled WireProject in build-project.ts trims the

@@ -23,6 +23,15 @@
   let settingsOpen = $state(false);
   let addTextOpen = $state(false);
 
+  // Open the Tool library dialog when OpPropertiesPanel's "edit this
+  // tool" icon requests focus on a specific tool row. The dialog reads
+  // project.toolsDialogFocusId and handles scroll/highlight.
+  $effect(() => {
+    if (project.toolsDialogFocusId != null) {
+      toolsOpen = true;
+    }
+  });
+
   // G-code panel visibility. The playback bar always sits below the
   // 3D canvas; the gcode panel opens as an extra row beneath it so
   // the user sees the toolpath, the playhead, and the program text
@@ -580,7 +589,13 @@
   </main>
 
   <MachineDialog open={machineOpen} onClose={() => (machineOpen = false)} />
-  <ToolLibraryDialog open={toolsOpen} onClose={() => (toolsOpen = false)} />
+  <ToolLibraryDialog
+    open={toolsOpen}
+    onClose={() => {
+      toolsOpen = false;
+      project.toolsDialogFocusId = null;
+    }}
+  />
   <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
   <AddTextDialog open={addTextOpen} onClose={() => (addTextOpen = false)} />
   <SourceStaleToast onReload={async (p) => { await project.reimportFromPath(p); }} />

@@ -29,6 +29,7 @@ import {
   clearTabsCommand,
   deleteOperationCommand,
   deleteToolCommand,
+  duplicateOperationCommand,
   removeFixtureCommand,
   removeTabCommand,
   reorderOperationCommand,
@@ -301,6 +302,12 @@ class ProjectState {
   /// the user has `autoReloadSources` disabled. SourceStaleToast renders
   /// from this and clears it on Reload / Ignore. Auto-reloads bypass it.
   sourceFileStaleNotice = $state<{ path: string; auto_reload: boolean } | null>(null);
+
+  /// Drives the Tool library dialog. When non-null, App.svelte opens the
+  /// dialog and the dialog scrolls/highlights the row whose id matches.
+  /// Set via the "edit this tool" link in OpPropertiesPanel; cleared by
+  /// the dialog on close. Per-session view state, not undoable.
+  toolsDialogFocusId = $state<number | null>(null);
 
 
   constructor() {
@@ -801,6 +808,22 @@ class ProjectState {
     if (!this.operations.some((o) => o.id === id)) return;
     this.history.exec(deleteOperationCommand(id), this.target());
     if (this.selectedOpId === id) this.selectedOpId = null;
+  }
+
+  /// Deep-clone the op and insert it immediately after the original.
+  /// Returns the new op or null if `id` is unknown.
+  duplicateOperation(id: number): OpEntry | null {
+    const src = this.operations.find((o) => o.id === id);
+    if (!src) return null;
+    const nextId = this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
+    const copy: OpEntry = {
+      ...structuredClone(src),
+      id: nextId,
+      name: `${src.name} (copy)`,
+    };
+    this.history.exec(duplicateOperationCommand(id, copy, id), this.target());
+    this.selectedOpId = copy.id;
+    return copy;
   }
 
   updateOperation(id: number, patch: Partial<OpEntry>) {

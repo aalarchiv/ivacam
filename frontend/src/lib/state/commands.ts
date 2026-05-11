@@ -54,6 +54,34 @@ export function addOperationCommand(op: OpEntry): Command {
   };
 }
 
+/// Insert a deep-cloned op immediately after the source row. `insertAfter`
+/// is an op id; the new op lands at index(sourceOp) + 1 so the user sees
+/// the copy adjacent to the original. Undo removes the inserted op.
+export function duplicateOperationCommand(
+  srcId: number,
+  newOp: OpEntry,
+  insertAfter: number,
+): Command {
+  return {
+    label: 'Duplicate operation',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      const idx = t.operations.findIndex((o) => o.id === insertAfter);
+      const next = [...t.operations];
+      const pos = idx < 0 ? next.length : idx + 1;
+      next.splice(pos, 0, structuredClone(newOp));
+      t.operations = next;
+      t.dirty = true;
+      void srcId;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.operations = t.operations.filter((o) => o.id !== newOp.id);
+      t.dirty = true;
+    },
+  };
+}
+
 export function deleteOperationCommand(opId: number): Command {
   let savedIdx = -1;
   let savedOp: OpEntry | undefined;

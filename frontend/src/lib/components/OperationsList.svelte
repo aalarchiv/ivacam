@@ -4,61 +4,14 @@
   /// op-kind icon, name, tool, and a status badge. Click selects the op
   /// (drives OpPropertiesPanel). Drag-handle reorders. + Add operation
   /// pops a kind picker.
-  import { project, type OpEntry, type OpKind } from '../state/project.svelte';
+  import { project, type OpEntry } from '../state/project.svelte';
   import OpPropertiesPanel from './OpPropertiesPanel.svelte';
-
-  /// Synthetic kind for the "Pocket Outside" picker entry — wraps a
-  /// regular Pocket op with frame_shape + difference combine pre-filled.
-  type PickerKind = OpKind | 'pocket_outside';
-
-  const KIND_LABEL: Record<OpKind, string> = {
-    profile: 'Profile',
-    pocket: 'Pocket',
-    drill: 'Drill',
-    thread: 'Thread',
-    chamfer: 'Chamfer',
-    engrave: 'Engrave',
-    drag_knife: 'Drag-knife',
-    helix: 'Helix',
-    vcarve: 'V-Carve',
-  };
-  const KIND_ICON: Record<OpKind, string> = {
-    profile: '▢',
-    pocket: '▣',
-    drill: '◉',
-    thread: '◎',
-    chamfer: '◇',
-    engrave: '✎',
-    drag_knife: '✁',
-    helix: '◎',
-    vcarve: '⌃',
-  };
-  const ALL_KINDS: PickerKind[] = [
-    'profile', 'pocket', 'pocket_outside', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'helix', 'vcarve',
-  ];
-
-  const PICKER_LABEL: Record<PickerKind, string> = {
-    ...KIND_LABEL,
-    pocket_outside: 'Pocket Outside',
-  };
-  const PICKER_ICON: Record<PickerKind, string> = {
-    ...KIND_ICON,
-    pocket_outside: '⊞',
-  };
-  const PICKER_HELP: Record<PickerKind, string> = {
-    profile: '',
-    pocket: '',
-    pocket_outside: 'Pocket the area BETWEEN a frame and the selection. Useful for raised text/graphics where the surrounding area is removed. Requires at least one selected object.',
-    drill: '',
-    thread: '',
-    chamfer: '',
-    engrave: '',
-    drag_knife: '',
-    helix: '',
-    vcarve: '',
-  };
-
-  const pocketOutsideDisabled = $derived(project.selectedObjects.size === 0);
+  import OpKindPicker, {
+    KIND_ICON,
+    KIND_LABEL,
+    PICKER_HELP,
+    type PickerKind,
+  } from './OpKindPicker.svelte';
 
   let pickerOpen = $state(false);
   let dragId = $state<number | null>(null);
@@ -184,22 +137,8 @@
   </header>
 
   {#if pickerOpen}
-    <div class="picker" role="menu">
-      {#each ALL_KINDS as k (k)}
-        {@const disabled = k === 'pocket_outside' && pocketOutsideDisabled}
-        <button
-          class="kind"
-          role="menuitem"
-          onclick={() => pick(k)}
-          {disabled}
-          title={disabled
-            ? 'Select one or more objects in the canvas first.'
-            : PICKER_HELP[k] || ''}
-        >
-          <span class="ico" aria-hidden="true">{PICKER_ICON[k]}</span>
-          <span>{PICKER_LABEL[k]}</span>
-        </button>
-      {/each}
+    <div class="picker-host">
+      <OpKindPicker onPick={pick} />
     </div>
   {/if}
 
@@ -234,10 +173,20 @@
               onchange={(e) => project.updateOperation(op.id, { enabled: (e.currentTarget as HTMLInputElement).checked })}
             />
             <span class="caret" aria-hidden="true">{selected ? '▾' : '▸'}</span>
-            <span class="ico" title={KIND_LABEL[op.kind]}>{KIND_ICON[op.kind]}</span>
+            <span
+              class="ico"
+              title={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
+              aria-label={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
+            >{KIND_ICON[op.kind]}</span>
             <span class="name">{op.name}</span>
             <span class="tool">{toolName(op.toolId)}</span>
             <span class="status {status.tone}" title={status.reason}>{status.label}</span>
+            <button
+              class="dup"
+              onclick={(e) => { e.stopPropagation(); project.duplicateOperation(op.id); }}
+              title="Duplicate"
+              aria-label={`Duplicate operation ${op.name}`}
+            >⎘</button>
             <button
               class="del"
               onclick={(e) => { e.stopPropagation(); project.removeOperation(op.id); }}
@@ -290,36 +239,8 @@
     line-height: 1;
     cursor: pointer;
   }
-  .picker {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.2rem;
+  .picker-host {
     margin-bottom: 0.4rem;
-    padding: 0.3rem;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-  }
-  .kind {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    background: transparent;
-    color: var(--text);
-    border: 1px solid transparent;
-    border-radius: 3px;
-    padding: 0.2rem 0.4rem;
-    font-size: 0.78rem;
-    cursor: pointer;
-    text-align: left;
-  }
-  .kind:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    border-color: var(--accent);
-  }
-  .kind:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
   .ico {
     font-size: 0.95rem;
@@ -357,7 +278,7 @@
   }
   .row {
     display: grid;
-    grid-template-columns: auto auto auto auto minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+    grid-template-columns: auto auto auto auto minmax(0, 1.4fr) minmax(0, 1fr) auto auto auto;
     gap: 0.3rem;
     align-items: center;
     padding: 0.25rem 0.35rem;
@@ -403,7 +324,8 @@
   .status.ok { color: var(--success); }
   .status.warn { color: var(--warn); }
   .status.bad { color: var(--error); }
-  .del {
+  .del,
+  .dup {
     background: transparent;
     color: var(--text-muted);
     border: 1px solid transparent;
@@ -414,6 +336,10 @@
   .del:hover {
     color: var(--error);
     border-color: var(--error);
+  }
+  .dup:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent);
   }
   input[type='checkbox'] {
     accent-color: var(--accent);

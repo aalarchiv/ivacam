@@ -17,6 +17,7 @@ import {
   deleteOperationCommand,
   deleteToolCommand,
   disableOpCommand,
+  duplicateOperationCommand,
   lowerSimResolutionCommand,
   removeFixtureCommand,
   removeTabCommand,
@@ -174,6 +175,57 @@ describe('setOpFieldCommand', () => {
     const b = setOpFieldCommand(3, 'depth', -2);
     expect(a.coalesce_key).toBe(b.coalesce_key);
     expect(a.coalesce_key).toBe('setOpField:3:depth');
+  });
+});
+
+describe('duplicateOperationCommand', () => {
+  it('inserts the clone immediately after the source row', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1, 'A'), sampleOp(2, 'B'), sampleOp(3, 'C')];
+    const copy: OpEntry = { ...sampleOp(99, 'B (copy)') };
+    const cmd = duplicateOperationCommand(2, copy, 2);
+    cmd.apply(t);
+    expect(t.operations.map((o) => o.id)).toEqual([1, 2, 99, 3]);
+    expect(t.operations[2].name).toBe('B (copy)');
+    expect(t.dirty).toBe(true);
+  });
+
+  it('revert removes the inserted op', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1, 'A'), sampleOp(2, 'B')];
+    const copy: OpEntry = { ...sampleOp(7, 'A (copy)') };
+    const cmd = duplicateOperationCommand(1, copy, 1);
+    cmd.apply(t);
+    expect(t.operations.map((o) => o.id)).toEqual([1, 7, 2]);
+    cmd.revert(t);
+    expect(t.operations.map((o) => o.id)).toEqual([1, 2]);
+  });
+
+  it('appends when insertAfter id is unknown', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1), sampleOp(2)];
+    const copy: OpEntry = { ...sampleOp(5, 'rogue') };
+    const cmd = duplicateOperationCommand(1, copy, 999);
+    cmd.apply(t);
+    expect(t.operations.map((o) => o.id)).toEqual([1, 2, 5]);
+    cmd.revert(t);
+    expect(t.operations.map((o) => o.id)).toEqual([1, 2]);
+  });
+
+  it('round-trip is independent of source-state mutation', () => {
+    const t = blankTarget();
+    const src = sampleOp(1, 'orig');
+    t.operations = [src];
+    const copy: OpEntry = { ...sampleOp(2, 'orig (copy)'), depth: -9 };
+    const cmd = duplicateOperationCommand(1, copy, 1);
+    cmd.apply(t);
+    t.operations = t.operations.map((o) =>
+      o.id === 1 ? { ...o, depth: -42 } : o,
+    );
+    const inserted = t.operations.find((o) => o.id === 2)!;
+    expect(inserted.depth).toBe(-9);
+    cmd.revert(t);
+    expect(t.operations.find((o) => o.id === 2)).toBeUndefined();
   });
 });
 

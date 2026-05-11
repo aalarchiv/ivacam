@@ -2,6 +2,10 @@
   import { onMount } from 'svelte';
   import { project } from '../state/project.svelte';
   import type { Segment } from '../api/types';
+  import OpKindPicker, {
+    PICKER_LABEL,
+    type PickerKind,
+  } from './OpKindPicker.svelte';
 
   // AutoCAD ACI palette. ACI 7 means "white in dark mode, black in light" —
   // this is exactly how AutoCAD itself renders it. We resolve it at draw
@@ -238,6 +242,75 @@
     hoverIdx = null;
     canvas.style.cursor = project.tabMode ? 'crosshair' : 'default';
   }
+  /// Right-click context menu. `null` = closed. Open menu lists the
+  /// same op kinds as the Add-operation picker; clicking an entry
+  /// creates an op whose source is the current canvas selection, all
+  /// wrapped in one undoable transaction.
+  let ctxMenu = $state<{ x: number; y: number } | null>(null);
+
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    ctxMenu = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function closeCtxMenu() {
+    ctxMenu = null;
+  }
+
+  function onCtxKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && ctxMenu) {
+      ctxMenu = null;
+      e.preventDefault();
+    }
+  }
+
+  function onCtxDocClick(e: MouseEvent) {
+    if (!ctxMenu) return;
+    const target = e.target as HTMLElement | null;
+    if (target && target.closest('.ctx-menu')) return;
+    ctxMenu = null;
+  }
+
+  function pickFromCtx(kind: PickerKind) {
+    const sel = [...project.selectedObjects];
+    if (sel.length === 0) {
+      ctxMenu = null;
+      return;
+    }
+    const label = `New ${PICKER_LABEL[kind]} from selection`;
+    project.history.beginTransaction(label);
+    try {
+      if (kind === 'pocket_outside') {
+        const endmill = project.tools.find((t) => t.kind === 'endmill') ?? project.tools[0];
+        const toolDiameter = endmill?.diameter ?? 3;
+        const op = project.addOperation('pocket');
+        project.updateOperation(op.id, {
+          name: 'Pocket Outside',
+          toolId: endmill?.id ?? op.toolId,
+          sourceLayers: null,
+          sourceObjects: sel,
+          sourceCombine: 'difference',
+          frameShape: 'rectangle',
+          framePaddingMm: 3 * toolDiameter,
+          frameCornerRadiusMm: undefined,
+        });
+      } else {
+        const op = project.addOperation(kind);
+        project.updateOperation(op.id, {
+          name: `${PICKER_LABEL[kind]} from selection`,
+          sourceLayers: null,
+          sourceObjects: sel,
+        });
+      }
+      project.history.commitTransaction();
+    } catch (e) {
+      project.history.cancelTransaction(project as unknown as never);
+      throw e;
+    }
+    ctxMenu = null;
+  }
+
   function onPointerDown(e: PointerEvent) {
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
@@ -712,15 +785,40 @@
   }
 </script>
 
+<svelte:window onkeydown={onCtxKeydown} onclick={onCtxDocClick} />
 <div class="canvas-host" bind:this={container}>
   <canvas
     bind:this={canvas}
     onpointermove={onPointerMove}
     onpointerleave={onPointerLeave}
     onpointerdown={onPointerDown}
+    oncontextmenu={onContextMenu}
   ></canvas>
   {#if project.selectedEntities.size > 0}
     <div class="selection-hud">{project.selectedEntities.size} selected · esc to clear</div>
+  {/if}
+  {#if ctxMenu}
+    {#if project.selectedObjects.size === 0}
+      <div
+        class="ctx-menu empty"
+        style:left={`${ctxMenu.x}px`}
+        style:top={`${ctxMenu.y}px`}
+        role="menu"
+      >
+        <p class="ctx-hint">Select objects first to add an operation from them.</p>
+        <button type="button" onclick={closeCtxMenu}>Dismiss</button>
+      </div>
+    {:else}
+      <div
+        class="ctx-menu"
+        style:left={`${ctxMenu.x}px`}
+        style:top={`${ctxMenu.y}px`}
+        role="menu"
+      >
+        <div class="ctx-header">New operation from selection</div>
+        <OpKindPicker onPick={pickFromCtx} />
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -747,5 +845,46 @@
     border-radius: 3px;
     font-size: 0.72rem;
     pointer-events: none;
+  }
+  .ctx-menu {
+    position: absolute;
+    min-width: 16rem;
+    max-width: 22rem;
+    background: var(--bg-panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    z-index: 40;
+    padding: 0.25rem;
+  }
+  .ctx-header {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.25rem 0.45rem 0.3rem;
+  }
+  .ctx-menu.empty {
+    padding: 0.4rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 14rem;
+  }
+  .ctx-hint {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+  .ctx-menu.empty button {
+    align-self: flex-end;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.74rem;
+    cursor: pointer;
   }
 </style>

@@ -172,14 +172,26 @@
 
     <label class="row">
       <span>Tool</span>
-      <select
-        value={op.toolId}
-        onchange={(e) => patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
-      >
-        {#each project.tools as t (t.id)}
-          <option value={t.id}>#{t.id} {t.name} ({t.diameter}mm)</option>
-        {/each}
-      </select>
+      <div class="tool-cell">
+        <select
+          value={op.toolId}
+          onchange={(e) => patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
+        >
+          {#each project.tools as t (t.id)}
+            <option value={t.id}>#{t.id} {t.name} ({t.diameter}mm)</option>
+          {/each}
+        </select>
+        <button
+          type="button"
+          class="tool-edit"
+          title="Edit this tool in the Tool library"
+          aria-label="Edit this tool in the Tool library"
+          onclick={(e) => {
+            e.stopPropagation();
+            project.toolsDialogFocusId = op.toolId;
+          }}
+        >⚙</button>
+      </div>
     </label>
 
     <fieldset>
@@ -1105,6 +1117,31 @@
   .step-cell input {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .tool-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+  .tool-cell select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .tool-edit {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 0.4rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .tool-edit:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent);
   }
   input.inherit::placeholder {
     font-style: italic;

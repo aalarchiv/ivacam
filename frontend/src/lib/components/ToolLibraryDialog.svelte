@@ -23,12 +23,33 @@
   /// table compact. Stored as a Set of row ids so reorders / additions
   /// don't accidentally move the toggle to a different tool.
   let expanded = $state<Set<number>>(new Set());
+  /// Tool id that flashes briefly when the dialog is opened with a focus
+  /// request (the "edit this tool" link in OpPropertiesPanel).
+  let highlightedId = $state<number | null>(null);
+  let bodyEl = $state<HTMLDivElement | null>(null);
 
   $effect(() => {
     if (open) {
       draft = project.tools.map((t) => ({ ...t }));
       expanded = new Set();
     }
+  });
+
+  $effect(() => {
+    const focusId = project.toolsDialogFocusId;
+    if (!open || focusId == null) return;
+    queueMicrotask(() => {
+      const host = bodyEl;
+      if (!host) return;
+      const row = host.querySelector(
+        `[data-tool-id="${focusId}"]`,
+      ) as HTMLElement | null;
+      if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      highlightedId = focusId;
+      window.setTimeout(() => {
+        if (highlightedId === focusId) highlightedId = null;
+      }, 1400);
+    });
   });
 
   function commit() {
@@ -230,7 +251,7 @@
       <h2 id="tools-title">Tool library</h2>
       <button class="close" onclick={onClose} aria-label="Close">×</button>
     </header>
-      <div class="body">
+      <div class="body" bind:this={bodyEl}>
         <div class="table">
           <div class="row head">
             <span>#</span>
@@ -247,7 +268,7 @@
             <span></span>
           </div>
           {#each draft as tool, i (tool.id)}
-            <div class="row">
+            <div class="row" class:highlight={highlightedId === tool.id} data-tool-id={tool.id}>
               <span class="id">
                 <button
                   class="expand"
@@ -575,6 +596,14 @@
     font-size: 0.68rem;
     padding-bottom: 0.2rem;
     border-bottom: 1px solid var(--border);
+  }
+  @keyframes wiac-tool-flash {
+    0%, 100% { background: transparent; }
+    25%, 75% { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  }
+  .row.highlight {
+    border-radius: 3px;
+    animation: wiac-tool-flash 1.2s ease-in-out;
   }
   .id {
     text-align: center;

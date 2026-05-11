@@ -349,13 +349,29 @@ class ProjectState {
   /// Persist the current per-project view state. Called from $effects in
   /// App.svelte when `visibleLayers` / `selectedOpId` / `playhead` change.
   /// No-op when no path is active (browser uploads, samples, etc.).
+  ///
+  /// Defers the workspace write off the synchronous Svelte 5 effect flush
+  /// via queueMicrotask. The write would otherwise mutate
+  /// `workspace.version` ($state) inside the effect body — when the
+  /// dispatch chain landed on top of the eb8.6 commit, this caused the
+  /// entire reactivity scheduler to abort silently after the first DXF
+  /// import (toolbar buttons stopped responding, file picker opened but
+  /// imports didn't propagate, etc.). The try/catch guards against the
+  /// throw still leaking past the microtask boundary.
   persistPerProjectState() {
     const path = this.activeProjectPath;
     if (!path) return;
-    workspace.setPerProject(path, {
+    const snapshot = {
       visible_layers: [...this.visibleLayers],
       selected_op_id: this.selectedOpId,
       playhead: this.playhead,
+    };
+    queueMicrotask(() => {
+      try {
+        workspace.setPerProject(path, snapshot);
+      } catch (e) {
+        console.warn('persist per-project state:', e);
+      }
     });
   }
 

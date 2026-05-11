@@ -54,7 +54,18 @@
   }
   let post: PostId = $state(coercePost(workspace.get().last_post_processor));
   $effect(() => {
-    workspace.setLastPostProcessor(post);
+    const current = post;
+    // Defer the workspace write off the synchronous effect flush.
+    // Writing $state (workspace.version) inside an effect body aborts
+    // Svelte 5's reactivity scheduler silently — see project.svelte.ts
+    // persistPerProjectState for the full diagnosis.
+    queueMicrotask(() => {
+      try {
+        workspace.setLastPostProcessor(current);
+      } catch (e) {
+        console.warn('persist post processor:', e);
+      }
+    });
   });
   let progressMsg = $state<string>('');
   let progressFrac = $state<number>(0);

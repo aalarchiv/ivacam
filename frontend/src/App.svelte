@@ -60,6 +60,18 @@
   onMount(() => {
     document.documentElement.dataset.theme = project.settings.theme;
 
+    // Global error capture. Silent throws inside Svelte 5 $effect bodies
+    // can abort the reactivity scheduler — every button still fires its
+    // onclick, but visible state stops updating. Surfacing these to the
+    // console (and to project.error for severity) makes the failure mode
+    // visible instead of "the whole UI just stopped working".
+    window.addEventListener('error', (ev) => {
+      console.error('uncaught error:', ev.error ?? ev.message);
+    });
+    window.addEventListener('unhandledrejection', (ev) => {
+      console.error('unhandled promise rejection:', ev.reason);
+    });
+
     if (isTauri()) {
       void wireMenuEvents();
       void wireSourceWatch();

@@ -7,6 +7,11 @@
     type PickerKind,
   } from './OpKindPicker.svelte';
 
+  interface Props {
+    onShowHelp?: () => void;
+  }
+  let { onShowHelp }: Props = $props();
+
   // AutoCAD ACI palette. ACI 7 means "white in dark mode, black in light" —
   // this is exactly how AutoCAD itself renders it. We resolve it at draw
   // time from the active theme.
@@ -820,6 +825,15 @@
       </div>
     {/if}
   {/if}
+  {#if onShowHelp}
+    <button
+      type="button"
+      class="help-btn"
+      onclick={onShowHelp}
+      title="Keyboard & mouse shortcuts (?)"
+      aria-label="Show keyboard and mouse shortcuts"
+    >?</button>
+  {/if}
 </div>
 
 <style>
@@ -886,5 +900,31 @@
     padding: 0.15rem 0.6rem;
     font-size: 0.74rem;
     cursor: pointer;
+  }
+  .help-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: bold;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.7;
+    transition: opacity 0.12s ease, color 0.12s ease;
+  }
+  .help-btn:hover,
+  .help-btn:focus {
+    opacity: 1;
+    color: var(--text-strong);
   }
 </style>

@@ -127,7 +127,7 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
 /// Compute the simulator footprint from the imported geometry + stock
 /// config. Defaults to imported bbox plus a small margin; manual mode
 /// uses customX/Y centered on the bbox.
-function computeFootprint(
+export function computeFootprint(
   imported: ImportResponse | null,
   stock: {
     mode: 'auto' | 'manual';

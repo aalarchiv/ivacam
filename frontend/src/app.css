@@ -43,6 +43,7 @@
 
   --tab-marker: #ffd23a;
   --shadow-modal: rgba(0, 0, 0, 0.55);
+  --stock-edge: #888888;
 }
 
 /* Light tokens applied for explicit light. */
@@ -77,6 +78,7 @@
 
   --tab-marker: #b58000;
   --shadow-modal: rgba(0, 0, 0, 0.18);
+  --stock-edge: #777777;
 }
 
 @media (prefers-color-scheme: light) {
@@ -111,6 +113,7 @@
 
     --tab-marker: #b58000;
     --shadow-modal: rgba(0, 0, 0, 0.18);
+    --stock-edge: #777777;
   }
 }
 

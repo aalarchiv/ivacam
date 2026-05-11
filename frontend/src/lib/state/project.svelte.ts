@@ -68,6 +68,10 @@ export interface AppSettings {
   /// hits Ctrl+S in their CAD app). When false the user gets a
   /// "Reload?" toast instead.
   autoReloadSources: boolean;
+  /// When true, Scene3D draws a translucent stock-envelope box at all
+  /// times (not only when the sim heightfield is active). Combined with
+  /// the per-project `stock.visible` toggle.
+  showStockBox: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -85,6 +89,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   blockOnCriticalSimWarnings: false,
   autoRunSimOnSave: true,
   autoReloadSources: true,
+  showStockBox: true,
 };
 
 /// Load persisted settings, deep-merging stored values over defaults so

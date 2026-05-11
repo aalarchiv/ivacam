@@ -16,40 +16,10 @@
   } from '../state/project.svelte';
   import { defaultClient } from '../api/http';
   import type { HelixRadiusResponse } from '../api/types';
+  import { _ } from 'svelte-i18n';
 
   const apiClient = defaultClient();
   const HELIX_PREVIEW_DEBOUNCE_MS = 300;
-
-  /// One-line description per cut direction for the option titles.
-  const CUT_DIR_HELP: Record<CutDirection, string> = {
-    conventional: 'Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.',
-    climb: 'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
-  };
-  const PLUNGE_HELP: Record<'direct' | 'ramp' | 'helix', string> = {
-    direct:
-      'Straight Z plunge into material. Safe for center-cutting end mills on shallow steps; risky on harder materials.',
-    ramp:
-      'Ramped descent: cutter walks forward along the path while Z descends, taking a chip in both directions. Required for non-center-cutting bits.',
-    helix:
-      'Helical entry: cutter spirals down on a small circle inside the closed pocket boundary, then walks to the path start. Standard for non-center-cutting endmills and harder materials. Falls back to ramp on open paths or when the helix circle does not fit.',
-  };
-  const TAB_TYPE_HELP: Record<'rectangle' | 'ramp', string> = {
-    rectangle:
-      'Straight Z lift over each tab: cutter pops up to tab height, runs across, drops back down. Simple and fast.',
-    ramp:
-      'Sloped entry/exit: cutter ramps UP at the configured angle, holds tab height for the flat top, then ramps DOWN. Smoother machine motion and cleaner tab transitions.',
-  };
-
-  /// Tooltip blurb per combine mode — kept short so it fits in a native
-  /// option's `title` attribute (most browsers cut after ~2 lines).
-  const COMBINE_HELP: Record<SourceCombine, string> = {
-    auto: 'Containment-aware: nested closed objects become holes (outer + inner = annulus). Default.',
-    union: 'Boolean union of all selected closed contours.',
-    difference: 'First selected minus the union of the rest.',
-    intersection: 'Boolean intersection of all selected closed contours.',
-    xor: 'Symmetric difference (xor) of all selected closed contours.',
-    none: 'No combination — one boundary per selected object, no holes.',
-  };
 
   interface Props {
     /// True when rendered inline under an OperationsList row (drops the
@@ -157,9 +127,9 @@
   {/if}
 
   {#if !op}
-    {#if !embedded}
-      <p class="empty">Select an operation in the list to edit it.</p>
-    {/if}
+    <p class="empty" class:embedded-empty={embedded}>
+      Select an operation in the list to edit it.
+    </p>
   {:else}
     <label class="row">
       <span>Name</span>
@@ -245,49 +215,63 @@
         <p class="hint">runs on every chain in the import</p>
       {/if}
       {#if (op.sourceObjects?.length ?? 0) > 1 || (op.sourceLayers !== null && op.sourceLayers.length > 0)}
-        <label class="row" title={COMBINE_HELP[op.sourceCombine ?? 'auto']}>
+        <label class="row" title={$_('op.help.combine.' + (op.sourceCombine ?? 'auto'))}>
           <span>Combine</span>
           <select
             value={op.sourceCombine ?? 'auto'}
             onchange={(e) =>
               patch('sourceCombine', (e.currentTarget as HTMLSelectElement).value as SourceCombine)}
           >
-            <option value="auto" title={COMBINE_HELP.auto}>auto (containment)</option>
-            <option value="union" title={COMBINE_HELP.union}>union</option>
-            <option value="difference" title={COMBINE_HELP.difference}>difference</option>
-            <option value="intersection" title={COMBINE_HELP.intersection}>intersection</option>
-            <option value="xor" title={COMBINE_HELP.xor}>xor</option>
-            <option value="none" title={COMBINE_HELP.none}>none (per object)</option>
+            <option value="auto" title={$_('op.help.combine.auto')}>auto (containment)</option>
+            <option value="union" title={$_('op.help.combine.union')}>union</option>
+            <option value="difference" title={$_('op.help.combine.difference')}>difference</option>
+            <option value="intersection" title={$_('op.help.combine.intersection')}>intersection</option>
+            <option value="xor" title={$_('op.help.combine.xor')}>xor</option>
+            <option value="none" title={$_('op.help.combine.none')}>none (per object)</option>
           </select>
         </label>
       {/if}
       <button
         class="from-selection"
+        class:ghost={project.selectedObjects.size === 0}
         type="button"
         disabled={project.selectedObjects.size === 0}
+        aria-label={project.selectedObjects.size === 0
+          ? 'Select one or more objects in the 2D canvas first to enable this.'
+          : `Set sources from ${project.selectedObjects.size} selected`}
+        title={project.selectedObjects.size === 0
+          ? 'Select one or more objects in the 2D canvas first to enable this.'
+          : 'Use the chains currently highlighted in the 2D pane'}
         onclick={() => {
           patch('sourceLayers', null);
           patch('sourceObjects', [...project.selectedObjects]);
         }}
-        title="Use the chains currently highlighted in the 2D pane"
-      >Set from current selection ({project.selectedObjects.size})</button>
+      >{project.selectedObjects.size === 0
+          ? 'Set sources from selection'
+          : `Set sources from ${project.selectedObjects.size} selected`}</button>
     </fieldset>
 
     <fieldset>
       <legend>Cut</legend>
       <label class="row">
         <span>Final depth</span>
-        <input
-          type="number" step="0.1" value={op.depth}
-          onchange={(e) => patch('depth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
-        />
+        <div class="num-cell">
+          <input
+            type="number" step="0.1" value={op.depth}
+            onchange={(e) => patch('depth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+          />
+          <span class="unit">mm</span>
+        </div>
       </label>
       <label class="row">
         <span>Start depth</span>
-        <input
-          type="number" step="0.1" value={op.startDepth}
-          onchange={(e) => patch('startDepth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
-        />
+        <div class="num-cell">
+          <input
+            type="number" step="0.1" value={op.startDepth}
+            onchange={(e) => patch('startDepth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+          />
+          <span class="unit">mm</span>
+        </div>
       </label>
       <label class="row">
         <span>Step / pass</span>
@@ -311,6 +295,7 @@
               patch('step', isNaN(n) ? null : n);
             }}
           />
+          <span class="unit">mm</span>
           {#if !stepInheriting}
             <button
               type="button"
@@ -329,80 +314,89 @@
         title="Optional smaller step for the FINAL Z pass — gives a thin finishing pass at the bottom for cleaner surface. Same sign as Step (negative). Empty = same as Step."
       >
         <span>Finish step</span>
-        <input
-          type="number"
-          step="0.05"
-          placeholder="same as step"
-          value={op.finishStep ?? ''}
-          onchange={(e) => {
-            const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            patch('finishStep', isNaN(v) ? undefined : v);
-          }}
-        />
+        <div class="num-cell">
+          <input
+            type="number"
+            step="0.05"
+            placeholder="same as step"
+            value={op.finishStep ?? ''}
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              patch('finishStep', isNaN(v) ? undefined : v);
+            }}
+          />
+          <span class="unit">mm</span>
+        </div>
       </label>
       <label
         class="row"
         title="Cut past the nominal depth by this many mm. Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom. 0 = no extension."
       >
         <span>Through depth</span>
-        <input
-          type="number"
-          step="0.1"
-          min="0"
-          value={op.throughDepth ?? 0}
-          onchange={(e) => {
-            const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            patch('throughDepth', isNaN(v) || v <= 0 ? undefined : v);
-          }}
-        />
+        <div class="num-cell">
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={op.throughDepth ?? 0}
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              patch('throughDepth', isNaN(v) || v <= 0 ? undefined : v);
+            }}
+          />
+          <span class="unit">mm</span>
+        </div>
       </label>
       <label
         class="row"
         title="Explicit comma-separated list of Z depths (negative numbers, e.g. -0.5, -1.5, -3). When non-empty, overrides Step / Finish step / Through depth. Empty = use the step-down loop."
       >
         <span>Depth list</span>
-        <input
-          type="text"
-          placeholder="e.g. -0.5, -1.5, -3"
-          value={op.depthList ? op.depthList.join(', ') : ''}
-          onchange={(e) => {
-            const text = (e.currentTarget as HTMLInputElement).value.trim();
-            if (text === '') {
-              patch('depthList', undefined);
-              return;
-            }
-            const parts = text
-              .split(',')
-              .map((s) => parseFloat(s.trim()))
-              .filter((n) => !isNaN(n));
-            patch('depthList', parts.length > 0 ? parts : undefined);
-          }}
-        />
+        <div class="num-cell">
+          <input
+            type="text"
+            placeholder="e.g. -0.5, -1.5, -3"
+            value={op.depthList ? op.depthList.join(', ') : ''}
+            onchange={(e) => {
+              const text = (e.currentTarget as HTMLInputElement).value.trim();
+              if (text === '') {
+                patch('depthList', undefined);
+                return;
+              }
+              const parts = text
+                .split(',')
+                .map((s) => parseFloat(s.trim()))
+                .filter((n) => !isNaN(n));
+              patch('depthList', parts.length > 0 ? parts : undefined);
+            }}
+          />
+          <span class="unit">mm</span>
+        </div>
       </label>
       {#if op.kind === 'profile' || op.kind === 'pocket'}
-        <label class="row" title={CUT_DIR_HELP[op.cutDirection ?? 'conventional']}>
+        <label class="row" title={$_('op.help.cut_direction.' + (op.cutDirection ?? 'conventional'))}>
           <span>Direction</span>
           <select
             value={op.cutDirection ?? 'conventional'}
             onchange={(e) =>
               patch('cutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
           >
-            <option value="conventional" title={CUT_DIR_HELP.conventional}>conventional</option>
-            <option value="climb" title={CUT_DIR_HELP.climb}>climb</option>
+            <option value="conventional" title={$_('op.help.cut_direction.conventional')}>conventional</option>
+            <option value="climb" title={$_('op.help.cut_direction.climb')}>climb</option>
           </select>
         </label>
-        <label class="row" title={CUT_DIR_HELP[op.finishCutDirection ?? 'conventional']}>
+        <label class="row" title={$_('op.help.cut_direction.' + (op.finishCutDirection ?? 'conventional'))}>
           <span>Finish dir</span>
           <select
             value={op.finishCutDirection ?? 'conventional'}
             onchange={(e) =>
               patch('finishCutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
           >
-            <option value="conventional" title={CUT_DIR_HELP.conventional}>conventional</option>
-            <option value="climb" title={CUT_DIR_HELP.climb}>climb</option>
+            <option value="conventional" title={$_('op.help.cut_direction.conventional')}>conventional</option>
+            <option value="climb" title={$_('op.help.cut_direction.climb')}>climb</option>
           </select>
         </label>
-        <label class="row" title={PLUNGE_HELP[op.plunge?.kind ?? 'direct']}>
+        <label class="row" title={$_('op.help.plunge.' + (op.plunge?.kind ?? 'direct'))}>
           <span>Plunge</span>
           <select
             value={op.plunge?.kind ?? 'direct'}
@@ -414,9 +408,7 @@
                   angle_deg: op.plunge && op.plunge.kind === 'ramp' ? op.plunge.angle_deg : 3,
                 });
               } else if (v === 'helix') {
-                // Pick a sane default helix radius from the selected
-                // tool's diameter (1.5 × tool radius). Falls back to
-                // 3mm if the tool can't be resolved.
+                // Sane default helix radius: 1.5 × tool radius, fallback 3mm.
                 const tool = project.tools.find((t) => t.id === op?.toolId);
                 const defaultRadius = tool ? Math.max(0.1, tool.diameter * 0.75) : 3;
                 patch('plunge', {
@@ -429,102 +421,114 @@
               }
             }}
           >
-            <option value="direct" title={PLUNGE_HELP.direct}>direct</option>
-            <option value="ramp" title={PLUNGE_HELP.ramp}>ramp</option>
-            <option value="helix" title={PLUNGE_HELP.helix}>helix</option>
+            <option value="direct" title={$_('op.help.plunge.direct')}>direct</option>
+            <option value="ramp" title={$_('op.help.plunge.ramp')}>ramp</option>
+            <option value="helix" title={$_('op.help.plunge.helix')}>helix</option>
           </select>
         </label>
         {#if op.plunge && op.plunge.kind === 'ramp'}
           <label class="row" title="Ramp angle in degrees. 1°–5° is gentle, 10°+ is aggressive. The ramp's horizontal length is step / tan(angle).">
             <span>Ramp angle</span>
-            <input
-              type="number"
-              step="0.5"
-              min="0.5"
-              max="45"
-              value={op.plunge.angle_deg}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v))
-                  patch('plunge', { kind: 'ramp', angle_deg: Math.max(0.5, Math.min(45, v)) });
-              }}
-            />
-          </label>
-        {:else if op.plunge && op.plunge.kind === 'helix'}
-          <label class="row" title="Helix descent angle in degrees. 1°–5° is gentle, 10°+ is aggressive. Each revolution drops Z by 2π·radius·tan(angle).">
-            <span>Helix angle</span>
-            <input
-              type="number"
-              step="0.5"
-              min="0.5"
-              max="45"
-              value={op.plunge.angle_deg}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
-                  patch('plunge', {
-                    kind: 'helix',
-                    angle_deg: Math.max(0.5, Math.min(45, v)),
-                    radius_mm: op.plunge.radius_mm,
-                  });
-              }}
-            />
-          </label>
-          <label class="row" title="Auto-fit the helix circle to the largest inscribed circle inside the pocket boundary. Falls back to ramp when no helix circle fits.">
-            <span>Auto-fit helix</span>
-            <input
-              type="checkbox"
-              checked={op.plunge.radius_mm === null}
-              onchange={(e) => {
-                const checked = (e.currentTarget as HTMLInputElement).checked;
-                if (op.plunge && op.plunge.kind === 'helix') {
-                  patch('plunge', {
-                    kind: 'helix',
-                    angle_deg: op.plunge.angle_deg,
-                    radius_mm: checked ? null : lastManualHelixRadius,
-                  });
-                }
-              }}
-            />
-          </label>
-          {#if op.plunge.radius_mm === null}
-            <div class="row" title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at gcode time.">
-              <span>Helix radius</span>
-              {#if helixPreview?.radius_mm != null}
-                <em class="placeholder">Auto (detected: {helixPreview.radius_mm.toFixed(1)} mm)</em>
-              {:else if helixPreview && helixPreview.radius_mm == null}
-                <em class="placeholder"
-                  >Auto (no fit — will Ramp instead{helixPreview.fallback_reason
-                    ? `: ${helixPreview.fallback_reason}`
-                    : ''})</em
-                >
-              {:else if helixPreviewLoading}
-                <em class="placeholder">Auto (will fit at generation)</em>
-              {:else}
-                <em class="placeholder">Auto (will fit at generation)</em>
-              {/if}
-            </div>
-          {:else}
-            <label class="row" title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral.">
-              <span>Helix radius</span>
+            <div class="num-cell">
               <input
                 type="number"
-                step="0.1"
-                min="0.1"
-                max="50"
-                value={op.plunge.radius_mm}
+                step="0.5"
+                min="0.5"
+                max="45"
+                value={op.plunge.angle_deg}
                 onchange={(e) => {
                   const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                  if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
+                  if (!isNaN(v))
+                    patch('plunge', { kind: 'ramp', angle_deg: Math.max(0.5, Math.min(45, v)) });
+                }}
+              />
+              <span class="unit">°</span>
+            </div>
+          </label>
+        {:else if op.plunge && op.plunge.kind === 'helix'}
+          <details class="subsection" open>
+            <summary>{$_('op.section.helix')}</summary>
+            <label class="row" title="Helix descent angle in degrees. 1°–5° is gentle, 10°+ is aggressive. Each revolution drops Z by 2π·radius·tan(angle).">
+              <span>Helix angle</span>
+              <div class="num-cell">
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  max="45"
+                  value={op.plunge.angle_deg}
+                  onchange={(e) => {
+                    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                    if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
+                      patch('plunge', {
+                        kind: 'helix',
+                        angle_deg: Math.max(0.5, Math.min(45, v)),
+                        radius_mm: op.plunge.radius_mm,
+                      });
+                  }}
+                />
+                <span class="unit">°</span>
+              </div>
+            </label>
+            <label class="row" title="Auto-fit the helix circle to the largest inscribed circle inside the pocket boundary. Falls back to ramp when no helix circle fits.">
+              <span>Auto-fit helix</span>
+              <input
+                type="checkbox"
+                checked={op.plunge.radius_mm === null}
+                onchange={(e) => {
+                  const checked = (e.currentTarget as HTMLInputElement).checked;
+                  if (op.plunge && op.plunge.kind === 'helix') {
                     patch('plunge', {
                       kind: 'helix',
                       angle_deg: op.plunge.angle_deg,
-                      radius_mm: Math.max(0.1, Math.min(50, v)),
+                      radius_mm: checked ? null : lastManualHelixRadius,
                     });
+                  }
                 }}
               />
             </label>
-          {/if}
+            {#if op.plunge.radius_mm === null}
+              <div class="row" title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at gcode time.">
+                <span>Helix radius</span>
+                {#if helixPreview?.radius_mm != null}
+                  <em class="placeholder">Auto (detected: {helixPreview.radius_mm.toFixed(1)} mm)</em>
+                {:else if helixPreview && helixPreview.radius_mm == null}
+                  <em class="placeholder"
+                    >Auto (no fit — will Ramp instead{helixPreview.fallback_reason
+                      ? `: ${helixPreview.fallback_reason}`
+                      : ''})</em
+                  >
+                {:else if helixPreviewLoading}
+                  <em class="placeholder">Auto (will fit at generation)</em>
+                {:else}
+                  <em class="placeholder">Auto (will fit at generation)</em>
+                {/if}
+              </div>
+            {:else}
+              <label class="row" title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral.">
+                <span>Helix radius</span>
+                <div class="num-cell">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    max="50"
+                    value={op.plunge.radius_mm}
+                    onchange={(e) => {
+                      const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                      if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
+                        patch('plunge', {
+                          kind: 'helix',
+                          angle_deg: op.plunge.angle_deg,
+                          radius_mm: Math.max(0.1, Math.min(50, v)),
+                        });
+                    }}
+                  />
+                  <span class="unit">mm</span>
+                </div>
+              </label>
+            {/if}
+          </details>
         {/if}
       {/if}
     </fieldset>
@@ -532,7 +536,7 @@
     {#if op.kind === 'profile' || op.kind === 'pocket'}
       <fieldset>
         <legend>Tabs</legend>
-        <label class="row" title={TAB_TYPE_HELP[op.tabType ?? 'rectangle']}>
+        <label class="row" title={$_('op.help.tab_type.' + (op.tabType ?? 'rectangle'))}>
           <span>Type</span>
           <select
             value={op.tabType ?? 'rectangle'}
@@ -544,29 +548,35 @@
               }
             }}
           >
-            <option value="rectangle" title={TAB_TYPE_HELP.rectangle}>rectangle</option>
-            <option value="ramp" title={TAB_TYPE_HELP.ramp}>ramp</option>
+            <option value="rectangle" title={$_('op.help.tab_type.rectangle')}>rectangle</option>
+            <option value="ramp" title={$_('op.help.tab_type.ramp')}>ramp</option>
           </select>
         </label>
         {#if op.tabType === 'ramp'}
-          <label
-            class="row"
-            title="Ramp angle in degrees. 30° (default) gives a 1:√3 slope. Smaller = gentler, longer ramps; larger = steeper, more like a Rectangle tab. Horizontal ramp length = tabs.height / tan(angle)."
-          >
-            <span>Ramp angle</span>
-            <input
-              type="number"
-              step="1"
-              min="1"
-              max="89"
-              value={op.tabRampAngleDeg ?? 30}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v))
-                  patch('tabRampAngleDeg', Math.max(1, Math.min(89, v)));
-              }}
-            />
-          </label>
+          <details class="subsection" open>
+            <summary>{$_('op.section.tab_ramp')}</summary>
+            <label
+              class="row"
+              title="Ramp angle in degrees. 30° (default) gives a 1:√3 slope. Smaller = gentler, longer ramps; larger = steeper, more like a Rectangle tab. Horizontal ramp length = tabs.height / tan(angle)."
+            >
+              <span>Ramp angle</span>
+              <div class="num-cell">
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="89"
+                  value={op.tabRampAngleDeg ?? 30}
+                  onchange={(e) => {
+                    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                    if (!isNaN(v))
+                      patch('tabRampAngleDeg', Math.max(1, Math.min(89, v)));
+                  }}
+                />
+                <span class="unit">°</span>
+              </div>
+            </label>
+          </details>
         {/if}
       </fieldset>
     {/if}
@@ -611,17 +621,20 @@
               ? 'Roll-on arc RADIUS (mm). The arc is a quarter-circle tangent to the contour at the entry point.'
               : 'Straight-line LENGTH (mm) of the perpendicular hop into the contour.'}
           >
-            <span>{op.leadInKind === 'arc' ? 'Radius' : 'Length'} (mm)</span>
-            <input
-              type="number"
-              step="0.5"
-              min="0"
-              value={op.leadIn ?? 5}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                patch('leadIn', isNaN(v) || v < 0 ? 0 : v);
-              }}
-            />
+            <span>{op.leadInKind === 'arc' ? 'Radius' : 'Length'}</span>
+            <div class="num-cell">
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={op.leadIn ?? 5}
+                onchange={(e) => {
+                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                  patch('leadIn', isNaN(v) || v < 0 ? 0 : v);
+                }}
+              />
+              <span class="unit">mm</span>
+            </div>
           </label>
         {/if}
         <label
@@ -646,17 +659,20 @@
               ? 'Roll-off arc RADIUS (mm). Quarter-circle tangent to the contour at the exit point.'
               : 'Straight-line LENGTH (mm) of the perpendicular exit from the contour.'}
           >
-            <span>{op.leadOutKind === 'arc' ? 'Radius' : 'Length'} (mm)</span>
-            <input
-              type="number"
-              step="0.5"
-              min="0"
-              value={op.leadOut ?? 5}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                patch('leadOut', isNaN(v) || v < 0 ? 0 : v);
-              }}
-            />
+            <span>{op.leadOutKind === 'arc' ? 'Radius' : 'Length'}</span>
+            <div class="num-cell">
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={op.leadOut ?? 5}
+                onchange={(e) => {
+                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                  patch('leadOut', isNaN(v) || v < 0 ? 0 : v);
+                }}
+              />
+              <span class="unit">mm</span>
+            </div>
           </label>
         {/if}
       </fieldset>
@@ -665,46 +681,55 @@
         {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
         <fieldset>
           <legend>Frame</legend>
-          <label class="row" title="Shape of the synthetic frame the pipeline derives from your selection at generate time.">
-            <span>Shape</span>
-            <select
-              value={op.frameShape}
-              onchange={(e) =>
-                patch('frameShape', (e.currentTarget as HTMLSelectElement).value as FrameShape)}
-            >
-              <option value="rectangle">rectangle</option>
-              <option value="rounded_rectangle">rounded rectangle</option>
-            </select>
-          </label>
-          <label class="row" title="Padding (mm) added on every side of the selection bbox to size the frame. Default is 3 × tool diameter; once you type a value it stays manual.">
-            <span>Padding (mm)</span>
-            <input
-              type="number"
-              step="0.5"
-              min="0"
-              value={op.framePaddingMm ?? (opTool ? opTool.diameter * 3 : 9)}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                patch('framePaddingMm', isNaN(v) || v < 0 ? 0 : v);
-              }}
-            />
-          </label>
-          {#if op.frameShape === 'rounded_rectangle'}
-            <label class="row" title="Corner radius (mm) for the rounded rectangle. Empty = same as padding.">
-              <span>Corner radius</span>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                placeholder="same as padding"
-                value={op.frameCornerRadiusMm ?? ''}
-                onchange={(e) => {
-                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                  patch('frameCornerRadiusMm', isNaN(v) || v < 0 ? undefined : v);
-                }}
-              />
+          <details class="subsection" open>
+            <summary>{$_('op.section.frame')}</summary>
+            <label class="row" title="Shape of the synthetic frame the pipeline derives from your selection at generate time.">
+              <span>Shape</span>
+              <select
+                value={op.frameShape}
+                onchange={(e) =>
+                  patch('frameShape', (e.currentTarget as HTMLSelectElement).value as FrameShape)}
+              >
+                <option value="rectangle">rectangle</option>
+                <option value="rounded_rectangle">rounded rectangle</option>
+              </select>
             </label>
-          {/if}
+            <label class="row" title="Padding (mm) added on every side of the selection bbox to size the frame. Default is 3 × tool diameter; once you type a value it stays manual.">
+              <span>Padding</span>
+              <div class="num-cell">
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={op.framePaddingMm ?? (opTool ? opTool.diameter * 3 : 9)}
+                  onchange={(e) => {
+                    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                    patch('framePaddingMm', isNaN(v) || v < 0 ? 0 : v);
+                  }}
+                />
+                <span class="unit">mm</span>
+              </div>
+            </label>
+            {#if op.frameShape === 'rounded_rectangle'}
+              <label class="row" title="Corner radius (mm) for the rounded rectangle. Empty = same as padding.">
+                <span>Corner radius</span>
+                <div class="num-cell">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="same as padding"
+                    value={op.frameCornerRadiusMm ?? ''}
+                    onchange={(e) => {
+                      const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                      patch('frameCornerRadiusMm', isNaN(v) || v < 0 ? undefined : v);
+                    }}
+                  />
+                  <span class="unit">mm</span>
+                </div>
+              </label>
+            {/if}
+          </details>
         </fieldset>
       {/if}
       <fieldset>
@@ -730,71 +755,85 @@
           </select>
         </label>
         {#if op.pocketStrategy === 'trochoidal'}
-          <label
-            class="row"
-            title="Engagement arc angle in degrees. Lower = lighter cut, more loops; higher = aggressive. Drives centerline pitch."
-          >
-            <span>Engagement angle (°)</span>
-            <input
-              type="range"
-              min="5"
-              max="90"
-              step="1"
-              value={op.engagementAngleDeg ?? 30}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v)) patch('engagementAngleDeg', Math.max(5, Math.min(90, v)));
-              }}
-            />
-            <span class="num">{op.engagementAngleDeg ?? 30}°</span>
-          </label>
-          <label
-            class="row"
-            title="Loop radius as a fraction of tool radius. 0.6 is a balanced default; 0.3 = tiny loops (very light), 1.0 = loops as large as the cutter."
-          >
-            <span>Loop radius factor</span>
-            <input
-              type="range"
-              min="0.3"
-              max="1.0"
-              step="0.05"
-              value={op.loopRadiusFactor ?? 0.6}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v)) patch('loopRadiusFactor', Math.max(0.3, Math.min(1.0, v)));
-              }}
-            />
-            <span class="num">{(op.loopRadiusFactor ?? 0.6).toFixed(2)}</span>
-          </label>
-          {#if op.cutDirection === 'climb' || op.cutDirection === undefined || op.cutDirection === 'conventional'}
-            {#if (op.cutDirection ?? 'conventional') === 'conventional'}
-              <p class="hint warn">Trochoidal usually pairs with climb.</p>
+          <details class="subsection" open>
+            <summary>{$_('op.section.trochoidal')}</summary>
+            <label
+              class="row"
+              title="Engagement arc angle in degrees. Lower = lighter cut, more loops; higher = aggressive. Drives centerline pitch."
+            >
+              <span>Engagement angle</span>
+              <div class="range-cell">
+                <span class="range-min">5°</span>
+                <input
+                  type="range"
+                  min="5"
+                  max="90"
+                  step="1"
+                  value={op.engagementAngleDeg ?? 30}
+                  onchange={(e) => {
+                    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                    if (!isNaN(v)) patch('engagementAngleDeg', Math.max(5, Math.min(90, v)));
+                  }}
+                />
+                <span class="range-max">90°</span>
+                <span class="num">{op.engagementAngleDeg ?? 30}°</span>
+              </div>
+            </label>
+            <label
+              class="row"
+              title="Loop radius as a fraction of tool radius. 0.6 is a balanced default; 0.3 = tiny loops (very light), 1.0 = loops as large as the cutter."
+            >
+              <span>Loop radius factor</span>
+              <div class="range-cell">
+                <span class="range-min">0.3×</span>
+                <input
+                  type="range"
+                  min="0.3"
+                  max="1.0"
+                  step="0.05"
+                  value={op.loopRadiusFactor ?? 0.6}
+                  onchange={(e) => {
+                    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                    if (!isNaN(v)) patch('loopRadiusFactor', Math.max(0.3, Math.min(1.0, v)));
+                  }}
+                />
+                <span class="range-max">1.0×</span>
+                <span class="num">{(op.loopRadiusFactor ?? 0.6).toFixed(2)}×</span>
+              </div>
+            </label>
+            {#if op.cutDirection === 'climb' || op.cutDirection === undefined || op.cutDirection === 'conventional'}
+              {#if (op.cutDirection ?? 'conventional') === 'conventional'}
+                <p class="hint warn">Trochoidal usually pairs with climb.</p>
+              {/if}
             {/if}
-          {/if}
-          {#if op.plunge && op.plunge.kind !== 'helix'}
-            <p class="hint warn">Trochoidal will override plunge to Helix.</p>
-          {/if}
-          {#if Object.values(project.tabs ?? {}).some((t) => t.length > 0)}
-            <p class="hint warn">Tabs ignored on trochoidal pockets.</p>
-          {/if}
+            {#if op.plunge && op.plunge.kind !== 'helix'}
+              <p class="hint warn">Trochoidal will override plunge to Helix.</p>
+            {/if}
+            {#if Object.values(project.tabs ?? {}).some((t) => t.length > 0)}
+              <p class="hint warn">Tabs ignored on trochoidal pockets.</p>
+            {/if}
+          </details>
         {:else}
           <label
             class="row"
             title="XY overlap between consecutive pocket cuts. 0.5 = 50% overlap (step is half the tool diameter, the standard default). Higher = tighter cascade rings, cleaner fill on small pockets but slower; lower = bigger steps, faster but may leave stripes."
           >
             <span>XY overlap</span>
-            <input
-              type="number"
-              step="0.05"
-              min="0.05"
-              max="0.95"
-              value={op.xyOverlap ?? 0.5}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v))
-                  patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
-              }}
-            />
+            <div class="num-cell">
+              <input
+                type="number"
+                step="0.05"
+                min="0.05"
+                max="0.95"
+                value={op.xyOverlap ?? 0.5}
+                onchange={(e) => {
+                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                  if (!isNaN(v))
+                    patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
+                }}
+              />
+              <span class="unit">0–1</span>
+            </div>
           </label>
         {/if}
       </fieldset>
@@ -853,43 +892,52 @@
           </select>
         </label>
         {#if op.drillCycle && (op.drillCycle.kind === 'peck' || op.drillCycle.kind === 'chip_break')}
-          <label class="row">
-            <span>Peck step (mm)</span>
+          <details class="subsection" open>
+            <summary>{$_('op.section.drill_cycle')}</summary>
+            <label class="row">
+              <span>Peck step</span>
+              <div class="num-cell">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  value={op.drillCycle.peck_step_mm}
+                  onchange={(e) => {
+                    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                    if (!isNaN(v) && v > 0 && op.drillCycle) {
+                      const cur = op.drillCycle;
+                      if (cur.kind === 'peck' || cur.kind === 'chip_break') {
+                        patch('drillCycle', {
+                          ...cur,
+                          peck_step_mm: v,
+                        } as DrillCycle);
+                      }
+                    }
+                  }}
+                />
+                <span class="unit">mm</span>
+              </div>
+            </label>
+          </details>
+        {/if}
+        <label class="row">
+          <span>Dwell</span>
+          <div class="num-cell">
             <input
               type="number"
               step="0.1"
-              min="0.1"
-              value={op.drillCycle.peck_step_mm}
+              min="0"
+              value={op.drillCycle?.dwell_sec ?? 0}
               onchange={(e) => {
                 const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v) && v > 0 && op.drillCycle) {
-                  const cur = op.drillCycle;
-                  if (cur.kind === 'peck' || cur.kind === 'chip_break') {
-                    patch('drillCycle', {
-                      ...cur,
-                      peck_step_mm: v,
-                    } as DrillCycle);
-                  }
+                if (!isNaN(v) && v >= 0) {
+                  const cur = op.drillCycle ?? ({ kind: 'simple' } as DrillCycle);
+                  patch('drillCycle', { ...cur, dwell_sec: v } as DrillCycle);
                 }
               }}
             />
-          </label>
-        {/if}
-        <label class="row">
-          <span>Dwell (s)</span>
-          <input
-            type="number"
-            step="0.1"
-            min="0"
-            value={op.drillCycle?.dwell_sec ?? 0}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              if (!isNaN(v) && v >= 0) {
-                const cur = op.drillCycle ?? ({ kind: 'simple' } as DrillCycle);
-                patch('drillCycle', { ...cur, dwell_sec: v } as DrillCycle);
-              }
-            }}
-          />
+            <span class="unit">s</span>
+          </div>
         </label>
       </fieldset>
     {/if}
@@ -899,45 +947,54 @@
         <legend>Feeds (overrides)</legend>
         <label class="row" title="Override the tool's feed rate (mm/min) for this op only. Leave empty to use the tool default.">
           <span>Feed rate</span>
-          <input
-            type="number"
-            step="50"
-            min="0"
-            placeholder="tool default"
-            value={op.feedRateOverride ?? ''}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              patch('feedRateOverride', isNaN(v) || v <= 0 ? undefined : v);
-            }}
-          />
+          <div class="num-cell">
+            <input
+              type="number"
+              step="50"
+              min="0"
+              placeholder="tool default"
+              value={op.feedRateOverride ?? ''}
+              onchange={(e) => {
+                const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                patch('feedRateOverride', isNaN(v) || v <= 0 ? undefined : v);
+              }}
+            />
+            <span class="unit">mm/min</span>
+          </div>
         </label>
         <label class="row" title="Override the tool's plunge rate (mm/min) for Z descents in this op. Leave empty to use the tool default.">
           <span>Plunge rate</span>
-          <input
-            type="number"
-            step="10"
-            min="0"
-            placeholder="tool default"
-            value={op.plungeRateOverride ?? ''}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              patch('plungeRateOverride', isNaN(v) || v <= 0 ? undefined : v);
-            }}
-          />
+          <div class="num-cell">
+            <input
+              type="number"
+              step="10"
+              min="0"
+              placeholder="tool default"
+              value={op.plungeRateOverride ?? ''}
+              onchange={(e) => {
+                const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                patch('plungeRateOverride', isNaN(v) || v <= 0 ? undefined : v);
+              }}
+            />
+            <span class="unit">mm/min</span>
+          </div>
         </label>
         <label class="row" title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns.">
           <span>Corner slow</span>
-          <input
-            type="number"
-            step="0.05"
-            min="0"
-            max="0.95"
-            value={op.cornerFeedReduction ?? 0}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              patch('cornerFeedReduction', isNaN(v) ? 0 : Math.max(0, Math.min(0.95, v)));
-            }}
-          />
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.05"
+              min="0"
+              max="0.95"
+              value={op.cornerFeedReduction ?? 0}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('cornerFeedReduction', isNaN(v) ? 0 : Math.max(0, Math.min(0.95, v)));
+              }}
+            />
+            <span class="unit">0–1</span>
+          </div>
         </label>
       </fieldset>
     {/if}
@@ -951,34 +1008,40 @@
             Tool kind mismatch — V-Carve needs a V-bit.
           </p>
         {/if}
-        <label
-          class="row"
-          title="Optional cap on the inscribed-circle radius (mm). Leave empty for no cap. Useful when a wide region would otherwise drive the V deeper than the bit's usable shoulder."
-        >
-          <span>Max width (mm)</span>
-          <input
-            type="number"
-            step="0.1"
-            min="0"
-            placeholder="no cap"
-            value={op.carveMaxWidthMm ?? ''}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              patch('carveMaxWidthMm', isNaN(v) || v <= 0 ? undefined : v);
-            }}
-          />
-        </label>
-        <label
-          class="row"
-          title="When on, run a refinement pass that re-cuts only the points whose first pass fell short of the geometric target depth. Off by default."
-        >
-          <span>Refine pass</span>
-          <input
-            type="checkbox"
-            checked={op.multiPassRefine ?? false}
-            onchange={(e) => patch('multiPassRefine', (e.currentTarget as HTMLInputElement).checked)}
-          />
-        </label>
+        <details class="subsection" open>
+          <summary>{$_('op.section.vcarve_advanced')}</summary>
+          <label
+            class="row"
+            title="Optional cap on the inscribed-circle radius (mm). Leave empty for no cap. Useful when a wide region would otherwise drive the V deeper than the bit's usable shoulder."
+          >
+            <span>Max width</span>
+            <div class="num-cell">
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="no cap"
+                value={op.carveMaxWidthMm ?? ''}
+                onchange={(e) => {
+                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                  patch('carveMaxWidthMm', isNaN(v) || v <= 0 ? undefined : v);
+                }}
+              />
+              <span class="unit">mm</span>
+            </div>
+          </label>
+          <label
+            class="row"
+            title="When on, run a refinement pass that re-cuts only the points whose first pass fell short of the geometric target depth. Off by default."
+          >
+            <span>Refine pass</span>
+            <input
+              type="checkbox"
+              checked={op.multiPassRefine ?? false}
+              onchange={(e) => patch('multiPassRefine', (e.currentTarget as HTMLInputElement).checked)}
+            />
+          </label>
+        </details>
       </fieldset>
     {/if}
 
@@ -1020,6 +1083,12 @@
   .empty {
     color: var(--text-faint);
     font-size: 0.78rem;
+  }
+  .empty.embedded-empty {
+    text-align: center;
+    font-size: 0.72rem;
+    opacity: 0.7;
+    margin: 0.4rem 0;
   }
   .placeholder {
     color: var(--text-faint);
@@ -1096,8 +1165,11 @@
     width: 100%;
   }
   .from-selection:disabled {
-    opacity: 0.45;
     cursor: not-allowed;
+  }
+  .from-selection.ghost {
+    opacity: 0.5;
+    border-style: dashed;
   }
   .warn-chip {
     margin: 0.2rem 0;
@@ -1117,6 +1189,41 @@
   .step-cell input {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .num-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .num-cell input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .unit {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-left: 0.25rem;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .range-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+  .range-cell input[type='range'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+  }
+  .range-min,
+  .range-max {
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
   .tool-cell {
     display: flex;
@@ -1169,5 +1276,35 @@
     border-radius: 3px;
     font-size: 0.72rem;
     width: max-content;
+  }
+  .subsection {
+    margin: 0.3rem 0 0.1rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.2rem;
+  }
+  .subsection > summary {
+    cursor: pointer;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    padding: 0.15rem 0;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    user-select: none;
+  }
+  .subsection > summary::-webkit-details-marker {
+    display: none;
+  }
+  .subsection > summary::before {
+    content: '▸';
+    font-size: 0.6rem;
+    transition: transform 0.12s ease;
+    color: var(--text-faint);
+  }
+  .subsection[open] > summary::before {
+    transform: rotate(90deg);
   }
 </style>

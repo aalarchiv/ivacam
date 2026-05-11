@@ -53,5 +53,26 @@
   "stock.auto": "Automatik (BBox + Rand)",
   "stock.manual": "manuell (X/Y/Dicke)",
   "stock.margin": "Rand",
-  "stock.thickness": "Dicke"
+  "stock.thickness": "Dicke",
+
+  "op.help.cut_direction.conventional": "Fräserrotation läuft am Eingriff GEGEN den Vorschub. Sicherer bei Maschinen mit Spiel; Span beginnt dünn.",
+  "op.help.cut_direction.climb": "Fräserrotation läuft am Eingriff MIT dem Vorschub (Gleichlauf). Bessere Oberfläche; erfordert eine steife Maschine.",
+  "op.help.plunge.direct": "Senkrechtes Eintauchen in Z. Sicher für mittenschneidende Schaftfräser bei flachen Stufen; riskant in härteren Werkstoffen.",
+  "op.help.plunge.ramp": "Rampen-Eintauchen: Fräser bewegt sich entlang der Bahn vorwärts, während Z absinkt — Spanabnahme in beide Richtungen. Pflicht für nicht mittenschneidende Fräser.",
+  "op.help.plunge.helix": "Helikales Eintauchen: Fräser fährt eine Spirale auf einem kleinen Kreis innerhalb der geschlossenen Taschenkontur und läuft dann zum Startpunkt. Standard für nicht mittenschneidende Fräser und härtere Werkstoffe. Fällt auf Rampe zurück bei offenen Pfaden oder wenn der Helixkreis nicht passt.",
+  "op.help.tab_type.rectangle": "Gerades Z-Anheben über jeden Steg: Fräser hebt auf Steghöhe, fährt darüber, senkt wieder ab. Einfach und schnell.",
+  "op.help.tab_type.ramp": "Geneigte Ein-/Ausfahrt: Fräser rampt im konfigurierten Winkel HOCH, hält die Steghöhe für die flache Oberseite und rampt wieder HERUNTER. Sanftere Maschinenbewegung und sauberere Stegübergänge.",
+  "op.help.combine.auto": "Mit Verschachtelungserkennung: ineinanderliegende geschlossene Objekte werden zu Löchern (außen + innen = Ring). Standard.",
+  "op.help.combine.union": "Boolesche Vereinigung aller ausgewählten geschlossenen Konturen.",
+  "op.help.combine.difference": "Erste Auswahl minus Vereinigung des Restes.",
+  "op.help.combine.intersection": "Boolescher Schnitt aller ausgewählten geschlossenen Konturen.",
+  "op.help.combine.xor": "Symmetrische Differenz (XOR) aller ausgewählten geschlossenen Konturen.",
+  "op.help.combine.none": "Keine Kombination — eine Kontur je Objekt, keine Löcher.",
+
+  "op.section.helix": "Helix",
+  "op.section.trochoidal": "Trochoidal",
+  "op.section.frame": "Rahmen",
+  "op.section.drill_cycle": "Zyklus-Optionen",
+  "op.section.tab_ramp": "Rampe",
+  "op.section.vcarve_advanced": "Erweitert"
 }

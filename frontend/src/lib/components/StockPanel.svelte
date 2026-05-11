@@ -75,40 +75,52 @@
     {#if project.stock.mode === 'auto'}
       <div class="row">
         <span class="lbl">{$_('stock.margin')}</span>
-        <input
-          type="number"
-          step="0.1"
-          value={project.stock.margin}
-          onchange={(e) => patch({ margin: parseFloat((e.target as HTMLInputElement).value) })}
-        />
+        <span class="field">
+          <input
+            type="number"
+            step="0.1"
+            value={project.stock.margin}
+            onchange={(e) => patch({ margin: parseFloat((e.target as HTMLInputElement).value) })}
+          />
+          <span class="unit">mm</span>
+        </span>
       </div>
     {:else}
       <div class="row">
-        <span class="lbl">X (mm)</span>
-        <input
-          type="number"
-          step="0.1"
-          value={project.stock.customX}
-          onchange={(e) => patch({ customX: parseFloat((e.target as HTMLInputElement).value) })}
-        />
+        <span class="lbl">X</span>
+        <span class="field">
+          <input
+            type="number"
+            step="0.1"
+            value={project.stock.customX}
+            onchange={(e) => patch({ customX: parseFloat((e.target as HTMLInputElement).value) })}
+          />
+          <span class="unit">mm</span>
+        </span>
       </div>
       <div class="row">
-        <span class="lbl">Y (mm)</span>
-        <input
-          type="number"
-          step="0.1"
-          value={project.stock.customY}
-          onchange={(e) => patch({ customY: parseFloat((e.target as HTMLInputElement).value) })}
-        />
+        <span class="lbl">Y</span>
+        <span class="field">
+          <input
+            type="number"
+            step="0.1"
+            value={project.stock.customY}
+            onchange={(e) => patch({ customY: parseFloat((e.target as HTMLInputElement).value) })}
+          />
+          <span class="unit">mm</span>
+        </span>
       </div>
       <div class="row">
         <span class="lbl">{$_('stock.thickness')}</span>
-        <input
-          type="number"
-          step="0.1"
-          value={project.stock.thickness}
-          onchange={(e) => patch({ thickness: parseFloat((e.target as HTMLInputElement).value) })}
-        />
+        <span class="field">
+          <input
+            type="number"
+            step="0.1"
+            value={project.stock.thickness}
+            onchange={(e) => patch({ thickness: parseFloat((e.target as HTMLInputElement).value) })}
+          />
+          <span class="unit">mm</span>
+        </span>
       </div>
     {/if}
   {/if}
@@ -159,75 +171,96 @@
       {#if project.selectedFixtureId === f.id}
         <div class="fix-edit">
           <div class="row">
-            <span class="lbl">X (mm)</span>
-            <input
-              type="number"
-              step="0.1"
-              value={f.origin[0]}
-              onchange={(e) =>
-                patchFixture(f.id, {
-                  origin: [parseFloat((e.target as HTMLInputElement).value), f.origin[1]],
-                })}
-            />
+            <span class="lbl">X</span>
+            <span class="field">
+              <input
+                type="number"
+                step="0.1"
+                value={f.origin[0]}
+                onchange={(e) =>
+                  patchFixture(f.id, {
+                    origin: [parseFloat((e.target as HTMLInputElement).value), f.origin[1]],
+                  })}
+              />
+              <span class="unit">mm</span>
+            </span>
           </div>
           <div class="row">
-            <span class="lbl">Y (mm)</span>
-            <input
-              type="number"
-              step="0.1"
-              value={f.origin[1]}
-              onchange={(e) =>
-                patchFixture(f.id, {
-                  origin: [f.origin[0], parseFloat((e.target as HTMLInputElement).value)],
-                })}
-            />
+            <span class="lbl">Y</span>
+            <span class="field">
+              <input
+                type="number"
+                step="0.1"
+                value={f.origin[1]}
+                onchange={(e) =>
+                  patchFixture(f.id, {
+                    origin: [f.origin[0], parseFloat((e.target as HTMLInputElement).value)],
+                  })}
+              />
+              <span class="unit">mm</span>
+            </span>
           </div>
           <div class="row">
             <span class="lbl">Z bot</span>
-            <input
-              type="number"
-              step="0.1"
-              value={f.z_bottom}
-              onchange={(e) => patchFixture(f.id, { z_bottom: parseFloat((e.target as HTMLInputElement).value) })}
-            />
+            <span class="field">
+              <input
+                type="number"
+                step="0.1"
+                value={f.z_bottom}
+                onchange={(e) => patchFixture(f.id, { z_bottom: parseFloat((e.target as HTMLInputElement).value) })}
+              />
+              <span class="unit">mm</span>
+            </span>
           </div>
           <div class="row">
             <span class="lbl">Z top</span>
-            <input
-              type="number"
-              step="0.1"
-              value={f.z_top}
-              onchange={(e) => patchFixture(f.id, { z_top: parseFloat((e.target as HTMLInputElement).value) })}
-            />
+            <span class="field">
+              <input
+                type="number"
+                step="0.1"
+                value={f.z_top}
+                onchange={(e) => patchFixture(f.id, { z_top: parseFloat((e.target as HTMLInputElement).value) })}
+              />
+              <span class="unit">mm</span>
+            </span>
           </div>
           {#if f.kind.shape === 'box'}
             <div class="row">
-              <span class="lbl">W (mm)</span>
-              <input
-                type="number"
-                step="0.1"
-                value={f.kind.width}
-                onchange={(e) => patchKind(f.id, { width: parseFloat((e.target as HTMLInputElement).value) })}
-              />
+              <span class="lbl">W</span>
+              <span class="field">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={f.kind.width}
+                  onchange={(e) => patchKind(f.id, { width: parseFloat((e.target as HTMLInputElement).value) })}
+                />
+                <span class="unit">mm</span>
+              </span>
             </div>
             <div class="row">
-              <span class="lbl">D (mm)</span>
-              <input
-                type="number"
-                step="0.1"
-                value={f.kind.depth}
-                onchange={(e) => patchKind(f.id, { depth: parseFloat((e.target as HTMLInputElement).value) })}
-              />
+              <span class="lbl">D</span>
+              <span class="field">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={f.kind.depth}
+                  onchange={(e) => patchKind(f.id, { depth: parseFloat((e.target as HTMLInputElement).value) })}
+                />
+                <span class="unit">mm</span>
+              </span>
             </div>
           {:else if f.kind.shape === 'cylinder'}
             <div class="row">
-              <span class="lbl">R (mm)</span>
-              <input
-                type="number"
-                step="0.1"
-                value={f.kind.radius}
-                onchange={(e) => patchKind(f.id, { radius: parseFloat((e.target as HTMLInputElement).value) })}
-              />
+              <span class="lbl">R</span>
+              <span class="field">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={f.kind.radius}
+                  onchange={(e) => patchKind(f.id, { radius: parseFloat((e.target as HTMLInputElement).value) })}
+                />
+                <span class="unit">mm</span>
+              </span>
             </div>
           {:else}
             <div class="poly-note">{f.kind.vertices.length} vertices</div>
@@ -279,6 +312,17 @@
     padding: 0.18rem 0.35rem;
     font-size: 0.78rem;
     min-width: 0;
+  }
+  .field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+  .field input[type='number'] {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
   }
   input[type='checkbox'] {
     accent-color: var(--accent);

@@ -222,10 +222,10 @@
 
   const kindLabels: Record<ToolKind, string> = {
     endmill: 'Endmill',
-    ball_nose: 'Ball nose',
+    ball_nose: 'Ball-nose',
     v_bit: 'V-bit',
     engraver: 'Engraver',
-    drag_knife: 'Drag knife',
+    drag_knife: 'Drag-knife',
     drill: 'Drill',
     laser_beam: 'Laser',
   };
@@ -257,13 +257,13 @@
             <span>#</span>
             <span>Name</span>
             <span>Kind</span>
-            <span>⌀ mm</span>
-            <span>tip</span>
+            <span>⌀ <span class="unit-hdr">mm</span></span>
+            <span>tip ⌀ <span class="unit-hdr">mm</span></span>
             <span>flutes</span>
-            <span>speed</span>
-            <span>feed</span>
-            <span>plunge</span>
-            <span title="Default Z step (depth-per-pass) for ops using this tool. Negative number, mm. Empty = no default — every op must set its own.">dflt step</span>
+            <span>speed <span class="unit-hdr">RPM</span></span>
+            <span>feed <span class="unit-hdr">mm/min</span></span>
+            <span>plunge <span class="unit-hdr">mm/min</span></span>
+            <span title="Default Z step (depth-per-pass) for operations using this tool. Negative number, mm. Empty = no default — every operation must set its own.">dflt step <span class="unit-hdr">mm</span></span>
             <span>coolant</span>
             <span></span>
           </div>
@@ -274,6 +274,7 @@
                   class="expand"
                   type="button"
                   aria-expanded={expanded.has(tool.id)}
+                  aria-label={expanded.has(tool.id) ? `Collapse holder section for tool ${tool.id}` : `Expand holder section for tool ${tool.id}`}
                   title={expanded.has(tool.id) ? 'Collapse holder section' : 'Expand holder section'}
                   onclick={() => toggleExpanded(tool.id)}
                 >{expanded.has(tool.id) ? '▾' : '▸'} {tool.id}</button>
@@ -363,6 +364,7 @@
                 onclick={() => removeAt(i)}
                 disabled={draft.length <= 1}
                 title={draft.length <= 1 ? 'At least one tool must remain' : 'Delete tool'}
+                aria-label={draft.length <= 1 ? 'At least one tool must remain' : `Delete tool ${tool.name}`}
               >×</button>
             </div>
             {#if expanded.has(tool.id)}
@@ -596,6 +598,13 @@
     font-size: 0.68rem;
     padding-bottom: 0.2rem;
     border-bottom: 1px solid var(--border);
+  }
+  .row.head .unit-hdr {
+    color: var(--text-faint);
+    font-size: 0.62rem;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-left: 0.2rem;
   }
   @keyframes wiac-tool-flash {
     0%, 100% { background: transparent; }

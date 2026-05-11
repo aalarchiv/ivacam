@@ -44,6 +44,16 @@
   --tab-marker: #ffd23a;
   --shadow-modal: rgba(0, 0, 0, 0.55);
   --stock-edge: #888888;
+
+  --sim-clean-bg: color-mix(in srgb, var(--success) 18%, transparent);
+  --sim-clean-fg: var(--success);
+  --sim-warn-bg: color-mix(in srgb, var(--warn) 18%, transparent);
+  --sim-warn-fg: var(--warn);
+  --sim-critical-bg: color-mix(in srgb, var(--error) 18%, transparent);
+  --sim-critical-fg: var(--error);
+  --marker-critical: var(--error);
+  --marker-warn: var(--warn);
+  --marker-info: var(--accent);
 }
 
 /* Light tokens applied for explicit light. */
@@ -136,4 +146,10 @@ body,
 
 * {
   box-sizing: border-box;
+}
+
+.unit {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: 0.25rem;
 }

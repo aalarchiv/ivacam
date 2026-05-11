@@ -1,6 +1,11 @@
 <script lang="ts">
   import { project } from '../state/project.svelte';
 
+  interface Props {
+    onOpenFileClick?: () => void;
+  }
+  let { onOpenFileClick }: Props = $props();
+
   const ACI: Record<number, string> = {
     1: '#ff0000',
     2: '#ffff00',
@@ -37,7 +42,12 @@
       {/each}
     </ul>
   {:else}
-    <p class="empty">No file loaded.</p>
+    <div class="empty-hint">
+      <p>No file loaded.</p>
+      {#if onOpenFileClick}
+        <button class="link" type="button" onclick={onOpenFileClick}>Open a DXF or SVG…</button>
+      {/if}
+    </div>
   {/if}
 </aside>
 
@@ -95,8 +105,28 @@
     color: var(--text-faint);
     font-size: 0.75rem;
   }
-  .empty {
+  .empty-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    padding: 0.3rem 0;
+  }
+  .empty-hint p {
+    margin: 0;
     color: var(--text-faint);
     font-size: 0.85rem;
+  }
+  .link {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--accent-strong);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 0.82rem;
+  }
+  .link:hover {
+    color: var(--accent);
   }
 </style>

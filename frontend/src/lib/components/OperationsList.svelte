@@ -44,10 +44,10 @@
       }
     }
     if (project.dirty) {
-      return { label: '⚠', tone: 'warn', reason: 'Project changed since the last Generate — re-Generate to refresh this operation\'s gcode.' };
+      return { label: '⚠', tone: 'warn', reason: 'Project changed since the last Generate — re-Generate to refresh this operation\'s G-code.' };
     }
     if (!project.generated) {
-      return { label: '·', tone: 'warn', reason: 'Not generated yet — click Generate to produce this operation\'s gcode.' };
+      return { label: '·', tone: 'warn', reason: 'Not generated yet — click Generate to produce this operation\'s G-code.' };
     }
     // Pipeline warnings tagged with this op's id (tool-fit, kind
     // mismatch, etc.) — escalate to the bad tone if a structural
@@ -131,7 +131,12 @@
 <div class="ops">
   <header>
     <h3>Operations</h3>
-    <button class="add" onclick={() => (pickerOpen = !pickerOpen)} title="Add operation">
+    <button
+      class="add"
+      onclick={() => (pickerOpen = !pickerOpen)}
+      title="Add operation"
+      aria-label="Add operation"
+    >
       +
     </button>
   </header>
@@ -143,7 +148,13 @@
   {/if}
 
   {#if project.operations.length === 0}
-    <p class="empty">No operations. Click <strong>+</strong> to add one.</p>
+    <div class="empty-card">
+      <p class="empty-title">No operations yet</p>
+      <p class="empty-sub">An operation tells the machine how to cut a region — pocket, contour, drill, engrave.</p>
+      <button class="primary-cta" type="button" onclick={() => (pickerOpen = true)}>
+        + Add operation
+      </button>
+    </div>
   {:else}
     <ul role="listbox">
       {#each project.operations as op (op.id)}
@@ -191,6 +202,7 @@
               class="del"
               onclick={(e) => { e.stopPropagation(); project.removeOperation(op.id); }}
               title="Delete operation"
+              aria-label={`Delete operation ${op.name}`}
             >×</button>
           </div>
           {#if selected}
@@ -252,6 +264,44 @@
     color: var(--text-faint);
     font-size: 0.78rem;
     margin: 0.5rem 0;
+  }
+  .empty-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    padding: 0.75rem 0.7rem;
+    margin: 0.4rem 0;
+    border: 1px dashed var(--border);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel));
+    text-align: center;
+  }
+  .empty-title {
+    margin: 0;
+    color: var(--text-strong);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .empty-sub {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    line-height: 1.3;
+  }
+  .primary-cta {
+    margin-top: 0.4rem;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 0.4rem 0.7rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .primary-cta:hover {
+    background: var(--accent-strong);
   }
   ul {
     list-style: none;

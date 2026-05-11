@@ -945,7 +945,7 @@
     {#if op.kind === 'profile' || op.kind === 'pocket' || op.kind === 'engrave' || op.kind === 'drag_knife'}
       <fieldset>
         <legend>Feeds (overrides)</legend>
-        <label class="row" title="Override the tool's feed rate (mm/min) for this op only. Leave empty to use the tool default.">
+        <label class="row" title="Override the tool's feed rate (mm/min) for this operation only. Leave empty to use the tool default.">
           <span>Feed rate</span>
           <div class="num-cell">
             <input
@@ -962,7 +962,7 @@
             <span class="unit">mm/min</span>
           </div>
         </label>
-        <label class="row" title="Override the tool's plunge rate (mm/min) for Z descents in this op. Leave empty to use the tool default.">
+        <label class="row" title="Override the tool's plunge rate (mm/min) for Z descents in this operation. Leave empty to use the tool default.">
           <span>Plunge rate</span>
           <div class="num-cell">
             <input
@@ -1047,7 +1047,7 @@
 
     {#if op.kind === 'thread' || op.kind === 'chamfer' || op.kind === 'helix'}
       <p class="empty">
-        This operation kind is parsed but the gcode emitter for it ships
+        This operation kind is parsed but the G-code emitter for it ships
         with the next backend slice; the run will return
         <code>UnimplementedKind</code> for now.
       </p>

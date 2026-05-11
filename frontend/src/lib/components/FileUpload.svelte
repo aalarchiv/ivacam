@@ -43,13 +43,16 @@
   async function saveProject() {
     const snapshot = JSON.stringify(project.snapshot(), null, 2);
     const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
-    const filename = `${base}.vc-project.json`;
+    // New saves use .wiac-project.json. Loads still accept the legacy
+    // .vc-project.json (inherited from viaConstructor, the Python
+    // predecessor) for backwards compat.
+    const filename = `${base}.wiac-project.json`;
     if (isTauri()) {
       const { save } = await import('@tauri-apps/plugin-dialog');
       const { writeTextFile } = await import('@tauri-apps/plugin-fs');
       const path = await save({
         defaultPath: filename,
-        filters: [{ name: 'wiaConstructor project', extensions: ['vc-project.json', 'json'] }],
+        filters: [{ name: 'wiaConstructor project', extensions: ['wiac-project.json', 'vc-project.json', 'json'] }],
       });
       if (typeof path === 'string') {
         try {
@@ -151,7 +154,7 @@
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
     const selected = await open({
       multiple: false,
-      filters: [{ name: 'wiaConstructor project', extensions: ['vc-project.json', 'json'] }],
+      filters: [{ name: 'wiaConstructor project', extensions: ['wiac-project.json', 'vc-project.json', 'json'] }],
     });
     if (typeof selected !== 'string') return;
     project.loading = true;
@@ -214,7 +217,11 @@
     dragOver = false;
     const file = e.dataTransfer?.files[0];
     if (!file) return;
-    if (file.name.endsWith('.vc-project.json') || file.name.endsWith('.json')) {
+    if (
+      file.name.endsWith('.wiac-project.json') ||
+      file.name.endsWith('.vc-project.json') ||
+      file.name.endsWith('.json')
+    ) {
       loadProjectFile(file);
     } else {
       load(file);
@@ -291,7 +298,7 @@
   <input
     bind:this={projectInput}
     type="file"
-    accept=".vc-project.json,.json"
+    accept=".wiac-project.json,.vc-project.json,.json"
     onchange={onProjectPick}
     hidden
   />
@@ -308,7 +315,7 @@
     class="secondary open-project"
     onclick={() => (isTauri() ? openProjectNative() : projectInput.click())}
     disabled={project.loading}
-    title="Open a saved project (.vc-project.json)"
+    title="Open a saved project (.wiac-project.json or legacy .vc-project.json)"
   >
     Open project
   </button>
@@ -317,7 +324,7 @@
     class="secondary save-project"
     onclick={saveProject}
     disabled={!project.imported}
-    title="Save current geometry + setup to a .vc-project.json file"
+    title="Save current geometry + setup to a .wiac-project.json file"
   >
     Save project
   </button>

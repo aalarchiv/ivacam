@@ -110,7 +110,7 @@
   /// can drive loads without poking at FileUpload's internals.
   async function openProjectPath(path: string) {
     if (!isTauri()) return;
-    const isProjectFile = /\.vc-project\.json$|\.json$/i.test(path);
+    const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
     project.loading = true;
     project.loadingMessage = isProjectFile ? 'Loading project…' : 'Parsing file…';
     project.error = null;

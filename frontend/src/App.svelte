@@ -17,11 +17,13 @@
   import SettingsDialog from './lib/components/SettingsDialog.svelte';
   import AddTextDialog from './lib/components/AddTextDialog.svelte';
   import SourceStaleToast from './lib/components/SourceStaleToast.svelte';
+  import ShortcutHelp from './lib/components/ShortcutHelp.svelte';
 
   let machineOpen = $state(false);
   let toolsOpen = $state(false);
   let settingsOpen = $state(false);
   let addTextOpen = $state(false);
+  let shortcutHelpOpen = $state(false);
 
   // G-code panel visibility. The playback bar always sits below the
   // 3D canvas; the gcode panel opens as an extra row beneath it so
@@ -298,6 +300,13 @@
       addTextOpen = true;
       e.preventDefault();
     }
+    // Shortcut cheatsheet: '?' (Shift+/) or F1. Skip when typing so the
+    // user can still type '?' into text fields.
+    if ((e.key === '?' || e.key === 'F1') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (isTypingTarget(e.target)) return;
+      shortcutHelpOpen = true;
+      e.preventDefault();
+    }
   }
 
   const undoLabel = $derived(project.undoLabel());
@@ -506,7 +515,7 @@
              user only pays the Scene3D mount cost once, on first 3D
              activation. -->
         <div class:pane-hidden={activePane !== '2d'} class="pane">
-          <EntityCanvas2D />
+          <EntityCanvas2D onShowHelp={() => (shortcutHelpOpen = true)} />
         </div>
         {#if Scene3D}
           {@const C = Scene3D}
@@ -583,6 +592,9 @@
   <ToolLibraryDialog open={toolsOpen} onClose={() => (toolsOpen = false)} />
   <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
   <AddTextDialog open={addTextOpen} onClose={() => (addTextOpen = false)} />
+  {#if shortcutHelpOpen}
+    <ShortcutHelp onClose={() => (shortcutHelpOpen = false)} />
+  {/if}
   <SourceStaleToast onReload={async (p) => { await project.reimportFromPath(p); }} />
 
   <footer>

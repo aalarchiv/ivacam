@@ -9,7 +9,7 @@
     simWarningSegmentIdx,
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
-  import { HeightfieldDriver } from '../sim/driver';
+  import { HeightfieldDriver, computeFootprint } from '../sim/driver';
   import type { SimWarning } from '../api/types';
 
   let host: HTMLDivElement;
@@ -322,6 +322,7 @@
       disposeMesh(toolMesh);
       toolMesh = undefined;
     }
+    disposeStockGroup();
     driver?.destroy();
     driver = undefined;
     renderer?.dispose();
@@ -361,6 +362,7 @@
     void project.operations;
     void project.fixtures;
     void project.selectedFixtureId;
+    void project.settings.showStockBox;
     rebuildGeometry();
     updateTabs();
     updateStock();
@@ -778,57 +780,39 @@
     }
   });
 
-  /// Translucent stock box + its wireframe. The Z extents go from
-  /// setup.mill.depth (or stock.thickness for `manual` mode) up to 0.
-  /// In `auto` mode the XY footprint is derived from the imported bbox
-  /// plus a margin; otherwise the user supplies customX/customY centered
-  /// on the bbox center.
+  /// Translucent stock box + its wireframe. Always visible (not only in
+  /// sim mode) whenever an import is loaded and both `stock.visible` and
+  /// `settings.showStockBox` are on. The XY footprint comes from the
+  /// shared `computeFootprint` (auto = bbox + margin; manual = customX/Y
+  /// centered on the bbox); Z extents are `-stock.thickness..0`.
   function updateStock() {
     if (!scene) return;
     if (!stockGroup) {
       stockGroup = new THREE.Group();
       scene.add(stockGroup);
     }
-    stockGroup.clear();
+    disposeStockGroup();
     const cfg = project.stock;
-    if (!cfg.visible) return;
+    if (!cfg.visible || !project.settings.showStockBox) return;
     const data = project.imported;
     if (!data) return;
 
-    // Stock thickness in auto mode is the deepest enabled-op depth so
-    // the box sized to the actual cut volume.
-    const opDepth = project.operations
-      .filter((o) => o.enabled)
-      .reduce((min, o) => Math.min(min, o.depth), 0);
-    const cx = (data.bbox.min_x + data.bbox.max_x) * 0.5;
-    const cy = (data.bbox.min_y + data.bbox.max_y) * 0.5;
-    let sizeX: number;
-    let sizeY: number;
-    let z0: number;
-    if (cfg.mode === 'manual') {
-      sizeX = Math.max(0.1, cfg.customX);
-      sizeY = Math.max(0.1, cfg.customY);
-      z0 = -Math.max(0.1, cfg.thickness);
-    } else {
-      const margin = Math.max(0, cfg.margin);
-      sizeX = (data.bbox.max_x - data.bbox.min_x) + 2 * margin;
-      sizeY = (data.bbox.max_y - data.bbox.min_y) + 2 * margin;
-      // Default to a 2 mm sheet when no ops are configured yet so the
-      // user still sees a sensibly-sized stock outline.
-      const depth = Math.abs(opDepth < 0 ? opDepth : -2);
-      z0 = -Math.max(0.5, depth);
-    }
+    const fp = computeFootprint(data, cfg);
+    const sizeX = fp.maxX - fp.minX;
+    const sizeY = fp.maxY - fp.minY;
+    const thickness = Math.max(0.1, cfg.thickness);
     if (sizeX <= 0.1 || sizeY <= 0.1) return;
 
-    const sizeZ = -z0;
-    const cz = z0 / 2;
-    const box = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
+    const cx = (fp.minX + fp.maxX) * 0.5;
+    const cy = (fp.minY + fp.maxY) * 0.5;
+    const cz = -thickness * 0.5;
+    const box = new THREE.BoxGeometry(sizeX, sizeY, thickness);
     const fillMat = new THREE.MeshBasicMaterial({
-      color: cssColor('--accent', 0x4a8df0),
       transparent: true,
-      opacity: 0.07,
-      depthWrite: false,
+      opacity: 0.05,
+      color: 0xcccccc,
       side: THREE.DoubleSide,
+      depthWrite: false,
     });
     const fill = new THREE.Mesh(box, fillMat);
     fill.position.set(cx, cy, cz);
@@ -836,13 +820,32 @@
 
     const edges = new THREE.EdgesGeometry(box);
     const lineMat = new THREE.LineBasicMaterial({
-      color: cssColor('--text-muted', 0xa0a0a0),
+      color: cssColor('--stock-edge', 0x888888),
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.4,
     });
     const wire = new THREE.LineSegments(edges, lineMat);
     wire.position.set(cx, cy, cz);
     stockGroup.add(wire);
+  }
+
+  /// Dispose all geometry + materials inside stockGroup before clearing.
+  /// THREE.Group.clear() only removes the children; without explicit
+  /// disposal the GPU buffers leak on every stock-config tweak.
+  function disposeStockGroup() {
+    if (!stockGroup) return;
+    while (stockGroup.children.length > 0) {
+      const child = stockGroup.children[0];
+      stockGroup.remove(child);
+      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+        child.geometry.dispose();
+        const m = (child as THREE.Mesh | THREE.LineSegments).material as
+          | THREE.Material
+          | THREE.Material[];
+        if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
+        else m.dispose();
+      }
+    }
   }
 
   /// Build/refresh the 3D fixture group. Each fixture extrudes between

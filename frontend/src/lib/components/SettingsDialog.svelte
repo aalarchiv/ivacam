@@ -96,6 +96,20 @@
         </section>
 
         <section>
+          <h3>View</h3>
+          <div class="grid">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={project.settings.showStockBox}
+                onchange={(e) => update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
+              />
+              <span>Show stock outline in 3D</span>
+            </label>
+          </div>
+        </section>
+
+        <section>
           <h3>Cutting preview</h3>
           <p class="hint">
             How the 3D viewport renders the simulated stock once cutting

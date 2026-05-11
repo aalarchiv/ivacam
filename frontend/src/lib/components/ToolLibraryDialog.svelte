@@ -10,6 +10,7 @@
     type CoolantMode,
     type HolderShape,
   } from '../state/project.svelte';
+  import Modal from './Modal.svelte';
 
   interface Props {
     open: boolean;
@@ -224,12 +225,11 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="tools-title">
-    <div class="modal">
-      <header>
-        <h2 id="tools-title">Tool library</h2>
-        <button class="close" onclick={onClose} aria-label="Close">×</button>
-      </header>
+  <Modal onClose={onClose} persistKey="tool-library" modalClass="tools-modal">
+    <header>
+      <h2 id="tools-title">Tool library</h2>
+      <button class="close" onclick={onClose} aria-label="Close">×</button>
+    </header>
       <div class="body">
         <div class="table">
           <div class="row head">
@@ -521,30 +521,12 @@
         <button class="secondary" onclick={onClose}>Cancel</button>
         <button class="primary" onclick={commit}>OK</button>
       </footer>
-    </div>
-  </div>
+  </Modal>
 {/if}
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, black 50%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-  }
-  .modal {
+  :global(.tools-modal) {
     width: min(960px, 96vw);
-    max-height: 88vh;
-    background: var(--bg-panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    overflow: hidden;
   }
   header {
     display: flex;

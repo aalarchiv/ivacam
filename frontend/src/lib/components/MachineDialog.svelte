@@ -5,6 +5,7 @@
   /// values are also mirrored into setup.machine via SetupPanel so the
   /// legacy Generate path keeps working.
   import { project, type MachineSettings, type AxisLimits } from '../state/project.svelte';
+  import Modal from './Modal.svelte';
 
   interface Props {
     open: boolean;
@@ -51,12 +52,11 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="machine-title">
-    <div class="modal">
-      <header>
-        <h2 id="machine-title">Machine</h2>
-        <button class="close" onclick={close} aria-label="Close">×</button>
-      </header>
+  <Modal onClose={close} modalClass="machine-modal">
+    <header>
+      <h2 id="machine-title">Machine</h2>
+      <button class="close" onclick={close} aria-label="Close">×</button>
+    </header>
 
       <div class="grid">
         <label>Unit
@@ -151,31 +151,10 @@
         <button class="secondary" onclick={close}>Cancel</button>
         <button class="primary" onclick={commit}>OK</button>
       </footer>
-    </div>
-  </div>
+  </Modal>
 {/if}
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, black 50%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-  }
-  .modal {
-    width: min(440px, 95vw);
-    background: var(--bg-panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    overflow: hidden;
-  }
   header {
     display: flex;
     align-items: center;

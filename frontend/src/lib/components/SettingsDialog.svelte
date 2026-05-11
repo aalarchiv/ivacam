@@ -9,6 +9,7 @@
   /// close button just dismisses the dialog.
   import { project, type AppSettings } from '../state/project.svelte';
   import { setLocale } from '../i18n';
+  import Modal from './Modal.svelte';
 
   interface Props {
     open: boolean;
@@ -26,13 +27,6 @@
     setLocale(code);
   }
 
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && open) {
-      e.stopPropagation();
-      onClose();
-    }
-  }
-
   // Coerce a number input: keep current value if the user typed garbage.
   function toNumber(raw: string, fallback: number, min?: number, max?: number): number {
     const n = Number.parseFloat(raw);
@@ -44,15 +38,12 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
-
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-    <div class="modal">
-      <header>
-        <h2 id="settings-title">Settings</h2>
-        <button class="close" onclick={onClose} aria-label="Close">×</button>
-      </header>
+  <Modal onClose={onClose} modalClass="settings-modal">
+    <header>
+      <h2 id="settings-title">Settings</h2>
+      <button class="close" onclick={onClose} aria-label="Close">×</button>
+    </header>
 
       <div class="body">
         <section>
@@ -280,31 +271,12 @@
       <footer>
         <button class="primary" onclick={onClose} type="button">Done</button>
       </footer>
-    </div>
-  </div>
+  </Modal>
 {/if}
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, black 50%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-  }
-  .modal {
+  :global(.settings-modal) {
     width: min(540px, 95vw);
-    max-height: 90vh;
-    background: var(--bg-panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    overflow: hidden;
   }
   header {
     display: flex;

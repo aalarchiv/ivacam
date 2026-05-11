@@ -23,6 +23,7 @@
     engravingMismatch,
     type TextStyle,
   } from './text_style';
+  import Modal from './Modal.svelte';
 
   interface Props {
     open: boolean;
@@ -261,12 +262,11 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="addtext-title">
-    <div class="modal">
-      <header>
-        <h2 id="addtext-title">Add Text</h2>
-        <button class="close" onclick={close} aria-label="Close">×</button>
-      </header>
+  <Modal onClose={close} modalClass="addtext-modal">
+    <header>
+      <h2 id="addtext-title">Add Text</h2>
+      <button class="close" onclick={close} aria-label="Close">×</button>
+    </header>
 
       <div class="body">
         <label class="full">
@@ -360,31 +360,12 @@
         <button class="secondary" onclick={close}>Cancel</button>
         <button class="primary" onclick={apply} disabled={busy}>Add</button>
       </footer>
-    </div>
-  </div>
+  </Modal>
 {/if}
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, black 50%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-  }
-  .modal {
+  :global(.addtext-modal) {
     width: min(540px, 95vw);
-    max-height: 90vh;
-    background: var(--bg-panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    overflow: hidden;
   }
   header {
     display: flex;

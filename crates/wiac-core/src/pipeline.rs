@@ -2630,6 +2630,7 @@ mod tests {
             source: OperationSource::All,
             params: OperationParams::mill_default(),
             pattern: None,
+            group: None,
         }
     }
 
@@ -2747,6 +2748,7 @@ mod tests {
             source,
             params: OperationParams::mill_default(),
             pattern: None,
+            group: None,
         }
     }
 
@@ -2883,6 +2885,7 @@ mod tests {
                 },
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -2949,6 +2952,7 @@ mod tests {
                 },
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3026,6 +3030,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3129,6 +3134,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3208,6 +3214,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3249,6 +3256,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3343,6 +3351,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3430,6 +3439,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3511,6 +3521,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3576,6 +3587,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3694,6 +3706,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3763,6 +3776,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3809,6 +3823,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3869,6 +3884,7 @@ mod tests {
                     source: OperationSource::All,
                     params,
                     pattern: None,
+                    group: None,
                 }],
                 fixtures: Default::default(),
             };
@@ -3915,6 +3931,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -3985,6 +4002,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4044,6 +4062,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4099,6 +4118,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4172,6 +4192,7 @@ mod tests {
             source: OperationSource::All,
             params,
             pattern: None,
+            group: None,
         }
     }
 
@@ -4366,6 +4387,7 @@ mod tests {
                     p
                 },
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4425,6 +4447,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4466,6 +4489,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4507,6 +4531,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4548,6 +4573,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4823,6 +4849,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4869,6 +4896,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -4923,6 +4951,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5226,6 +5255,7 @@ mod tests {
                 source: OperationSource::All,
                 params: params.clone(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5315,6 +5345,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5424,6 +5455,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5489,6 +5521,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5573,6 +5606,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5651,6 +5685,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5712,6 +5747,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -5819,6 +5855,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6000,6 +6037,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6048,6 +6086,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6091,6 +6130,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6128,6 +6168,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6174,6 +6215,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6210,6 +6252,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6300,6 +6343,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6620,6 +6664,7 @@ mod tests {
             source: OperationSource::All,
             params,
             pattern: None,
+            group: None,
         }
     }
 
@@ -6866,6 +6911,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -6938,6 +6984,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -7015,6 +7062,7 @@ mod tests {
                     ..OperationParams::mill_default()
                 },
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -7157,6 +7205,7 @@ mod tests {
                 },
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -7441,6 +7490,7 @@ mod tests {
                     ..OperationParams::mill_default()
                 },
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -7523,6 +7573,7 @@ mod tests {
                 source: OperationSource::All,
                 params,
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -7571,6 +7622,7 @@ mod tests {
                     ..OperationParams::mill_default()
                 },
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -7663,6 +7715,7 @@ mod tests {
                 ..OperationParams::default()
             },
             pattern: None,
+            group: None,
         };
         let project = Project {
             segments: vec![
@@ -7777,6 +7830,7 @@ mod tests {
                 ..OperationParams::default()
             },
             pattern: None,
+            group: None,
         };
         let json = serde_json::to_string(&op).expect("serialize");
         let back: Operation = serde_json::from_str(&json).expect("deserialize");
@@ -7971,6 +8025,7 @@ mod tests {
                     ..OperationParams::default()
                 },
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -8051,6 +8106,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };
@@ -8082,6 +8138,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             })
             .collect();
         let mut project = Project {
@@ -8128,6 +8185,7 @@ mod tests {
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
+                group: None,
             }],
             fixtures: Default::default(),
         };

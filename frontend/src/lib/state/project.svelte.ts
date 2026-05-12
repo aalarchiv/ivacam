@@ -852,6 +852,75 @@ class ProjectState {
     this.history.exec(reorderOperationCommand(id, clamped), this.target());
   }
 
+  // ── op grouping (rt1.21) ─────────────────────────────────────────────
+
+  /// Assign an op to a group (or clear it). Convenience wrapper over
+  /// `updateOperation` so the OperationsList can pass strings around
+  /// without worrying about the broader patch shape. Empty string is
+  /// treated as "ungrouped".
+  setOpGroup(opId: number, group: string | undefined) {
+    const trimmed = group?.trim();
+    const next = trimmed && trimmed.length > 0 ? trimmed : undefined;
+    this.updateOperation(opId, { group: next });
+  }
+
+  /// Rename every op in `from` to be in `to`. No-op if `to` is empty
+  /// or unchanged. One transaction so a single Ctrl+Z reverts.
+  renameGroup(from: string, to: string) {
+    const newName = to.trim();
+    if (!newName || newName === from) return;
+    const members = this.operations.filter((o) => (o.group ?? '') === from);
+    if (members.length === 0) return;
+    this.history.beginTransaction(`Rename group "${from}" → "${newName}"`);
+    try {
+      for (const m of members) {
+        this.history.exec(
+          updateOperationCommand(m.id, { group: newName }),
+          this.target(),
+        );
+      }
+    } finally {
+      this.history.commitTransaction();
+    }
+  }
+
+  /// Clear `group` on every op currently in `name`. Members survive
+  /// (now ungrouped). One transaction.
+  dissolveGroup(name: string) {
+    const members = this.operations.filter((o) => (o.group ?? '') === name);
+    if (members.length === 0) return;
+    this.history.beginTransaction(`Dissolve group "${name}"`);
+    try {
+      for (const m of members) {
+        this.history.exec(
+          updateOperationCommand(m.id, { group: undefined }),
+          this.target(),
+        );
+      }
+    } finally {
+      this.history.commitTransaction();
+    }
+  }
+
+  /// Flip `enabled` on every op in `name`. The toggle target is `next`
+  /// (the caller decides — usually the inverse of "are they all on").
+  setGroupEnabled(name: string, enabled: boolean) {
+    const members = this.operations.filter((o) => (o.group ?? '') === name);
+    if (members.length === 0) return;
+    this.history.beginTransaction(`${enabled ? 'Enable' : 'Disable'} group "${name}"`);
+    try {
+      for (const m of members) {
+        if (m.enabled === enabled) continue;
+        this.history.exec(
+          updateOperationCommand(m.id, { enabled }),
+          this.target(),
+        );
+      }
+    } finally {
+      this.history.commitTransaction();
+    }
+  }
+
   // ── tool library ─────────────────────────────────────────────────────
 
   /// Replace the entire tool library in one undoable step. Used by the
@@ -1402,6 +1471,12 @@ export interface OpEntry {
   /// Corner radius (mm) for `frameShape === 'rounded_rectangle'`. Ignored
   /// otherwise. Undefined ⇒ backend defaults to `framePaddingMm`.
   frameCornerRadiusMm?: number;
+  /// Operation group label (rt1.21). Ops sharing the same `group`
+  /// string render under a collapsible header in OperationsList.
+  /// Undefined = ungrouped (rendered under an implicit "Other"
+  /// bucket at the bottom). The backend pipeline ignores this — it's
+  /// pure UI / project state.
+  group?: string;
 }
 
 export interface ProjectFile {

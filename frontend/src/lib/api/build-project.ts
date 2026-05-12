@@ -155,6 +155,9 @@ interface WireOp {
   kind: WireOpKind;
   tool_id: number;
   finish_tool_id?: number;
+  /// Optional UI grouping label (rt1.21). Preserved through save/load
+  /// so reopening a project restores the user's group layout.
+  group?: string;
   source: WireSource;
   params: {
     depth: number;
@@ -425,6 +428,7 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
     ...(op.finishToolId !== undefined && op.finishToolId !== op.toolId
       ? { finish_tool_id: op.finishToolId }
       : {}),
+    ...(op.group ? { group: op.group } : {}),
     source: buildSource(op),
     params: {
       depth: op.depth,

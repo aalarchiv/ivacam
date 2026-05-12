@@ -438,6 +438,11 @@ fn hash_operation<H: Hasher>(op: &Operation, h: &mut H) {
             hash_pattern(p, h);
         }
     }
+    // rt1.21: op.group is intentionally NOT hashed. It's a pure UI
+    // grouping label with no effect on gcode output; folding it into
+    // the cache key would invalidate every cached body on group
+    // rename / move, which would burn time recomputing identical
+    // toolpaths.
 }
 
 fn hash_operation_kind<H: Hasher>(k: OperationKind, h: &mut H) {
@@ -821,6 +826,7 @@ mod tests {
             source: OperationSource::All,
             params: OperationParams::mill_default(),
             pattern: None,
+            group: None,
         }
     }
 

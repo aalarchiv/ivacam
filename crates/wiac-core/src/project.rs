@@ -382,6 +382,13 @@ pub struct Operation {
     /// See [`PatternConfig`] for the concrete pattern shapes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern: Option<PatternConfig>,
+    /// Optional grouping label (rt1.21). Ops with the same `group`
+    /// string render under a shared collapsible header in
+    /// OperationsList. `None` = ungrouped; the FE buckets ungrouped
+    /// ops under an implicit "Other" group at the bottom. The
+    /// pipeline ignores this field — it's pure UI / project state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 impl Default for Operation {
@@ -398,6 +405,7 @@ impl Default for Operation {
             source: OperationSource::All,
             params: OperationParams::default(),
             pattern: None,
+            group: None,
         }
     }
 }

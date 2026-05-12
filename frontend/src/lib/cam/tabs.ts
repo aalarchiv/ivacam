@@ -187,6 +187,41 @@ export function polylineAtT(
   return { point: b, tangent: { x: (b.x - a.x) / segLen, y: (b.y - a.y) / segLen } };
 }
 
+/// Walk a polyline and collect t parameters for every vertex and
+/// every segment midpoint (1q3). Useful as snap candidates next to
+/// the contour projection.
+export function vertexAndMidpointTs(
+  pts: Point2[],
+  closed: boolean,
+): { t: number; point: Point2; kind: 'vertex' | 'midpoint' }[] {
+  if (pts.length < 2) return [];
+  const { totalOpen } = arcLengths(pts);
+  const totalClose = closed ? Math.hypot(pts[0].x - pts.at(-1)!.x, pts[0].y - pts.at(-1)!.y) : 0;
+  const total = totalOpen + totalClose;
+  if (total < 1e-12) return [];
+  const out: { t: number; point: Point2; kind: 'vertex' | 'midpoint' }[] = [];
+  const nSegs = closed ? pts.length : pts.length - 1;
+  let acc = 0;
+  for (let i = 0; i < nSegs; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    out.push({ t: acc / total, point: { x: a.x, y: a.y }, kind: 'vertex' });
+    const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+    if (segLen > 1e-12) {
+      out.push({
+        t: (acc + segLen * 0.5) / total,
+        point: { x: a.x + (b.x - a.x) * 0.5, y: a.y + (b.y - a.y) * 0.5 },
+        kind: 'midpoint',
+      });
+    }
+    acc += segLen;
+  }
+  if (!closed && pts.length > 0) {
+    out.push({ t: 1 - 1e-12, point: pts[pts.length - 1], kind: 'vertex' });
+  }
+  return out;
+}
+
 /// N evenly spaced tab parameters. Closed: [0, 1/N, 2/N, ...]. Open:
 /// inset by 0.5/N so the first/last don't land on the endpoints.
 export function autoTabTs(count: number, closed: boolean): number[] {

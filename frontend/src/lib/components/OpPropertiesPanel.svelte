@@ -34,6 +34,35 @@
       : project.operations.find((o) => o.id === project.selectedOpId) ?? null,
   );
 
+  /// rt1.10 / zed: count tab placements whose objectId is no longer
+  /// reachable from this op's source. "Reachable" means the import
+  /// still carries an object with that id AND the op's source filter
+  /// would include it.
+  function disconnectedTabCount(op: OpEntry): number {
+    const placements = op.tabPlacements ?? [];
+    if (placements.length === 0) return 0;
+    const imp = project.imported;
+    if (!imp) return 0;
+    const liveIds = new Set<number>(imp.objects ?? []);
+    const so = op.sourceObjects;
+    const allowed = (id: number) =>
+      liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
+    return placements.filter((p) => !allowed(p.objectId)).length;
+  }
+
+  /// One-click strip of disconnected placements. Single
+  /// updateOperation call so it lands as one undoable history entry.
+  function clearDisconnectedTabs(op: OpEntry) {
+    const imp = project.imported;
+    if (!imp) return;
+    const liveIds = new Set<number>(imp.objects ?? []);
+    const so = op.sourceObjects;
+    const allowed = (id: number) =>
+      liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
+    const next = (op.tabPlacements ?? []).filter((p) => allowed(p.objectId));
+    project.updateOperation(op.id, { tabPlacements: next });
+  }
+
   /// Resolve the assigned tool's defaultStep for the current op so the
   /// Step / pass input can fall back to it. null when no assignment.
   const toolDefaultStep = $derived<number | null>(
@@ -705,6 +734,17 @@
               ({op.tabPlacements.length} placed)
             {/if}
           </p>
+          {@const disconnected = disconnectedTabCount(op)}
+          {#if disconnected > 0}
+            <p class="hint warn" title="These tabs reference objects that are no longer in this op's source set (either removed from the import or no longer selected). The pipeline silently drops them; clear them out to keep the data tidy.">
+              <strong>{disconnected}</strong> tab{disconnected === 1 ? '' : 's'} disconnected
+              <button
+                type="button"
+                class="reset-link"
+                onclick={() => clearDisconnectedTabs(op)}
+              >clear</button>
+            </p>
+          {/if}
         {/if}
         <label class="row" title="Width of each bridge along the cut path. Default 10 mm.">
           <span>Width</span>

@@ -5,6 +5,7 @@
     buildObjectPolylines,
     polylineAtT,
     polylineProject,
+    vertexAndMidpointTs,
     type ObjectPolyline,
   } from '../cam/tabs';
   import type { Segment } from '../api/types';
@@ -99,8 +100,23 @@
       (selectedOp.kind === 'profile' || selectedOp.kind === 'pocket') &&
       (selectedOp.tabMode?.kind === 'manual' || selectedOp.tabMode?.kind === 'mixed'),
   );
-  /// Ghost tab while hovering the contour in placement mode.
-  let ghostTab = $state<{ x: number; y: number; objectId: number; t: number } | null>(null);
+  /// Ghost tab while hovering the contour in placement mode. The
+  /// `snap` field describes which secondary snap target the cursor
+  /// landed on so the renderer can flash a small dot.
+  let ghostTab = $state<
+    | {
+        x: number;
+        y: number;
+        objectId: number;
+        t: number;
+        snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
+      }
+    | null
+  >(null);
+  /// Track Alt-held state across the gesture (1q3) — when true, snap
+  /// to anything except the bare contour projection is disabled,
+  /// matching the CAD-convention escape hatch.
+  let altDown = $state(false);
 
   // Mouse → segment hit testing. We project each segment to canvas space
   // and pick the nearest one within `HIT_PIXEL_TOL`.
@@ -306,10 +322,20 @@
   /// Project canvas-space (cx, cy) onto the closest source contour of
   /// the selected op. Returns the ghost-tab position or null when no
   /// contour is within 6 screen-px / the op has no closed source.
+  /// Snap precedence (1q3): vertex within 4 screen-px > midpoint
+  /// within 4 screen-px > existing tab on this op within 2 mm
+  /// data-space > raw contour projection within 6 screen-px. Alt
+  /// disables secondary snaps.
   function projectGhostTab(
     cx: number,
     cy: number,
-  ): { x: number; y: number; objectId: number; t: number } | null {
+  ): {
+    x: number;
+    y: number;
+    objectId: number;
+    t: number;
+    snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
+  } | null {
     const op = selectedOp;
     if (!op || !lastTransform) return null;
     const { scale, offX, offY } = lastTransform;
@@ -317,7 +343,10 @@
     const dataX = (cx - offX) / scale;
     const dataY = (offY - cy) / scale;
     const tolPx = 6;
+    const snapPx = 4;
+    const existingTabTolMm = 2;
     const tolData = tolPx / scale;
+    const snapTolData = snapPx / scale;
     // Op-source filter: only project onto contours the op actually consumes.
     const allow = (id: number) => {
       const so = op.sourceObjects;
@@ -325,16 +354,73 @@
       // 'all' or layer-source: every chained object qualifies.
       return true;
     };
-    let best: { x: number; y: number; objectId: number; t: number; d2: number } | null = null;
+    let best: {
+      x: number;
+      y: number;
+      objectId: number;
+      t: number;
+      d2: number;
+      snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
+    } | null = null;
     for (const obj of getObjectPolylines()) {
       if (!allow(obj.objectId)) continue;
       const { t, snap, d2 } = polylineProject(obj.pts, { x: dataX, y: dataY }, obj.closed);
       if (d2 > tolData * tolData) continue;
       if (best && d2 >= best.d2) continue;
-      best = { x: snap.x, y: snap.y, objectId: obj.objectId, t, d2 };
+      best = {
+        x: snap.x,
+        y: snap.y,
+        objectId: obj.objectId,
+        t,
+        d2,
+        snap: 'contour',
+      };
     }
     if (!best) return null;
-    return { x: best.x, y: best.y, objectId: best.objectId, t: best.t };
+    if (altDown) {
+      // CAD-style escape hatch: bare contour projection only.
+      return best;
+    }
+    // Promote to vertex / midpoint when the cursor is close enough.
+    const obj = getObjectPolylines().find((o) => o.objectId === best!.objectId);
+    if (obj) {
+      let promoted: {
+        t: number;
+        x: number;
+        y: number;
+        snap: 'vertex' | 'midpoint' | 'existing';
+        d2: number;
+      } | null = null;
+      for (const cand of vertexAndMidpointTs(obj.pts, obj.closed)) {
+        const dx = cand.point.x - dataX;
+        const dy = cand.point.y - dataY;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > snapTolData * snapTolData) continue;
+        if (promoted && d2 >= promoted.d2) continue;
+        promoted = { t: cand.t, x: cand.point.x, y: cand.point.y, snap: cand.kind, d2 };
+      }
+      // Existing-tab snap on the SAME op + object, within 2mm data-space.
+      for (const tp of op.tabPlacements ?? []) {
+        if (tp.objectId !== best.objectId) continue;
+        const wp = polylineAtT(obj.pts, tp.t, obj.closed).point;
+        const dx = wp.x - dataX;
+        const dy = wp.y - dataY;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > existingTabTolMm * existingTabTolMm) continue;
+        if (promoted && d2 >= promoted.d2) continue;
+        promoted = { t: tp.t, x: wp.x, y: wp.y, snap: 'existing', d2 };
+      }
+      if (promoted) {
+        return {
+          x: promoted.x,
+          y: promoted.y,
+          objectId: best.objectId,
+          t: promoted.t,
+          snap: promoted.snap,
+        };
+      }
+    }
+    return best;
   }
   /// Right-click context menu. `null` = closed. Open menu lists the
   /// same op kinds as the Add-operation picker; clicking an entry
@@ -342,17 +428,113 @@
   /// wrapped in one undoable transaction.
   let ctxMenu = $state<{ x: number; y: number } | null>(null);
 
+  /// Per-tab popover (8rd). Opens on right-click over an existing
+  /// tab; carries the canvas-space position to anchor the popover
+  /// + the (opId, placementIdx) it edits. Clamped to canvas bounds
+  /// at render time so a tab near the edge doesn't open off-screen.
+  let tabPopover = $state<{
+    x: number;
+    y: number;
+    opId: number;
+    placementIdx: number;
+  } | null>(null);
+
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    ctxMenu = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    // 8rd: right-click over an existing tab opens the per-tab
+    // popover BEFORE falling through to the op-picker context menu.
+    const hit = findTabAtPixel(cx, cy);
+    if (hit) {
+      // Clamp the popover anchor so it stays inside the canvas
+      // even when the user right-clicks near the right / bottom
+      // edge. Popover footprint ≈ 200×160 px.
+      const cw = container?.clientWidth ?? 800;
+      const ch = container?.clientHeight ?? 600;
+      const px = Math.max(8, Math.min(cx, cw - 200));
+      const py = Math.max(8, Math.min(cy, ch - 160));
+      tabPopover = { x: px, y: py, opId: hit.opId, placementIdx: hit.placementIdx };
+      ctxMenu = null;
+      return;
+    }
+    ctxMenu = { x: cx, y: cy };
   }
 
   function closeCtxMenu() {
     ctxMenu = null;
   }
 
+  function closeTabPopover() {
+    tabPopover = null;
+  }
+
+  /// Find an op's tab placement under the cursor (canvas-space).
+  /// Walks every op (not just the selected) so right-click works
+  /// regardless of which op is active — matches CAD intuition
+  /// ('that tab right there').
+  function findTabAtPixel(cx: number, cy: number): { opId: number; placementIdx: number } | null {
+    if (!lastTransform) return null;
+    const { scale, offX, offY } = lastTransform;
+    const tolPx = 10;
+    const objects = getObjectPolylines();
+    let best: { opId: number; placementIdx: number; d2: number } | null = null;
+    for (const op of project.operations) {
+      const mode = op.tabMode?.kind ?? 'off';
+      if (mode !== 'manual' && mode !== 'mixed') continue;
+      const placements = op.tabPlacements ?? [];
+      for (let i = 0; i < placements.length; i++) {
+        const tp = placements[i];
+        const obj = objects.find((o) => o.objectId === tp.objectId);
+        if (!obj) continue;
+        const { point } = polylineAtT(obj.pts, tp.t, obj.closed);
+        const sx = point.x * scale + offX;
+        const sy = offY - point.y * scale;
+        const d2 = (cx - sx) * (cx - sx) + (cy - sy) * (cy - sy);
+        if (d2 > tolPx * tolPx) continue;
+        if (best && d2 >= best.d2) continue;
+        best = { opId: op.id, placementIdx: i, d2 };
+      }
+    }
+    return best ? { opId: best.opId, placementIdx: best.placementIdx } : null;
+  }
+
+  /// Update one tab placement's width / height override. Routes
+  /// through updateOperation so it's a single undoable history entry.
+  function patchTabOverride(
+    opId: number,
+    placementIdx: number,
+    patch: { widthOverrideMm?: number | undefined; heightOverrideMm?: number | undefined },
+  ) {
+    const op = project.operations.find((o) => o.id === opId);
+    if (!op) return;
+    const cur = op.tabPlacements ?? [];
+    if (placementIdx < 0 || placementIdx >= cur.length) return;
+    const next = cur.map((p, i) =>
+      i === placementIdx ? { ...p, ...patch } : p,
+    );
+    project.updateOperation(opId, { tabPlacements: next });
+  }
+
+  /// Delete one tab placement (via toggleTabPlacement — its remove
+  /// branch fires when the target is within tolerance).
+  function deleteTabPlacement(opId: number, placementIdx: number) {
+    const op = project.operations.find((o) => o.id === opId);
+    if (!op) return;
+    const cur = op.tabPlacements ?? [];
+    if (placementIdx < 0 || placementIdx >= cur.length) return;
+    const next = cur.filter((_, i) => i !== placementIdx);
+    project.updateOperation(opId, { tabPlacements: next });
+    tabPopover = null;
+  }
+
   function onCtxKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && tabPopover) {
+      tabPopover = null;
+      e.preventDefault();
+      return;
+    }
     if (e.key === 'Escape' && ctxMenu) {
       ctxMenu = null;
       e.preventDefault();
@@ -360,8 +542,13 @@
   }
 
   function onCtxDocClick(e: MouseEvent) {
-    if (!ctxMenu) return;
     const target = e.target as HTMLElement | null;
+    if (tabPopover) {
+      if (!(target && target.closest('.tab-popover'))) {
+        tabPopover = null;
+      }
+    }
+    if (!ctxMenu) return;
     if (target && target.closest('.ctx-menu')) return;
     ctxMenu = null;
   }
@@ -818,6 +1005,20 @@
           'manual',
         );
         ctx.restore();
+        // Snap indicator (1q3): a small accent dot next to the
+        // ghost when the cursor caught a secondary snap target
+        // (vertex / midpoint / existing tab).
+        if (ghostTab.snap !== 'contour') {
+          const [gx, gy] = p(ghostTab.x, ghostTab.y);
+          const accent = themeVar('--accent', '#2d6cdf');
+          ctx.beginPath();
+          ctx.arc(gx, gy, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = accent;
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = themeVar('--bg-app', '#0d0d0d');
+          ctx.stroke();
+        }
       }
     }
   }
@@ -988,7 +1189,16 @@
   }
 </script>
 
-<svelte:window onkeydown={onCtxKeydown} onclick={onCtxDocClick} />
+<svelte:window
+  onkeydown={(e) => {
+    onCtxKeydown(e);
+    if (e.key === 'Alt' || e.altKey) altDown = true;
+  }}
+  onkeyup={(e) => {
+    if (e.key === 'Alt' || !e.altKey) altDown = false;
+  }}
+  onclick={onCtxDocClick}
+/>
 <div class="canvas-host" bind:this={container}>
   <canvas
     bind:this={canvas}
@@ -999,6 +1209,67 @@
   ></canvas>
   {#if project.selectedEntities.size > 0}
     <div class="selection-hud">{project.selectedEntities.size} selected · esc to clear</div>
+  {/if}
+  {#if tabPopover}
+    {@const op = project.operations.find((o) => o.id === tabPopover!.opId)}
+    {@const placement = op?.tabPlacements?.[tabPopover!.placementIdx]}
+    {#if op && placement}
+      <div
+        class="tab-popover"
+        style:left={`${tabPopover.x}px`}
+        style:top={`${tabPopover.y}px`}
+        role="dialog"
+      >
+        <div class="tab-popover-header">Tab on op #{op.id}</div>
+        <label class="tab-popover-row">
+          <span>Width</span>
+          <input
+            type="number"
+            step="0.5"
+            min="0.1"
+            placeholder={String(op.tabWidth ?? 10)}
+            value={placement.widthOverrideMm ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              const v = raw === '' ? undefined : parseFloat(raw);
+              patchTabOverride(tabPopover!.opId, tabPopover!.placementIdx, {
+                widthOverrideMm: v === undefined || isNaN(v) ? undefined : v,
+              });
+            }}
+          />
+          <span class="unit">mm</span>
+        </label>
+        <label class="tab-popover-row">
+          <span>Height</span>
+          <input
+            type="number"
+            step="0.1"
+            min="0.1"
+            placeholder={String(op.tabHeight ?? 1)}
+            value={placement.heightOverrideMm ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              const v = raw === '' ? undefined : parseFloat(raw);
+              patchTabOverride(tabPopover!.opId, tabPopover!.placementIdx, {
+                heightOverrideMm: v === undefined || isNaN(v) ? undefined : v,
+              });
+            }}
+          />
+          <span class="unit">mm</span>
+        </label>
+        <button
+          type="button"
+          class="tab-popover-delete"
+          onclick={() => deleteTabPlacement(tabPopover!.opId, tabPopover!.placementIdx)}
+        >Delete tab</button>
+        <button
+          type="button"
+          class="tab-popover-close"
+          aria-label="Close"
+          onclick={closeTabPopover}
+        >×</button>
+      </div>
+    {/if}
   {/if}
   {#if ctxMenu}
     {#if project.selectedObjects.size === 0}
@@ -1069,6 +1340,68 @@
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     z-index: 40;
     padding: 0.25rem;
+  }
+  .tab-popover {
+    position: absolute;
+    min-width: 11rem;
+    max-width: 14rem;
+    background: var(--bg-panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+    z-index: 45;
+    padding: 0.55rem 0.6rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+  }
+  .tab-popover-header {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.2rem;
+  }
+  .tab-popover-row {
+    display: grid;
+    grid-template-columns: 3.5rem 1fr auto;
+    gap: 0.35rem;
+    align-items: center;
+  }
+  .tab-popover-row input {
+    width: 100%;
+    padding: 0.15rem 0.3rem;
+  }
+  .tab-popover-row .unit {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+  }
+  .tab-popover-delete {
+    margin-top: 0.3rem;
+    background: transparent;
+    color: var(--danger, #c44);
+    border: 1px solid var(--danger, #c44);
+    border-radius: 3px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .tab-popover-delete:hover {
+    background: color-mix(in srgb, var(--danger, #c44) 15%, transparent);
+  }
+  .tab-popover-close {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.3rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 0;
+    font-size: 1rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 0.3rem;
   }
   .ctx-header {
     font-size: 0.68rem;

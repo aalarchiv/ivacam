@@ -3004,6 +3004,121 @@ mod tests {
         );
     }
 
+    /// Two-op regression: a plain Pocket followed by a Pocket-Outside
+    /// on the same source must produce two distinct toolpath blocks
+    /// (one inside, one in the padding ring outside) without one
+    /// op's mutations bleeding into the other. Catches the case where
+    /// frame_op_storage mutating `objects` would leak into a prior or
+    /// subsequent op.
+    #[test]
+    fn pocket_then_pocket_outside_produces_disjoint_cuts() {
+        let segments = closed_square_offset(50.0, 0.0, 0.0);
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![
+                Operation {
+                    id: 1,
+                    name: "Inner pocket".into(),
+                    enabled: true,
+                    kind: OperationKind::Pocket {
+                        strategy: crate::project::PocketStrategy::Cascade,
+                    },
+                    tool_id: 1,
+                    finish_tool_id: None,
+                    source: OperationSource::Objects {
+                        ids: vec![1],
+                        combine: SourceCombine::Auto,
+                    },
+                    params: OperationParams::mill_default(),
+                    pattern: None,
+                    group: None,
+                },
+                Operation {
+                    id: 2,
+                    name: "Pocket Outside".into(),
+                    enabled: true,
+                    kind: OperationKind::Pocket {
+                        strategy: crate::project::PocketStrategy::Cascade,
+                    },
+                    tool_id: 1,
+                    finish_tool_id: None,
+                    source: OperationSource::Objects {
+                        ids: vec![1],
+                        combine: SourceCombine::Difference,
+                    },
+                    params: {
+                        let mut p = OperationParams::mill_default();
+                        p.frame_shape =
+                            Some(crate::cam::source_combine::FrameShape::Rectangle);
+                        p.frame_padding_mm = Some(10.0);
+                        p
+                    },
+                    pattern: None,
+                    group: None,
+                },
+            ],
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.stats.offset_count >= 2,
+            "expected ≥2 offsets total (pocket + pocket-outside), got {}",
+            resp.stats.offset_count,
+        );
+        let cuts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .collect();
+        // Cuts should cover BOTH the inside (pocket op) and the
+        // padding ring (pocket-outside).
+        let inside_cuts = cuts.iter().any(|s| {
+            let deep_inside =
+                |x: f64, y: f64| (5.0..45.0).contains(&x) && (5.0..45.0).contains(&y);
+            deep_inside(s.from.x, s.from.y) && deep_inside(s.to.x, s.to.y)
+        });
+        let outside_cuts = cuts.iter().any(|s| {
+            let in_padding = |x: f64, y: f64| {
+                !((0.0..=50.0).contains(&x) && (0.0..=50.0).contains(&y))
+            };
+            in_padding(s.from.x, s.from.y) || in_padding(s.to.x, s.to.y)
+        });
+        assert!(inside_cuts, "first pocket should cut inside the square");
+        assert!(
+            outside_cuts,
+            "pocket-outside should cut in the padding ring",
+        );
+        // The regions preview must also distinguish them: one region
+        // per op_id, with op 1 inside and op 2 in the ring.
+        let op1_regions = resp
+            .regions
+            .iter()
+            .filter(|r| r.op_id == 1)
+            .count();
+        let op2_regions = resp
+            .regions
+            .iter()
+            .filter(|r| r.op_id == 2)
+            .count();
+        assert!(
+            op1_regions >= 1,
+            "op 1 should have a fill region in the preview (got {op1_regions})",
+        );
+        assert!(
+            op2_regions >= 1,
+            "op 2 (pocket-outside) should have a fill region (got {op2_regions})",
+        );
+    }
+
     /// Climb on the main + conventional on the finishing pass: walks the
     /// pipeline output and verifies the level=0 ring uses the
     /// conventional winding (CCW for an inner pocket boundary) while

@@ -82,9 +82,17 @@
   }
 
   function commit() {
-    const out: MachineSettings = { ...draft };
-    out.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
-    project.setMachine(out);
+    // Deep-snapshot the draft so the command system receives a plain
+    // object — Svelte 5 `$state` proxies can trip up `structuredClone`
+    // inside setMachineCommand on some browser builds, which would
+    // silently abort commit and leave the dialog open.
+    const snap = JSON.parse(JSON.stringify(draft)) as MachineSettings;
+    snap.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
+    try {
+      project.setMachine(snap);
+    } catch (e) {
+      console.error('MachineDialog.commit: setMachine failed', e);
+    }
     onClose();
   }
 
@@ -299,17 +307,16 @@
         <button class="primary" onclick={commit}>OK</button>
       </footer>
   </Modal>
+  <PostProcessorEditor
+    open={editorOpen}
+    initial={draft.postProfile ?? { name: 'Custom' }}
+    onSave={(next) => {
+      draft.postProfile = next;
+      editorOpen = false;
+    }}
+    onClose={() => (editorOpen = false)}
+  />
 {/if}
-
-<PostProcessorEditor
-  open={editorOpen}
-  initial={draft.postProfile ?? { name: 'Custom' }}
-  onSave={(next) => {
-    draft.postProfile = next;
-    editorOpen = false;
-  }}
-  onClose={() => (editorOpen = false)}
-/>
 
 <style>
   header {

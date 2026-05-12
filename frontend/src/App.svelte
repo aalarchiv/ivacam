@@ -879,12 +879,20 @@
   }
   .sidebar {
     display: grid;
-    grid-template-rows: minmax(80px, 130px) minmax(0, 1fr) auto;
+    /* Layers row sizes to its content (capped); ops fills the rest;
+       stock sticks to the bottom. min-content stops a near-empty
+       layer list from reserving the legacy 80-130 px gap that used
+       to show as whitespace above operations. */
+    grid-template-rows: minmax(min-content, 22vh) minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
-  .layers-host,
+  .layers-host {
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
+  }
   .ops-host,
   .stock-host {
     min-height: 0;

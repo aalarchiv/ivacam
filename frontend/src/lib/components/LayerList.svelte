@@ -59,12 +59,15 @@
     color: var(--text);
     border-left: 1px solid var(--border);
     overflow-y: auto;
-    padding: 0.75rem 0.75rem 1rem;
+    /* Match the operations panel's tighter padding so the two
+       sections sit flush against each other instead of leaving a
+       visible band of whitespace between them. */
+    padding: 0.4rem 0.6rem 0.5rem;
     box-sizing: border-box;
   }
   h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.85rem;
+    margin: 0 0 0.25rem 0;
+    font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);

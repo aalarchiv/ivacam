@@ -53,7 +53,19 @@
   });
 
   function commit() {
-    if (draft.length > 0) project.replaceTools(draft.map((t) => ({ ...t })));
+    // Deep-snapshot so the command system receives plain objects —
+    // Svelte 5 `$state` proxies inside `draft[i]` can trip up the
+    // `structuredClone` call inside replaceToolsCommand on some
+    // production builds, which would silently abort and leave the
+    // dialog open.
+    if (draft.length > 0) {
+      const snap = JSON.parse(JSON.stringify(draft)) as typeof draft;
+      try {
+        project.replaceTools(snap);
+      } catch (e) {
+        console.error('ToolLibraryDialog.commit: replaceTools failed', e);
+      }
+    }
     onClose();
   }
 

@@ -308,7 +308,7 @@
                 class="caret-btn"
                 onclick={() => toggleGroupCollapsed(bucket.name)}
                 title={collapsed ? 'Expand group' : 'Collapse group'}
-                aria-label="Toggle group {bucket.name || 'Other'}"
+                aria-label="Toggle group {bucket.name || 'Default Ops Group'}"
               >{collapsed ? '▸' : '▾'}</button>
               {#if bucket.name !== ''}
                 <input
@@ -339,7 +339,7 @@
                   class:ungrouped={bucket.name === ''}
                   ondblclick={() => startRenameGroup(bucket.name)}
                   title={bucket.name === '' ? 'Ungrouped operations' : 'Double-click to rename'}
-                >{bucket.name || 'Other'}</span>
+                >{bucket.name || 'Default Ops Group'}</span>
               {/if}
               <span class="group-count">{bucket.ops.length}</span>
               {#if bucket.name !== ''}
@@ -372,18 +372,29 @@
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <div
                       class="row"
-                      draggable="true"
-                      ondragstart={(e) => onDragStart(e, op.id)}
                       ondragover={(e) => onDragOver(e, op.id)}
                       ondrop={(e) => onDrop(e, op.id)}
-                      ondragend={onDragEnd}
                       onclick={() => selectOp(op.id)}
                       onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectOp(op.id); }}
                       role="option"
                       tabindex="0"
                       aria-selected={selected}
                     >
-                      <span class="grip" title="Drag to reorder or move between groups" aria-hidden="true">⋮⋮</span>
+                      <!-- Only the grip initiates a drag. Putting
+                           draggable=true on the row body hijacks
+                           mousedown on buttons / checkboxes (the
+                           browser starts a drag instead of firing
+                           click), so duplicate / delete / enable
+                           appear dead. -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <span
+                        class="grip"
+                        draggable="true"
+                        ondragstart={(e) => onDragStart(e, op.id)}
+                        ondragend={onDragEnd}
+                        title="Drag to reorder or move between groups"
+                        aria-hidden="true"
+                      >⋮⋮</span>
                       <input
                         type="checkbox"
                         checked={op.enabled}
@@ -571,6 +582,15 @@
     font-size: 0.7rem;
     user-select: none;
     line-height: 1;
+    padding: 0.25rem 0.15rem;
+    border-radius: 2px;
+  }
+  .grip:hover {
+    background: var(--bg);
+    color: var(--text-muted);
+  }
+  .grip:active {
+    cursor: grabbing;
   }
   .caret {
     color: var(--text-muted);

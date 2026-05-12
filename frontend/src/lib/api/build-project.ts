@@ -163,6 +163,17 @@ interface WireOp {
       tab_type: 'rectangle' | 'ramp';
       ramp_angle_deg?: number;
     };
+    tab_mode?:
+      | { kind: 'off' }
+      | { kind: 'auto'; count: number }
+      | { kind: 'manual' }
+      | { kind: 'mixed'; auto_count: number };
+    tab_placements?: {
+      object_id: number;
+      t: number;
+      width_override_mm?: number;
+      height_override_mm?: number;
+    }[];
     leads: { in: 'off' | 'straight' | 'arc'; out: 'off' | 'straight' | 'arc'; in_lenght: number; out_lenght: number };
     cut_direction?: 'conventional' | 'climb';
     finish_cut_direction?: 'conventional' | 'climb';
@@ -220,7 +231,6 @@ export interface WireProject {
   machine: WireMachine;
   tools: WireToolEntry[];
   operations: WireOp[];
-  tabs: Record<number, { x: number; y: number }[]>;
   fixtures?: WireFixture[];
 }
 
@@ -229,7 +239,6 @@ interface ProjectStateView {
   machine: MachineSettings;
   tools: FrontToolEntry[];
   operations: OpEntry[];
-  tabs: Record<number, { x: number; y: number }[]>;
   fixtures?: WireFixture[];
 }
 
@@ -393,7 +402,7 @@ function buildSource(op: OpEntry): WireSource {
   return { kind: 'layers', layers: op.sourceLayers, ...(combine ? { combine } : {}) };
 }
 
-function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireOp {
+function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
   return {
     id: op.id,
     name: op.name,
@@ -422,9 +431,9 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
       pocket_nocontour: false,
       pocket_insideout: false,
       tabs: {
-        active: anyTabs,
-        width: 10,
-        height: 1,
+        active: op.tabsActive ?? false,
+        width: op.tabWidth ?? 10,
+        height: op.tabHeight ?? 1,
         tab_type: op.tabType ?? 'rectangle',
         // Only emit ramp_angle_deg when ≠ default (30°) so old payloads
         // and the Rust serde default match — the field is
@@ -433,6 +442,21 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
           ? { ramp_angle_deg: op.tabRampAngleDeg }
           : {}),
       },
+      ...(op.tabMode && op.tabMode.kind !== 'off' ? { tab_mode: op.tabMode } : {}),
+      ...(op.tabPlacements && op.tabPlacements.length > 0
+        ? {
+            tab_placements: op.tabPlacements.map((p) => ({
+              object_id: p.objectId,
+              t: p.t,
+              ...(p.widthOverrideMm !== undefined
+                ? { width_override_mm: p.widthOverrideMm }
+                : {}),
+              ...(p.heightOverrideMm !== undefined
+                ? { height_override_mm: p.heightOverrideMm }
+                : {}),
+            })),
+          }
+        : {}),
       leads: {
         in: op.leadInKind ?? 'off',
         out: op.leadOutKind ?? 'off',
@@ -502,13 +526,11 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
 export function buildProject(state: ProjectStateView): WireProject | null {
   if (state.operations.length === 0) return null;
   if (!state.imported) return null;
-  const anyTabs = Object.values(state.tabs).some((t) => t.length > 0);
   return {
     segments: state.imported.segments,
     machine: buildMachine(state.machine),
     tools: state.tools.map(buildTool),
-    operations: state.operations.map((op) => buildOp(op, state.machine, anyTabs)),
-    tabs: state.tabs,
+    operations: state.operations.map((op) => buildOp(op, state.machine)),
     ...(state.fixtures && state.fixtures.length > 0 ? { fixtures: state.fixtures } : {}),
   };
 }
@@ -517,6 +539,5 @@ export function buildProject(state: ProjectStateView): WireProject | null {
 /// project field as an opaque object (the schema generator hasn't
 /// added it to the typed wire shape yet).
 export type GenerateRequestWithProject = GenerateRequest & {
-  tabs?: Record<number, { x: number; y: number }[]>;
   project?: WireProject;
 };

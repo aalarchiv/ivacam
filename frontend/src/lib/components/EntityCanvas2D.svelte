@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { project } from '../state/project.svelte';
+  import {
+    buildObjectPolylines,
+    polylineAtT,
+    polylineProject,
+    type ObjectPolyline,
+  } from '../cam/tabs';
   import type { Segment } from '../api/types';
   import OpKindPicker, {
     PICKER_LABEL,
@@ -68,16 +74,33 @@
     void project.imported;
     void project.visibleLayers;
     void project.selectedObjects;
-    void project.tabs;
-    void project.tabMode;
+    void project.operations;
     void project.generated;
     void project.selectedOpId;
     void project.regionsVisible;
     void project.fixtures;
     void project.selectedFixtureId;
     void hoverIdx;
+    void ghostTab;
     draw();
   });
+
+  /// Selected-op-driven tab placement mode (rt1.10). When the user
+  /// has a profile / pocket op selected with `tabMode` === manual or
+  /// mixed, the canvas behaves as a tab-placement surface: hover
+  /// shows a ghost tab; click toggles a placement.
+  const selectedOp = $derived(
+    project.selectedOpId == null
+      ? null
+      : project.operations.find((o) => o.id === project.selectedOpId) ?? null,
+  );
+  const tabPlacementActive = $derived(
+    !!selectedOp &&
+      (selectedOp.kind === 'profile' || selectedOp.kind === 'pocket') &&
+      (selectedOp.tabMode?.kind === 'manual' || selectedOp.tabMode?.kind === 'mixed'),
+  );
+  /// Ghost tab while hovering the contour in placement mode.
+  let ghostTab = $state<{ x: number; y: number; objectId: number; t: number } | null>(null);
 
   // Mouse → segment hit testing. We project each segment to canvas space
   // and pick the nearest one within `HIT_PIXEL_TOL`.
@@ -236,16 +259,82 @@
 
   function onPointerMove(e: PointerEvent) {
     const rect = canvas.getBoundingClientRect();
-    const idx = pixelHit(e.clientX - rect.left, e.clientY - rect.top);
-    if (idx !== hoverIdx) {
-      hoverIdx = idx;
-      const baseCursor = project.tabMode ? 'crosshair' : 'default';
-      canvas.style.cursor = idx == null ? baseCursor : project.tabMode ? 'cell' : 'pointer';
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const idx = pixelHit(cx, cy);
+    if (idx !== hoverIdx) hoverIdx = idx;
+    // rt1.10: tab-placement mode — project cursor to the op's
+    // closest source contour and stage a ghost tab. The ghost only
+    // renders when the projection is within ~6 px of the cursor
+    // (screen-space) so we don't spam ghosts the user wasn't aiming at.
+    if (tabPlacementActive && lastTransform) {
+      const ghost = projectGhostTab(cx, cy);
+      if (
+        !ghost
+        || !ghostTab
+        || ghost.objectId !== ghostTab.objectId
+        || Math.abs(ghost.t - ghostTab.t) > 1e-5
+      ) {
+        ghostTab = ghost;
+      }
+    } else if (ghostTab) {
+      ghostTab = null;
     }
+    const baseCursor = tabPlacementActive ? 'crosshair' : 'default';
+    canvas.style.cursor = idx == null ? baseCursor : tabPlacementActive ? 'cell' : 'pointer';
   }
   function onPointerLeave() {
     hoverIdx = null;
-    canvas.style.cursor = project.tabMode ? 'crosshair' : 'default';
+    ghostTab = null;
+    canvas.style.cursor = tabPlacementActive ? 'crosshair' : 'default';
+  }
+
+  /// Cache of the per-object polylines for the current import. Cleared
+  /// when the import changes; the projection helpers reuse it.
+  let objectPolylinesCache: ObjectPolyline[] | null = null;
+  let objectPolylinesCacheKey: unknown = null;
+  function getObjectPolylines(): ObjectPolyline[] {
+    const imp = project.imported;
+    if (!imp) return [];
+    if (objectPolylinesCacheKey !== imp) {
+      objectPolylinesCache = buildObjectPolylines(imp);
+      objectPolylinesCacheKey = imp;
+    }
+    return objectPolylinesCache ?? [];
+  }
+
+  /// Project canvas-space (cx, cy) onto the closest source contour of
+  /// the selected op. Returns the ghost-tab position or null when no
+  /// contour is within 6 screen-px / the op has no closed source.
+  function projectGhostTab(
+    cx: number,
+    cy: number,
+  ): { x: number; y: number; objectId: number; t: number } | null {
+    const op = selectedOp;
+    if (!op || !lastTransform) return null;
+    const { scale, offX, offY } = lastTransform;
+    // Canvas → data XY (mirror of the draw transform).
+    const dataX = (cx - offX) / scale;
+    const dataY = (offY - cy) / scale;
+    const tolPx = 6;
+    const tolData = tolPx / scale;
+    // Op-source filter: only project onto contours the op actually consumes.
+    const allow = (id: number) => {
+      const so = op.sourceObjects;
+      if (so && so.length > 0) return so.includes(id);
+      // 'all' or layer-source: every chained object qualifies.
+      return true;
+    };
+    let best: { x: number; y: number; objectId: number; t: number; d2: number } | null = null;
+    for (const obj of getObjectPolylines()) {
+      if (!allow(obj.objectId)) continue;
+      const { t, snap, d2 } = polylineProject(obj.pts, { x: dataX, y: dataY }, obj.closed);
+      if (d2 > tolData * tolData) continue;
+      if (best && d2 >= best.d2) continue;
+      best = { x: snap.x, y: snap.y, objectId: obj.objectId, t, d2 };
+    }
+    if (!best) return null;
+    return { x: best.x, y: best.y, objectId: best.objectId, t: best.t };
   }
   /// Right-click context menu. `null` = closed. Open menu lists the
   /// same op kinds as the Add-operation picker; clicking an entry
@@ -321,15 +410,20 @@
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
-    // Tab mode takes precedence over selection: a click adds (or removes)
-    // a tab at the closest point on the nearest segment.
-    if (project.tabMode) {
-      const removed = removeTabAtPixel(cx, cy);
-      if (removed) return;
-      const idx = pixelHit(cx, cy);
-      if (idx == null) return;
-      const proj = closestPointOnSegment(idx, cx, cy);
-      if (proj) project.addTab(idx, proj);
+    // rt1.10: tab-placement mode (selected op has Manual / Mixed
+    // tab_mode). Click toggles a placement at the contour projection
+    // — Estlcam-style. ToleranceT picks the "is this near an existing
+    // tab" threshold: ~3 px of contour length.
+    if (tabPlacementActive && selectedOp) {
+      const ghost = projectGhostTab(cx, cy);
+      if (!ghost) return;
+      // Tolerance in t-units: ~3 px of contour length. Without an
+      // exact polyline length we conservatively use 0.01 (1% of contour).
+      project.toggleTabPlacement(
+        selectedOp.id,
+        { objectId: ghost.objectId, t: ghost.t },
+        0.01,
+      );
       return;
     }
 
@@ -424,28 +518,6 @@
     return { x: s.start.x + t * dx, y: s.start.y + t * dy };
   }
 
-  /// Returns true if a tab marker was clicked and removed.
-  function removeTabAtPixel(canvasX: number, canvasY: number): boolean {
-    if (!lastTransform) return false;
-    const { scale, offX, offY } = lastTransform;
-    const tolPx = 10;
-    const tolData = tolPx / scale;
-    for (const [idxStr, list] of Object.entries(project.tabs)) {
-      const segIdx = Number(idxStr);
-      for (let i = 0; i < list.length; i++) {
-        const t = list[i];
-        const cx = t.x * scale + offX;
-        const cy = offY - t.y * scale;
-        const _ = tolData; // kept to make the threshold doc-explicit
-        if (Math.hypot(canvasX - cx, canvasY - cy) <= tolPx) {
-          project.removeTab(segIdx, i);
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   function colorFor(c: number): string {
     if (c === 7 || c === 256) return themeVar('--text-strong', '#e6e6e6');
     if (c === 8) return themeVar('--text-muted', '#888');
@@ -522,7 +594,7 @@
     }
 
     drawFixtures(ctx, project2);
-    drawTabs(ctx, project2);
+    drawTabs(ctx, project2, scale);
   }
 
   /// Paint each fixture as a translucent filled outline in its declared
@@ -654,21 +726,147 @@
   function drawTabs(
     ctx: CanvasRenderingContext2D,
     p: (x: number, y: number) => [number, number],
+    scale: number,
   ) {
     const tabFill = themeVar('--tab-marker', '#ffd23a');
+    const tabAuto = themeVar('--tab-auto', '#ffeb88');
     const tabStroke = themeVar('--bg-app', '#0d0d0d');
-    for (const list of Object.values(project.tabs)) {
-      for (const tab of list) {
-        const [cx, cy] = p(tab.x, tab.y);
-        ctx.beginPath();
-        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-        ctx.fillStyle = tabFill;
-        ctx.fill();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = tabStroke;
-        ctx.stroke();
+    const objects = getObjectPolylines();
+    // Walk every op with tabs ON: render auto-spaced (per kind),
+    // manual placements, and the ghost (if the selected op).
+    for (const op of project.operations) {
+      const mode = op.tabMode?.kind ?? 'off';
+      const tabsActive = op.tabsActive ?? false;
+      // Skip ops with no tabs to draw.
+      if (mode === 'off' && (op.tabPlacements?.length ?? 0) === 0 && !tabsActive) continue;
+      const allowedObjects = op.sourceObjects;
+      const objFilter = (id: number) =>
+        !allowedObjects || allowedObjects.length === 0 || allowedObjects.includes(id);
+      // Manual / Mixed placements.
+      if (mode === 'manual' || mode === 'mixed') {
+        for (const tp of op.tabPlacements ?? []) {
+          const obj = objects.find((o) => o.objectId === tp.objectId);
+          if (!obj || !objFilter(obj.objectId)) continue;
+          const { point, tangent } = polylineAtT(obj.pts, tp.t, obj.closed);
+          drawTabMarker(
+            ctx,
+            p,
+            scale,
+            point.x,
+            point.y,
+            tangent.x,
+            tangent.y,
+            tp.widthOverrideMm ?? op.tabWidth ?? 10,
+            tp.heightOverrideMm ?? op.tabHeight ?? 1,
+            tabFill,
+            tabStroke,
+            'manual',
+          );
+        }
+      }
+      // Auto / Mixed: N evenly spaced tabs per allowed object.
+      if (op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed') {
+        const count =
+          op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count;
+        if (count > 0) {
+          for (const obj of objects) {
+            if (!objFilter(obj.objectId)) continue;
+            const ts = obj.closed
+              ? Array.from({ length: count }, (_, i) => i / count)
+              : Array.from({ length: count }, (_, i) => (i + 0.5) / count);
+            for (const t of ts) {
+              const { point, tangent } = polylineAtT(obj.pts, t, obj.closed);
+              drawTabMarker(
+                ctx,
+                p,
+                scale,
+                point.x,
+                point.y,
+                tangent.x,
+                tangent.y,
+                op.tabWidth ?? 10,
+                op.tabHeight ?? 1,
+                tabAuto,
+                tabStroke,
+                'auto',
+              );
+            }
+          }
+        }
       }
     }
+    // Ghost (selected op + manual/mixed mode + cursor over contour).
+    if (ghostTab && tabPlacementActive && selectedOp) {
+      const obj = objects.find((o) => o.objectId === ghostTab!.objectId);
+      if (obj) {
+        const { tangent } = polylineAtT(obj.pts, ghostTab.t, obj.closed);
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.setLineDash([4, 3]);
+        drawTabMarker(
+          ctx,
+          p,
+          scale,
+          ghostTab.x,
+          ghostTab.y,
+          tangent.x,
+          tangent.y,
+          selectedOp.tabWidth ?? 10,
+          selectedOp.tabHeight ?? 1,
+          tabFill,
+          tabStroke,
+          'manual',
+        );
+        ctx.restore();
+      }
+    }
+  }
+
+  /// Draw one tab marker oriented along the contour tangent. Falls
+  /// back to a 6-px pill when the data-space size collapses too small
+  /// on screen so the marker stays visible at extreme zoom-out.
+  function drawTabMarker(
+    ctx: CanvasRenderingContext2D,
+    p: (x: number, y: number) => [number, number],
+    scale: number,
+    dataX: number,
+    dataY: number,
+    tanX: number,
+    tanY: number,
+    widthMm: number,
+    heightMm: number,
+    fill: string,
+    stroke: string,
+    _kind: 'auto' | 'manual',
+  ) {
+    const [cx, cy] = p(dataX, dataY);
+    const halfLenPx = Math.max(3, (widthMm * 0.5) * scale);
+    const halfThickPx = Math.max(2, heightMm * scale);
+    // Canvas Y is flipped vs data Y. Mirror the tangent Y so the
+    // rendered orientation matches the contour in screen space.
+    const txPx = tanX;
+    const tyPx = -tanY;
+    const tLen = Math.hypot(txPx, tyPx) || 1;
+    const ux = txPx / tLen;
+    const uy = tyPx / tLen;
+    // Perpendicular (left of tangent in canvas space).
+    const px = -uy;
+    const py = ux;
+    ctx.beginPath();
+    const corners: [number, number][] = [
+      [cx - ux * halfLenPx - px * halfThickPx, cy - uy * halfLenPx - py * halfThickPx],
+      [cx + ux * halfLenPx - px * halfThickPx, cy + uy * halfLenPx - py * halfThickPx],
+      [cx + ux * halfLenPx + px * halfThickPx, cy + uy * halfLenPx + py * halfThickPx],
+      [cx - ux * halfLenPx + px * halfThickPx, cy - uy * halfLenPx + py * halfThickPx],
+    ];
+    ctx.moveTo(corners[0][0], corners[0][1]);
+    for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i][0], corners[i][1]);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
   }
 
   function drawSegment(

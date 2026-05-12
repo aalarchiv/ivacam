@@ -7,25 +7,23 @@ import { describe, expect, it } from 'vitest';
 import {
   addFixtureCommand,
   addOperationCommand,
-  addTabCommand,
   addToolCommand,
   appendImportedCommand,
   assignToolCommand,
   autoFixToCommand,
   changeProfileOffsetCommand,
-  clearTabsCommand,
   deleteOperationCommand,
   deleteToolCommand,
   disableOpCommand,
   duplicateOperationCommand,
   lowerSimResolutionCommand,
   removeFixtureCommand,
-  removeTabCommand,
   reorderOperationCommand,
   replaceToolsCommand,
   setMachineCommand,
   setOpFieldCommand,
   setStockCommand,
+  toggleTabPlacementCommand,
   updateFixtureCommand,
   updateOperationCommand,
   type CommandTarget,
@@ -38,7 +36,6 @@ function blankTarget(): CommandTarget {
     operations: [],
     tools: [],
     fixtures: [],
-    tabs: {},
     machine: {
       unit: 'mm',
       mode: 'mill',
@@ -307,48 +304,53 @@ describe('fixtures', () => {
   });
 });
 
-describe('tabs', () => {
-  it('addTabCommand pushes to per-segment list', () => {
+describe('tabs (rt1.10)', () => {
+  function withOp(t: CommandTarget, opId: number, placements: { objectId: number; t: number }[]) {
+    t.operations = [
+      {
+        id: opId,
+        name: 'Profile',
+        enabled: true,
+        kind: 'profile',
+        toolId: 1,
+        offset: 'outside',
+        depth: -2,
+        startDepth: 0,
+        fastMoveZ: 5,
+        step: -1,
+        sourceLayers: null,
+        pocketStrategy: null,
+        tabPlacements: placements.map((p) => ({ objectId: p.objectId, t: p.t })),
+      } as OpEntry,
+    ];
+  }
+
+  it('toggleTabPlacementCommand adds a tab on first click', () => {
     const t = blankTarget();
-    const cmd = addTabCommand(3, { x: 1, y: 2 });
+    withOp(t, 1, []);
+    const cmd = toggleTabPlacementCommand(1, { objectId: 2, t: 0.4 }, 0.01);
     cmd.apply(t);
-    expect(t.tabs[3]).toEqual([{ x: 1, y: 2 }]);
+    expect(t.operations[0].tabPlacements).toEqual([{ objectId: 2, t: 0.4 }]);
     cmd.revert(t);
-    expect(t.tabs[3]).toBeUndefined();
+    expect(t.operations[0].tabPlacements).toEqual([]);
   });
 
-  it('removeTabCommand restores at position', () => {
+  it('toggleTabPlacementCommand removes a tab on second click within tolerance', () => {
     const t = blankTarget();
-    t.tabs = {
-      5: [
-        { x: 1, y: 1 },
-        { x: 2, y: 2 },
-        { x: 3, y: 3 },
-      ],
-    };
-    const cmd = removeTabCommand(5, 1);
+    withOp(t, 1, [{ objectId: 2, t: 0.405 }]);
+    const cmd = toggleTabPlacementCommand(1, { objectId: 2, t: 0.41 }, 0.01);
     cmd.apply(t);
-    expect(t.tabs[5]).toEqual([
-      { x: 1, y: 1 },
-      { x: 3, y: 3 },
-    ]);
+    expect(t.operations[0].tabPlacements).toEqual([]);
     cmd.revert(t);
-    expect(t.tabs[5]).toEqual([
-      { x: 1, y: 1 },
-      { x: 2, y: 2 },
-      { x: 3, y: 3 },
-    ]);
+    expect(t.operations[0].tabPlacements).toEqual([{ objectId: 2, t: 0.405 }]);
   });
 
-  it('clearTabsCommand restores all', () => {
+  it('toggleTabPlacementCommand respects per-op isolation (different op untouched)', () => {
     const t = blankTarget();
-    t.tabs = { 5: [{ x: 1, y: 1 }], 7: [{ x: 9, y: 9 }] };
-    const cmd = clearTabsCommand();
+    withOp(t, 1, [{ objectId: 2, t: 0.5 }]);
+    const cmd = toggleTabPlacementCommand(99, { objectId: 2, t: 0.5 }, 0.01);
     cmd.apply(t);
-    expect(t.tabs).toEqual({});
-    cmd.revert(t);
-    expect(t.tabs[5]).toEqual([{ x: 1, y: 1 }]);
-    expect(t.tabs[7]).toEqual([{ x: 9, y: 9 }]);
+    expect(t.operations[0].tabPlacements).toEqual([{ objectId: 2, t: 0.5 }]);
   });
 });
 

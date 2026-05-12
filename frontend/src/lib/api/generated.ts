@@ -701,8 +701,12 @@ export interface components {
              * @description Per-pass step (negative ⇒ down). None = inherit from `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to mean "unset"; the deserializer maps that to None.
              */
             step?: number | null;
+            /** @description How tab positions are sourced for this op (rt1.10). */
+            tab_mode?: components["schemas"]["TabPlacementMode"];
+            /** @description User-placed tabs, anchored geometry-relative as `(object_id, t)`. Honored when `tab_mode` is `Manual` or `Mixed`; `Off` / `Auto` ignore. Each placement may carry per-tab width / height overrides. */
+            tab_placements?: components["schemas"]["TabPlacement"][];
             /**
-             * @description Per-op tabs config. The Project's `tabs` map carries the actual placement points; this controls width / height / type.
+             * @description Per-op tab SHAPE config: width / height / kind (rectangle vs ramp) / ramp angle. Effective tab POSITIONS come from `tab_placements` (manual) and / or `tab_mode` (auto-spaced).
              * @default {
              *       "active": false,
              *       "height": 1,
@@ -888,10 +892,6 @@ export interface components {
             operations: components["schemas"]["Operation"][];
             /** @description Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained. */
             segments: components["schemas"]["Segment"][];
-            /** @description Tab placements keyed by imported-segment index. Same shape as the legacy PipelineRequest.tabs. */
-            tabs?: {
-                [key: string]: components["schemas"]["TabPoint"][];
-            };
             tools: components["schemas"]["ToolEntry"][];
         };
         /** @description One filled region attached to a specific operation. `outer` is the outer boundary; `holes` are the islands the cutter must avoid. Both in project units (typically mm). */
@@ -1019,6 +1019,41 @@ export interface components {
             file: string;
             /** Format: uint32 */
             line: number;
+        };
+        /** @description A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OperationSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms. */
+        TabPlacement: {
+            /**
+             * Format: double
+             * @description Optional per-tab height override (mm). None ⇒ use `OperationParams.tabs.height`.
+             */
+            height_override_mm?: number | null;
+            /** Format: uint32 */
+            object_id: number;
+            /** Format: double */
+            t: number;
+            /**
+             * Format: double
+             * @description Optional per-tab width override (mm). None ⇒ use `OperationParams.tabs.width`.
+             */
+            width_override_mm?: number | null;
+        };
+        /** @description How an op sources tab positions (rt1.10). */
+        TabPlacementMode: {
+            /** @enum {string} */
+            kind: "off";
+        } | {
+            /** Format: uint32 */
+            count: number;
+            /** @enum {string} */
+            kind: "auto";
+        } | {
+            /** @enum {string} */
+            kind: "manual";
+        } | {
+            /** Format: uint32 */
+            auto_count: number;
+            /** @enum {string} */
+            kind: "mixed";
         };
         TabPoint: {
             /** Format: double */

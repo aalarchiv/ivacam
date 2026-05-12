@@ -7,12 +7,9 @@
 //! Estlcum, FreeCAD Path Workbench) so the user's mental model translates
 //! without surprises.
 
-use std::collections::HashMap;
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::cam::offsets::TabPoint;
 use crate::cam::setup::{
     LeadKind, LeadsConfig, MachineConfig, ObjectOrder, TabType, TabsConfig, ToolOffset,
 };
@@ -31,11 +28,6 @@ pub struct Project {
     pub machine: MachineConfig,
     pub tools: Vec<ToolEntry>,
     pub operations: Vec<Operation>,
-
-    /// Tab placements keyed by imported-segment index. Same shape as the
-    /// legacy PipelineRequest.tabs.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub tabs: HashMap<u32, Vec<TabPoint>>,
 
     /// Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must
     /// avoid throughout the entire program — including rapids. The sim
@@ -872,6 +864,52 @@ impl CutDirection {
     }
 }
 
+/// A user-placed tab anchored geometry-relative (rt1.10). The
+/// `object_id` is 1-based to match `OperationSource::Objects::ids`;
+/// `t ∈ [0, 1)` is the arc-length parameter along the chained
+/// object's segments. `cam/tabs.rs::polyline_at_t` resolves the
+/// parameter to a world point at gcode-emission time, so the tab
+/// follows the geometry through transforms.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TabPlacement {
+    pub object_id: u32,
+    pub t: f64,
+    /// Optional per-tab width override (mm). None ⇒ use
+    /// `OperationParams.tabs.width`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width_override_mm: Option<f64>,
+    /// Optional per-tab height override (mm). None ⇒ use
+    /// `OperationParams.tabs.height`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_override_mm: Option<f64>,
+}
+
+/// How an op sources tab positions (rt1.10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TabPlacementMode {
+    /// No tabs emitted. Default — matches the pre-rt1.10 behavior
+    /// of "user must opt in". Distinct from `TabsConfig.active`
+    /// (which is the SHAPE config's active flag).
+    #[default]
+    Off,
+    /// N tabs evenly spaced around each closed source contour. Open
+    /// contours get tabs inset by 0.5/N to avoid endpoint placement.
+    Auto { count: u32 },
+    /// Only user-placed `tab_placements`. Auto-spacing disabled.
+    Manual,
+    /// `Auto { count: auto_count }` ∪ `tab_placements`. v1 makes no
+    /// attempt to dedupe: auto positions ignore manual ones and
+    /// vice versa.
+    Mixed { auto_count: u32 },
+}
+
+impl TabPlacementMode {
+    fn is_default(&self) -> bool {
+        matches!(self, TabPlacementMode::Off)
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct OperationParams {
     /// Final cut depth (negative number — a depth, not a height).
@@ -921,10 +959,20 @@ pub struct OperationParams {
     #[serde(default)]
     pub pocket_insideout: bool,
 
-    /// Per-op tabs config. The Project's `tabs` map carries the actual
-    /// placement points; this controls width / height / type.
+    /// Per-op tab SHAPE config: width / height / kind (rectangle vs
+    /// ramp) / ramp angle. Effective tab POSITIONS come from
+    /// `tab_placements` (manual) and / or `tab_mode` (auto-spaced).
     #[serde(default)]
     pub tabs: TabsConfig,
+    /// How tab positions are sourced for this op (rt1.10).
+    #[serde(default, skip_serializing_if = "TabPlacementMode::is_default")]
+    pub tab_mode: TabPlacementMode,
+    /// User-placed tabs, anchored geometry-relative as
+    /// `(object_id, t)`. Honored when `tab_mode` is `Manual` or
+    /// `Mixed`; `Off` / `Auto` ignore. Each placement may carry
+    /// per-tab width / height overrides.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tab_placements: Vec<TabPlacement>,
 
     /// Lead-in / lead-out shape for this op.
     #[serde(default)]
@@ -1088,6 +1136,8 @@ impl OperationParams {
                 tab_type: TabType::Rectangle,
                 ramp_angle_deg: 30.0,
             },
+            tab_mode: TabPlacementMode::Off,
+            tab_placements: Vec::new(),
             leads: LeadsConfig {
                 r#in: LeadKind::Off,
                 out: LeadKind::Off,
@@ -1126,7 +1176,7 @@ mod tests {
         assert!(p.segments.is_empty());
         assert!(p.tools.is_empty());
         assert!(p.operations.is_empty());
-        assert!(p.tabs.is_empty());
+        assert!(p.fixtures.is_empty());
     }
 
     #[test]

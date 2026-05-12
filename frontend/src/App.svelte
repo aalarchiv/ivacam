@@ -213,7 +213,9 @@
           activePane = '3d';
           break;
         case 'view:toggle_tabs':
-          if (project.imported) project.tabMode = !project.tabMode;
+          // rt1.10: tab-mode is now per-op via OpPropertiesPanel. The
+          // menu item lands the user on the Tabs fieldset of the
+          // selected op (no-op if no op is selected).
           break;
         case 'help:check_update':
           void runUpdateCheck();
@@ -272,7 +274,10 @@
   });
 
   const tabCount = $derived(
-    Object.values(project.tabs).reduce((n, list) => n + list.length, 0),
+    project.operations.reduce(
+      (n, op) => n + (op.tabPlacements?.length ?? 0),
+      0,
+    ),
   );
 
   /// Bumped to `performance.now()` whenever an undo/redo is attempted on
@@ -313,8 +318,7 @@
       }
     }
     if (e.key === 'Escape') {
-      if (project.tabMode) project.tabMode = false;
-      else if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
+      if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
       return;
     }
     // Keyboard shortcut: T = Add Text. Skip when typing in any text input
@@ -503,9 +507,7 @@
     </button>
     <button
       class="tool-toggle"
-      class:active={project.tabMode}
-      onclick={() => (project.tabMode = !project.tabMode)}
-      disabled={!project.imported}
+      disabled={!project.imported || project.selectedOpId == null}
       title={$_('header.tabs_hint')}
     >
       {$_('header.tabs', { values: { count: tabCount } })}
@@ -784,11 +786,6 @@
     border-radius: 4px;
     font-size: 0.78rem;
     cursor: pointer;
-  }
-  .tool-toggle.active {
-    background: var(--tab-marker);
-    color: #1a1a1a;
-    border-color: var(--tab-marker);
   }
   .tool-toggle:disabled {
     opacity: 0.4;

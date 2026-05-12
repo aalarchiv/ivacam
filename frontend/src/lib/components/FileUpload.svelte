@@ -262,21 +262,12 @@
     const params = new URLSearchParams(window.location.search);
     const sample = params.get('sample');
     const gen = params.get('gen');
-    const tabs = params.get('tabs');
     if (sample && gen) {
       await loadSampleWithGenerate(`/samples/${sample}.json`, `/samples/${gen}.json`);
     } else if (sample) {
       await loadSample(`/samples/${sample}.json`);
     }
-    if (tabs) {
-      try {
-        const r = await fetch(`/samples/${tabs}.json`);
-        const data = await r.json();
-        if (data.tabs) project.tabs = data.tabs;
-      } catch (e) {
-        project.setError(`tabs sample: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    }
+    // (legacy ?tabs= sample loader dropped with rt1.10 — tabs are per-op now)
   });
 </script>
 

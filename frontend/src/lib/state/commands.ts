@@ -15,7 +15,7 @@ import type {
   MachineSettings,
   OpEntry,
   StockConfig,
-  Tab,
+  TabPlacement,
   ToolEntry,
 } from './project.svelte';
 import type { ImportResponse, WiacAutoFix } from '../api/types';
@@ -29,7 +29,6 @@ export interface CommandTarget {
   operations: OpEntry[];
   tools: ToolEntry[];
   fixtures: Fixture[];
-  tabs: Record<number, Tab[]>;
   machine: MachineSettings;
   stock: StockConfig;
   settings: AppSettings;
@@ -320,80 +319,47 @@ export function updateFixtureCommand(id: number, patch: Partial<Fixture>): Comma
   };
 }
 
-// ── tabs ─────────────────────────────────────────────────────────────
+// ── tabs (rt1.10) ─────────────────────────────────────────────────────
+//
+// Tab placements are now per-op fields (`op.tabMode`, `op.tabPlacements`).
+// Add / remove / toggle go through `updateOperationCommand` with a new
+// placements array. No bespoke commands needed; the
+// `toggleTabPlacementCommand` helper below stages the array transition
+// as a single undoable history entry.
 
-export function addTabCommand(segmentIdx: number, tab: Tab): Command {
+export function toggleTabPlacementCommand(
+  opId: number,
+  placement: TabPlacement,
+  toleranceT: number,
+): Command {
+  let saved: TabPlacement[] | undefined;
   return {
-    label: 'Add tab',
+    label: 'Toggle tab',
     apply: (s) => {
       const t = s as CommandTarget;
-      const next = { ...t.tabs };
-      next[segmentIdx] = [...(next[segmentIdx] ?? []), { x: tab.x, y: tab.y }];
-      t.tabs = next;
+      const op = t.operations.find((o) => o.id === opId);
+      if (!op) return;
+      saved = op.tabPlacements ? op.tabPlacements.map((p) => ({ ...p })) : [];
+      // Estlcam-style click toggle: within toleranceT of the same
+      // object's existing placement, remove it; else append.
+      const current = saved;
+      const matchIdx = current.findIndex(
+        (p) =>
+          p.objectId === placement.objectId &&
+          Math.min(Math.abs(p.t - placement.t), 1 - Math.abs(p.t - placement.t)) < toleranceT,
+      );
+      const next =
+        matchIdx >= 0
+          ? current.filter((_, i) => i !== matchIdx)
+          : [...current, { ...placement }];
+      op.tabPlacements = next;
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
-      const list = t.tabs[segmentIdx];
-      if (!list || list.length === 0) return;
-      const next = { ...t.tabs };
-      next[segmentIdx] = list.slice(0, -1);
-      if (next[segmentIdx].length === 0) delete next[segmentIdx];
-      t.tabs = next;
-      t.dirty = true;
-    },
-  };
-}
-
-export function removeTabCommand(segmentIdx: number, tabIdx: number): Command {
-  let saved: Tab | undefined;
-  return {
-    label: 'Remove tab',
-    apply: (s) => {
-      const t = s as CommandTarget;
-      const list = t.tabs[segmentIdx];
-      if (!list || tabIdx < 0 || tabIdx >= list.length) return;
-      saved = { ...list[tabIdx] };
-      const next = { ...t.tabs };
-      next[segmentIdx] = list.filter((_, i) => i !== tabIdx);
-      if (next[segmentIdx].length === 0) delete next[segmentIdx];
-      t.tabs = next;
-      t.dirty = true;
-    },
-    revert: (s) => {
-      const t = s as CommandTarget;
-      if (!saved) return;
-      const cur = t.tabs[segmentIdx] ?? [];
-      const restored = [...cur];
-      restored.splice(Math.min(tabIdx, restored.length), 0, { ...saved });
-      const next = { ...t.tabs };
-      next[segmentIdx] = restored;
-      t.tabs = next;
-      t.dirty = true;
-    },
-  };
-}
-
-export function clearTabsCommand(): Command {
-  let saved: Record<number, Tab[]> = {};
-  return {
-    label: 'Clear tabs',
-    apply: (s) => {
-      const t = s as CommandTarget;
-      saved = {};
-      for (const k of Object.keys(t.tabs)) {
-        saved[Number(k)] = t.tabs[Number(k)].map((x) => ({ ...x }));
-      }
-      t.tabs = {};
-      t.dirty = true;
-    },
-    revert: (s) => {
-      const t = s as CommandTarget;
-      const restored: Record<number, Tab[]> = {};
-      for (const k of Object.keys(saved)) {
-        restored[Number(k)] = saved[Number(k)].map((x) => ({ ...x }));
-      }
-      t.tabs = restored;
+      const op = t.operations.find((o) => o.id === opId);
+      if (!op || saved === undefined) return;
+      op.tabPlacements = saved.map((p) => ({ ...p }));
       t.dirty = true;
     },
   };

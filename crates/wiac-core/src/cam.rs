@@ -18,6 +18,7 @@ pub mod inscribed;
 pub mod offsets;
 pub mod setup;
 pub mod source_combine;
+pub mod tabs;
 pub mod thread;
 pub mod trochoidal;
 pub mod vcarve;

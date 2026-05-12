@@ -23,19 +23,17 @@ function isAbsolutePath(p: string): boolean {
 import {
   addFixtureCommand,
   addOperationCommand,
-  addTabCommand,
   addToolCommand,
   appendImportedCommand,
-  clearTabsCommand,
   deleteOperationCommand,
   deleteToolCommand,
   duplicateOperationCommand,
   removeFixtureCommand,
-  removeTabCommand,
   reorderOperationCommand,
   replaceToolsCommand,
   setMachineCommand,
   setStockCommand,
+  toggleTabPlacementCommand,
   updateFixtureCommand,
   updateOperationCommand,
   type CommandTarget,
@@ -188,21 +186,12 @@ class ProjectState {
   toolpathCumLen = $state<Float64Array | null>(null);
   toolpathTotalLen = $state(0.0);
 
-  /// Tab placements per imported segment index. Each tab is a position
-  /// where the cutter lifts to clear the workpiece. The CAM core honors
-  /// these via `setup.tabs.data` once gas.6 lands; until then they are
-  /// purely visual + persisted in .vc-project.json.
-  tabs = $state<Record<number, Tab[]>>({});
-
   /// Project fixtures (clamps, dogs, vise jaws). Threaded into the
   /// sim's collision check so the cutter can't run them over.
   fixtures = $state<Fixture[]>([]);
   /// 2D / 3D selection of the currently-edited fixture (id). Drives
   /// the highlight + the sidebar's edit form.
   selectedFixtureId = $state<number | null>(null);
-
-  /// UI mode for placing tabs by clicking in the 2D canvas.
-  tabMode = $state(false);
 
   /// Stock visualization in the 3D view. `auto` (default) derives the
   /// rectangular extent from the imported bbox plus a small margin and
@@ -425,19 +414,19 @@ class ProjectState {
     this.saveSettings();
   }
 
-  addTab(segmentIdx: number, position: Point2) {
-    this.history.exec(addTabCommand(segmentIdx, { x: position.x, y: position.y }), this.target());
-  }
-
-  removeTab(segmentIdx: number, tabIdx: number) {
-    const list = this.tabs[segmentIdx];
-    if (!list || tabIdx < 0 || tabIdx >= list.length) return;
-    this.history.exec(removeTabCommand(segmentIdx, tabIdx), this.target());
-  }
-
-  clearTabs() {
-    if (Object.keys(this.tabs).length === 0) return;
-    this.history.exec(clearTabsCommand(), this.target());
+  /// rt1.10: click-toggle a tab placement on an op. `toleranceT` is
+  /// the parameter-space distance under which a click on an existing
+  /// nearby tab removes it (Estlcam-style toggle). Single undoable
+  /// history entry per click.
+  toggleTabPlacement(
+    opId: number,
+    placement: { objectId: number; t: number },
+    toleranceT: number,
+  ) {
+    this.history.exec(
+      toggleTabPlacementCommand(opId, placement, toleranceT),
+      this.target(),
+    );
   }
 
   // ── fixtures ─────────────────────────────────────────────────────────
@@ -489,7 +478,6 @@ class ProjectState {
     this.selectedEntities = new Set();
     this.selectedObjects = new Set();
     this.hoverSegment = null;
-    this.tabs = {};
     if (sourcePath !== undefined) this.lastImportPath = sourcePath;
     this.sourceFileStaleNotice = null;
     // Imports cross a project boundary; undoing back across that boundary
@@ -636,7 +624,6 @@ class ProjectState {
       imported: this.imported,
       visibleLayers: [...this.visibleLayers],
       selectedEntities: [...this.selectedEntities],
-      tabs: this.tabs,
       stock: this.stock,
       tools: this.tools,
       machine: this.machine,
@@ -652,7 +639,6 @@ class ProjectState {
     if (file.imported) this.setImported(file.imported, null);
     this.visibleLayers = new Set(file.visibleLayers ?? []);
     this.selectedEntities = new Set(file.selectedEntities ?? []);
-    this.tabs = file.tabs ?? {};
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
     if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
     if (file.machine) this.machine = { ...this.machine, ...file.machine };
@@ -919,11 +905,6 @@ function prettyOpKind(kind: OpKind): string {
   }
 }
 
-export interface Tab {
-  x: number;
-  y: number;
-}
-
 /// Mirrors `wiac_core::project::FixtureKind`. The `shape` discriminator
 /// is the wire-side serde tag; vertex coords for `polygon` are local
 /// (origin-relative) so the fixture can be moved by editing `origin`.
@@ -1110,6 +1091,26 @@ export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal' | 'h
 export type HalfpipeProfile =
   | { kind: 'circular_arc'; radius_mm: number }
   | { kind: 'v_bottom'; included_angle_deg: number };
+
+/// Per-op tab placement mode (rt1.10). Maps to
+/// `wiac_core::project::TabPlacementMode`.
+export type TabPlacementMode =
+  | { kind: 'off' }
+  | { kind: 'auto'; count: number }
+  | { kind: 'manual' }
+  | { kind: 'mixed'; auto_count: number };
+
+/// A user-placed tab anchored geometry-relative (rt1.10). The
+/// `objectId` is 1-based to match `sourceObjects`; `t ∈ [0, 1)` is
+/// the arc-length parameter along the chained object.
+export interface TabPlacement {
+  objectId: number;
+  t: number;
+  /// Optional per-tab width override (mm).
+  widthOverrideMm?: number;
+  /// Optional per-tab height override (mm).
+  heightOverrideMm?: number;
+}
 /// Cut direction for milling. `conventional` is the safer default —
 /// cutter rotation opposes the feed at the contact point so chip starts
 /// thin and grows; works on machines with backlash. `climb` is rotation
@@ -1204,11 +1205,33 @@ export interface OpEntry {
   /// Tab geometry. `tabType=rectangle` (default) is a straight Z lift
   /// over each tab; `tabType=ramp` runs a sloped ramp up to the tab top
   /// at `tabRampAngleDeg` (default 30°), holds the flat top, then ramps
-  /// back down. The actual tab placements live on `project.tabs`; this
-  /// just controls the shape of the cut over each tab. Per-op so a
-  /// user can mix Rectangle pockets with Ramp profiles in one project.
+  /// back down. Per-op so a user can mix Rectangle pockets with Ramp
+  /// profiles in one project. Per-tab POSITIONS come from
+  /// `tabMode` + `tabPlacements` (rt1.10).
   tabType?: 'rectangle' | 'ramp';
   tabRampAngleDeg?: number;
+  /// Tab width (mm) — visible length of each bridge along the cut.
+  /// Defaults to 10mm at the backend.
+  tabWidth?: number;
+  /// Tab height (mm) — Z-clearance the cutter lifts to over each tab.
+  tabHeight?: number;
+  /// Tab activity flag (rt1.10). When `true`, the per-tab positions
+  /// from `tabMode` + `tabPlacements` are honored. Distinct from
+  /// `tabMode === 'off'`: `tabsActive=false` disables ALL tabs for
+  /// this op regardless of mode.
+  tabsActive?: boolean;
+  /// Tab placement mode (rt1.10): how the op sources tab positions.
+  /// - `off`: no tabs (the legacy default; equivalent to
+  ///   `tabsActive=false`).
+  /// - `auto`: N evenly spaced tabs per closed source contour.
+  /// - `manual`: only the user's `tabPlacements` (click-to-toggle on
+  ///   the 2D canvas).
+  /// - `mixed`: union of auto + manual.
+  tabMode?: TabPlacementMode;
+  /// User-placed tabs anchored geometry-relative as
+  /// `(objectId, t)`. Honored when `tabMode` is `manual` or `mixed`.
+  /// Each placement may carry per-tab width / height overrides.
+  tabPlacements?: TabPlacement[];
   /// Per-op feedrate override in mm/min. When set, replaces the tool's
   /// `feedRate` for this op (cutting feed). Useful for finishing passes
   /// or hard materials where you don't want to edit the tool entry.
@@ -1306,7 +1329,6 @@ export interface ProjectFile {
   imported: ImportResponse | null;
   visibleLayers: string[];
   selectedEntities: number[];
-  tabs?: Record<number, Tab[]>;
   stock?: StockConfig;
   tools?: ToolEntry[];
   machine?: MachineSettings;

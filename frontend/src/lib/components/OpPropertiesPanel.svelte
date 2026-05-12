@@ -638,6 +638,106 @@
     {#if op.kind === 'profile' || op.kind === 'pocket'}
       <fieldset>
         <legend>Tabs</legend>
+        <div
+          class="row"
+          title="How tab positions are sourced for this op. Off ignores tabs entirely. Auto evenly spaces N tabs on each closed contour. Manual lets you click on the 2D canvas to place individual tabs. Mixed combines both."
+        >
+          <span>Mode</span>
+          <div class="segmented">
+            {#each ['off', 'auto', 'manual', 'mixed'] as mk (mk)}
+              <button
+                type="button"
+                class:active={(op.tabMode?.kind ?? 'off') === mk}
+                onclick={() => {
+                  if (mk === 'off') {
+                    patch('tabMode', { kind: 'off' });
+                    patch('tabsActive', false);
+                  } else if (mk === 'auto') {
+                    const count =
+                      op.tabMode?.kind === 'auto'
+                        ? op.tabMode.count
+                        : op.tabMode?.kind === 'mixed'
+                        ? op.tabMode.auto_count
+                        : 4;
+                    patch('tabMode', { kind: 'auto', count });
+                    patch('tabsActive', true);
+                  } else if (mk === 'manual') {
+                    patch('tabMode', { kind: 'manual' });
+                    patch('tabsActive', true);
+                  } else {
+                    const auto_count =
+                      op.tabMode?.kind === 'auto'
+                        ? op.tabMode.count
+                        : op.tabMode?.kind === 'mixed'
+                        ? op.tabMode.auto_count
+                        : 4;
+                    patch('tabMode', { kind: 'mixed', auto_count });
+                    patch('tabsActive', true);
+                  }
+                }}
+              >{mk}</button>
+            {/each}
+          </div>
+        </div>
+        {#if op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed'}
+          <label class="row" title="Number of tabs to auto-place evenly around each closed contour.">
+            <span>Count</span>
+            <div class="num-cell">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count}
+                onchange={(e) => {
+                  const n = Math.max(1, parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1);
+                  if (op.tabMode?.kind === 'auto') patch('tabMode', { kind: 'auto', count: n });
+                  else if (op.tabMode?.kind === 'mixed')
+                    patch('tabMode', { kind: 'mixed', auto_count: n });
+                }}
+              />
+            </div>
+          </label>
+        {/if}
+        {#if op.tabMode?.kind === 'manual' || op.tabMode?.kind === 'mixed'}
+          <p class="hint" title="Click on a closed contour in the 2D canvas to place a tab. Click on an existing tab to remove it.">
+            Click the 2D canvas to add or remove tabs.
+            {#if op.tabPlacements && op.tabPlacements.length > 0}
+              ({op.tabPlacements.length} placed)
+            {/if}
+          </p>
+        {/if}
+        <label class="row" title="Width of each bridge along the cut path. Default 10 mm.">
+          <span>Width</span>
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.5"
+              min="0.1"
+              value={op.tabWidth ?? 10}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v) && v > 0) patch('tabWidth', v);
+              }}
+            />
+            <span class="unit">mm</span>
+          </div>
+        </label>
+        <label class="row" title="Z clearance the cutter lifts to over each tab. Default 1 mm.">
+          <span>Height</span>
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.1"
+              min="0.1"
+              value={op.tabHeight ?? 1}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                if (!isNaN(v) && v > 0) patch('tabHeight', v);
+              }}
+            />
+            <span class="unit">mm</span>
+          </div>
+        </label>
         <label class="row" title={$_('op.help.tab_type.' + (op.tabType ?? 'rectangle'))}>
           <span>Type</span>
           <select
@@ -977,7 +1077,7 @@
             {#if op.plunge && op.plunge.kind !== 'helix'}
               <p class="hint warn">Trochoidal will override plunge to Helix.</p>
             {/if}
-            {#if Object.values(project.tabs ?? {}).some((t) => t.length > 0)}
+            {#if (op.tabPlacements && op.tabPlacements.length > 0) || (op.tabMode && op.tabMode.kind !== 'off')}
               <p class="hint warn">Tabs ignored on trochoidal pockets.</p>
             {/if}
           </details>
@@ -1490,6 +1590,33 @@
   .num-cell-pair input {
     flex: 1 1 0;
     min-width: 0;
+  }
+  .segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--bg-elevated);
+  }
+  .segmented button {
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    border-left: 1px solid var(--border);
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    text-transform: capitalize;
+    cursor: pointer;
+  }
+  .segmented button:first-child {
+    border-left: 0;
+  }
+  .segmented button.active {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: var(--text-strong);
+  }
+  .segmented button:hover:not(.active) {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
   .unit {
     font-size: 0.7rem;

@@ -585,7 +585,6 @@ where
                 &project.machine,
                 &resolve_op_segments(op, &project.segments),
                 &project.fixtures,
-                &project.tabs,
                 post_tag,
             ))
         });
@@ -826,19 +825,12 @@ fn build_op_offsets(
     // tool-kind / op-kind mismatches and impossible tool geometry.
     push_tool_fit_kind_warnings(op, project, setup, warnings);
     push_trochoidal_warnings(op, warnings);
-    // Map imported-segment-keyed tabs → owning chain object.
-    let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> = HashMap::new();
-    if !project.tabs.is_empty() {
-        let segment_to_object = build_segment_to_object_map(&project.segments, objects);
-        for (seg_idx, tabs) in &project.tabs {
-            if let Some(&obj_idx) = segment_to_object.get(&(*seg_idx as usize)) {
-                tabs_by_object
-                    .entry(obj_idx)
-                    .or_default()
-                    .extend_from_slice(tabs);
-            }
-        }
-    }
+    // Per-op tab positions (rt1.10): the op's `tab_mode` +
+    // `tab_placements` drive Manual / Auto / Mixed; Off ⇒ no tabs.
+    // Resolves to a (object_idx → Vec<TabPoint>) map the existing
+    // attach_tabs_to_offsets consumes verbatim.
+    let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> =
+        build_op_tabs_by_object(op, objects);
 
     // Pattern repetition (5fz): when the op carries a PatternConfig, expand
     // the source set into N transformed clones BEFORE the per-object loops
@@ -2372,29 +2364,57 @@ fn header_setup_for(project: &Project) -> Setup {
     setup
 }
 
-fn build_segment_to_object_map(
-    segments: &[Segment],
+/// Resolve an op's tab placements + auto-spacing into a per-object
+/// `TabPoint` map for `attach_tabs_to_offsets` (rt1.10). Manual
+/// placements walk `cam/tabs::polyline_at_t`; auto placements use
+/// evenly spaced parameters over each closed source object's chain.
+fn build_op_tabs_by_object(
+    op: &Operation,
     objects: &[VcObject],
-) -> HashMap<usize, usize> {
-    let mut map = HashMap::new();
-    for (obj_idx, obj) in objects.iter().enumerate() {
-        for chain_seg in &obj.segments {
-            for (seg_idx, src) in segments.iter().enumerate() {
-                let same =
-                    approx_pt(src.start, chain_seg.start) && approx_pt(src.end, chain_seg.end);
-                let reverse =
-                    approx_pt(src.start, chain_seg.end) && approx_pt(src.end, chain_seg.start);
-                if same || reverse {
-                    map.entry(seg_idx).or_insert(obj_idx);
+) -> HashMap<usize, Vec<TabPoint>> {
+    use crate::cam::tabs::{auto_tab_ts, polyline_at_t, resolve_tab_placements};
+    use crate::project::TabPlacementMode;
+
+    let mut out: HashMap<usize, Vec<TabPoint>> =
+        match op.params.tab_mode {
+            TabPlacementMode::Off => return HashMap::new(),
+            TabPlacementMode::Manual => {
+                resolve_tab_placements(&op.params.tab_placements, objects, 6)
+            }
+            TabPlacementMode::Auto { .. } | TabPlacementMode::Mixed { .. } => HashMap::new(),
+        };
+    // Auto + Mixed: add evenly-spaced tabs on every selected closed
+    // object.
+    if let TabPlacementMode::Auto { count } | TabPlacementMode::Mixed { auto_count: count } =
+        op.params.tab_mode
+    {
+        if count > 0 {
+            let auto_ts = auto_tab_ts(count, true);
+            let auto_ts_open = auto_tab_ts(count, false);
+            for (idx, obj) in objects.iter().enumerate() {
+                if !op_includes_object(op, obj, idx) {
+                    continue;
+                }
+                let pts = segments_to_points(&obj.segments, 6);
+                if pts.len() < 2 {
+                    continue;
+                }
+                let ts = if obj.closed { &auto_ts } else { &auto_ts_open };
+                for &t in ts {
+                    let (p, _) = polyline_at_t(&pts, t, obj.closed);
+                    out.entry(idx).or_default().push(TabPoint { x: p.x, y: p.y });
                 }
             }
         }
     }
-    map
-}
-
-fn approx_pt(a: Point2, b: Point2) -> bool {
-    (a.x - b.x).abs() < 1e-6 && (a.y - b.y).abs() < 1e-6
+    // For Mixed, also include manual placements (Manual was handled
+    // above; Mixed enters this branch with no manual entries yet).
+    if matches!(op.params.tab_mode, TabPlacementMode::Mixed { .. }) {
+        for (k, v) in resolve_tab_placements(&op.params.tab_placements, objects, 6) {
+            out.entry(k).or_default().extend(v);
+        }
+    }
+    out
 }
 
 /// One pattern instance: translate by (dx, dy) AND rotate by `angle_rad`
@@ -2616,7 +2636,6 @@ mod tests {
             machine: Default::default(),
             tools,
             operations: ops,
-            tabs: Default::default(),
             fixtures: Default::default(),
         }
     }
@@ -2773,7 +2792,6 @@ mod tests {
                     combine: SourceCombine::Auto,
                 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let annulus_project = Project {
@@ -2788,7 +2806,6 @@ mod tests {
                     combine: SourceCombine::Auto,
                 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let baseline = run_pipeline(
@@ -2864,7 +2881,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -2931,7 +2947,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3009,7 +3024,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3113,7 +3127,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3193,7 +3206,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3235,7 +3247,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3330,7 +3341,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3418,7 +3428,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3500,7 +3509,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3566,7 +3574,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3657,13 +3664,17 @@ mod tests {
             angle_deg: 3.0,
             radius_mm: Some(3.0),
         };
-        let mut tabs_map: std::collections::HashMap<u32, Vec<crate::cam::offsets::TabPoint>> =
-            Default::default();
-        // Tab on the bottom edge (segment index 0 of the 100×100
-        // square). The pipeline routes tab points keyed by source
-        // segment index → owning chain object so the tab attaches to
-        // the polyline offset that's actually being cut.
-        tabs_map.insert(0, vec![crate::cam::offsets::TabPoint { x: 50.0, y: -1.5 }]);
+        // rt1.10: tabs are per-op now. Manual placement with a single
+        // tab on the bottom edge (t=0.125 lands at the midpoint of
+        // edge 0 of the square's chained object since the chain runs
+        // a single closed polyline).
+        params.tab_mode = crate::project::TabPlacementMode::Manual;
+        params.tab_placements = vec![crate::project::TabPlacement {
+            object_id: 1,
+            t: 0.125,
+            width_override_mm: None,
+            height_override_mm: None,
+        }];
         let project = Project {
             segments: closed_square_offset(100.0, 0.0, 0.0),
             machine: Default::default(),
@@ -3681,7 +3692,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: tabs_map,
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3751,7 +3761,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3798,7 +3807,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3859,7 +3867,6 @@ mod tests {
                     params,
                     pattern: None,
                 }],
-                tabs: Default::default(),
                 fixtures: Default::default(),
             };
             run_pipeline(
@@ -3906,7 +3913,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -3977,7 +3983,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4037,7 +4042,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4093,7 +4097,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4183,7 +4186,6 @@ mod tests {
                 1,
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4222,7 +4224,6 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4260,7 +4261,6 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4295,7 +4295,6 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4365,7 +4364,6 @@ mod tests {
                 },
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4425,7 +4423,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4467,7 +4464,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4509,7 +4505,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4551,7 +4546,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4617,7 +4611,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![tool],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4663,7 +4656,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![tool],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4705,7 +4697,6 @@ mod tests {
                 1,
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4747,7 +4738,6 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4831,7 +4821,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4878,7 +4867,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4933,7 +4921,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -4960,7 +4947,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5004,7 +4990,6 @@ mod tests {
                 params: params.clone(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp_a = run_pipeline(
@@ -5094,7 +5079,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5204,7 +5188,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5270,7 +5253,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5355,7 +5337,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5385,7 +5366,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![tool],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5435,7 +5415,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5497,7 +5476,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5527,7 +5505,6 @@ mod tests {
                 1,
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5563,7 +5540,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![tool],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5607,7 +5583,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5636,7 +5611,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5665,7 +5639,6 @@ mod tests {
             machine,
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5703,7 +5676,6 @@ mod tests {
             machine,
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5742,7 +5714,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5793,7 +5764,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5842,7 +5812,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5886,7 +5855,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5924,7 +5892,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -5971,7 +5938,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -6008,7 +5974,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -6099,7 +6064,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -6510,7 +6474,6 @@ mod tests {
                 crate::cam::setup::LeadKind::Arc,
                 2.0,
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -6548,7 +6511,6 @@ mod tests {
                 crate::cam::setup::LeadKind::Off,
                 0.0,
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -6591,7 +6553,6 @@ mod tests {
                 crate::cam::setup::LeadKind::Straight,
                 2.0,
             )],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -6669,7 +6630,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let mut spiral_project = cascade_project.clone();
@@ -6742,7 +6702,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let gcode = run_pipeline(
@@ -6820,7 +6779,6 @@ mod tests {
                 },
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let strategies = [
@@ -6891,7 +6849,6 @@ mod tests {
                 machine: Default::default(),
                 tools: vec![endmill(1, 3.0)],
                 operations: vec![profile_op(1, 1, offset)],
-                tabs: Default::default(),
                 fixtures: Default::default(),
             };
             let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
@@ -6964,7 +6921,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -7117,7 +7073,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         for offset in [ToolOffset::Outside, ToolOffset::Inside] {
@@ -7161,7 +7116,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
@@ -7251,7 +7205,6 @@ mod tests {
                 },
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let cut_total = |toolpath: &[preview::ToolpathSegment]| -> f64 {
@@ -7334,7 +7287,6 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -7383,7 +7335,6 @@ mod tests {
                 },
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -7490,7 +7441,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![vbit],
             operations: vec![op],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let resp = run_pipeline(
@@ -7680,7 +7630,6 @@ mod tests {
                 profile_op(2, 1, ToolOffset::Inside),
                 profile_op(3, 1, ToolOffset::On),
             ],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let cancel = CancelToken::new();
@@ -7720,7 +7669,6 @@ mod tests {
             machine: Default::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let cancel = CancelToken::new();
@@ -7787,7 +7735,6 @@ mod tests {
                 },
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         let cancel = CancelToken::new();
@@ -7868,7 +7815,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         clear_pipeline_cache();
@@ -7906,7 +7852,6 @@ mod tests {
             machine: Default::default(),
             tools,
             operations: ops,
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         clear_pipeline_cache();
@@ -7947,7 +7892,6 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            tabs: Default::default(),
             fixtures: Default::default(),
         };
         clear_pipeline_cache();

@@ -28,7 +28,6 @@ function blankCommandTarget(): CommandTarget {
     ],
     tools: [],
     fixtures: [],
-    tabs: {},
     machine: {} as CommandTarget['machine'],
     stock: {} as CommandTarget['stock'],
     settings: {} as CommandTarget['settings'],

@@ -10,6 +10,7 @@
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { HeightfieldDriver, computeFootprint } from '../sim/driver';
+  import { resolveTabPlacementToWorld } from '../cam/tabs';
   import type { SimWarning } from '../api/types';
 
   let host: HTMLDivElement;
@@ -357,7 +358,6 @@
     void project.imported;
     void project.visibleLayers;
     void project.generated;
-    void project.tabs;
     void project.stock;
     void project.operations;
     void project.fixtures;
@@ -959,17 +959,29 @@
       scene.add(tabsGroup);
     }
     tabsGroup.clear();
+    const imp = project.imported;
+    if (!imp) return;
     const color = cssColor('--tab-marker', 0xffd23a);
     const radius = Math.max(
       0.5,
-      ((project.imported?.bbox.max_x ?? 100) - (project.imported?.bbox.min_x ?? 0)) * 0.008,
+      ((imp.bbox.max_x - imp.bbox.min_x) || 100) * 0.008,
     );
     const geom = new THREE.SphereGeometry(radius, 12, 8);
     const mat = new THREE.MeshBasicMaterial({ color });
-    for (const list of Object.values(project.tabs)) {
-      for (const t of list) {
+    // rt1.10: tabs are now per-op (mode + placements). Resolve each
+    // placement's (objectId, t) to a world point via the same
+    // arc-length helper the 2D canvas uses. Auto-spaced tabs would
+    // need the same resolution + density walk; for now render only
+    // manual placements (3D auto-tab rendering is a small follow-up).
+    for (const op of project.operations) {
+      if (!op.tabsActive && op.tabMode?.kind !== 'manual' && op.tabMode?.kind !== 'mixed') {
+        continue;
+      }
+      for (const tp of op.tabPlacements ?? []) {
+        const pt = resolveTabPlacementToWorld(imp, tp);
+        if (!pt) continue;
         const sphere = new THREE.Mesh(geom, mat);
-        sphere.position.set(t.x, t.y, 0);
+        sphere.position.set(pt[0], pt[1], 0);
         tabsGroup.add(sphere);
       }
     }

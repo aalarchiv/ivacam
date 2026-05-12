@@ -33,7 +33,6 @@
 //! every running process so we never serve stale shapes from before
 //! the change.
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
@@ -41,7 +40,6 @@ use std::sync::Mutex;
 use lru::LruCache;
 use seahash::SeaHasher;
 
-use crate::cam::offsets::TabPoint;
 use crate::cam::setup::{
     AxisLimits, LeadKind, LeadsConfig, MachineConfig, MachineMode, ObjectOrder, PlungeStrategy,
     TabType, TabsConfig, ToolOffset, UnitSystem,
@@ -58,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 13;
+pub const PIPELINE_VERSION: u32 = 14;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
 /// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
@@ -143,7 +141,6 @@ pub fn op_cache_key(
     machine: &MachineConfig,
     selected_segments: &[Segment],
     fixtures: &[Fixture],
-    tabs: &HashMap<u32, Vec<TabPoint>>,
     post_processor_tag: u8,
 ) -> OpCacheKey {
     op_cache_key_with_finish(
@@ -153,7 +150,6 @@ pub fn op_cache_key(
         machine,
         selected_segments,
         fixtures,
-        tabs,
         post_processor_tag,
     )
 }
@@ -171,7 +167,6 @@ pub fn op_cache_key_with_finish(
     machine: &MachineConfig,
     selected_segments: &[Segment],
     fixtures: &[Fixture],
-    tabs: &HashMap<u32, Vec<TabPoint>>,
     post_processor_tag: u8,
 ) -> OpCacheKey {
     let mut h = SeaHasher::new();
@@ -195,7 +190,6 @@ pub fn op_cache_key_with_finish(
     for fx in fixtures {
         hash_fixture(fx, &mut h);
     }
-    hash_tabs_map(tabs, &mut h);
     OpCacheKey(h.finish())
 }
 
@@ -596,6 +590,14 @@ fn hash_operation_params<H: Hasher>(p: &OperationParams, h: &mut H) {
     p.pocket_nocontour.hash(h);
     p.pocket_insideout.hash(h);
     hash_tabs(&p.tabs, h);
+    hash_tab_mode(p.tab_mode, h);
+    h.write_usize(p.tab_placements.len());
+    for tp in &p.tab_placements {
+        tp.object_id.hash(h);
+        hash_f64(tp.t, h);
+        hash_opt_f64(tp.width_override_mm, h);
+        hash_opt_f64(tp.height_override_mm, h);
+    }
     hash_leads(&p.leads, h);
     h.write_u8(cut_direction_disc(p.cut_direction));
     h.write_u8(cut_direction_disc(p.finish_cut_direction));
@@ -664,6 +666,22 @@ fn hash_tabs<H: Hasher>(t: &TabsConfig, h: &mut H) {
     hash_f64(t.ramp_angle_deg, h);
 }
 
+fn hash_tab_mode<H: Hasher>(m: crate::project::TabPlacementMode, h: &mut H) {
+    use crate::project::TabPlacementMode;
+    match m {
+        TabPlacementMode::Off => h.write_u8(0),
+        TabPlacementMode::Auto { count } => {
+            h.write_u8(1);
+            count.hash(h);
+        }
+        TabPlacementMode::Manual => h.write_u8(2),
+        TabPlacementMode::Mixed { auto_count } => {
+            h.write_u8(3);
+            auto_count.hash(h);
+        }
+    }
+}
+
 fn hash_leads<H: Hasher>(l: &LeadsConfig, h: &mut H) {
     h.write_u8(lead_kind_disc(l.r#in));
     h.write_u8(lead_kind_disc(l.out));
@@ -680,25 +698,6 @@ fn lead_kind_disc(k: LeadKind) -> u8 {
 }
 
 // ─── tabs map (helper for callers caching the project-level tabs for an op) ───
-
-/// Hash a `HashMap<u32, Vec<TabPoint>>` with sorted keys so HashMap
-/// iteration order doesn't leak into the cache key. Exposed for the
-/// pipeline driver — when an op's source set covers segments that
-/// carry tab placements, those tabs become part of the op's input.
-pub fn hash_tabs_map<H: Hasher>(tabs: &HashMap<u32, Vec<TabPoint>>, h: &mut H) {
-    let mut keys: Vec<u32> = tabs.keys().copied().collect();
-    keys.sort_unstable();
-    h.write_usize(keys.len());
-    for k in keys {
-        k.hash(h);
-        let v = &tabs[&k];
-        h.write_usize(v.len());
-        for tp in v {
-            hash_f64(tp.x, h);
-            hash_f64(tp.y, h);
-        }
-    }
-}
 
 // ─── fixtures ─────────────────────────────────────────────────────────
 
@@ -816,18 +815,17 @@ mod tests {
             &MachineConfig::default(),
             &square(20.0),
             &[],
-            &HashMap::new(),
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x5b09_e7eb_ff7a_4b9c_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x4913_a490_900e_97d4_u64, "got {:#018x}", key.0);
     }
 
     #[test]
     fn same_op_same_key() {
         let segs = square(20.0);
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
+        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
         assert_eq!(k1, k2);
     }
 
@@ -836,8 +834,8 @@ mod tests {
         let segs = square(20.0);
         let mut op2 = profile_op();
         op2.params.depth -= 0.1;
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
-        let k2 = op_cache_key(&op2, &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
+        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k2 = op_cache_key(&op2, &endmill(), &MachineConfig::default(), &segs, &[], 0);
         assert_ne!(k1, k2);
     }
 
@@ -846,8 +844,8 @@ mod tests {
         let segs = square(20.0);
         let mut t2 = endmill();
         t2.diameter = 6.0;
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
-        let k2 = op_cache_key(&profile_op(), &t2, &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
+        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k2 = op_cache_key(&profile_op(), &t2, &MachineConfig::default(), &segs, &[], 0);
         assert_ne!(k1, k2);
     }
 
@@ -855,21 +853,17 @@ mod tests {
     fn segments_change_changes_key() {
         let s1 = square(20.0);
         let s2 = square(25.0);
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &s1, &[], &HashMap::new(), 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &s2, &[], &HashMap::new(), 0);
+        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &s1, &[], 0);
+        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &s2, &[], 0);
         assert_ne!(k1, k2);
     }
 
     #[test]
-    fn tabs_change_changes_key() {
-        let segs = square(20.0);
-        let mut t: HashMap<u32, Vec<TabPoint>> = HashMap::new();
-        t.insert(0u32, vec![TabPoint { x: 5.0, y: 0.0 }]);
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &t, 0);
-        assert_ne!(k1, k2);
-    }
-
+    /// rt1.10 — tabs now live on the OP (`op.params.tab_placements`),
+    /// so the cache-invalidation test exercises that path: bumping
+    /// a tab in op.params changes hash_operation, which changes the
+    /// key. Verified separately by `tab_mode_change_changes_key`
+    /// below.
     #[test]
     fn fixtures_change_changes_key() {
         let segs = square(20.0);
@@ -882,16 +876,16 @@ mod tests {
             z_top: 12.0,
             color: 0xFFA0_50C0,
         }];
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &fx, &HashMap::new(), 0);
+        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &fx, 0);
         assert_ne!(k1, k2);
     }
 
     #[test]
     fn post_processor_tag_changes_key() {
         let segs = square(20.0);
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], &HashMap::new(), 1);
+        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 1);
         assert_ne!(k1, k2);
     }
 
@@ -904,20 +898,20 @@ mod tests {
         let tool = endmill();
         let machine = MachineConfig::default();
         let segs = square(20.0);
-        let real = op_cache_key(&op, &tool, &machine, &segs, &[], &HashMap::new(), 0);
+        let real = op_cache_key(&op, &tool, &machine, &segs, &[], 0);
 
         let mut h = SeaHasher::new();
         (PIPELINE_VERSION + 1).hash(&mut h);
         h.write_u8(0);
         hash_operation(&op, &mut h);
         hash_tool(&tool, &mut h);
+        h.write_u8(0); // no finish tool
         hash_machine(&machine, &mut h);
         h.write_usize(segs.len());
         for s in &segs {
             hash_segment(s, &mut h);
         }
         h.write_usize(0);
-        hash_tabs_map(&HashMap::new(), &mut h);
         let bumped = OpCacheKey(h.finish());
         assert_ne!(real, bumped);
     }
@@ -967,21 +961,15 @@ mod tests {
         assert_eq!(got.offset_count, v.offset_count);
     }
 
+    /// rt1.10: changing op.tab_mode invalidates the cache (tab_mode
+    /// is hashed via hash_operation_params).
     #[test]
-    fn hash_tabs_map_is_order_independent() {
-        let mut a: HashMap<u32, Vec<TabPoint>> = HashMap::new();
-        a.insert(1, vec![TabPoint { x: 1.0, y: 2.0 }]);
-        a.insert(2, vec![TabPoint { x: 3.0, y: 4.0 }]);
-        a.insert(3, vec![TabPoint { x: 5.0, y: 6.0 }]);
-        // Same data, different insertion order.
-        let mut b: HashMap<u32, Vec<TabPoint>> = HashMap::new();
-        b.insert(3, vec![TabPoint { x: 5.0, y: 6.0 }]);
-        b.insert(1, vec![TabPoint { x: 1.0, y: 2.0 }]);
-        b.insert(2, vec![TabPoint { x: 3.0, y: 4.0 }]);
-        let mut ha = SeaHasher::new();
-        let mut hb = SeaHasher::new();
-        hash_tabs_map(&a, &mut ha);
-        hash_tabs_map(&b, &mut hb);
-        assert_eq!(ha.finish(), hb.finish());
+    fn tab_mode_change_changes_key() {
+        let segs = square(20.0);
+        let mut op_b = profile_op();
+        op_b.params.tab_mode = crate::project::TabPlacementMode::Auto { count: 4 };
+        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k2 = op_cache_key(&op_b, &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        assert_ne!(k1, k2);
     }
 }

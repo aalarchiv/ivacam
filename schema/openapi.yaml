@@ -1183,6 +1183,15 @@ components:
           type:
           - number
           - 'null'
+        tab_mode:
+          allOf:
+          - $ref: '#/components/schemas/TabPlacementMode'
+          description: How tab positions are sourced for this op (rt1.10).
+        tab_placements:
+          description: User-placed tabs, anchored geometry-relative as `(object_id, t)`. Honored when `tab_mode` is `Manual` or `Mixed`; `Off` / `Auto` ignore. Each placement may carry per-tab width / height overrides.
+          items:
+            $ref: '#/components/schemas/TabPlacement'
+          type: array
         tabs:
           allOf:
           - $ref: '#/components/schemas/TabsConfig'
@@ -1191,7 +1200,7 @@ components:
             height: 1.0
             tab_type: rectangle
             width: 10.0
-          description: Per-op tabs config. The Project's `tabs` map carries the actual placement points; this controls width / height / type.
+          description: 'Per-op tab SHAPE config: width / height / kind (rectangle vs ramp) / ramp angle. Effective tab POSITIONS come from `tab_placements` (manual) and / or `tab_mode` (auto-spaced).'
         through_depth:
           description: Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
           format: double
@@ -1589,13 +1598,6 @@ components:
           items:
             $ref: '#/components/schemas/Segment'
           type: array
-        tabs:
-          additionalProperties:
-            items:
-              $ref: '#/components/schemas/TabPoint'
-            type: array
-          description: Tab placements keyed by imported-segment index. Same shape as the legacy PipelineRequest.tabs.
-          type: object
         tools:
           items:
             $ref: '#/components/schemas/ToolEntry'
@@ -1914,6 +1916,81 @@ components:
       - file
       - line
       type: object
+    TabPlacement:
+      description: A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OperationSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms.
+      properties:
+        height_override_mm:
+          description: Optional per-tab height override (mm). None ⇒ use `OperationParams.tabs.height`.
+          format: double
+          type:
+          - number
+          - 'null'
+        object_id:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        t:
+          format: double
+          type: number
+        width_override_mm:
+          description: Optional per-tab width override (mm). None ⇒ use `OperationParams.tabs.width`.
+          format: double
+          type:
+          - number
+          - 'null'
+      required:
+      - object_id
+      - t
+      type: object
+    TabPlacementMode:
+      description: How an op sources tab positions (rt1.10).
+      oneOf:
+      - description: No tabs emitted. Default — matches the pre-rt1.10 behavior of "user must opt in". Distinct from `TabsConfig.active` (which is the SHAPE config's active flag).
+        properties:
+          kind:
+            enum:
+            - off
+            type: string
+        required:
+        - kind
+        type: object
+      - description: N tabs evenly spaced around each closed source contour. Open contours get tabs inset by 0.5/N to avoid endpoint placement.
+        properties:
+          count:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          kind:
+            enum:
+            - auto
+            type: string
+        required:
+        - count
+        - kind
+        type: object
+      - description: Only user-placed `tab_placements`. Auto-spacing disabled.
+        properties:
+          kind:
+            enum:
+            - manual
+            type: string
+        required:
+        - kind
+        type: object
+      - description: '`Auto { count: auto_count }` ∪ `tab_placements`. v1 makes no attempt to dedupe: auto positions ignore manual ones and vice versa.'
+        properties:
+          auto_count:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          kind:
+            enum:
+            - mixed
+            type: string
+        required:
+        - auto_count
+        - kind
+        type: object
     TabPoint:
       properties:
         x:

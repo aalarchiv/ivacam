@@ -737,6 +737,26 @@
                       }}
                     />
                   </label>
+                  <label>
+                    <span>Spindle warmup (s)</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      placeholder="1"
+                      value={tool.pause ?? ''}
+                      title="Dwell (seconds) emitted as G4 P<n> after every M3 / M4 so the spindle reaches commanded RPM before the cut starts. Critical on machines without spindle-at-speed feedback. Empty = default (1 s)."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        if (v === '') {
+                          updateField(i, 'pause', undefined);
+                          return;
+                        }
+                        const n = parseFloat(v);
+                        updateField(i, 'pause', isNaN(n) || n < 0 ? undefined : n);
+                      }}
+                    />
+                  </label>
                 </div>
                 <div class="holder-row pass-overrides">
                   <span class="holder-label" title="Automatic chip-thinning (rt1.25 / Estlcam Wirbeln). When checked, Pocket ops using this tool clamp the cascade step down to tool_radius/2 (or the user-set Step) — keeps the cutter from overloading on hard materials. Set the Step value to override the default half-radius rule.">Chip-thinning (Estlcam: Wirbeln)</span>

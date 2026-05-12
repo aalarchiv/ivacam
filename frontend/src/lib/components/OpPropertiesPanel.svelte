@@ -1366,14 +1366,15 @@
           </label>
           <label
             class="row"
-            title="When on, run a refinement pass that re-cuts only the points whose first pass fell short of the geometric target depth. Off by default."
+            title="Planned for a future release: re-cut only the points whose first pass fell short of the geometric target depth. The control is disabled until the refinement pass ships — the flag is wire-only today, never inspected by the V-Carve emitter."
           >
             <span>Refine pass</span>
             <input
               type="checkbox"
-              checked={op.multiPassRefine ?? false}
-              onchange={(e) => patch('multiPassRefine', (e.currentTarget as HTMLInputElement).checked)}
+              checked={false}
+              disabled
             />
+            <span class="hint" style="margin-left:0.5rem">not yet implemented</span>
           </label>
         </details>
       </fieldset>

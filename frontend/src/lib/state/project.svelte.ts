@@ -1099,6 +1099,11 @@ export interface ToolEntry {
   /// T-slot cutter neck length (rt1.28). Honored only when
   /// kind === 't_slot'.
   tslotNeckLengthMm?: number;
+  /// Spindle warmup pause (seconds). After each spindle_cw / spindle_ccw
+  /// the post inserts a G4 P<pause> dwell so the spindle reaches
+  /// commanded RPM before the cut starts. Critical for hand-controllers
+  /// without spindle-at-speed feedback. Default 1.
+  pause?: number;
   /// Wirbeln (rt1.25): per-tool automatic chip-thinning flag. When
   /// true, Pocket ops using this tool clamp their cascade step to
   /// `wirbelnStepoverMm ?? tool_radius / 2` — bounds radial

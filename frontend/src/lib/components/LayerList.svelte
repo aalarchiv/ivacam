@@ -87,10 +87,13 @@
           {/each}
         </ul>
       {:else}
-        <div class="empty-hint">
-          <p>No file loaded.</p>
+        <div class="empty-card">
+          <p class="empty-title">No drawing yet</p>
+          <p class="empty-sub">Import a DXF or SVG to see its layers here.</p>
           {#if onOpenFileClick}
-            <button class="link" type="button" onclick={onOpenFileClick}>Open a DXF or SVG…</button>
+            <button class="primary-cta" type="button" onclick={onOpenFileClick}>
+              + Open file
+            </button>
           {/if}
         </div>
       {/if}
@@ -191,28 +194,44 @@
     color: var(--text-faint);
     font-size: 0.72rem;
   }
-  .empty-hint {
+  /* Empty-state card matches OperationsList's pattern for visual
+     consistency across the sidebar (audit 0ki0). */
+  .empty-card {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
-    padding: 0.3rem 0;
+    align-items: stretch;
+    gap: 0.35rem;
+    padding: 0.6rem;
+    margin: 0.4rem 0;
+    border: 1px dashed var(--border);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel));
+    text-align: center;
   }
-  .empty-hint p {
+  .empty-title {
     margin: 0;
-    color: var(--text-faint);
+    color: var(--text-strong);
     font-size: 0.82rem;
+    font-weight: 600;
   }
-  .link {
-    background: transparent;
+  .empty-sub {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+  .primary-cta {
+    margin-top: 0.3rem;
+    background: var(--accent);
+    color: #fff;
     border: 0;
-    padding: 0;
-    color: var(--accent-strong);
-    text-decoration: underline;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    font-weight: 600;
     cursor: pointer;
-    font-size: 0.8rem;
   }
-  .link:hover {
-    color: var(--accent);
+  .primary-cta:hover {
+    background: var(--accent-strong);
   }
 </style>

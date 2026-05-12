@@ -23,6 +23,11 @@ export interface PreviewTokenCtx {
   spindle: number;
   opName: string;
   projectName: string;
+  /// Full multi-line tool-library listing (one tool per line), the
+  /// same shape Rust's `TokenCtx.tools_listing` produces. Callers
+  /// feed `project.tools` in here for an accurate preview of the
+  /// `<tools>` token; the default falls back to a single sample row.
+  toolsListing: string;
 }
 
 const DEFAULT_PREVIEW_CTX: PreviewTokenCtx = {
@@ -35,6 +40,7 @@ const DEFAULT_PREVIEW_CTX: PreviewTokenCtx = {
   spindle: 18000,
   opName: 'Profile (preview)',
   projectName: 'preview',
+  toolsListing: 'T1 (3mm endmill) ⌀3.000',
 };
 
 /// Drop-in TS port of `post_profile::substitute`. Case-insensitive,
@@ -50,7 +56,7 @@ export function substitute(template: string, ctx: PreviewTokenCtx): string {
     ['<s>', String(ctx.spindle)],
     ['<op>', ctx.opName],
     ['<project>', ctx.projectName],
-    ['<tools>', `T${ctx.toolNumber} (${ctx.toolName})`],
+    ['<tools>', ctx.toolsListing],
     ['<nl>', '\n'],
   ];
   let out = template;

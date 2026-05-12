@@ -10,6 +10,7 @@
   /// receives a fully formed `PostProfile | undefined`.
   import type { PostProfile, AxesConfig, AxisFormat } from '../state/project.svelte';
   import { previewGcode, AXIS_DEFAULTS } from '../cam/post-profile-preview';
+  import { project } from '../state/project.svelte';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -38,7 +39,17 @@
     }
   });
 
-  let preview = $derived(previewGcode(draft));
+  // Feed the real project tool library into the preview so the
+  // `<tools>` token renders the actual multi-line listing the
+  // generated gcode will carry (was: a single placeholder line).
+  let toolsListing = $derived(
+    project.tools
+      .map((t) => `T${t.id} (${t.name}) ⌀${t.diameter.toFixed(3)}`)
+      .join('\n'),
+  );
+  let preview = $derived(
+    previewGcode(draft, toolsListing ? { toolsListing } : {}),
+  );
 
   function defaultAxesConfig(): AxesConfig {
     const coord = (name: string): AxisFormat => ({
@@ -387,7 +398,7 @@
       <div class="pp-preview">
         <div class="preview-head">
           Live preview
-          <span class="preview-sub">representative program · re-renders on edit</span>
+          <span class="preview-sub">synthetic 2-pass toolpath: header → toolchange → move + plunge + arc + retract → footer · re-renders on every edit</span>
         </div>
         <pre class="preview-pane">{preview}</pre>
       </div>

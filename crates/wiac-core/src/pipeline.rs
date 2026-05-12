@@ -2214,7 +2214,9 @@ fn synthesize_op_setup(
         name: tool.name.clone(),
         diameter: tool.diameter,
         speed: rough_speed,
-        pause: 1,
+        // Per-tool spindle-warmup pause (seconds) flows into the
+        // post's G4 P<n> dwell after each M3 / M4.
+        pause: tool.pause,
         mist: matches!(tool.coolant, crate::project::Coolant::Mist),
         flood: matches!(tool.coolant, crate::project::Coolant::Flood),
         dragoff: tool.dragoff,

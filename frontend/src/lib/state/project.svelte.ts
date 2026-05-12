@@ -1093,7 +1093,14 @@ export interface MachineSettings {
   plotModeZ?: boolean;
 }
 
-export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal';
+export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal' | 'halfpipe';
+
+/// Halfpipe cross-section profile (rt1.19). `circular_arc` for a
+/// ball-bottom slot with the given radius; `v_bottom` for a V-bottom
+/// slot with the given included angle (equivalent to V-Carve).
+export type HalfpipeProfile =
+  | { kind: 'circular_arc'; radius_mm: number }
+  | { kind: 'v_bottom'; included_angle_deg: number };
 /// Cut direction for milling. `conventional` is the safer default —
 /// cutter rotation opposes the feed at the contact point so chip starts
 /// thin and grows; works on machines with backlash. `climb` is rotation
@@ -1181,6 +1188,10 @@ export interface OpEntry {
   engagementAngleDeg?: number;
   /// Trochoidal loop radius as a fraction of tool radius. Default 0.6.
   loopRadiusFactor?: number;
+  /// Halfpipe cross-section profile (rt1.19). Honored when
+  /// pocketStrategy === 'halfpipe'. Default
+  /// `{ kind: 'circular_arc', radius_mm: 5 }`.
+  halfpipeProfile?: HalfpipeProfile;
   /// Tab geometry. `tabType=rectangle` (default) is a straight Z lift
   /// over each tab; `tabType=ramp` runs a sloped ramp up to the tab top
   /// at `tabRampAngleDeg` (default 30°), holds the flat top, then ramps

@@ -103,7 +103,13 @@ type WirePocketStrategy =
   | 'cascade'
   | 'zigzag'
   | 'spiral'
-  | { kind: 'trochoidal'; engagement_angle_deg: number; loop_radius_factor: number };
+  | { kind: 'trochoidal'; engagement_angle_deg: number; loop_radius_factor: number }
+  | {
+      kind: 'halfpipe';
+      profile:
+        | { kind: 'circular_arc'; radius_mm: number }
+        | { kind: 'v_bottom'; included_angle_deg: number };
+    };
 
 type WireOpKind =
   | { type: 'profile'; offset: 'outside' | 'inside' | 'on' | 'none' }
@@ -302,6 +308,16 @@ function buildOpKind(op: OpEntry): WireOpKind {
             kind: 'trochoidal',
             engagement_angle_deg: op.engagementAngleDeg ?? 30,
             loop_radius_factor: op.loopRadiusFactor ?? 0.6,
+          },
+        };
+      }
+      if (strategy === 'halfpipe') {
+        const profile = op.halfpipeProfile ?? { kind: 'circular_arc' as const, radius_mm: 5 };
+        return {
+          type: 'pocket',
+          strategy: {
+            kind: 'halfpipe',
+            profile,
           },
         };
       }

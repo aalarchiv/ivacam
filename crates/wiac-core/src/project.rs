@@ -559,6 +559,30 @@ pub enum PocketStrategy {
         engagement_angle_deg: f64,
         loop_radius_factor: f64,
     },
+    /// Halfpipe (rt1.19 / Estlcam _PK::Halfpipe): slot machining where
+    /// the toolpath walks the region's MEDIAL AXIS at varying Z so the
+    /// cut floor matches the configured profile. The slot's width at
+    /// each medial-axis point (= 2*inscribed-circle radius) drives the
+    /// depth via `profile`. Right strategy for drainage channels,
+    /// decorative grooves, water-stop seals, mortise-prep for
+    /// round-bottomed inlays.
+    Halfpipe { profile: HalfpipeProfile },
+}
+
+/// Half-pipe slot cross-section (rt1.19).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HalfpipeProfile {
+    /// Circular arc cross-section of `radius_mm`. At a medial-axis
+    /// point with inscribed-circle radius `r`, depth =
+    /// `-(R - sqrt(R² - r²))`. When `r > R`, the slot is wider than
+    /// the desired pipe — depth caps at `-R` (the deepest point of a
+    /// circle of radius `R`). Use with a ball-nose cutter.
+    CircularArc { radius_mm: f64 },
+    /// V-bottom cross-section: depth = `-r / tan(half_angle)` (i.e.
+    /// the V-Carve formula). Use with a V-bit. Equivalent to running
+    /// V-Carve at full depth — provided here for completeness and so
+    /// the strategy picker stays uniform.
+    VBottom { included_angle_deg: f64 },
 }
 
 impl Default for PocketStrategy {
@@ -584,6 +608,31 @@ impl Serialize for PocketStrategy {
                 s.serialize_field("loop_radius_factor", &loop_radius_factor)?;
                 s.end()
             }
+            Self::Halfpipe { profile } => {
+                let mut s = ser.serialize_struct("Halfpipe", 2)?;
+                s.serialize_field("kind", "halfpipe")?;
+                match profile {
+                    HalfpipeProfile::CircularArc { radius_mm } => {
+                        s.serialize_field(
+                            "profile",
+                            &serde_json::json!({
+                                "kind": "circular_arc",
+                                "radius_mm": radius_mm,
+                            }),
+                        )?;
+                    }
+                    HalfpipeProfile::VBottom { included_angle_deg } => {
+                        s.serialize_field(
+                            "profile",
+                            &serde_json::json!({
+                                "kind": "v_bottom",
+                                "included_angle_deg": included_angle_deg,
+                            }),
+                        )?;
+                    }
+                }
+                s.end()
+            }
         }
     }
 }
@@ -607,6 +656,33 @@ impl JsonSchema for PocketStrategy {
                         "engagement_angle_deg": { "type": "number", "format": "double" },
                         "loop_radius_factor": { "type": "number", "format": "double" }
                     }
+                },
+                {
+                    "type": "object",
+                    "required": ["kind", "profile"],
+                    "properties": {
+                        "kind": { "type": "string", "enum": ["halfpipe"] },
+                        "profile": {
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "required": ["kind", "radius_mm"],
+                                    "properties": {
+                                        "kind": { "type": "string", "enum": ["circular_arc"] },
+                                        "radius_mm": { "type": "number", "format": "double" }
+                                    }
+                                },
+                                {
+                                    "type": "object",
+                                    "required": ["kind", "included_angle_deg"],
+                                    "properties": {
+                                        "kind": { "type": "string", "enum": ["v_bottom"] },
+                                        "included_angle_deg": { "type": "number", "format": "double" }
+                                    }
+                                }
+                            ]
+                        }
+                    }
                 }
             ]
         });
@@ -617,6 +693,14 @@ impl JsonSchema for PocketStrategy {
 impl<'de> Deserialize<'de> for PocketStrategy {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
+        struct ProfileObj {
+            kind: String,
+            #[serde(default)]
+            radius_mm: Option<f64>,
+            #[serde(default)]
+            included_angle_deg: Option<f64>,
+        }
+        #[derive(Deserialize)]
         #[serde(untagged)]
         enum Repr {
             Str(String),
@@ -626,6 +710,8 @@ impl<'de> Deserialize<'de> for PocketStrategy {
                 engagement_angle_deg: Option<f64>,
                 #[serde(default)]
                 loop_radius_factor: Option<f64>,
+                #[serde(default)]
+                profile: Option<ProfileObj>,
             },
         }
         match Repr::deserialize(de)? {
@@ -635,13 +721,14 @@ impl<'de> Deserialize<'de> for PocketStrategy {
                 "spiral" => Ok(Self::Spiral),
                 other => Err(serde::de::Error::unknown_variant(
                     other,
-                    &["cascade", "zigzag", "spiral", "trochoidal"],
+                    &["cascade", "zigzag", "spiral", "trochoidal", "halfpipe"],
                 )),
             },
             Repr::Obj {
                 kind,
                 engagement_angle_deg,
                 loop_radius_factor,
+                profile,
             } => match kind.as_str() {
                 "cascade" => Ok(Self::Cascade),
                 "zigzag" => Ok(Self::Zigzag),
@@ -650,9 +737,29 @@ impl<'de> Deserialize<'de> for PocketStrategy {
                     engagement_angle_deg: engagement_angle_deg.unwrap_or(30.0),
                     loop_radius_factor: loop_radius_factor.unwrap_or(0.6),
                 }),
+                "halfpipe" => {
+                    let p = profile.ok_or_else(|| {
+                        serde::de::Error::missing_field("profile (for halfpipe)")
+                    })?;
+                    let profile = match p.kind.as_str() {
+                        "circular_arc" => HalfpipeProfile::CircularArc {
+                            radius_mm: p.radius_mm.unwrap_or(5.0),
+                        },
+                        "v_bottom" => HalfpipeProfile::VBottom {
+                            included_angle_deg: p.included_angle_deg.unwrap_or(60.0),
+                        },
+                        other => {
+                            return Err(serde::de::Error::unknown_variant(
+                                other,
+                                &["circular_arc", "v_bottom"],
+                            ));
+                        }
+                    };
+                    Ok(Self::Halfpipe { profile })
+                }
                 other => Err(serde::de::Error::unknown_variant(
                     other,
-                    &["cascade", "zigzag", "spiral", "trochoidal"],
+                    &["cascade", "zigzag", "spiral", "trochoidal", "halfpipe"],
                 )),
             },
         }

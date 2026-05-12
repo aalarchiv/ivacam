@@ -847,6 +847,9 @@
                 if (op?.engagementAngleDeg === undefined) patches.engagementAngleDeg = 30;
                 if (op?.loopRadiusFactor === undefined) patches.loopRadiusFactor = 0.6;
               }
+              if (v === 'halfpipe' && op?.halfpipeProfile === undefined) {
+                patches.halfpipeProfile = { kind: 'circular_arc', radius_mm: 5 };
+              }
               if (op) project.updateOperation(op.id, patches);
             }}
           >
@@ -854,8 +857,71 @@
             <option value="zigzag">zigzag (raster fill)</option>
             <option value="spiral">spiral</option>
             <option value="trochoidal">Trochoidal (load-limiting)</option>
+            <option value="halfpipe">Halfpipe (slot, profiled floor)</option>
           </select>
         </label>
+        {#if op.pocketStrategy === 'halfpipe'}
+          <details class="subsection" open>
+            <summary>Halfpipe</summary>
+            <p class="hint" title="Halfpipe walks the slot's medial axis at varying Z so the cut floor matches the chosen profile. Tool kind: ball-nose for circular_arc, V-bit for v_bottom.">
+              Slot floor profile.
+            </p>
+            <label class="row" title="Pipe profile: circular_arc gives a ball-bottom slot; v_bottom matches V-Carve.">
+              <span>Profile</span>
+              <select
+                value={op.halfpipeProfile?.kind ?? 'circular_arc'}
+                onchange={(e) => {
+                  const v = (e.currentTarget as HTMLSelectElement).value;
+                  if (v === 'circular_arc') {
+                    patch('halfpipeProfile', { kind: 'circular_arc', radius_mm: op.halfpipeProfile?.kind === 'circular_arc' ? op.halfpipeProfile.radius_mm : 5 });
+                  } else if (v === 'v_bottom') {
+                    patch('halfpipeProfile', { kind: 'v_bottom', included_angle_deg: op.halfpipeProfile?.kind === 'v_bottom' ? op.halfpipeProfile.included_angle_deg : 60 });
+                  }
+                }}
+              >
+                <option value="circular_arc">circular arc (ball-bottom)</option>
+                <option value="v_bottom">V-bottom</option>
+              </select>
+            </label>
+            {#if op.halfpipeProfile?.kind === 'circular_arc'}
+              <label class="row" title="Pipe radius in mm. Match this to the ball-nose cutter's radius for a true half-pipe.">
+                <span>Radius</span>
+                <div class="num-cell">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    value={op.halfpipeProfile.radius_mm}
+                    onchange={(e) => {
+                      const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                      if (!isNaN(v) && v > 0) patch('halfpipeProfile', { kind: 'circular_arc', radius_mm: v });
+                    }}
+                  />
+                  <span class="unit">mm</span>
+                </div>
+              </label>
+            {/if}
+            {#if op.halfpipeProfile?.kind === 'v_bottom'}
+              <label class="row" title="V-bit included angle in degrees. Same semantics as the V-Carve tip angle.">
+                <span>Included angle</span>
+                <div class="num-cell">
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="179"
+                    value={op.halfpipeProfile.included_angle_deg}
+                    onchange={(e) => {
+                      const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                      if (!isNaN(v) && v > 0) patch('halfpipeProfile', { kind: 'v_bottom', included_angle_deg: v });
+                    }}
+                  />
+                  <span class="unit">°</span>
+                </div>
+              </label>
+            {/if}
+          </details>
+        {/if}
         {#if op.pocketStrategy === 'trochoidal'}
           <details class="subsection" open>
             <summary>{$_('op.section.trochoidal')}</summary>

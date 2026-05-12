@@ -1457,6 +1457,41 @@ components:
         - kind
         - loop_radius_factor
         type: object
+      - properties:
+          kind:
+            enum:
+            - halfpipe
+            type: string
+          profile:
+            oneOf:
+            - properties:
+                kind:
+                  enum:
+                  - circular_arc
+                  type: string
+                radius_mm:
+                  format: double
+                  type: number
+              required:
+              - kind
+              - radius_mm
+              type: object
+            - properties:
+                included_angle_deg:
+                  format: double
+                  type: number
+                kind:
+                  enum:
+                  - v_bottom
+                  type: string
+              required:
+              - included_angle_deg
+              - kind
+              type: object
+        required:
+        - kind
+        - profile
+        type: object
     Point2:
       properties:
         x:

@@ -826,6 +826,20 @@ export interface components {
             kind: "trochoidal";
             /** Format: double */
             loop_radius_factor: number;
+        } | {
+            /** @enum {string} */
+            kind: "halfpipe";
+            profile: {
+                /** @enum {string} */
+                kind: "circular_arc";
+                /** Format: double */
+                radius_mm: number;
+            } | {
+                /** Format: double */
+                included_angle_deg: number;
+                /** @enum {string} */
+                kind: "v_bottom";
+            };
         };
         Point2: {
             /** Format: double */

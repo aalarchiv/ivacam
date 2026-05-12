@@ -13,6 +13,7 @@ use crate::math;
 
 pub mod chaining;
 pub mod chamfer;
+pub mod halfpipe;
 pub mod inscribed;
 pub mod offsets;
 pub mod setup;

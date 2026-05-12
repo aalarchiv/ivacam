@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 11;
+pub const PIPELINE_VERSION: u32 = 12;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
 /// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
@@ -453,6 +453,7 @@ fn tool_offset_disc(o: ToolOffset) -> u8 {
 }
 
 fn hash_pocket_strategy<H: Hasher>(s: PocketStrategy, h: &mut H) {
+    use crate::project::HalfpipeProfile;
     match s {
         PocketStrategy::Cascade => h.write_u8(0),
         PocketStrategy::Zigzag => h.write_u8(1),
@@ -464,6 +465,19 @@ fn hash_pocket_strategy<H: Hasher>(s: PocketStrategy, h: &mut H) {
             h.write_u8(3);
             hash_f64(engagement_angle_deg, h);
             hash_f64(loop_radius_factor, h);
+        }
+        PocketStrategy::Halfpipe { profile } => {
+            h.write_u8(4);
+            match profile {
+                HalfpipeProfile::CircularArc { radius_mm } => {
+                    h.write_u8(0);
+                    hash_f64(radius_mm, h);
+                }
+                HalfpipeProfile::VBottom { included_angle_deg } => {
+                    h.write_u8(1);
+                    hash_f64(included_angle_deg, h);
+                }
+            }
         }
     }
 }
@@ -802,7 +816,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0xa474_55d5_6d42_f2df_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x7e03_c831_0205_243a_u64, "got {:#018x}", key.0);
     }
 
     #[test]

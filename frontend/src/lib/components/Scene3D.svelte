@@ -10,7 +10,12 @@
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { HeightfieldDriver, computeFootprint } from '../sim/driver';
-  import { resolveTabPlacementToWorld } from '../cam/tabs';
+  import {
+    autoTabTs,
+    buildObjectPolylines,
+    polylineAtT,
+    resolveTabPlacementToWorld,
+  } from '../cam/tabs';
   import type { SimWarning } from '../api/types';
 
   let host: HTMLDivElement;
@@ -968,23 +973,66 @@
     );
     const geom = new THREE.SphereGeometry(radius, 12, 8);
     const mat = new THREE.MeshBasicMaterial({ color });
-    // rt1.10: tabs are now per-op (mode + placements). Resolve each
-    // placement's (objectId, t) to a world point via the same
-    // arc-length helper the 2D canvas uses. Auto-spaced tabs would
-    // need the same resolution + density walk; for now render only
-    // manual placements (3D auto-tab rendering is a small follow-up).
+    // rt1.10 + hr5: tabs are per-op. Manual placements get resolved
+    // directly via (objectId, t); Auto / Mixed modes additionally
+    // walk every object the op covers and emit auto-spaced t values
+    // there. Same arc-length math as the 2D canvas + backend.
+    const objects = buildObjectPolylines(imp);
     for (const op of project.operations) {
-      if (!op.tabsActive && op.tabMode?.kind !== 'manual' && op.tabMode?.kind !== 'mixed') {
-        continue;
+      const mode = op.tabMode;
+      if (!mode || mode.kind === 'off') continue;
+      // Manual placements (Manual + Mixed).
+      if (mode.kind === 'manual' || mode.kind === 'mixed') {
+        for (const tp of op.tabPlacements ?? []) {
+          const pt = resolveTabPlacementToWorld(imp, tp);
+          if (!pt) continue;
+          const sphere = new THREE.Mesh(geom, mat);
+          sphere.position.set(pt[0], pt[1], 0);
+          tabsGroup.add(sphere);
+        }
       }
-      for (const tp of op.tabPlacements ?? []) {
-        const pt = resolveTabPlacementToWorld(imp, tp);
-        if (!pt) continue;
-        const sphere = new THREE.Mesh(geom, mat);
-        sphere.position.set(pt[0], pt[1], 0);
-        tabsGroup.add(sphere);
+      // Auto-spaced placements (Auto + Mixed).
+      if (mode.kind === 'auto' || mode.kind === 'mixed') {
+        const count = mode.kind === 'auto' ? mode.count : mode.auto_count;
+        if (count <= 0) continue;
+        for (const obj of objects) {
+          if (!opIncludesObject(op, obj.objectId, imp)) continue;
+          const ts = autoTabTs(count, obj.closed);
+          for (const t of ts) {
+            const { point } = polylineAtT(obj.pts, t, obj.closed);
+            const sphere = new THREE.Mesh(geom, mat);
+            sphere.position.set(point.x, point.y, 0);
+            tabsGroup.add(sphere);
+          }
+        }
       }
     }
+  }
+
+  /// Mirror of `wiac_core::pipeline::op_includes_object`. Tells us
+  /// whether an op's source filter (All / Layers / Objects) selects
+  /// the given 1-based object id, so the 3D scene's auto-tab walk
+  /// honors the same rules as the backend.
+  function opIncludesObject(
+    op: { sourceLayers: string[] | null; sourceObjects?: number[] },
+    objectId: number,
+    imp: import('../api/types').ImportResponse,
+  ): boolean {
+    if (op.sourceObjects && op.sourceObjects.length > 0) {
+      return op.sourceObjects.includes(objectId);
+    }
+    if (op.sourceLayers && op.sourceLayers.length > 0) {
+      // Look up this object's layer via the first segment that maps
+      // to it (objects[] is per-segment; layers come from segments[]).
+      for (let i = 0; i < (imp.objects?.length ?? 0); i++) {
+        if (imp.objects?.[i] === objectId) {
+          const layer = imp.segments[i]?.layer ?? '';
+          return op.sourceLayers.includes(layer);
+        }
+      }
+      return false;
+    }
+    return true;
   }
 
   /// Tool-tip cone: a small inverted cone whose apex sits at the current

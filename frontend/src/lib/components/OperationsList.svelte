@@ -169,7 +169,20 @@
   }
 
   function selectOp(id: number) {
-    project.selectedOpId = project.selectedOpId === id ? null : id;
+    const wasSelected = project.selectedOpId === id;
+    project.selectedOpId = wasSelected ? null : id;
+    // Scroll the newly-selected row into view so the expanded
+    // OpPropertiesPanel (which grows the row by 600+ px) doesn't
+    // shove the following rows + "+ New group" button off-screen.
+    if (!wasSelected) {
+      // Wait one tick so the props panel has been rendered.
+      queueMicrotask(() => {
+        const row = document.querySelector(
+          `[data-op-row-id="${id}"]`,
+        ) as HTMLElement | null;
+        row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    }
   }
 
   function pick(kind: PickerKind) {
@@ -397,7 +410,7 @@
                   {@const status = statusFor(op)}
                   {@const selected = project.selectedOpId === op.id}
                   {@const dragOver = dragOverId === op.id}
-                  <li class:selected class:drag-over={dragOver}>
+                  <li class:selected class:drag-over={dragOver} data-op-row-id={op.id}>
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <div
                       class="row"

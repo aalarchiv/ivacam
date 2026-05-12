@@ -67,13 +67,15 @@ pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     if arcs.is_empty() {
         return FitOutput::Lines(points.to_vec());
     }
-    // Last arc must end on the run's final point; partial coverage
-    // (arc + line tail) would force the caller to mix the two encodings
-    // and isn't worth the complexity in v1. Fall back to Lines instead.
+    // Last arc must end on the run's final point. Allow up to the
+    // same tolerance the fit itself uses — the prior 1e-9 threshold
+    // here was inconsistent with the fit tolerance and forced
+    // perfectly-fitted chains off by 1e-8 to fall back to all-Lines,
+    // wiping out the arc-fit optimization for slightly-noisy input.
     let last_arc_end = arcs.last().map(|a| a.end);
     let last_pt = points.last().copied();
     match (last_arc_end, last_pt) {
-        (Some(a), Some(p)) if (a.x - p.x).hypot(a.y - p.y) < 1e-9 => FitOutput::Arcs(arcs),
+        (Some(a), Some(p)) if (a.x - p.x).hypot(a.y - p.y) <= tolerance_mm => FitOutput::Arcs(arcs),
         _ => FitOutput::Lines(points.to_vec()),
     }
 }
@@ -109,9 +111,10 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
         let next = points[j];
         // Refit through the first, middle, and new endpoint of the
         // growing run so the circle stays representative of the full
-        // span. This is the standard "fit by three witnesses" used in
-        // production polyline simplifiers.
-        let mid = points[(j) / 2];
+        // span. `points` here is already the run-local slice (the
+        // caller rebases via `&points[start..]`) so `j / 2` indexes
+        // the geometric middle of the current candidate run.
+        let mid = points[j / 2];
         let new_circle = circumcircle(p0, mid, next).or(Some((current_center, current_radius)));
         let Some((nc, nr)) = new_circle else {
             break;

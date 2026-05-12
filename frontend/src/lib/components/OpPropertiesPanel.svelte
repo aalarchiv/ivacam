@@ -121,6 +121,12 @@
       helixPreviewLoading = false;
       return;
     }
+    // Capture everything we need at effect entry — once the effect
+    // body returns, the async callbacks below run outside any
+    // reactive scope and must not re-read `op` (it could be null by
+    // then). The id captured here is what we'll compare against in
+    // the .then to detect "user selected a different op while the
+    // request was in flight".
     const opIdAtStart = op?.id;
     const segments = project.imported?.segments ?? [];
     const objectIds = op?.sourceObjects ?? [];
@@ -134,12 +140,12 @@
           tool_diameter_mm: toolD,
         })
         .then((resp) => {
-          if (op?.id !== opIdAtStart) return;
+          if (project.selectedOpId !== opIdAtStart) return;
           helixPreview = resp;
           helixPreviewLoading = false;
         })
         .catch(() => {
-          if (op?.id !== opIdAtStart) return;
+          if (project.selectedOpId !== opIdAtStart) return;
           helixPreview = null;
           helixPreviewLoading = false;
         });

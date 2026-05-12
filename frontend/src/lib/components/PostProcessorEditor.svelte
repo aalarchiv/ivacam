@@ -123,10 +123,27 @@
           if (typeof parsed[k] === 'string') next[k] = parsed[k];
         }
         if (parsed.axes && typeof parsed.axes === 'object') {
-          // Light validation: only accept if every required axis is present.
+          // Full validation: every axis must be a complete AxisFormat
+          // object with correctly-typed fields. Looser checks were
+          // accepting malformed JSON that crashed formatAxisValue at
+          // render time.
           const required: (keyof AxesConfig)[] = ['x', 'y', 'z', 'i', 'j', 'feed', 'speed'];
-          if (required.every((k) => parsed.axes[k] && typeof parsed.axes[k] === 'object')) {
+          const isAxisFormat = (a: unknown): boolean => {
+            if (!a || typeof a !== 'object') return false;
+            const rec = a as Record<string, unknown>;
+            return (
+              typeof rec.enabled === 'boolean'
+              && typeof rec.name === 'string'
+              && typeof rec.format === 'string'
+              && typeof rec.scale === 'number'
+              && Number.isFinite(rec.scale)
+            );
+          };
+          if (required.every((k) => isAxisFormat(parsed.axes[k]))) {
             next.axes = parsed.axes as AxesConfig;
+          } else {
+            importErr =
+              'JSON has an axes section but one or more axes are missing required fields (enabled / name / format / scale). Skipped axes.';
           }
         }
         draft = next;

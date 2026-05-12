@@ -415,7 +415,9 @@
                 placeholder={fieldApplies('defaultStep', tool.kind) ? '—' : 'n/a'}
                 disabled={!fieldApplies('defaultStep', tool.kind)}
                 title={fieldApplies('defaultStep', tool.kind)
-                  ? 'Operations using this tool inherit this when they don\'t specify their own. Negative number, mm.'
+                  ? (tool.defaultStep !== undefined && tool.defaultStep >= 0
+                    ? 'Default step must be NEGATIVE (mm down per pass) — values ≥ 0 are ignored and treated as unset.'
+                    : 'Operations using this tool inherit this when they don\'t specify their own. Negative number, mm.')
                   : fieldReasonForKind('defaultStep', tool.kind)}
                 class:invalid={tool.defaultStep !== undefined && tool.defaultStep >= 0}
                 onchange={(e) => {

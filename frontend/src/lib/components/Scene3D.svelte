@@ -14,7 +14,6 @@
     autoTabTs,
     buildObjectPolylines,
     polylineAtT,
-    resolveTabPlacementToWorld,
   } from '../cam/tabs';
   import type { SimWarning } from '../api/types';
 
@@ -985,17 +984,25 @@
     // directly via (objectId, t); Auto / Mixed modes additionally
     // walk every object the op covers and emit auto-spaced t values
     // there. Same arc-length math as the 2D canvas + backend.
+    //
+    // Performance (90j): build the object-polyline cache ONCE and
+    // resolve placements inline against this local cache. The prior
+    // code called resolveTabPlacementToWorld(imp, tp) per manual
+    // placement, which internally re-ran buildObjectPolylines —
+    // O(N_placements × N_segments) on a multi-thousand-segment DXF.
     const objects = buildObjectPolylines(imp);
+    const objectById = new Map(objects.map((o) => [o.objectId, o]));
     for (const op of project.operations) {
       const mode = op.tabMode;
       if (!mode || mode.kind === 'off') continue;
       // Manual placements (Manual + Mixed).
       if (mode.kind === 'manual' || mode.kind === 'mixed') {
         for (const tp of op.tabPlacements ?? []) {
-          const pt = resolveTabPlacementToWorld(imp, tp);
-          if (!pt) continue;
+          const obj = objectById.get(tp.objectId);
+          if (!obj) continue;
+          const { point } = polylineAtT(obj.pts, tp.t, obj.closed);
           const sphere = new THREE.Mesh(geom, mat);
-          sphere.position.set(pt[0], pt[1], 0);
+          sphere.position.set(point.x, point.y, 0);
           tabsGroup.add(sphere);
         }
       }

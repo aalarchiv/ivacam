@@ -94,6 +94,18 @@ interface WireMachine {
   decimal_separator?: '.' | ',';
   line_number_start?: number;
   plot_mode_z?: boolean;
+  post_profile?: {
+    name?: string;
+    file_extension?: string;
+    line_ending?: string;
+    program_start?: string;
+    program_end?: string;
+    tool_change?: string;
+    coolant_flood_on?: string;
+    coolant_flood_off?: string;
+    coolant_mist_on?: string;
+    coolant_mist_off?: string;
+  };
 }
 
 type WireDrillCycle =
@@ -259,6 +271,7 @@ function buildMachine(m: MachineSettings): WireMachine {
       ? { line_number_start: m.lineNumberStart }
       : {}),
     ...(m.plotModeZ ? { plot_mode_z: true } : {}),
+    ...(m.postProfile ? { post_profile: m.postProfile } : {}),
   };
 }
 

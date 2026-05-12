@@ -1081,6 +1081,30 @@ export interface MachineSettings {
   /// Right setting for laser / plasma / pen plotter / 3D-printer
   /// extrusion / drag-knife controllers.
   plotModeZ?: boolean;
+  /// User-configurable post-processor profile (rt1.15). When set,
+  /// the built-in posts (linuxcnc / grbl) use its template strings
+  /// instead of their hard-coded program_start / program_end /
+  /// tool_change / coolant lines. Undefined ⇒ defaults.
+  postProfile?: PostProfile;
+}
+
+/// Mirror of `wiac_core::gcode::post_profile::PostProfile` (rt1.15).
+/// Every template field is optional — `None` keeps the built-in
+/// emitter's hard-coded behavior. Templates accept token markers
+/// substituted at emit time: `<version>`, `<unit>`, `<t>` (tool
+/// number), `<n>` (tool name), `<d>` (tool diameter), `<f>` (feed),
+/// `<s>` (spindle), `<op>` (op name), `<nl>` (newline).
+export interface PostProfile {
+  name?: string;
+  file_extension?: string;
+  line_ending?: string;
+  program_start?: string;
+  program_end?: string;
+  tool_change?: string;
+  coolant_flood_on?: string;
+  coolant_flood_off?: string;
+  coolant_mist_on?: string;
+  coolant_mist_off?: string;
 }
 
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal' | 'halfpipe';

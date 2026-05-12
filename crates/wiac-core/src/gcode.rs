@@ -16,6 +16,7 @@ pub mod arc_fit;
 pub mod grbl;
 pub mod hpgl;
 pub mod linuxcnc;
+pub mod post_profile;
 pub mod preview;
 
 /// Generic post-processor trait. Stateful — implementations track the last
@@ -184,6 +185,19 @@ pub trait PostProcessor {
     /// posts that emit numeric coordinates (linuxcnc, grbl) override
     /// it; HPGL / pen plotters ignore it.
     fn configure(&mut self, _decimal_separator: char, _line_number_start: Option<u32>) {}
+
+    /// rt1.15: attach a user-configurable post-processor profile.
+    /// Called once at program_begin from `MachineConfig`. Default
+    /// impl is a no-op; linuxcnc / grbl posts override to store the
+    /// profile in their PostState and consult it for
+    /// program_start / _end / tool / coolant.
+    fn set_post_profile(&mut self, _profile: Option<&post_profile::PostProfile>) {}
+
+    /// rt1.15: refresh the token-substitution context. Called at
+    /// program_begin and at every op boundary so per-op tokens
+    /// (`<op>`, `<t>`, `<n>`, `<f>`, `<s>`) reflect the active
+    /// state. Default impl is a no-op.
+    fn set_token_ctx(&mut self, _ctx: &post_profile::TokenCtx) {}
 
     /// Apply a per-tool Z work-coordinate offset (rt1.30). Called
     /// at program_begin for the first op's tool and right after each
@@ -496,6 +510,19 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     // the post state BEFORE any output flows so every emitted line
     // honors the project's MachineConfig.
     post.configure(setup.machine.decimal_separator, setup.machine.line_number_start);
+    // rt1.15: thread the user-configurable post profile + initial
+    // token-substitution context. Profile templates can reference
+    // tool / feed / spindle / unit etc. that we know from `setup`
+    // even before any op runs.
+    post.set_post_profile(setup.machine.post_profile.as_ref());
+    let mut ctx = post_profile::TokenCtx::with_wiac_version();
+    ctx.tool_number = setup.tool.number;
+    ctx.tool_name = setup.tool.name.clone();
+    ctx.tool_diameter = setup.tool.diameter;
+    ctx.feed = setup.tool.rate_h;
+    ctx.spindle = setup.tool.speed;
+    ctx.unit = setup.machine.unit;
+    post.set_token_ctx(&ctx);
     post.program_start();
     post.unit(setup.machine.unit);
     post.absolute(true);
@@ -2186,6 +2213,17 @@ pub struct PostState {
     /// program start from `MachineConfig::line_number_start`.
     #[serde(default)]
     pub line_counter: Option<u32>,
+    /// rt1.15: user-configurable post-processor profile attached to
+    /// MachineConfig. When `Some`, the built-in posts consult its
+    /// template strings instead of their hard-coded headers /
+    /// footers / toolchange / coolant lines. `None` = use the
+    /// post's built-in defaults.
+    #[serde(default, skip)]
+    pub profile: Option<crate::gcode::post_profile::PostProfile>,
+    /// Current token substitution context for `profile` templates.
+    /// Refreshed at program_begin and at each op boundary.
+    #[serde(default, skip)]
+    pub token_ctx: crate::gcode::post_profile::TokenCtx,
 }
 
 fn default_decimal_separator() -> char {
@@ -2203,6 +2241,8 @@ impl Default for PostState {
             absolute: false,
             decimal_separator: '.',
             line_counter: None,
+            profile: None,
+            token_ctx: crate::gcode::post_profile::TokenCtx::default(),
         }
     }
 }

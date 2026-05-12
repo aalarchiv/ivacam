@@ -56,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 14;
+pub const PIPELINE_VERSION: u32 = 15;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
 /// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
@@ -385,6 +385,24 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     h.write_u32(m.decimal_separator as u32);
     hash_opt_u32(m.line_number_start, h);
     m.plot_mode_z.hash(h);
+    // rt1.15: post-profile templates affect program output, so they
+    // must invalidate the cache. None == absent variant byte.
+    match &m.post_profile {
+        None => h.write_u8(0),
+        Some(p) => {
+            h.write_u8(1);
+            p.name.hash(h);
+            p.file_extension.hash(h);
+            p.line_ending.hash(h);
+            p.program_start.hash(h);
+            p.program_end.hash(h);
+            p.tool_change.hash(h);
+            p.coolant_flood_on.hash(h);
+            p.coolant_flood_off.hash(h);
+            p.coolant_mist_on.hash(h);
+            p.coolant_mist_off.hash(h);
+        }
+    }
 }
 
 // ─── operation ────────────────────────────────────────────────────────
@@ -818,7 +836,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x4913_a490_900e_97d4_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x925f_5e31_960e_d597_u64, "got {:#018x}", key.0);
     }
 
     #[test]
@@ -858,7 +876,6 @@ mod tests {
         assert_ne!(k1, k2);
     }
 
-    #[test]
     /// rt1.10 — tabs now live on the OP (`op.params.tab_placements`),
     /// so the cache-invalidation test exercises that path: bumping
     /// a tab in op.params changes hash_operation, which changes the

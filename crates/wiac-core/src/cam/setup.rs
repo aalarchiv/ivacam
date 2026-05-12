@@ -21,6 +21,10 @@ pub struct ToolConfig {
     pub number: u32,
     pub diameter: f64,
     pub speed: u32,
+    /// User-facing tool name, for token substitution in
+    /// post-profile templates (rt1.15 `<n>`). Empty by default.
+    #[serde(default)]
+    pub name: String,
     /// Spindle warm-up pause in seconds.
     pub pause: u32,
     pub mist: bool,
@@ -56,6 +60,7 @@ impl Default for ToolConfig {
             number: 1,
             diameter: 3.0,
             speed: 18000,
+            name: String::new(),
             pause: 1,
             mist: false,
             flood: false,
@@ -374,6 +379,13 @@ pub struct MachineConfig {
     /// 3D-printer extrusion and drag-knife controllers.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub plot_mode_z: bool,
+    /// User-configurable post-processor profile (rt1.15). When
+    /// `Some`, the built-in posts (linuxcnc / grbl) read its
+    /// templates instead of emitting their hard-coded
+    /// program_start / program_end / tool_change / coolant lines.
+    /// `None` = hard-coded defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_profile: Option<crate::gcode::post_profile::PostProfile>,
 }
 
 impl MachineConfig {
@@ -428,6 +440,7 @@ impl Default for MachineConfig {
             decimal_separator: '.',
             line_number_start: None,
             plot_mode_z: false,
+            post_profile: None,
         }
     }
 }

@@ -948,20 +948,18 @@
   }
   .sidebar {
     display: grid;
-    /* Layers row sizes to its content (capped); ops fills the rest;
-       stock sticks to the bottom. min-content stops a near-empty
-       layer list from reserving the legacy 80-130 px gap that used
-       to show as whitespace above operations. */
-    grid-template-rows: minmax(min-content, 22vh) minmax(0, 1fr) auto;
+    /* Layers row sizes to its own content via `auto` — collapsed
+       layers panel = single header row; expanded = capped via
+       LayerList's own max-height. Ops fills the rest. Stock sits
+       at the bottom. This makes the panel feel like one stack of
+       collapsible blocks (Layers / Operations / Stock) rather than
+       three rows with fixed minimums. */
+    grid-template-rows: auto minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
-  .layers-host {
-    min-height: 0;
-    min-width: 0;
-    overflow: auto;
-  }
+  .layers-host,
   .ops-host,
   .stock-host {
     min-height: 0;
@@ -971,16 +969,42 @@
   .stock-host {
     border-top: 1px solid var(--border);
     background: var(--bg-panel);
-    padding: 0.3rem 0.55rem 0.4rem;
+    padding: 0.4rem 0.6rem 0.5rem;
     max-height: 30vh;
     overflow: auto;
   }
+  /* Disclosure header restyled to match LayerList / OperationsList
+     group-head — consistent collapsible-section visual across the
+     sidebar's three blocks (Layers / Operations / Stock). */
   .stock-host summary {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.35rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
+    font-size: 0.78rem;
+    color: var(--text-strong);
+    font-weight: 600;
     cursor: pointer;
-    padding: 0.15rem 0;
+    list-style: none;
+  }
+  .stock-host summary::-webkit-details-marker {
+    display: none;
+  }
+  .stock-host summary::before {
+    content: '▸';
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1;
+    transition: transform 0.08s;
+  }
+  .stock-host details[open] summary::before {
+    content: '▾';
+  }
+  .stock-host details > :global(*) + :global(*) {
+    margin-top: 0.4rem;
   }
   .region-toggle {
     display: flex;

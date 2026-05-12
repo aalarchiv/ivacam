@@ -56,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 15;
+pub const PIPELINE_VERSION: u32 = 16;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
 /// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
@@ -401,6 +401,21 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
             p.coolant_flood_off.hash(h);
             p.coolant_mist_on.hash(h);
             p.coolant_mist_off.hash(h);
+            // hev: per-axis output config. Hash each axis word so any
+            // tweak (rename / scale / format / disable) invalidates the
+            // cache. None == absent variant byte.
+            match &p.axes {
+                None => h.write_u8(0),
+                Some(a) => {
+                    h.write_u8(1);
+                    for af in [&a.x, &a.y, &a.z, &a.i, &a.j, &a.feed, &a.speed] {
+                        af.enabled.hash(h);
+                        af.name.hash(h);
+                        af.format.hash(h);
+                        hash_f64(af.scale, h);
+                    }
+                }
+            }
         }
     }
 }
@@ -836,7 +851,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x925f_5e31_960e_d597_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x2009_a4d5_0fcb_fd26_u64, "got {:#018x}", key.0);
     }
 
     #[test]

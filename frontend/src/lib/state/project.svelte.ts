@@ -1105,6 +1105,63 @@ export interface PostProfile {
   coolant_flood_off?: string;
   coolant_mist_on?: string;
   coolant_mist_off?: string;
+  /// Per-axis output formatting (hev). When set, replaces the
+  /// hard-coded `X{val} Y{val} Z{val}` / `F{rate}` / `S{rpm}`
+  /// emission with the user's axis names + printf-ish format +
+  /// scale. Disabled axes drop out of the output entirely.
+  axes?: AxesConfig;
+}
+
+/// Mirror of `wiac_core::gcode::post_profile::AxisFormat`. The
+/// printf-ish `format` string supports `%[flags][width][.precision]<f|d|g|e>`.
+/// `scale` is applied before formatting (`-1.0` flips Z-down for a
+/// Z-up controller; `25.4` ad-hoc converts inch→mm).
+export interface AxisFormat {
+  enabled: boolean;
+  name: string;
+  format: string;
+  scale: number;
+}
+
+/// Mirror of `wiac_core::gcode::post_profile::AxesConfig`. All seven
+/// axes are required so the Rust deserializer doesn't need to
+/// reconstruct defaults — the FE always sends a complete bundle.
+export interface AxesConfig {
+  x: AxisFormat;
+  y: AxisFormat;
+  z: AxisFormat;
+  i: AxisFormat;
+  j: AxisFormat;
+  feed: AxisFormat;
+  speed: AxisFormat;
+}
+
+/// Helper: an axes config that exactly matches the legacy hand-written
+/// behavior (X/Y/Z with three decimals, F/S as integers, identity
+/// scale, all enabled). Use this as the starting point when a user
+/// switches the per-axis section on for the first time.
+export function defaultAxesConfig(): AxesConfig {
+  const coord = (name: string): AxisFormat => ({
+    enabled: true,
+    name,
+    format: '%.3f',
+    scale: 1.0,
+  });
+  const int = (name: string): AxisFormat => ({
+    enabled: true,
+    name,
+    format: '%d',
+    scale: 1.0,
+  });
+  return {
+    x: coord('X'),
+    y: coord('Y'),
+    z: coord('Z'),
+    i: coord('I'),
+    j: coord('J'),
+    feed: int('F'),
+    speed: int('S'),
+  };
 }
 
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal' | 'halfpipe';

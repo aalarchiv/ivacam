@@ -6,6 +6,9 @@
   /// legacy Generate path keeps working.
   import {
     project,
+    defaultAxesConfig,
+    type AxesConfig,
+    type AxisFormat,
     type AxisLimits,
     type MachineSettings,
     type PostProfile,
@@ -56,6 +59,31 @@
     if (p.name === 'GRBL default') return 'grbl';
     if (p.name === 'Mach3 metric') return 'mach3';
     return 'custom';
+  }
+
+  /// One-line summary of a per-axis config — shown next to its row
+  /// when collapsed, so users can scan the seven axes without
+  /// expanding each. Empty when the axis is at its baseline (enabled,
+  /// natural name, %.3f / %d, scale 1.0).
+  function axisSummary(af: AxisFormat, defaultName: string, defaultFormat: string): string {
+    const tweaks: string[] = [];
+    if (!af.enabled) return 'disabled';
+    if (af.name !== defaultName) tweaks.push(`→${af.name}`);
+    if (af.format !== defaultFormat) tweaks.push(af.format);
+    if (af.scale !== 1.0) tweaks.push(`×${af.scale}`);
+    return tweaks.join(' ');
+  }
+
+  function patchAxis(key: keyof AxesConfig, patch: Partial<AxisFormat>) {
+    if (!draft.postProfile || !draft.postProfile.axes) return;
+    const cur = draft.postProfile.axes[key];
+    draft.postProfile = {
+      ...draft.postProfile,
+      axes: {
+        ...draft.postProfile.axes,
+        [key]: { ...cur, ...patch },
+      },
+    };
   }
 
   function commit() {
@@ -270,6 +298,103 @@
               ></textarea>
             </span>
           </label>
+
+          <details class="axes-block" open={!!draft.postProfile?.axes}>
+            <summary>Per-axis output (advanced)</summary>
+            <p class="axes-note">
+              Rename, reformat, scale or disable individual axis words.
+              Common uses: <code>scale = -1</code> on Z to flip a Z-up
+              controller, <code>enabled = off</code> on Z for a laser
+              that doesn't have one, <code>name = A</code> on Z for a
+              rotary-as-Z setup.
+            </p>
+            <label class="axes-toggle">
+              <input
+                type="checkbox"
+                checked={!!draft.postProfile.axes}
+                onchange={(e) => {
+                  if (!draft.postProfile) return;
+                  const on = (e.target as HTMLInputElement).checked;
+                  draft.postProfile = {
+                    ...draft.postProfile,
+                    axes: on ? defaultAxesConfig() : undefined,
+                  };
+                }}
+              />
+              Override per-axis output
+            </label>
+            {#if draft.postProfile.axes}
+              {@const axes = draft.postProfile.axes}
+              <div class="axes-table" role="table">
+                <div class="axes-row axes-head" role="row">
+                  <span role="columnheader">Axis</span>
+                  <span role="columnheader">On</span>
+                  <span role="columnheader">Name</span>
+                  <span role="columnheader">Format</span>
+                  <span role="columnheader">Scale</span>
+                </div>
+                {#each [
+                  { key: 'x' as const, label: 'X', defaultName: 'X', defaultFormat: '%.3f' },
+                  { key: 'y' as const, label: 'Y', defaultName: 'Y', defaultFormat: '%.3f' },
+                  { key: 'z' as const, label: 'Z', defaultName: 'Z', defaultFormat: '%.3f' },
+                  { key: 'i' as const, label: 'I (arc)', defaultName: 'I', defaultFormat: '%.3f' },
+                  { key: 'j' as const, label: 'J (arc)', defaultName: 'J', defaultFormat: '%.3f' },
+                  { key: 'feed' as const, label: 'Feed', defaultName: 'F', defaultFormat: '%d' },
+                  { key: 'speed' as const, label: 'Spindle', defaultName: 'S', defaultFormat: '%d' },
+                ] as row}
+                  {@const af = axes[row.key]}
+                  <div class="axes-row" role="row" class:dimmed={!af.enabled}>
+                    <span role="cell" class="axes-label">
+                      {row.label}
+                      {#if axisSummary(af, row.defaultName, row.defaultFormat)}
+                        <em>{axisSummary(af, row.defaultName, row.defaultFormat)}</em>
+                      {/if}
+                    </span>
+                    <span role="cell">
+                      <input
+                        type="checkbox"
+                        checked={af.enabled}
+                        onchange={(e) => patchAxis(row.key, { enabled: (e.target as HTMLInputElement).checked })}
+                        aria-label="Enable {row.label}"
+                      />
+                    </span>
+                    <span role="cell">
+                      <input
+                        type="text"
+                        value={af.name}
+                        placeholder={row.defaultName}
+                        size="3"
+                        oninput={(e) => patchAxis(row.key, { name: (e.target as HTMLInputElement).value })}
+                        aria-label="{row.label} name"
+                      />
+                    </span>
+                    <span role="cell">
+                      <input
+                        type="text"
+                        value={af.format}
+                        placeholder={row.defaultFormat}
+                        size="6"
+                        oninput={(e) => patchAxis(row.key, { format: (e.target as HTMLInputElement).value })}
+                        aria-label="{row.label} format"
+                      />
+                    </span>
+                    <span role="cell">
+                      <input
+                        type="number"
+                        step="0.001"
+                        value={af.scale}
+                        oninput={(e) => {
+                          const v = (e.target as HTMLInputElement).valueAsNumber;
+                          if (Number.isFinite(v)) patchAxis(row.key, { scale: v });
+                        }}
+                        aria-label="{row.label} scale"
+                      />
+                    </span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </details>
         {/if}
 
         <div class="section-title">Kinematics</div>
@@ -433,5 +558,76 @@
     padding: 0.3rem 0.8rem;
     border-radius: 3px;
     cursor: pointer;
+  }
+  .axes-block {
+    grid-column: 1 / -1;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-elevated);
+    font-size: 0.85rem;
+  }
+  .axes-block summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .axes-note {
+    color: var(--text-muted);
+    margin: 0.4rem 0;
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+  .axes-note code {
+    background: var(--bg);
+    padding: 0 0.2rem;
+    border-radius: 2px;
+  }
+  .axes-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.3rem 0 0.5rem;
+    font-weight: 500;
+  }
+  .axes-table {
+    display: grid;
+    gap: 0.15rem;
+  }
+  .axes-row {
+    display: grid;
+    grid-template-columns: 5.5rem 2rem 4.5rem 5rem 5rem;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.2rem;
+    border-radius: 2px;
+  }
+  .axes-row:hover:not(.axes-head) {
+    background: var(--bg);
+  }
+  .axes-row.dimmed {
+    opacity: 0.55;
+  }
+  .axes-head {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .axes-label {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+  }
+  .axes-label em {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-style: normal;
+  }
+  .axes-row input[type='text'],
+  .axes-row input[type='number'] {
+    width: 100%;
+    padding: 0.2rem 0.3rem;
+    font-size: 0.82rem;
+    font-family: ui-monospace, monospace;
   }
 </style>

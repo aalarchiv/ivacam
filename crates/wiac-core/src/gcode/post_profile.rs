@@ -1,4 +1,4 @@
-//! User-configurable post-processor profile (rt1.15).
+//! User-configurable post-processor profile (rt1.15, hev).
 //!
 //! A `PostProfile` is a serde-friendly bundle of TEMPLATE STRINGS that
 //! override the hard-coded headers / footers / toolchange / coolant
@@ -7,11 +7,11 @@
 //! can reference the current tool / feed / spindle / op without
 //! editing wiac source.
 //!
-//! Scope reminder: v1 doesn't expose per-axis name / format / scale /
-//! enable — that surface is filed as a follow-up. v1 covers the most
-//! common controller-quirk vector: prologue / epilogue / toolchange
-//! and coolant strings that vary by controller (Mach / FANUC /
-//! Siemens / Heidenhain / a home-rolled controller).
+//! v2 (hev) adds per-axis formatting: each of X/Y/Z/I/J/F/S can be
+//! renamed (e.g. swap Z↔A for rotary), reformatted (`%.4f` for a
+//! lathe), scaled (`-1` flips a Z-up controller, `1.0/60.0` converts
+//! mm/min→mm/s), or disabled (skip the axis entirely, useful for
+//! laser controllers that ignore Z).
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,230 @@ pub struct PostProfile {
     pub coolant_mist_on: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coolant_mist_off: Option<String>,
+    /// Per-axis output format (hev). When set, replaces the hard-coded
+    /// `X{val} Y{val} Z{val}` / `I{val} J{val}` / `F{rate}` / `S{rpm}`
+    /// emission with the user's axis names + printf-ish format + scale,
+    /// with per-axis enable so disabled axes drop out entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axes: Option<AxesConfig>,
+}
+
+/// Per-axis output configuration. `enabled=false` means "drop this
+/// axis from the line entirely" (laser controllers commonly ignore Z;
+/// some lathes ignore Y). `name` is the output letter — rename Z to
+/// A for a rotary-as-Z setup. `format` is a tiny printf-ish spec.
+/// `scale` is a multiplier applied BEFORE formatting (`-1.0` flips
+/// the Z-up vs Z-down convention; `0.0393701` mm→inch).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AxisFormat {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub name: String,
+    pub format: String,
+    pub scale: f64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl AxisFormat {
+    /// Default coordinate axis: enabled, named after the letter, three
+    /// decimals, identity scale.
+    #[must_use]
+    pub fn coord(name: &str) -> Self {
+        Self {
+            enabled: true,
+            name: name.into(),
+            format: "%.3f".into(),
+            scale: 1.0,
+        }
+    }
+
+    /// Default integer axis (feed, spindle): enabled, named after the
+    /// letter, integer format, identity scale.
+    #[must_use]
+    pub fn integer(name: &str) -> Self {
+        Self {
+            enabled: true,
+            name: name.into(),
+            format: "%d".into(),
+            scale: 1.0,
+        }
+    }
+
+    /// Render `value` (already in source units, e.g. mm or mm/min) as
+    /// `<name><formatted_value>`. Returns `None` when this axis is
+    /// disabled, so callers can use `?` to drop the word.
+    #[must_use]
+    pub fn render(&self, value: f64) -> Option<String> {
+        if !self.enabled {
+            return None;
+        }
+        Some(format!(
+            "{}{}",
+            self.name,
+            format_axis_value(&self.format, value * self.scale)
+        ))
+    }
+}
+
+/// Bundle of per-axis output configs. Set on `PostProfile::axes` to
+/// take over from the hard-coded axis letters / `%.3f` format in the
+/// LinuxCNC / GRBL posts. All seven axes default to their natural
+/// letter + sensible format, so `AxesConfig::default()` is the same
+/// as the legacy hand-written behavior — the user only changes what
+/// they care about.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AxesConfig {
+    pub x: AxisFormat,
+    pub y: AxisFormat,
+    pub z: AxisFormat,
+    pub i: AxisFormat,
+    pub j: AxisFormat,
+    pub feed: AxisFormat,
+    pub speed: AxisFormat,
+}
+
+impl Default for AxesConfig {
+    fn default() -> Self {
+        Self {
+            x: AxisFormat::coord("X"),
+            y: AxisFormat::coord("Y"),
+            z: AxisFormat::coord("Z"),
+            i: AxisFormat::coord("I"),
+            j: AxisFormat::coord("J"),
+            feed: AxisFormat::integer("F"),
+            speed: AxisFormat::integer("S"),
+        }
+    }
+}
+
+/// Tiny printf-ish formatter. Accepts a single conversion spec inside
+/// an optional literal prefix/suffix:
+///   `%[flags][width][.precision]<type>`
+/// where flags ∈ `0 - +`, type ∈ `f g d i e`. Unrecognized type falls
+/// back to `f`. Empty or `%`-less strings render as `%.3f`. The
+/// caller is responsible for swapping `.` to a locale-specific
+/// decimal separator after the fact.
+#[must_use]
+pub fn format_axis_value(format: &str, value: f64) -> String {
+    if format.is_empty() {
+        return format!("{value:.3}");
+    }
+    let bytes = format.as_bytes();
+    let Some(pct) = bytes.iter().position(|&b| b == b'%') else {
+        // No % anywhere — treat the whole string as a literal so a
+        // misconfigured profile produces a visible eyesore rather
+        // than silently dropping the value.
+        return format.to_string();
+    };
+
+    let mut i = pct + 1;
+    let mut zero_pad = false;
+    let mut plus_sign = false;
+    let mut left_align = false;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'0' => zero_pad = true,
+            b'-' => left_align = true,
+            b'+' => plus_sign = true,
+            b' ' => {}
+            _ => break,
+        }
+        i += 1;
+    }
+
+    let mut width: usize = 0;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        width = width * 10 + (bytes[i] - b'0') as usize;
+        i += 1;
+    }
+
+    let mut precision: Option<usize> = None;
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+        let pstart = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i > pstart {
+            precision = std::str::from_utf8(&bytes[pstart..i])
+                .ok()
+                .and_then(|s| s.parse().ok());
+        } else {
+            precision = Some(0);
+        }
+    }
+
+    let typ = bytes.get(i).copied().unwrap_or(b'f') as char;
+    let after_type = if i < bytes.len() { i + 1 } else { i };
+
+    let prefix = std::str::from_utf8(&bytes[..pct]).unwrap_or("");
+    let suffix = std::str::from_utf8(&bytes[after_type..]).unwrap_or("");
+
+    let prec = precision.unwrap_or(3);
+    let mut body = match typ {
+        'd' | 'i' => {
+            #[allow(clippy::cast_possible_truncation)]
+            let n = value.round() as i64;
+            if plus_sign && n >= 0 {
+                format!("+{n}")
+            } else {
+                n.to_string()
+            }
+        }
+        'e' | 'E' => {
+            let s = format!("{value:.prec$e}");
+            if typ == 'E' {
+                s.to_uppercase()
+            } else {
+                s
+            }
+        }
+        'g' | 'G' => {
+            // %g: trim trailing zeros after the decimal, drop dangling
+            // '.', strip "+0" exponent suffixes from very small values
+            // (`%g` would render those in scientific form on a real
+            // libc, but our typical inputs stay in fixed range).
+            let raw = format!("{value:.prec$}");
+            if let Some(stripped) = raw.find('.') {
+                let trimmed = raw[stripped..]
+                    .trim_end_matches('0')
+                    .trim_end_matches('.');
+                if trimmed.is_empty() {
+                    raw[..stripped].to_string()
+                } else {
+                    format!("{}{}", &raw[..stripped], trimmed)
+                }
+            } else {
+                raw
+            }
+        }
+        _ => {
+            // 'f' and anything else (treat unknown as f, since the
+            // dominant use case is decimal coordinates).
+            let s = format!("{value:.prec$}");
+            if plus_sign && value >= 0.0 {
+                format!("+{s}")
+            } else {
+                s
+            }
+        }
+    };
+
+    if width > body.len() {
+        let pad = width - body.len();
+        let ch = if zero_pad && !left_align { '0' } else { ' ' };
+        let padding: String = std::iter::repeat(ch).take(pad).collect();
+        body = if left_align {
+            format!("{body}{padding}")
+        } else {
+            format!("{padding}{body}")
+        };
+    }
+
+    format!("{prefix}{body}{suffix}")
 }
 
 impl PostProfile {
@@ -306,5 +530,130 @@ mod tests {
         assert!(p.program_start.as_ref().unwrap().starts_with('%'));
         assert!(p.program_end.as_ref().unwrap().ends_with('%'));
         assert_eq!(p.line_ending.as_deref(), Some("\r\n"));
+    }
+
+    // ─── axis formatting (hev) ────────────────────────────────────────
+
+    #[test]
+    fn format_axis_value_default_three_decimals() {
+        assert_eq!(format_axis_value("%.3f", 1.234_56), "1.235");
+        assert_eq!(format_axis_value("%.4f", 1.234_56), "1.2346");
+        assert_eq!(format_axis_value("%.0f", 3.7), "4");
+    }
+
+    #[test]
+    fn format_axis_value_empty_falls_back_to_three_decimals() {
+        assert_eq!(format_axis_value("", 1.234_56), "1.235");
+    }
+
+    #[test]
+    fn format_axis_value_no_percent_passes_through() {
+        // A misconfigured spec gives a visible eyesore in the gcode so
+        // the user notices, rather than silently emitting the value.
+        assert_eq!(format_axis_value("oops", 1.234), "oops");
+    }
+
+    #[test]
+    fn format_axis_value_integer_rounds() {
+        assert_eq!(format_axis_value("%d", 3.7), "4");
+        assert_eq!(format_axis_value("%d", 3.4), "3");
+        assert_eq!(format_axis_value("%d", -2.6), "-3");
+    }
+
+    #[test]
+    fn format_axis_value_general_drops_trailing_zeros() {
+        // %g with default 3 decimals: 1.200 → "1.2", 1.000 → "1"
+        assert_eq!(format_axis_value("%.3g", 1.2), "1.2");
+        assert_eq!(format_axis_value("%.3g", 1.0), "1");
+        assert_eq!(format_axis_value("%.3g", 1.234), "1.234");
+    }
+
+    #[test]
+    fn format_axis_value_prefix_and_suffix_preserved() {
+        // Some Heidenhain dialects bracket the value: `X +1.000`.
+        // The literal prefix " +" survives via the prefix capture.
+        assert_eq!(format_axis_value("[%.2f]", 1.234), "[1.23]");
+    }
+
+    #[test]
+    fn format_axis_value_width_and_zero_pad() {
+        assert_eq!(format_axis_value("%06.2f", 1.5), "001.50");
+        assert_eq!(format_axis_value("%-6.2f", 1.5), "1.50  ");
+    }
+
+    #[test]
+    fn format_axis_value_plus_sign() {
+        assert_eq!(format_axis_value("%+.2f", 1.5), "+1.50");
+        assert_eq!(format_axis_value("%+.2f", -1.5), "-1.50");
+    }
+
+    #[test]
+    fn axis_format_render_applies_scale() {
+        let af = AxisFormat {
+            enabled: true,
+            name: "Z".into(),
+            format: "%.3f".into(),
+            scale: -1.0,
+        };
+        assert_eq!(af.render(2.5).as_deref(), Some("Z-2.500"));
+        assert_eq!(af.render(-1.0).as_deref(), Some("Z1.000"));
+    }
+
+    #[test]
+    fn axis_format_render_skipped_when_disabled() {
+        let af = AxisFormat {
+            enabled: false,
+            name: "Z".into(),
+            format: "%.3f".into(),
+            scale: 1.0,
+        };
+        assert!(af.render(1.0).is_none());
+    }
+
+    #[test]
+    fn axis_format_render_rename_axis() {
+        let mut af = AxisFormat::coord("X");
+        af.name = "A".into();
+        assert_eq!(af.render(45.0).as_deref(), Some("A45.000"));
+    }
+
+    #[test]
+    fn axes_config_default_matches_legacy() {
+        let a = AxesConfig::default();
+        assert_eq!(a.x.render(1.0).as_deref(), Some("X1.000"));
+        assert_eq!(a.feed.render(800.0).as_deref(), Some("F800"));
+        assert_eq!(a.speed.render(18_000.0).as_deref(), Some("S18000"));
+    }
+
+    #[test]
+    fn axes_config_serde_round_trip() {
+        let mut a = AxesConfig::default();
+        a.z.scale = -1.0;
+        a.z.format = "%.4f".into();
+        a.feed.name = "FEED".into();
+        let json = serde_json::to_string(&a).unwrap();
+        let back: AxesConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(a, back);
+    }
+
+    #[test]
+    fn post_profile_with_axes_serde_round_trip() {
+        let mut p = PostProfile::linuxcnc_default();
+        let mut axes = AxesConfig::default();
+        axes.z.enabled = false;
+        p.axes = Some(axes);
+        let json = serde_json::to_string(&p).unwrap();
+        let back: PostProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(p, back);
+        assert!(!back.axes.unwrap().z.enabled);
+    }
+
+    #[test]
+    fn axis_format_enabled_default_true_when_field_missing() {
+        // Backwards-compat: an older JSON that doesn't carry the
+        // `enabled` field should round-trip as enabled=true.
+        let json = r#"{"name":"X","format":"%.3f","scale":1.0}"#;
+        let af: AxisFormat = serde_json::from_str(json).unwrap();
+        assert!(af.enabled);
     }
 }

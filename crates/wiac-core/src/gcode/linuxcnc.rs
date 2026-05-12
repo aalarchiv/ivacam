@@ -1,7 +1,7 @@
 //! LinuxCNC post-processor. Mirrors output_plugins/gcode_linuxcnc.py.
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
-use crate::gcode::post_profile::{template_lines, PostProfile, TokenCtx};
+use crate::gcode::post_profile::{template_lines, AxisFormat, PostProfile, TokenCtx};
 use crate::gcode::{
     configure_post_state, fmt_num, line_number_prefix, CapturedPostState, PostProcessor, PostState,
 };
@@ -34,6 +34,29 @@ impl Post {
         fmt_num(v, self.state.decimal_separator)
     }
 
+    /// Format a single axis word. Consults the profile's per-axis
+    /// config (hev) when set: disabled axes return None so the caller
+    /// drops the word; renamed / reformatted / scaled axes are rendered
+    /// per the user's spec, with the configured decimal separator
+    /// applied last so `,`-locales keep working.
+    fn fmt_axis(&self, default: char, v: f64) -> Option<String> {
+        let af = self
+            .state
+            .profile
+            .as_ref()
+            .and_then(|p| p.axes.as_ref())
+            .map(|a| axis_for(default, a));
+        let rendered = match af {
+            Some(af) => af.render(v)?,
+            None => format!("{default}{}", self.fmt(v)),
+        };
+        if self.state.decimal_separator != '.' {
+            Some(rendered.replace('.', &self.state.decimal_separator.to_string()))
+        } else {
+            Some(rendered)
+        }
+    }
+
     fn maybe(&self, coord: char, prev: Option<f64>, val: Option<f64>) -> Option<String> {
         let v = val?;
         if let Some(p) = prev {
@@ -41,7 +64,23 @@ impl Post {
                 return None;
             }
         }
-        Some(format!("{coord}{}", self.fmt(v)))
+        self.fmt_axis(coord, v)
+    }
+
+    /// Spindle-speed word (`S<rpm>`) with a leading space when emitted.
+    /// Returns "" when the speed axis is disabled so callers can just
+    /// concatenate it onto `M3` / `M4`.
+    fn render_speed(&self, speed: u32) -> String {
+        let af = self
+            .state
+            .profile
+            .as_ref()
+            .and_then(|p| p.axes.as_ref())
+            .map(|a| a.speed.clone());
+        match af {
+            Some(af) => af.render(f64::from(speed)).map_or(String::new(), |s| format!(" {s}")),
+            None => format!(" S{speed}"),
+        }
     }
 
     fn coords(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) -> String {
@@ -72,6 +111,21 @@ impl Post {
 }
 
 
+/// Pick the matching `AxisFormat` from a profile's `AxesConfig` given
+/// the default axis letter the post wants to emit. Returns a clone
+/// because the call sites hold `&self.state` and we need to release
+/// it before calling `self.fmt(v)`.
+fn axis_for(letter: char, axes: &crate::gcode::post_profile::AxesConfig) -> AxisFormat {
+    match letter {
+        'X' => axes.x.clone(),
+        'Y' => axes.y.clone(),
+        'Z' => axes.z.clone(),
+        'I' => axes.i.clone(),
+        'J' => axes.j.clone(),
+        _ => AxisFormat::coord(&letter.to_string()),
+    }
+}
+
 impl PostProcessor for Post {
     fn separation(&mut self) {
         self.write("");
@@ -99,7 +153,20 @@ impl PostProcessor for Post {
     }
     fn feedrate(&mut self, rate: u32) {
         if self.state.last_rate != Some(rate) {
-            self.write(format!("F{rate}"));
+            let af = self
+                .state
+                .profile
+                .as_ref()
+                .and_then(|p| p.axes.as_ref())
+                .map(|a| a.feed.clone());
+            match af {
+                Some(af) => {
+                    if let Some(s) = af.render(f64::from(rate)) {
+                        self.write(s);
+                    }
+                }
+                None => self.write(format!("F{rate}")),
+            }
             self.state.last_rate = Some(rate);
         }
     }
@@ -200,7 +267,8 @@ impl PostProcessor for Post {
     }
     fn spindle_cw(&mut self, speed: u32, pause: u32) {
         if self.state.last_speed != Some(speed) {
-            self.write(format!("M3 S{speed}"));
+            let rendered = self.render_speed(speed);
+            self.write(format!("M3{rendered}"));
             self.state.last_speed = Some(speed);
             if pause > 0 {
                 self.write(format!("G4 P{pause}"));
@@ -209,7 +277,8 @@ impl PostProcessor for Post {
     }
     fn spindle_ccw(&mut self, speed: u32, pause: u32) {
         if self.state.last_speed != Some(speed) {
-            self.write(format!("M4 S{speed}"));
+            let rendered = self.render_speed(speed);
+            self.write(format!("M4{rendered}"));
             self.state.last_speed = Some(speed);
             if pause > 0 {
                 self.write(format!("G4 P{pause}"));
@@ -237,8 +306,14 @@ impl PostProcessor for Post {
         j: Option<f64>,
     ) {
         let body = self.coords(x, y, z);
-        let i = i.map(|v| format!(" I{}", self.fmt(v))).unwrap_or_default();
-        let j = j.map(|v| format!(" J{}", self.fmt(v))).unwrap_or_default();
+        let i = i
+            .and_then(|v| self.fmt_axis('I', v))
+            .map(|s| format!(" {s}"))
+            .unwrap_or_default();
+        let j = j
+            .and_then(|v| self.fmt_axis('J', v))
+            .map(|s| format!(" {s}"))
+            .unwrap_or_default();
         self.write(format!("G2 {body}{i}{j}").trim().to_string());
     }
     fn arc_ccw(
@@ -250,8 +325,14 @@ impl PostProcessor for Post {
         j: Option<f64>,
     ) {
         let body = self.coords(x, y, z);
-        let i = i.map(|v| format!(" I{}", self.fmt(v))).unwrap_or_default();
-        let j = j.map(|v| format!(" J{}", self.fmt(v))).unwrap_or_default();
+        let i = i
+            .and_then(|v| self.fmt_axis('I', v))
+            .map(|s| format!(" {s}"))
+            .unwrap_or_default();
+        let j = j
+            .and_then(|v| self.fmt_axis('J', v))
+            .map(|s| format!(" {s}"))
+            .unwrap_or_default();
         self.write(format!("G3 {body}{i}{j}").trim().to_string());
     }
     fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, dwell_sec: f64) {

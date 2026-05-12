@@ -124,6 +124,11 @@ function loadSettings(): AppSettings {
 class ProjectState {
   imported = $state<ImportResponse | null>(null);
   generated = $state<GenerateResponse | null>(null);
+  /// Monotonic counter bumped on every `setGenerated` call. Scene3D's
+  /// sim-rebuild key uses this instead of `generated.gcode.length` —
+  /// two runs with identical gcode length but different content used
+  /// to silently dedupe and skip the sim rebuild.
+  generatedVersion = $state(0);
   loading = $state(false);
   loadingMessage = $state<string | null>(null);
   generating = $state(false);
@@ -579,6 +584,7 @@ class ProjectState {
 
   setGenerated(r: GenerateResponse) {
     this.generated = r;
+    this.generatedVersion += 1;
     // Pre-compute cumulative arc length over the toolpath so playback
     // can advance by physical distance instead of segment count. See
     // `playheadToSegment` for the inverse lookup.

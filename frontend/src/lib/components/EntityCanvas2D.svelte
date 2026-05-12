@@ -1197,6 +1197,7 @@
   onkeyup={(e) => {
     if (e.key === 'Alt' || !e.altKey) altDown = false;
   }}
+  onblur={() => (altDown = false)}
   onclick={onCtxDocClick}
 />
 <div class="canvas-host" bind:this={container}>

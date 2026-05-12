@@ -1745,7 +1745,21 @@ fn build_z_schedule(
             // Last pass.
             if let Some(fs) = finish_mag {
                 let pre_finish = total_depth + fs;
-                if !out.is_empty() && (out.last().copied().unwrap_or(0.0) - pre_finish).abs() > 1e-9 && pre_finish < start_depth - 1e-9 {
+                // Splice a pre-finish pass whenever the resulting Z
+                // sits strictly between total_depth and start_depth,
+                // AND it isn't a duplicate of the previous pass.
+                // Bug before this: the `!out.is_empty()` guard
+                // dropped the pre-finish pass on a single-pass op
+                // (step >= total_depth ⇒ loop terminates with
+                // `out` still empty), silently losing the finish
+                // quality on thin cuts.
+                let dup_of_last = out
+                    .last()
+                    .map_or(false, |&l| (l - pre_finish).abs() <= 1e-9);
+                if !dup_of_last
+                    && pre_finish < start_depth - 1e-9
+                    && pre_finish > total_depth + 1e-9
+                {
                     out.push(pre_finish);
                 }
             }
@@ -2349,6 +2363,41 @@ mod tests {
             tabs: Vec::new(),
             is_finish: false,
         }
+    }
+
+    /// Regression for `hsb` (audit): build_z_schedule used to drop the
+    /// pre-finish pass on single-pass ops because of an `!out.is_empty()`
+    /// guard. With step >= depth (one pass at total_depth), the user's
+    /// finish_step was silently lost.
+    #[test]
+    fn build_z_schedule_inserts_pre_finish_on_single_pass() {
+        // Depth = -3, step = -3 (= depth, so one main pass), finish_step = 0.2.
+        // Expected: pre-finish at -2.8, then total at -3.
+        let s = build_z_schedule(0.0, -3.0, -3.0, Some(0.2), &[]);
+        assert_eq!(
+            s,
+            vec![-2.8, -3.0],
+            "single-pass with finish_step should splice a pre-finish at depth + finish_step",
+        );
+    }
+
+    /// Same finish_step but multi-pass: the schedule should still
+    /// include the pre-finish where it makes sense, AND not duplicate
+    /// it when a regular step lands at the same Z.
+    #[test]
+    fn build_z_schedule_inserts_pre_finish_on_multi_pass() {
+        // Depth = -5, step = -1, finish_step = 0.2.
+        // Main passes: -1, -2, -3, -4. Final reaches -5 with a
+        // pre-finish at -4.8 spliced in, then -5.
+        let s = build_z_schedule(0.0, -5.0, -1.0, Some(0.2), &[]);
+        assert_eq!(s, vec![-1.0, -2.0, -3.0, -4.0, -4.8, -5.0]);
+    }
+
+    /// Finish-step of zero behaves like None — no extra pass.
+    #[test]
+    fn build_z_schedule_finish_step_zero_is_noop() {
+        let s = build_z_schedule(0.0, -3.0, -3.0, Some(0.0), &[]);
+        assert_eq!(s, vec![-3.0]);
     }
 
     #[test]

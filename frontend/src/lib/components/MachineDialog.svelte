@@ -56,11 +56,52 @@
   /// not exact equality — the user might tweak templates on top of
   /// 'Mach3 metric' and we still want the dropdown to show Mach3 (so
   /// the next tweak doesn't snap it back to the canonical preset).
+  /// Map the current `postProfile` to one of our preset keys. Match
+  /// the NAME *and* check that the user hasn't tweaked anything on
+  /// top of the preset — if they edited a template, the dropdown
+  /// should snap to "custom" so users can tell they've diverged from
+  /// the canonical preset (was: name-only match, which silently
+  /// claimed a heavily-edited profile was still "LinuxCNC default").
   function profilePreset(p: PostProfile | undefined): string {
     if (!p) return 'none';
-    if (p.name === 'LinuxCNC default') return 'linuxcnc';
-    if (p.name === 'GRBL default') return 'grbl';
-    if (p.name === 'Mach3 metric') return 'mach3';
+    const matches = (a: PostProfile, b: PostProfile): boolean =>
+      a.file_extension === b.file_extension &&
+      (a.line_ending ?? null) === (b.line_ending ?? null) &&
+      (a.program_start ?? null) === (b.program_start ?? null) &&
+      (a.program_end ?? null) === (b.program_end ?? null) &&
+      (a.tool_change ?? null) === (b.tool_change ?? null) &&
+      (a.coolant_flood_on ?? null) === (b.coolant_flood_on ?? null) &&
+      (a.coolant_flood_off ?? null) === (b.coolant_flood_off ?? null) &&
+      (a.coolant_mist_on ?? null) === (b.coolant_mist_on ?? null) &&
+      (a.coolant_mist_off ?? null) === (b.coolant_mist_off ?? null) &&
+      !a.axes === !b.axes;
+    const presets: { key: string; profile: PostProfile }[] = [
+      { key: 'linuxcnc', profile: { name: 'LinuxCNC default', file_extension: 'nc', line_ending: '\n' } },
+      {
+        key: 'mach3',
+        profile: {
+          name: 'Mach3 metric',
+          file_extension: 'tap',
+          line_ending: '\r\n',
+          program_start: '%\nN10 G21 G90 (wiac <version>)',
+          program_end: 'M30\n%',
+        },
+      },
+      {
+        key: 'grbl',
+        profile: {
+          name: 'GRBL default',
+          file_extension: 'nc',
+          line_ending: '\n',
+          program_start: '; wiac <version> — GRBL',
+          program_end: 'M2',
+          tool_change: '; toolchange to T<t> (manual on GRBL)',
+        },
+      },
+    ];
+    for (const { key, profile } of presets) {
+      if (p.name === profile.name && matches(p, profile)) return key;
+    }
     return 'custom';
   }
 

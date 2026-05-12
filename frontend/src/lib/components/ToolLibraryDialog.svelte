@@ -737,7 +737,7 @@
                   </label>
                 </div>
                 <div class="holder-row pass-overrides">
-                  <span class="holder-label" title="Automatic chip-thinning (rt1.25 / Estlcam Wirbeln). When checked, Pocket ops using this tool clamp the cascade step down to tool_radius/2 (or the user-set Step) — keeps the cutter from overloading on hard materials. Set the Step value to override the default half-radius rule.">Wirbeln (auto chip-thin)</span>
+                  <span class="holder-label" title="Automatic chip-thinning (rt1.25 / Estlcam Wirbeln). When checked, Pocket ops using this tool clamp the cascade step down to tool_radius/2 (or the user-set Step) — keeps the cutter from overloading on hard materials. Set the Step value to override the default half-radius rule.">Chip-thinning (Estlcam: Wirbeln)</span>
                 </div>
                 <div class="holder-row">
                   <label class="radio">

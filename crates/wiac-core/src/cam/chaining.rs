@@ -114,22 +114,24 @@ fn find_neighbor(
     segments: &[Segment],
     taken: &[bool],
     point: Point2,
-    forward: bool,
+    _forward: bool,
 ) -> Option<usize> {
+    // Pick the unused segment whose nearer endpoint is closest to
+    // `point` within FUZZY. Was previously a "best" tracker that
+    // broke on first match without using the recorded distance —
+    // effectively a first-fit lookup that could pick a worse
+    // candidate when two segments both lay within FUZZY of the seam.
+    // True best-fit makes the chaining stable under input order.
     let mut best: Option<(usize, f64)> = None;
     for (i, seg) in segments.iter().enumerate() {
         if taken[i] {
             continue;
         }
-        let candidate_distance = if forward {
-            seg.start.distance(point).min(seg.end.distance(point))
-        } else {
-            seg.end.distance(point).min(seg.start.distance(point))
-        };
-        if candidate_distance < FUZZY {
-            let _ = candidate_distance;
+        let candidate_distance = seg.start.distance(point).min(seg.end.distance(point));
+        if candidate_distance < FUZZY
+            && best.map_or(true, |(_, d)| candidate_distance < d)
+        {
             best = Some((i, candidate_distance));
-            break;
         }
     }
     best.map(|(i, _)| i)

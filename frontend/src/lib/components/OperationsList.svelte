@@ -71,37 +71,35 @@
     renameDraft = '';
   }
 
+  /// Empty group placeholders — groups the user named via "+ New group"
+  /// but hasn't moved any ops into yet. Rendered as a stub header so
+  /// the user has a drop target for the next op. Cleared whenever
+  /// the group gains a member.
+  let pendingEmptyGroups = $state<Set<string>>(new Set());
+
   function commitNewGroup() {
     const name = newGroupDraft.trim();
     if (!name) {
       newGroupOpen = false;
       return;
     }
-    // Apply to currently selected op; otherwise, no-op (the user can
-    // drag an op onto the new header in a follow-up).
+    // Apply to currently selected op; otherwise create an empty
+    // placeholder bucket so the user has a drop target for the next
+    // op they drag in.
     if (project.selectedOpId != null) {
       project.setOpGroup(project.selectedOpId, name);
     } else {
-      // No selection — at least show the empty group by mounting a
-      // "ghost" bucket. We do this by adding the name to collapsedGroups
-      // via a sentinel — no, simpler: just collapse it after creation
-      // so the empty header is visible at the top until the user drags
-      // something in.
+      // Make sure the new group is visible (not collapsed) on
+      // creation, and pin it in pendingEmptyGroups so it renders
+      // even though no op carries the label yet.
       const next = new Set(collapsedGroups);
       next.delete(name);
       collapsedGroups = next;
-      // Force the group to appear by stashing it in a "pending" set.
       pendingEmptyGroups = new Set(pendingEmptyGroups).add(name);
     }
     newGroupDraft = '';
     newGroupOpen = false;
   }
-
-  /// Empty group placeholders — groups the user named via "+ New group"
-  /// but hasn't moved any ops into yet. Rendered as a stub header so
-  /// the user has a drop target for the next op. Cleared whenever
-  /// the group gains a member.
-  let pendingEmptyGroups = $state<Set<string>>(new Set());
 
   /// Svelte action: focus the element on mount. Replaces the
   /// `autofocus` attribute that svelte-check flags as an a11y
@@ -117,6 +115,18 @@
     return t ? t.name : `tool #${toolId}`;
   }
 
+  /// Lift the per-render Set construction out of statusFor() so it's
+  /// not rebuilt N times per op per render. statusFor() runs once per
+  /// op per draw; before this each call did `imported.objects.includes(id)`
+  /// (linear scan over a 5000-object DXF) and built a fresh
+  /// `Set(layers.map(name))` for the layer check.
+  let importedObjectsSet = $derived(
+    project.imported?.objects ? new Set(project.imported.objects) : new Set<number>(),
+  );
+  let importedLayersSet = $derived(
+    project.imported?.layers ? new Set(project.imported.layers.map((l) => l.name)) : new Set<string>(),
+  );
+
   function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad'; reason: string } {
     if (!project.tools.find((t) => t.id === op.toolId)) {
       return { label: '✘', tone: 'bad', reason: `Tool #${op.toolId} is not in the project's tool library. Pick a tool in the operation properties.` };
@@ -125,15 +135,13 @@
       return { label: '⚠', tone: 'warn', reason: 'No drawing imported yet — open a DXF/SVG to apply this operation.' };
     }
     if (op.sourceObjects && op.sourceObjects.length > 0) {
-      const have = project.imported.objects ?? [];
-      const missing = op.sourceObjects.filter((id) => !have.includes(id));
+      const missing = op.sourceObjects.filter((id) => !importedObjectsSet.has(id));
       if (missing.length > 0) {
         return { label: '⚠', tone: 'warn', reason: `Source includes ${missing.length} object id(s) not present in the current import — they may have come from a different drawing.` };
       }
     }
     if (op.sourceLayers && op.sourceLayers.length > 0) {
-      const knownLayers = new Set(project.imported.layers.map((l) => l.name));
-      const missing = op.sourceLayers.filter((l) => !knownLayers.has(l));
+      const missing = op.sourceLayers.filter((l) => !importedLayersSet.has(l));
       if (missing.length > 0) {
         return { label: '⚠', tone: 'warn', reason: `Source layer(s) "${missing.join(', ')}" not in this drawing.` };
       }
@@ -225,14 +233,24 @@
   function onDrop(_e: DragEvent, id: number) {
     if (dragId == null) return;
     // Same-group drop ⇒ pure reorder. Cross-group drop ⇒ move into
-    // the target's group AND reposition next to it.
+    // the target's group AND reposition next to it. Both are
+    // wrapped in one history transaction so a single Ctrl+Z reverts
+    // the whole drag instead of needing two (was: setOpGroup +
+    // reorderOperation as separate commands).
     const dragged = project.operations.find((o) => o.id === dragId);
     const target = project.operations.find((o) => o.id === id);
-    if (dragged && target && (dragged.group ?? '') !== (target.group ?? '')) {
-      project.setOpGroup(dragged.id, target.group);
+    const crossGroup =
+      !!dragged && !!target && (dragged.group ?? '') !== (target.group ?? '');
+    if (crossGroup) {
+      project.history.beginTransaction('Move op');
     }
-    const targetIdx = project.operations.findIndex((o) => o.id === id);
-    if (targetIdx >= 0) project.reorderOperation(dragId, targetIdx);
+    try {
+      if (crossGroup) project.setOpGroup(dragged!.id, target!.group);
+      const targetIdx = project.operations.findIndex((o) => o.id === id);
+      if (targetIdx >= 0) project.reorderOperation(dragId, targetIdx);
+    } finally {
+      if (crossGroup) project.history.commitTransaction();
+    }
     dragId = null;
     dragOverId = null;
     dragOverGroup = null;

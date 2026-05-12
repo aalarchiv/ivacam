@@ -449,7 +449,11 @@
       tool_dia: tool.diameter,
       cellRes,
       maxCells: settings.maxSimulationCells,
-      gen_id: generated.gcode.length, // cheap stand-in for "is this a new gen?"
+      // Monotonic version counter bumped on every setGenerated — two
+      // runs whose gcode happens to have the same length but different
+      // content now correctly invalidate the sim cache (was: gcode.length
+      // as a cheap-but-unreliable stand-in).
+      gen_id: project.generatedVersion,
       fixtures: project.fixtures,
     });
     if (key !== lastSimKey) {

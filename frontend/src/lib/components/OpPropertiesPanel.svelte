@@ -1140,7 +1140,7 @@
                     patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
                 }}
               />
-              <span class="unit">0–1</span>
+              <span class="unit" title="Unitless fraction between 0 and 1.">fraction</span>
             </div>
           </label>
         {/if}
@@ -1321,7 +1321,7 @@
                 patch('cornerFeedReduction', isNaN(v) ? 0 : Math.max(0, Math.min(0.95, v)));
               }}
             />
-            <span class="unit">0–1</span>
+            <span class="unit" title="Unitless fraction between 0 and 1.">fraction</span>
           </div>
         </label>
       </fieldset>

@@ -259,6 +259,55 @@
     stepped: 'Stepped',
   };
   const holderKindOptions: HolderKind[] = ['none', 'cylinder', 'cone', 'stepped'];
+
+  /// Whether a given main-row field is meaningful for the tool kind.
+  /// Inapplicable fields are kept in the grid (so the row layout
+  /// stays stable) but disabled with a tooltip explaining why —
+  /// mirrors Estlcam's c_Tools (`_TP`) which hides per-type rows.
+  function fieldApplies(field: string, kind: ToolKind): boolean {
+    switch (field) {
+      case 'flutes':
+        return !['v_bit', 'engraver', 'drag_knife', 'laser_beam', 'drill'].includes(kind);
+      case 'tipDiameter':
+        return ['v_bit', 'engraver'].includes(kind);
+      case 'speed':
+        return !['drag_knife', 'laser_beam'].includes(kind);
+      case 'plunge':
+        return !['drag_knife', 'laser_beam', 'drill'].includes(kind);
+      case 'defaultStep':
+        // Drill has its own peck-step in the expanded section, not
+        // the generic Z step.
+        return !['drag_knife', 'laser_beam', 'drill'].includes(kind);
+      case 'coolant':
+        // Laser uses gas-assist (not implemented yet) — coolant
+        // dropdown still applies as a generic "assist" toggle.
+        return true;
+      default:
+        return true;
+    }
+  }
+
+  function fieldReasonForKind(field: string, kind: ToolKind): string {
+    const k = kindLabels[kind];
+    if (field === 'flutes') return `Flutes not used for ${k.toLowerCase()}.`;
+    if (field === 'tipDiameter') return `Tip ⌀ only applies to V-bits / engravers.`;
+    if (field === 'speed' && kind === 'drag_knife') return `Drag-knife doesn't spin.`;
+    if (field === 'speed' && kind === 'laser_beam')
+      return `Laser uses power (set in machine config), not RPM.`;
+    if (field === 'plunge' && kind === 'drag_knife')
+      return `Drag-knife stays at cut depth.`;
+    if (field === 'plunge' && kind === 'laser_beam')
+      return `Laser cuts at constant Z.`;
+    if (field === 'plunge' && kind === 'drill')
+      return `Drill uses the cut feed as its plunge rate.`;
+    if (field === 'defaultStep' && kind === 'drill')
+      return `Drill uses the peck step in the expanded section, not the generic Z step.`;
+    if (field === 'defaultStep' && kind === 'drag_knife')
+      return `Drag-knife runs at fixed depth.`;
+    if (field === 'defaultStep' && kind === 'laser_beam')
+      return `Laser cuts at constant Z.`;
+    return '';
+  }
 </script>
 
 {#if open}
@@ -318,7 +367,9 @@
                 type="number"
                 step="0.05"
                 value={tool.tipDiameter ?? ''}
-                placeholder="—"
+                placeholder={fieldApplies('tipDiameter', tool.kind) ? '—' : 'n/a'}
+                disabled={!fieldApplies('tipDiameter', tool.kind)}
+                title={fieldApplies('tipDiameter', tool.kind) ? '' : fieldReasonForKind('tipDiameter', tool.kind)}
                 onchange={(e) => {
                   const v = (e.currentTarget as HTMLInputElement).value;
                   updateField(i, 'tipDiameter', v === '' ? undefined : parseFloat(v));
@@ -329,24 +380,31 @@
                 step="1"
                 min="1"
                 value={tool.flutes}
+                disabled={!fieldApplies('flutes', tool.kind)}
+                title={fieldApplies('flutes', tool.kind) ? '' : fieldReasonForKind('flutes', tool.kind)}
                 onchange={(e) => updateField(i, 'flutes', parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1)}
               />
               <input
                 type="number"
                 step="500"
                 value={tool.speed}
+                disabled={!fieldApplies('speed', tool.kind)}
+                title={fieldApplies('speed', tool.kind) ? '' : fieldReasonForKind('speed', tool.kind)}
                 onchange={(e) => updateField(i, 'speed', parseInt((e.currentTarget as HTMLInputElement).value, 10) || 0)}
               />
               <input
                 type="number"
                 step="50"
                 value={tool.feedRate}
+                title={tool.kind === 'drill' ? 'For drill, this is the plunge feed.' : ''}
                 onchange={(e) => updateField(i, 'feedRate', parseInt((e.currentTarget as HTMLInputElement).value, 10) || 0)}
               />
               <input
                 type="number"
                 step="50"
                 value={tool.plungeRate}
+                disabled={!fieldApplies('plunge', tool.kind)}
+                title={fieldApplies('plunge', tool.kind) ? '' : fieldReasonForKind('plunge', tool.kind)}
                 onchange={(e) => updateField(i, 'plungeRate', parseInt((e.currentTarget as HTMLInputElement).value, 10) || 0)}
               />
               <input
@@ -354,8 +412,11 @@
                 step="0.05"
                 max="0"
                 value={tool.defaultStep ?? ''}
-                placeholder="—"
-                title="Operations using this tool inherit this when they don't specify their own. Negative number, mm."
+                placeholder={fieldApplies('defaultStep', tool.kind) ? '—' : 'n/a'}
+                disabled={!fieldApplies('defaultStep', tool.kind)}
+                title={fieldApplies('defaultStep', tool.kind)
+                  ? 'Operations using this tool inherit this when they don\'t specify their own. Negative number, mm.'
+                  : fieldReasonForKind('defaultStep', tool.kind)}
                 class:invalid={tool.defaultStep !== undefined && tool.defaultStep >= 0}
                 onchange={(e) => {
                   const v = (e.currentTarget as HTMLInputElement).value;
@@ -704,6 +765,110 @@
                     />
                   </label>
                 </div>
+                {#if tool.kind === 'v_bit' || tool.kind === 'engraver'}
+                  <div class="holder-row pass-overrides">
+                    <span class="holder-label" title="V-bit / engraver fields. The cone math drives V-Carve depth and Chamfer width.">V-bit</span>
+                  </div>
+                  <div class="holder-row">
+                    <label>
+                      <span>Tip angle (°)</span>
+                      <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        max="179"
+                        placeholder="60"
+                        value={tool.tipAngleDeg ?? ''}
+                        title="Full included angle of the V-bit point (degrees). Drives V-Carve depth (z = -R / tan(angle / 2)) and Chamfer depth. Common values: 30°, 45°, 60°, 90°."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          updateField(i, 'tipAngleDeg', v === '' ? undefined : parseFloat(v));
+                        }}
+                      />
+                    </label>
+                  </div>
+                {/if}
+                {#if tool.kind === 'drag_knife'}
+                  <div class="holder-row pass-overrides">
+                    <span class="holder-label" title="Drag-knife fields. The drag offset drives the pivot-arc compensation at corners.">Drag-knife</span>
+                  </div>
+                  <div class="holder-row">
+                    <label>
+                      <span>Drag offset (mm)</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        placeholder="—"
+                        value={tool.dragoff ?? ''}
+                        title="Distance from the spindle axis to the cutting tip. The post emits a pivot arc at each corner so the blade trails through cleanly. 0 ⇒ no compensation (true tangent knife)."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          updateField(i, 'dragoff', v === '' ? undefined : parseFloat(v));
+                        }}
+                      />
+                    </label>
+                  </div>
+                {/if}
+                {#if tool.kind === 'bull_nose'}
+                  <div class="holder-row pass-overrides">
+                    <span class="holder-label" title="Bull-nose endmill: corner radius rounds the cutter's bottom edge.">Bull-nose</span>
+                  </div>
+                  <div class="holder-row">
+                    <label>
+                      <span>Corner radius (mm)</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        placeholder="—"
+                        value={tool.cornerRadiusMm ?? ''}
+                        title="Radius of the rounded corner where the flat bottom meets the side. Set to 0 (or empty) for a square endmill; set to half the diameter for a ball-nose."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          updateField(i, 'cornerRadiusMm', v === '' ? undefined : parseFloat(v));
+                        }}
+                      />
+                    </label>
+                  </div>
+                {/if}
+                {#if tool.kind === 't_slot'}
+                  <div class="holder-row pass-overrides">
+                    <span class="holder-label" title="T-slot cutter geometry: the neck connects the shank to the wider cutting head.">T-slot</span>
+                  </div>
+                  <div class="holder-row">
+                    <label>
+                      <span>Neck ⌀ (mm)</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        placeholder="—"
+                        value={tool.tslotNeckDiameterMm ?? ''}
+                        title="Diameter of the narrow neck above the cutting head. Must be smaller than the cutter ⌀ (otherwise it's a regular endmill)."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          updateField(i, 'tslotNeckDiameterMm', v === '' ? undefined : parseFloat(v));
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <span>Neck length (mm)</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        placeholder="—"
+                        value={tool.tslotNeckLengthMm ?? ''}
+                        title="Length of the neck section from the top of the cutting head up to where the shank begins."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          updateField(i, 'tslotNeckLengthMm', v === '' ? undefined : parseFloat(v));
+                        }}
+                      />
+                    </label>
+                  </div>
+                {/if}
                 {#if tool.kind === 'laser_beam'}
                   <div class="holder-row pass-overrides">
                     <span class="holder-label" title="Laser-only fields (rt1.29). Honored when this tool fires the cut.">Laser</span>
@@ -797,6 +962,15 @@
   }
   input.invalid {
     border-color: var(--danger, #c44);
+  }
+  /* Disabled fields (per-kind n/a entries) fade visibly so users see
+     they're not editable, without changing the row layout. */
+  input:disabled,
+  select:disabled {
+    opacity: 0.4;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: not-allowed;
   }
   .row.head {
     color: var(--text-muted);

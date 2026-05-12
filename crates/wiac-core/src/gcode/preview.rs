@@ -108,6 +108,11 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
         // diameter (the bug this tessellation guards against).
         let mut i_off: Option<f64> = None;
         let mut j_off: Option<f64> = None;
+        // R word: for G2/G3 it's a radius; for G81/G82/G83/G73 it's
+        // the retract plane (Z) the canned cycle returns to. We keep
+        // these in the same variable since they're mutually exclusive
+        // per line.
+        let mut r_val: Option<f64> = None;
         for tok in line.split_whitespace() {
             let (head, val_str) = tok.split_at(1);
             let val: f64 = val_str.parse().unwrap_or(0.0);
@@ -120,6 +125,16 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                             unit_scale = 25.4;
                         } else if n == 21 {
                             unit_scale = 1.0;
+                        } else if matches!(n, 73 | 81 | 82 | 83) {
+                            // Drill canned cycle. Recorded so the
+                            // expansion below knows to emit the
+                            // rapid + plunge + retract triplet
+                            // instead of a single diagonal "rapid"
+                            // (the pre-fix bug: G81 X10 Y10 Z-3 R2
+                            // after a G0 was treated as a G0 to
+                            // (10, 10, -3), drawing a diagonal
+                            // segment THROUGH the workpiece).
+                            active_code = n;
                         }
                     }
                 }
@@ -131,8 +146,57 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                 }
                 "I" | "i" => i_off = Some(val * unit_scale),
                 "J" | "j" => j_off = Some(val * unit_scale),
+                "R" | "r" => r_val = Some(val * unit_scale),
                 _ => {}
             }
+        }
+        // Drill canned cycle expansion. The post emits one G81/G82/G83/G73
+        // line per hole with the target X/Y/Z and the retract R. Expand
+        // it into three preview segments:
+        //   1. Horizontal rapid from current pos to (X, Y, current_z)
+        //   2. Vertical plunge to (X, Y, Z) at feed (Plunge kind)
+        //   3. Vertical retract to (X, Y, R) at rapid (Retract kind)
+        // After the cycle, the cutter is at (X, Y, R). The next iteration
+        // can rapid back up to fast_z via the post's emitted `G0 Z<fast_z>`
+        // before the following G81.
+        if matches!(active_code, 73 | 81 | 82 | 83) {
+            let r_z = r_val.unwrap_or(state.z);
+            let mid_xy = Pose3 {
+                x,
+                y,
+                z: state.z,
+            };
+            let bottom = Pose3 { x, y, z };
+            let retracted = Pose3 { x, y, z: r_z };
+            let from = state;
+            let mut push = |from: Pose3, to: Pose3, kind: MoveKind| {
+                if from.x == to.x && from.y == to.y && from.z == to.z {
+                    return;
+                }
+                let seg_idx = out.len() as u32;
+                out.push(ToolpathSegment {
+                    from,
+                    to,
+                    kind,
+                    gcode_line: line_no,
+                    op_id: active_op,
+                });
+                let last = lines_to_segment.len() - 1;
+                if lines_to_segment[last] == NO_SEGMENT {
+                    lines_to_segment[last] = seg_idx;
+                }
+                segments_to_line.push(line_no);
+            };
+            push(from, mid_xy, MoveKind::Rapid);
+            push(mid_xy, bottom, MoveKind::Plunge);
+            push(bottom, retracted, MoveKind::Retract);
+            state = retracted;
+            // Reset active_code so a subsequent non-canned-cycle line
+            // (e.g. a plain `G0 Z10` between holes) isn't misclassified.
+            // The post explicitly re-emits the G code on every line, so
+            // we don't need to keep G81 modal in the interpreter.
+            active_code = 0;
+            continue;
         }
         let from = state;
         let to = Pose3 { x, y, z };
@@ -308,6 +372,54 @@ mod tests {
         assert!(matches!(segs[0].kind, MoveKind::Rapid));
         assert!(matches!(segs[1].kind, MoveKind::Plunge));
         assert!(matches!(segs[2].kind, MoveKind::Retract));
+    }
+
+    /// Regression: a G81 canned cycle after a G0 Z lift used to be
+    /// interpreted as a diagonal G0 to (X, Y, Z), drawing a straight
+    /// line through the workpiece. It now expands into a horizontal
+    /// rapid, a vertical plunge, and a vertical retract — what the
+    /// real machine executes.
+    #[test]
+    fn drill_canned_cycle_expands_into_rapid_plunge_retract() {
+        // Two-hole drill program. Each cycle starts with a G0 lift to
+        // fast_z (10 mm), then G81 X Y Z=−3 R=2.
+        let g = "\
+            G21\n\
+            G90\n\
+            G0 Z10\n\
+            G81 X1 Y1 Z-3 R2\n\
+            G0 Z10\n\
+            G81 X5 Y5 Z-3 R2\n";
+        let segs = interpret(g);
+        // Each G0 Z10 = 1 segment. Each G81 = 3 segments.
+        // Total = 1 + 3 + 1 + 3 = 8.
+        assert_eq!(segs.len(), 8, "got {:#?}", segs);
+
+        // First G81: horizontal rapid at z=10, plunge to z=-3, retract to z=2.
+        let g81_a = &segs[1..4];
+        assert!(matches!(g81_a[0].kind, MoveKind::Rapid));
+        assert_eq!(g81_a[0].from, Pose3 { x: 0.0, y: 0.0, z: 10.0 });
+        assert_eq!(g81_a[0].to, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
+        assert!(matches!(g81_a[1].kind, MoveKind::Plunge));
+        assert_eq!(g81_a[1].from, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
+        assert_eq!(g81_a[1].to, Pose3 { x: 1.0, y: 1.0, z: -3.0 });
+        assert!(matches!(g81_a[2].kind, MoveKind::Retract));
+        assert_eq!(g81_a[2].to, Pose3 { x: 1.0, y: 1.0, z: 2.0 });
+
+        // Second G0 lift: vertical rapid from (1, 1, 2) to (1, 1, 10).
+        assert!(matches!(segs[4].kind, MoveKind::Rapid));
+        assert_eq!(segs[4].from, Pose3 { x: 1.0, y: 1.0, z: 2.0 });
+        assert_eq!(segs[4].to, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
+
+        // Second G81: horizontal rapid at z=10, NOT a diagonal into the
+        // workpiece (the bug we're guarding against).
+        let g81_b = &segs[5..8];
+        assert!(matches!(g81_b[0].kind, MoveKind::Rapid));
+        assert_eq!(g81_b[0].from, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
+        assert_eq!(g81_b[0].to, Pose3 { x: 5.0, y: 5.0, z: 10.0 });
+        assert!(matches!(g81_b[1].kind, MoveKind::Plunge));
+        assert_eq!(g81_b[1].from, Pose3 { x: 5.0, y: 5.0, z: 10.0 });
+        assert_eq!(g81_b[1].to, Pose3 { x: 5.0, y: 5.0, z: -3.0 });
     }
 
     #[test]

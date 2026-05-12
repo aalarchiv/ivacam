@@ -94,51 +94,77 @@ export class TauriWiacClient implements WiacClient {
 
     let abortHandler: (() => void) | undefined;
     const unlistens: UnlistenFn[] = [];
-    return new Promise<GenerateResponse>((resolve, reject) => {
-      const cleanup = () => {
-        for (const u of unlistens) {
-          try {
-            u();
-          } catch {
-            // Best-effort.
-          }
-        }
-        if (cancelToken && abortHandler) {
-          cancelToken.removeEventListener('abort', abortHandler);
-        }
-      };
+    let resolve!: (resp: GenerateResponse) => void;
+    let reject!: (err: unknown) => void;
+    const result = new Promise<GenerateResponse>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
 
-      void listen<PipelineEvent>(`generate-event:${token_id}`, (msg) => {
+    const cleanup = () => {
+      for (const u of unlistens) {
+        try {
+          u();
+        } catch {
+          // Best-effort.
+        }
+      }
+      if (cancelToken && abortHandler) {
+        cancelToken.removeEventListener('abort', abortHandler);
+      }
+    };
+
+    // Register all four listeners and AWAIT their registration before
+    // signaling the backend worker to start. The backend's
+    // `generate_streaming_cmd` already spawned the worker but parked
+    // it on a oneshot channel pending the ready handshake we send
+    // below — without this gate, a fast pipeline (empty / 1-op
+    // project) can emit `generate-result:<token>` before the FE's
+    // listener for that event has finished registering, dropping
+    // the terminal event and hanging the Generate UI in 'running'
+    // (or 'cancelling' if the user clicks Cancel).
+    const [u1, u2, u3, u4] = await Promise.all([
+      listen<PipelineEvent>(`generate-event:${token_id}`, (msg) => {
         onEvent(msg.payload);
-      }).then((u) => unlistens.push(u));
-
-      void listen<GenerateResponse>(`generate-result:${token_id}`, (msg) => {
+      }),
+      listen<GenerateResponse>(`generate-result:${token_id}`, (msg) => {
         cleanup();
         resolve(msg.payload);
-      }).then((u) => unlistens.push(u));
-
-      void listen<number>(`generate-cancelled:${token_id}`, () => {
+      }),
+      listen<number>(`generate-cancelled:${token_id}`, () => {
         cleanup();
         onEvent({ kind: 'cancelled' });
         reject(new CancelledError());
-      }).then((u) => unlistens.push(u));
-
-      void listen<string>(`generate-error:${token_id}`, (msg) => {
+      }),
+      listen<string>(`generate-error:${token_id}`, (msg) => {
         cleanup();
         reject(new Error(msg.payload));
-      }).then((u) => unlistens.push(u));
+      }),
+    ]);
+    unlistens.push(u1, u2, u3, u4);
 
-      if (cancelToken) {
-        if (cancelToken.aborted) {
+    if (cancelToken) {
+      if (cancelToken.aborted) {
+        void invoke('cancel_generate', { tokenId: token_id });
+      } else {
+        abortHandler = () => {
           void invoke('cancel_generate', { tokenId: token_id });
-        } else {
-          abortHandler = () => {
-            void invoke('cancel_generate', { tokenId: token_id });
-          };
-          cancelToken.addEventListener('abort', abortHandler);
-        }
+        };
+        cancelToken.addEventListener('abort', abortHandler);
       }
-    });
+    }
+
+    // Listeners are live — tell the backend worker to proceed. If this
+    // call fails (e.g. the command name isn't registered on an older
+    // backend), the worker's 2-second timeout still lets the pipeline
+    // run; the race is just not fixed in that case.
+    try {
+      await invoke('generate_streaming_ready_cmd', { tokenId: token_id });
+    } catch {
+      // Older backend without the ready handshake — fall through.
+    }
+
+    return result;
   }
 
   async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {

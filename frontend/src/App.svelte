@@ -116,6 +116,18 @@
     reopenPrompt = null;
   }
 
+  // Auto-dismiss the reopen banner once a project / drawing is loaded by
+  // any path (the user clicked Open, dragged a file, or accepted the
+  // banner). The banner only makes sense as a startup affordance —
+  // keeping it visible after the user is already working is noise.
+  $effect(() => {
+    void project.imported;
+    void project.activeProjectPath;
+    if (reopenPrompt && (project.imported || project.activeProjectPath)) {
+      reopenPrompt = null;
+    }
+  });
+
   /// Load a project by absolute path. Picks the import path vs.
   /// .vc-project loader by the file extension. Mirrors what
   /// FileUpload.svelte's loadFromPath / openProjectNative flows do —

@@ -98,6 +98,18 @@ fn token_registry() -> &'static Mutex<HashMap<u32, CancelToken>> {
     REG.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Pending generate runs whose worker thread is waiting for the FE's
+/// `generate_streaming_ready_cmd` handshake. When the FE finishes
+/// registering event listeners, it sends the signal here and the worker
+/// proceeds. Without this gate, fast pipelines (empty / 1-op projects)
+/// can emit `generate-result:<token>` before the FE's listener for that
+/// event has finished registering, dropping the terminal event and
+/// hanging the Generate UI.
+fn ready_registry() -> &'static Mutex<HashMap<u32, std::sync::mpsc::Sender<()>>> {
+    static REG: OnceLock<Mutex<HashMap<u32, std::sync::mpsc::Sender<()>>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn next_token_id() -> u32 {
     static COUNTER: AtomicU32 = AtomicU32::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -129,8 +141,22 @@ pub async fn generate_streaming_cmd(
     let error_channel = format!("generate-error:{token_id}");
     let cancelled_channel = format!("generate-cancelled:{token_id}");
 
+    // Per-token oneshot channel the worker thread blocks on until the FE
+    // signals it's done registering listeners. See `ready_registry`.
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
+    {
+        if let Ok(mut reg) = ready_registry().lock() {
+            reg.insert(token_id, ready_tx);
+        }
+    }
+
     let project = request.project.clone();
     std::thread::spawn(move || {
+        // Wait for the FE handshake, capped so a buggy FE that forgets to
+        // signal can't strand the worker forever. 2 s is generously more
+        // than `listen()` round-trips ever take.
+        let _ = ready_rx.recv_timeout(std::time::Duration::from_secs(2));
+        let _ = ready_registry().lock().map(|mut m| m.remove(&token_id));
         let app_for_events = app.clone();
         let mut sink = move |ev: PipelineEvent| {
             let _ = app_for_events.emit(&event_channel, ev);
@@ -164,6 +190,23 @@ pub async fn generate_streaming_cmd(
     });
 
     Ok(GenerateStreamingResponse { token_id })
+}
+
+/// FE → backend handshake confirming all four `generate-{event,result,
+/// cancelled,error}:<token>` listeners are registered. The worker
+/// thread (spawned in `generate_streaming_cmd`) blocks on this signal
+/// before it starts the pipeline, eliminating the race where a fast
+/// pipeline finishes and emits its terminal event before the FE's
+/// listener for that event has finished registering, which used to
+/// leave the Generate UI stuck in "running" / "cancelling".
+#[tauri::command]
+pub fn generate_streaming_ready_cmd(token_id: u32) -> Result<(), String> {
+    if let Ok(mut reg) = ready_registry().lock() {
+        if let Some(tx) = reg.remove(&token_id) {
+            let _ = tx.send(());
+        }
+    }
+    Ok(())
 }
 
 /// Flip the cancel flag for a previously-issued token. The streaming

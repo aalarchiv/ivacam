@@ -105,7 +105,27 @@ interface WireMachine {
     coolant_flood_off?: string;
     coolant_mist_on?: string;
     coolant_mist_off?: string;
+    // hev: per-axis output config. Must mirror
+    // `wiac_core::gcode::post_profile::AxesConfig` so a refactor that
+    // type-picks instead of spread-copies the post profile doesn't
+    // silently drop the user's axis customisations.
+    axes?: {
+      x: WireAxisFormat;
+      y: WireAxisFormat;
+      z: WireAxisFormat;
+      i: WireAxisFormat;
+      j: WireAxisFormat;
+      feed: WireAxisFormat;
+      speed: WireAxisFormat;
+    };
   };
+}
+
+interface WireAxisFormat {
+  enabled: boolean;
+  name: string;
+  format: string;
+  scale: number;
 }
 
 type WireDrillCycle =

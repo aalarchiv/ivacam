@@ -109,17 +109,44 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
     }
 }
 
-/// Polygon-signed-area of a closed VcObject from its segment endpoints
-/// (shoelace formula on the segment vertices). Positive = CCW, negative
-/// = CW. Used to make the offset direction predictable regardless of
-/// the user's input winding — without this, parallel_offset_object's
-/// "left of tangent" semantics flip the inward/outward meaning between
-/// CCW and CW polygons, which surprised users who imported CW DXF
-/// boundaries and saw their pockets cut on the OUTSIDE of the shape.
+/// Polygon-signed-area of a closed VcObject. Sums the chord-shoelace
+/// contribution from each segment plus, for arcs/circles, the lens
+/// area between chord and arc carrying `sign(bulge)`. Positive = CCW,
+/// negative = CW.
+///
+/// Bulge correction matters for objects whose curved segments dominate
+/// the shape — most importantly a single-Circle encoded as two
+/// semicircles where the chord shoelace sums to exactly zero. Without
+/// the correction every closed-arc-only object reads as area=0 ⇒ CCW,
+/// which silently flips the inward/outward sign for CW-encoded
+/// circles and gives wrong-side profile offsets.
 pub fn object_signed_area(obj: &VcObject) -> f64 {
     let mut sum = 0.0;
     for seg in &obj.segments {
+        // Chord shoelace contribution.
         sum += seg.start.x * seg.end.y - seg.end.x * seg.start.y;
+        // Arc bow correction. Only meaningful when bulge != 0 — Line
+        // and Point fall through with bulge = 0.
+        let b = seg.bulge;
+        if b.abs() < 1e-12 {
+            continue;
+        }
+        let dx = seg.end.x - seg.start.x;
+        let dy = seg.end.y - seg.start.y;
+        let chord = (dx * dx + dy * dy).sqrt();
+        if chord < 1e-12 {
+            continue;
+        }
+        // sagitta = b * chord / 2 (signed).
+        let s = b * chord * 0.5;
+        let s_abs = s.abs();
+        let r = (chord * chord * 0.25 + s * s) / (2.0 * s_abs);
+        // Included angle: 2 * 2*atan(|b|).
+        let theta = 4.0 * b.abs().atan();
+        let lens = r * r * (theta - theta.sin()) * 0.5;
+        // sum is 2*signed_area (we halve at the end); the lens
+        // contribution is signed_area-scale, so multiply by 2.
+        sum += 2.0 * b.signum() * lens;
     }
     sum * 0.5
 }
@@ -224,10 +251,15 @@ pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Ve
         for pair in iter.by_ref() {
             let (a, b) = (pair[0], pair[1]);
             // Inset both ends by half a tool diameter so we don't carve
-            // outside the polygon interior on the corners.
-            let inset = tool_diameter * 0.5;
-            let new_a = a.min(b - inset.min((b - a).abs())) + inset.min((b - a).abs() * 0.5);
-            let new_b = a.max(b - inset.min((b - a).abs())) - inset.min((b - a).abs() * 0.5);
+            // outside the polygon interior at the row endpoints. The
+            // inset is clamped to half the stroke length so a narrow
+            // crossing collapses to a single point rather than going
+            // negative.
+            let lo = a.min(b);
+            let hi = a.max(b);
+            let inset = (tool_diameter * 0.5).min((hi - lo) * 0.5);
+            let new_a = lo + inset;
+            let new_b = hi - inset;
             if new_b <= new_a + 1e-6 {
                 continue;
             }
@@ -1431,6 +1463,115 @@ mod tests {
         enforce_winding(&mut o, CutContext::Skip, crate::project::CutDirection::Conventional);
         let after: Vec<_> = o.segments.iter().map(|s| (s.start, s.end)).collect();
         assert_eq!(before, after);
+    }
+
+    /// Regression for C1 (audit): the zigzag inset used to double-apply
+    /// the inset to one end, leaving a stripe of uncut stock at every
+    /// stroke's right end. Each stroke now spans `[lo + r, hi - r]`
+    /// exactly, where r = tool_diameter / 2.
+    #[test]
+    fn pocket_zigzag_insets_both_ends_by_tool_radius() {
+        // Square 0..20 in X and Y; stride small enough to get several
+        // strokes; tool diameter 3 mm ⇒ radius 1.5 mm.
+        let boundary = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(20.0, 0.0),
+            Point2::new(20.0, 20.0),
+            Point2::new(0.0, 20.0),
+        ];
+        let segs = pocket_zigzag(&boundary, 2.0, 3.0);
+        // Pull out the horizontal cuts (the strokes — they share y).
+        let strokes: Vec<&Segment> = segs
+            .iter()
+            .filter(|s| (s.start.y - s.end.y).abs() < 1e-6)
+            .collect();
+        assert!(strokes.len() >= 3, "expected multiple strokes");
+        for s in &strokes {
+            let lo = s.start.x.min(s.end.x);
+            let hi = s.start.x.max(s.end.x);
+            assert!(
+                (lo - 1.5).abs() < 1e-6,
+                "left end should sit at lo=1.5, got {lo}",
+            );
+            assert!(
+                (hi - 18.5).abs() < 1e-6,
+                "right end should sit at hi=18.5, got {hi} (was 17.0 before C1 fix)",
+            );
+        }
+    }
+
+    /// Regression for C5 (audit): a CW-encoded full circle (two
+    /// semicircles, bulge = -1) used to read signed_area == 0 because
+    /// the chord shoelace cancelled out. With the bulge bow correction
+    /// the sign is now negative, so parallel_offset_inward picks the
+    /// correct delta sign for CW circles.
+    #[test]
+    fn object_signed_area_includes_arc_bow() {
+        use crate::geometry::SegmentKind;
+        let r = 5.0;
+        let center = Point2::new(0.0, 0.0);
+        let p_right = Point2::new(r, 0.0);
+        let p_left = Point2::new(-r, 0.0);
+        // CCW circle: bulge = +1, traverses p_right → top → p_left → bottom → p_right.
+        let ccw = VcObject::new(
+            vec![
+                Segment {
+                    kind: SegmentKind::Circle,
+                    start: p_right,
+                    end: p_left,
+                    bulge: 1.0,
+                    center: Some(center),
+                    layer: "0".into(),
+                    color: 7,
+                },
+                Segment {
+                    kind: SegmentKind::Circle,
+                    start: p_left,
+                    end: p_right,
+                    bulge: 1.0,
+                    center: Some(center),
+                    layer: "0".into(),
+                    color: 7,
+                },
+            ],
+            true,
+        );
+        // CW circle: bulge = -1.
+        let cw = VcObject::new(
+            vec![
+                Segment {
+                    kind: SegmentKind::Circle,
+                    start: p_right,
+                    end: p_left,
+                    bulge: -1.0,
+                    center: Some(center),
+                    layer: "0".into(),
+                    color: 7,
+                },
+                Segment {
+                    kind: SegmentKind::Circle,
+                    start: p_left,
+                    end: p_right,
+                    bulge: -1.0,
+                    center: Some(center),
+                    layer: "0".into(),
+                    color: 7,
+                },
+            ],
+            true,
+        );
+        let area_ccw = object_signed_area(&ccw);
+        let area_cw = object_signed_area(&cw);
+        let pi_r2 = std::f64::consts::PI * r * r;
+        assert!(
+            (area_ccw - pi_r2).abs() < 1e-6,
+            "CCW circle area should be +π·r² (got {area_ccw}, expected {pi_r2})",
+        );
+        assert!(
+            (area_cw + pi_r2).abs() < 1e-6,
+            "CW circle area should be -π·r² (got {area_cw}, expected {})",
+            -pi_r2,
+        );
     }
 
     #[test]

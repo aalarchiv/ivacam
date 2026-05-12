@@ -337,11 +337,10 @@ export function toggleTabPlacementCommand(
     label: 'Toggle tab',
     apply: (s) => {
       const t = s as CommandTarget;
-      const op = t.operations.find((o) => o.id === opId);
-      if (!op) return;
+      const opIdx = t.operations.findIndex((o) => o.id === opId);
+      if (opIdx < 0) return;
+      const op = t.operations[opIdx];
       saved = op.tabPlacements ? op.tabPlacements.map((p) => ({ ...p })) : [];
-      // Estlcam-style click toggle: within toleranceT of the same
-      // object's existing placement, remove it; else append.
       const current = saved;
       const matchIdx = current.findIndex(
         (p) =>
@@ -352,14 +351,26 @@ export function toggleTabPlacementCommand(
         matchIdx >= 0
           ? current.filter((_, i) => i !== matchIdx)
           : [...current, { ...placement }];
-      op.tabPlacements = next;
+      // Produce a NEW operations array (and a new op object) so $derived /
+      // $effect blocks that depend on operations' reference identity
+      // (the 2D ghost tab, 3D tab markers) refire. The previous
+      // in-place mutation left stale markers until something else
+      // dirtied operations.
+      const nextOps = [...t.operations];
+      nextOps[opIdx] = { ...op, tabPlacements: next };
+      t.operations = nextOps;
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
-      const op = t.operations.find((o) => o.id === opId);
-      if (!op || saved === undefined) return;
-      op.tabPlacements = saved.map((p) => ({ ...p }));
+      const opIdx = t.operations.findIndex((o) => o.id === opId);
+      if (opIdx < 0 || saved === undefined) return;
+      const nextOps = [...t.operations];
+      nextOps[opIdx] = {
+        ...t.operations[opIdx],
+        tabPlacements: saved.map((p) => ({ ...p })),
+      };
+      t.operations = nextOps;
       t.dirty = true;
     },
   };

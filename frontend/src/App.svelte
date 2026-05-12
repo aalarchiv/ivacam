@@ -25,6 +25,11 @@
   let settingsOpen = $state(false);
   let addTextOpen = $state(false);
   let shortcutHelpOpen = $state(false);
+  /// Startup banner: when set, the user was previously editing a
+  /// project and we offer to reopen it. Styled in-app instead of a
+  /// native window.confirm so the first impression of the app isn't
+  /// an unstyled OS dialog (audit C10).
+  let reopenPrompt = $state<{ path: string; filename: string } | null>(null);
 
   // Open the Tool library dialog when OpPropertiesPanel's "edit this
   // tool" icon requests focus on a specific tool row. The dialog reads
@@ -96,11 +101,19 @@
       const last = workspace.get().last_project;
       if (last) {
         const filename = last.split(/[\\/]/).pop() ?? last;
-        if (window.confirm(`Reopen ${filename}?`)) {
-          await openProjectPath(last);
-        }
+        reopenPrompt = { path: last, filename };
       }
     }
+  }
+
+  async function acceptReopen() {
+    if (!reopenPrompt) return;
+    const path = reopenPrompt.path;
+    reopenPrompt = null;
+    await openProjectPath(path);
+  }
+  function dismissReopen() {
+    reopenPrompt = null;
   }
 
   /// Load a project by absolute path. Picks the import path vs.
@@ -505,13 +518,15 @@
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
       </svg>
     </button>
-    <button
-      class="tool-toggle"
-      disabled={!project.imported || project.selectedOpId == null}
-      title={$_('header.tabs_hint')}
+    <!-- Tab count chip — read-only summary. Click-to-place lives on
+         the 2D canvas and per-op Tabs section (audit C11). -->
+    <span
+      class="tab-count-chip"
+      title="Total tabs across all operations. Select an op and click on its contour in the 2D canvas to add or remove a tab."
+      aria-label={$_('header.tabs', { values: { count: tabCount } })}
     >
       {$_('header.tabs', { values: { count: tabCount } })}
-    </button>
+    </span>
     <div class="pane-toggle">
       <button
         class:active={activePane === '2d'}
@@ -527,6 +542,16 @@
       </button>
     </div>
   </header>
+
+  {#if reopenPrompt}
+    <div class="reopen-banner" role="alert">
+      <span class="reopen-text">
+        Reopen <strong>{reopenPrompt.filename}</strong>?
+      </span>
+      <button class="reopen-accept" type="button" onclick={acceptReopen}>Open</button>
+      <button class="reopen-dismiss" type="button" onclick={dismissReopen}>Dismiss</button>
+    </div>
+  {/if}
 
   <FileUpload />
   <GenerateBar />
@@ -649,6 +674,51 @@
 </div>
 
 <style>
+  .reopen-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0.75rem;
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .reopen-text {
+    flex: 1;
+  }
+  .reopen-accept,
+  .reopen-dismiss {
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    padding: 0.2rem 0.6rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.82rem;
+  }
+  .reopen-accept {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .reopen-accept:hover {
+    background: var(--accent-strong, var(--accent));
+  }
+  .reopen-dismiss:hover {
+    background: var(--bg);
+  }
+  .tab-count-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.2;
+  }
   .app {
     display: grid;
     grid-template-rows: auto auto auto 1fr auto;
@@ -777,19 +847,6 @@
     height: 1px;
     background: var(--border);
     margin: 0.2rem 0.1rem;
-  }
-  .tool-toggle {
-    background: var(--bg-elevated);
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 0.3rem 0.7rem;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    cursor: pointer;
-  }
-  .tool-toggle:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
   .pane-toggle {
     display: inline-flex;

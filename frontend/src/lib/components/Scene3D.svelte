@@ -30,6 +30,10 @@
   let intersectObserver: IntersectionObserver | undefined;
   let themeMql: MediaQueryList | undefined;
   let themeMo: MutationObserver | undefined;
+  // Hoisted so onDestroy's removeEventListener can pass the SAME
+  // function reference that onMount's addEventListener used — a
+  // fresh closure would silently fail to detach (audit C12).
+  let onThemeChange: (() => void) | undefined;
   /// RAF gating: stop the loop entirely when the page is hidden OR the
   /// host element is fully off-screen. Pane swaps unmount Scene3D
   /// already (so onDestroy stops RAF), but minimised windows / tabbed-
@@ -268,8 +272,8 @@
     // group rebuilds via the $effect below since we touch project.imported
     // as a Svelte dep.
     themeMql = window.matchMedia('(prefers-color-scheme: light)');
-    const onTheme = () => applyTheme();
-    themeMql.addEventListener('change', onTheme);
+    onThemeChange = () => applyTheme();
+    themeMql.addEventListener('change', onThemeChange);
     // MutationObserver fires on every attribute *write*, even when the
     // value didn't change — track the last seen value so we only do the
     // work when the theme actually flipped. applyTheme rebuilds the grid
@@ -332,10 +336,10 @@
     driver?.destroy();
     driver = undefined;
     renderer?.dispose();
-    if (themeMql) {
-      const handler = () => applyTheme();
-      themeMql.removeEventListener('change', handler);
+    if (themeMql && onThemeChange) {
+      themeMql.removeEventListener('change', onThemeChange);
     }
+    onThemeChange = undefined;
     themeMo?.disconnect();
     if (renderer && host?.contains(renderer.domElement)) {
       host.removeChild(renderer.domElement);

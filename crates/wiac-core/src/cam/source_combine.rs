@@ -359,7 +359,12 @@ fn polytree_to_regions(
     color: i32,
 ) -> Vec<CombinedRegion> {
     let mut out = Vec::new();
-    let root = &tree.nodes[0];
+    // An empty result tree (e.g. difference of A from A) has no nodes;
+    // bail out cleanly instead of indexing into an empty Vec and
+    // panicking the whole pipeline.
+    let Some(root) = tree.nodes.first() else {
+        return out;
+    };
     for &top_idx in root.children() {
         let top = &tree.nodes[top_idx];
         let boundary = pathd_to_points(top.polygon());

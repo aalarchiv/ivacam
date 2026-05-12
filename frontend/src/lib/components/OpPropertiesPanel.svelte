@@ -1474,9 +1474,9 @@
 
     {#if op.kind === 'helix'}
       <p class="empty">
-        This operation kind is parsed but the G-code emitter for it ships
-        with the next backend slice; the run will return
-        <code>UnimplementedKind</code> for now.
+        Helical entry isn't supported as a standalone operation yet. For
+        helical plunge into a pocket, use a Pocket op and set
+        <strong>Plunge → Helix</strong> in the Cut section.
       </p>
     {/if}
   {/if}
@@ -1555,11 +1555,6 @@
     min-width: 0;
     width: 100%;
     box-sizing: border-box;
-  }
-  code {
-    background: var(--bg-input);
-    padding: 0 0.2rem;
-    border-radius: 2px;
   }
   .hint {
     margin: 0.2rem 0 0;

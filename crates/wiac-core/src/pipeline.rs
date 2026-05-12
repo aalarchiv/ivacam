@@ -464,35 +464,25 @@ fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionP
             continue;
         }
         // Pocket-Outside (rt1.3) preview: when the op declares a frame,
-        // mirror the build_op_offsets injection so the preview matches the
-        // toolpath the user will see.
-        if let Some(frame_shape) = op.params.frame_shape {
-            let selected_indices = ordered_selection(op, objects);
-            if selected_indices.is_empty() {
-                continue;
-            }
-            let mut local_objects = objects.to_vec();
-            let frame_selection: Vec<&VcObject> =
-                selected_indices.iter().map(|&i| &local_objects[i]).collect();
-            let frame = build_frame(
-                &frame_selection,
-                frame_shape,
-                op.params.frame_padding_mm.unwrap_or(0.0).max(0.0),
-                op.params.frame_corner_radius_mm,
-            );
-            let frame_idx = local_objects.len();
-            local_objects.push(frame);
-            let mut ordered: Vec<usize> = Vec::with_capacity(selected_indices.len() + 1);
-            ordered.push(frame_idx);
-            ordered.extend(selected_indices);
-            let regions =
-                combine_source_regions(&local_objects, &ordered, SourceCombine::Difference);
-            for r in regions {
-                out.push(RegionPreview {
-                    op_id: op.id,
-                    outer: r.boundary,
-                    holes: r.holes,
-                });
+        // synthesize the frame + ordered-ids the same way the toolpath
+        // driver does (`synthesize_pocket_outside_objects`) so preview
+        // and emit stay in lockstep.
+        if op.params.frame_shape.is_some() {
+            if let Some((local_objects, ordered)) =
+                synthesize_pocket_outside_objects(op, objects)
+            {
+                let regions = combine_source_regions(
+                    &local_objects,
+                    &ordered,
+                    SourceCombine::Difference,
+                );
+                for r in regions {
+                    out.push(RegionPreview {
+                        op_id: op.id,
+                        outer: r.boundary,
+                        holes: r.holes,
+                    });
+                }
             }
             continue;
         }
@@ -809,6 +799,48 @@ fn resolve_op_segments(op: &Operation, all: &[Segment]) -> Vec<Segment> {
 
 /// Build the offset list a single op consumes. Currently supports
 /// Profile / Pocket / Engrave / DragKnife — others raise UnimplementedKind.
+/// Pocket-Outside (rt1.3) helper. When the op carries `frame_shape`,
+/// builds the synthetic frame around the op's current selection and
+/// returns `(new_objects, ordered_indices)` where:
+///   * `new_objects` is `objects` with the frame appended at the end.
+///   * `ordered_indices` lists `[frame_idx, ...selection_idxs]` so
+///     downstream `SourceCombine::Difference` carves between the
+///     frame and the original selection.
+/// Returns `None` when the op has no frame_shape or the selection is
+/// empty. Single source of truth used by both the preview pass
+/// (`build_region_previews`) and the toolpath driver (`build_op_offsets`)
+/// so they cannot drift.
+fn synthesize_pocket_outside_objects(
+    op: &Operation,
+    objects: &[VcObject],
+) -> Option<(Vec<VcObject>, Vec<usize>)> {
+    let frame_shape = op.params.frame_shape?;
+    let selected_indices: Vec<usize> = (0..objects.len())
+        .filter(|i| op_includes_object(op, &objects[*i], *i))
+        .collect();
+    if selected_indices.is_empty() {
+        return None;
+    }
+    let frame = {
+        let frame_selection: Vec<&VcObject> =
+            selected_indices.iter().map(|&i| &objects[i]).collect();
+        let padding = op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
+        build_frame(
+            &frame_selection,
+            frame_shape,
+            padding,
+            op.params.frame_corner_radius_mm,
+        )
+    };
+    let mut new_objects = objects.to_vec();
+    let frame_idx = new_objects.len();
+    new_objects.push(frame);
+    let mut ordered = Vec::with_capacity(selected_indices.len() + 1);
+    ordered.push(frame_idx);
+    ordered.extend(selected_indices);
+    Some((new_objects, ordered))
+}
+
 fn build_op_offsets(
     op: &Operation,
     project: &Project,
@@ -885,37 +917,22 @@ fn build_op_offsets(
     // stale to clean up — recomputed every generate from the op params.
     let frame_op_storage: Option<Operation> = {
         let cur_op: &Operation = effective_op_storage.as_ref().unwrap_or(op);
-        if let Some(frame_shape) = cur_op.params.frame_shape {
-            let selected_indices: Vec<usize> = (0..objects.len())
-                .filter(|i| op_includes_object(cur_op, &objects[*i], *i))
-                .collect();
-            if selected_indices.is_empty() {
-                None
-            } else {
-                let frame = {
-                    let frame_selection: Vec<&VcObject> =
-                        selected_indices.iter().map(|&i| &objects[i]).collect();
-                    let padding = cur_op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
-                    build_frame(
-                        &frame_selection,
-                        frame_shape,
-                        padding,
-                        cur_op.params.frame_corner_radius_mm,
-                    )
-                };
-                let frame_idx = objects.len();
-                objects.push(frame);
-                let mut ordered_ids: Vec<u32> = Vec::with_capacity(selected_indices.len() + 1);
-                ordered_ids.push((frame_idx as u32) + 1);
-                for i in &selected_indices {
-                    ordered_ids.push((*i as u32) + 1);
-                }
+        if cur_op.params.frame_shape.is_some() {
+            if let Some((new_objects, ordered_indices)) =
+                synthesize_pocket_outside_objects(cur_op, objects)
+            {
+                // Replace the working vec with the frame-augmented set.
+                *objects = new_objects;
+                let ordered_ids: Vec<u32> =
+                    ordered_indices.iter().map(|&i| (i as u32) + 1).collect();
                 let mut clone = cur_op.clone();
                 clone.source = OperationSource::Objects {
                     ids: ordered_ids,
                     combine: SourceCombine::Difference,
                 };
                 Some(clone)
+            } else {
+                None
             }
         } else {
             None
@@ -1543,21 +1560,38 @@ fn run_thread_op<P: PostProcessor>(
         if !obj.closed {
             continue;
         }
-        // Accept any closed object whose first segment is a Circle
-        // with a known center — covers both single-segment circles
-        // and the multi-arc representation chaining produces. For
-        // non-circle closed loops, the inscribed-circle path would
-        // be a sensible extension; defer that to a follow-up.
+        // Accept any closed loop that is geometrically a circle:
+        //   * A single Circle segment (the importer's preferred form).
+        //   * A chain of Arc segments that all share the same center
+        //     — what `chaining::segments_to_objects` produces for a
+        //     DXF/SVG circle split into multiple arcs. Without this
+        //     branch the user gets a `thread_no_circles` warning on
+        //     perfectly circular geometry whose importer happened to
+        //     pick the arc representation.
         let Some(first) = obj.segments.first() else {
             continue;
         };
-        if !matches!(first.kind, SegmentKind::Circle) {
-            continue;
-        }
-        let Some(center) = first.center else {
-            continue;
+        let (center, bore_radius) = match first.kind {
+            SegmentKind::Circle => {
+                let Some(c) = first.center else { continue };
+                (c, first.start.distance(c))
+            }
+            SegmentKind::Arc => {
+                let Some(c) = first.center else { continue };
+                let radius = first.start.distance(c);
+                let all_same_center = obj.segments.iter().all(|s| {
+                    matches!(s.kind, SegmentKind::Arc | SegmentKind::Circle)
+                        && s.center.is_some_and(|sc| {
+                            (sc.x - c.x).abs() < 1e-4 && (sc.y - c.y).abs() < 1e-4
+                        })
+                });
+                if !all_same_center {
+                    continue;
+                }
+                (c, radius)
+            }
+            _ => continue,
         };
-        let bore_radius = first.start.distance(center);
         let helix_radius = if internal {
             bore_radius - tool_radius
         } else {
@@ -1663,17 +1697,27 @@ fn emit_stufenfase<P: PostProcessor>(
         if r < 0.05 {
             continue;
         }
-        // Single revolution, no descent — reuse helix_waypoints with
-        // top_z == bottom_z by faking a 1-µm Z range so the helper
-        // emits at least one full lap, then flatten to a constant Z.
-        let raw =
-            crate::cam::thread::helix_waypoints(center, r, chamfer_z, chamfer_z - 1e-6, 1.0, false);
-        let flat: Vec<(f64, f64, f64)> =
-            raw.into_iter().map(|(x, y, _)| (x, y, chamfer_z)).collect();
-        if flat.len() >= 2 {
-            polylines.push(flat);
-            found += 1;
+        // Single full revolution at constant Z. The prior implementation
+        // reused `helix_waypoints` with a 1-µm Z range, which collapsed
+        // to a 2-point segment — the chamfer never traced the rim.
+        // Emit N evenly-spaced waypoints around the circle plus a
+        // closing point so the post fits it as one or two arcs.
+        const STEPS: usize = 64;
+        let mut flat: Vec<(f64, f64, f64)> = (0..=STEPS)
+            .map(|i| {
+                let a = (i as f64) * std::f64::consts::TAU / (STEPS as f64);
+                (center.x + r * a.cos(), center.y + r * a.sin(), chamfer_z)
+            })
+            .collect();
+        // Ensure the last point exactly closes onto the first to give
+        // arc-fit a clean target instead of a sub-µm gap.
+        if let Some(&first) = flat.first() {
+            if let Some(last) = flat.last_mut() {
+                *last = first;
+            }
         }
+        polylines.push(flat);
+        found += 1;
     }
     if found == 0 {
         return Ok(());
@@ -2197,6 +2241,16 @@ fn synthesize_op_setup(
         _ => PocketConfig::default(),
     };
     setup.tabs = op.params.tabs.clone();
+    // C8 (rt1.21 followup): drive `setup.tabs.active` from the
+    // single source of truth — `tab_mode != Off`. The legacy
+    // `op.params.tabs.active` boolean was a separate hand-mirrored
+    // flag; the FE no longer maintains it perfectly, and a non-Off
+    // tab_mode with `tabs.active=false` would silently emit no tabs
+    // despite the user seeing markers on the canvas. Honor the
+    // legacy flag too (logical OR) so projects saved before this
+    // change keep working.
+    setup.tabs.active = setup.tabs.active
+        || !matches!(op.params.tab_mode, crate::project::TabPlacementMode::Off);
     if trochoidal {
         // Tabs not supported on trochoidal pockets in v1; force-off so
         // the gcode emitter doesn't see active tabs.

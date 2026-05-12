@@ -2108,6 +2108,41 @@ fn last_segment_end_tangent(seg: &Segment) -> Option<(f64, f64)> {
     }
 }
 
+/// Chord-polygon signed area of a closed-ish offset polyline. Positive
+/// = CCW, negative = CW. Bulge is ignored — the sign is dominated by
+/// the chord winding except in pathological >180° arcs that the offset
+/// pass would not produce.
+fn polyline_signed_area(segments: &[Segment]) -> f64 {
+    let mut a = 0.0;
+    for s in segments {
+        a += s.start.x * s.end.y - s.end.x * s.start.y;
+    }
+    a * 0.5
+}
+
+/// Decide which side of the tangent is FREE SPACE (no stock), so the
+/// lead-in rapids in through air rather than carving into the part.
+///
+/// Rule:
+///   * Outer profile (offset expanded outside the part) — the part
+///     sits in the INTERIOR of the offset polygon. Free space is on
+///     the side opposite the interior.
+///   * Inner profile (pocket boundary, offset contracted) — free
+///     space IS the interior (pocket center).
+/// Winding tells us where the interior is: CCW (positive signed area)
+/// ⇒ interior on the LEFT of tangent; CW ⇒ on the RIGHT.
+///
+/// Returns true when free space is on the LEFT of the tangent
+/// (perpendicular CCW = `(-ty, tx)`); false ⇒ RIGHT (`(ty, -tx)`).
+fn lead_free_side_left(setup: &Setup, segments: &[Segment]) -> bool {
+    let ccw = polyline_signed_area(segments) > 0.0;
+    let is_outer = matches!(setup.mill.offset, ToolOffset::Outside);
+    // outer + ccw → interior left → free right;  outer + cw → free left
+    // inner + ccw → interior left = free left;   inner + cw → free right
+    // ⇒ free_left = is_outer XOR ccw == !is_outer && ccw || is_outer && !ccw
+    is_outer != ccw
+}
+
 pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeometry {
     if setup.leads.r#in == LeadKind::Off || segments.is_empty() {
         return LeadGeometry::None;
@@ -2120,23 +2155,19 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
     let Some((tx, ty)) = first_segment_start_tangent(first) else {
         return LeadGeometry::None;
     };
-    // Perpendicular CCW of the tangent = "left of tangent". Same
-    // convention as the legacy lead_in_point: for an Outer profile cut
-    // post-`apply_cut_direction` (CW winding), this points OUTWARD into
-    // free space; for an Inner profile cut (CCW), it points into the
-    // open pocket interior. Climb cuts reverse the winding and the lead
-    // ends up on the wrong side — same caveat as before.
-    let (px, py) = (-ty, tx);
+    let free_left = lead_free_side_left(setup, segments);
+    let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
     match setup.leads.r#in {
         LeadKind::Straight => LeadGeometry::Straight {
             from: Point2::new(first.start.x + len * px, first.start.y + len * py),
         },
         LeadKind::Arc => {
             // Quarter-arc roll-on:
-            //   center    = P0 + perp_left * radius
-            //   arc_start = P0 + radius * (perp_left - tangent)
-            // CCW (G3) sweep around `center` from arc_start to P0
-            // lands tangent to (+tx, +ty) at P0.
+            //   center    = P0 + perp_free * radius
+            //   arc_start = P0 + radius * (perp_free - tangent)
+            // Sweep direction follows the perpendicular hand: free-on-
+            // left ⇒ CCW (G3); free-on-right ⇒ CW (G2). Either way the
+            // cutter lands at P0 tangent to (+tx, +ty).
             let radius = len;
             let center = Point2::new(first.start.x + radius * px, first.start.y + radius * py);
             let arc_start = Point2::new(
@@ -2146,7 +2177,7 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
             LeadGeometry::Arc {
                 entry_or_exit: arc_start,
                 center,
-                ccw: true,
+                ccw: free_left,
             }
         }
         LeadKind::Off => LeadGeometry::None,
@@ -2165,17 +2196,17 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
     let Some((tx, ty)) = last_segment_end_tangent(last) else {
         return LeadGeometry::None;
     };
-    let (px, py) = (-ty, tx);
+    let free_left = lead_free_side_left(setup, segments);
+    let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
     match setup.leads.out {
         LeadKind::Straight => LeadGeometry::Straight {
             from: Point2::new(last.end.x + len * px, last.end.y + len * py),
         },
         LeadKind::Arc => {
-            // Mirror of lead-in: the cutter is at Pn moving along +t.
-            //   center  = Pn + perp_left * radius
-            //   arc_end = Pn + radius * (perp_left + tangent)
-            // CCW (G3) sweep around `center` from Pn to arc_end leaves
-            // the contour tangentially.
+            // Mirror of lead-in: cutter is at Pn moving along +t.
+            //   center  = Pn + perp_free * radius
+            //   arc_end = Pn + radius * (perp_free + tangent)
+            // Sweep direction = free_left (CCW iff free is on the left).
             let radius = len;
             let center = Point2::new(last.end.x + radius * px, last.end.y + radius * py);
             let arc_end = Point2::new(
@@ -2185,7 +2216,7 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
             LeadGeometry::Arc {
                 entry_or_exit: arc_end,
                 center,
-                ccw: true,
+                ccw: free_left,
             }
         }
         LeadKind::Off => LeadGeometry::None,

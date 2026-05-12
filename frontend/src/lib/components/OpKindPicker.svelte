@@ -27,8 +27,14 @@
     helix: '◎',
     vcarve: '⌃',
   };
+  // Helix is omitted intentionally: it's an OperationKind in the
+  // schema but the dedicated standalone helix-op emitter isn't shipped
+  // yet (the backend returns UnimplementedKind). Users get helical
+  // entry by adding a Pocket and setting `Plunge → Helix` in the Cut
+  // section, which IS supported. Re-add 'helix' here when the
+  // standalone emitter lands.
   export const ALL_PICKER_KINDS: PickerKind[] = [
-    'profile', 'pocket', 'pocket_outside', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'helix', 'vcarve',
+    'profile', 'pocket', 'pocket_outside', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'vcarve',
   ];
 
   export const PICKER_LABEL: Record<PickerKind, string> = {
@@ -61,8 +67,10 @@
       'Helical descent into a closed contour.',
     vcarve:
       'Variable-depth medial-axis carving with a V-bit. Tip dips deepest where the region is widest.',
-    chamfer: 'Coming soon — chamfering pass for edge-breaking.',
-    thread: 'Coming soon — single-point thread milling.',
+    chamfer:
+      'Chamfering pass with a V-bit. Set the chamfer width and the depth is derived from the bit angle.',
+    thread:
+      'Single-point thread milling inside a circular bore (internal) or around a stud (external). Requires a closed-circle selection.',
   };
 </script>
 

@@ -66,6 +66,8 @@ interface WireToolEntry {
   corner_radius_mm?: number;
   tslot_neck_diameter_mm?: number;
   tslot_neck_length_mm?: number;
+  wirbeln?: boolean;
+  wirbeln_stepover_mm?: number;
   default_step?: number;
   flute_length_mm?: number;
   shank_diameter_mm?: number;
@@ -287,6 +289,10 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
       : {}),
     ...(t.tslotNeckLengthMm !== undefined && t.tslotNeckLengthMm > 0
       ? { tslot_neck_length_mm: t.tslotNeckLengthMm }
+      : {}),
+    ...(t.wirbeln ? { wirbeln: true } : {}),
+    ...(t.wirbelnStepoverMm !== undefined && t.wirbelnStepoverMm > 0
+      ? { wirbeln_stepover_mm: t.wirbelnStepoverMm }
       : {}),
     ...(t.defaultStep !== undefined ? { default_step: t.defaultStep } : {}),
     ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),

@@ -1023,6 +1023,15 @@ export interface ToolEntry {
   /// T-slot cutter neck length (rt1.28). Honored only when
   /// kind === 't_slot'.
   tslotNeckLengthMm?: number;
+  /// Wirbeln (rt1.25): per-tool automatic chip-thinning flag. When
+  /// true, Pocket ops using this tool clamp their cascade step to
+  /// `wirbelnStepoverMm ?? tool_radius / 2` — bounds radial
+  /// engagement at half-radius so the cutter doesn't overload on
+  /// hard materials. Default false.
+  wirbeln?: boolean;
+  /// Wirbeln stepover override (rt1.25): mm. None = use the
+  /// half-radius rule (tool_radius / 2).
+  wirbelnStepoverMm?: number;
   /// Default depth-per-pass (negative, mm). Operations using this tool
   /// inherit this when their own `step` is unset.
   defaultStep?: number;

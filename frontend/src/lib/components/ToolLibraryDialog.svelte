@@ -663,6 +663,35 @@
                     />
                   </label>
                 </div>
+                <div class="holder-row pass-overrides">
+                  <span class="holder-label" title="Automatic chip-thinning (rt1.25 / Estlcam Wirbeln). When checked, Pocket ops using this tool clamp the cascade step down to tool_radius/2 (or the user-set Step) — keeps the cutter from overloading on hard materials. Set the Step value to override the default half-radius rule.">Wirbeln (auto chip-thin)</span>
+                </div>
+                <div class="holder-row">
+                  <label class="radio">
+                    <input
+                      type="checkbox"
+                      checked={tool.wirbeln ?? false}
+                      onchange={(e) => updateField(i, 'wirbeln', (e.currentTarget as HTMLInputElement).checked)}
+                    />
+                    <span>Enable</span>
+                  </label>
+                  <label>
+                    <span>Step (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0.05"
+                      placeholder={(tool.diameter * 0.25).toFixed(2)}
+                      value={tool.wirbelnStepoverMm ?? ''}
+                      disabled={!tool.wirbeln}
+                      title="Cascade-step cap when Wirbeln is on. Empty = use tool_radius / 2 (the classic chip-thinning rule)."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'wirbelnStepoverMm', v === '' ? undefined : parseFloat(v));
+                      }}
+                    />
+                  </label>
+                </div>
                 {#if tool.kind === 'laser_beam'}
                   <div class="holder-row pass-overrides">
                     <span class="holder-label" title="Laser-only fields (rt1.29). Honored when this tool fires the cut.">Laser</span>

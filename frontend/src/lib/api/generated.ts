@@ -1236,6 +1236,13 @@ export interface components {
              * @description T-slot / keyway cutter neck length (rt1.28). Honored only when `kind == TSlot`. The vertical extent of the narrow neck above the disk. mm, positive only.
              */
             tslot_neck_length_mm?: number | null;
+            /** @description Wirbeln (rt1.25 / Estlcam T_Wirbeln): automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
+            wirbeln?: boolean;
+            /**
+             * Format: double
+             * @description Wirbeln stepover override (rt1.25). When `wirbeln` is `true`, the effective cascade step is `min(op.xy_step, wirbeln_stepover_mm OR tool_radius / 2)`. mm, positive only. None = use the half-radius rule.
+             */
+            wirbeln_stepover_mm?: number | null;
             /**
              * Format: double
              * @description Per-tool Z origin offset (rt1.30 / Estlcam Z_Shift). For machines without automatic tool-length probing — the user pre-measures each tool's tip Z relative to a reference tool and records the delta here (positive = sticks out further; negative = shorter). At toolchange / program-start the post emits a `G92 Z<shift>` that pins the new tool's tip at the same work-Z the reference tool used. mm. None = no shift.

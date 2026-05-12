@@ -951,7 +951,25 @@ fn build_op_offsets(
     } else {
         0.5
     };
-    let xy_step = setup.tool.diameter * (1.0 - overlap);
+    let mut xy_step = setup.tool.diameter * (1.0 - overlap);
+    // Wirbeln (rt1.25): when the tool is flagged for automatic
+    // chip-thinning, clamp the cascade step so radial engagement
+    // stays bounded — half the tool radius (= tool_radius / 2) is the
+    // classic chip-thinning rule. Pocket ops only; other op kinds
+    // already control their own stepover. The user can override via
+    // `ToolEntry.wirbeln_stepover_mm`.
+    if matches!(effective_op.kind, OperationKind::Pocket { .. }) {
+        if let Some(tool) = project.tools.iter().find(|t| t.id == effective_op.tool_id) {
+            if tool.wirbeln {
+                let half_r = (tool.diameter * 0.5) * 0.5;
+                let cap = tool.wirbeln_stepover_mm.filter(|v| *v > 0.0).unwrap_or(half_r);
+                if cap > 0.0 && cap < xy_step {
+                    xy_step = cap;
+                }
+            }
+        }
+    }
+    let xy_step = xy_step;
     let mut offsets: Vec<PolylineOffset> = Vec::new();
     let mut closed = 0usize;
     let mut emitted_objects = 0usize;
@@ -2569,6 +2587,8 @@ mod tests {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -3149,6 +3169,8 @@ mod tests {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -4950,6 +4972,80 @@ mod tests {
         )
         .unwrap();
         assert!(!resp.gcode.contains(" M6"));
+    }
+
+    /// Wirbeln (rt1.25): a Pocket op with a Wirbeln-flagged tool
+    /// emits MORE cascade rings than the same op without Wirbeln,
+    /// because the effective xy_step gets clamped to tool_radius/2.
+    #[test]
+    fn wirbeln_tool_increases_cascade_ring_count() {
+        let mut tool_a = endmill(1, 6.0);
+        tool_a.wirbeln = false;
+        let mut tool_b = endmill(1, 6.0);
+        tool_b.wirbeln = true;
+        let mut params = OperationParams::mill_default();
+        // overlap 0.05 -> xy_step = 6 * 0.95 = 5.7 mm. Wirbeln clamps
+        // to tool_radius/2 = 1.5 mm, so b should have many more rings.
+        params.xy_overlap = 0.05;
+        let project_with_tool = |tool: ToolEntry| Project {
+            segments: closed_square_offset(80.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params: params.clone(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp_a = run_pipeline(
+            PipelineRequest {
+                project: project_with_tool(tool_a),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let resp_b = run_pipeline(
+            PipelineRequest {
+                project: project_with_tool(tool_b),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp_b.stats.offset_count > resp_a.stats.offset_count,
+            "Wirbeln should produce more cascade rings: wirbeln=on offsets={} vs off offsets={}",
+            resp_b.stats.offset_count,
+            resp_a.stats.offset_count
+        );
+    }
+
+    /// Wirbeln serde round-trip on ToolEntry (rt1.25). Default = false
+    /// (skipped on serialize); when on with an override, both round-trip.
+    #[test]
+    fn wirbeln_serde_round_trip() {
+        let mut tool = endmill(1, 6.0);
+        let json_default = serde_json::to_string(&tool).unwrap();
+        assert!(!json_default.contains("wirbeln"));
+        tool.wirbeln = true;
+        tool.wirbeln_stepover_mm = Some(0.75);
+        let json = serde_json::to_string(&tool).unwrap();
+        assert!(json.contains("\"wirbeln\":true"));
+        assert!(json.contains("wirbeln_stepover_mm"));
+        let back: ToolEntry = serde_json::from_str(&json).unwrap();
+        assert!(back.wirbeln);
+        assert_eq!(back.wirbeln_stepover_mm, Some(0.75));
     }
 
     /// Halfpipe op (rt1.19): a closed region + Halfpipe CircularArc
@@ -7356,6 +7452,8 @@ mod tests {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -7562,6 +7660,8 @@ mod tests {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,

@@ -188,6 +188,21 @@ pub struct ToolEntry {
     /// above the disk. mm, positive only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tslot_neck_length_mm: Option<f64>,
+    /// Wirbeln (rt1.25 / Estlcam T_Wirbeln): automatic chip-thinning.
+    /// When `true`, Pocket ops using this tool clamp their effective
+    /// `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)`
+    /// — the classic chip-thinning rule that bounds radial engagement
+    /// at half-radius. Use for hard materials where the user wants
+    /// fast cascade / spiral pockets but doesn't want the cutter to
+    /// overload at high-engagement points. Default `false`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub wirbeln: bool,
+    /// Wirbeln stepover override (rt1.25). When `wirbeln` is `true`,
+    /// the effective cascade step is `min(op.xy_step,
+    /// wirbeln_stepover_mm OR tool_radius / 2)`. mm, positive only.
+    /// None = use the half-radius rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wirbeln_stepover_mm: Option<f64>,
     /// Spindle warm-up pause in seconds applied once per used tool by
     /// the time estimator. Mirrors `ToolConfig.pause`.
     #[serde(default = "default_tool_pause", skip_serializing_if = "is_default_tool_pause")]
@@ -264,6 +279,8 @@ impl Default for ToolEntry {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
             pause: default_tool_pause(),
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -500,6 +517,10 @@ fn default_tip_angle_deg() -> f64 {
 
 fn default_chamfer_width() -> f64 {
     1.0
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn default_thread_pitch() -> f64 {

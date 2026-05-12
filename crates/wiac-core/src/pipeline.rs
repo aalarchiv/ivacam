@@ -40,7 +40,7 @@ use crate::gcode::{
     linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::{Point2, Segment};
-use crate::pipeline_cache::{op_cache_key, OpCacheValue, PipelineCache};
+use crate::pipeline_cache::{op_cache_key_with_finish, OpCacheValue, PipelineCache};
 use crate::project::{
     Operation, OperationKind, OperationSource, PatternConfig, PocketStrategy, Project,
     SourceCombine, ToolEntry,
@@ -533,6 +533,15 @@ where
     F: Fn(&str, f64, &str),
 {
     emit_program_begin(header_setup, post);
+    // rt1.30: apply the first enabled op's tool's Z shift right after
+    // program_begin so even single-tool programs honor the offset.
+    if let Some(first) = project.operations.iter().find(|o| o.enabled) {
+        if let Some(tool) = project.tools.iter().find(|t| t.id == first.tool_id) {
+            if let Some(shift) = tool.z_shift_mm {
+                post.tool_z_shift(shift);
+            }
+        }
+    }
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
     let enabled_ops: Vec<&Operation> = project.operations.iter().filter(|o| o.enabled).collect();
@@ -560,9 +569,19 @@ where
         // Cache lookup. We skip caching when no cache is provided.
         let cache_key = cache.and_then(|_| {
             let tool = project.tools.iter().find(|t| t.id == op.tool_id)?;
-            Some(op_cache_key(
+            // For dual-tool Pocket ops (rt1.33), fold the finish tool's
+            // properties into the key so changing its diameter / feeds
+            // / RPMs invalidates cached output. Single-tool ops pass
+            // None and route through op_cache_key_with_finish's
+            // is-finish-tool sentinel.
+            let finish_tool = op
+                .finish_tool_id
+                .filter(|id| *id != op.tool_id)
+                .and_then(|id| project.tools.iter().find(|t| t.id == id));
+            Some(op_cache_key_with_finish(
                 op,
                 tool,
+                finish_tool,
                 &project.machine,
                 &resolve_op_segments(op, &project.segments),
                 &project.fixtures,
@@ -612,6 +631,18 @@ where
                 warnings,
                 cancel,
             )?;
+        } else if matches!(op.kind, OperationKind::Thread { .. }) {
+            post.raw(&format!("; OP {}", op.id));
+            run_thread_op(
+                op,
+                project,
+                objects,
+                &setup,
+                post,
+                &mut last_pos,
+                warnings,
+                cancel,
+            )?;
         } else {
             let (offsets, closed_count) =
                 build_op_offsets(op, project, &mut objects.clone(), &setup, warnings, cancel)?;
@@ -625,9 +656,86 @@ where
             post.raw(&format!("; OP {}", op.id));
             if !offsets.is_empty() {
                 if let OperationKind::Drill { cycle } = op.kind {
-                    emit_drill_block(&setup, &offsets, cycle, post, &mut last_pos);
+                    // Peck cycles fall back to the tool's
+                    // `default_peck_step_mm` when the op's own
+                    // peck_step_mm is unset (== 0).
+                    let resolved_cycle = resolve_peck_step(cycle, project, op);
+                    emit_drill_block(&setup, &offsets, resolved_cycle, post, &mut last_pos);
+                    // rt1.20 (Stufenfase): when the drill op carries a
+                    // chamfer-after width, walk a single revolution at
+                    // each hole's rim at the V-bit chamfer depth.
+                    if let Some(w) = op.params.chamfer_after_width_mm {
+                        if w > 0.0 {
+                            emit_stufenfase(
+                                op,
+                                project,
+                                objects,
+                                &setup,
+                                w,
+                                post,
+                                &mut last_pos,
+                                warnings,
+                            )?;
+                        }
+                    }
                 } else {
-                    emit_polylines_block(&setup, &offsets, post, &mut last_pos);
+                    // Dual-tool Pocket (rt1.33): split offsets at the
+                    // is_finish boundary, emit the rough block with
+                    // the op's tool setup, insert a M6 toolchange to
+                    // the finish tool, emit the finish block with the
+                    // finish tool's setup. Single-tool ops fall
+                    // through to a single emit_polylines_block call.
+                    let dual = synthesize_finish_setup(op, project, warnings)?;
+                    let has_finish_offsets = offsets.iter().any(|o| o.is_finish);
+                    if let (Some(finish_setup), true) = (&dual, has_finish_offsets) {
+                        let (rough_offsets, finish_offsets): (Vec<_>, Vec<_>) =
+                            offsets.iter().cloned().partition(|o| !o.is_finish);
+                        if !rough_offsets.is_empty() {
+                            emit_polylines_block(&setup, &rough_offsets, post, &mut last_pos);
+                        }
+                        // Toolchange + comment. post.tool() emits T<n>
+                        // M6 for posts that support it; no-op posts
+                        // (GRBL) skip silently, and we emit a
+                        // pipeline warning when the machine isn't
+                        // toolchange-capable so the user can spot it.
+                        if !project.machine.supports_toolchange {
+                            warnings.push(PipelineWarning {
+                                op_id: Some(op.id),
+                                kind: "dual_tool_no_toolchange".into(),
+                                message: format!(
+                                    "op '{}' uses a dual-tool setup (rough + finish) but the machine config has supports_toolchange=false; the gcode will assume a manual tool change.",
+                                    op.name
+                                ),
+                            });
+                        }
+                        post.raw(&format!(
+                            "; toolchange: finish pass with tool {}",
+                            finish_setup.tool.number
+                        ));
+                        post.tool(finish_setup.tool.number);
+                        // rt1.30: re-apply Z shift for the finish
+                        // tool after the M6. Each tool's shift is
+                        // absolute (set such that the work-Z=0 line
+                        // matches the reference tool); we just emit
+                        // the new value.
+                        if let Some(ft_id) = op.finish_tool_id {
+                            if let Some(ft) = project.tools.iter().find(|t| t.id == ft_id) {
+                                if let Some(shift) = ft.z_shift_mm {
+                                    post.tool_z_shift(shift);
+                                }
+                            }
+                        }
+                        if !finish_offsets.is_empty() {
+                            emit_polylines_block(
+                                finish_setup,
+                                &finish_offsets,
+                                post,
+                                &mut last_pos,
+                            );
+                        }
+                    } else {
+                        emit_polylines_block(&setup, &offsets, post, &mut last_pos);
+                    }
                 }
             }
         }
@@ -865,6 +973,7 @@ fn build_op_offsets(
                 closed += 1;
                 emitted_objects += 1;
                 let synthetic = synthesize_region_object(region);
+                let finish_ring_r = dual_tool_finish_radius(effective_op, project);
                 for mut o in pocket_for_object(
                     &synthetic,
                     radius,
@@ -873,6 +982,8 @@ fn build_op_offsets(
                     pocket_emit,
                     &region.holes,
                     xy_step,
+                    effective_op.params.finish_xy_allowance_mm.unwrap_or(0.0),
+                    finish_ring_r,
                 ) {
                     o.source_object_idx = region.source_idx;
                     offsets.push(o);
@@ -885,6 +996,9 @@ fn build_op_offsets(
                 apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
             }
             apply_cut_direction(&mut offsets, effective_op, false);
+            if let Some(ap) = effective_op.params.approach_point {
+                crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
+            }
             push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
             return Ok((offsets, closed));
         }
@@ -955,6 +1069,7 @@ fn build_op_offsets(
                         .collect();
                 }
                 if obj.closed {
+                    let finish_ring_r = dual_tool_finish_radius(effective_op, project);
                     for mut o in pocket_for_object(
                         obj,
                         radius,
@@ -963,6 +1078,8 @@ fn build_op_offsets(
                         pocket_emit,
                         &islands,
                         xy_step,
+                        effective_op.params.finish_xy_allowance_mm.unwrap_or(0.0),
+                        finish_ring_r,
                     ) {
                         o.source_object_idx = idx;
                         offsets.push(o);
@@ -985,6 +1102,7 @@ fn build_op_offsets(
                             color: obj.color,
                             source_object_idx: idx,
                             tabs: Vec::new(),
+                            is_finish: false,
                         }]
                     }
                     ToolOffset::Outside => parallel_offset_outward(obj, radius),
@@ -1007,6 +1125,7 @@ fn build_op_offsets(
                     color: obj.color,
                     source_object_idx: idx,
                     tabs: Vec::new(),
+                    is_finish: false,
                 });
             }
             OperationKind::Drill { .. } => {
@@ -1032,13 +1151,51 @@ fn build_op_offsets(
                         color: obj.color,
                         source_object_idx: idx,
                         tabs: Vec::new(),
+                        is_finish: false,
                     });
                 } else if let Some(mut drill) = small_circle_drill(obj, radius) {
                     drill.source_object_idx = idx;
                     offsets.push(drill);
                 }
             }
-            OperationKind::Thread | OperationKind::Chamfer | OperationKind::Helix => {
+            OperationKind::Chamfer { finish_pass, .. } => {
+                // Chamfer (rt1.18): the V-bit walks the source path
+                // verbatim — no XY offset — and the depth comes from
+                // the bit's cone math computed at synth time. The
+                // first offset is the rough cut; if finish_pass is
+                // on, emit a second offset tagged is_finish so the
+                // tool's finish-set rates kick in.
+                offsets.push(PolylineOffset {
+                    segments: obj.segments.clone(),
+                    closed: obj.closed,
+                    level: 0,
+                    is_pocket: 0,
+                    layer: obj.layer.clone(),
+                    color: obj.color,
+                    source_object_idx: idx,
+                    tabs: Vec::new(),
+                    is_finish: false,
+                });
+                if finish_pass {
+                    offsets.push(PolylineOffset {
+                        segments: obj.segments.clone(),
+                        closed: obj.closed,
+                        level: 0,
+                        is_pocket: 0,
+                        layer: obj.layer.clone(),
+                        color: obj.color,
+                        source_object_idx: idx,
+                        tabs: Vec::new(),
+                        is_finish: true,
+                    });
+                }
+            }
+            OperationKind::Thread { .. } => {
+                // Thread runs through `run_thread_op` from the per-op
+                // driver, not the offset-cascade emitter — skip
+                // silently here so a stray dispatch doesn't crash.
+            }
+            OperationKind::Helix => {
                 return Err(PipelineError::UnimplementedKind(effective_op.kind));
             }
             OperationKind::VCarve => {
@@ -1059,6 +1216,9 @@ fn build_op_offsets(
         apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
     }
     apply_cut_direction(&mut offsets, effective_op, false);
+    if let Some(ap) = effective_op.params.approach_point {
+        crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
+    }
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
     Ok((offsets, closed))
 }
@@ -1160,6 +1320,228 @@ fn run_vcarve_op<P: PostProcessor>(
     }
 
     crate::gcode::emit_vcarve_block(setup, &polylines, post, last_pos);
+    Ok(())
+}
+
+/// Helical thread emitter (rt1.17). For each selected closed circle
+/// in the source set, compute the helix radius (bore - tool_radius
+/// for internal, stud + tool_radius for external) and emit the helix
+/// waypoints between `start_depth` and `depth` at `pitch_mm` per
+/// revolution. Reuses the V-Carve emit block since both walk a
+/// pre-computed XYZ polyline at constant feed.
+fn run_thread_op<P: PostProcessor>(
+    op: &Operation,
+    project: &Project,
+    objects: &[VcObject],
+    setup: &Setup,
+    post: &mut P,
+    last_pos: &mut Point2,
+    warnings: &mut Vec<PipelineWarning>,
+    cancel: Option<&CancelToken>,
+) -> Result<(), PipelineError> {
+    use crate::geometry::SegmentKind;
+    let OperationKind::Thread {
+        pitch_mm,
+        internal,
+        climb,
+    } = op.kind
+    else {
+        return Ok(());
+    };
+    let tool = project
+        .tools
+        .iter()
+        .find(|t| t.id == op.tool_id)
+        .ok_or(PipelineError::UnknownTool(op.id, op.tool_id))?;
+    let tool_radius = tool.diameter * 0.5;
+    let top_z = op.params.start_depth;
+    let bottom_z = op.params.depth;
+    if (bottom_z - top_z).abs() < 1e-9 || pitch_mm <= 0.0 {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "thread_no_depth".into(),
+            message: format!(
+                "Thread op '{}' has zero Z range or non-positive pitch; nothing emitted.",
+                op.name
+            ),
+        });
+        return Ok(());
+    }
+    let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    let mut emitted = 0usize;
+    for (idx, obj) in objects.iter().enumerate() {
+        if cancelled(cancel) {
+            return Err(PipelineError::Cancelled);
+        }
+        if !op_includes_object(op, obj, idx) {
+            continue;
+        }
+        if !obj.closed {
+            continue;
+        }
+        // Accept any closed object whose first segment is a Circle
+        // with a known center — covers both single-segment circles
+        // and the multi-arc representation chaining produces. For
+        // non-circle closed loops, the inscribed-circle path would
+        // be a sensible extension; defer that to a follow-up.
+        let Some(first) = obj.segments.first() else {
+            continue;
+        };
+        if !matches!(first.kind, SegmentKind::Circle) {
+            continue;
+        }
+        let Some(center) = first.center else {
+            continue;
+        };
+        let bore_radius = first.start.distance(center);
+        let helix_radius = if internal {
+            bore_radius - tool_radius
+        } else {
+            bore_radius + tool_radius
+        };
+        if helix_radius <= 0.05 {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "thread_tool_too_large".into(),
+                message: format!(
+                    "Thread op '{}': bore_radius {:.3} mm with tool_radius {:.3} mm leaves no room for an internal helix (needs bore > tool). Switch to external or pick a smaller cutter.",
+                    op.name, bore_radius, tool_radius
+                ),
+            });
+            continue;
+        }
+        let path = crate::cam::thread::helix_waypoints(
+            center,
+            helix_radius,
+            top_z,
+            bottom_z,
+            pitch_mm,
+            climb,
+        );
+        if path.len() >= 2 {
+            polylines.push(path);
+            emitted += 1;
+        }
+    }
+    if emitted == 0 {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "thread_no_circles".into(),
+            message: format!(
+                "Thread op '{}' didn't find any closed circles in the selected source — Thread v1 only operates on single-segment CIRCLE objects.",
+                op.name
+            ),
+        });
+        return Ok(());
+    }
+    // V-Carve's emit_vcarve_block walks XYZ polylines with G1 cuts
+    // and safe-Z rapids between them — exactly what a tessellated
+    // helix needs. Reuse it instead of writing a parallel emitter.
+    crate::gcode::emit_vcarve_block(setup, &polylines, post, last_pos);
+    Ok(())
+}
+
+/// Stufenfase emitter (rt1.20). After the drill block for an op
+/// finishes, walk the (possibly toolchanged) cutter on a single
+/// revolution at each drilled hole's rim at z computed from the
+/// cutter's tip angle and the user-set chamfer width. Reuses
+/// emit_vcarve_block which already handles safe-Z rapids and per-
+/// polyline G1 emission. When `op.finish_tool_id` is set to a
+/// distinct tool, emits a T<n> M6 + the finish tool's Z shift
+/// before the chamfer revolution.
+#[allow(clippy::too_many_arguments)]
+fn emit_stufenfase<P: PostProcessor>(
+    op: &Operation,
+    project: &Project,
+    objects: &[VcObject],
+    drill_setup: &Setup,
+    width_mm: f64,
+    post: &mut P,
+    last_pos: &mut Point2,
+    warnings: &mut Vec<PipelineWarning>,
+) -> Result<(), PipelineError> {
+    use crate::geometry::SegmentKind;
+    // Pick the cutter for the chamfer pass: either the dual-tool
+    // finish_tool_id override, or the same tool that drilled. The
+    // setup carries the right tool already in the single-tool case.
+    let cutter_id = op.finish_tool_id.unwrap_or(op.tool_id);
+    let cutter = project
+        .tools
+        .iter()
+        .find(|t| t.id == cutter_id)
+        .ok_or(PipelineError::UnknownTool(op.id, cutter_id))?;
+    let chamfer_z = crate::cam::chamfer::chamfer_depth(width_mm, cutter.tip_angle_deg);
+    if chamfer_z.abs() < 1e-9 {
+        return Ok(());
+    }
+    // Build a tessellated revolution per hole at radius = hole_radius
+    // (the cutter centerline rides on the rim, so the cone cuts the
+    // outer bevel — matches the rt1.18 single-pass chamfer geometry).
+    let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    let mut found = 0usize;
+    for (idx, obj) in objects.iter().enumerate() {
+        if !op_includes_object(op, obj, idx) {
+            continue;
+        }
+        if !obj.closed {
+            continue;
+        }
+        let Some(first) = obj.segments.first() else {
+            continue;
+        };
+        if !matches!(first.kind, SegmentKind::Circle) {
+            continue;
+        }
+        let Some(center) = first.center else {
+            continue;
+        };
+        let r = first.start.distance(center);
+        if r < 0.05 {
+            continue;
+        }
+        // Single revolution, no descent — reuse helix_waypoints with
+        // top_z == bottom_z by faking a 1-µm Z range so the helper
+        // emits at least one full lap, then flatten to a constant Z.
+        let raw =
+            crate::cam::thread::helix_waypoints(center, r, chamfer_z, chamfer_z - 1e-6, 1.0, false);
+        let flat: Vec<(f64, f64, f64)> =
+            raw.into_iter().map(|(x, y, _)| (x, y, chamfer_z)).collect();
+        if flat.len() >= 2 {
+            polylines.push(flat);
+            found += 1;
+        }
+    }
+    if found == 0 {
+        return Ok(());
+    }
+    // Tool change + Z shift if the finish_tool_id is distinct from
+    // the drill tool. Single-tool case keeps cutting with the same
+    // setup the drill block left active.
+    let mut chamfer_setup = drill_setup.clone();
+    if op.finish_tool_id.is_some() && op.finish_tool_id != Some(op.tool_id) {
+        if !project.machine.supports_toolchange {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "stufenfase_no_toolchange".into(),
+                message: format!(
+                    "drill op '{}' has chamfer_after_width_mm + a distinct finish_tool_id but the machine doesn't support toolchange; gcode will assume manual change.",
+                    op.name
+                ),
+            });
+        }
+        if let Some(finish_setup) = synthesize_finish_setup(op, project, warnings)? {
+            post.raw(&format!(
+                "; stufenfase: toolchange to {} for hole-rim chamfer",
+                finish_setup.tool.number
+            ));
+            post.tool(finish_setup.tool.number);
+            if let Some(shift) = cutter.z_shift_mm {
+                post.tool_z_shift(shift);
+            }
+            chamfer_setup = finish_setup;
+        }
+    }
+    crate::gcode::emit_vcarve_block(&chamfer_setup, &polylines, post, last_pos);
     Ok(())
 }
 
@@ -1424,6 +1806,103 @@ pub(crate) fn effective_step(op: &Operation, tool: &ToolEntry) -> Result<f64, Pi
         })
 }
 
+/// Build a Setup whose ToolConfig comes from `op.finish_tool_id` —
+/// used for the dual-tool finish block (rt1.33). Returns `Ok(None)`
+/// when the op is single-tool or its finish_tool_id is missing /
+/// equal to tool_id; `Ok(Some(setup))` when a distinct finish tool
+/// exists. Falls through `Err(PipelineError::UnknownTool)` if the
+/// referenced finish tool id isn't in the project.
+fn synthesize_finish_setup(
+    op: &Operation,
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) -> Result<Option<crate::cam::setup::Setup>, PipelineError> {
+    let Some(ft_id) = op.finish_tool_id else {
+        return Ok(None);
+    };
+    if ft_id == op.tool_id {
+        return Ok(None);
+    }
+    // Pocket dual-tool (rt1.33) AND Drill+chamfer (rt1.20) both
+    // funnel through here; other op kinds shouldn't reach this path
+    // (no offset would be tagged finish), but be defensive — return
+    // None for anything else.
+    let drill_with_chamfer = matches!(op.kind, OperationKind::Drill { .. })
+        && op
+            .params
+            .chamfer_after_width_mm
+            .map(|w| w > 0.0)
+            .unwrap_or(false);
+    if !matches!(op.kind, OperationKind::Pocket { .. }) && !drill_with_chamfer {
+        return Ok(None);
+    }
+    // Synthesize a temporary op pointing at the finish tool and use
+    // the regular synth path so feed / plunge / spindle resolution
+    // stays in one place. The temporary op runs as PassKind::Finish
+    // via synthesize_op_setup's pass selection.
+    let mut finish_op = op.clone();
+    finish_op.tool_id = ft_id;
+    finish_op.finish_tool_id = None;
+    let mut setup = synthesize_op_setup(&finish_op, project, warnings)?;
+    // Force the finish block to use the finish tool's finish-set as
+    // its rough rates too — every offset in the finish block is the
+    // wall ring, the dedicated "finish" pass for the dual-tool flow.
+    setup.tool.rate_h = setup.tool.rate_h_finish;
+    setup.tool.rate_v = setup.tool.rate_v_finish;
+    setup.tool.speed = setup.tool.speed_finish;
+    Ok(Some(setup))
+}
+
+/// Resolve the finish-tool radius for a dual-tool Pocket op (rt1.33).
+/// Returns `Some(radius)` when `op.finish_tool_id` references a tool
+/// distinct from `op.tool_id`. Profile / other ops, single-tool ops,
+/// and missing-tool references collapse to `None`.
+fn dual_tool_finish_radius(op: &Operation, project: &Project) -> Option<f64> {
+    if !matches!(op.kind, OperationKind::Pocket { .. }) {
+        return None;
+    }
+    let finish_id = op.finish_tool_id?;
+    if finish_id == op.tool_id {
+        return None;
+    }
+    let t = project.tools.iter().find(|t| t.id == finish_id)?;
+    Some(t.diameter * 0.5)
+}
+
+/// Apply the tool library's `default_peck_step_mm` to peck-style drill
+/// cycles when the op leaves `peck_step_mm` at 0. Unrecognized values
+/// pass through untouched.
+fn resolve_peck_step(
+    cycle: crate::project::DrillCycle,
+    project: &Project,
+    op: &Operation,
+) -> crate::project::DrillCycle {
+    use crate::project::DrillCycle;
+    let tool_default = project
+        .tools
+        .iter()
+        .find(|t| t.id == op.tool_id)
+        .and_then(|t| t.default_peck_step_mm);
+    let resolved = |op_step: f64| -> f64 {
+        if op_step.abs() > 1e-9 {
+            op_step
+        } else {
+            tool_default.unwrap_or(0.0)
+        }
+    };
+    match cycle {
+        DrillCycle::Simple { .. } => cycle,
+        DrillCycle::Peck { peck_step_mm, dwell_sec } => DrillCycle::Peck {
+            peck_step_mm: resolved(peck_step_mm),
+            dwell_sec,
+        },
+        DrillCycle::ChipBreak { peck_step_mm, dwell_sec } => DrillCycle::ChipBreak {
+            peck_step_mm: resolved(peck_step_mm),
+            dwell_sec,
+        },
+    }
+}
+
 /// Build a Setup that represents this single op — copy in its tool from
 /// `project.tools` and its params.kind-driven mill/pockets/tabs/leads.
 fn synthesize_op_setup(
@@ -1450,19 +1929,51 @@ fn synthesize_op_setup(
         machine: project.machine.clone(),
         ..Setup::default()
     };
+    // Pick the per-tool rate variant. Drill ops consume the dedicated
+    // _drill set throughout; everything else uses Rough (general) for
+    // the main passes and Finish for the level=0 wall-defining ring
+    // (selected per-offset at emit time).
+    let main_pass = if matches!(op.kind, OperationKind::Drill { .. }) {
+        crate::project::PassKind::Drill
+    } else {
+        crate::project::PassKind::Rough
+    };
+    let (rough_speed, rough_plunge, rough_feed) = crate::project::resolve_tool_rates(tool, main_pass);
+    let (finish_speed, finish_plunge, finish_feed) = if matches!(op.kind, OperationKind::Drill { .. }) {
+        // Drill never emits a finish pass — keep the finish triplet
+        // equal to the drill triplet so a caller that reads either side
+        // sees consistent values.
+        (rough_speed, rough_plunge, rough_feed)
+    } else {
+        crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
+    };
+    // rt1.29: laser tools get their per-tool pierce-time threaded
+    // into ToolConfig so emit_offset can emit a G4 P<sec> dwell
+    // before each plunge. Non-laser tools collapse to 0.
+    let pierce_sec = if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
+        tool.laser_pierce_sec.unwrap_or(0.0).max(0.0)
+    } else {
+        0.0
+    };
     setup.tool = ToolConfig {
         number: tool.id,
         diameter: tool.diameter,
-        speed: tool.speed,
+        speed: rough_speed,
         pause: 1,
         mist: matches!(tool.coolant, crate::project::Coolant::Mist),
         flood: matches!(tool.coolant, crate::project::Coolant::Flood),
         dragoff: tool.dragoff,
         // Per-op overrides win over the tool library defaults — handy
         // for finishing passes or hard materials without editing the
-        // tool entry itself.
-        rate_v: op.params.plunge_rate_override.unwrap_or(tool.plunge_rate),
-        rate_h: op.params.feed_rate_override.unwrap_or(tool.feed_rate),
+        // tool entry itself. They apply to the ROUGH side only; the
+        // finish-set is the user's explicit per-tool finish override,
+        // so a per-op feed override doesn't bulldoze it.
+        rate_v: op.params.plunge_rate_override.unwrap_or(rough_plunge),
+        rate_h: op.params.feed_rate_override.unwrap_or(rough_feed),
+        speed_finish: finish_speed,
+        rate_v_finish: finish_plunge,
+        rate_h_finish: finish_feed,
+        pierce_sec,
     };
     let offset = match op.kind {
         OperationKind::Profile { offset } => offset,
@@ -1525,6 +2036,32 @@ fn synthesize_op_setup(
     setup.leads = op.params.leads.clone();
     if matches!(op.kind, OperationKind::DragKnife) {
         setup.machine.mode = MachineMode::Drag;
+    }
+    // Chamfer ops (rt1.18) carve at a single depth computed from the
+    // V-bit cone math — override the schedule fields after the main
+    // synth so no user-set depth / step / finish_step / through_depth
+    // sneaks through. The chamfer is a constant-Z pass; the cone-tip
+    // sits at `-width / tan(tip_angle / 2)` while the centerline rides
+    // the source path. Tabs / leads / objectorder still honor the op.
+    if let OperationKind::Chamfer { width_mm, .. } = op.kind {
+        let z = crate::cam::chamfer::chamfer_depth(width_mm, tool.tip_angle_deg);
+        setup.mill.depth = z;
+        setup.mill.start_depth = 0.0;
+        // step == depth -> build_z_schedule emits a single pass.
+        setup.mill.step = z;
+        setup.mill.finish_step = None;
+        setup.mill.through_depth = 0.0;
+        setup.mill.depth_list = Vec::new();
+        if !matches!(tool.kind, crate::project::ToolKind::VBit) {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "chamfer_non_vbit".into(),
+                message: format!(
+                    "Chamfer op '{}' uses tool '{}' which is not a V-bit. The cone math assumes a conical cutter; flat / ball tools will not produce a true bevel.",
+                    op.name, tool.name
+                ),
+            });
+        }
     }
     Ok(setup)
 }
@@ -1595,10 +2132,26 @@ fn header_setup_for(project: &Project) -> Setup {
     };
     if let Some(op) = project.operations.iter().find(|o| o.enabled) {
         if let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) {
+            let main_pass = if matches!(op.kind, OperationKind::Drill { .. }) {
+                crate::project::PassKind::Drill
+            } else {
+                crate::project::PassKind::Rough
+            };
+            let (rs, rp, rf) = crate::project::resolve_tool_rates(tool, main_pass);
+            let (fs, fp, ff) = if matches!(op.kind, OperationKind::Drill { .. }) {
+                (rs, rp, rf)
+            } else {
+                crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
+            };
+            let pierce_sec = if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
+                tool.laser_pierce_sec.unwrap_or(0.0).max(0.0)
+            } else {
+                0.0
+            };
             setup.tool = crate::cam::setup::ToolConfig {
                 number: tool.id,
                 diameter: tool.diameter,
-                speed: tool.speed,
+                speed: rs,
                 pause: 1,
                 mist: matches!(tool.coolant, crate::project::Coolant::Mist),
                 flood: matches!(tool.coolant, crate::project::Coolant::Flood),
@@ -1607,22 +2160,37 @@ fn header_setup_for(project: &Project) -> Setup {
                 // header feed too — otherwise the header emits the tool
                 // default and the user sees an extra `F800` line at the
                 // top despite the override.
-                rate_v: op.params.plunge_rate_override.unwrap_or(tool.plunge_rate),
-                rate_h: op.params.feed_rate_override.unwrap_or(tool.feed_rate),
+                rate_v: op.params.plunge_rate_override.unwrap_or(rp),
+                rate_h: op.params.feed_rate_override.unwrap_or(rf),
+                speed_finish: fs,
+                rate_v_finish: fp,
+                rate_h_finish: ff,
+                pierce_sec,
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
     } else if let Some(tool) = project.tools.first() {
+        let (rs, rp, rf) = crate::project::resolve_tool_rates(tool, crate::project::PassKind::Rough);
+        let (fs, fp, ff) = crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish);
+        let pierce_sec = if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
+            tool.laser_pierce_sec.unwrap_or(0.0).max(0.0)
+        } else {
+            0.0
+        };
         setup.tool = crate::cam::setup::ToolConfig {
             number: tool.id,
             diameter: tool.diameter,
-            speed: tool.speed,
+            speed: rs,
             pause: 1,
             mist: matches!(tool.coolant, crate::project::Coolant::Mist),
             flood: matches!(tool.coolant, crate::project::Coolant::Flood),
             dragoff: tool.dragoff,
-            rate_v: tool.plunge_rate,
-            rate_h: tool.feed_rate,
+            rate_v: rp,
+            rate_h: rf,
+            speed_finish: fs,
+            rate_v_finish: fp,
+            rate_h_finish: ff,
+            pierce_sec,
         };
     }
     setup
@@ -1829,7 +2397,20 @@ mod tests {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
             default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -1844,6 +2425,7 @@ mod tests {
             enabled: true,
             kind: OperationKind::Profile { offset },
             tool_id,
+            finish_tool_id: None,
             source: OperationSource::All,
             params: OperationParams::mill_default(),
             pattern: None,
@@ -1961,6 +2543,7 @@ mod tests {
                 strategy: crate::project::PocketStrategy::Cascade,
             },
             tool_id,
+            finish_tool_id: None,
             source,
             params: OperationParams::mill_default(),
             pattern: None,
@@ -2095,6 +2678,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::Objects {
                     ids: vec![1, 2],
                     combine: SourceCombine::Difference,
@@ -2161,6 +2745,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::Objects {
                     ids: vec![1],
                     combine: SourceCombine::Difference,
@@ -2241,6 +2826,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -2344,6 +2930,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -2390,7 +2977,20 @@ mod tests {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
             default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -2408,6 +3008,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -2449,6 +3050,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -2543,6 +3145,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -2630,6 +3233,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -2711,6 +3315,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -2776,6 +3381,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -2890,6 +3496,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -2959,6 +3566,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3005,6 +3613,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -3065,6 +3674,7 @@ mod tests {
                         strategy: crate::project::PocketStrategy::Cascade,
                     },
                     tool_id: 1,
+                    finish_tool_id: None,
                     source: OperationSource::All,
                     params,
                     pattern: None,
@@ -3111,6 +3721,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Zigzag,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3181,6 +3792,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3240,6 +3852,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3295,6 +3908,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -3368,6 +3982,7 @@ mod tests {
             enabled: true,
             kind: OperationKind::Drill { cycle },
             tool_id,
+            finish_tool_id: None,
             source: OperationSource::All,
             params,
             pattern: None,
@@ -3556,6 +4171,7 @@ mod tests {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::Objects {
                     ids: vec![2],
                     combine: SourceCombine::Auto,
@@ -3624,6 +4240,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3665,6 +4282,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3706,6 +4324,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3747,6 +4366,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -3775,6 +4395,1328 @@ mod tests {
         assert!(!resp.gcode.lines().any(|l| l.trim() == "F800"));
     }
 
+    /// resolve_tool_rates: unset finish/drill variants fall back to the
+    /// general triplet (rt1.27).
+    #[test]
+    fn resolve_tool_rates_falls_back_when_unset() {
+        use crate::project::{resolve_tool_rates, PassKind};
+        let t = endmill(1, 3.0);
+        assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (18_000, 100, 800));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (18_000, 100, 800));
+    }
+
+    /// resolve_tool_rates: each variant honors its own override when set.
+    #[test]
+    fn resolve_tool_rates_honors_per_pass_overrides() {
+        use crate::project::{resolve_tool_rates, PassKind};
+        let mut t = endmill(1, 3.0);
+        t.speed_finish = Some(12_000);
+        t.feed_rate_finish = Some(400);
+        t.speed_drill = Some(8_000);
+        t.feed_rate_drill = Some(200);
+        t.plunge_rate_drill = Some(50);
+        assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (12_000, 100, 400));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (8_000, 50, 200));
+    }
+
+    /// Pocket op with a slower finish feed: the gcode must contain the
+    /// finish feedrate before the wall-defining (level=0) ring is cut
+    /// (rt1.27).
+    #[test]
+    fn pocket_finish_ring_emits_finish_feedrate() {
+        let mut tool = endmill(1, 3.0);
+        tool.speed = 20_000;
+        tool.feed_rate = 1500;
+        tool.speed_finish = Some(8_000);
+        tool.feed_rate_finish = Some(400);
+
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![pocket_op(1, 1, OperationSource::All)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The rough feed (F1500) should appear for the cascade rings;
+        // the finish feed (F400) must appear before the level=0 wall
+        // ring is cut. Both must show up — and the post should also
+        // emit the finish spindle (S8000) somewhere in the body.
+        assert!(
+            resp.gcode.contains("F1500"),
+            "expected rough feed 1500 in gcode:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("F400"),
+            "expected finish feed 400 in gcode:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("S8000"),
+            "expected finish spindle 8000 in gcode:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Pocket op WITHOUT a finish override: rough feed is used
+    /// everywhere — no surprise feed change before the level=0 ring
+    /// (rt1.27 fallback behavior).
+    #[test]
+    fn pocket_without_finish_override_uses_rough_throughout() {
+        let mut tool = endmill(1, 3.0);
+        tool.speed = 20_000;
+        tool.feed_rate = 1500;
+        // no finish overrides set
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![pocket_op(1, 1, OperationSource::All)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("F1500"));
+        assert!(
+            !resp.gcode.contains("F400"),
+            "no finish-feed F400 should appear when finish overrides are unset"
+        );
+    }
+
+    /// Drill op picks the per-tool _drill speed/feed/plunge variants
+    /// (rt1.27).
+    #[test]
+    fn drill_op_uses_drill_set() {
+        let mut tool = endmill(1, 3.0);
+        tool.kind = ToolKind::Drill;
+        // Keep diameter at 3 mm so the 0.5-mm circle below qualifies
+        // as a small_circle_drill target (radius < 0.95 * tool_radius).
+        tool.speed = 20_000;
+        tool.plunge_rate = 100;
+        tool.feed_rate = 1500;
+        tool.speed_drill = Some(3_000);
+        tool.plunge_rate_drill = Some(30);
+        // feed_rate_drill left unset to verify per-field fallback.
+
+        let project = Project {
+            segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+            )],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("S3000"),
+            "expected drill spindle 3000 in gcode:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("F30"),
+            "expected drill plunge 30 in gcode:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Drill op with peck cycle and peck_step_mm=0 falls back to the
+    /// tool's `default_peck_step_mm` (rt1.27).
+    #[test]
+    fn drill_peck_uses_tool_default_when_op_step_zero() {
+        let mut tool = endmill(1, 3.0);
+        tool.kind = ToolKind::Drill;
+        tool.default_peck_step_mm = Some(1.25);
+        let project = Project {
+            segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Peck {
+                    peck_step_mm: 0.0,
+                    dwell_sec: 0.0,
+                },
+            )],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // LinuxCNC G83 emits `Q<step>` for the peck increment.
+        assert!(
+            resp.gcode.contains("Q1.25"),
+            "expected resolved peck step Q1.25 in gcode:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Pocket with xy_finish_allowance emits an extra wall ring at
+    /// the actual contour (tool_radius offset) AND the rough rings
+    /// step inward from (tool_radius + allowance) — leaving stock at
+    /// the wall that the finish ring removes (rt1.24).
+    #[test]
+    fn pocket_finish_xy_allowance_emits_extra_boundary_pass() {
+        use crate::cam::offsets::{pocket_for_object, PocketEmit};
+        use crate::cam::VcObject;
+        let pt = |x: f64, y: f64| Point2::new(x, y);
+        let segs = vec![
+            Segment::line(pt(0.0, 0.0), pt(50.0, 0.0), "0", 7),
+            Segment::line(pt(50.0, 0.0), pt(50.0, 50.0), "0", 7),
+            Segment::line(pt(50.0, 50.0), pt(0.0, 50.0), "0", 7),
+            Segment::line(pt(0.0, 50.0), pt(0.0, 0.0), "0", 7),
+        ];
+        let obj = VcObject::new(segs, true);
+        let tool_radius = 1.5;
+        let no_allow =
+            pocket_for_object(&obj, tool_radius, false, 6, PocketEmit::Cascade, &[], 1.5, 0.0, None);
+        let with_allow =
+            pocket_for_object(&obj, tool_radius, false, 6, PocketEmit::Cascade, &[], 1.5, 0.5, None);
+        // With allowance we expect exactly one MORE level-0 ring:
+        // the rough boundary (is_finish=false) + the finish boundary
+        // (is_finish=true). Without allowance there's a single
+        // boundary tagged as finish.
+        let finish_count_no = no_allow.iter().filter(|o| o.is_finish).count();
+        let finish_count_with = with_allow.iter().filter(|o| o.is_finish).count();
+        assert_eq!(finish_count_no, 1);
+        assert_eq!(finish_count_with, 1);
+        // The extra rough boundary in `with_allow` is a non-finish
+        // level-0 ring that doesn't exist in `no_allow`.
+        let rough_level0_no = no_allow.iter().filter(|o| o.level == 0 && !o.is_finish).count();
+        let rough_level0_with = with_allow.iter().filter(|o| o.level == 0 && !o.is_finish).count();
+        assert_eq!(rough_level0_no, 0);
+        assert_eq!(rough_level0_with, 1);
+        assert_eq!(with_allow.len(), no_allow.len() + 1);
+    }
+
+    /// Pocket with xy_finish_allowance produces gcode that visits the
+    /// rough rings at the tool's general feed and the finish ring at
+    /// the finish-set feed (rt1.24 × rt1.27).
+    #[test]
+    fn pocket_with_xy_allowance_finish_ring_uses_finish_feed() {
+        let mut tool = endmill(1, 3.0);
+        tool.feed_rate = 1500;
+        tool.feed_rate_finish = Some(400);
+        let mut params = OperationParams::mill_default();
+        params.finish_xy_allowance_mm = Some(0.5);
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("F1500"), "rough feed missing");
+        assert!(resp.gcode.contains("F400"), "finish feed missing");
+    }
+
+    /// Dual-tool Pocket op (rt1.33): when finish_tool_id is set to a
+    /// different tool, the gcode contains a `T<n> M6` toolchange and
+    /// uses the finish tool's feed for the wall ring.
+    #[test]
+    fn dual_tool_pocket_emits_toolchange_and_uses_finish_tool_feed() {
+        let mut rough_tool = endmill(1, 6.0);
+        rough_tool.feed_rate = 1500;
+        rough_tool.speed = 20_000;
+        let mut finish_tool = endmill(2, 3.0);
+        finish_tool.feed_rate = 600;
+        finish_tool.speed = 24_000;
+        finish_tool.feed_rate_finish = Some(300);
+
+        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        machine.supports_toolchange = true;
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine,
+            tools: vec![rough_tool, finish_tool],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: Some(2),
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("T2 M6"),
+            "expected toolchange T2 M6 for finish pass:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("F1500"),
+            "expected rough feed 1500:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("F300"),
+            "expected finish feed 300 (finish tool's feed_rate_finish):\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("S24000"),
+            "expected finish tool spindle 24000:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Dual-tool Pocket op without a distinct finish tool
+    /// (finish_tool_id == tool_id) — no toolchange emitted, single
+    /// tool throughout.
+    #[test]
+    fn dual_tool_same_id_skips_toolchange() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: Some(1),
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.contains(" M6"),
+            "expected no toolchange when finish_tool_id == tool_id:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Dual-tool Pocket op without finish_tool_id (None) — legacy
+    /// single-tool behavior: no toolchange.
+    #[test]
+    fn dual_tool_none_uses_single_tool() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![pocket_op(1, 1, OperationSource::All)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(!resp.gcode.contains(" M6"));
+    }
+
+    /// New ToolKind variants (rt1.28): BullNose / Compression /
+    /// TSlot / FormProfile all serialize + deserialize cleanly and
+    /// carry their geometry fields through round-trip.
+    #[test]
+    fn extended_tool_kinds_serde_round_trip() {
+        for (kind, label) in [
+            (ToolKind::BullNose, "bull_nose"),
+            (ToolKind::Compression, "compression"),
+            (ToolKind::TSlot, "t_slot"),
+            (ToolKind::FormProfile, "form_profile"),
+        ] {
+            let mut t = endmill(7, 6.0);
+            t.kind = kind;
+            t.corner_radius_mm = Some(0.5);
+            t.tslot_neck_diameter_mm = Some(3.0);
+            t.tslot_neck_length_mm = Some(8.0);
+            let json = serde_json::to_string(&t).unwrap();
+            assert!(json.contains(label), "expected '{label}' in {json}");
+            let back: ToolEntry = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.kind, kind);
+            assert_eq!(back.corner_radius_mm, Some(0.5));
+            assert_eq!(back.tslot_neck_diameter_mm, Some(3.0));
+            assert_eq!(back.tslot_neck_length_mm, Some(8.0));
+        }
+    }
+
+    /// Plot-mode Z (rt1.35): with plot_mode_z enabled, every Z value
+    /// in the gcode is one of {fast_move_z, cut_depth}. No
+    /// intermediate Z values from a step-down schedule.
+    #[test]
+    fn plot_mode_emits_only_two_z_values() {
+        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        machine.plot_mode_z = true;
+        let mut params = OperationParams::mill_default();
+        params.depth = -3.0; // would normally cascade through Z=-1, -2, -3
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        params.step = Some(-1.0);
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Laser cut".into(),
+                enabled: true,
+                kind: OperationKind::Engrave,
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let z_values: std::collections::HashSet<String> = resp
+            .gcode
+            .lines()
+            .flat_map(|l| {
+                l.split_whitespace()
+                    .filter_map(|t| t.strip_prefix('Z'))
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        // Expect Z values only at {5, -3} (plus possibly 0 for the
+        // pre-plunge "drop to z=0" line — that's still in the
+        // emit_offset prelude before multi_pass takes over).
+        let allowed = ["5", "-3", "0"];
+        for z in &z_values {
+            assert!(
+                allowed.contains(&z.as_str()),
+                "unexpected Z value {z} in plot mode:\n{}",
+                resp.gcode
+            );
+        }
+        // And the intermediate descent values must NOT appear.
+        assert!(!z_values.contains("-1"), "Z=-1 leaked through plot mode:\n{}", resp.gcode);
+        assert!(!z_values.contains("-2"), "Z=-2 leaked through plot mode:\n{}", resp.gcode);
+    }
+
+    /// Approach point (rt1.26): when set on a Pocket op, each closed
+    /// offset's segment list rotates so the start (where plunge
+    /// happens) is the vertex closest to the user-picked XY.
+    #[test]
+    fn approach_point_rotates_closed_offsets_to_nearest_vertex() {
+        // A 20x20 closed square at (0..20, 0..20). With approach_point
+        // ~ (20, 20) the closest vertex of the inward-offset ring is
+        // the top-right corner. Without approach_point, plunge happens
+        // at an arbitrary auto-picked vertex.
+        let center_ap = (20.0, 20.0);
+        let mut params = OperationParams::mill_default();
+        params.approach_point = Some(center_ap);
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 1.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The first G0 rapid that lands on the cut plane should
+        // approach a point in the upper-right quadrant (X >= 10, Y >=
+        // 10). With a 1-mm endmill and 20-mm box, the inward offset
+        // wall ring sits around (0.5..19.5)^2; the rotated start lands
+        // near (19.5, 19.5).
+        let mut found_quadrant_entry = false;
+        for line in resp.gcode.lines() {
+            if !line.starts_with("G0 ") {
+                continue;
+            }
+            // Parse X and Y if present.
+            let mut x: Option<f64> = None;
+            let mut y: Option<f64> = None;
+            for tok in line.split_whitespace() {
+                if let Some(rest) = tok.strip_prefix('X') {
+                    x = rest.parse().ok();
+                } else if let Some(rest) = tok.strip_prefix('Y') {
+                    y = rest.parse().ok();
+                }
+            }
+            if let (Some(xv), Some(yv)) = (x, y) {
+                if xv > 10.0 && yv > 10.0 {
+                    found_quadrant_entry = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            found_quadrant_entry,
+            "expected a G0 entry in the upper-right quadrant after approach_point=(20,20):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Approach point serde round-trip (rt1.26).
+    #[test]
+    fn approach_point_serde_round_trip() {
+        let mut params = OperationParams::mill_default();
+        params.approach_point = Some((3.5, -2.0));
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("approach_point"));
+        let back: OperationParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.approach_point, Some((3.5, -2.0)));
+        // Unset round-trips as absent.
+        let none_params = OperationParams::mill_default();
+        let json_none = serde_json::to_string(&none_params).unwrap();
+        assert!(!json_none.contains("approach_point"));
+    }
+
+    /// Laser pierce time (rt1.29): a laser tool with
+    /// laser_pierce_sec set emits a `G4 P<sec>` dwell between
+    /// rapid-to-entry and plunge.
+    #[test]
+    fn laser_op_emits_pierce_dwell_before_cut() {
+        let mut tool = endmill(1, 0.1);
+        tool.kind = ToolKind::LaserBeam;
+        tool.laser_pierce_sec = Some(0.3);
+        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        machine.mode = crate::cam::setup::MachineMode::Laser;
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![tool],
+            operations: vec![Operation {
+                id: 1,
+                name: "Laser cut".into(),
+                enabled: true,
+                kind: OperationKind::Engrave,
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("G4 P0.3"),
+            "expected pierce dwell G4 P0.3 before cut:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Non-laser tools never get the pierce dwell even if
+    /// laser_pierce_sec is somehow set (e.g. legacy projects).
+    #[test]
+    fn non_laser_tool_ignores_pierce_field() {
+        let mut tool = endmill(1, 3.0);
+        // Endmill kind, but pierce field set (shouldn't fire).
+        tool.laser_pierce_sec = Some(0.5);
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.contains("G4 P0.5"),
+            "endmill should ignore laser_pierce_sec:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Stufenfase (rt1.20): a drill op with chamfer_after_width_mm
+    /// follows the drill cycle with a constant-Z revolution at each
+    /// hole's rim, computed from the cutter's tip angle.
+    #[test]
+    fn drill_with_chamfer_after_emits_constant_z_revolution() {
+        let mut vbit_drill = vbit();
+        vbit_drill.kind = ToolKind::Drill;
+        vbit_drill.diameter = 3.0;
+        vbit_drill.tip_angle_deg = 90.0; // makes the math easy: z = -width
+        let center = Point2::new(5.0, 7.0);
+        let mut params = OperationParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        params.chamfer_after_width_mm = Some(1.0);
+        let project = Project {
+            segments: closed_circle(center, 0.5),
+            machine: Default::default(),
+            tools: vec![vbit_drill],
+            operations: vec![Operation {
+                id: 1,
+                name: "Drill+chamfer".into(),
+                enabled: true,
+                kind: OperationKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Drill cycle present (G81 / G82) AND a chamfer revolution
+        // shows up at Z-1 (width / tan(45°) = 1.0).
+        assert!(
+            resp.gcode.lines().any(|l| l.starts_with("G81") || l.starts_with("G82")),
+            "expected drill cycle (G81/G82):\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("Z-1"),
+            "expected chamfer revolution at Z-1 (90° tip + 1mm width):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Drill with chamfer_after AND a distinct finish_tool_id emits
+    /// the toolchange between the drill cycle and the chamfer
+    /// revolution (rt1.20 × rt1.33).
+    #[test]
+    fn drill_chamfer_after_with_tool_override_emits_m6() {
+        let mut drill = vbit();
+        drill.kind = ToolKind::Drill;
+        drill.diameter = 3.0;
+        drill.id = 1;
+        let mut vbit_finish = vbit();
+        vbit_finish.id = 2;
+        vbit_finish.diameter = 6.35;
+        vbit_finish.tip_angle_deg = 90.0;
+        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        machine.supports_toolchange = true;
+        let center = Point2::new(5.0, 7.0);
+        let mut params = OperationParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        params.chamfer_after_width_mm = Some(0.5);
+        let project = Project {
+            segments: closed_circle(center, 0.5),
+            machine,
+            tools: vec![drill, vbit_finish],
+            operations: vec![Operation {
+                id: 1,
+                name: "Drill".into(),
+                enabled: true,
+                kind: OperationKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                },
+                tool_id: 1,
+                finish_tool_id: Some(2),
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("T2 M6"),
+            "expected toolchange T2 M6 for chamfer cutter:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Drill without chamfer_after_width_mm emits no rim revolution.
+    #[test]
+    fn drill_without_chamfer_after_emits_no_revolution() {
+        let project = Project {
+            segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+            )],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // No G1 line should land at a fractional negative Z below the
+        // drill block — only G81 / G82 / safe-Z moves.
+        let any_chamfer_g1 = resp
+            .gcode
+            .lines()
+            .any(|l| l.starts_with("G1 ") && l.contains("Z-"));
+        assert!(
+            !any_chamfer_g1,
+            "expected no chamfer revolution gcode in drill-only op:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Per-tool Z shift (rt1.30): when set on the first op's tool, a
+    /// `G92 Z<shift>` line follows program_begin to pin work-Z=0 to
+    /// the new tool's tip.
+    #[test]
+    fn first_tool_z_shift_emits_g92_after_program_begin() {
+        let mut tool = endmill(1, 3.0);
+        tool.z_shift_mm = Some(-0.5);
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![tool],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("G92 Z-0.5"),
+            "expected G92 Z-0.5 for tool z_shift:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Dual-tool Pocket (rt1.33) with z_shift on the finish tool:
+    /// after the M6 we emit the finish tool's G92 Z shift.
+    #[test]
+    fn dual_tool_finish_tool_z_shift_emits_g92_after_m6() {
+        let rough_tool = endmill(1, 6.0);
+        let mut finish_tool = endmill(2, 3.0);
+        finish_tool.z_shift_mm = Some(1.25);
+        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        machine.supports_toolchange = true;
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine,
+            tools: vec![rough_tool, finish_tool],
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: Some(2),
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("T2 M6"), "toolchange missing");
+        let m6_idx = resp.gcode.find("T2 M6").unwrap();
+        let after = &resp.gcode[m6_idx..];
+        assert!(
+            after.contains("G92 Z1.25"),
+            "expected G92 Z1.25 AFTER T2 M6:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Zero / unset z_shift emits no G92 (rt1.30 fallback).
+    #[test]
+    fn no_z_shift_emits_no_g92() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.contains("G92 Z"),
+            "no G92 Z expected when z_shift_mm is unset:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Comma decimal separator (rt1.36) makes the LinuxCNC post emit
+    /// `X1,5` instead of `X1.5`. Activated via MachineConfig.
+    #[test]
+    fn comma_decimal_separator_emits_commas_in_numbers() {
+        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        machine.decimal_separator = ',';
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.5, 0.5),
+            machine,
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // At least one coordinate with a fractional part survives in
+        // the gcode (e.g. `X-1,5` from offsetting the 20-mm box).
+        assert!(
+            resp.gcode.lines().any(|l| l.contains(',') && (l.starts_with("G0") || l.starts_with("G1"))),
+            "expected at least one comma-decimal in a coordinate line:\n{}",
+            resp.gcode
+        );
+        // No '.' inside coordinate words (allowing '.' in '; OP' lines
+        // is fine since post.raw bypasses the formatter).
+        for l in resp.gcode.lines() {
+            if (l.starts_with("G0 ") || l.starts_with("G1 ")) && l.contains('.') {
+                panic!("decimal '.' leaked into a coordinate line under comma-mode: {l}");
+            }
+        }
+    }
+
+    /// Line numbering (rt1.36): when MachineConfig.line_number_start is
+    /// Some(10), every emitted line gets `N10`, `N20`, … prefix.
+    #[test]
+    fn line_numbering_prefixes_every_line() {
+        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        machine.line_number_start = Some(10);
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let lines: Vec<&str> = resp.gcode.lines().collect();
+        // First non-empty line should have N10; subsequent N20, N30, ...
+        let mut expected = 10u32;
+        let mut found_count = 0;
+        for l in &lines {
+            if l.is_empty() {
+                continue;
+            }
+            assert!(
+                l.starts_with(&format!("N{expected} ")),
+                "expected line to start with 'N{expected} ', got: {l}\nFull:\n{}",
+                resp.gcode
+            );
+            expected += 10;
+            found_count += 1;
+        }
+        assert!(found_count > 3, "expected several numbered lines");
+    }
+
+    /// No numbering by default (rt1.36 fallback): lines do not get an
+    /// N-prefix when MachineConfig.line_number_start is None.
+    #[test]
+    fn no_line_numbering_by_default() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // No line should start with N\d+\s.
+        for l in resp.gcode.lines() {
+            assert!(
+                !(l.starts_with("N") && l.chars().nth(1).map_or(false, |c| c.is_ascii_digit())),
+                "unexpected N-prefix: {l}"
+            );
+        }
+    }
+
+    /// Thread op (rt1.17): a closed circle source + Thread op emits
+    /// a helical descent. The gcode must contain the helix's bottom
+    /// Z (rounded to 4 decimals) and a sweep of XY coordinates
+    /// around the bore's center.
+    #[test]
+    fn thread_op_emits_helical_descent_on_a_closed_circle() {
+        let center = Point2::new(10.0, 20.0);
+        let radius = 5.0;
+        let segments = closed_circle(center, radius);
+        let mut params = OperationParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 1.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Thread".into(),
+                enabled: true,
+                kind: OperationKind::Thread {
+                    pitch_mm: 1.0,
+                    internal: true,
+                    climb: true,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Bottom Z = -3 → gcode contains Z-3 somewhere.
+        assert!(
+            resp.gcode.contains("Z-3"),
+            "expected helix bottom Z-3 in gcode:\n{}",
+            resp.gcode
+        );
+        // Internal: helix walks at (bore_radius - tool_radius) = 5 - 0.5 = 4.5 mm
+        // around center (10, 20). One waypoint sits at (10 + 4.5, 20) = (14.5, 20).
+        assert!(
+            resp.gcode.contains("X14.5") || resp.gcode.contains("X14.5000"),
+            "expected helix waypoint at X=14.5 (bore - tool_radius):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Thread op without a closed circle in the source emits a
+    /// thread_no_circles warning and produces no toolpath.
+    #[test]
+    fn thread_op_without_circle_warns() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 1.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Thread".into(),
+                enabled: true,
+                kind: OperationKind::Thread {
+                    pitch_mm: 1.0,
+                    internal: true,
+                    climb: true,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.warnings.iter().any(|w| w.kind == "thread_no_circles"));
+    }
+
+    /// Thread op with internal + a tool larger than the bore emits a
+    /// thread_tool_too_large warning rather than producing a
+    /// nonsensical helix.
+    #[test]
+    fn thread_op_internal_with_oversized_tool_warns() {
+        let center = Point2::new(0.0, 0.0);
+        let radius = 1.0; // 1mm bore
+        let segments = closed_circle(center, radius);
+        let mut params = OperationParams::mill_default();
+        params.depth = -1.0;
+        params.start_depth = 0.0;
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)], // 3mm tool, bigger than the bore
+            operations: vec![Operation {
+                id: 1,
+                name: "Thread".into(),
+                enabled: true,
+                kind: OperationKind::Thread {
+                    pitch_mm: 1.0,
+                    internal: true,
+                    climb: true,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params,
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.warnings.iter().any(|w| w.kind == "thread_tool_too_large"));
+    }
+
+    /// Chamfer op (rt1.18): walks the source contour at constant Z,
+    /// computed from the V-bit cone math. A 60° V-bit + 1mm width
+    /// gives ~1.732 mm depth; the gcode must contain Z-1.732.
+    #[test]
+    fn chamfer_op_emits_constant_z_pass_at_computed_depth() {
+        let vbit = vbit();
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![vbit],
+            operations: vec![Operation {
+                id: 1,
+                name: "Chamfer".into(),
+                enabled: true,
+                kind: OperationKind::Chamfer {
+                    width_mm: 1.0,
+                    finish_pass: false,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Cone depth: 1 / tan(30°) ≈ 1.7320508; the gcode rounds to
+        // 4 decimals so we look for Z-1.732.
+        assert!(
+            resp.gcode.contains("Z-1.732"),
+            "expected chamfer depth Z-1.732 in gcode:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Chamfer with finish_pass=true emits the source path twice —
+    /// once at rough feed, once tagged is_finish so the finish-set
+    /// feed wins. Verified by counting how many times the contour's
+    /// starting move appears (= number of passes through the path).
+    #[test]
+    fn chamfer_finish_pass_emits_second_pass_at_finish_feed() {
+        let mut vbit = vbit();
+        vbit.feed_rate = 1200;
+        vbit.feed_rate_finish = Some(400);
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![vbit],
+            operations: vec![Operation {
+                id: 1,
+                name: "Chamfer".into(),
+                enabled: true,
+                kind: OperationKind::Chamfer {
+                    width_mm: 1.0,
+                    finish_pass: true,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("F1200"), "rough feed missing");
+        assert!(resp.gcode.contains("F400"), "finish feed missing");
+    }
+
+    /// Chamfer on a non-V-bit tool emits a warning so the user knows
+    /// the cone math is approximate.
+    #[test]
+    fn chamfer_with_non_vbit_warns() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Operation {
+                id: 1,
+                name: "Chamfer".into(),
+                enabled: true,
+                kind: OperationKind::Chamfer {
+                    width_mm: 1.0,
+                    finish_pass: false,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::All,
+                params: OperationParams::mill_default(),
+                pattern: None,
+            }],
+            tabs: Default::default(),
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.warnings.iter().any(|w| w.kind == "chamfer_non_vbit"));
+    }
+
+    /// Operation.finish_tool_id round-trips through serde and is
+    /// omitted from the wire payload when None.
+    #[test]
+    fn operation_finish_tool_id_serde_round_trip() {
+        let mut op = pocket_op(1, 5, OperationSource::All);
+        op.finish_tool_id = Some(9);
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("finish_tool_id"));
+        let back: Operation = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.finish_tool_id, Some(9));
+
+        let none_op = pocket_op(1, 5, OperationSource::All);
+        let json_none = serde_json::to_string(&none_op).unwrap();
+        assert!(!json_none.contains("finish_tool_id"));
+    }
+
+    /// OperationParams.finish_xy_allowance_mm round-trips through
+    /// serde and omits the field when unset (rt1.24).
+    #[test]
+    fn finish_xy_allowance_serde_round_trip() {
+        let mut params = OperationParams::mill_default();
+        params.finish_xy_allowance_mm = Some(0.3);
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("finish_xy_allowance_mm"));
+        let back: OperationParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.finish_xy_allowance_mm, Some(0.3));
+        let none_params = OperationParams::mill_default();
+        let json_none = serde_json::to_string(&none_params).unwrap();
+        assert!(!json_none.contains("finish_xy_allowance_mm"));
+    }
+
+    /// Tool round-trips through serde with the new finish/drill fields
+    /// (rt1.27). Empty overrides serialize as omitted entries.
+    #[test]
+    fn tool_entry_serde_round_trip_with_finish_and_drill_overrides() {
+        let mut t = endmill(1, 3.0);
+        t.speed_finish = Some(12_000);
+        t.feed_rate_finish = Some(400);
+        t.plunge_rate_drill = Some(50);
+        t.default_peck_step_mm = Some(1.5);
+        let json = serde_json::to_string(&t).unwrap();
+        let back: ToolEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.speed_finish, Some(12_000));
+        assert_eq!(back.feed_rate_finish, Some(400));
+        assert_eq!(back.plunge_rate_drill, Some(50));
+        assert_eq!(back.default_peck_step_mm, Some(1.5));
+        // Unset finish/drill overrides round-trip as None and don't
+        // appear in the serialized form.
+        assert!(back.speed_drill.is_none());
+        assert!(!json.contains("speed_drill"));
+    }
+
     /// Corner feed reduction emits a slower F before sharp turns.
     /// Verified on a zigzag pocket where adjacent strokes are joined
     /// by a 180° turn — exactly the worst-case for high-feed motion.
@@ -3795,6 +5737,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Zigzag,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -4115,6 +6058,7 @@ mod tests {
             enabled: true,
             kind: OperationKind::Profile { offset },
             tool_id: 1,
+            finish_tool_id: None,
             source: OperationSource::All,
             params,
             pattern: None,
@@ -4363,6 +6307,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -4435,6 +6380,7 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Spiral,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -4506,6 +6452,7 @@ mod tests {
                 enabled: true,
                 kind: OperationKind::Pocket { strategy },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::Objects {
                     ids: vec![1],
                     combine: SourceCombine::Auto,
@@ -4650,6 +6597,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 // Object 2 is the inner circle (chaining puts segments
                 // in input order; outer was first).
                 source: OperationSource::Objects {
@@ -4935,6 +6883,7 @@ mod tests {
                 enabled: true,
                 kind: OperationKind::Pocket { strategy },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams {
                     plunge: crate::cam::setup::PlungeStrategy::Helix {
@@ -5023,6 +6972,7 @@ mod tests {
                     },
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params,
                 pattern: None,
@@ -5068,6 +7018,7 @@ mod tests {
                     },
                 },
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams {
                     plunge: crate::cam::setup::PlungeStrategy::Direct,
@@ -5130,7 +7081,20 @@ mod tests {
             plunge_rate: 200,
             feed_rate: 1200,
             coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
             default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -5142,6 +7106,7 @@ mod tests {
             enabled: true,
             kind: OperationKind::VCarve,
             tool_id: 1,
+            finish_tool_id: None,
             source: OperationSource::All,
             params: OperationParams {
                 depth: -10.0,
@@ -5254,6 +7219,7 @@ mod tests {
             enabled: true,
             kind: OperationKind::VCarve,
             tool_id: 1,
+            finish_tool_id: None,
             source: OperationSource::All,
             params: OperationParams {
                 depth: -8.0,
@@ -5321,7 +7287,20 @@ mod tests {
             plunge_rate: 200,
             feed_rate: 1200,
             coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
             default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -5436,6 +7415,7 @@ mod tests {
                 enabled: true,
                 kind: OperationKind::VCarve,
                 tool_id: 1,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams {
                     depth: -10.0,
@@ -5522,6 +7502,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 91,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -5553,6 +7534,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 100 + i,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -5599,6 +7581,7 @@ mod tests {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 77,
+                finish_tool_id: None,
                 source: OperationSource::All,
                 params: OperationParams::mill_default(),
                 pattern: None,
@@ -5657,7 +7640,7 @@ mod tests {
     #[test]
     fn unsupported_op_kind_returns_structured_error() {
         let mut op = profile_op(1, 1, ToolOffset::Outside);
-        op.kind = OperationKind::Thread;
+        op.kind = OperationKind::Helix;
         let project = project_with(vec![op], vec![endmill(1, 3.0)]);
         let err = run_pipeline(
             PipelineRequest {

@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 2;
+pub const PIPELINE_VERSION: u32 = 11;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
 /// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
@@ -146,11 +146,46 @@ pub fn op_cache_key(
     tabs: &HashMap<u32, Vec<TabPoint>>,
     post_processor_tag: u8,
 ) -> OpCacheKey {
+    op_cache_key_with_finish(
+        op,
+        tool,
+        None,
+        machine,
+        selected_segments,
+        fixtures,
+        tabs,
+        post_processor_tag,
+    )
+}
+
+/// Cache-key constructor that folds a SECOND tool's entry into the
+/// hash — used for dual-tool Pocket ops (rt1.33) so changes to the
+/// finish tool's diameter / feed_rate_finish / etc. invalidate the
+/// cache. Pass `finish_tool = None` for single-tool ops (legacy
+/// callers route through [`op_cache_key`]).
+#[allow(clippy::too_many_arguments)]
+pub fn op_cache_key_with_finish(
+    op: &Operation,
+    tool: &ToolEntry,
+    finish_tool: Option<&ToolEntry>,
+    machine: &MachineConfig,
+    selected_segments: &[Segment],
+    fixtures: &[Fixture],
+    tabs: &HashMap<u32, Vec<TabPoint>>,
+    post_processor_tag: u8,
+) -> OpCacheKey {
     let mut h = SeaHasher::new();
     PIPELINE_VERSION.hash(&mut h);
     h.write_u8(post_processor_tag);
     hash_operation(op, &mut h);
     hash_tool(tool, &mut h);
+    match finish_tool {
+        None => h.write_u8(0),
+        Some(t) => {
+            h.write_u8(1);
+            hash_tool(t, &mut h);
+        }
+    }
     hash_machine(machine, &mut h);
     h.write_usize(selected_segments.len());
     for seg in selected_segments {
@@ -256,6 +291,10 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
         ToolKind::DragKnife => 5,
         ToolKind::Drill => 6,
         ToolKind::LaserBeam => 7,
+        ToolKind::BullNose => 8,
+        ToolKind::Compression => 9,
+        ToolKind::TSlot => 10,
+        ToolKind::FormProfile => 11,
     };
     h.write_u8(kind);
     hash_f64(t.diameter, h);
@@ -266,6 +305,19 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     t.speed.hash(h);
     t.plunge_rate.hash(h);
     t.feed_rate.hash(h);
+    hash_opt_u32(t.speed_finish, h);
+    hash_opt_u32(t.plunge_rate_finish, h);
+    hash_opt_u32(t.feed_rate_finish, h);
+    hash_opt_u32(t.speed_drill, h);
+    hash_opt_u32(t.plunge_rate_drill, h);
+    hash_opt_u32(t.feed_rate_drill, h);
+    hash_opt_f64(t.default_peck_step_mm, h);
+    hash_opt_f64(t.z_shift_mm, h);
+    hash_opt_f64(t.laser_pierce_sec, h);
+    hash_opt_f64(t.laser_lead_in_mm, h);
+    hash_opt_f64(t.corner_radius_mm, h);
+    hash_opt_f64(t.tslot_neck_diameter_mm, h);
+    hash_opt_f64(t.tslot_neck_length_mm, h);
     let coolant: u8 = match t.coolant {
         Coolant::Off => 0,
         Coolant::Mist => 1,
@@ -334,6 +386,9 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     hash_opt_f64(m.rapid_speed, h);
     m.use_kinematic_time_estimate.hash(h);
     hash_opt_f64(m.arc_fit_tolerance_mm, h);
+    h.write_u32(m.decimal_separator as u32);
+    hash_opt_u32(m.line_number_start, h);
+    m.plot_mode_z.hash(h);
 }
 
 // ─── operation ────────────────────────────────────────────────────────
@@ -344,6 +399,7 @@ fn hash_operation<H: Hasher>(op: &Operation, h: &mut H) {
     op.enabled.hash(h);
     hash_operation_kind(op.kind, h);
     op.tool_id.hash(h);
+    hash_opt_u32(op.finish_tool_id, h);
     hash_operation_source(&op.source, h);
     hash_operation_params(&op.params, h);
     match op.pattern {
@@ -369,8 +425,17 @@ fn hash_operation_kind<H: Hasher>(k: OperationKind, h: &mut H) {
             h.write_u8(3);
             hash_drill_cycle(cycle, h);
         }
-        OperationKind::Thread => h.write_u8(4),
-        OperationKind::Chamfer => h.write_u8(5),
+        OperationKind::Thread { pitch_mm, internal, climb } => {
+            h.write_u8(4);
+            hash_f64(pitch_mm, h);
+            internal.hash(h);
+            climb.hash(h);
+        }
+        OperationKind::Chamfer { width_mm, finish_pass } => {
+            h.write_u8(5);
+            hash_f64(width_mm, h);
+            finish_pass.hash(h);
+        }
         OperationKind::Engrave => h.write_u8(6),
         OperationKind::DragKnife => h.write_u8(7),
         OperationKind::Helix => h.write_u8(8),
@@ -523,6 +588,16 @@ fn hash_operation_params<H: Hasher>(p: &OperationParams, h: &mut H) {
     hash_opt_u32(p.plunge_rate_override, h);
     hash_f64(p.corner_feed_reduction, h);
     hash_opt_f64(p.finish_step, h);
+    hash_opt_f64(p.finish_xy_allowance_mm, h);
+    hash_opt_f64(p.chamfer_after_width_mm, h);
+    match p.approach_point {
+        None => h.write_u8(0),
+        Some((x, y)) => {
+            h.write_u8(1);
+            hash_f64(x, h);
+            hash_f64(y, h);
+        }
+    }
     hash_f64(p.through_depth, h);
     hash_vec_f64(&p.depth_list, h);
     hash_opt_f64(p.carve_max_width_mm, h);
@@ -662,7 +737,20 @@ mod tests {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
             default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -679,6 +767,7 @@ mod tests {
                 offset: ToolOffset::Outside,
             },
             tool_id: 1,
+            finish_tool_id: None,
             source: OperationSource::All,
             params: OperationParams::mill_default(),
             pattern: None,
@@ -713,7 +802,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x5d51_8efa_e74b_1e6f_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0xa474_55d5_6d42_f2df_u64, "got {:#018x}", key.0);
     }
 
     #[test]

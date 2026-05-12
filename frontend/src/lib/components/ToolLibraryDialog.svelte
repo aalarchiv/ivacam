@@ -228,6 +228,10 @@
     drag_knife: 'Drag-knife',
     drill: 'Drill',
     laser_beam: 'Laser',
+    bull_nose: 'Bull-nose (radius)',
+    compression: 'Compression',
+    t_slot: 'T-slot',
+    form_profile: 'Form / profile',
   };
   const coolantLabels: Record<CoolantMode, string> = {
     off: 'Off',
@@ -530,6 +534,168 @@
                         min="0"
                         value={tool.holder.cone_length_mm}
                         onchange={(e) => updateHolderField(i, 'cone_length_mm', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+                      />
+                    </label>
+                  </div>
+                {/if}
+                <div class="holder-row pass-overrides">
+                  <span class="holder-label" title="Per-tool overrides for the wall-defining (finish) pass of a Pocket op and for Drill ops. Empty = inherit the main speed/feed/plunge values.">Pass overrides</span>
+                </div>
+                <div class="holder-row">
+                  <label>
+                    <span>Finish RPM</span>
+                    <input
+                      type="number"
+                      step="500"
+                      min="0"
+                      placeholder={String(tool.speed)}
+                      value={tool.speedFinish ?? ''}
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'speedFinish', v === '' ? undefined : parseInt(v, 10));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Finish feed (mm/min)</span>
+                    <input
+                      type="number"
+                      step="50"
+                      min="0"
+                      placeholder={String(tool.feedRate)}
+                      value={tool.feedRateFinish ?? ''}
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'feedRateFinish', v === '' ? undefined : parseInt(v, 10));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Finish plunge (mm/min)</span>
+                    <input
+                      type="number"
+                      step="50"
+                      min="0"
+                      placeholder={String(tool.plungeRate)}
+                      value={tool.plungeRateFinish ?? ''}
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'plungeRateFinish', v === '' ? undefined : parseInt(v, 10));
+                      }}
+                    />
+                  </label>
+                </div>
+                <div class="holder-row">
+                  <label>
+                    <span>Drill RPM</span>
+                    <input
+                      type="number"
+                      step="500"
+                      min="0"
+                      placeholder={String(tool.speed)}
+                      value={tool.speedDrill ?? ''}
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'speedDrill', v === '' ? undefined : parseInt(v, 10));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Drill feed (mm/min)</span>
+                    <input
+                      type="number"
+                      step="50"
+                      min="0"
+                      placeholder={String(tool.feedRate)}
+                      value={tool.feedRateDrill ?? ''}
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'feedRateDrill', v === '' ? undefined : parseInt(v, 10));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Drill plunge (mm/min)</span>
+                    <input
+                      type="number"
+                      step="50"
+                      min="0"
+                      placeholder={String(tool.plungeRate)}
+                      value={tool.plungeRateDrill ?? ''}
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'plungeRateDrill', v === '' ? undefined : parseInt(v, 10));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Default peck (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="—"
+                      value={tool.defaultPeckStepMm ?? ''}
+                      title="Default peck step for Peck / ChipBreak drill cycles whose op leaves peck_step_mm at 0. Empty = the op must specify its own."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'defaultPeckStepMm', v === '' ? undefined : parseFloat(v));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Z shift (mm)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="—"
+                      value={tool.zShiftMm ?? ''}
+                      title="Per-tool Z origin offset (rt1.30). For machines without auto tool-length probing. Pre-measure each tool's tip Z relative to a reference and record the delta. Positive = sticks out further; negative = shorter. A G92 Z<shift> line is emitted at program start and after each tool change. Empty / 0 = no shift."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        if (v === '') {
+                          updateField(i, 'zShiftMm', undefined);
+                          return;
+                        }
+                        const n = parseFloat(v);
+                        updateField(i, 'zShiftMm', isNaN(n) || n === 0 ? undefined : n);
+                      }}
+                    />
+                  </label>
+                </div>
+                {#if tool.kind === 'laser_beam'}
+                  <div class="holder-row pass-overrides">
+                    <span class="holder-label" title="Laser-only fields (rt1.29). Honored when this tool fires the cut.">Laser</span>
+                  </div>
+                  <div class="holder-row">
+                    <label>
+                      <span>Pierce time (s)</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        placeholder="—"
+                        value={tool.laserPierceSec ?? ''}
+                        title="Seconds the beam dwells at the entry point with laser ON before the cut begins. Critical for piercing thick acrylic / wood — without it the first millimeter is gouged. Emitted as a G4 P<sec> between rapid-to-entry and plunge."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          updateField(i, 'laserPierceSec', v === '' ? undefined : parseFloat(v));
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <span>Lead-in (mm)</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        placeholder="—"
+                        value={tool.laserLeadInMm ?? ''}
+                        title="Per-tool lead-in distance (mm) the laser head travels before reaching the cut path, to reduce edge entry burn. Wire field reserved; emit logic ships in a follow-up. Use the per-op Lead-in field for the same effect today."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          updateField(i, 'laserLeadInMm', v === '' ? undefined : parseFloat(v));
+                        }}
                       />
                     </label>
                   </div>

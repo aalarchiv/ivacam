@@ -177,6 +177,24 @@ pub trait PostProcessor {
     /// cache hits to splice cached gcode lines and resume as if those
     /// lines had been emitted live.
     fn restore_state(&mut self, _state: &CapturedPostState) {}
+
+    /// Configure the program-wide number formatter (rt1.36): decimal
+    /// separator and optional N-line-numbering start. Called once at
+    /// program_begin from `MachineConfig`. Default impl is a no-op —
+    /// posts that emit numeric coordinates (linuxcnc, grbl) override
+    /// it; HPGL / pen plotters ignore it.
+    fn configure(&mut self, _decimal_separator: char, _line_number_start: Option<u32>) {}
+
+    /// Apply a per-tool Z work-coordinate offset (rt1.30). Called
+    /// at program_begin for the first op's tool and right after each
+    /// emitted toolchange. LinuxCNC / GRBL emit `G92 Z<shift>`;
+    /// HPGL ignores. Skip when `shift_mm == 0`.
+    fn tool_z_shift(&mut self, _shift_mm: f64) {}
+
+    /// Emit a dwell of `seconds` (rt1.29 — used for laser pierce
+    /// time). LinuxCNC / GRBL emit `G4 P<seconds>`; HPGL ignores.
+    /// Skip when `seconds <= 0`.
+    fn dwell(&mut self, _seconds: f64) {}
 }
 
 /// Public projection of [`PostState`] used by the per-op cache. Mirrors
@@ -418,24 +436,38 @@ fn greedy_nearest_among(offsets: &[&PolylineOffset], start: Point2) -> Vec<usize
     let mut order = Vec::with_capacity(n);
     let mut pen = start;
     for _ in 0..n {
-        let mut best: Option<(usize, f64, u32)> = None;
+        let mut best: Option<(usize, f64, u32, bool)> = None;
         for (i, o) in offsets.iter().enumerate() {
             if taken[i] {
                 continue;
             }
             let d = pen.distance(start_pos_of(o));
-            // Tie-breaker: deeper levels first so pocket cascades unwind
-            // inside-out (innermost ring before its parent contour).
+            // Tie-breakers (in order):
+            //   1. closer distance wins,
+            //   2. deeper level wins (innermost ring first — pocket
+            //      cascades unwind inside-out),
+            //   3. non-finish before finish (rt1.24 — the dedicated
+            //      finish-wall ring runs LAST so surface quality
+            //      isn't degraded by re-traversing it).
             let level = o.level;
+            let is_finish = o.is_finish;
             let better = match best {
                 None => true,
-                Some((_, bd, bl)) => d < bd || (d == bd && level > bl),
+                Some((_, bd, bl, bf)) => {
+                    if d != bd {
+                        d < bd
+                    } else if level != bl {
+                        level > bl
+                    } else {
+                        !is_finish && bf
+                    }
+                }
             };
             if better {
-                best = Some((i, d, level));
+                best = Some((i, d, level, is_finish));
             }
         }
-        let (chosen, _, _) = best.unwrap();
+        let (chosen, _, _, _) = best.unwrap();
         taken[chosen] = true;
         order.push(chosen);
         pen = end_pos(offsets[chosen]);
@@ -460,6 +492,10 @@ fn end_pos(offset: &PolylineOffset) -> Point2 {
 }
 
 fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
+    // rt1.36: thread the decimal separator + N-numbering knobs into
+    // the post state BEFORE any output flows so every emitted line
+    // honors the project's MachineConfig.
+    post.configure(setup.machine.decimal_separator, setup.machine.line_number_start);
     post.program_start();
     post.unit(setup.machine.unit);
     post.absolute(true);
@@ -490,15 +526,29 @@ fn emit_offset<P: PostProcessor>(
     if setup.machine.comments {
         post.separation();
         post.comment(&format!(
-            "object={} level={} pocket={} segments={}",
+            "object={} level={} pocket={} segments={}{}",
             offset.source_object_idx,
             offset.level,
             offset.is_pocket,
-            offset.segments.len()
+            offset.segments.len(),
+            if offset.is_finish { " finish" } else { "" }
         ));
     }
+    // Pick the per-tool feed / speed / plunge set: finish-set for the
+    // wall-defining ring of a Pocket op (rt1.27), rough-set everywhere
+    // else. Posts delta-encode so emitting the same values back-to-back
+    // is free.
+    let (use_speed, use_rate_v, use_rate_h) = if offset.is_finish {
+        (
+            setup.tool.speed_finish,
+            setup.tool.rate_v_finish,
+            setup.tool.rate_h_finish,
+        )
+    } else {
+        (setup.tool.speed, setup.tool.rate_v, setup.tool.rate_h)
+    };
     if setup.machine.mode == MachineMode::Mill {
-        post.spindle_cw(setup.tool.speed, setup.tool.pause);
+        post.spindle_cw(use_speed, setup.tool.pause);
     }
     if setup.tool.flood {
         post.coolant_flood();
@@ -506,6 +556,10 @@ fn emit_offset<P: PostProcessor>(
     if setup.tool.mist {
         post.coolant_mist();
     }
+    // Surface the chosen cut feedrate before the cut; the plunge feed
+    // gets set explicitly at each Z-down move inside multi_pass.
+    post.feedrate(use_rate_h);
+    let _ = use_rate_v;
     let start = offset.segments[0].start;
     // Lead-in (straight, arc, or off) before the first cut. The arc
     // lead is a tangent roll-on at z=0 that lands the cutter on the
@@ -513,9 +567,16 @@ fn emit_offset<P: PostProcessor>(
     // tangent — no dwell at the start point. multi_pass then plunges
     // from z=0 to the first pass depth at segments[0].start.
     let lead_in = lead_in_geometry(setup, &offset.segments);
+    // rt1.29: laser pierce — once we've rapid'd to the entry point at
+    // safe Z, dwell with the laser ON so it burns through stock
+    // before any cutting motion starts.
+    let pierce_sec = setup.tool.pierce_sec;
     match lead_in {
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            if pierce_sec > 0.0 {
+                post.dwell(pierce_sec);
+            }
             post.linear(None, None, Some(0.0));
         }
         LeadGeometry::Arc {
@@ -524,6 +585,9 @@ fn emit_offset<P: PostProcessor>(
             ccw,
         } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            if pierce_sec > 0.0 {
+                post.dwell(pierce_sec);
+            }
             post.linear(None, None, Some(0.0));
             // I/J are the offset from the arc's start (current XY) to
             // its center — same convention as ezdxf / ngc / linuxcnc.
@@ -537,11 +601,14 @@ fn emit_offset<P: PostProcessor>(
         }
         LeadGeometry::None => {
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
+            if pierce_sec > 0.0 {
+                post.dwell(pierce_sec);
+            }
             post.linear(None, None, Some(0.0));
         }
     }
 
-    multi_pass(setup, &offset.segments, &offset.tabs, post);
+    multi_pass(setup, &offset.segments, &offset.tabs, offset.is_finish, post);
 
     // Lead-out happens at the FINAL pass depth — it's a real cutting
     // motion that rolls the cutter off the contour into free space.
@@ -577,8 +644,37 @@ fn multi_pass<P: PostProcessor>(
     setup: &Setup,
     segments: &[Segment],
     tabs: &[crate::cam::offsets::TabPoint],
+    is_finish: bool,
     post: &mut P,
 ) {
+    // Finish-set rates (rt1.27): swap in the tool's _finish overrides
+    // when this offset is the wall-defining ring of a Pocket. Falls
+    // back to rough rates everywhere else.
+    let rate_v = if is_finish { setup.tool.rate_v_finish } else { setup.tool.rate_v };
+    let rate_h = if is_finish { setup.tool.rate_h_finish } else { setup.tool.rate_h };
+
+    // Plot-mode (rt1.35): emit ONE pass at the op's cut depth,
+    // skipping the multi-step schedule + helix / ramp / finish_step /
+    // through_depth / depth_list machinery. Laser / plasma / pen
+    // plotter / 3D-printer / drag-knife controllers expect binary
+    // pen-up / pen-down Z values; all the descent stages are noise.
+    if setup.machine.plot_mode_z {
+        let cut_z = setup.mill.depth.min(0.0);
+        post.feedrate(rate_v);
+        post.linear(None, None, Some(cut_z));
+        post.feedrate(rate_h);
+        let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+        let fitted = fit_line_runs(segments, setup);
+        emit_path_with_corner_feed(
+            &fitted,
+            dragoff,
+            rate_h,
+            setup.mill.corner_feed_reduction,
+            post,
+        );
+        let _ = tabs; // tabs are meaningless in plot mode
+        return;
+    }
     // Build the Z schedule. depth_list (when non-empty) wins as an
     // explicit list; otherwise use step + finish_step + through_depth
     // to derive a step-down sequence ending at depth - through_depth.
@@ -667,7 +763,7 @@ fn multi_pass<P: PostProcessor>(
         let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
         if let (true, Some(pz)) = (helix, prev_z) {
             // Spiral from prev_z down to z while tracing the segments.
-            post.feedrate(setup.tool.rate_h);
+            post.feedrate(rate_h);
             emit_helix_pass(segments, pz, z, post);
         } else if let Some(plan) = helix_entry.as_ref().filter(|_| !pass_uses_tabs) {
             // Start-of-cut helical entry: spiral down on a small
@@ -676,7 +772,7 @@ fn multi_pass<P: PostProcessor>(
             // portion is helix-driven; the rest of the pass uses the
             // ordinary path emit at constant z.
             let pz = ramp_from;
-            post.feedrate(setup.tool.rate_h);
+            post.feedrate(rate_h);
             emit_helix_entry(plan, pz, z, post);
             // Cut from helix landing point to the path's actual start.
             let start = segments.first().map(|s| s.start).unwrap_or(plan.center);
@@ -686,7 +782,7 @@ fn multi_pass<P: PostProcessor>(
             emit_path_with_corner_feed(
                 &fitted,
                 dragoff,
-                setup.tool.rate_h,
+                rate_h,
                 setup.mill.corner_feed_reduction,
                 post,
             );
@@ -705,28 +801,28 @@ fn multi_pass<P: PostProcessor>(
                 dz / angle.to_radians().tan()
             };
             if ramp_length > 1e-6 && total_path_len >= ramp_length {
-                post.feedrate(setup.tool.rate_h);
+                post.feedrate(rate_h);
                 emit_ramp_pass(segments, pz, z, ramp_length, post);
             } else {
                 // Path too short for the ramp → fall back to straight
                 // plunge so the user still gets a valid program.
-                post.feedrate(setup.tool.rate_v);
+                post.feedrate(rate_v);
                 post.linear(None, None, Some(z));
-                post.feedrate(setup.tool.rate_h);
+                post.feedrate(rate_h);
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
                 let fitted = fit_line_runs(segments, setup);
                 emit_path_with_corner_feed(
                     &fitted,
                     dragoff,
-                    setup.tool.rate_h,
+                    rate_h,
                     setup.mill.corner_feed_reduction,
                     post,
                 );
             }
         } else {
-            post.feedrate(setup.tool.rate_v);
+            post.feedrate(rate_v);
             post.linear(None, None, Some(z));
-            post.feedrate(setup.tool.rate_h);
+            post.feedrate(rate_h);
             if pass_uses_tabs {
                 emit_path_with_tabs(
                     segments,
@@ -743,7 +839,7 @@ fn multi_pass<P: PostProcessor>(
                 emit_path_with_corner_feed(
                     &fitted,
                     dragoff,
-                    setup.tool.rate_h,
+                    rate_h,
                     setup.mill.corner_feed_reduction,
                     post,
                 );
@@ -765,13 +861,13 @@ fn multi_pass<P: PostProcessor>(
         && !(setup.tabs.active && !tabs.is_empty())
         && total_path_len > 1e-6;
     if needs_ramp_cleanup {
-        post.feedrate(setup.tool.rate_h);
+        post.feedrate(rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
         let fitted = fit_line_runs(segments, setup);
         emit_path_with_corner_feed(
             &fitted,
             dragoff,
-            setup.tool.rate_h,
+            rate_h,
             setup.mill.corner_feed_reduction,
             post,
         );
@@ -2070,7 +2166,7 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
 }
 
 /// Internal state shared across post processor implementations.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostState {
     pub last_x: Option<f64>,
     pub last_y: Option<f64>,
@@ -2078,6 +2174,81 @@ pub struct PostState {
     pub last_rate: Option<u32>,
     pub last_speed: Option<u32>,
     pub absolute: bool,
+    /// Decimal separator used by the number formatter — `.` (default)
+    /// or `,` for European-locale Siemens / Heidenhain controllers
+    /// (rt1.36). Configured once at program start from
+    /// `MachineConfig::decimal_separator`.
+    #[serde(default = "default_decimal_separator")]
+    pub decimal_separator: char,
+    /// When `Some(next)`, every emitted line gets a `N<next> ` prefix
+    /// and `next` increments by 10 (rt1.36 / FANUC / vintage
+    /// controllers). `None` = no numbering. Configured once at
+    /// program start from `MachineConfig::line_number_start`.
+    #[serde(default)]
+    pub line_counter: Option<u32>,
+}
+
+fn default_decimal_separator() -> char {
+    '.'
+}
+
+impl Default for PostState {
+    fn default() -> Self {
+        Self {
+            last_x: None,
+            last_y: None,
+            last_z: None,
+            last_rate: None,
+            last_speed: None,
+            absolute: false,
+            decimal_separator: '.',
+            line_counter: None,
+        }
+    }
+}
+
+/// Apply the post-processor numbering / separator settings derived
+/// from MachineConfig (rt1.36). Drains down into `PostState` so the
+/// per-post `write` / `fmt` helpers consult them on every line.
+pub fn configure_post_state(
+    state: &mut PostState,
+    decimal_separator: char,
+    line_number_start: Option<u32>,
+) {
+    // Only '.' and ',' are supported; anything else silently falls
+    // back to '.' so the gcode stays parseable.
+    state.decimal_separator = match decimal_separator {
+        '.' | ',' => decimal_separator,
+        _ => '.',
+    };
+    state.line_counter = line_number_start;
+}
+
+/// Format a floating-point number using the post-state's decimal
+/// separator. Matches the upstream's formatting otherwise: 4 decimal
+/// places, strip trailing zeros, never end with `.`.
+pub fn fmt_num(v: f64, sep: char) -> String {
+    let s = format!("{v:.4}");
+    let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+    let base = if trimmed.is_empty() { "0".into() } else { trimmed.to_string() };
+    if sep == ',' {
+        base.replace('.', ",")
+    } else {
+        base
+    }
+}
+
+/// Build the `N<n> ` line-number prefix and advance the counter when
+/// active. When the counter is `None`, returns empty and leaves
+/// state untouched.
+pub fn line_number_prefix(state: &mut PostState) -> String {
+    if let Some(n) = state.line_counter {
+        let s = format!("N{n} ");
+        state.line_counter = Some(n + 10);
+        s
+    } else {
+        String::new()
+    }
 }
 
 #[cfg(test)]
@@ -2105,6 +2276,7 @@ mod tests {
             color: 7,
             source_object_idx: 0,
             tabs: Vec::new(),
+            is_finish: false,
         }
     }
 
@@ -2219,6 +2391,7 @@ mod tests {
             color: 7,
             source_object_idx: 0,
             tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0 }],
+            is_finish: false,
         };
 
         let mut post = linuxcnc::Post::new();
@@ -2313,6 +2486,7 @@ mod tests {
             color: 7,
             source_object_idx: 0,
             tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0 }],
+            is_finish: false,
         };
 
         let mut post = linuxcnc::Post::new();
@@ -2425,6 +2599,7 @@ mod tests {
             color: 7,
             source_object_idx: 0,
             tabs: Vec::new(),
+            is_finish: false,
         };
 
         let mut setup = Setup::default();

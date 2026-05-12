@@ -2,7 +2,18 @@
 // modules without a Svelte runtime (helpers, vitest specs) can import the
 // shapes without dragging in `$state`.
 
-export type ToolKind = 'endmill' | 'ball_nose' | 'v_bit' | 'engraver' | 'drag_knife' | 'drill' | 'laser_beam';
+export type ToolKind =
+  | 'endmill'
+  | 'ball_nose'
+  | 'v_bit'
+  | 'engraver'
+  | 'drag_knife'
+  | 'drill'
+  | 'laser_beam'
+  | 'bull_nose'
+  | 'compression'
+  | 't_slot'
+  | 'form_profile';
 
 export type OpKind =
   | 'profile'

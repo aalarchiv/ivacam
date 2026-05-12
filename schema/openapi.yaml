@@ -743,13 +743,28 @@ components:
           type: boolean
         comments:
           type: boolean
+        decimal_separator:
+          description: Decimal separator for emitted numbers (rt1.36). `'.'` (default) suits LinuxCNC / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'.
+          maxLength: 1
+          minLength: 1
+          type: string
         jerk:
           anyOf:
           - $ref: '#/components/schemas/AxisLimits'
           - type: 'null'
           description: Per-axis jerk in mm/s³. None ⇒ trapezoidal-only profiling (S-curve refinement is Phase 2).
+        line_number_start:
+          description: Starting line number for `N<n>` prefixes (rt1.36). `None` (the default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`, `N30`, … incrementing by 10. Required by some FANUC / vintage controllers; useful operator reference even on modern ones.
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         mode:
           $ref: '#/components/schemas/MachineMode'
+        plot_mode_z:
+          description: 'Plot-mode Z (rt1.35 / Estlcam c_PP.Z_Up_Dn): when true, the pipeline collapses every cut to ONE pass at the op''s cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op''s `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers.'
+          type: boolean
         rapid_speed:
           description: Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
           format: double
@@ -868,6 +883,13 @@ components:
       properties:
         enabled:
           type: boolean
+        finish_tool_id:
+          description: Optional finish tool id for dual-tool Pocket ops (rt1.33 / Estlcam TS slot). When `Some(id)` and `id != tool_id`, the pipeline emits a toolchange after the rough cascade and runs the wall-defining ring with the finish tool's geometry + finish-set feed/speed. When `None` or equal to `tool_id`, the op runs single-tool (current behavior).
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         id:
           format: uint32
           minimum: 0.0
@@ -886,7 +908,7 @@ components:
         source:
           $ref: '#/components/schemas/OperationSource'
         tool_id:
-          description: id of a `Project.tools` entry.
+          description: id of a `Project.tools` entry. For dual-tool Pocket ops this is the roughing tool; the finish ring is cut by `finish_tool_id`.
           format: uint32
           minimum: 0.0
           type: integer
@@ -937,8 +959,21 @@ components:
         - cycle
         - type
         type: object
-      - description: Helical thread — bore + helical thread cut.
+      - description: Helical thread — single-point cutter walks a helix inside a bore (internal) or around a stud (external). Z descends linearly by `pitch_mm` per revolution between `start_depth` and `depth`. The source must be a closed circle (single Circle / closed Arc loop); the helix radius derives from the circle's radius plus tool radius for internal threads, or minus tool radius for external. (rt1.17)
         properties:
+          climb:
+            default: false
+            description: Climb (CCW helix on a right-hand spindle) vs conventional (CW). Default conventional. Surface quality on hobby rigs almost always favors conventional even for threading.
+            type: boolean
+          internal:
+            default: true
+            description: '`true` = internal (tap-style, cutter walks INSIDE the bore); `false` = external (cutter walks AROUND a stud).'
+            type: boolean
+          pitch_mm:
+            default: 1.0
+            description: Thread pitch in mm — Z descent per full revolution. Positive; defaults to 1.0 mm (M6 fine).
+            format: double
+            type: number
           type:
             enum:
             - thread
@@ -946,12 +981,21 @@ components:
         required:
         - type
         type: object
-      - description: V-bit edge break.
+      - description: 'V-bit edge break (rt1.18). The cutter walks the source path itself at a single Z computed from the bit''s cone angle and the desired chamfer width: `z = -width_mm / tan(tip_angle / 2)`. One pass at that depth carves a beveled edge whose horizontal width on the workpiece equals `width_mm`. Optionally followed by a second pass at the tool''s finish-set feed/speed for surface quality. Default values for the variant fields keep legacy payloads (`{ "type": "chamfer" }`) backward-compatible.'
         properties:
+          finish_pass:
+            default: false
+            description: When `true`, the chamfer is cut twice — once at the rough feed (cleanup) and once at the tool's finish-set feed (rt1.27) for surface quality. Default `false`.
+            type: boolean
           type:
             enum:
             - chamfer
             type: string
+          width_mm:
+            default: 1.0
+            description: Horizontal width of the chamfer cut on the workpiece, mm. Mirrors Estlcam's Fasenabstand. Positive; defaults to 1.0.
+            format: double
+            type: number
         required:
         - type
         type: object
@@ -993,8 +1037,26 @@ components:
         type: object
     OperationParams:
       properties:
+        approach_point:
+          description: 'Anfahrpunkt (rt1.26 / Estlcam): user-picked XY where the cutter enters each pocket / closed-contour ring. Honored on Pocket / Profile ops with closed offsets. When `Some((x, y))`, each closed offset gets its segment list rotated so the start vertex is the segment vertex closest to the approach point — the plunge / lead-in then happens there instead of an arbitrary auto-picked point. `None` = auto.'
+          items:
+          - format: double
+            type: number
+          - format: double
+            type: number
+          maxItems: 2
+          minItems: 2
+          type:
+          - array
+          - 'null'
         carve_max_width_mm:
           description: V-Carve cap on the inscribed-circle radius (mm). When set, any medial-axis point with `R_inscribed > carve_max_width_mm` clips to the cap — the V doesn't carve any wider than the bit's usable diameter. None = no cap (use the geometric inscribed circle directly).
+          format: double
+          type:
+          - number
+          - 'null'
+        chamfer_after_width_mm:
+          description: 'Stufenfase (rt1.20 / Estlcam Prog_KTD_Stufenfase): chamfer a drilled hole''s rim immediately after the drill cycle. Honored only on `OperationKind::Drill`. The post emits the drill cycle for each hole, then walks the cutter on a single revolution at the hole''s edge at z = -width / tan(tip_angle / 2). When `Operation.finish_tool_id` is set to a distinct tool, a M6 + G92 toolchange happens BEFORE the chamfer revolution so the user can chamfer with a V-bit / fly-cutter different from the drill. mm, positive only. None / 0 = no countersink.'
           format: double
           type:
           - number
@@ -1034,6 +1096,12 @@ components:
           description: 'Cut direction for the finishing pass — the offset that defines the wall surface (Pocket level=0 ring; Profile single-pass cut). Default: Conventional, regardless of the main `cut_direction`. Surface quality on the finish wall is almost always best with conventional milling on hobby machines.'
         finish_step:
           description: Optional smaller step for the FINAL Z pass, for a cleaner bottom finish. None = use the same `step` for the last pass too. Negative just like `step`.
+          format: double
+          type:
+          - number
+          - 'null'
+        finish_xy_allowance_mm:
+          description: XY stock allowance left UNCUT by the roughing pass, removed by a dedicated finish pass walking the actual boundary (rt1.24 / Estlcam Schlichtzugabe). Honored on Pocket ops only — the roughing cascade insets the cutter centerline by `tool_radius + allowance`, then a wall-defining ring at `tool_radius` runs at the tool's finish-set feed/speed (rt1.27). None / 0 = no allowance (current behavior). mm, positive only.
           format: double
           type:
           - number
@@ -1409,6 +1477,9 @@ components:
         color:
           format: int32
           type: integer
+        is_finish:
+          description: When true, the gcode emitter swaps in the finish-set feed / speed / plunge rates (`ToolConfig::*_finish`) before cutting this offset. The pipeline tags the wall-defining level=0 ring of a Pocket op as finish; everything else stays at the rough rates.
+          type: boolean
         is_pocket:
           description: 0 = boundary, 1 = zigzag fill stroke, 2 = pocket ring.
           format: uint8
@@ -1908,8 +1979,19 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        pierce_sec:
+          default: 0.0
+          description: Laser pierce time (rt1.29) — seconds to dwell after laser-on before each plunge so the beam burns through stock. Resolved from `ToolEntry.laser_pierce_sec` at synth time; 0 = no pierce dwell.
+          format: double
+          type: number
         rate_h:
           description: Cutting feedrate (mm/min).
+          format: uint32
+          minimum: 0.0
+          type: integer
+        rate_h_finish:
+          default: 0
+          description: Resolved cutting feedrate for the finishing pass. mm/min.
           format: uint32
           minimum: 0.0
           type: integer
@@ -1918,7 +2000,19 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        rate_v_finish:
+          default: 0
+          description: Resolved plunge feedrate for the finishing pass. mm/min.
+          format: uint32
+          minimum: 0.0
+          type: integer
         speed:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        speed_finish:
+          default: 0
+          description: Resolved RPM for the finishing pass. Equal to `speed` unless the tool library carried a `speed_finish` override. The gcode emitter switches to these on level=0 rings of a Pocket op.
           format: uint32
           minimum: 0.0
           type: integer
@@ -1936,6 +2030,18 @@ components:
       properties:
         coolant:
           $ref: '#/components/schemas/Coolant'
+        corner_radius_mm:
+          description: Bull-nose / radius-endmill corner radius (rt1.28). Honored only when `kind == BullNose`. The corner radius produces a fillet on the cut floor edge — relevant for sim cross-section (the sim envelope falls below `corner_radius_mm` of the nominal flat floor). mm, positive only.
+          format: double
+          type:
+          - number
+          - 'null'
+        default_peck_step_mm:
+          description: Default peck step (positive, mm) for `DrillCycle::Peck` / `ChipBreak` ops that don't set their own `peck_step_mm`. None = the op must specify its own.
+          format: double
+          type:
+          - number
+          - 'null'
         default_step:
           description: Default depth-per-pass (negative, mm). Operations using this tool inherit this when their own `step` is unset. None = no default.
           format: double
@@ -1956,6 +2062,20 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        feed_rate_drill:
+          description: 'Cutting feedrate override when this tool is used in a Drill op. None = inherit `feed_rate`. Units: mm/min. Only meaningful for posts that emit XY-traverse feed lines between drill points.'
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        feed_rate_finish:
+          description: 'Cutting feedrate override for the finishing pass. None = inherit `feed_rate`. Units: mm/min.'
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         flute_length_mm:
           description: Length of cutting flutes (mm). None = treat entire tool as cutting.
           format: double
@@ -1977,6 +2097,18 @@ components:
           type: integer
         kind:
           $ref: '#/components/schemas/ToolKind'
+        laser_lead_in_mm:
+          description: 'Laser lead-in distance (rt1.29 / Estlcam T_Lead_In): mm of approach travel the head takes along the entry tangent before the cut starts, to reduce edge entry burn. Honored only when `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time — the per-op lead-in field overrides this if set explicitly. None = no tool-level lead-in.'
+          format: double
+          type:
+          - number
+          - 'null'
+        laser_pierce_sec:
+          description: 'Laser pierce time (rt1.29 / Estlcam T_Pierce_Time): seconds the beam dwells at the start point BEFORE the cut begins so it burns through thick stock. Honored only when `kind == LaserBeam`. The post emits a `G4 P<seconds>` after the laser-on before each plunge. None = no pierce dwell.'
+          format: double
+          type:
+          - number
+          - 'null'
         name:
           type: string
         pause:
@@ -1989,6 +2121,20 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        plunge_rate_drill:
+          description: 'Plunge feedrate override when this tool is used in a Drill op. None = inherit `plunge_rate`. Units: mm/min.'
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        plunge_rate_finish:
+          description: 'Plunge feedrate override for the finishing pass. None = inherit `plunge_rate`. Units: mm/min.'
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         shank_diameter_mm:
           description: Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
           format: double
@@ -1999,6 +2145,20 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        speed_drill:
+          description: Spindle RPM override when this tool is used in a Drill op. None = inherit `speed`.
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        speed_finish:
+          description: Spindle RPM override for the finishing pass (the wall-defining level=0 ring of a Pocket). None = inherit `speed`. Hard-material finish quality usually wants a slower RPM than roughing.
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         tip_angle_deg:
           default: 60.0
           description: V-bit full included tip angle in degrees (apex angle of the cone). Drives the V-Carve depth-from-width relationship `z = -R / tan(tip_angle / 2)`. Validated to (0, 180); defaults to 60° for the most common engraving V-bit.
@@ -2006,6 +2166,24 @@ components:
           type: number
         tip_diameter:
           description: V-bit tip diameter (None for endmill / ball nose / drag knife).
+          format: double
+          type:
+          - number
+          - 'null'
+        tslot_neck_diameter_mm:
+          description: T-slot / keyway cutter neck diameter (rt1.28). Honored only when `kind == TSlot`. The undercut cutter has a wide disk (`diameter`) at the tip and a narrow neck of this diameter above. mm, positive only.
+          format: double
+          type:
+          - number
+          - 'null'
+        tslot_neck_length_mm:
+          description: T-slot / keyway cutter neck length (rt1.28). Honored only when `kind == TSlot`. The vertical extent of the narrow neck above the disk. mm, positive only.
+          format: double
+          type:
+          - number
+          - 'null'
+        z_shift_mm:
+          description: Per-tool Z origin offset (rt1.30 / Estlcam Z_Shift). For machines without automatic tool-length probing — the user pre-measures each tool's tip Z relative to a reference tool and records the delta here (positive = sticks out further; negative = shorter). At toolchange / program-start the post emits a `G92 Z<shift>` that pins the new tool's tip at the same work-Z the reference tool used. mm. None = no shift.
           format: double
           type:
           - number
@@ -2034,6 +2212,22 @@ components:
       - description: Used for laser cutting / etching — no physical tool radius.
         enum:
         - laser_beam
+        type: string
+      - description: 'Bull-nose / radius-corner endmill (rt1.28): flat endmill with a rounded transition between the cylindrical wall and the flat floor. Cuts a fillet on the floor edge. `ToolEntry.corner_radius_mm` carries the radius.'
+        enum:
+        - bull_nose
+        type: string
+      - description: Compression / up-down spiral endmill (rt1.28 / Estlcam Obenunten). Cuts down on top half, up on bottom half — clean edges on both faces of sheet material. v1 treats it like an Endmill at the cutting algorithm; the variant is here so the tool library can label it accurately for the user.
+        enum:
+        - compression
+        type: string
+      - description: 'T-slot / keyway / undercut cutter (rt1.28): plunges vertically down a narrow neck, then a wider disk at the tip cuts the undercut slot. `ToolEntry.tslot_neck_diameter_mm` / `tslot_neck_length_mm` carry the neck geometry.'
+        enum:
+        - t_slot
+        type: string
+      - description: 'Form / profile cutter (rt1.28 / Estlcam Profil): bull-nose / cove / ogee / dovetail / custom — a profile bit with a fixed cross-section. v1 treats as an Endmill at the algorithm; the variant labels it.'
+        enum:
+        - form_profile
         type: string
     ToolOffset:
       enum:

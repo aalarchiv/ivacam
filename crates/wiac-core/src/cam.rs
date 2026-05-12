@@ -12,10 +12,12 @@ use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
 
 pub mod chaining;
+pub mod chamfer;
 pub mod inscribed;
 pub mod offsets;
 pub mod setup;
 pub mod source_combine;
+pub mod thread;
 pub mod trochoidal;
 pub mod vcarve;
 pub mod vcarve_emit;

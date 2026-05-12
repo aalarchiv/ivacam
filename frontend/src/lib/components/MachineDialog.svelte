@@ -104,6 +104,49 @@
           <input type="checkbox" bind:checked={draft.supportsToolchange} />
           Machine supports tool changes (M6)
         </label>
+        <label class="check" title="Plot-mode Z (rt1.35): collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers.">
+          <input type="checkbox" bind:checked={draft.plotModeZ} />
+          Plot-mode Z (single-pass, binary up/down)
+        </label>
+
+        <div class="section-title">G-code formatting</div>
+        <label title="Some EU-locale Siemens / Heidenhain controllers require X1,5 instead of X1.5. Default is the period.">
+          Decimal separator
+          <span class="field">
+            <select
+              value={draft.decimalSeparator ?? '.'}
+              onchange={(e) => {
+                const v = (e.currentTarget as HTMLSelectElement).value;
+                draft.decimalSeparator = v === ',' ? ',' : '.';
+              }}
+            >
+              <option value=".">period (.)</option>
+              <option value=",">comma (,)</option>
+            </select>
+          </span>
+        </label>
+        <label title="Prefix every emitted line with N10, N20, N30, … Required by some FANUC / vintage controllers; useful operator reference even on modern ones. Empty / 0 disables numbering.">
+          Line numbering start
+          <span class="field">
+            <input
+              type="number"
+              min="0"
+              step="10"
+              placeholder="off"
+              value={draft.lineNumberStart ?? ''}
+              oninput={(e) => {
+                const raw = (e.target as HTMLInputElement).value;
+                if (raw === '') {
+                  draft.lineNumberStart = undefined;
+                  return;
+                }
+                const v = parseInt(raw, 10);
+                draft.lineNumberStart = isFinite(v) && v > 0 ? v : undefined;
+              }}
+            />
+            <span class="unit">N</span>
+          </span>
+        </label>
 
         <div class="section-title">Kinematics</div>
         <label>Rapid speed

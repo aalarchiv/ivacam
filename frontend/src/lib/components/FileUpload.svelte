@@ -104,7 +104,11 @@
     const { open } = await import('@tauri-apps/plugin-dialog');
     const selected = await open({
       multiple: false,
-      filters: [{ name: 'CAD/CAM input', extensions: ['dxf', 'svg', 'hpgl', 'plt', 'ngc', 'stl'] }],
+      // Only formats the wiac-core importer actually supports today
+      // (input.rs dispatch lists DXF + SVG). HPGL / PLT / NGC / STL
+      // are tracked as separate follow-up issues (byd, rt1.32). When
+      // those land, extend this filter so the picker stays honest.
+      filters: [{ name: 'CAD/CAM input', extensions: ['dxf', 'svg'] }],
     });
     if (typeof selected !== 'string') return;
     await loadFromPath(selected);
@@ -291,7 +295,7 @@
   <input
     bind:this={inputEl}
     type="file"
-    accept=".dxf,.svg,.hpgl,.plt,.ngc,.stl"
+    accept=".dxf,.svg"
     onchange={onPick}
     hidden
   />
@@ -328,7 +332,7 @@
   >
     Save project
   </button>
-  <span class="hint">or drop a .dxf / .svg / .hpgl / .ngc / .stl here</span>
+  <span class="hint">or drop a .dxf or .svg here</span>
   {#if isTauri() && recent.length > 0}
     <span class="recent-host">
       <select

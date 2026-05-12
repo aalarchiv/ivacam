@@ -1,7 +1,9 @@
 //! LinuxCNC post-processor. Mirrors output_plugins/gcode_linuxcnc.py.
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
-use crate::gcode::{CapturedPostState, PostProcessor, PostState};
+use crate::gcode::{
+    configure_post_state, fmt_num, line_number_prefix, CapturedPostState, PostProcessor, PostState,
+};
 
 #[derive(Debug, Default)]
 pub struct Post {
@@ -15,58 +17,56 @@ impl Post {
     }
 
     fn write(&mut self, line: impl Into<String>) {
-        self.out.push(line.into());
-    }
-}
-
-fn fmt(v: f64) -> String {
-    // Match the upstream's formatting: 4 decimal places, strip trailing zeros.
-    let s = format!("{v:.4}");
-    let trimmed = s.trim_end_matches('0').trim_end_matches('.');
-    if trimmed.is_empty() {
-        "0".into()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-fn maybe(coord: char, prev: Option<f64>, val: Option<f64>) -> Option<String> {
-    let v = val?;
-    if let Some(p) = prev {
-        if (p - v).abs() < 1e-9 {
-            return None;
+        let raw: String = line.into();
+        let prefix = line_number_prefix(&mut self.state);
+        if prefix.is_empty() {
+            self.out.push(raw);
+        } else {
+            self.out.push(format!("{prefix}{raw}"));
         }
     }
-    Some(format!("{coord}{}", fmt(v)))
+
+    fn fmt(&self, v: f64) -> String {
+        fmt_num(v, self.state.decimal_separator)
+    }
+
+    fn maybe(&self, coord: char, prev: Option<f64>, val: Option<f64>) -> Option<String> {
+        let v = val?;
+        if let Some(p) = prev {
+            if (p - v).abs() < 1e-9 {
+                return None;
+            }
+        }
+        Some(format!("{coord}{}", self.fmt(v)))
+    }
+
+    fn coords(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) -> String {
+        let last_x = self.state.last_x;
+        let last_y = self.state.last_y;
+        let last_z = self.state.last_z;
+        let mut parts = Vec::with_capacity(3);
+        if let Some(s) = self.maybe('X', last_x, x) {
+            parts.push(s);
+        }
+        if let Some(s) = self.maybe('Y', last_y, y) {
+            parts.push(s);
+        }
+        if let Some(s) = self.maybe('Z', last_z, z) {
+            parts.push(s);
+        }
+        if let Some(v) = x {
+            self.state.last_x = Some(v);
+        }
+        if let Some(v) = y {
+            self.state.last_y = Some(v);
+        }
+        if let Some(v) = z {
+            self.state.last_z = Some(v);
+        }
+        parts.join(" ")
+    }
 }
 
-fn coords(
-    state: &mut PostState,
-    x: Option<f64>,
-    y: Option<f64>,
-    z: Option<f64>,
-) -> String {
-    let mut parts = Vec::with_capacity(3);
-    if let Some(s) = maybe('X', state.last_x, x) {
-        parts.push(s);
-    }
-    if let Some(s) = maybe('Y', state.last_y, y) {
-        parts.push(s);
-    }
-    if let Some(s) = maybe('Z', state.last_z, z) {
-        parts.push(s);
-    }
-    if let Some(v) = x {
-        state.last_x = Some(v);
-    }
-    if let Some(v) = y {
-        state.last_y = Some(v);
-    }
-    if let Some(v) = z {
-        state.last_z = Some(v);
-    }
-    parts.join(" ")
-}
 
 impl PostProcessor for Post {
     fn separation(&mut self) {
@@ -119,9 +119,9 @@ impl PostProcessor for Post {
     fn machine_offsets(&mut self, offsets: (f64, f64, f64), _soft: bool) {
         self.write(format!(
             "G92 X{} Y{} Z{}",
-            fmt(offsets.0),
-            fmt(offsets.1),
-            fmt(offsets.2)
+            self.fmt(offsets.0),
+            self.fmt(offsets.1),
+            self.fmt(offsets.2)
         ));
     }
     fn coolant_mist(&mut self) {
@@ -156,13 +156,13 @@ impl PostProcessor for Post {
         }
     }
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
-        let body = coords(&mut self.state, x, y, z);
+        let body = self.coords(x, y, z);
         if !body.is_empty() {
             self.write(format!("G0 {body}"));
         }
     }
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
-        let body = coords(&mut self.state, x, y, z);
+        let body = self.coords(x, y, z);
         if !body.is_empty() {
             self.write(format!("G1 {body}"));
         }
@@ -175,9 +175,9 @@ impl PostProcessor for Post {
         i: Option<f64>,
         j: Option<f64>,
     ) {
-        let body = coords(&mut self.state, x, y, z);
-        let i = i.map(|v| format!(" I{}", fmt(v))).unwrap_or_default();
-        let j = j.map(|v| format!(" J{}", fmt(v))).unwrap_or_default();
+        let body = self.coords(x, y, z);
+        let i = i.map(|v| format!(" I{}", self.fmt(v))).unwrap_or_default();
+        let j = j.map(|v| format!(" J{}", self.fmt(v))).unwrap_or_default();
         self.write(format!("G2 {body}{i}{j}").trim().to_string());
     }
     fn arc_ccw(
@@ -188,9 +188,9 @@ impl PostProcessor for Post {
         i: Option<f64>,
         j: Option<f64>,
     ) {
-        let body = coords(&mut self.state, x, y, z);
-        let i = i.map(|v| format!(" I{}", fmt(v))).unwrap_or_default();
-        let j = j.map(|v| format!(" J{}", fmt(v))).unwrap_or_default();
+        let body = self.coords(x, y, z);
+        let i = i.map(|v| format!(" I{}", self.fmt(v))).unwrap_or_default();
+        let j = j.map(|v| format!(" J{}", self.fmt(v))).unwrap_or_default();
         self.write(format!("G3 {body}{i}{j}").trim().to_string());
     }
     fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, dwell_sec: f64) {
@@ -198,13 +198,13 @@ impl PostProcessor for Post {
         // G81 otherwise, so machinists who watch the canned cycle code see what
         // they expect.
         let dwell = if dwell_sec > 0.0 {
-            format!(" P{}", fmt(dwell_sec))
+            format!(" P{}", self.fmt(dwell_sec))
         } else {
             String::new()
         };
         let g = if dwell_sec > 0.0 { "G82" } else { "G81" };
-        let body = coords(&mut self.state, Some(x), Some(y), Some(z));
-        self.write(format!("{g} {body} R{}{dwell}", fmt(r)));
+        let body = self.coords(Some(x), Some(y), Some(z));
+        self.write(format!("{g} {body} R{}{dwell}", self.fmt(r)));
         // Canned cycles leave Z at R after each cycle, but the post state
         // already records Z=z above. Sync it so subsequent moves don't
         // emit redundant Z words.
@@ -212,29 +212,29 @@ impl PostProcessor for Post {
     }
     fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
         let dwell = if dwell_sec > 0.0 {
-            format!(" P{}", fmt(dwell_sec))
+            format!(" P{}", self.fmt(dwell_sec))
         } else {
             String::new()
         };
-        let body = coords(&mut self.state, Some(x), Some(y), Some(z));
+        let body = self.coords(Some(x), Some(y), Some(z));
         self.write(format!(
             "G83 {body} R{} Q{}{dwell}",
-            fmt(r),
-            fmt(q.abs())
+            self.fmt(r),
+            self.fmt(q.abs())
         ));
         self.state.last_z = Some(r);
     }
     fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
         let dwell = if dwell_sec > 0.0 {
-            format!(" P{}", fmt(dwell_sec))
+            format!(" P{}", self.fmt(dwell_sec))
         } else {
             String::new()
         };
-        let body = coords(&mut self.state, Some(x), Some(y), Some(z));
+        let body = self.coords(Some(x), Some(y), Some(z));
         self.write(format!(
             "G73 {body} R{} Q{}{dwell}",
-            fmt(r),
-            fmt(q.abs())
+            self.fmt(r),
+            self.fmt(q.abs())
         ));
         self.state.last_z = Some(r);
     }
@@ -276,5 +276,31 @@ impl PostProcessor for Post {
         self.state.last_z = s.last_z;
         self.state.last_rate = s.last_rate;
         self.state.last_speed = s.last_speed;
+    }
+    fn configure(&mut self, decimal_separator: char, line_number_start: Option<u32>) {
+        configure_post_state(&mut self.state, decimal_separator, line_number_start);
+    }
+    fn tool_z_shift(&mut self, shift_mm: f64) {
+        if shift_mm.abs() < 1e-9 {
+            return;
+        }
+        // G92 sets the work-coordinate offset; here we pin the work Z
+        // to the configured shift so the new tool's tip lines up with
+        // the reference tool's Z=0. The `;` comment is bracketed so
+        // grep'ing for the offset is easy in CAM-review.
+        let s = self.fmt(shift_mm);
+        self.write(format!("(z-shift: {s})"));
+        self.write(format!("G92 Z{s}"));
+        // The G92 leaves the controller's internal "last_z" unknown
+        // to our delta encoder — flushing it forces the next Z move
+        // to re-emit explicitly.
+        self.state.last_z = None;
+    }
+    fn dwell(&mut self, seconds: f64) {
+        if seconds <= 0.0 {
+            return;
+        }
+        let s = self.fmt(seconds);
+        self.write(format!("G4 P{s}"));
     }
 }

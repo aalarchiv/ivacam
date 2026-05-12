@@ -194,7 +194,7 @@ fn build_offsets(
         }
         let pocket = obj.setup.pockets.active && obj.closed;
         if pocket {
-            for mut o in pocket_for_object(obj, radius, false, 6, PocketEmit::Cascade, &[], radius) {
+            for mut o in pocket_for_object(obj, radius, false, 6, PocketEmit::Cascade, &[], radius, 0.0, None) {
                 o.source_object_idx = idx;
                 offsets.push(o);
             }
@@ -219,6 +219,7 @@ fn build_offsets(
                 color: obj.color,
                 source_object_idx: idx,
                 tabs: Vec::new(),
+                is_finish: false,
             });
         } else {
             for mut o in wiac_core::cam::offsets::parallel_offset_object(obj, delta) {

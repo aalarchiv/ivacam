@@ -31,6 +31,23 @@ pub struct ToolConfig {
     pub rate_v: u32,
     /// Cutting feedrate (mm/min).
     pub rate_h: u32,
+    /// Resolved RPM for the finishing pass. Equal to `speed` unless the
+    /// tool library carried a `speed_finish` override. The gcode emitter
+    /// switches to these on level=0 rings of a Pocket op.
+    #[serde(default)]
+    pub speed_finish: u32,
+    /// Resolved plunge feedrate for the finishing pass. mm/min.
+    #[serde(default)]
+    pub rate_v_finish: u32,
+    /// Resolved cutting feedrate for the finishing pass. mm/min.
+    #[serde(default)]
+    pub rate_h_finish: u32,
+    /// Laser pierce time (rt1.29) — seconds to dwell after laser-on
+    /// before each plunge so the beam burns through stock. Resolved
+    /// from `ToolEntry.laser_pierce_sec` at synth time; 0 = no
+    /// pierce dwell.
+    #[serde(default)]
+    pub pierce_sec: f64,
 }
 
 impl Default for ToolConfig {
@@ -45,6 +62,10 @@ impl Default for ToolConfig {
             dragoff: None,
             rate_v: 100,
             rate_h: 800,
+            speed_finish: 18000,
+            rate_v_finish: 100,
+            rate_h_finish: 800,
+            pierce_sec: 0.0,
         }
     }
 }
@@ -331,6 +352,28 @@ pub struct MachineConfig {
     /// `arcs == true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arc_fit_tolerance_mm: Option<f64>,
+    /// Decimal separator for emitted numbers (rt1.36). `'.'` (default)
+    /// suits LinuxCNC / GRBL / Mach3 and any controller configured in
+    /// US locale. `','` covers European-locale Siemens / Heidenhain
+    /// controllers that require `X1,5` instead of `X1.5`. Anything
+    /// other than '.' / ',' silently falls back to '.'.
+    #[serde(default = "default_decimal_separator_char", skip_serializing_if = "is_default_decimal_separator")]
+    pub decimal_separator: char,
+    /// Starting line number for `N<n>` prefixes (rt1.36). `None` (the
+    /// default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`,
+    /// `N30`, … incrementing by 10. Required by some FANUC / vintage
+    /// controllers; useful operator reference even on modern ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_number_start: Option<u32>,
+    /// Plot-mode Z (rt1.35 / Estlcam c_PP.Z_Up_Dn): when true, the
+    /// pipeline collapses every cut to ONE pass at the op's cut depth
+    /// and skips the multi-step descent / ramp / helix machinery.
+    /// Z values written into gcode are restricted to `fast_move_z`
+    /// (pen up between cuts) and the op's `depth` (pen down on
+    /// cut moves). Right setting for laser / plasma / pen plotters /
+    /// 3D-printer extrusion and drag-knife controllers.
+    #[serde(default, skip_serializing_if = "is_false_bool")]
+    pub plot_mode_z: bool,
 }
 
 impl MachineConfig {
@@ -356,6 +399,18 @@ fn is_default_use_kinematic(v: &bool) -> bool {
     *v
 }
 
+fn default_decimal_separator_char() -> char {
+    '.'
+}
+
+fn is_default_decimal_separator(v: &char) -> bool {
+    *v == '.'
+}
+
+fn is_false_bool(v: &bool) -> bool {
+    !*v
+}
+
 impl Default for MachineConfig {
     fn default() -> Self {
         Self {
@@ -370,6 +425,9 @@ impl Default for MachineConfig {
             rapid_speed: None,
             use_kinematic_time_estimate: default_use_kinematic(),
             arc_fit_tolerance_mm: None,
+            decimal_separator: '.',
+            line_number_start: None,
+            plot_mode_z: false,
         }
     }
 }

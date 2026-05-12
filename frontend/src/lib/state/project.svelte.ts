@@ -987,6 +987,42 @@ export interface ToolEntry {
   plungeRate: number;
   feedRate: number;
   coolant: CoolantMode;
+  /// Per-pass overrides (rt1.27): when set, the finish ring of a
+  /// Pocket op consumes these instead of the general values. Drill ops
+  /// consume the _drill variants throughout. Undefined = inherit the
+  /// general value.
+  speedFinish?: number;
+  plungeRateFinish?: number;
+  feedRateFinish?: number;
+  speedDrill?: number;
+  plungeRateDrill?: number;
+  feedRateDrill?: number;
+  /// Default peck step (positive, mm) for Peck / ChipBreak drill
+  /// cycles whose op leaves `peck_step_mm` at 0.
+  defaultPeckStepMm?: number;
+  /// Per-tool Z origin offset (rt1.30): for machines without auto
+  /// tool-length probing, pre-measure each tool's tip Z relative to a
+  /// reference tool and record the delta here. Positive = sticks out
+  /// further; negative = shorter. mm.
+  zShiftMm?: number;
+  /// Laser pierce dwell (rt1.29): seconds the beam waits at the
+  /// entry point with the laser on before the cut starts so it burns
+  /// through stock. Honored only when kind === 'laser_beam'.
+  laserPierceSec?: number;
+  /// Laser lead-in distance (rt1.29): mm of approach travel along the
+  /// entry tangent to reduce edge entry burn. Honored only when
+  /// kind === 'laser_beam'. (Wire field reserved; emit logic ships in
+  /// a follow-up.)
+  laserLeadInMm?: number;
+  /// Bull-nose corner radius (rt1.28): rounded transition at the
+  /// floor edge. Honored only when kind === 'bull_nose'.
+  cornerRadiusMm?: number;
+  /// T-slot cutter neck diameter (rt1.28). Honored only when
+  /// kind === 't_slot'.
+  tslotNeckDiameterMm?: number;
+  /// T-slot cutter neck length (rt1.28). Honored only when
+  /// kind === 't_slot'.
+  tslotNeckLengthMm?: number;
   /// Default depth-per-pass (negative, mm). Operations using this tool
   /// inherit this when their own `step` is unset.
   defaultStep?: number;
@@ -1042,6 +1078,19 @@ export interface MachineSettings {
   /// G2/G3 on emit. Only consulted when `arcs == true`. undefined ⇒
   /// 0.01 mm (the backend default).
   arcFitToleranceMm?: number;
+  /// Decimal separator for emitted numbers (rt1.36). Default '.';
+  /// switch to ',' for European Siemens / Heidenhain controllers.
+  decimalSeparator?: '.' | ',';
+  /// Starting line number for `N<n>` prefixes (rt1.36). Undefined
+  /// disables numbering. `10` produces `N10`, `N20`, … on every line.
+  lineNumberStart?: number;
+  /// Plot-mode Z (rt1.35): when true, the pipeline collapses every
+  /// cut to ONE pass at the op's cut depth and skips multi-step
+  /// descent / ramp / helix. Z values written into gcode are
+  /// restricted to fast_move_z (pen up) and cut depth (pen down).
+  /// Right setting for laser / plasma / pen plotter / 3D-printer
+  /// extrusion / drag-knife controllers.
+  plotModeZ?: boolean;
 }
 
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal';
@@ -1085,6 +1134,11 @@ export interface OpEntry {
   enabled: boolean;
   kind: OpKind;
   toolId: number;
+  /// Dual-tool Pocket (rt1.33): optional finish tool id. When set to a
+  /// tool distinct from `toolId`, the pipeline emits a toolchange after
+  /// the rough cascade and cuts the wall ring with the finish tool's
+  /// finish-set feed/speed. Undefined = single-tool (current behavior).
+  finishToolId?: number;
   /// Source kind:
   ///   null              → all imported geometry (the default)
   ///   string[]          → run only on chains whose layer name is listed
@@ -1166,6 +1220,23 @@ export interface OpEntry {
   /// sign convention as `step` (negative). Undefined = use `step` for
   /// every pass.
   finishStep?: number;
+  /// XY stock allowance (positive, mm) left UNCUT at the wall by the
+  /// roughing pass, removed by a dedicated finish ring (rt1.24 /
+  /// Estlcam Schlichtzugabe). Honored on Pocket ops only. Undefined or
+  /// 0 = no allowance.
+  finishXyAllowanceMm?: number;
+  /// Stufenfase (rt1.20 / Estlcam): drilled-hole rim chamfer width.
+  /// After the drill cycle, the cutter walks a constant-Z revolution
+  /// at each hole's edge at z = -width / tan(tipAngle / 2). Honored
+  /// only on Drill ops. Set finishToolId to swap to a dedicated
+  /// chamfer cutter; otherwise the drill tool itself is used.
+  chamferAfterWidthMm?: number;
+  /// Anfahrpunkt (rt1.26 / Estlcam): user-picked XY where the cutter
+  /// enters each pocket / closed-contour ring. When set, each closed
+  /// offset's start vertex is rotated to the segment closest to the
+  /// point — the plunge / lead-in then happens there. Honored on
+  /// Pocket / Profile ops with closed offsets. Undefined = auto.
+  approachPoint?: [number, number];
   /// Cut past `depth` by this many mm (positive). Useful for
   /// through-cuts on edge-clamped sheet.
   throughDepth?: number;
@@ -1178,6 +1249,23 @@ export interface OpEntry {
   carveMaxWidthMm?: number;
   /// V-Carve refinement pass toggle. Default false.
   multiPassRefine?: boolean;
+  /// Chamfer width on the workpiece, mm (rt1.18). Drives the Z depth
+  /// via the V-bit cone math `z = -width / tan(tipAngle / 2)`. Honored
+  /// only when op.kind === 'chamfer'.
+  chamferWidthMm?: number;
+  /// Chamfer second pass at finish-set feed/speed for surface
+  /// quality (rt1.18 × rt1.27). Default false. Honored only when
+  /// op.kind === 'chamfer'.
+  chamferFinishPass?: boolean;
+  /// Thread pitch in mm (rt1.17): Z descent per full helix
+  /// revolution. Honored only when op.kind === 'thread'.
+  threadPitchMm?: number;
+  /// Thread direction: `true` = internal (tap-style, inside the
+  /// bore); `false` = external (around a stud). Default true.
+  threadInternal?: boolean;
+  /// Thread climb (CCW) vs conventional (CW). Default false
+  /// (conventional). Honored only when op.kind === 'thread'.
+  threadClimb?: boolean;
   /// Pocket-Outside (rt1.3): when set, the op carves the area between a
   /// synthetic frame and the source selection. The frame is computed in
   /// the pipeline from these params — not persisted as project geometry.

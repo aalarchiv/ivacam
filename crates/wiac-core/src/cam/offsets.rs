@@ -33,6 +33,16 @@ pub struct PolylineOffset {
     /// emitter splits the cut at each crossing and lifts Z to tabs.height.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tabs: Vec<TabPoint>,
+    /// When true, the gcode emitter swaps in the finish-set feed / speed
+    /// / plunge rates (`ToolConfig::*_finish`) before cutting this
+    /// offset. The pipeline tags the wall-defining level=0 ring of a
+    /// Pocket op as finish; everything else stays at the rough rates.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_finish: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
@@ -172,6 +182,7 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
             color: obj.color,
             source_object_idx: 0,
             tabs: Vec::new(),
+            is_finish: false,
         })
         .collect()
 }
@@ -442,6 +453,36 @@ pub fn enforce_winding(
     }
 }
 
+/// Rotate each CLOSED offset's segment list so the first segment's
+/// start is closest to `ap` (rt1.26 / Estlcam Anfahrpunkt). Open
+/// offsets (zigzag / spiral / trochoidal strokes) are left alone —
+/// their winding has no rotational symmetry to exploit. The cutter's
+/// plunge / lead-in then happens at the user-picked entry XY.
+///
+/// When the chosen `ap` is far from every closed offset, the function
+/// still rotates (picks the nearest vertex regardless of distance);
+/// the caller can validate or warn separately.
+pub fn rotate_offsets_to_approach_point(offsets: &mut [PolylineOffset], ap: (f64, f64)) {
+    let ap_pt = Point2::new(ap.0, ap.1);
+    for offset in offsets.iter_mut() {
+        if !offset.closed || offset.segments.len() < 2 {
+            continue;
+        }
+        let mut best: Option<(usize, f64)> = None;
+        for (i, seg) in offset.segments.iter().enumerate() {
+            let d = seg.start.distance(ap_pt);
+            if best.map_or(true, |(_, bd)| d < bd) {
+                best = Some((i, d));
+            }
+        }
+        if let Some((i, _)) = best {
+            if i > 0 {
+                offset.segments.rotate_left(i);
+            }
+        }
+    }
+}
+
 /// Walk a per-op offset list and enforce climb/conventional on each
 /// closed offset. The op's main `cut_direction` applies to roughing
 /// passes (cascade level ≥ 1); the `finish_direction` applies to the
@@ -482,8 +523,8 @@ pub fn apply_cut_direction(
             OperationKind::Engrave
             | OperationKind::DragKnife
             | OperationKind::Drill { .. }
-            | OperationKind::Thread
-            | OperationKind::Chamfer
+            | OperationKind::Thread { .. }
+            | OperationKind::Chamfer { .. }
             | OperationKind::Helix
             | OperationKind::VCarve => CutContext::Skip,
         }
@@ -539,6 +580,8 @@ pub fn pocket_for_object(
     emit: PocketEmit,
     islands: &[Vec<Point2>],
     xy_step: f64,
+    xy_allowance: f64,
+    finish_ring_radius: Option<f64>,
 ) -> Vec<PolylineOffset> {
     let mut out = Vec::new();
 
@@ -551,7 +594,24 @@ pub fn pocket_for_object(
     // CW DXF boundaries used to take the cutter OUTSIDE the shape
     // because positive delta = LEFT of tangent for cavc, which is
     // outward on CW polygons. parallel_offset_inward picks the sign.
-    let boundary = parallel_offset_inward(obj, tool_radius.abs());
+    //
+    // Schlichtzugabe / xy_allowance (rt1.24): when > 0, the rough
+    // cascade walks an INSET boundary at (tool_radius + allowance)
+    // — that leaves `allowance` mm of stock at the wall — and a
+    // dedicated finish ring at tool_radius removes it. allowance == 0
+    // collapses both rings onto the tool_radius offset (current
+    // behavior).
+    //
+    // Dual-tool / finish_ring_radius (rt1.33): when Some(r), the
+    // dedicated finish wall ring is emitted at radius `r` (the FINISH
+    // tool's radius) instead of `tool_radius`. The pipeline op-driver
+    // splits the offsets list by is_finish and emits the finish block
+    // with the finish tool's setup after an auto toolchange. When None,
+    // the finish ring (if any — see allowance) uses `tool_radius`.
+    let allowance = xy_allowance.max(0.0);
+    let has_dual_tool_finish = finish_ring_radius.is_some();
+    let rough_delta = tool_radius.abs() + allowance;
+    let boundary = parallel_offset_inward(obj, rough_delta);
     if boundary.is_empty() {
         return out;
     }
@@ -561,7 +621,15 @@ pub fn pocket_for_object(
     let step = xy_step.max(tool_radius * 0.05);
     for offset in &boundary {
         if !nocontour {
-            out.push(offset.clone());
+            // When there's no XY allowance AND no dual-tool finish,
+            // the rough boundary IS the wall — tag it as finish so
+            // emit_offset swaps in the tool's finish-set rates
+            // (rt1.27). When allowance > 0 OR dual-tool, a dedicated
+            // finish ring is emitted below and the rough boundary
+            // stays rough.
+            let mut wall = offset.clone();
+            wall.is_finish = allowance <= 1e-9 && !has_dual_tool_finish;
+            out.push(wall);
         }
         let pts = segments_to_points(&offset.segments, interpolate);
 
@@ -580,6 +648,7 @@ pub fn pocket_for_object(
                         color: offset.color,
                         source_object_idx: offset.source_object_idx,
                         tabs: Vec::new(),
+                        is_finish: false,
                     });
                 }
                 continue;
@@ -613,6 +682,7 @@ pub fn pocket_for_object(
                             color: offset.color,
                             source_object_idx: offset.source_object_idx,
                             tabs: Vec::new(),
+                            is_finish: false,
                         });
                         continue;
                     }
@@ -650,6 +720,7 @@ pub fn pocket_for_object(
                             color: offset.color,
                             source_object_idx: offset.source_object_idx,
                             tabs: Vec::new(),
+                            is_finish: false,
                         });
                     }
                 }
@@ -687,7 +758,25 @@ pub fn pocket_for_object(
                 color: offset.color,
                 source_object_idx: offset.source_object_idx,
                 tabs: Vec::new(),
+                is_finish: false,
             });
+        }
+    }
+    // rt1.24 / rt1.33: emit a dedicated finish-wall pass when either
+    // an XY allowance is set (single-tool finishing pass) or a
+    // dual-tool finish radius is set (smaller tool walks the wall).
+    // The dual-tool branch uses `finish_ring_radius`; the single-tool
+    // branch uses `tool_radius`.
+    let needs_finish_ring = allowance > 1e-9 || has_dual_tool_finish;
+    if !nocontour && needs_finish_ring {
+        let finish_r = finish_ring_radius
+            .map(|r| r.abs())
+            .unwrap_or_else(|| tool_radius.abs());
+        let finish_boundary = parallel_offset_inward(obj, finish_r);
+        for o in &finish_boundary {
+            let mut wall = o.clone();
+            wall.is_finish = true;
+            out.push(wall);
         }
     }
     out
@@ -913,6 +1002,7 @@ pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOf
         color: obj.color,
         source_object_idx: 0,
         tabs: Vec::new(),
+        is_finish: false,
     })
 }
 
@@ -1155,7 +1245,7 @@ mod tests {
             color: 7,
         };
         let obj = VcObject::new(vec![half1, half2], true);
-        let offsets = pocket_for_object(&obj, 1.5, false, 6, PocketEmit::Cascade, &[], 1.5);
+        let offsets = pocket_for_object(&obj, 1.5, false, 6, PocketEmit::Cascade, &[], 1.5, 0.0, None);
         assert_eq!(offsets.len(), 1);
         assert_eq!(offsets[0].segments.len(), 1);
         assert!(matches!(
@@ -1237,6 +1327,7 @@ mod tests {
             color: 7,
             source_object_idx: 0,
             tabs: Vec::new(),
+            is_finish: false,
         };
         let before = offset.segments.len();
         // Wait — for an inside-of-shape offset like a pocket, the offset poly
@@ -1298,6 +1389,7 @@ mod tests {
             color: 7,
             source_object_idx: 0,
             tabs: Vec::new(),
+            is_finish: false,
         }
     }
 
@@ -1354,6 +1446,7 @@ mod tests {
             color: 7,
             source_object_idx: 0,
             tabs: Vec::new(),
+            is_finish: false,
         };
         reverse_offset(&mut o);
         assert_eq!(o.segments.len(), 2);

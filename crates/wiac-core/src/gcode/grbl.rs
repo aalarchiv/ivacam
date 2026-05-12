@@ -117,4 +117,17 @@ impl PostProcessor for Post {
     fn restore_state(&mut self, s: &CapturedPostState) {
         self.inner.restore_state(s);
     }
+    fn configure(&mut self, decimal_separator: char, line_number_start: Option<u32>) {
+        self.inner.configure(decimal_separator, line_number_start);
+    }
+    fn tool_z_shift(&mut self, shift_mm: f64) {
+        // GRBL accepts G92 albeit with caveats (some firmware revisions
+        // ignore Z component). Emit it through the inner LinuxCNC post
+        // so the output line is identical; controllers that ignore G92
+        // simply skip it.
+        self.inner.tool_z_shift(shift_mm);
+    }
+    fn dwell(&mut self, seconds: f64) {
+        self.inner.dwell(seconds);
+    }
 }

@@ -164,6 +164,33 @@
       </div>
     </label>
 
+    {#if op.kind === 'pocket' || op.kind === 'drill'}
+      <label
+        class="row"
+        title={op.kind === 'pocket'
+          ? 'Optional finish tool (rt1.33). When different from the rough tool, the pipeline runs the bulk cascade with the rough tool, emits a T<n> M6 toolchange, then walks the wall ring with this smaller / sharper finish tool at its finish-set feed/speed. Empty = single-tool (the rough tool also defines the wall).'
+          : 'Stufenfase chamfer cutter (rt1.20). Used only when Chamfer width is set below — after the drill cycle the pipeline emits a toolchange to this V-bit, then walks the hole rim at the chamfer depth. Empty = chamfer with the drill tool itself.'}
+      >
+        <span>Finish tool</span>
+        <div class="tool-cell">
+          <select
+            value={op.finishToolId ?? ''}
+            onchange={(e) => {
+              const raw = (e.currentTarget as HTMLSelectElement).value;
+              patch('finishToolId', raw === '' ? undefined : parseInt(raw, 10));
+            }}
+          >
+            <option value="">— same as rough —</option>
+            {#each project.tools as t (t.id)}
+              <option value={t.id} disabled={t.id === op.toolId}
+                >#{t.id} {t.name} ({t.diameter}mm)</option
+              >
+            {/each}
+          </select>
+        </div>
+      </label>
+    {/if}
+
     <fieldset>
       <legend>Source</legend>
       <label class="row">
@@ -328,6 +355,81 @@
           <span class="unit">mm</span>
         </div>
       </label>
+      {#if op.kind === 'pocket'}
+        <label
+          class="row"
+          title="Material left UNCUT on the walls by the roughing pass. A dedicated finish ring walks the actual boundary at the tool's finish-set feed/speed to remove it. Empty / 0 = no allowance (roughing reaches the wall in one pass)."
+        >
+          <span>XY finish stock</span>
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.05"
+              min="0"
+              placeholder="0"
+              value={op.finishXyAllowanceMm ?? ''}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('finishXyAllowanceMm', isNaN(v) || v <= 0 ? undefined : v);
+              }}
+            />
+            <span class="unit">mm</span>
+          </div>
+        </label>
+      {/if}
+
+      {#if op.kind === 'pocket' || op.kind === 'profile'}
+        <div
+          class="row"
+          title="Anfahrpunkt (rt1.26): user-picked XY where the cutter enters each closed ring. Each closed offset's start vertex is rotated to the segment closest to this point — plunge/lead-in then happens there instead of an auto-picked vertex. Empty = auto. (Click-pick UI is a follow-up.)"
+        >
+          <span>Approach point</span>
+          <div class="num-cell num-cell-pair">
+            <input
+              type="number"
+              step="0.1"
+              placeholder="X"
+              aria-label="Approach point X"
+              value={op.approachPoint?.[0] ?? ''}
+              onchange={(e) => {
+                const xs = (e.currentTarget as HTMLInputElement).value;
+                if (xs === '') {
+                  patch('approachPoint', undefined);
+                  return;
+                }
+                const x = parseFloat(xs);
+                const y = op.approachPoint?.[1] ?? 0;
+                if (!isNaN(x)) patch('approachPoint', [x, y]);
+              }}
+            />
+            <input
+              type="number"
+              step="0.1"
+              placeholder="Y"
+              aria-label="Approach point Y"
+              value={op.approachPoint?.[1] ?? ''}
+              onchange={(e) => {
+                const ys = (e.currentTarget as HTMLInputElement).value;
+                if (ys === '') {
+                  patch('approachPoint', undefined);
+                  return;
+                }
+                const y = parseFloat(ys);
+                const x = op.approachPoint?.[0] ?? 0;
+                if (!isNaN(y)) patch('approachPoint', [x, y]);
+              }}
+            />
+            {#if op.approachPoint}
+              <button
+                type="button"
+                class="reset-link"
+                title="Clear approach point (auto-pick)"
+                onclick={() => patch('approachPoint', undefined)}
+              >clear</button>
+            {/if}
+          </div>
+        </div>
+      {/if}
       <label
         class="row"
         title="Cut past the nominal depth by this many mm. Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom. 0 = no extension."
@@ -939,6 +1041,26 @@
             <span class="unit">s</span>
           </div>
         </label>
+        <label
+          class="row"
+          title="Stufenfase (rt1.20): after drilling each hole, the cutter walks a constant-Z revolution at the rim to break the edge. Depth is computed from the cutter's V-bit tip angle. Set Finish tool below to swap to a dedicated chamfer cutter (drill, then T<n> M6, then chamfer). Empty / 0 = no countersink."
+        >
+          <span>Chamfer width</span>
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              placeholder="0"
+              value={op.chamferAfterWidthMm ?? ''}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('chamferAfterWidthMm', isNaN(v) || v <= 0 ? undefined : v);
+              }}
+            />
+            <span class="unit">mm</span>
+          </div>
+        </label>
       </fieldset>
     {/if}
 
@@ -1045,7 +1167,106 @@
       </fieldset>
     {/if}
 
-    {#if op.kind === 'thread' || op.kind === 'chamfer' || op.kind === 'helix'}
+    {#if op.kind === 'chamfer'}
+      {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
+      <fieldset>
+        <legend>Chamfer</legend>
+        {#if opTool && opTool.kind !== 'v_bit'}
+          <p class="warn-chip" title="Chamfer assumes a V-bit cone; flat / ball tools won't produce a true bevel. Pick a V-bit in the tool library.">
+            Tool kind mismatch — Chamfer needs a V-bit.
+          </p>
+        {/if}
+        <label
+          class="row"
+          title="Horizontal width of the chamfer cut on the workpiece. The Z depth is computed automatically from the V-bit's apex angle: depth = -width / tan(tipAngle/2). Default 1 mm."
+        >
+          <span>Width</span>
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              placeholder="1"
+              value={op.chamferWidthMm ?? ''}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('chamferWidthMm', isNaN(v) || v <= 0 ? undefined : v);
+              }}
+            />
+            <span class="unit">mm</span>
+          </div>
+        </label>
+        <label
+          class="row"
+          title="Cut the chamfer twice — once at the rough feed (cleanup) and once at the tool's finish-set feed (rt1.27) for surface quality."
+        >
+          <span>Finish pass</span>
+          <input
+            type="checkbox"
+            checked={op.chamferFinishPass ?? false}
+            onchange={(e) => patch('chamferFinishPass', (e.currentTarget as HTMLInputElement).checked)}
+          />
+        </label>
+      </fieldset>
+    {/if}
+
+    {#if op.kind === 'thread'}
+      <fieldset>
+        <legend>Thread</legend>
+        <p class="hint" title="Source must be a closed circle (drilled hole or stud diameter). The cutter walks a helix at one pitch of Z descent per revolution between Start depth and Depth.">
+          Thread requires a closed circle as the source.
+        </p>
+        <label
+          class="row"
+          title="Z descent per full revolution. Picks the thread series: M6×1.0 → 1.0 mm, M3×0.5 → 0.5 mm. Positive value."
+        >
+          <span>Pitch</span>
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.05"
+              min="0"
+              placeholder="1"
+              value={op.threadPitchMm ?? ''}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('threadPitchMm', isNaN(v) || v <= 0 ? undefined : v);
+              }}
+            />
+            <span class="unit">mm</span>
+          </div>
+        </label>
+        <label
+          class="row"
+          title="Internal = tap-style (cutter inside the bore). External = die-style (cutter around a stud)."
+        >
+          <span>Direction</span>
+          <select
+            value={(op.threadInternal ?? true) ? 'internal' : 'external'}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              patch('threadInternal', v === 'internal');
+            }}
+          >
+            <option value="internal">Internal (bore)</option>
+            <option value="external">External (stud)</option>
+          </select>
+        </label>
+        <label
+          class="row"
+          title="Climb (CCW helix on a right-hand spindle) vs conventional (CW). Default off (conventional) — almost always best for surface quality on hobby machines."
+        >
+          <span>Climb</span>
+          <input
+            type="checkbox"
+            checked={op.threadClimb ?? false}
+            onchange={(e) => patch('threadClimb', (e.currentTarget as HTMLInputElement).checked)}
+          />
+        </label>
+      </fieldset>
+    {/if}
+
+    {#if op.kind === 'helix'}
       <p class="empty">
         This operation kind is parsed but the G-code emitter for it ships
         with the next backend slice; the run will return
@@ -1198,6 +1419,10 @@
   }
   .num-cell input {
     flex: 1 1 auto;
+    min-width: 0;
+  }
+  .num-cell-pair input {
+    flex: 1 1 0;
     min-width: 0;
   }
   .unit {

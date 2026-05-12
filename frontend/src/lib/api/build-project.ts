@@ -17,7 +17,11 @@ type WireToolKind =
   | 'engraver'
   | 'drag_knife'
   | 'drill'
-  | 'laser_beam';
+  | 'laser_beam'
+  | 'bull_nose'
+  | 'compression'
+  | 't_slot'
+  | 'form_profile';
 
 /// Wire-side holder shape. Mirrors `wiac_core::project::HolderShape`'s
 /// `#[serde(tag = "kind")]` discriminator.
@@ -47,6 +51,21 @@ interface WireToolEntry {
   plunge_rate: number;
   feed_rate: number;
   coolant: 'off' | 'mist' | 'flood';
+  /// Per-pass rate overrides (rt1.27). Omit when unset so the Rust
+  /// side falls back to the general triplet.
+  speed_finish?: number;
+  plunge_rate_finish?: number;
+  feed_rate_finish?: number;
+  speed_drill?: number;
+  plunge_rate_drill?: number;
+  feed_rate_drill?: number;
+  default_peck_step_mm?: number;
+  z_shift_mm?: number;
+  laser_pierce_sec?: number;
+  laser_lead_in_mm?: number;
+  corner_radius_mm?: number;
+  tslot_neck_diameter_mm?: number;
+  tslot_neck_length_mm?: number;
   default_step?: number;
   flute_length_mm?: number;
   shank_diameter_mm?: number;
@@ -70,6 +89,9 @@ interface WireMachine {
   toolchange_s?: number;
   rapid_speed?: number;
   arc_fit_tolerance_mm?: number;
+  decimal_separator?: '.' | ',';
+  line_number_start?: number;
+  plot_mode_z?: boolean;
 }
 
 type WireDrillCycle =
@@ -87,8 +109,8 @@ type WireOpKind =
   | { type: 'profile'; offset: 'outside' | 'inside' | 'on' | 'none' }
   | { type: 'pocket'; strategy: WirePocketStrategy }
   | { type: 'drill'; cycle: WireDrillCycle }
-  | { type: 'thread' }
-  | { type: 'chamfer' }
+  | { type: 'thread'; pitch_mm?: number; internal?: boolean; climb?: boolean }
+  | { type: 'chamfer'; width_mm?: number; finish_pass?: boolean }
   | { type: 'engrave' }
   | { type: 'drag_knife' }
   | { type: 'helix' }
@@ -112,6 +134,7 @@ interface WireOp {
   enabled: boolean;
   kind: WireOpKind;
   tool_id: number;
+  finish_tool_id?: number;
   source: WireSource;
   params: {
     depth: number;
@@ -144,6 +167,9 @@ interface WireOp {
     plunge_rate_override?: number;
     corner_feed_reduction?: number;
     finish_step?: number;
+    finish_xy_allowance_mm?: number;
+    chamfer_after_width_mm?: number;
+    approach_point?: [number, number];
     through_depth?: number;
     depth_list?: number[];
     /// V-Carve: optional cap on the inscribed-circle radius. None = no
@@ -211,6 +237,11 @@ function buildMachine(m: MachineSettings): WireMachine {
     ...(m.toolchangeS !== undefined && m.toolchangeS !== 5 ? { toolchange_s: m.toolchangeS } : {}),
     ...(m.rapidSpeed !== undefined ? { rapid_speed: m.rapidSpeed } : {}),
     ...(m.arcFitToleranceMm !== undefined ? { arc_fit_tolerance_mm: m.arcFitToleranceMm } : {}),
+    ...(m.decimalSeparator === ',' ? { decimal_separator: ',' as const } : {}),
+    ...(m.lineNumberStart !== undefined && m.lineNumberStart > 0
+      ? { line_number_start: m.lineNumberStart }
+      : {}),
+    ...(m.plotModeZ ? { plot_mode_z: true } : {}),
   };
 }
 
@@ -228,6 +259,29 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     plunge_rate: t.plungeRate,
     feed_rate: t.feedRate,
     coolant: t.coolant,
+    ...(t.speedFinish !== undefined ? { speed_finish: t.speedFinish } : {}),
+    ...(t.plungeRateFinish !== undefined ? { plunge_rate_finish: t.plungeRateFinish } : {}),
+    ...(t.feedRateFinish !== undefined ? { feed_rate_finish: t.feedRateFinish } : {}),
+    ...(t.speedDrill !== undefined ? { speed_drill: t.speedDrill } : {}),
+    ...(t.plungeRateDrill !== undefined ? { plunge_rate_drill: t.plungeRateDrill } : {}),
+    ...(t.feedRateDrill !== undefined ? { feed_rate_drill: t.feedRateDrill } : {}),
+    ...(t.defaultPeckStepMm !== undefined ? { default_peck_step_mm: t.defaultPeckStepMm } : {}),
+    ...(t.zShiftMm !== undefined && t.zShiftMm !== 0 ? { z_shift_mm: t.zShiftMm } : {}),
+    ...(t.laserPierceSec !== undefined && t.laserPierceSec > 0
+      ? { laser_pierce_sec: t.laserPierceSec }
+      : {}),
+    ...(t.laserLeadInMm !== undefined && t.laserLeadInMm > 0
+      ? { laser_lead_in_mm: t.laserLeadInMm }
+      : {}),
+    ...(t.cornerRadiusMm !== undefined && t.cornerRadiusMm > 0
+      ? { corner_radius_mm: t.cornerRadiusMm }
+      : {}),
+    ...(t.tslotNeckDiameterMm !== undefined && t.tslotNeckDiameterMm > 0
+      ? { tslot_neck_diameter_mm: t.tslotNeckDiameterMm }
+      : {}),
+    ...(t.tslotNeckLengthMm !== undefined && t.tslotNeckLengthMm > 0
+      ? { tslot_neck_length_mm: t.tslotNeckLengthMm }
+      : {}),
     ...(t.defaultStep !== undefined ? { default_step: t.defaultStep } : {}),
     ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
@@ -261,6 +315,23 @@ function buildOpKind(op: OpEntry): WireOpKind {
     }
     case 'vcarve':
       return { type: 'v_carve' };
+    case 'chamfer':
+      return {
+        type: 'chamfer',
+        ...(op.chamferWidthMm !== undefined && op.chamferWidthMm > 0
+          ? { width_mm: op.chamferWidthMm }
+          : {}),
+        ...(op.chamferFinishPass ? { finish_pass: true } : {}),
+      };
+    case 'thread':
+      return {
+        type: 'thread',
+        ...(op.threadPitchMm !== undefined && op.threadPitchMm > 0
+          ? { pitch_mm: op.threadPitchMm }
+          : {}),
+        ...(op.threadInternal === false ? { internal: false } : {}),
+        ...(op.threadClimb ? { climb: true } : {}),
+      };
     default:
       return { type: op.kind } as WireOpKind;
   }
@@ -307,6 +378,9 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
     enabled: op.enabled,
     kind: buildOpKind(op),
     tool_id: op.toolId,
+    ...(op.finishToolId !== undefined && op.finishToolId !== op.toolId
+      ? { finish_tool_id: op.finishToolId }
+      : {}),
     source: buildSource(op),
     params: {
       depth: op.depth,
@@ -369,6 +443,15 @@ function buildOp(op: OpEntry, machine: MachineSettings, anyTabs: boolean): WireO
         : {}),
       ...(op.finishStep !== undefined && op.finishStep !== 0
         ? { finish_step: op.finishStep }
+        : {}),
+      ...(op.finishXyAllowanceMm !== undefined && op.finishXyAllowanceMm > 0
+        ? { finish_xy_allowance_mm: op.finishXyAllowanceMm }
+        : {}),
+      ...(op.chamferAfterWidthMm !== undefined && op.chamferAfterWidthMm > 0
+        ? { chamfer_after_width_mm: op.chamferAfterWidthMm }
+        : {}),
+      ...(op.approachPoint !== undefined
+        ? { approach_point: op.approachPoint }
         : {}),
       ...(op.throughDepth !== undefined && op.throughDepth > 0
         ? { through_depth: op.throughDepth }

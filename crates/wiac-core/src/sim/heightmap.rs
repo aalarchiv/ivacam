@@ -214,6 +214,15 @@ impl ToolProfile {
             // Laser kerf is effectively zero; give it a small finite radius
             // so the heightmap can still register etching.
             ToolKind::LaserBeam => ToolProfile::LaserBeam { r: 0.15 },
+            // rt1.28: new cutter geometries collapse to an Endmill
+            // profile for the sim sweep — the cross-section
+            // differences (fillet floor, undercut disk, profile
+            // shape) are still a follow-up. The tool library carries
+            // the metadata; algorithmic use ships in rt1.28.x.
+            ToolKind::BullNose
+            | ToolKind::Compression
+            | ToolKind::TSlot
+            | ToolKind::FormProfile => ToolProfile::Endmill { r },
         }
     }
 }
@@ -243,7 +252,20 @@ mod tests {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
             default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,

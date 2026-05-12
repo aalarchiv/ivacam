@@ -111,10 +111,83 @@ pub struct ToolEntry {
     /// Cutting feedrate (mm/min).
     pub feed_rate: u32,
     pub coolant: Coolant,
+    /// Spindle RPM override for the finishing pass (the wall-defining
+    /// level=0 ring of a Pocket). None = inherit `speed`. Hard-material
+    /// finish quality usually wants a slower RPM than roughing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_finish: Option<u32>,
+    /// Plunge feedrate override for the finishing pass. None = inherit
+    /// `plunge_rate`. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plunge_rate_finish: Option<u32>,
+    /// Cutting feedrate override for the finishing pass. None = inherit
+    /// `feed_rate`. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_rate_finish: Option<u32>,
+    /// Spindle RPM override when this tool is used in a Drill op. None =
+    /// inherit `speed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_drill: Option<u32>,
+    /// Plunge feedrate override when this tool is used in a Drill op.
+    /// None = inherit `plunge_rate`. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plunge_rate_drill: Option<u32>,
+    /// Cutting feedrate override when this tool is used in a Drill op.
+    /// None = inherit `feed_rate`. Units: mm/min. Only meaningful for
+    /// posts that emit XY-traverse feed lines between drill points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_rate_drill: Option<u32>,
+    /// Default peck step (positive, mm) for `DrillCycle::Peck` /
+    /// `ChipBreak` ops that don't set their own `peck_step_mm`. None =
+    /// the op must specify its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_peck_step_mm: Option<f64>,
     /// Default depth-per-pass (negative, mm). Operations using this tool
     /// inherit this when their own `step` is unset. None = no default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_step: Option<f64>,
+    /// Per-tool Z origin offset (rt1.30 / Estlcam Z_Shift). For
+    /// machines without automatic tool-length probing — the user
+    /// pre-measures each tool's tip Z relative to a reference tool and
+    /// records the delta here (positive = sticks out further; negative
+    /// = shorter). At toolchange / program-start the post emits a
+    /// `G92 Z<shift>` that pins the new tool's tip at the same work-Z
+    /// the reference tool used. mm. None = no shift.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z_shift_mm: Option<f64>,
+    /// Laser pierce time (rt1.29 / Estlcam T_Pierce_Time): seconds the
+    /// beam dwells at the start point BEFORE the cut begins so it
+    /// burns through thick stock. Honored only when `kind ==
+    /// LaserBeam`. The post emits a `G4 P<seconds>` after the
+    /// laser-on before each plunge. None = no pierce dwell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub laser_pierce_sec: Option<f64>,
+    /// Laser lead-in distance (rt1.29 / Estlcam T_Lead_In): mm of
+    /// approach travel the head takes along the entry tangent before
+    /// the cut starts, to reduce edge entry burn. Honored only when
+    /// `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time
+    /// — the per-op lead-in field overrides this if set explicitly.
+    /// None = no tool-level lead-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub laser_lead_in_mm: Option<f64>,
+    /// Bull-nose / radius-endmill corner radius (rt1.28). Honored
+    /// only when `kind == BullNose`. The corner radius produces a
+    /// fillet on the cut floor edge — relevant for sim cross-section
+    /// (the sim envelope falls below `corner_radius_mm` of the
+    /// nominal flat floor). mm, positive only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corner_radius_mm: Option<f64>,
+    /// T-slot / keyway cutter neck diameter (rt1.28). Honored only
+    /// when `kind == TSlot`. The undercut cutter has a wide disk
+    /// (`diameter`) at the tip and a narrow neck of this diameter
+    /// above. mm, positive only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tslot_neck_diameter_mm: Option<f64>,
+    /// T-slot / keyway cutter neck length (rt1.28). Honored only
+    /// when `kind == TSlot`. The vertical extent of the narrow neck
+    /// above the disk. mm, positive only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tslot_neck_length_mm: Option<f64>,
     /// Spindle warm-up pause in seconds applied once per used tool by
     /// the time estimator. Mirrors `ToolConfig.pause`.
     #[serde(default = "default_tool_pause", skip_serializing_if = "is_default_tool_pause")]
@@ -177,12 +250,56 @@ impl Default for ToolEntry {
             plunge_rate: 100,
             feed_rate: 800,
             coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
             default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
             pause: default_tool_pause(),
             flute_length_mm: None,
             shank_diameter_mm: None,
             holder: None,
         }
+    }
+}
+
+/// Which set of per-tool feed/speed/plunge values to use for a given
+/// emission context. `Rough` is the default and matches every legacy
+/// caller. `Finish` is consulted at the wall-defining level=0 ring of a
+/// Pocket / per-op finish pass. `Drill` is consulted for Drill ops so
+/// the user can dial drilling RPM independently from milling RPM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassKind {
+    Rough,
+    Finish,
+    Drill,
+}
+
+/// Resolve the (speed, plunge_rate, feed_rate) triplet for `tool` under
+/// `pass`. Finish / Drill variants fall back to the general values when
+/// their override is `None`.
+pub fn resolve_tool_rates(tool: &ToolEntry, pass: PassKind) -> (u32, u32, u32) {
+    match pass {
+        PassKind::Rough => (tool.speed, tool.plunge_rate, tool.feed_rate),
+        PassKind::Finish => (
+            tool.speed_finish.unwrap_or(tool.speed),
+            tool.plunge_rate_finish.unwrap_or(tool.plunge_rate),
+            tool.feed_rate_finish.unwrap_or(tool.feed_rate),
+        ),
+        PassKind::Drill => (
+            tool.speed_drill.unwrap_or(tool.speed),
+            tool.plunge_rate_drill.unwrap_or(tool.plunge_rate),
+            tool.feed_rate_drill.unwrap_or(tool.feed_rate),
+        ),
     }
 }
 
@@ -198,6 +315,27 @@ pub enum ToolKind {
     Drill,
     /// Used for laser cutting / etching — no physical tool radius.
     LaserBeam,
+    /// Bull-nose / radius-corner endmill (rt1.28): flat endmill with
+    /// a rounded transition between the cylindrical wall and the flat
+    /// floor. Cuts a fillet on the floor edge.
+    /// `ToolEntry.corner_radius_mm` carries the radius.
+    BullNose,
+    /// Compression / up-down spiral endmill (rt1.28 / Estlcam
+    /// Obenunten). Cuts down on top half, up on bottom half — clean
+    /// edges on both faces of sheet material. v1 treats it like an
+    /// Endmill at the cutting algorithm; the variant is here so the
+    /// tool library can label it accurately for the user.
+    Compression,
+    /// T-slot / keyway / undercut cutter (rt1.28): plunges vertically
+    /// down a narrow neck, then a wider disk at the tip cuts the
+    /// undercut slot. `ToolEntry.tslot_neck_diameter_mm` /
+    /// `tslot_neck_length_mm` carry the neck geometry.
+    TSlot,
+    /// Form / profile cutter (rt1.28 / Estlcam Profil): bull-nose /
+    /// cove / ogee / dovetail / custom — a profile bit with a fixed
+    /// cross-section. v1 treats as an Endmill at the algorithm; the
+    /// variant labels it.
+    FormProfile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
@@ -217,8 +355,17 @@ pub struct Operation {
     pub name: String,
     pub enabled: bool,
     pub kind: OperationKind,
-    /// id of a `Project.tools` entry.
+    /// id of a `Project.tools` entry. For dual-tool Pocket ops this is
+    /// the roughing tool; the finish ring is cut by `finish_tool_id`.
     pub tool_id: u32,
+    /// Optional finish tool id for dual-tool Pocket ops (rt1.33 / Estlcam
+    /// TS slot). When `Some(id)` and `id != tool_id`, the pipeline emits
+    /// a toolchange after the rough cascade and runs the wall-defining
+    /// ring with the finish tool's geometry + finish-set feed/speed. When
+    /// `None` or equal to `tool_id`, the op runs single-tool (current
+    /// behavior).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_tool_id: Option<u32>,
     pub source: OperationSource,
     pub params: OperationParams,
     /// Optional pattern repetition. When set, the op runs once per
@@ -238,6 +385,7 @@ impl Default for Operation {
                 offset: ToolOffset::Outside,
             },
             tool_id: 1,
+            finish_tool_id: None,
             source: OperationSource::All,
             params: OperationParams::default(),
             pattern: None,
@@ -291,10 +439,47 @@ pub enum OperationKind {
     /// [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1
     /// fallback for posts that don't support canned cycles).
     Drill { cycle: DrillCycle },
-    /// Helical thread — bore + helical thread cut.
-    Thread,
-    /// V-bit edge break.
-    Chamfer,
+    /// Helical thread — single-point cutter walks a helix inside a bore
+    /// (internal) or around a stud (external). Z descends linearly by
+    /// `pitch_mm` per revolution between `start_depth` and `depth`. The
+    /// source must be a closed circle (single Circle / closed Arc
+    /// loop); the helix radius derives from the circle's radius plus
+    /// tool radius for internal threads, or minus tool radius for
+    /// external. (rt1.17)
+    Thread {
+        /// Thread pitch in mm — Z descent per full revolution.
+        /// Positive; defaults to 1.0 mm (M6 fine).
+        #[serde(default = "default_thread_pitch")]
+        pitch_mm: f64,
+        /// `true` = internal (tap-style, cutter walks INSIDE the bore);
+        /// `false` = external (cutter walks AROUND a stud).
+        #[serde(default = "default_thread_internal")]
+        internal: bool,
+        /// Climb (CCW helix on a right-hand spindle) vs conventional
+        /// (CW). Default conventional. Surface quality on hobby rigs
+        /// almost always favors conventional even for threading.
+        #[serde(default)]
+        climb: bool,
+    },
+    /// V-bit edge break (rt1.18). The cutter walks the source path
+    /// itself at a single Z computed from the bit's cone angle and the
+    /// desired chamfer width: `z = -width_mm / tan(tip_angle / 2)`.
+    /// One pass at that depth carves a beveled edge whose horizontal
+    /// width on the workpiece equals `width_mm`. Optionally followed by
+    /// a second pass at the tool's finish-set feed/speed for surface
+    /// quality. Default values for the variant fields keep legacy
+    /// payloads (`{ "type": "chamfer" }`) backward-compatible.
+    Chamfer {
+        /// Horizontal width of the chamfer cut on the workpiece, mm.
+        /// Mirrors Estlcam's Fasenabstand. Positive; defaults to 1.0.
+        #[serde(default = "default_chamfer_width")]
+        width_mm: f64,
+        /// When `true`, the chamfer is cut twice — once at the rough
+        /// feed (cleanup) and once at the tool's finish-set feed
+        /// (rt1.27) for surface quality. Default `false`.
+        #[serde(default)]
+        finish_pass: bool,
+    },
     /// Tool-on engraving — no offset, follows the source path.
     Engrave,
     /// Drag-knife — emits trail-compensation moves.
@@ -311,6 +496,18 @@ pub enum OperationKind {
 
 fn default_tip_angle_deg() -> f64 {
     60.0
+}
+
+fn default_chamfer_width() -> f64 {
+    1.0
+}
+
+fn default_thread_pitch() -> f64 {
+    1.0
+}
+
+fn default_thread_internal() -> bool {
+    true
 }
 
 /// Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned
@@ -649,6 +846,36 @@ pub struct OperationParams {
     /// Negative just like `step`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_step: Option<f64>,
+    /// XY stock allowance left UNCUT by the roughing pass, removed by a
+    /// dedicated finish pass walking the actual boundary (rt1.24 /
+    /// Estlcam Schlichtzugabe). Honored on Pocket ops only — the
+    /// roughing cascade insets the cutter centerline by
+    /// `tool_radius + allowance`, then a wall-defining ring at
+    /// `tool_radius` runs at the tool's finish-set feed/speed
+    /// (rt1.27). None / 0 = no allowance (current behavior). mm,
+    /// positive only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_xy_allowance_mm: Option<f64>,
+    /// Stufenfase (rt1.20 / Estlcam Prog_KTD_Stufenfase): chamfer a
+    /// drilled hole's rim immediately after the drill cycle. Honored
+    /// only on `OperationKind::Drill`. The post emits the drill cycle
+    /// for each hole, then walks the cutter on a single revolution at
+    /// the hole's edge at z = -width / tan(tip_angle / 2). When
+    /// `Operation.finish_tool_id` is set to a distinct tool, a M6 +
+    /// G92 toolchange happens BEFORE the chamfer revolution so the
+    /// user can chamfer with a V-bit / fly-cutter different from the
+    /// drill. mm, positive only. None / 0 = no countersink.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chamfer_after_width_mm: Option<f64>,
+    /// Anfahrpunkt (rt1.26 / Estlcam): user-picked XY where the
+    /// cutter enters each pocket / closed-contour ring. Honored on
+    /// Pocket / Profile ops with closed offsets. When `Some((x, y))`,
+    /// each closed offset gets its segment list rotated so the start
+    /// vertex is the segment vertex closest to the approach point —
+    /// the plunge / lead-in then happens there instead of an
+    /// arbitrary auto-picked point. `None` = auto.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approach_point: Option<(f64, f64)>,
     /// Cut past the nominal `depth` by this much (positive number — gets
     /// subtracted from the working depth). Useful for through-cuts on
     /// edge-clamped sheet so the cutter clears the bottom even with
@@ -746,6 +973,9 @@ impl OperationParams {
             plunge_rate_override: None,
             corner_feed_reduction: 0.0,
             finish_step: None,
+            finish_xy_allowance_mm: None,
+            chamfer_after_width_mm: None,
+            approach_point: None,
             through_depth: 0.0,
             depth_list: Vec::new(),
             carve_max_width_mm: None,

@@ -532,7 +532,11 @@ class ProjectState {
   async reimportFromPath(path: string): Promise<boolean> {
     if (typeof window === 'undefined') return false;
     if (!isTauriEnv()) return false;
-    const before = this.imported ? structuredClone(this.imported) : null;
+    // JSON-roundtrip clone avoids the $state proxy / structuredClone
+    // DataCloneError seen in production builds.
+    const before = this.imported
+      ? (JSON.parse(JSON.stringify(this.imported)) as ImportResponse)
+      : null;
     let after: ImportResponse;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -663,7 +667,9 @@ class ProjectState {
   /// id 0 (unchained), but we still return an array of ids so callers
   /// can use the same flow.
   appendImportedSegments(segments: Segment[], layerName: string, singleLine: boolean): number[] {
-    const before: ImportResponse | null = this.imported ? structuredClone(this.imported) : null;
+    const before: ImportResponse | null = this.imported
+      ? (JSON.parse(JSON.stringify(this.imported)) as ImportResponse)
+      : null;
     if (!this.imported) {
       const empty: ImportResponse = {
         filename: 'text',
@@ -787,6 +793,16 @@ class ProjectState {
   addOperation(kind: OpKind): OpEntry {
     const nextId = this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
     const tool = this.tools[0];
+    // When the user has objects selected on the canvas, pin the new op
+    // to that exact set. Most users select first, click "+ Pocket"
+    // expecting the op to apply to what they highlighted — the
+    // alternative (default to All) silently runs across every imported
+    // chain. Empty selection ⇒ keep the All default (sourceObjects
+    // undefined + sourceLayers: null).
+    const presetSources =
+      this.selectedObjects.size > 0
+        ? { sourceObjects: [...this.selectedObjects] }
+        : {};
     const op: OpEntry = {
       id: nextId,
       name: prettyOpKind(kind),
@@ -795,6 +811,7 @@ class ProjectState {
       toolId: tool?.id ?? 1,
       sourceCombine: 'auto',
       sourceLayers: null,
+      ...presetSources,
       depth: -2,
       startDepth: 0,
       step: -1,
@@ -824,8 +841,11 @@ class ProjectState {
     const src = this.operations.find((o) => o.id === id);
     if (!src) return null;
     const nextId = this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
+    // JSON-roundtrip clone: Svelte 5 `$state` proxies make
+    // structuredClone throw DataCloneError in production builds — the
+    // dup button would die with an uncaught exception and look dead.
     const copy: OpEntry = {
-      ...structuredClone(src),
+      ...(JSON.parse(JSON.stringify(src)) as OpEntry),
       id: nextId,
       name: `${src.name} (copy)`,
     };

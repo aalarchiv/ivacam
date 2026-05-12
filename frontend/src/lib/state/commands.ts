@@ -21,6 +21,21 @@ import type {
 import type { ImportResponse, WiacAutoFix } from '../api/types';
 import type { ProfileOffset } from './op_types';
 
+/// Deep-clone via JSON round-trip. Svelte 5's `$state` proxies carry
+/// reactivity metadata that `structuredClone` chokes on in production
+/// builds — the symbol-keyed internals leak through Reflect.ownKeys
+/// and `structuredClone` raises `DataCloneError`. The button click
+/// that triggered the command then dies with an uncaught exception
+/// and the user sees nothing happen.
+///
+/// JSON round-trip works because every command target field is plain
+/// data (no Map/Set/Date/Function). Used everywhere a command needs
+/// to snapshot or copy state-tracked data. Functionally equivalent
+/// to `structuredClone` for our shapes.
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
+}
+
 /// The shape of the project state Commands operate on. Kept narrow so
 /// commands.ts doesn't pull in the Svelte-runtime class itself; only
 /// the fields it touches.
@@ -42,7 +57,7 @@ export function addOperationCommand(op: OpEntry): Command {
     label: 'Add operation',
     apply: (s) => {
       const t = s as CommandTarget;
-      t.operations = [...t.operations, structuredClone(op)];
+      t.operations = [...t.operations, clone(op)];
       t.dirty = true;
     },
     revert: (s) => {
@@ -68,7 +83,7 @@ export function duplicateOperationCommand(
       const idx = t.operations.findIndex((o) => o.id === insertAfter);
       const next = [...t.operations];
       const pos = idx < 0 ? next.length : idx + 1;
-      next.splice(pos, 0, structuredClone(newOp));
+      next.splice(pos, 0, clone(newOp));
       t.operations = next;
       t.dirty = true;
       void srcId;
@@ -90,7 +105,7 @@ export function deleteOperationCommand(opId: number): Command {
       const t = s as CommandTarget;
       savedIdx = t.operations.findIndex((o) => o.id === opId);
       if (savedIdx >= 0) {
-        savedOp = structuredClone(t.operations[savedIdx]);
+        savedOp = clone(t.operations[savedIdx]);
         t.operations = t.operations.filter((o) => o.id !== opId);
         t.dirty = true;
       }
@@ -99,7 +114,7 @@ export function deleteOperationCommand(opId: number): Command {
       const t = s as CommandTarget;
       if (savedIdx >= 0 && savedOp) {
         const next = [...t.operations];
-        next.splice(savedIdx, 0, structuredClone(savedOp));
+        next.splice(savedIdx, 0, clone(savedOp));
         t.operations = next;
         t.dirty = true;
       }
@@ -196,7 +211,7 @@ export function addToolCommand(tool: ToolEntry): Command {
     label: 'Add tool',
     apply: (s) => {
       const t = s as CommandTarget;
-      t.tools = [...t.tools, structuredClone(tool)];
+      t.tools = [...t.tools, clone(tool)];
       t.dirty = true;
     },
     revert: (s) => {
@@ -216,7 +231,7 @@ export function deleteToolCommand(toolId: number): Command {
       const t = s as CommandTarget;
       savedIdx = t.tools.findIndex((x) => x.id === toolId);
       if (savedIdx >= 0) {
-        savedTool = structuredClone(t.tools[savedIdx]);
+        savedTool = clone(t.tools[savedIdx]);
         t.tools = t.tools.filter((x) => x.id !== toolId);
         t.dirty = true;
       }
@@ -225,7 +240,7 @@ export function deleteToolCommand(toolId: number): Command {
       const t = s as CommandTarget;
       if (savedIdx >= 0 && savedTool) {
         const next = [...t.tools];
-        next.splice(savedIdx, 0, structuredClone(savedTool));
+        next.splice(savedIdx, 0, clone(savedTool));
         t.tools = next;
         t.dirty = true;
       }
@@ -239,13 +254,13 @@ export function replaceToolsCommand(nextTools: ToolEntry[]): Command {
     label: 'Update tool library',
     apply: (s) => {
       const t = s as CommandTarget;
-      prev = t.tools.map((x) => structuredClone(x));
-      t.tools = nextTools.map((x) => structuredClone(x));
+      prev = t.tools.map((x) => clone(x));
+      t.tools = nextTools.map((x) => clone(x));
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
-      t.tools = prev.map((x) => structuredClone(x));
+      t.tools = prev.map((x) => clone(x));
       t.dirty = true;
     },
   };
@@ -258,7 +273,7 @@ export function addFixtureCommand(f: Fixture): Command {
     label: 'Add fixture',
     apply: (s) => {
       const t = s as CommandTarget;
-      t.fixtures = [...t.fixtures, structuredClone(f)];
+      t.fixtures = [...t.fixtures, clone(f)];
       t.dirty = true;
     },
     revert: (s) => {
@@ -278,7 +293,7 @@ export function removeFixtureCommand(id: number): Command {
       const t = s as CommandTarget;
       savedIdx = t.fixtures.findIndex((x) => x.id === id);
       if (savedIdx >= 0) {
-        savedFixture = structuredClone(t.fixtures[savedIdx]);
+        savedFixture = clone(t.fixtures[savedIdx]);
         t.fixtures = t.fixtures.filter((x) => x.id !== id);
         t.dirty = true;
       }
@@ -287,7 +302,7 @@ export function removeFixtureCommand(id: number): Command {
       const t = s as CommandTarget;
       if (savedIdx >= 0 && savedFixture) {
         const next = [...t.fixtures];
-        next.splice(savedIdx, 0, structuredClone(savedFixture));
+        next.splice(savedIdx, 0, clone(savedFixture));
         t.fixtures = next;
         t.dirty = true;
       }
@@ -305,7 +320,7 @@ export function updateFixtureCommand(id: number, patch: Partial<Fixture>): Comma
       if (!cur) return;
       prevPatch = {};
       for (const k of Object.keys(patch) as (keyof Fixture)[]) {
-        (prevPatch as Record<string, unknown>)[k as string] = structuredClone(cur[k]);
+        (prevPatch as Record<string, unknown>)[k as string] = clone(cur[k]);
       }
       t.fixtures = t.fixtures.map((x) => (x.id === id ? { ...x, ...patch } : x));
       t.dirty = true;
@@ -384,13 +399,13 @@ export function setMachineCommand(next: MachineSettings): Command {
     label: 'Update machine',
     apply: (s) => {
       const t = s as CommandTarget;
-      prev = structuredClone(t.machine);
-      t.machine = structuredClone(next);
+      prev = clone(t.machine);
+      t.machine = clone(next);
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
-      if (prev) t.machine = structuredClone(prev);
+      if (prev) t.machine = clone(prev);
       t.dirty = true;
     },
   };
@@ -433,12 +448,12 @@ export function appendImportedCommand(p: AppendImportedSegmentsPayload): Command
     label: 'Add geometry',
     apply: (s) => {
       const t = s as CommandTarget;
-      t.imported = structuredClone(p.after);
+      t.imported = clone(p.after);
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
-      t.imported = p.before ? structuredClone(p.before) : null;
+      t.imported = p.before ? clone(p.before) : null;
       t.dirty = true;
     },
   };

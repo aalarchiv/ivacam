@@ -799,6 +799,28 @@ fn resolve_op_segments(op: &Operation, all: &[Segment]) -> Vec<Segment> {
 
 /// Build the offset list a single op consumes. Currently supports
 /// Profile / Pocket / Engrave / DragKnife — others raise UnimplementedKind.
+/// Geometric bbox center of a closed VcObject, computed from segment
+/// endpoints (ignores arc bow — the chord polygon's bbox is a good
+/// proxy for the user's "midpoint" intuition on the shapes drill ops
+/// typically target). Used by the Drill driver to pick a drill point
+/// for closed objects that aren't small-enough circles.
+fn object_bbox_center(obj: &VcObject) -> Option<Point2> {
+    let mut min_x = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for s in &obj.segments {
+        min_x = min_x.min(s.start.x).min(s.end.x);
+        max_x = max_x.max(s.start.x).max(s.end.x);
+        min_y = min_y.min(s.start.y).min(s.end.y);
+        max_y = max_y.max(s.start.y).max(s.end.y);
+    }
+    if !min_x.is_finite() {
+        return None;
+    }
+    Some(Point2::new((min_x + max_x) * 0.5, (min_y + max_y) * 0.5))
+}
+
 /// Pocket-Outside (rt1.3) helper. When the op carries `frame_shape`,
 /// builds the synthetic frame around the op's current selection and
 /// returns `(new_objects, ordered_indices)` where:
@@ -1174,13 +1196,18 @@ fn build_op_offsets(
             }
             OperationKind::Drill { .. } => {
                 // Drill picks a single XY for each selected object:
-                //   - a closed CIRCLE smaller than tool_radius → center
-                //     of the circle (the existing small_circle_drill
-                //     mechanism that pocket reuses).
-                //   - a single POINT segment → the point itself.
-                // Anything else is silently skipped (the gcode emitter
-                // can't usefully drill an open polyline). The
-                // tool_kind_mismatch warning surfaces a misuse.
+                //   - A single POINT segment → the point itself.
+                //   - A closed CIRCLE smaller than tool_radius → center
+                //     of the circle (small_circle_drill, fast path that
+                //     skips offset cascade).
+                //   - Any other closed object → bbox center of its
+                //     segments. This is what users expect for "drill
+                //     this object" on a rectangle or arbitrary closed
+                //     shape — the tool moves to the object's midpoint,
+                //     plunges, retracts.
+                // Open polylines are skipped — drilling along a stroke
+                // has no sensible interpretation; the
+                // tool_kind_mismatch warning surfaces the misuse.
                 use crate::geometry::SegmentKind;
                 if obj.segments.len() == 1
                     && matches!(obj.segments[0].kind, SegmentKind::Point)
@@ -1200,6 +1227,21 @@ fn build_op_offsets(
                 } else if let Some(mut drill) = small_circle_drill(obj, radius) {
                     drill.source_object_idx = idx;
                     offsets.push(drill);
+                } else if obj.closed {
+                    if let Some(center) = object_bbox_center(obj) {
+                        let pt = Segment::point(center, &obj.layer, obj.color);
+                        offsets.push(PolylineOffset {
+                            segments: vec![pt],
+                            closed: false,
+                            level: 0,
+                            is_pocket: 0,
+                            layer: obj.layer.clone(),
+                            color: obj.color,
+                            source_object_idx: idx,
+                            tabs: Vec::new(),
+                            is_finish: false,
+                        });
+                    }
                 }
             }
             OperationKind::Chamfer { finish_pass, .. } => {
@@ -4397,6 +4439,53 @@ mod tests {
         assert!(
             resp.gcode.contains("X5") && resp.gcode.contains("Y7"),
             "expected drill at (5, 7):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Drill onto a closed rectangle (not a small circle, not a Point)
+    /// should drill at the rectangle's bbox center. Regression for the
+    /// user-reported "drilling op is not correct" — the rectangle case
+    /// used to be silently skipped, leaving the drill op with no
+    /// output and no warning.
+    #[test]
+    fn drill_op_targets_bbox_center_of_closed_rectangle() {
+        // 20mm × 20mm rectangle offset to (10, 5) ⇒ corners at
+        // (10,5)-(30,25). Bbox center = (20, 15).
+        let segments = closed_square_offset(20.0, 10.0, 5.0);
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+            )],
+            fixtures: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.stats.offset_count >= 1,
+            "drill op produced no offsets — bbox-center fallback is missing",
+        );
+        assert!(
+            resp.gcode.contains("G81"),
+            "expected G81 in linuxcnc drill output:\n{}",
+            resp.gcode
+        );
+        // Drill should land at bbox center (20, 15). Use loose substring
+        // matching since the formatter may produce X20 / X20.000 etc.
+        assert!(
+            resp.gcode.contains("X20") && resp.gcode.contains("Y15"),
+            "expected drill at bbox center (20, 15):\n{}",
             resp.gcode
         );
     }

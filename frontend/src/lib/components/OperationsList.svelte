@@ -203,7 +203,18 @@
 
   function onDragStart(e: DragEvent, id: number) {
     dragId = id;
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      // WebKit / Chromium-based webviews silently reject the drop when
+      // no data was set on the source — the dragstart fires, dragover
+      // fires, but `drop` never does. Set a noop payload so the drop
+      // is accepted. (Same WebView in Tauri's AppImage.)
+      try {
+        e.dataTransfer.setData('text/plain', String(id));
+      } catch {
+        /* some old engines throw inside drag handlers; harmless */
+      }
+    }
   }
   function onDragOver(e: DragEvent, id: number) {
     if (dragId == null || dragId === id) return;

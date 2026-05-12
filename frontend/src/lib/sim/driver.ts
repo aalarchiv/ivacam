@@ -112,6 +112,7 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
     kind: t.kind,
     diameter: t.diameter,
     ...(t.tipDiameter !== undefined ? { tip_diameter: t.tipDiameter } : {}),
+    ...(t.tipAngleDeg !== undefined ? { tip_angle_deg: t.tipAngleDeg } : {}),
     ...(t.dragoff !== undefined ? { dragoff: t.dragoff } : {}),
     flutes: t.flutes,
     speed: t.speed,
@@ -121,6 +122,15 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
     ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
     ...(t.holder !== undefined ? { holder: t.holder } : {}),
+    // Per-kind sim/holder metadata so the heightfield simulator can
+    // pick the right cutter profile and holder-check uses the right
+    // shank dims. Bull-nose / T-slot collapse to Endmill in the sim
+    // for now (see ToolProfile::from_tool), but ship the fields so
+    // the data is there when the sim grows fillet / undercut support.
+    ...(t.cornerRadiusMm !== undefined ? { corner_radius_mm: t.cornerRadiusMm } : {}),
+    ...(t.tslotNeckDiameterMm !== undefined ? { tslot_neck_diameter_mm: t.tslotNeckDiameterMm } : {}),
+    ...(t.tslotNeckLengthMm !== undefined ? { tslot_neck_length_mm: t.tslotNeckLengthMm } : {}),
+    ...(t.zShiftMm !== undefined ? { z_shift_mm: t.zShiftMm } : {}),
   };
 }
 

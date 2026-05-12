@@ -188,10 +188,12 @@ impl ToolProfile {
         }
     }
 
-    /// Build a profile from a project tool entry. `ToolEntry` has no explicit
-    /// length, so v-bit / engraver default to a 30° half-angle (60° included)
-    /// when `tip_diameter` is provided; without `tip_diameter` we fall back
-    /// to the same half-angle and `tip_r = 0`.
+    /// Build a profile from a project tool entry. V-bit / engraver use
+    /// `tool.tip_angle_deg` (full included angle) — sim depth before
+    /// this used a hard-coded 60° regardless of the configured bit,
+    /// so a 90° V-bit carved at half the correct depth in preview. A
+    /// missing / unreasonable angle falls back to 60° (the default
+    /// the backend assigns to a new tool).
     #[must_use]
     pub fn from_tool(tool: &ToolEntry) -> Self {
         let r = (tool.diameter * 0.5) as f32;
@@ -200,10 +202,16 @@ impl ToolProfile {
             ToolKind::BallNose => ToolProfile::BallNose { r },
             ToolKind::VBit | ToolKind::Engraver => {
                 let tip_r = (tool.tip_diameter.unwrap_or(0.0) * 0.5) as f32;
+                let included = if tool.tip_angle_deg > 0.0 && tool.tip_angle_deg < 180.0 {
+                    tool.tip_angle_deg
+                } else {
+                    60.0
+                };
+                let half_angle_rad = ((included * 0.5).to_radians()) as f32;
                 ToolProfile::VBit {
                     r,
                     tip_r,
-                    half_angle_rad: std::f32::consts::FRAC_PI_6,
+                    half_angle_rad,
                 }
             }
             ToolKind::DragKnife => ToolProfile::DragKnife {
@@ -399,5 +407,44 @@ mod tests {
         assert!(matches!(ToolProfile::from_tool(&t), ToolProfile::BallNose { .. }));
         let t = make_tool(ToolKind::Drill, 5.0);
         assert!(matches!(ToolProfile::from_tool(&t), ToolProfile::Drill { .. }));
+    }
+
+    /// Regression: V-bit half-angle was hard-coded to 30° (60°
+    /// included) regardless of `tool.tip_angle_deg`. A 90° bit
+    /// carved at half its true depth in the sim. The profile now
+    /// reads the tool's configured angle.
+    #[test]
+    fn from_tool_vbit_uses_tip_angle_deg() {
+        for &(angle_deg, expected_half_rad) in &[
+            (60.0_f64, std::f32::consts::FRAC_PI_6), // baseline default
+            (90.0_f64, std::f32::consts::FRAC_PI_4),
+            (30.0_f64, (15.0_f32).to_radians()),
+        ] {
+            let mut t = make_tool(ToolKind::VBit, 6.0);
+            t.tip_angle_deg = angle_deg;
+            match ToolProfile::from_tool(&t) {
+                ToolProfile::VBit { half_angle_rad, .. } => {
+                    assert!(
+                        approx(half_angle_rad, expected_half_rad),
+                        "angle {angle_deg}: got {half_angle_rad}, expected {expected_half_rad}",
+                    );
+                }
+                other => panic!("expected VBit profile, got {other:?}"),
+            }
+        }
+    }
+
+    /// Defense-in-depth: an out-of-range tip_angle_deg (e.g. an old
+    /// project before the field was required) falls back to 60°
+    /// instead of producing a NaN or zero-angle cone.
+    #[test]
+    fn from_tool_vbit_falls_back_to_60_on_invalid_angle() {
+        let mut t = make_tool(ToolKind::VBit, 6.0);
+        t.tip_angle_deg = 0.0;
+        if let ToolProfile::VBit { half_angle_rad, .. } = ToolProfile::from_tool(&t) {
+            assert!(approx(half_angle_rad, std::f32::consts::FRAC_PI_6));
+        } else {
+            panic!("expected VBit profile");
+        }
     }
 }

@@ -165,17 +165,27 @@
       {#if usableLayers.length > 0}
         <ul>
           {#each usableLayers as layer (layer.name)}
-            <li>
-              <label>
+            <li class="layer-row">
+              <label class="layer-label">
                 <input
                   type="checkbox"
                   checked={project.visibleLayers.has(layer.name)}
                   onchange={() => project.toggleLayer(layer.name)}
+                  title="Active = included in pipeline + visible on canvas. Uncheck to deactivate."
                 />
                 <span class="swatch" style="background: {swatch(layer.color)}"></span>
                 <span class="name">{layer.name}</span>
                 <span class="count">{layer.segment_count}</span>
               </label>
+              <button
+                type="button"
+                class="del-btn"
+                onclick={() => project.removeImportedLayer(layer.name)}
+                title="Delete this layer (drops every segment on it)"
+                aria-label={`Delete layer ${layer.name}`}
+              >
+                ×
+              </button>
             </li>
           {/each}
         </ul>
@@ -349,12 +359,32 @@
   li {
     margin: 0.18rem 0;
   }
-  label {
+  li.layer-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.2rem;
+  }
+  label,
+  .layer-label {
     display: flex;
     align-items: center;
     gap: 0.4rem;
     font-size: 0.82rem;
     cursor: pointer;
+    min-width: 0;
+  }
+  .del-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+  }
+  .del-btn:hover {
+    color: var(--error);
   }
   input[type='checkbox'] {
     accent-color: var(--accent);

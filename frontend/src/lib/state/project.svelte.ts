@@ -20,6 +20,34 @@ function isAbsolutePath(p: string): boolean {
   return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
 }
 
+/// Bounding box of a segment list — used after layer-delete to refresh
+/// the imported.bbox without touching every other field. Returns a
+/// safe zero-extent bbox when the list is empty (matches what the
+/// Rust BBox::from_segments would do).
+function bboxOfSegments(segs: Segment[]): {
+  min_x: number;
+  min_y: number;
+  max_x: number;
+  max_y: number;
+} {
+  if (segs.length === 0) return { min_x: 0, min_y: 0, max_x: 0, max_y: 0 };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const s of segs) {
+    if (s.start.x < minX) minX = s.start.x;
+    if (s.start.y < minY) minY = s.start.y;
+    if (s.start.x > maxX) maxX = s.start.x;
+    if (s.start.y > maxY) maxY = s.start.y;
+    if (s.end.x < minX) minX = s.end.x;
+    if (s.end.y < minY) minY = s.end.y;
+    if (s.end.x > maxX) maxX = s.end.x;
+    if (s.end.y > maxY) maxY = s.end.y;
+  }
+  return { min_x: minX, min_y: minY, max_x: maxX, max_y: maxY };
+}
+
 /// Memoised bundled-font fetch — the DejaVu Sans bytes used as the
 /// default font for imported DXF TEXT/MTEXT entities. Resolved once
 /// per session and shared across every TextLayer created from
@@ -58,6 +86,7 @@ import {
   duplicateOperationCommand,
   removeFixtureCommand,
   reorderOperationCommand,
+  replaceImportedCommand,
   replaceToolsCommand,
   setMachineCommand,
   setStockCommand,
@@ -684,6 +713,41 @@ class ProjectState {
     if (next.has(name)) next.delete(name);
     else next.add(name);
     this.visibleLayers = next;
+  }
+
+  /// Delete every imported segment that belongs to `layerName`. Drops
+  /// the layer entry, the visibleLayers entry, and (parallel-index)
+  /// the `objects[]` per-segment mapping. `object_meta` is left intact
+  /// — entries for deleted objects become orphaned but no remaining
+  /// segment references them, so they're harmless until the next
+  /// re-import. Bbox is recomputed from the surviving segments.
+  /// Undoable via the imported-snapshot command pattern.
+  removeImportedLayer(layerName: string) {
+    if (!this.imported) return;
+    const cur = this.imported;
+    const keep = cur.segments.map((s) => s.layer !== layerName);
+    if (keep.every((k) => k)) return; // nothing matched
+    const newSegments = cur.segments.filter((_, i) => keep[i]);
+    const newObjects = (cur.objects ?? []).filter((_, i) => keep[i]);
+    const newLayers = cur.layers.filter((l) => l.name !== layerName);
+    const newBbox = bboxOfSegments(newSegments);
+    const after: ImportResponse = {
+      ...cur,
+      segments: newSegments,
+      layers: newLayers,
+      bbox: newBbox,
+      objects: newObjects,
+    };
+    this.history.beginTransaction(`Delete layer "${layerName}"`);
+    this.history.exec(replaceImportedCommand(cur, after, `Delete layer "${layerName}"`), this.target());
+    // Drop visibility tracking for the gone layer too — visibleLayers
+    // lives outside the command target, so this is a plain mutation.
+    if (this.visibleLayers.has(layerName)) {
+      const next = new Set(this.visibleLayers);
+      next.delete(layerName);
+      this.visibleLayers = next;
+    }
+    this.history.commitTransaction();
   }
 
   /// Snapshot for project save.

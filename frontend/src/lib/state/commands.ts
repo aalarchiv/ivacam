@@ -534,6 +534,29 @@ export function appendImportedCommand(p: AppendImportedSegmentsPayload): Command
   };
 }
 
+/// Generic imported-swap with a custom label. Used by per-layer delete
+/// (and any future imported-geometry mutation that isn't a simple
+/// append). Same before/after snapshot pattern as appendImportedCommand.
+export function replaceImportedCommand(
+  before: ImportResponse | null,
+  after: ImportResponse | null,
+  label: string,
+): Command {
+  return {
+    label,
+    apply: (s) => {
+      const t = s as CommandTarget;
+      t.imported = after ? clone(after) : null;
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.imported = before ? clone(before) : null;
+      t.dirty = true;
+    },
+  };
+}
+
 // ── helpers ──────────────────────────────────────────────────────────
 
 function coalesceKeyForPatch(opId: number, patch: Partial<OpEntry>): string | undefined {

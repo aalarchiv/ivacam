@@ -8,7 +8,12 @@
   /// The dialog edits a local `draft` clone; only `Save` commits back
   /// to the parent via the `onSave` callback. The parent (MachineDialog)
   /// receives a fully formed `PostProfile | undefined`.
-  import type { PostProfile, AxesConfig, AxisFormat } from '../state/project.svelte';
+  import {
+    defaultAxesConfig,
+    type AxesConfig,
+    type AxisFormat,
+    type PostProfile,
+  } from '../state/project.svelte';
   import { previewGcode, AXIS_DEFAULTS } from '../cam/post-profile-preview';
   import { project } from '../state/project.svelte';
   import Modal from './Modal.svelte';
@@ -46,30 +51,6 @@
     project.tools.map((t) => `T${t.id} (${t.name}) ⌀${t.diameter.toFixed(3)}`).join('\n'),
   );
   let preview = $derived(previewGcode(draft, toolsListing ? { toolsListing } : {}));
-
-  function defaultAxesConfig(): AxesConfig {
-    const coord = (name: string): AxisFormat => ({
-      enabled: true,
-      name,
-      format: '%.3f',
-      scale: 1.0,
-    });
-    const int = (name: string): AxisFormat => ({
-      enabled: true,
-      name,
-      format: '%d',
-      scale: 1.0,
-    });
-    return {
-      x: coord('X'),
-      y: coord('Y'),
-      z: coord('Z'),
-      i: coord('I'),
-      j: coord('J'),
-      feed: int('F'),
-      speed: int('S'),
-    };
-  }
 
   function patchAxis(key: keyof AxesConfig, patch: Partial<AxisFormat>) {
     if (!draft.axes) return;

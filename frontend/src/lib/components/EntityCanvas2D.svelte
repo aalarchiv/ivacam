@@ -535,7 +535,7 @@
   /// same op kinds as the Add-operation picker; clicking an entry
   /// creates an op whose source is the current canvas selection, all
   /// wrapped in one undoable transaction.
-  let ctxMenu = $state<{ x: number; y: number } | null>(null);
+  let ctxMenu = $state<{ x: number; y: number; dataX: number; dataY: number } | null>(null);
 
   /// Per-tab popover (8rd). Opens on right-click over an existing
   /// tab; carries the canvas-space position to anchor the popover
@@ -568,7 +568,28 @@
       ctxMenu = null;
       return;
     }
-    ctxMenu = { x: cx, y: cy };
+    // Convert canvas pixels → data-space mm so menu actions (like
+    // "Set text origin here") can plant their target at the cursor
+    // without redoing the projection math.
+    const t = lastTransform;
+    const dataX = t ? (cx - t.offX) / t.scale : 0;
+    const dataY = t ? (t.offY - cy) / t.scale : 0;
+    ctxMenu = { x: cx, y: cy, dataX, dataY };
+  }
+
+  /// Set the currently-selected text layer's origin to the position
+  /// the user right-clicked at. No-op when no text layer is selected.
+  function setTextOriginHere() {
+    if (!ctxMenu) return;
+    const id = project.selectedTextLayerId;
+    if (id == null) {
+      ctxMenu = null;
+      return;
+    }
+    const x = ctxMenu.dataX;
+    const y = ctxMenu.dataY;
+    ctxMenu = null;
+    project.updateTextLayer(id, { origin: { x, y } });
   }
 
   function closeCtxMenu() {
@@ -1517,20 +1538,35 @@
     {/if}
   {/if}
   {#if ctxMenu}
-    {#if project.selectedObjects.size === 0}
+    {@const hasTextSelected = project.selectedTextLayerId != null}
+    {@const hasObjsSelected = project.selectedObjects.size > 0}
+    {#if !hasTextSelected && !hasObjsSelected}
       <div
         class="ctx-menu empty"
         style:left={`${ctxMenu.x}px`}
         style:top={`${ctxMenu.y}px`}
         role="menu"
       >
-        <p class="ctx-hint">Select objects first to add an operation from them.</p>
+        <p class="ctx-hint">
+          Select objects to add an operation, or a text layer to reposition it.
+        </p>
         <button type="button" onclick={closeCtxMenu}>Dismiss</button>
       </div>
     {:else}
       <div class="ctx-menu" style:left={`${ctxMenu.x}px`} style:top={`${ctxMenu.y}px`} role="menu">
-        <div class="ctx-header">New operation from selection</div>
-        <OpKindPicker onPick={pickFromCtx} />
+        {#if hasTextSelected}
+          <div class="ctx-header">Text layer</div>
+          <button type="button" class="ctx-item" onclick={setTextOriginHere}>
+            Set text origin here
+          </button>
+          {#if hasObjsSelected}
+            <div class="ctx-divider"></div>
+          {/if}
+        {/if}
+        {#if hasObjsSelected}
+          <div class="ctx-header">New operation from selection</div>
+          <OpKindPicker onPick={pickFromCtx} />
+        {/if}
       </div>
     {/if}
   {/if}
@@ -1649,6 +1685,25 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.25rem 0.45rem 0.3rem;
+  }
+  .ctx-item {
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 3px;
+    margin: 0 0.2rem;
+  }
+  .ctx-item:hover {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .ctx-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.2rem 0.1rem;
   }
   .ctx-menu.empty {
     padding: 0.4rem 0.55rem;

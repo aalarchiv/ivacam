@@ -39,6 +39,20 @@
     project.updateTextLayer(id, delta);
   }
 
+  /// Single text-input handler that auto-promotes between TEXT and
+  /// MTEXT based on whether the value contains a newline. The user
+  /// doesn't pick the kind any more — the field reacts.
+  function onTextInput(layer: TextLayer, e: Event) {
+    const value = (e.currentTarget as HTMLTextAreaElement).value;
+    const isMulti = value.includes('\n');
+    const nextKind: TextLayerKind = isMulti ? 'MTEXT' : 'TEXT';
+    if (nextKind !== layer.kind) {
+      project.updateTextLayer(layer.id, { text: value, kind: nextKind });
+    } else {
+      project.updateTextLayer(layer.id, { text: value });
+    }
+  }
+
   function patchOrigin(id: number, axis: 'x' | 'y', value: number) {
     const cur = project.textLayers.find((t) => t.id === id);
     if (!cur) return;
@@ -132,34 +146,12 @@
                 <div class="edit-form">
                   <label class="full">
                     <span>Text</span>
-                    {#if layer.kind === 'MTEXT'}
-                      <textarea
-                        rows="3"
-                        value={layer.text}
-                        oninput={(e) =>
-                          patch(layer.id, { text: (e.currentTarget as HTMLTextAreaElement).value })}
-                      ></textarea>
-                    {:else}
-                      <input
-                        type="text"
-                        value={layer.text}
-                        oninput={(e) =>
-                          patch(layer.id, { text: (e.currentTarget as HTMLInputElement).value })}
-                      />
-                    {/if}
-                  </label>
-                  <label>
-                    <span>Kind</span>
-                    <select
-                      value={layer.kind}
-                      onchange={(e) =>
-                        patch(layer.id, {
-                          kind: (e.currentTarget as HTMLSelectElement).value as TextLayerKind,
-                        })}
-                    >
-                      <option value="TEXT">TEXT (single line)</option>
-                      <option value="MTEXT">MTEXT (multi-line)</option>
-                    </select>
+                    <textarea
+                      class:multiline={layer.text.includes('\n')}
+                      rows={layer.text.includes('\n') ? 4 : 1}
+                      value={layer.text}
+                      oninput={(e) => onTextInput(layer, e)}
+                    ></textarea>
                   </label>
                   <div class="field-pair">
                     <span class="field-label">Font</span>
@@ -455,8 +447,15 @@
   }
   .edit-form textarea {
     resize: vertical;
-    min-height: 3rem;
+    min-height: 1.6rem;
     font-family: inherit;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .edit-form textarea.multiline {
+    min-height: 4rem;
+    overflow: auto;
+    white-space: pre;
   }
   .edit-form .readout {
     padding: 0.18rem 0.3rem;

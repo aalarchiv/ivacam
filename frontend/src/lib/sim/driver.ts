@@ -141,9 +141,13 @@ export function computeFootprint(
     margin: number;
     customX: number;
     customY: number;
+    offsetX?: number;
+    offsetY?: number;
   },
   workArea?: { x: number; y: number } | null,
 ): { minX: number; minY: number; maxX: number; maxY: number } {
+  const ox = stock.offsetX ?? 0;
+  const oy = stock.offsetY ?? 0;
   // Manual mode: footprint is exactly customX × customY centered on
   // the imported geometry's bbox center (or origin when none).
   if (stock.mode === 'manual') {
@@ -155,29 +159,30 @@ export function computeFootprint(
       cy = (min_y + max_y) * 0.5;
     }
     return {
-      minX: cx - stock.customX * 0.5,
-      minY: cy - stock.customY * 0.5,
-      maxX: cx + stock.customX * 0.5,
-      maxY: cy + stock.customY * 0.5,
+      minX: cx - stock.customX * 0.5 + ox,
+      minY: cy - stock.customY * 0.5 + oy,
+      maxX: cx + stock.customX * 0.5 + ox,
+      maxY: cy + stock.customY * 0.5 + oy,
     };
   }
   // Auto mode WITH geometry: bbox + margin (the legacy behavior).
   if (imported) {
     const { min_x, min_y, max_x, max_y } = imported.bbox;
     const m = Math.max(0, stock.margin);
-    return { minX: min_x - m, minY: min_y - m, maxX: max_x + m, maxY: max_y + m };
+    return {
+      minX: min_x - m + ox,
+      minY: min_y - m + oy,
+      maxX: max_x + m + ox,
+      maxY: max_y + m + oy,
+    };
   }
   // Auto mode WITHOUT geometry: default to the machine work-area
-  // footprint anchored at the origin. This is the stock-first fallback
-  // — when the user opens a fresh project the canvas still has a
-  // workpiece to act on.
+  // footprint anchored at the origin.
   if (workArea && workArea.x > 0 && workArea.y > 0) {
-    return { minX: 0, minY: 0, maxX: workArea.x, maxY: workArea.y };
+    return { minX: ox, minY: oy, maxX: workArea.x + ox, maxY: workArea.y + oy };
   }
-  // Final fallback for clients that don't pass a work area (legacy or
-  // mid-load) — keep the 100×100 mm placeholder so we never produce
-  // a degenerate stock footprint.
-  return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+  // Final fallback for clients that don't pass a work area.
+  return { minX: ox, minY: oy, maxX: 100 + ox, maxY: 100 + oy };
 }
 
 /// Compute cell size from the active tool diameter when settings is in

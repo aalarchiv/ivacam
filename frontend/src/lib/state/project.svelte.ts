@@ -1253,6 +1253,16 @@ export interface StockConfig {
   thickness: number;
   customX: number;
   customY: number;
+  /// Origin offsets in mm. In auto mode the stock anchor is the
+  /// imported bbox (or the work-area corner when no drawing is loaded);
+  /// the offsets translate the stock relative to that anchor. In manual
+  /// mode the anchor is (0, 0) so offsets are absolute.
+  offsetX?: number;
+  offsetY?: number;
+  /// Z offset is for future use (currently the pipeline assumes stock
+  /// top at z = 0). Plumbed through the UI now so the field exists
+  /// before the sim refactor lands.
+  offsetZ?: number;
 }
 
 export type { ToolKind, OpKind, ProfileOffset, SourceCombine, FrameShape } from './op_types';

@@ -104,7 +104,7 @@
         onchange={(e) => setAllVisible((e.currentTarget as HTMLInputElement).checked)}
       />
     {/if}
-    {#if project.imported?.filename}
+    {#if usableLayers.length > 0 && project.imported?.filename}
       <span class="filename" title={project.imported.filename}>
         {project.imported.filename}
       </span>

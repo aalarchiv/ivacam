@@ -69,6 +69,10 @@
   /// without expanding the panel. Uses `computeFootprint` so the
   /// numbers match what Scene3D / sim use (auto mode follows imported
   /// bbox; manual = customX/Y; no-import fallback = machine work area).
+  /// Collapsible state for the Stock panel — matches the LayerList /
+  /// OperationsList caret-collapse pattern. Default open so a fresh
+  /// project shows the stock settings prominently.
+  let stockExpanded = $state(true);
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.stock;
     const fp = computeFootprint(project.imported, cfg, project.machine.workArea);
@@ -224,6 +228,29 @@
   });
 
   let activePane = $state<'2d' | '3d'>('2d');
+
+  /// 3D button label cycles with the preview mode: 'both' → "3D",
+  /// 'wireframe' → "3Dwire", 'solid' → "3Dsolid". The button does
+  /// double duty — first click in 2D mode switches to 3D (keeping the
+  /// current preview mode); subsequent clicks cycle modes. Shift+click
+  /// reverses the cycle.
+  const PREVIEW_CYCLE: ('both' | 'wireframe' | 'solid')[] = ['both', 'wireframe', 'solid'];
+  const threeDLabel = $derived.by<string>(() => {
+    const m = project.settings.previewMode;
+    if (m === 'wireframe') return '3Dwire';
+    if (m === 'solid') return '3Dsolid';
+    return '3D';
+  });
+  function onClick3dButton(e: MouseEvent) {
+    if (activePane !== '3d') {
+      activePane = '3d';
+      return;
+    }
+    const i = PREVIEW_CYCLE.indexOf(project.settings.previewMode);
+    const step = e.shiftKey ? -1 : 1;
+    const next = PREVIEW_CYCLE[(i + step + PREVIEW_CYCLE.length) % PREVIEW_CYCLE.length];
+    project.updateSettings({ previewMode: next });
+  }
 
   // Auto-switch to 3D when /generate returns; people want to see the toolpath.
   $effect(() => {
@@ -676,8 +703,11 @@
         role="tab"
         aria-selected={activePane === '3d'}
         class:active={activePane === '3d'}
-        onclick={() => (activePane = '3d')}>{$_('header.pane.3d')}</button
+        onclick={onClick3dButton}
+        title="Click to switch to 3D. Click again to cycle preview mode: both → wireframe → solid. Shift+click reverses."
       >
+        {threeDLabel}
+      </button>
     </div>
   </div>
 
@@ -734,15 +764,24 @@
     />
     <aside class="sidebar">
       <div class="stock-host">
-        <details open>
-          <summary>
-            <span class="stock-name">Stock</span>
-            <span class="stock-dims" title="Current stock dimensions (X × Y × Z) in mm">
-              {stockDimsLabel}
-            </span>
-          </summary>
-          <StockPanel />
-        </details>
+        <button
+          type="button"
+          class="group-head"
+          onclick={() => (stockExpanded = !stockExpanded)}
+          aria-expanded={stockExpanded}
+          title="Click to {stockExpanded ? 'collapse' : 'expand'} stock settings"
+        >
+          <span class="caret">{stockExpanded ? '▾' : '▸'}</span>
+          <span class="stock-name">Stock</span>
+          <span class="stock-dims" title="Current stock dimensions (Length × Width × Thickness) in mm">
+            {stockDimsLabel}
+          </span>
+        </button>
+        {#if stockExpanded}
+          <div class="group-body">
+            <StockPanel />
+          </div>
+        {/if}
       </div>
       <div class="layers-host">
         <LayerList
@@ -759,8 +798,8 @@
       <div class="ops-host">
         <OperationsList />
       </div>
-      <div class="stock-extras-host">
-        {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
+      {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
+        <div class="stock-extras-host">
           <label
             class="region-toggle"
             title="Show / hide the translucent fill that marks each pocket operation's machined region."
@@ -773,28 +812,8 @@
             />
             <span>Show machined regions</span>
           </label>
-        {/if}
-        <div
-          class="preview-mode"
-          title="Wireframe = toolpath lines only. Solid = simulated stock with material removed (semi-transparent + edge lines). Both = solid underneath, toolpath on top."
-        >
-          <span class="preview-mode-label">3D preview</span>
-          <div class="pill-group" role="radiogroup" aria-label="3D preview mode">
-            {#each ['wireframe', 'solid', 'both'] as mode (mode)}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={project.settings.previewMode === mode}
-                class:active={project.settings.previewMode === mode}
-                onclick={() =>
-                  project.updateSettings({ previewMode: mode as 'wireframe' | 'solid' | 'both' })}
-              >
-                {mode}
-              </button>
-            {/each}
-          </div>
         </div>
-      </div>
+      {/if}
     </aside>
   </main>
 
@@ -1163,25 +1182,41 @@
   .stock-extras-host {
     min-height: 0;
     min-width: 0;
+    /* overflow: visible so per-panel dropdowns (Add+ etc.) escape the
+       row boundary. The sidebar itself + inner scrollable lists handle
+       their own clipping where it matters. */
+    overflow: visible;
+  }
+  .ops-host {
+    /* Operations list is the 1fr row — its own internal panel needs to
+       scroll, so re-clip here. */
     overflow: hidden;
   }
   .stock-host,
   .stock-extras-host {
     background: var(--bg-panel);
     padding: 0.4rem 0.6rem 0.5rem;
-    max-height: 30vh;
-    overflow: auto;
   }
   .stock-host {
+    max-height: 50vh;
+    overflow: auto;
     border-bottom: 1px solid var(--border);
   }
   .stock-extras-host {
+    max-height: 30vh;
+    overflow: auto;
     border-top: 1px solid var(--border);
   }
-  .stock-host summary {
-    display: flex;
+  /* Stock panel header mirrors LayerList's .group-head so all three
+     sidebar panels (Stock / Layers / Operations) share one visual
+     language. Caret in the leading slot · name · live dimensions
+     readout pinned right. */
+  .stock-host .group-head {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 0.3rem;
     align-items: center;
-    gap: 0.4rem;
+    width: 100%;
     padding: 0.2rem 0.35rem;
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -1190,36 +1225,34 @@
     color: var(--text-strong);
     font-weight: 600;
     cursor: pointer;
-    list-style: none;
+    font-family: inherit;
+    text-align: left;
+  }
+  .stock-host .group-head:hover {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+  }
+  .stock-host .caret {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1;
   }
   .stock-name {
-    flex: 0 0 auto;
+    color: var(--text-strong);
   }
   .stock-dims {
-    flex: 1 1 auto;
     color: var(--text-muted);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
     font-size: 0.72rem;
+    text-align: right;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .stock-host summary::-webkit-details-marker {
-    display: none;
-  }
-  .stock-host summary::before {
-    content: '▸';
-    color: var(--text-muted);
-    font-size: 0.85rem;
-    line-height: 1;
-    transition: transform 0.08s;
-  }
-  .stock-host details[open] summary::before {
-    content: '▾';
-  }
-  .stock-host details > :global(*) + :global(*) {
-    margin-top: 0.4rem;
+  .stock-host .group-body {
+    margin: 0.2rem 0 0 0.5rem;
+    padding-left: 0.3rem;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   }
   .region-toggle {
     display: flex;
@@ -1229,40 +1262,6 @@
     font-size: 0.72rem;
     color: var(--text-muted);
     cursor: pointer;
-  }
-  .preview-mode {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 0.5rem;
-    font-size: 0.72rem;
-    color: var(--text-muted);
-  }
-  .preview-mode-label {
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.65rem;
-  }
-  .pill-group {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    overflow: hidden;
-    background: var(--bg-elevated);
-  }
-  .pill-group button {
-    flex: 1;
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    padding: 0.2rem 0.6rem;
-    font-size: 0.7rem;
-    cursor: pointer;
-    text-transform: capitalize;
-  }
-  .pill-group button.active {
-    background: var(--accent);
-    color: white;
   }
   footer {
     /* Fixed-height single-line status bar — never grows. Long content

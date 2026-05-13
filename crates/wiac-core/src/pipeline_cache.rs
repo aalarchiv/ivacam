@@ -56,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 19;
+pub const PIPELINE_VERSION: u32 = 20;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
 /// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
@@ -857,7 +857,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0xb168_89e1_5815_5fbe_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x99da_d059_ecd9_5416_u64, "got {:#018x}", key.0);
     }
 
     #[test]

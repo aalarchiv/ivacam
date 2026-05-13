@@ -212,7 +212,12 @@ pub fn resolve_tab_placements(
             continue;
         }
         let (p, _) = polyline_at_t(&pts, tp.t.rem_euclid(1.0), obj.closed);
-        out.entry(obj_idx).or_default().push(TabPoint { x: p.x, y: p.y });
+        out.entry(obj_idx).or_default().push(TabPoint {
+            x: p.x,
+            y: p.y,
+            width_override_mm: tp.width_override_mm,
+            height_override_mm: tp.height_override_mm,
+        });
     }
     out
 }

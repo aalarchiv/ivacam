@@ -915,7 +915,7 @@ fn build_op_offsets(
                         .iter()
                         .map(|t| {
                             let p = apply_pattern_to_point(Point2::new(t.x, t.y), *inst);
-                            TabPoint { x: p.x, y: p.y }
+                            TabPoint { x: p.x, y: p.y, width_override_mm: None, height_override_mm: None }
                         })
                         .collect();
                     expanded_tabs.insert(new_idx, xformed);
@@ -2517,7 +2517,7 @@ fn build_op_tabs_by_object(
                 let ts = if obj.closed { &auto_ts } else { &auto_ts_open };
                 for &t in ts {
                     let (p, _) = polyline_at_t(&pts, t, obj.closed);
-                    out.entry(idx).or_default().push(TabPoint { x: p.x, y: p.y });
+                    out.entry(idx).or_default().push(TabPoint { x: p.x, y: p.y, width_override_mm: None, height_override_mm: None });
                 }
             }
         }

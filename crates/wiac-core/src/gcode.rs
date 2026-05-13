@@ -1457,38 +1457,43 @@ fn emit_path_with_tabs<P: PostProcessor>(
             ),
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
-                let crosses = tabs.iter().any(|t| {
-                    let mid_x = (seg.start.x + seg.end.x) * 0.5;
-                    let mid_y = (seg.start.y + seg.end.y) * 0.5;
-                    (mid_x - t.x).hypot(mid_y - t.y) < tab_radius
-                });
+                // Per-tab radius for crossing detection. Walks all tabs
+                // and uses the MAX lift Z of any that touches this arc
+                // (audit 3wv: per-tab overrides). The midpoint-of-chord
+                // heuristic stays — exact arc-intersection math here
+                // would be heavier and the chord-mid check has been the
+                // shipped behavior since rt1.10.
+                let fallback_width = tab_radius * 2.0;
+                let fallback_lift = (tabs_z - cut_z).abs();
+                let mid_x = (seg.start.x + seg.end.x) * 0.5;
+                let mid_y = (seg.start.y + seg.end.y) * 0.5;
+                let arc_tab_z = tabs
+                    .iter()
+                    .filter_map(|t| {
+                        let r = t.radius(fallback_width);
+                        if (mid_x - t.x).hypot(mid_y - t.y) < r {
+                            Some(cut_z + t.lift(fallback_lift))
+                        } else {
+                            None
+                        }
+                    })
+                    .fold(f64::NEG_INFINITY, f64::max);
+                let crosses = arc_tab_z.is_finite();
                 let center = seg
                     .center
                     .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
                 let i = center.x - seg.start.x;
                 let j = center.y - seg.start.y;
                 if !crosses {
-                    // No tab on this arc — emit as G2/G3.
                     if seg.bulge > 0.0 {
                         post.arc_ccw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
                     } else {
                         post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
                     }
                 } else if let Some(ramp) = ramp_angle_deg {
-                    // Ramped tab crossing an arc: discretize the arc
-                    // into chord segments and apply the line-tab ramp
-                    // logic per chord. The arc itself is replaced by
-                    // short G1 segments through the tab — necessary
-                    // because G2/G3 generally don't support varying Z
-                    // mid-arc on most controllers (LinuxCNC's G2.1/G3.1
-                    // do, but they're a single helix delta over the
-                    // whole arc, not a trapezoid). Chord-error stays
-                    // small with ~32 chords per arc.
                     emit_arc_chord_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, ramp, post);
                 } else {
-                    // Rectangle tab on arc: keep the v1 step-pulse Z
-                    // lift — works, just harsher on the spindle.
-                    post.linear(None, None, Some(tabs_z));
+                    post.linear(None, None, Some(arc_tab_z));
                     if seg.bulge > 0.0 {
                         post.arc_ccw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
                     } else {
@@ -1517,91 +1522,89 @@ fn emit_line_with_tabs<P: PostProcessor>(
         return;
     }
     // Walk the segment; for every tab whose perpendicular foot is on the
-    // segment within `tab_radius`, compute t-entry and t-exit fractions.
-    let mut intervals: Vec<(f64, f64)> = Vec::new();
+    // segment within its own effective radius, compute t-entry / t-exit
+    // and the per-tab effective lift Z (audit 3wv: width / height
+    // overrides now flow through per-tab instead of using the op-level
+    // values uniformly).
+    let fallback_width = tab_radius * 2.0;
+    let fallback_lift = (tabs_z - cut_z).abs();
+    let mut intervals: Vec<(f64, f64, f64)> = Vec::new();
     for tab in tabs {
+        let r = tab.radius(fallback_width);
+        if r <= 0.0 {
+            continue;
+        }
         let tx = tab.x - seg.start.x;
         let ty = tab.y - seg.start.y;
         let t = (tx * dx + ty * dy) / (len * len);
-        // Perpendicular distance.
         let perp_x = tx - t * dx;
         let perp_y = ty - t * dy;
         let perp = (perp_x * perp_x + perp_y * perp_y).sqrt();
-        if perp > tab_radius {
+        if perp > r {
             continue;
         }
-        let half = (tab_radius * tab_radius - perp * perp).sqrt() / len;
+        let half = (r * r - perp * perp).sqrt() / len;
         let t_in = (t - half).max(0.0);
         let t_out = (t + half).min(1.0);
         if t_out > t_in {
-            intervals.push((t_in, t_out));
+            let z_top = cut_z + tab.lift(fallback_lift);
+            intervals.push((t_in, t_out, z_top));
         }
     }
     intervals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    // Merge overlaps.
-    let mut merged: Vec<(f64, f64)> = Vec::new();
-    for (a, b) in intervals {
+    // Merge overlaps; overlapping tabs use the higher of their lifts
+    // so the cutter clears both.
+    let mut merged: Vec<(f64, f64, f64)> = Vec::new();
+    for (a, b, z) in intervals {
         if let Some(last) = merged.last_mut() {
             if a <= last.1 + 1e-6 {
                 last.1 = last.1.max(b);
+                last.2 = last.2.max(z);
                 continue;
             }
         }
-        merged.push((a, b));
+        merged.push((a, b, z));
     }
-    // Ramp horizontal length: flat = (tabs_z - cut_z) / tan(angle). When
-    // 2*ramp_length > tab_width we collapse to a triangle (no flat top).
-    let dz = (tabs_z - cut_z).abs();
-    let ramp_length = ramp_angle_deg.map(|a| {
-        if dz < 1e-9 {
-            0.0
-        } else {
-            dz / a.to_radians().tan()
-        }
-    });
     // Emit: cut up to each interval, lift / ramp, traverse, drop / ramp,
-    // repeat.
+    // repeat. Per-interval `interval_z` is the (per-tab) effective lift,
+    // so a tab with a non-default height override gets its own Z plateau.
     let mut cursor = 0.0;
-    for (t_in, t_out) in merged {
+    for (t_in, t_out, interval_z) in merged {
         if t_in > cursor + 1e-6 {
             let p = lerp(seg, t_in);
             post.linear(Some(p.0), Some(p.1), None);
         }
+        let dz_here = (interval_z - cut_z).abs();
+        let ramp_length = ramp_angle_deg.map(|a| {
+            if dz_here < 1e-9 {
+                0.0
+            } else {
+                dz_here / a.to_radians().tan()
+            }
+        });
         match ramp_length {
             Some(rl) if rl > 1e-9 => {
                 let tab_world_len = (t_out - t_in) * len;
                 if tab_world_len < 2.0 * rl {
-                    // Triangle: ramp directly to tabs_z at tab center,
-                    // then ramp back down to cut_z at tab exit. Cutter
-                    // never reaches a flat top — the tab is too narrow
-                    // for the configured angle to fit its full slope.
                     let t_mid = 0.5 * (t_in + t_out);
                     let mid = lerp(seg, t_mid);
-                    post.linear(Some(mid.0), Some(mid.1), Some(tabs_z));
+                    post.linear(Some(mid.0), Some(mid.1), Some(interval_z));
                     let exit = lerp(seg, t_out);
                     post.linear(Some(exit.0), Some(exit.1), Some(cut_z));
                 } else {
-                    // Trapezoid: ramp up over rl, run flat, ramp down
-                    // over rl. Translate ramp_length back into t-space
-                    // along the segment.
                     let dt_ramp = rl / len;
                     let t_up_end = t_in + dt_ramp;
                     let t_down_start = t_out - dt_ramp;
                     let up_end = lerp(seg, t_up_end);
                     let down_start = lerp(seg, t_down_start);
                     let exit = lerp(seg, t_out);
-                    // Ramp up: cut + climb to tabs_z.
-                    post.linear(Some(up_end.0), Some(up_end.1), Some(tabs_z));
-                    // Flat top across the tab's interior at tabs_z.
+                    post.linear(Some(up_end.0), Some(up_end.1), Some(interval_z));
                     post.linear(Some(down_start.0), Some(down_start.1), None);
-                    // Ramp down: descend back to cut_z by tab exit.
                     post.linear(Some(exit.0), Some(exit.1), Some(cut_z));
                 }
             }
             _ => {
-                // Rectangle (or zero-height tab): straight Z lift, run
-                // across, drop. Original behavior.
-                post.linear(None, None, Some(tabs_z));
+                post.linear(None, None, Some(interval_z));
                 let p_out = lerp(seg, t_out);
                 post.linear(Some(p_out.0), Some(p_out.1), None);
                 post.linear(None, None, Some(cut_z));
@@ -2469,7 +2472,7 @@ mod tests {
 
         let mut offset = square_offset();
         // Tab in the middle of the bottom edge.
-        offset.tabs = vec![crate::cam::offsets::TabPoint { x: 5.0, y: 0.0 }];
+        offset.tabs = vec![crate::cam::offsets::TabPoint { x: 5.0, y: 0.0, width_override_mm: None, height_override_mm: None }];
         let mut post = linuxcnc::Post::new();
         let g = emit_polylines(&setup, &[offset], &mut post);
 
@@ -2510,7 +2513,7 @@ mod tests {
             layer: "0".into(),
             color: 7,
             source_object_idx: 0,
-            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0 }],
+            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0, width_override_mm: None, height_override_mm: None }],
             is_finish: false,
         };
 
@@ -2605,7 +2608,7 @@ mod tests {
             layer: "0".into(),
             color: 7,
             source_object_idx: 0,
-            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0 }],
+            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0, width_override_mm: None, height_override_mm: None }],
             is_finish: false,
         };
 

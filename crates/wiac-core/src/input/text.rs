@@ -69,6 +69,37 @@ pub struct RenderTextResponse {
     pub family_name: Option<String>,
 }
 
+/// Live-preview response — the rendered TextLayer segments plus the
+/// cached single-line classification. The pipeline produces the same
+/// segments at Generate time; this endpoint lets the frontend show the
+/// text on the 2D canvas without round-tripping a full pipeline run.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RenderTextLayerResponse {
+    pub segments: Vec<Segment>,
+    pub single_line: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_name: Option<String>,
+}
+
+/// Cross-transport entry point for live preview. Takes a full
+/// [`TextLayer`] (with embedded font bytes) and returns the same
+/// segments the pipeline pre-pass would produce, plus the
+/// single-line / family-name metadata the UI uses to label the layer.
+pub fn render_text_layer_api(layer: &TextLayer) -> crate::Result<RenderTextLayerResponse> {
+    let face = Face::parse(&layer.font_bytes, 0).map_err(|e| {
+        Error::misconfigured(format!("ttf parse: {e}"))
+            .with_hint("Pick a different font for this text layer.")
+    })?;
+    let single_line = is_single_line_font(&face);
+    let family_name = face_family_name(&face);
+    let segments = render_text_layer(layer)?;
+    Ok(RenderTextLayerResponse {
+        segments,
+        single_line,
+        family_name,
+    })
+}
+
 /// Cross-transport entry point: parses the font, renders, returns
 /// segments + the single-line classification. Errors map to the standard
 /// structured [`Error`] (kind=Misconfigured) when the bytes don't parse

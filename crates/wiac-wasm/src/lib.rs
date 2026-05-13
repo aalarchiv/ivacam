@@ -20,7 +20,8 @@
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use wiac_core::input::text::{render_text_api, RenderTextRequest};
+use wiac_core::input::text::{render_text_api, render_text_layer_api, RenderTextRequest};
+use wiac_core::project::TextLayer;
 use wiac_core::pipeline::{generate_streaming, run_pipeline, CancelToken, PipelineRequest};
 use wiac_core::{
     compute_helix_radius as core_compute_helix_radius, HelixRadiusRequest, ImportOptions,
@@ -134,6 +135,13 @@ pub fn generate_streaming_wasm(
 pub fn render_text(request: JsValue) -> Result<JsValue, JsValue> {
     let req: RenderTextRequest = serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
     let resp = render_text_api(&req).map_err(structured_error_to_js)?;
+    serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+}
+
+#[wasm_bindgen(js_name = renderTextLayer)]
+pub fn render_text_layer(layer: JsValue) -> Result<JsValue, JsValue> {
+    let layer: TextLayer = serde_wasm_bindgen::from_value(layer).map_err(into_js_error)?;
+    let resp = render_text_layer_api(&layer).map_err(structured_error_to_js)?;
     serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
 }
 

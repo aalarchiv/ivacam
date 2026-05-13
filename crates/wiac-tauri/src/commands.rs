@@ -15,7 +15,11 @@ use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use wiac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
+use wiac_core::input::text::{
+    render_text_api, render_text_layer_api, RenderTextLayerResponse, RenderTextRequest,
+    RenderTextResponse,
+};
+use wiac_core::project::TextLayer;
 use wiac_core::pipeline::{
     generate_streaming, run_pipeline, CancelToken, PipelineEvent, PipelineRequest, PipelineResponse,
 };
@@ -226,6 +230,14 @@ pub fn cancel_generate(token_id: u32) -> Result<(), String> {
 #[tauri::command]
 pub async fn render_text(request: RenderTextRequest) -> Result<RenderTextResponse, String> {
     tokio::task::spawn_blocking(move || render_text_api(&request))
+        .await
+        .map_err(|e| internal(format!("join error: {e}")))?
+        .map_err(serialize_error)
+}
+
+#[tauri::command]
+pub async fn render_text_layer(layer: TextLayer) -> Result<RenderTextLayerResponse, String> {
+    tokio::task::spawn_blocking(move || render_text_layer_api(&layer))
         .await
         .map_err(|e| internal(format!("join error: {e}")))?
         .map_err(serialize_error)

@@ -15,6 +15,8 @@ import type {
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
+  RenderTextLayerResponse,
+  WireTextLayer,
   VersionResponse,
 } from './types';
 
@@ -169,6 +171,10 @@ export class TauriWiacClient implements WiacClient {
 
   async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {
     return invoke<RenderTextResponse>('render_text', { request });
+  }
+
+  async renderTextLayer(layer: WireTextLayer): Promise<RenderTextLayerResponse> {
+    return invoke<RenderTextLayerResponse>('render_text_layer', { layer });
   }
 
   async computeHelixRadius(request: HelixRadiusRequest): Promise<HelixRadiusResponse> {

@@ -952,6 +952,12 @@ export interface components {
             op_id: number;
             outer: components["schemas"]["Point2"][];
         };
+        /** @description Live-preview response — the rendered TextLayer segments plus the cached single-line classification. The pipeline produces the same segments at Generate time; this endpoint lets the frontend show the text on the 2D canvas without round-tripping a full pipeline run. */
+        RenderTextLayerResponse: {
+            family_name?: string | null;
+            segments: components["schemas"]["Segment"][];
+            single_line: boolean;
+        };
         /** @description Request payload for the cross-transport `/text` endpoint. The frontend hands us TTF bytes (uploaded by the user or pulled from `frontend/public/fonts/`) plus a string + placement parameters; we return flattened [`Segment`]s and a single-line / outline classification the dialog uses to drive the engraving warning chip. */
         RenderTextRequest: {
             /**

@@ -10,6 +10,8 @@ import type {
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
+  RenderTextLayerResponse,
+  WireTextLayer,
   VersionResponse,
   WiacError,
 } from './types';
@@ -49,6 +51,13 @@ export interface WiacClient {
    * stage geometry before adding it to the project.
    */
   renderText(request: RenderTextRequest): Promise<RenderTextResponse>;
+  /**
+   * Live preview render for a full TextLayer (text + font + transform +
+   * MTEXT lines + alignment + spacing). Produces the same segments the
+   * pipeline pre-pass would emit at Generate time, so the 2D canvas can
+   * paint editable text without round-tripping a full pipeline run.
+   */
+  renderTextLayer(layer: WireTextLayer): Promise<RenderTextLayerResponse>;
   /**
    * Helix auto-fit preview — returns the largest inscribed-circle radius
    * for the given selection + tool diameter, or a fallback reason when no

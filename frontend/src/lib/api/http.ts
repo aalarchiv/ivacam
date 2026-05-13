@@ -10,6 +10,8 @@ import type {
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
+  RenderTextLayerResponse,
+  WireTextLayer,
   VersionResponse,
 } from './types';
 
@@ -80,6 +82,24 @@ export class HttpWiacClient implements WiacClient {
       throw new Error(`/text returned ${res.status}: ${JSON.stringify(detail)}`);
     }
     return (await res.json()) as RenderTextResponse;
+  }
+
+  async renderTextLayer(layer: WireTextLayer): Promise<RenderTextLayerResponse> {
+    const res = await fetch(`${this.base}/text/layer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(layer),
+    });
+    if (!res.ok) {
+      let detail: unknown;
+      try {
+        detail = await res.json();
+      } catch {
+        detail = await res.text();
+      }
+      throw new Error(`/text/layer returned ${res.status}: ${JSON.stringify(detail)}`);
+    }
+    return (await res.json()) as RenderTextLayerResponse;
   }
 
   async computeHelixRadius(request: HelixRadiusRequest): Promise<HelixRadiusResponse> {
@@ -340,6 +360,7 @@ class WasmClientLazy {
           c.generateStreaming ? c.generateStreaming(req, onEvent, signal) : c.generate(req),
         ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
+      renderTextLayer: (layer) => ensure().then((c) => c.renderTextLayer(layer)),
       computeHelixRadius: (req) => ensure().then((c) => c.computeHelixRadius(req)),
     };
   }
@@ -374,6 +395,7 @@ class TauriClientLazy {
           c.generateStreaming ? c.generateStreaming(req, onEvent, signal) : c.generate(req),
         ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
+      renderTextLayer: (layer) => ensure().then((c) => c.renderTextLayer(layer)),
       computeHelixRadius: (req) => ensure().then((c) => c.computeHelixRadius(req)),
     };
   }

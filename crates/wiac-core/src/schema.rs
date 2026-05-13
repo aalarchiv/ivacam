@@ -115,6 +115,7 @@ pub fn components_schemas() -> Value {
     insert::<crate::sim::timing::TimeEstimate>(&mut schemas, "TimeEstimate");
     insert::<crate::input::text::RenderTextRequest>(&mut schemas, "RenderTextRequest");
     insert::<crate::input::text::RenderTextResponse>(&mut schemas, "RenderTextResponse");
+    insert::<crate::input::text::RenderTextLayerResponse>(&mut schemas, "RenderTextLayerResponse");
     insert::<ErrorResponse>(&mut schemas, "Error");
     insert::<crate::errors::Error>(&mut schemas, "WiacError");
     insert::<crate::errors::ErrorKind>(&mut schemas, "WiacErrorKind");

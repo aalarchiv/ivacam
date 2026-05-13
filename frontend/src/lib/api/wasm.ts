@@ -12,6 +12,8 @@ import type {
   ImportResponse,
   RenderTextRequest,
   RenderTextResponse,
+  RenderTextLayerResponse,
+  WireTextLayer,
   VersionResponse,
 } from './types';
 
@@ -26,6 +28,7 @@ type WasmModule = {
     onEvent: (event: PipelineEvent) => void,
   ) => GenerateResponse | null;
   renderText: (request: RenderTextRequest) => RenderTextResponse;
+  renderTextLayer: (layer: WireTextLayer) => RenderTextLayerResponse;
   computeHelixRadius: (request: HelixRadiusRequest) => HelixRadiusResponse;
 };
 
@@ -114,6 +117,11 @@ export class WasmWiacClient implements WiacClient {
   async renderText(request: RenderTextRequest): Promise<RenderTextResponse> {
     const m = await loadModule();
     return m.renderText(request);
+  }
+
+  async renderTextLayer(layer: WireTextLayer): Promise<RenderTextLayerResponse> {
+    const m = await loadModule();
+    return m.renderTextLayer(layer);
   }
 
   async computeHelixRadius(request: HelixRadiusRequest): Promise<HelixRadiusResponse> {

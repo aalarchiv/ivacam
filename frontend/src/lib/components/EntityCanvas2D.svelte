@@ -10,6 +10,11 @@
   } from '../cam/tabs';
   import type { Segment } from '../api/types';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import {
+    previewSegmentsFor,
+    previewVersion,
+    requestPreview,
+  } from '../state/text_preview.svelte';
 
   interface Props {
     onShowHelp?: () => void;
@@ -78,10 +83,22 @@
     void project.regionsVisible;
     void project.fixtures;
     void project.selectedFixtureId;
+    void project.textLayers;
+    void project.selectedTextLayerId;
+    void previewVersion.v;
     void hoverIdx;
     void ghostTab;
     void boxSelect;
     draw();
+  });
+
+  // Keep the live-preview cache warm. Loops every text layer and asks
+  // for a render — the helper deduplicates by content hash and
+  // debounces, so this is cheap when nothing changed.
+  $effect(() => {
+    for (const layer of project.textLayers) {
+      requestPreview(layer);
+    }
   });
 
   /// Selected-op-driven tab placement mode (rt1.10). When the user
@@ -949,10 +966,54 @@
       drawSegment(ctx, seg, project2);
     }
 
+    // Live text-layer preview — paint each TextLayer's rendered segments
+    // on top of the imported geometry so the user sees their edits
+    // immediately. The cache is filled by requestPreview() in the
+    // top-of-file effect; if no render has resolved yet, the layer just
+    // hasn't appeared yet (the canvas redraws when previewVersion bumps).
+    if (project.textLayers.length > 0) {
+      drawTextPreview(ctx, project2, accent, hoverColor, haloColor);
+    }
+
     drawFixtures(ctx, project2);
     drawTabs(ctx, project2, scale);
     if (boxSelect && !boxSelect.armed) {
       drawBoxSelect(ctx, accent);
+    }
+  }
+
+  /// Render every TextLayer's cached preview segments. Each layer's
+  /// segments live on the synthetic layer `__text_<id>`; selection
+  /// state is the text-list's `selectedTextLayerId`. The active layer
+  /// gets a bright halo + accent stroke; idle layers render in the
+  /// muted assigned-other tint so they're visible but don't draw the
+  /// eye.
+  function drawTextPreview(
+    ctx: CanvasRenderingContext2D,
+    p: (x: number, y: number) => [number, number],
+    accent: string,
+    _hoverColor: string,
+    haloColor: string,
+  ) {
+    const activeColor = themeVar('--obj-assigned-active', '#39c75c');
+    const idleColor = themeVar('--obj-assigned-other', '#2a6f3b');
+    for (const layer of project.textLayers) {
+      const segs = previewSegmentsFor(layer.id);
+      if (!segs || segs.length === 0) continue;
+      const isActive = project.selectedTextLayerId === layer.id;
+      const baseWidth = isActive ? 1.8 : 1.4;
+      const haloAlpha = isActive ? 0.55 : 0.3;
+      for (const seg of segs) {
+        const prevAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = haloAlpha;
+        ctx.lineWidth = baseWidth + 2.5;
+        ctx.strokeStyle = haloColor;
+        drawSegment(ctx, seg, p);
+        ctx.globalAlpha = prevAlpha;
+        ctx.lineWidth = baseWidth;
+        ctx.strokeStyle = isActive ? accent : idleColor;
+        drawSegment(ctx, seg, p);
+      }
     }
   }
 

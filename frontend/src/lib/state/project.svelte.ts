@@ -572,6 +572,30 @@ class ProjectState {
     else next.add(id);
     this.selectedObjects = next;
   }
+  /// Bulk selection update — used by box-select and any other path
+  /// that needs to commit a set of object ids with FreeCAD-style
+  /// modifier semantics in one go.
+  ///   * 'replace' — drop the current selection and use `ids`
+  ///   * 'add'     — union into the current selection (Shift+...)
+  ///   * 'toggle'  — flip each id (Ctrl+... / Cmd+...)
+  selectObjects(ids: Iterable<number>, mode: 'replace' | 'add' | 'toggle') {
+    const incoming = [...ids].filter((id) => id > 0);
+    if (mode === 'replace') {
+      this.selectedObjects = new Set(incoming);
+      return;
+    }
+    const next = new Set(this.selectedObjects);
+    if (mode === 'add') {
+      for (const id of incoming) next.add(id);
+    } else {
+      // toggle
+      for (const id of incoming) {
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+      }
+    }
+    this.selectedObjects = next;
+  }
   clearSelection() {
     this.selectedObjects = new Set();
   }

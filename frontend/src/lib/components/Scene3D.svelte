@@ -449,7 +449,10 @@
   /// kicking the driver. The cheap bbox-box visual (`updateStock`)
   /// still updates instantly via its own effect.
   let simRebuildTimer: ReturnType<typeof setTimeout> | null = null;
-  const SIM_REBUILD_DEBOUNCE_MS = 250;
+  // 1 s lets the user finish typing a multi-digit stock value (e.g.
+  // 12.50) before the WASM heightfield re-bakes. Cheap visuals (the
+  // bbox box) still update every keystroke via `updateStock`.
+  const SIM_REBUILD_DEBOUNCE_MS = 1000;
 
   $effect(() => {
     if (!scene) return;

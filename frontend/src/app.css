@@ -44,6 +44,10 @@
   --tab-marker: #ffd23a;
   --shadow-modal: rgba(0, 0, 0, 0.55);
   --stock-edge: #888888;
+  /* 2D canvas tints for objects assigned to an operation. Active op =
+     bright; other ops = dim. Selected / hovered still override. */
+  --obj-assigned-active: #39c75c;
+  --obj-assigned-other: #2a6f3b;
 
   --sim-clean-bg: color-mix(in srgb, var(--success) 18%, transparent);
   --sim-clean-fg: var(--success);
@@ -89,6 +93,8 @@
   --tab-marker: #b58000;
   --shadow-modal: rgba(0, 0, 0, 0.18);
   --stock-edge: #777777;
+  --obj-assigned-active: #1c8a3a;
+  --obj-assigned-other: #6ba87f;
 }
 
 @media (prefers-color-scheme: light) {

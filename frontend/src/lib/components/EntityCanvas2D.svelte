@@ -80,6 +80,7 @@
     void project.selectedFixtureId;
     void hoverIdx;
     void ghostTab;
+    void boxSelect;
     draw();
   });
 
@@ -117,6 +118,44 @@
   const HIT_PIXEL_TOL = 8;
   let hoverIdx = $state<number | null>(null);
   let lastTransform: { scale: number; offX: number; offY: number } | null = null;
+
+  /// FreeCAD-style box-select state. Captured on pointerdown over
+  /// empty canvas; commits to a box drag once the cursor has moved
+  /// `BOX_DRAG_THRESHOLD` px (so a sloppy click on empty space still
+  /// just clears the selection).
+  let boxSelect = $state<{
+    startX: number;
+    startY: number;
+    curX: number;
+    curY: number;
+    mode: 'replace' | 'add' | 'toggle';
+    armed: boolean; // pointer is down but we haven't crossed the threshold yet
+  } | null>(null);
+  const BOX_DRAG_THRESHOLD = 4;
+
+  /// Inverted index: objectId → opIds that reference it via
+  /// `op.sourceObjects`. Drives the green / dim-green tinting on the
+  /// canvas and the "click an assigned object activates its op"
+  /// behaviour.
+  const objectToOps = $derived.by<Map<number, number[]>>(() => {
+    const out = new Map<number, number[]>();
+    for (const op of project.operations) {
+      const refs = op.sourceObjects;
+      if (!refs) continue;
+      for (const id of refs) {
+        if (id <= 0) continue;
+        const list = out.get(id);
+        if (list) list.push(op.id);
+        else out.set(id, [op.id]);
+      }
+    }
+    return out;
+  });
+  /// Object ids the currently-selected op references (highlighted
+  /// brighter than other-op assignments).
+  const activeOpObjects = $derived<Set<number>>(
+    selectedOp?.sourceObjects ? new Set(selectedOp.sourceObjects) : new Set<number>(),
+  );
 
   /// Uniform-grid spatial index for segment hit testing. Without it,
   /// pixelHit() ran an O(N) scan on every pointermove — fine for tiny
@@ -269,6 +308,21 @@
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    // Box-select drag: once the cursor crosses BOX_DRAG_THRESHOLD px
+    // from the arm point, commit to a box drag. While dragging,
+    // suppress hover hit-testing so the cursor stays a crosshair.
+    if (boxSelect) {
+      const dx = cx - boxSelect.startX;
+      const dy = cy - boxSelect.startY;
+      if (
+        !boxSelect.armed ||
+        Math.hypot(dx, dy) >= BOX_DRAG_THRESHOLD
+      ) {
+        boxSelect = { ...boxSelect, curX: cx, curY: cy, armed: false };
+        canvas.style.cursor = 'crosshair';
+        return;
+      }
+    }
     const idx = pixelHit(cx, cy);
     if (idx !== hoverIdx) hoverIdx = idx;
     // rt1.10: tab-placement mode — project cursor to the op's
@@ -290,6 +344,55 @@
     }
     const baseCursor = tabPlacementActive ? 'crosshair' : 'default';
     canvas.style.cursor = idx == null ? baseCursor : tabPlacementActive ? 'cell' : 'pointer';
+  }
+
+  function onPointerUp(e: PointerEvent) {
+    // Commit any pending box-select. A box-select that never crossed
+    // the threshold collapses to a plain "click on empty" — handled
+    // already in onPointerDown's empty-hit branch — so here we only
+    // act when we've committed to a box drag.
+    if (boxSelect && !boxSelect.armed) {
+      const { startX, startY, curX, curY, mode } = boxSelect;
+      const ids = objectsInBox(startX, startY, curX, curY);
+      project.selectObjects(ids, mode);
+    }
+    boxSelect = null;
+    canvas.style.cursor = tabPlacementActive ? 'crosshair' : 'default';
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* may already be released; harmless */
+    }
+  }
+
+  /// Return the set of object ids whose bbox intersects the screen
+  /// rectangle drawn between (x0,y0) and (x1,y1). Works in DATA
+  /// coordinates: we transform the rectangle once into data space and
+  /// AABB-test each object's bbox.
+  function objectsInBox(x0: number, y0: number, x1: number, y1: number): number[] {
+    const data = project.imported;
+    if (!data || !lastTransform) return [];
+    const { scale, offX, offY } = lastTransform;
+    const px2dx = (x: number) => (x - offX) / scale;
+    const px2dy = (y: number) => (offY - y) / scale;
+    const minX = Math.min(px2dx(x0), px2dx(x1));
+    const maxX = Math.max(px2dx(x0), px2dx(x1));
+    // Canvas Y is inverted relative to data Y, so the data-space min
+    // comes from the LOWER pixel y.
+    const minY = Math.min(px2dy(y0), px2dy(y1));
+    const maxY = Math.max(px2dy(y0), px2dy(y1));
+    const meta = data.object_meta ?? [];
+    const visibleLayers = project.visibleLayers;
+    const out: number[] = [];
+    for (const m of meta) {
+      // Layer-visibility filter so the user can't accidentally pick
+      // hidden chains.
+      if (!visibleLayers.has(m.layer)) continue;
+      const b = m.bbox;
+      if (b.max_x < minX || b.min_x > maxX || b.max_y < minY || b.min_y > maxY) continue;
+      out.push(m.id);
+    }
+    return out;
   }
   function onPointerLeave() {
     hoverIdx = null;
@@ -529,6 +632,13 @@
       ctxMenu = null;
       e.preventDefault();
     }
+    // Escape mid-drag cancels the box-select without changing the
+    // current selection — FreeCAD-style.
+    if (e.key === 'Escape' && boxSelect) {
+      boxSelect = null;
+      canvas.style.cursor = tabPlacementActive ? 'crosshair' : 'default';
+      e.preventDefault();
+    }
   }
 
   function onCtxDocClick(e: MouseEvent) {
@@ -609,18 +719,53 @@
     }
 
     const idx = pixelHit(cx, cy);
-    const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+    // FreeCAD-style modifier semantics:
+    //   * Shift+click → ADD to selection
+    //   * Ctrl/Cmd+click → TOGGLE in selection
+    //   * plain click → REPLACE selection (clear + select what's under
+    //     the cursor, or clear-all if nothing's there)
+    const mode: 'replace' | 'add' | 'toggle' = e.shiftKey
+      ? 'add'
+      : e.ctrlKey || e.metaKey
+        ? 'toggle'
+        : 'replace';
     if (idx == null) {
-      if (!additive) {
+      // Clicked empty space — arm a potential box-select. If the
+      // pointer comes back up without ever moving past
+      // BOX_DRAG_THRESHOLD, this collapses to a "click on empty"
+      // which clears the selection for `replace` mode and is a
+      // no-op for `add` / `toggle` (so the user can't accidentally
+      // drop their selection mid-modifier).
+      if (mode === 'replace') {
         project.clearSelection();
         project.selectFixture(null);
+      }
+      boxSelect = { startX: cx, startY: cy, curX: cx, curY: cy, mode, armed: true };
+      // Capture so pointermove keeps firing if the user drags past the
+      // canvas edge — otherwise the box-select would freeze at the
+      // last point inside the canvas.
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* not all browsers / older versions; harmless */
       }
       return;
     }
     // Map segment index → its 1-based object id from the chaining pass.
     const objId = project.imported?.objects?.[idx] ?? 0;
     if (objId === 0) return;
-    project.toggleObject(objId, additive);
+    project.selectObjects([objId], mode);
+    // Clicking an object that's already wired into an operation makes
+    // that op the active one — surfaces the right edit form on the
+    // right-hand panel without a separate trip to the operations list.
+    // Only fires for plain clicks; modifier-clicks are about building
+    // selections, not switching the active op.
+    if (mode === 'replace') {
+      const ops = objectToOps.get(objId);
+      if (ops && ops.length > 0 && project.selectedOpId !== ops[0]) {
+        project.selectedOpId = ops[0];
+      }
+    }
   }
 
   /// Returns the id of the fixture under the cursor, or null. Hit-test
@@ -754,6 +899,8 @@
 
     const accent = themeVar('--accent', '#2d6cdf');
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
+    const activeAssignColor = themeVar('--obj-assigned-active', '#39c75c');
+    const otherAssignColor = themeVar('--obj-assigned-other', '#2a6f3b');
     const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
@@ -761,13 +908,50 @@
       const objId = data.objects?.[i] ?? 0;
       const selected = objId !== 0 && project.selectedObjects.has(objId);
       const hovered = objId !== 0 && objId === hoverObj;
-      ctx.lineWidth = selected ? 2.4 : hovered ? 1.8 : 1.25;
-      ctx.strokeStyle = selected ? accent : hovered ? hoverColor : colorFor(seg.color);
+      // Assignment-tint precedence (top wins):
+      //   selected → accent
+      //   hovered → hoverColor
+      //   in active op → bright green
+      //   in any other op → dim green
+      //   else → DXF/SVG layer color
+      const inActiveOp = objId !== 0 && activeOpObjects.has(objId);
+      const inAnyOp = !inActiveOp && objId !== 0 && objectToOps.has(objId);
+      ctx.lineWidth = selected ? 2.4 : hovered ? 1.8 : inActiveOp ? 1.6 : 1.25;
+      ctx.strokeStyle = selected
+        ? accent
+        : hovered
+          ? hoverColor
+          : inActiveOp
+            ? activeAssignColor
+            : inAnyOp
+              ? otherAssignColor
+              : colorFor(seg.color);
       drawSegment(ctx, seg, project2);
     }
 
     drawFixtures(ctx, project2);
     drawTabs(ctx, project2, scale);
+    if (boxSelect && !boxSelect.armed) {
+      drawBoxSelect(ctx, accent);
+    }
+  }
+
+  /// Translucent rectangle for the active box-select drag (canvas
+  /// coords). Drawn last so it sits above everything else.
+  function drawBoxSelect(ctx: CanvasRenderingContext2D, accent: string) {
+    if (!boxSelect) return;
+    const x = Math.min(boxSelect.startX, boxSelect.curX);
+    const y = Math.min(boxSelect.startY, boxSelect.curY);
+    const w = Math.abs(boxSelect.curX - boxSelect.startX);
+    const h = Math.abs(boxSelect.curY - boxSelect.startY);
+    ctx.save();
+    ctx.fillStyle = `${accent}22`;
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
   }
 
   /// Paint each fixture as a translucent filled outline in its declared
@@ -1185,6 +1369,8 @@
     onpointermove={onPointerMove}
     onpointerleave={onPointerLeave}
     onpointerdown={onPointerDown}
+    onpointerup={onPointerUp}
+    onpointercancel={onPointerUp}
     oncontextmenu={onContextMenu}
   ></canvas>
   {#if project.selectedEntities.size > 0}

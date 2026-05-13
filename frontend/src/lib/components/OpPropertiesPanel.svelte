@@ -31,7 +31,7 @@
   const op = $derived<OpEntry | null>(
     project.selectedOpId == null
       ? null
-      : project.operations.find((o) => o.id === project.selectedOpId) ?? null,
+      : (project.operations.find((o) => o.id === project.selectedOpId) ?? null),
   );
 
   /// rt1.10 / zed: count tab placements whose objectId is no longer
@@ -45,8 +45,7 @@
     if (!imp) return 0;
     const liveIds = new Set<number>(imp.objects ?? []);
     const so = op.sourceObjects;
-    const allowed = (id: number) =>
-      liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
+    const allowed = (id: number) => liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
     return placements.filter((p) => !allowed(p.objectId)).length;
   }
 
@@ -57,8 +56,7 @@
     if (!imp) return;
     const liveIds = new Set<number>(imp.objects ?? []);
     const so = op.sourceObjects;
-    const allowed = (id: number) =>
-      liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
+    const allowed = (id: number) => liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
     const next = (op.tabPlacements ?? []).filter((p) => allowed(p.objectId));
     project.updateOperation(op.id, { tabPlacements: next });
   }
@@ -66,9 +64,7 @@
   /// Resolve the assigned tool's defaultStep for the current op so the
   /// Step / pass input can fall back to it. null when no assignment.
   const toolDefaultStep = $derived<number | null>(
-    op == null
-      ? null
-      : project.tools.find((t) => t.id === op.toolId)?.defaultStep ?? null,
+    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.defaultStep ?? null),
   );
   const stepInheriting = $derived(op != null && (op.step === null || op.step === undefined));
   const stepMissing = $derived(
@@ -100,20 +96,15 @@
   let helixPreviewLoading = $state(false);
 
   const helixToolDiameter = $derived<number | null>(
-    op == null ? null : project.tools.find((t) => t.id === op.toolId)?.diameter ?? null,
+    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.diameter ?? null),
   );
   const helixAutoActive = $derived(
-    op != null
-      && op.plunge != null
-      && op.plunge.kind === 'helix'
-      && op.plunge.radius_mm === null,
+    op != null && op.plunge != null && op.plunge.kind === 'helix' && op.plunge.radius_mm === null,
   );
   const helixHasGeometry = $derived(
     project.imported != null && (project.imported.segments?.length ?? 0) > 0,
   );
-  const helixHasSelection = $derived(
-    op != null && (op.sourceObjects?.length ?? 0) > 0,
-  );
+  const helixHasSelection = $derived(op != null && (op.sourceObjects?.length ?? 0) > 0);
 
   $effect(() => {
     if (!helixAutoActive || !helixHasGeometry || !helixHasSelection || helixToolDiameter == null) {
@@ -162,9 +153,7 @@
   {/if}
 
   {#if !op}
-    <p class="empty" class:embedded-empty={embedded}>
-      Select an operation in the list to edit it.
-    </p>
+    <p class="empty" class:embedded-empty={embedded}>Select an operation in the list to edit it.</p>
   {:else}
     <label class="row">
       <span>Name</span>
@@ -180,7 +169,8 @@
       <div class="tool-cell">
         <select
           value={op.toolId}
-          onchange={(e) => patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
+          onchange={(e) =>
+            patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
           {#each project.tools as t (t.id)}
             <option value={t.id}>#{t.id} {t.name} ({t.diameter}mm)</option>
@@ -194,8 +184,8 @@
           onclick={(e) => {
             e.stopPropagation();
             project.toolsDialogFocusId = op.toolId;
-          }}
-        >⚙</button>
+          }}>⚙</button
+        >
       </div>
     </label>
 
@@ -234,8 +224,8 @@
           value={op.sourceObjects && op.sourceObjects.length > 0
             ? '_objects_'
             : op.sourceLayers === null
-            ? '_all_'
-            : '_layer_'}
+              ? '_all_'
+              : '_layer_'}
           onchange={(e) => {
             const v = (e.currentTarget as HTMLSelectElement).value;
             if (v === '_all_') {
@@ -246,8 +236,7 @@
               if (op && op.sourceLayers === null) patch('sourceLayers', []);
             } else {
               patch('sourceLayers', null);
-              if (op && (op.sourceObjects?.length ?? 0) === 0)
-                patch('sourceObjects', []);
+              if (op && (op.sourceObjects?.length ?? 0) === 0) patch('sourceObjects', []);
             }
           }}
         >
@@ -287,7 +276,9 @@
             <option value="auto" title={$_('op.help.combine.auto')}>auto (containment)</option>
             <option value="union" title={$_('op.help.combine.union')}>union</option>
             <option value="difference" title={$_('op.help.combine.difference')}>difference</option>
-            <option value="intersection" title={$_('op.help.combine.intersection')}>intersection</option>
+            <option value="intersection" title={$_('op.help.combine.intersection')}
+              >intersection</option
+            >
             <option value="xor" title={$_('op.help.combine.xor')}>xor</option>
             <option value="none" title={$_('op.help.combine.none')}>none (per object)</option>
           </select>
@@ -308,9 +299,10 @@
           patch('sourceLayers', null);
           patch('sourceObjects', [...project.selectedObjects]);
         }}
-      >{project.selectedObjects.size === 0
+        >{project.selectedObjects.size === 0
           ? 'Set sources from selection'
-          : `Set sources from ${project.selectedObjects.size} selected`}</button>
+          : `Set sources from ${project.selectedObjects.size} selected`}</button
+      >
     </fieldset>
 
     <fieldset>
@@ -319,8 +311,11 @@
         <span>Final depth</span>
         <div class="num-cell">
           <input
-            type="number" step="0.1" value={op.depth}
-            onchange={(e) => patch('depth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+            type="number"
+            step="0.1"
+            value={op.depth}
+            onchange={(e) =>
+              patch('depth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
           />
           <span class="unit">mm</span>
         </div>
@@ -329,8 +324,11 @@
         <span>Start depth</span>
         <div class="num-cell">
           <input
-            type="number" step="0.1" value={op.startDepth}
-            onchange={(e) => patch('startDepth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+            type="number"
+            step="0.1"
+            value={op.startDepth}
+            onchange={(e) =>
+              patch('startDepth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
           />
           <span class="unit">mm</span>
         </div>
@@ -363,8 +361,8 @@
               type="button"
               class="reset-link"
               title="Clear the override and inherit the tool's default Z step."
-              onclick={() => patch('step', null)}
-            >reset to inherit</button>
+              onclick={() => patch('step', null)}>reset to inherit</button
+            >
           {/if}
         </div>
       </label>
@@ -459,8 +457,8 @@
                 type="button"
                 class="reset-link"
                 title="Clear approach point (auto-pick)"
-                onclick={() => patch('approachPoint', undefined)}
-              >clear</button>
+                onclick={() => patch('approachPoint', undefined)}>clear</button
+              >
             {/if}
           </div>
         </div>
@@ -511,25 +509,38 @@
         </div>
       </label>
       {#if op.kind === 'profile' || op.kind === 'pocket'}
-        <label class="row" title={$_('op.help.cut_direction.' + (op.cutDirection ?? 'conventional'))}>
+        <label
+          class="row"
+          title={$_('op.help.cut_direction.' + (op.cutDirection ?? 'conventional'))}
+        >
           <span>Direction</span>
           <select
             value={op.cutDirection ?? 'conventional'}
             onchange={(e) =>
               patch('cutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
           >
-            <option value="conventional" title={$_('op.help.cut_direction.conventional')}>conventional</option>
+            <option value="conventional" title={$_('op.help.cut_direction.conventional')}
+              >conventional</option
+            >
             <option value="climb" title={$_('op.help.cut_direction.climb')}>climb</option>
           </select>
         </label>
-        <label class="row" title={$_('op.help.cut_direction.' + (op.finishCutDirection ?? 'conventional'))}>
+        <label
+          class="row"
+          title={$_('op.help.cut_direction.' + (op.finishCutDirection ?? 'conventional'))}
+        >
           <span>Finish dir</span>
           <select
             value={op.finishCutDirection ?? 'conventional'}
             onchange={(e) =>
-              patch('finishCutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
+              patch(
+                'finishCutDirection',
+                (e.currentTarget as HTMLSelectElement).value as CutDirection,
+              )}
           >
-            <option value="conventional" title={$_('op.help.cut_direction.conventional')}>conventional</option>
+            <option value="conventional" title={$_('op.help.cut_direction.conventional')}
+              >conventional</option
+            >
             <option value="climb" title={$_('op.help.cut_direction.climb')}>climb</option>
           </select>
         </label>
@@ -551,7 +562,8 @@
                 patch('plunge', {
                   kind: 'helix',
                   angle_deg: op.plunge && op.plunge.kind === 'helix' ? op.plunge.angle_deg : 3,
-                  radius_mm: op.plunge && op.plunge.kind === 'helix' ? op.plunge.radius_mm : defaultRadius,
+                  radius_mm:
+                    op.plunge && op.plunge.kind === 'helix' ? op.plunge.radius_mm : defaultRadius,
                 });
               } else {
                 patch('plunge', { kind: 'direct' });
@@ -564,7 +576,10 @@
           </select>
         </label>
         {#if op.plunge && op.plunge.kind === 'ramp'}
-          <label class="row" title="Ramp angle in degrees. 1°–5° is gentle, 10°+ is aggressive. The ramp's horizontal length is step / tan(angle).">
+          <label
+            class="row"
+            title="Ramp angle in degrees. 1°–5° is gentle, 10°+ is aggressive. The ramp's horizontal length is step / tan(angle)."
+          >
             <span>Ramp angle</span>
             <div class="num-cell">
               <input
@@ -585,7 +600,10 @@
         {:else if op.plunge && op.plunge.kind === 'helix'}
           <details class="subsection" open>
             <summary>{$_('op.section.helix')}</summary>
-            <label class="row" title="Helix descent angle in degrees. 1°–5° is gentle, 10°+ is aggressive. Each revolution drops Z by 2π·radius·tan(angle).">
+            <label
+              class="row"
+              title="Helix descent angle in degrees. 1°–5° is gentle, 10°+ is aggressive. Each revolution drops Z by 2π·radius·tan(angle)."
+            >
               <span>Helix angle</span>
               <div class="num-cell">
                 <input
@@ -607,7 +625,10 @@
                 <span class="unit">°</span>
               </div>
             </label>
-            <label class="row" title="Auto-fit the helix circle to the largest inscribed circle inside the pocket boundary. Falls back to ramp when no helix circle fits.">
+            <label
+              class="row"
+              title="Auto-fit the helix circle to the largest inscribed circle inside the pocket boundary. Falls back to ramp when no helix circle fits."
+            >
               <span>Auto-fit helix</span>
               <input
                 type="checkbox"
@@ -625,10 +646,15 @@
               />
             </label>
             {#if op.plunge.radius_mm === null}
-              <div class="row" title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at gcode time.">
+              <div
+                class="row"
+                title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at gcode time."
+              >
                 <span>Helix radius</span>
                 {#if helixPreview?.radius_mm != null}
-                  <em class="placeholder">Auto (detected: {helixPreview.radius_mm.toFixed(1)} mm)</em>
+                  <em class="placeholder"
+                    >Auto (detected: {helixPreview.radius_mm.toFixed(1)} mm)</em
+                  >
                 {:else if helixPreview && helixPreview.radius_mm == null}
                   <em class="placeholder"
                     >Auto (no fit — will Ramp instead{helixPreview.fallback_reason
@@ -642,7 +668,10 @@
                 {/if}
               </div>
             {:else}
-              <label class="row" title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral.">
+              <label
+                class="row"
+                title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral."
+              >
                 <span>Helix radius</span>
                 <div class="num-cell">
                   <input
@@ -692,8 +721,8 @@
                       op.tabMode?.kind === 'auto'
                         ? op.tabMode.count
                         : op.tabMode?.kind === 'mixed'
-                        ? op.tabMode.auto_count
-                        : 4;
+                          ? op.tabMode.auto_count
+                          : 4;
                     patch('tabMode', { kind: 'auto', count });
                     patch('tabsActive', true);
                   } else if (mk === 'manual') {
@@ -704,18 +733,21 @@
                       op.tabMode?.kind === 'auto'
                         ? op.tabMode.count
                         : op.tabMode?.kind === 'mixed'
-                        ? op.tabMode.auto_count
-                        : 4;
+                          ? op.tabMode.auto_count
+                          : 4;
                     patch('tabMode', { kind: 'mixed', auto_count });
                     patch('tabsActive', true);
                   }
-                }}
-              >{mk}</button>
+                }}>{mk}</button
+              >
             {/each}
           </div>
         </div>
         {#if op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed'}
-          <label class="row" title="Number of tabs to auto-place evenly around each closed contour.">
+          <label
+            class="row"
+            title="Number of tabs to auto-place evenly around each closed contour."
+          >
             <span>Count</span>
             <div class="num-cell">
               <input
@@ -724,7 +756,10 @@
                 step="1"
                 value={op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count}
                 onchange={(e) => {
-                  const n = Math.max(1, parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1);
+                  const n = Math.max(
+                    1,
+                    parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1,
+                  );
                   if (op.tabMode?.kind === 'auto') patch('tabMode', { kind: 'auto', count: n });
                   else if (op.tabMode?.kind === 'mixed')
                     patch('tabMode', { kind: 'mixed', auto_count: n });
@@ -734,7 +769,10 @@
           </label>
         {/if}
         {#if op.tabMode?.kind === 'manual' || op.tabMode?.kind === 'mixed'}
-          <p class="hint" title="Click on a closed contour in the 2D canvas to place a tab. Click on an existing tab to remove it.">
+          <p
+            class="hint"
+            title="Click on a closed contour in the 2D canvas to place a tab. Click on an existing tab to remove it."
+          >
             Click the 2D canvas to add or remove tabs.
             {#if op.tabPlacements && op.tabPlacements.length > 0}
               ({op.tabPlacements.length} placed)
@@ -742,13 +780,14 @@
           </p>
           {@const disconnected = disconnectedTabCount(op)}
           {#if disconnected > 0}
-            <p class="hint warn" title="These tabs reference objects that are no longer in this op's source set (either removed from the import or no longer selected). The pipeline silently drops them; clear them out to keep the data tidy.">
+            <p
+              class="hint warn"
+              title="These tabs reference objects that are no longer in this op's source set (either removed from the import or no longer selected). The pipeline silently drops them; clear them out to keep the data tidy."
+            >
               <strong>{disconnected}</strong> tab{disconnected === 1 ? '' : 's'} disconnected
-              <button
-                type="button"
-                class="reset-link"
-                onclick={() => clearDisconnectedTabs(op)}
-              >clear</button>
+              <button type="button" class="reset-link" onclick={() => clearDisconnectedTabs(op)}
+                >clear</button
+              >
             </p>
           {/if}
         {/if}
@@ -817,8 +856,7 @@
                   value={op.tabRampAngleDeg ?? 30}
                   onchange={(e) => {
                     const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                    if (!isNaN(v))
-                      patch('tabRampAngleDeg', Math.max(1, Math.min(89, v)));
+                    if (!isNaN(v)) patch('tabRampAngleDeg', Math.max(1, Math.min(89, v)));
                   }}
                 />
                 <span class="unit">°</span>
@@ -836,7 +874,8 @@
           <span>Tool offset</span>
           <select
             value={op.offset}
-            onchange={(e) => patch('offset', (e.currentTarget as HTMLSelectElement).value as ProfileOffset)}
+            onchange={(e) =>
+              patch('offset', (e.currentTarget as HTMLSelectElement).value as ProfileOffset)}
           >
             <option value="outside">outside</option>
             <option value="inside">inside</option>
@@ -855,7 +894,10 @@
           <select
             value={op.leadInKind ?? 'off'}
             onchange={(e) =>
-              patch('leadInKind', (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc')}
+              patch(
+                'leadInKind',
+                (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc',
+              )}
           >
             <option value="off">off</option>
             <option value="straight">straight</option>
@@ -893,7 +935,10 @@
           <select
             value={op.leadOutKind ?? 'off'}
             onchange={(e) =>
-              patch('leadOutKind', (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc')}
+              patch(
+                'leadOutKind',
+                (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc',
+              )}
           >
             <option value="off">off</option>
             <option value="straight">straight</option>
@@ -930,10 +975,9 @@
         <fieldset>
           <legend>Pocket Outside</legend>
           <p class="hint">
-            Convert this Pocket into a Pocket Outside operation: the
-            pipeline auto-derives a frame around the selection at
-            generate time and carves the area BETWEEN the frame and
-            the selection.
+            Convert this Pocket into a Pocket Outside operation: the pipeline auto-derives a frame
+            around the selection at generate time and carves the area BETWEEN the frame and the
+            selection.
           </p>
           <button
             type="button"
@@ -944,8 +988,8 @@
               patch('frameShape', 'rectangle');
               patch('framePaddingMm', 3 * diameter);
               patch('sourceCombine', 'difference');
-            }}
-          >Convert to Pocket Outside →</button>
+            }}>Convert to Pocket Outside →</button
+          >
         </fieldset>
       {/if}
       {#if op.frameShape != null}
@@ -954,7 +998,10 @@
           <legend>Frame</legend>
           <details class="subsection" open>
             <summary>{$_('op.section.frame')}</summary>
-            <label class="row" title="Shape of the synthetic frame the pipeline derives from your selection at generate time.">
+            <label
+              class="row"
+              title="Shape of the synthetic frame the pipeline derives from your selection at generate time."
+            >
               <span>Shape</span>
               <select
                 value={op.frameShape}
@@ -965,7 +1012,10 @@
                 <option value="rounded_rectangle">rounded rectangle</option>
               </select>
             </label>
-            <label class="row" title="Padding (mm) added on every side of the selection bbox to size the frame. Default is 3 × tool diameter; once you type a value it stays manual.">
+            <label
+              class="row"
+              title="Padding (mm) added on every side of the selection bbox to size the frame. Default is 3 × tool diameter; once you type a value it stays manual."
+            >
               <span>Padding</span>
               <div class="num-cell">
                 <input
@@ -982,7 +1032,10 @@
               </div>
             </label>
             {#if op.frameShape === 'rounded_rectangle'}
-              <label class="row" title="Corner radius (mm) for the rounded rectangle. Empty = same as padding.">
+              <label
+                class="row"
+                title="Corner radius (mm) for the rounded rectangle. Empty = same as padding."
+              >
                 <span>Corner radius</span>
                 <div class="num-cell">
                   <input
@@ -1032,19 +1085,37 @@
         {#if op.pocketStrategy === 'halfpipe'}
           <details class="subsection" open>
             <summary>Halfpipe</summary>
-            <p class="hint" title="Halfpipe walks the slot's medial axis at varying Z so the cut floor matches the chosen profile. Tool kind: ball-nose for circular_arc, V-bit for v_bottom.">
+            <p
+              class="hint"
+              title="Halfpipe walks the slot's medial axis at varying Z so the cut floor matches the chosen profile. Tool kind: ball-nose for circular_arc, V-bit for v_bottom."
+            >
               Slot floor profile.
             </p>
-            <label class="row" title="Pipe profile: circular_arc gives a ball-bottom slot; v_bottom matches V-Carve.">
+            <label
+              class="row"
+              title="Pipe profile: circular_arc gives a ball-bottom slot; v_bottom matches V-Carve."
+            >
               <span>Profile</span>
               <select
                 value={op.halfpipeProfile?.kind ?? 'circular_arc'}
                 onchange={(e) => {
                   const v = (e.currentTarget as HTMLSelectElement).value;
                   if (v === 'circular_arc') {
-                    patch('halfpipeProfile', { kind: 'circular_arc', radius_mm: op.halfpipeProfile?.kind === 'circular_arc' ? op.halfpipeProfile.radius_mm : 5 });
+                    patch('halfpipeProfile', {
+                      kind: 'circular_arc',
+                      radius_mm:
+                        op.halfpipeProfile?.kind === 'circular_arc'
+                          ? op.halfpipeProfile.radius_mm
+                          : 5,
+                    });
                   } else if (v === 'v_bottom') {
-                    patch('halfpipeProfile', { kind: 'v_bottom', included_angle_deg: op.halfpipeProfile?.kind === 'v_bottom' ? op.halfpipeProfile.included_angle_deg : 60 });
+                    patch('halfpipeProfile', {
+                      kind: 'v_bottom',
+                      included_angle_deg:
+                        op.halfpipeProfile?.kind === 'v_bottom'
+                          ? op.halfpipeProfile.included_angle_deg
+                          : 60,
+                    });
                   }
                 }}
               >
@@ -1053,7 +1124,10 @@
               </select>
             </label>
             {#if op.halfpipeProfile?.kind === 'circular_arc'}
-              <label class="row" title="Pipe radius in mm. Match this to the ball-nose cutter's radius for a true half-pipe.">
+              <label
+                class="row"
+                title="Pipe radius in mm. Match this to the ball-nose cutter's radius for a true half-pipe."
+              >
                 <span>Radius</span>
                 <div class="num-cell">
                   <input
@@ -1063,7 +1137,8 @@
                     value={op.halfpipeProfile.radius_mm}
                     onchange={(e) => {
                       const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                      if (!isNaN(v) && v > 0) patch('halfpipeProfile', { kind: 'circular_arc', radius_mm: v });
+                      if (!isNaN(v) && v > 0)
+                        patch('halfpipeProfile', { kind: 'circular_arc', radius_mm: v });
                     }}
                   />
                   <span class="unit">mm</span>
@@ -1071,7 +1146,10 @@
               </label>
             {/if}
             {#if op.halfpipeProfile?.kind === 'v_bottom'}
-              <label class="row" title="V-bit included angle in degrees. Same semantics as the V-Carve tip angle.">
+              <label
+                class="row"
+                title="V-bit included angle in degrees. Same semantics as the V-Carve tip angle."
+              >
                 <span>Included angle</span>
                 <div class="num-cell">
                   <input
@@ -1082,7 +1160,8 @@
                     value={op.halfpipeProfile.included_angle_deg}
                     onchange={(e) => {
                       const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                      if (!isNaN(v) && v > 0) patch('halfpipeProfile', { kind: 'v_bottom', included_angle_deg: v });
+                      if (!isNaN(v) && v > 0)
+                        patch('halfpipeProfile', { kind: 'v_bottom', included_angle_deg: v });
                     }}
                   />
                   <span class="unit">°</span>
@@ -1165,8 +1244,7 @@
                 value={op.xyOverlap ?? 0.5}
                 onchange={(e) => {
                   const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                  if (!isNaN(v))
-                    patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
+                  if (!isNaN(v)) patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
                 }}
               />
               <span class="unit" title="Unitless fraction between 0 and 1.">fraction</span>
@@ -1191,9 +1269,7 @@
               const cur = op.drillCycle ?? ({ kind: 'simple', dwell_sec: 0 } as DrillCycle);
               const dwell = cur.dwell_sec ?? 0;
               const step =
-                cur.kind === 'peck' || cur.kind === 'chip_break'
-                  ? cur.peck_step_mm
-                  : 1.0;
+                cur.kind === 'peck' || cur.kind === 'chip_break' ? cur.peck_step_mm : 1.0;
               if (v === 'simple') {
                 patch('drillCycle', { kind: 'simple', dwell_sec: dwell } as DrillCycle);
               } else if (v === 'peck') {
@@ -1302,7 +1378,10 @@
     {#if op.kind === 'profile' || op.kind === 'pocket' || op.kind === 'engrave' || op.kind === 'drag_knife'}
       <fieldset>
         <legend>Feeds (overrides)</legend>
-        <label class="row" title="Override the tool's feed rate (mm/min) for this operation only. Leave empty to use the tool default.">
+        <label
+          class="row"
+          title="Override the tool's feed rate (mm/min) for this operation only. Leave empty to use the tool default."
+        >
           <span>Feed rate</span>
           <div class="num-cell">
             <input
@@ -1322,12 +1401,15 @@
                 type="button"
                 class="reset-link"
                 onclick={() => patch('feedRateOverride', undefined)}
-                title="Clear override and inherit from the tool's feed rate."
-              >reset</button>
+                title="Clear override and inherit from the tool's feed rate.">reset</button
+              >
             {/if}
           </div>
         </label>
-        <label class="row" title="Override the tool's plunge rate (mm/min) for Z descents in this operation. Leave empty to use the tool default.">
+        <label
+          class="row"
+          title="Override the tool's plunge rate (mm/min) for Z descents in this operation. Leave empty to use the tool default."
+        >
           <span>Plunge rate</span>
           <div class="num-cell">
             <input
@@ -1347,12 +1429,15 @@
                 type="button"
                 class="reset-link"
                 onclick={() => patch('plungeRateOverride', undefined)}
-                title="Clear override and inherit from the tool's plunge rate."
-              >reset</button>
+                title="Clear override and inherit from the tool's plunge rate.">reset</button
+              >
             {/if}
           </div>
         </label>
-        <label class="row" title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns.">
+        <label
+          class="row"
+          title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns."
+        >
           <span>Corner slow</span>
           <div class="num-cell">
             <input
@@ -1377,7 +1462,10 @@
       <fieldset>
         <legend>V-Carve</legend>
         {#if opTool && opTool.kind !== 'v_bit'}
-          <p class="warn-chip" title="V-Carve assumes a V-bit cone — pick a V-bit in the tool library or the carve depth math won't match the actual cutter.">
+          <p
+            class="warn-chip"
+            title="V-Carve assumes a V-bit cone — pick a V-bit in the tool library or the carve depth math won't match the actual cutter."
+          >
             Tool kind mismatch — V-Carve needs a V-bit.
           </p>
         {/if}
@@ -1408,11 +1496,7 @@
             title="Planned for a future release: re-cut only the points whose first pass fell short of the geometric target depth. The control is disabled until the refinement pass ships — the flag is wire-only today, never inspected by the V-Carve emitter."
           >
             <span>Refine pass</span>
-            <input
-              type="checkbox"
-              checked={false}
-              disabled
-            />
+            <input type="checkbox" checked={false} disabled />
             <span class="hint" style="margin-left:0.5rem">not yet implemented</span>
           </label>
         </details>
@@ -1424,7 +1508,10 @@
       <fieldset>
         <legend>Chamfer</legend>
         {#if opTool && opTool.kind !== 'v_bit'}
-          <p class="warn-chip" title="Chamfer assumes a V-bit cone; flat / ball tools won't produce a true bevel. Pick a V-bit in the tool library.">
+          <p
+            class="warn-chip"
+            title="Chamfer assumes a V-bit cone; flat / ball tools won't produce a true bevel. Pick a V-bit in the tool library."
+          >
             Tool kind mismatch — Chamfer needs a V-bit.
           </p>
         {/if}
@@ -1456,7 +1543,8 @@
           <input
             type="checkbox"
             checked={op.chamferFinishPass ?? false}
-            onchange={(e) => patch('chamferFinishPass', (e.currentTarget as HTMLInputElement).checked)}
+            onchange={(e) =>
+              patch('chamferFinishPass', (e.currentTarget as HTMLInputElement).checked)}
           />
         </label>
       </fieldset>
@@ -1465,7 +1553,10 @@
     {#if op.kind === 'thread'}
       <fieldset>
         <legend>Thread</legend>
-        <p class="hint" title="Source must be a closed circle (drilled hole or stud diameter). The cutter walks a helix at one pitch of Z descent per revolution between Start depth and Depth.">
+        <p
+          class="hint"
+          title="Source must be a closed circle (drilled hole or stud diameter). The cutter walks a helix at one pitch of Z descent per revolution between Start depth and Depth."
+        >
           Thread requires a closed circle as the source.
         </p>
         <label
@@ -1520,8 +1611,8 @@
 
     {#if op.kind === 'helix'}
       <p class="empty">
-        Helical entry isn't supported as a standalone operation yet. For
-        helical plunge into a pocket, use a Pocket op and set
+        Helical entry isn't supported as a standalone operation yet. For helical plunge into a
+        pocket, use a Pocket op and set
         <strong>Plunge → Helix</strong> in the Cut section.
       </p>
     {/if}
@@ -1529,12 +1620,14 @@
     <fieldset>
       <legend>Pattern (repeat this op)</legend>
       <p class="hint">
-        Run this operation once per pattern instance with the source
-        geometry translated or rotated. The original geometry stays at
-        the (0, 0) / 0° instance — single-count patterns are equivalent
-        to no pattern.
+        Run this operation once per pattern instance with the source geometry translated or rotated.
+        The original geometry stays at the (0, 0) / 0° instance — single-count patterns are
+        equivalent to no pattern.
       </p>
-      <label class="row" title="Pattern shape — Linear array, rectangular Grid, or Polar (rotational) array.">
+      <label
+        class="row"
+        title="Pattern shape — Linear array, rectangular Grid, or Polar (rotational) array."
+      >
         <span>Pattern</span>
         <select
           value={op.pattern?.kind ?? 'none'}
@@ -1565,7 +1658,10 @@
       </label>
       {#if op.pattern?.kind === 'linear'}
         {@const lin = op.pattern}
-        <label class="row" title="Total number of instances along the array, including the original at offset (0, 0).">
+        <label
+          class="row"
+          title="Total number of instances along the array, including the original at offset (0, 0)."
+        >
           <span>Count</span>
           <input
             type="number"
@@ -1711,7 +1807,10 @@
             <span class="unit">mm</span>
           </div>
         </label>
-        <label class="row" title="Angle between consecutive instances (degrees). 360 / count for a full revolution.">
+        <label
+          class="row"
+          title="Angle between consecutive instances (degrees). 360 / count for a full revolution."
+        >
           <span>Step</span>
           <div class="num-cell">
             <input

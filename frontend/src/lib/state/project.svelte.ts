@@ -309,7 +309,6 @@ class ProjectState {
   /// the dialog on close. Per-session view state, not undoable.
   toolsDialogFocusId = $state<number | null>(null);
 
-
   constructor() {
     this.history.subscribe(() => {
       this.historyVersion = this.history.version;
@@ -332,7 +331,10 @@ class ProjectState {
       const restored = saved.visible_layers.filter((n) => valid.has(n));
       if (restored.length > 0) this.visibleLayers = new Set(restored);
     }
-    if (saved.selected_op_id != null && this.operations.some((o) => o.id === saved.selected_op_id)) {
+    if (
+      saved.selected_op_id != null &&
+      this.operations.some((o) => o.id === saved.selected_op_id)
+    ) {
       this.selectedOpId = saved.selected_op_id;
     }
     if (typeof saved.playhead === 'number') {
@@ -423,15 +425,8 @@ class ProjectState {
   /// the parameter-space distance under which a click on an existing
   /// nearby tab removes it (Estlcam-style toggle). Single undoable
   /// history entry per click.
-  toggleTabPlacement(
-    opId: number,
-    placement: { objectId: number; t: number },
-    toleranceT: number,
-  ) {
-    this.history.exec(
-      toggleTabPlacementCommand(opId, placement, toleranceT),
-      this.target(),
-    );
+  toggleTabPlacement(opId: number, placement: { objectId: number; t: number }, toleranceT: number) {
+    this.history.exec(toggleTabPlacementCommand(opId, placement, toleranceT), this.target());
   }
 
   // ── fixtures ─────────────────────────────────────────────────────────
@@ -490,7 +485,6 @@ class ProjectState {
     this.history.clear();
     void this.refreshSourceWatch();
   }
-
 
   /// Refresh the desktop file-system watcher to track every absolute
   /// source path the project depends on. No-op outside Tauri; failure
@@ -829,9 +823,7 @@ class ProjectState {
     // chain. Empty selection ⇒ keep the All default (sourceObjects
     // undefined + sourceLayers: null).
     const presetSources =
-      this.selectedObjects.size > 0
-        ? { sourceObjects: [...this.selectedObjects] }
-        : {};
+      this.selectedObjects.size > 0 ? { sourceObjects: [...this.selectedObjects] } : {};
     const op: OpEntry = {
       id: nextId,
       name: prettyOpKind(kind),
@@ -923,10 +915,7 @@ class ProjectState {
     this.history.beginTransaction(`Rename group "${from}" → "${newName}"`);
     try {
       for (const m of members) {
-        this.history.exec(
-          updateOperationCommand(m.id, { group: newName }),
-          this.target(),
-        );
+        this.history.exec(updateOperationCommand(m.id, { group: newName }), this.target());
       }
     } finally {
       this.history.commitTransaction();
@@ -941,10 +930,7 @@ class ProjectState {
     this.history.beginTransaction(`Dissolve group "${name}"`);
     try {
       for (const m of members) {
-        this.history.exec(
-          updateOperationCommand(m.id, { group: undefined }),
-          this.target(),
-        );
+        this.history.exec(updateOperationCommand(m.id, { group: undefined }), this.target());
       }
     } finally {
       this.history.commitTransaction();
@@ -960,10 +946,7 @@ class ProjectState {
     try {
       for (const m of members) {
         if (m.enabled === enabled) continue;
-        this.history.exec(
-          updateOperationCommand(m.id, { enabled }),
-          this.target(),
-        );
+        this.history.exec(updateOperationCommand(m.id, { enabled }), this.target());
       }
     } finally {
       this.history.commitTransaction();

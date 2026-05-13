@@ -9,10 +9,7 @@
     type ObjectPolyline,
   } from '../cam/tabs';
   import type { Segment } from '../api/types';
-  import OpKindPicker, {
-    PICKER_LABEL,
-    type PickerKind,
-  } from './OpKindPicker.svelte';
+  import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
 
   interface Props {
     onShowHelp?: () => void;
@@ -93,7 +90,7 @@
   const selectedOp = $derived(
     project.selectedOpId == null
       ? null
-      : project.operations.find((o) => o.id === project.selectedOpId) ?? null,
+      : (project.operations.find((o) => o.id === project.selectedOpId) ?? null),
   );
   const tabPlacementActive = $derived(
     !!selectedOp &&
@@ -103,16 +100,13 @@
   /// Ghost tab while hovering the contour in placement mode. The
   /// `snap` field describes which secondary snap target the cursor
   /// landed on so the renderer can flash a small dot.
-  let ghostTab = $state<
-    | {
-        x: number;
-        y: number;
-        objectId: number;
-        t: number;
-        snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
-      }
-    | null
-  >(null);
+  let ghostTab = $state<{
+    x: number;
+    y: number;
+    objectId: number;
+    t: number;
+    snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
+  } | null>(null);
   /// Track Alt-held state across the gesture (1q3) — when true, snap
   /// to anything except the bare contour projection is disabled,
   /// matching the CAD-convention escape hatch.
@@ -148,9 +142,7 @@
     hitIndex = buildHitIndex(project.imported);
   });
 
-  function buildHitIndex(
-    data: typeof project.imported,
-  ): HitIndex | null {
+  function buildHitIndex(data: typeof project.imported): HitIndex | null {
     if (!data || data.segments.length === 0) return null;
     const { min_x, min_y, max_x, max_y } = data.bbox;
     const dx = Math.max(max_x - min_x, 1e-6);
@@ -286,10 +278,10 @@
     if (tabPlacementActive && lastTransform) {
       const ghost = projectGhostTab(cx, cy);
       if (
-        !ghost
-        || !ghostTab
-        || ghost.objectId !== ghostTab.objectId
-        || Math.abs(ghost.t - ghostTab.t) > 1e-5
+        !ghost ||
+        !ghostTab ||
+        ghost.objectId !== ghostTab.objectId ||
+        Math.abs(ghost.t - ghostTab.t) > 1e-5
       ) {
         ghostTab = ghost;
       }
@@ -511,9 +503,7 @@
     if (!op) return;
     const cur = op.tabPlacements ?? [];
     if (placementIdx < 0 || placementIdx >= cur.length) return;
-    const next = cur.map((p, i) =>
-      i === placementIdx ? { ...p, ...patch } : p,
-    );
+    const next = cur.map((p, i) => (i === placementIdx ? { ...p, ...patch } : p));
     project.updateOperation(opId, { tabPlacements: next });
   }
 
@@ -606,11 +596,7 @@
       if (!ghost) return;
       // Tolerance in t-units: ~3 px of contour length. Without an
       // exact polyline length we conservatively use 0.01 (1% of contour).
-      project.toggleTabPlacement(
-        selectedOp.id,
-        { objectId: ghost.objectId, t: ghost.t },
-        0.01,
-      );
+      project.toggleTabPlacement(selectedOp.id, { objectId: ghost.objectId, t: ghost.t }, 0.01);
       return;
     }
 
@@ -674,7 +660,7 @@
     for (let i = 0; i < n; i++) {
       const [pix, piy] = verts[i];
       const [pjx, pjy] = verts[j];
-      const crosses = (piy > py) !== (pjy > py);
+      const crosses = piy > py !== pjy > py;
       if (crosses) {
         const xAt = pix + ((py - piy) * (pjx - pix)) / (pjy - piy);
         if (px < xAt) inside = !inside;
@@ -744,7 +730,7 @@
     const scale = Math.min((w - 2 * margin) / dataW, (h - 2 * margin) / dataH);
     const offX = margin - min_x * scale + (w - 2 * margin - dataW * scale) / 2;
     // Y flipped: DXF y-up, canvas y-down.
-    const offY = h - margin - (-min_y) * scale - (h - 2 * margin - dataH * scale) / 2;
+    const offY = h - margin - -min_y * scale - (h - 2 * margin - dataH * scale) / 2;
 
     const project2 = (px: number, py: number): [number, number] => [
       px * scale + offX,
@@ -768,7 +754,7 @@
 
     const accent = themeVar('--accent', '#2d6cdf');
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
-    const hoverObj = hoverIdx == null ? 0 : data.objects?.[hoverIdx] ?? 0;
+    const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
       if (!project.visibleLayers.has(seg.layer)) continue;
@@ -853,9 +839,7 @@
   };
   let regionPathCache: { regionsRef: unknown; paths: RegionPath[] } | null = null;
 
-  function regionPaths(
-    regions: NonNullable<typeof project.generated>['regions'],
-  ): RegionPath[] {
+  function regionPaths(regions: NonNullable<typeof project.generated>['regions']): RegionPath[] {
     if (regionPathCache && regionPathCache.regionsRef === regions) {
       return regionPathCache.paths;
     }
@@ -897,10 +881,7 @@
     ctx.restore();
   }
 
-  function tracePolygonInto(
-    path: Path2D,
-    pts: Array<{ x: number; y: number }>,
-  ) {
+  function tracePolygonInto(path: Path2D, pts: Array<{ x: number; y: number }>) {
     if (pts.length < 3) return;
     path.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) {
@@ -908,7 +889,6 @@
     }
     path.closePath();
   }
-
 
   function drawTabs(
     ctx: CanvasRenderingContext2D,
@@ -953,8 +933,7 @@
       }
       // Auto / Mixed: N evenly spaced tabs per allowed object.
       if (op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed') {
-        const count =
-          op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count;
+        const count = op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count;
         if (count > 0) {
           for (const obj of objects) {
             if (!objFilter(obj.objectId)) continue;
@@ -1041,7 +1020,7 @@
     _kind: 'auto' | 'manual',
   ) {
     const [cx, cy] = p(dataX, dataY);
-    const halfLenPx = Math.max(3, (widthMm * 0.5) * scale);
+    const halfLenPx = Math.max(3, widthMm * 0.5 * scale);
     const halfThickPx = Math.max(2, heightMm * scale);
     // Canvas Y is flipped vs data Y. Mirror the tangent Y so the
     // rendered orientation matches the contour in screen space.
@@ -1262,13 +1241,11 @@
           type="button"
           class="tab-popover-delete"
           onclick={() => deleteTabPlacement(tabPopover!.opId, tabPopover!.placementIdx)}
-        >Delete tab</button>
-        <button
-          type="button"
-          class="tab-popover-close"
-          aria-label="Close"
-          onclick={closeTabPopover}
-        >×</button>
+          >Delete tab</button
+        >
+        <button type="button" class="tab-popover-close" aria-label="Close" onclick={closeTabPopover}
+          >×</button
+        >
       </div>
     {/if}
   {/if}
@@ -1284,12 +1261,7 @@
         <button type="button" onclick={closeCtxMenu}>Dismiss</button>
       </div>
     {:else}
-      <div
-        class="ctx-menu"
-        style:left={`${ctxMenu.x}px`}
-        style:top={`${ctxMenu.y}px`}
-        role="menu"
-      >
+      <div class="ctx-menu" style:left={`${ctxMenu.x}px`} style:top={`${ctxMenu.y}px`} role="menu">
         <div class="ctx-header">New operation from selection</div>
         <OpKindPicker onPick={pickFromCtx} />
       </div>
@@ -1301,8 +1273,8 @@
       class="help-btn"
       onclick={onShowHelp}
       title="Keyboard & mouse shortcuts (?)"
-      aria-label="Show keyboard and mouse shortcuts"
-    >?</button>
+      aria-label="Show keyboard and mouse shortcuts">?</button
+    >
   {/if}
 </div>
 
@@ -1452,7 +1424,9 @@
     justify-content: center;
     padding: 0;
     opacity: 0.7;
-    transition: opacity 0.12s ease, color 0.12s ease;
+    transition:
+      opacity 0.12s ease,
+      color 0.12s ease;
   }
   .help-btn:hover,
   .help-btn:focus {

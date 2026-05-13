@@ -337,9 +337,7 @@ class WasmClientLazy {
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
       generateStreaming: (req, onEvent, signal) =>
         ensure().then((c) =>
-          c.generateStreaming
-            ? c.generateStreaming(req, onEvent, signal)
-            : c.generate(req),
+          c.generateStreaming ? c.generateStreaming(req, onEvent, signal) : c.generate(req),
         ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
       computeHelixRadius: (req) => ensure().then((c) => c.computeHelixRadius(req)),
@@ -373,9 +371,7 @@ class TauriClientLazy {
         ensure().then((c) => (c.generateStream ? c.generateStream(req, cb) : c.generate(req))),
       generateStreaming: (req, onEvent, signal) =>
         ensure().then((c) =>
-          c.generateStreaming
-            ? c.generateStreaming(req, onEvent, signal)
-            : c.generate(req),
+          c.generateStreaming ? c.generateStreaming(req, onEvent, signal) : c.generate(req),
         ),
       renderText: (req) => ensure().then((c) => c.renderText(req)),
       computeHelixRadius: (req) => ensure().then((c) => c.computeHelixRadius(req)),

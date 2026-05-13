@@ -41,33 +41,48 @@
       <section>
         <h3>2D Canvas</h3>
         <dl>
-          <dt><kbd>drag</kbd></dt><dd>Pan view</dd>
-          <dt><kbd>scroll</kbd></dt><dd>Zoom in / out</dd>
-          <dt><kbd>click</kbd></dt><dd>Select object</dd>
-          <dt><kbd>Shift</kbd> + <kbd>click</kbd></dt><dd>Add to selection</dd>
-          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>click</kbd></dt><dd>Remove from selection</dd>
-          <dt><kbd>right-click</kbd></dt><dd>Context menu / deselect</dd>
+          <dt><kbd>drag</kbd></dt>
+          <dd>Pan view</dd>
+          <dt><kbd>scroll</kbd></dt>
+          <dd>Zoom in / out</dd>
+          <dt><kbd>click</kbd></dt>
+          <dd>Select object</dd>
+          <dt><kbd>Shift</kbd> + <kbd>click</kbd></dt>
+          <dd>Add to selection</dd>
+          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>click</kbd></dt>
+          <dd>Remove from selection</dd>
+          <dt><kbd>right-click</kbd></dt>
+          <dd>Context menu / deselect</dd>
         </dl>
       </section>
 
       <section>
         <h3>3D View</h3>
         <dl>
-          <dt><kbd>left-drag</kbd></dt><dd>Orbit</dd>
-          <dt><kbd>right-drag</kbd></dt><dd>Pan</dd>
-          <dt><kbd>scroll</kbd></dt><dd>Zoom in / out</dd>
+          <dt><kbd>left-drag</kbd></dt>
+          <dd>Orbit</dd>
+          <dt><kbd>right-drag</kbd></dt>
+          <dd>Pan</dd>
+          <dt><kbd>scroll</kbd></dt>
+          <dd>Zoom in / out</dd>
         </dl>
       </section>
 
       <section>
         <h3>Global</h3>
         <dl>
-          <dt><kbd>T</kbd></dt><dd>Add Text</dd>
-          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Undo</dd>
-          <dt><kbd>Ctrl</kbd> + <kbd>Y</kbd></dt><dd>Redo</dd>
-          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></dt><dd>Redo</dd>
-          <dt><kbd>?</kbd> / <kbd>F1</kbd></dt><dd>Show this help</dd>
-          <dt><kbd>Esc</kbd></dt><dd>Cancel mode / clear selection / close menu</dd>
+          <dt><kbd>T</kbd></dt>
+          <dd>Add Text</dd>
+          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt>
+          <dd>Undo</dd>
+          <dt><kbd>Ctrl</kbd> + <kbd>Y</kbd></dt>
+          <dd>Redo</dd>
+          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></dt>
+          <dd>Redo</dd>
+          <dt><kbd>?</kbd> / <kbd>F1</kbd></dt>
+          <dd>Show this help</dd>
+          <dt><kbd>Esc</kbd></dt>
+          <dd>Cancel mode / clear selection / close menu</dd>
         </dl>
       </section>
     </div>

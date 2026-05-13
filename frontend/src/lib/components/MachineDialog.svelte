@@ -36,9 +36,7 @@
     if (open) {
       draft = cloneSettings(project.machine);
       jerkEnabled = !!project.machine.jerk;
-      jerkDraft = project.machine.jerk
-        ? { ...project.machine.jerk }
-        : { x: 100, y: 100, z: 50 };
+      jerkDraft = project.machine.jerk ? { ...project.machine.jerk } : { x: 100, y: 100, z: 50 };
     }
   });
 
@@ -76,7 +74,10 @@
       (a.coolant_mist_off ?? null) === (b.coolant_mist_off ?? null) &&
       !a.axes === !b.axes;
     const presets: { key: string; profile: PostProfile }[] = [
-      { key: 'linuxcnc', profile: { name: 'LinuxCNC default', file_extension: 'nc', line_ending: '\n' } },
+      {
+        key: 'linuxcnc',
+        profile: { name: 'LinuxCNC default', file_extension: 'nc', line_ending: '\n' },
+      },
       {
         key: 'mach3',
         profile: {
@@ -149,37 +150,45 @@
       <button class="close" onclick={close} aria-label="Close">×</button>
     </header>
 
-      <div class="grid">
-        <label>Unit
-          <select bind:value={draft.unit}>
-            <option value="mm">mm</option>
-            <option value="inch">inch</option>
-          </select>
-        </label>
-        <label>Mode
-          <select bind:value={draft.mode}>
-            <option value="mill">Mill (CNC)</option>
-            <option value="laser">Laser</option>
-            <option value="drag">Drag-knife / vinyl</option>
-          </select>
-        </label>
-        <label>Fast-move Z
-          <span class="field"><input type="number" bind:value={draft.fastMoveZ} step="0.1" /><span class="unit">mm</span></span>
-        </label>
-        <label class="check">
-          <input type="checkbox" bind:checked={draft.comments} />
-          Emit comments in G-code
-        </label>
-        <label class="check">
-          <input type="checkbox" bind:checked={draft.arcs} />
-          Emit G2 / G3 arc moves
-        </label>
-        <label
-          class:disabled={!draft.arcs}
-          title="How far the fitted arc may deviate from the original polyline. Smaller = tighter, more arcs split. Typical values 0.005-0.05 mm."
+    <div class="grid">
+      <label
+        >Unit
+        <select bind:value={draft.unit}>
+          <option value="mm">mm</option>
+          <option value="inch">inch</option>
+        </select>
+      </label>
+      <label
+        >Mode
+        <select bind:value={draft.mode}>
+          <option value="mill">Mill (CNC)</option>
+          <option value="laser">Laser</option>
+          <option value="drag">Drag-knife / vinyl</option>
+        </select>
+      </label>
+      <label
+        >Fast-move Z
+        <span class="field"
+          ><input type="number" bind:value={draft.fastMoveZ} step="0.1" /><span class="unit"
+            >mm</span
+          ></span
         >
-          Arc fitting tolerance
-          <span class="field"><input
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={draft.comments} />
+        Emit comments in G-code
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={draft.arcs} />
+        Emit G2 / G3 arc moves
+      </label>
+      <label
+        class:disabled={!draft.arcs}
+        title="How far the fitted arc may deviate from the original polyline. Smaller = tighter, more arcs split. Typical values 0.005-0.05 mm."
+      >
+        Arc fitting tolerance
+        <span class="field"
+          ><input
             type="number"
             min="0"
             step="0.001"
@@ -189,171 +198,231 @@
               const v = (e.target as HTMLInputElement).valueAsNumber;
               draft.arcFitToleranceMm = isFinite(v) && v >= 0 ? v : undefined;
             }}
-          /><span class="unit">mm</span></span>
-        </label>
-        <label class="check">
-          <input type="checkbox" bind:checked={draft.supportsToolchange} />
-          Machine supports tool changes (M6)
-        </label>
-        <label class="check" title="Plot-mode Z (rt1.35): collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers.">
-          <input type="checkbox" bind:checked={draft.plotModeZ} />
-          Plot-mode Z (single-pass, binary up/down)
-        </label>
+          /><span class="unit">mm</span></span
+        >
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={draft.supportsToolchange} />
+        Machine supports tool changes (M6)
+      </label>
+      <label
+        class="check"
+        title="Plot-mode Z (rt1.35): collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."
+      >
+        <input type="checkbox" bind:checked={draft.plotModeZ} />
+        Plot-mode Z (single-pass, binary up/down)
+      </label>
 
-        <div class="section-title">G-code formatting</div>
-        <label title="Some EU-locale Siemens / Heidenhain controllers require X1,5 instead of X1.5. Default is the period.">
-          Decimal separator
-          <span class="field">
-            <select
-              value={draft.decimalSeparator ?? '.'}
-              onchange={(e) => {
-                const v = (e.currentTarget as HTMLSelectElement).value;
-                draft.decimalSeparator = v === ',' ? ',' : '.';
-              }}
-            >
-              <option value=".">period (.)</option>
-              <option value=",">comma (,)</option>
-            </select>
-          </span>
-        </label>
-        <label title="Prefix every emitted line with N10, N20, N30, … Required by some FANUC / vintage controllers; useful operator reference even on modern ones. Empty / 0 disables numbering.">
-          Line numbering start
-          <span class="field">
-            <input
-              type="number"
-              min="0"
-              step="10"
-              placeholder="off"
-              value={draft.lineNumberStart ?? ''}
-              oninput={(e) => {
-                const raw = (e.target as HTMLInputElement).value;
-                if (raw === '') {
-                  draft.lineNumberStart = undefined;
-                  return;
-                }
-                const v = parseInt(raw, 10);
-                draft.lineNumberStart = isFinite(v) && v > 0 ? v : undefined;
-              }}
-            />
-            <span class="unit">N</span>
-          </span>
-        </label>
+      <div class="section-title">G-code formatting</div>
+      <label
+        title="Some EU-locale Siemens / Heidenhain controllers require X1,5 instead of X1.5. Default is the period."
+      >
+        Decimal separator
+        <span class="field">
+          <select
+            value={draft.decimalSeparator ?? '.'}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              draft.decimalSeparator = v === ',' ? ',' : '.';
+            }}
+          >
+            <option value=".">period (.)</option>
+            <option value=",">comma (,)</option>
+          </select>
+        </span>
+      </label>
+      <label
+        title="Prefix every emitted line with N10, N20, N30, … Required by some FANUC / vintage controllers; useful operator reference even on modern ones. Empty / 0 disables numbering."
+      >
+        Line numbering start
+        <span class="field">
+          <input
+            type="number"
+            min="0"
+            step="10"
+            placeholder="off"
+            value={draft.lineNumberStart ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              if (raw === '') {
+                draft.lineNumberStart = undefined;
+                return;
+              }
+              const v = parseInt(raw, 10);
+              draft.lineNumberStart = isFinite(v) && v > 0 ? v : undefined;
+            }}
+          />
+          <span class="unit">N</span>
+        </span>
+      </label>
 
-        <div class="section-title">Post-processor profile (rt1.15)</div>
-        {#if draft.mode === 'drag'}
-          <p class="hpgl-note">
-            Drag mode emits HPGL plotter commands, not G-code. The
-            post-processor profile (templates, axes, etc.) is
-            ignored — HPGL has no analogue for these tokens.
-          </p>
-        {/if}
-        <label title="Pick a built-in profile or write your own templates below. Built-in profiles fill the templates with sensible defaults for that controller; you can still edit them. 'None' uses wiac's hard-coded defaults.">
-          Profile preset
-          <span class="field">
-            <select
-              value={profilePreset(draft.postProfile)}
-              onchange={(e) => {
-                const v = (e.currentTarget as HTMLSelectElement).value;
-                if (v === 'none') {
-                  draft.postProfile = undefined;
-                } else if (v === 'linuxcnc') {
-                  draft.postProfile = { name: 'LinuxCNC default', file_extension: 'nc', line_ending: '\n' };
-                } else if (v === 'mach3') {
-                  draft.postProfile = {
-                    name: 'Mach3 metric',
-                    file_extension: 'tap',
-                    line_ending: '\r\n',
-                    program_start: '%\nN10 G21 G90 (wiac <version>)',
-                    program_end: 'M30\n%',
-                  };
-                } else if (v === 'grbl') {
-                  draft.postProfile = {
-                    name: 'GRBL default',
-                    file_extension: 'nc',
-                    line_ending: '\n',
-                    program_start: '; wiac <version> — GRBL',
-                    program_end: 'M2',
-                    tool_change: '; toolchange to T<t> (manual on GRBL)',
-                  };
-                } else if (v === 'custom') {
-                  draft.postProfile = draft.postProfile ?? { name: 'Custom' };
-                }
-              }}
-            >
-              <option value="none">None (built-in defaults)</option>
-              <option value="linuxcnc">LinuxCNC default</option>
-              <option value="grbl">GRBL default</option>
-              <option value="mach3">Mach3 metric</option>
-              <option value="custom">Custom</option>
-            </select>
+      <div class="section-title">Post-processor profile (rt1.15)</div>
+      {#if draft.mode === 'drag'}
+        <p class="hpgl-note">
+          Drag mode emits HPGL plotter commands, not G-code. The post-processor profile (templates,
+          axes, etc.) is ignored — HPGL has no analogue for these tokens.
+        </p>
+      {/if}
+      <label
+        title="Pick a built-in profile or write your own templates below. Built-in profiles fill the templates with sensible defaults for that controller; you can still edit them. 'None' uses wiac's hard-coded defaults."
+      >
+        Profile preset
+        <span class="field">
+          <select
+            value={profilePreset(draft.postProfile)}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              if (v === 'none') {
+                draft.postProfile = undefined;
+              } else if (v === 'linuxcnc') {
+                draft.postProfile = {
+                  name: 'LinuxCNC default',
+                  file_extension: 'nc',
+                  line_ending: '\n',
+                };
+              } else if (v === 'mach3') {
+                draft.postProfile = {
+                  name: 'Mach3 metric',
+                  file_extension: 'tap',
+                  line_ending: '\r\n',
+                  program_start: '%\nN10 G21 G90 (wiac <version>)',
+                  program_end: 'M30\n%',
+                };
+              } else if (v === 'grbl') {
+                draft.postProfile = {
+                  name: 'GRBL default',
+                  file_extension: 'nc',
+                  line_ending: '\n',
+                  program_start: '; wiac <version> — GRBL',
+                  program_end: 'M2',
+                  tool_change: '; toolchange to T<t> (manual on GRBL)',
+                };
+              } else if (v === 'custom') {
+                draft.postProfile = draft.postProfile ?? { name: 'Custom' };
+              }
+            }}
+          >
+            <option value="none">None (built-in defaults)</option>
+            <option value="linuxcnc">LinuxCNC default</option>
+            <option value="grbl">GRBL default</option>
+            <option value="mach3">Mach3 metric</option>
+            <option value="custom">Custom</option>
+          </select>
+        </span>
+      </label>
+      {#if draft.postProfile}
+        <div class="pp-summary">
+          <span class="pp-summary-tweaks">
+            {#if profileTweakSummary(draft.postProfile)}
+              Overrides: <em>{profileTweakSummary(draft.postProfile)}</em>
+            {:else}
+              No overrides yet — preset defaults.
+            {/if}
           </span>
-        </label>
-        {#if draft.postProfile}
-          <div class="pp-summary">
-            <span class="pp-summary-tweaks">
-              {#if profileTweakSummary(draft.postProfile)}
-                Overrides: <em>{profileTweakSummary(draft.postProfile)}</em>
-              {:else}
-                No overrides yet — preset defaults.
-              {/if}
-            </span>
-            <button
-              type="button"
-              class="pp-edit-btn"
-              onclick={() => (editorOpen = true)}
-            >Edit templates / axes…</button>
-          </div>
-        {/if}
-
-        <div class="section-title">Kinematics</div>
-        <label>Rapid speed
-          <span class="field"><input type="number" min="0" step="100" bind:value={draft.rapidSpeed} /><span class="unit">mm/min</span></span>
-        </label>
-        <label>Tool-change time
-          <span class="field"><input type="number" min="0" step="0.5" bind:value={draft.toolchangeS} /><span class="unit">s</span></span>
-        </label>
-        <div class="triplet-label">Acceleration X / Y / Z <span class="unit">mm/s²</span></div>
-        <div class="triplet">
-          <input type="number" min="0" step="10"
-            aria-label="Acceleration X (mm/s²)"
-            value={draft.accel?.x ?? 250}
-            oninput={(e) => {
-              const v = (e.target as HTMLInputElement).valueAsNumber;
-              draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), x: isFinite(v) ? v : 250 };
-            }} />
-          <input type="number" min="0" step="10"
-            aria-label="Acceleration Y (mm/s²)"
-            value={draft.accel?.y ?? 250}
-            oninput={(e) => {
-              const v = (e.target as HTMLInputElement).valueAsNumber;
-              draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), y: isFinite(v) ? v : 250 };
-            }} />
-          <input type="number" min="0" step="10"
-            aria-label="Acceleration Z (mm/s²)"
-            value={draft.accel?.z ?? 250}
-            oninput={(e) => {
-              const v = (e.target as HTMLInputElement).valueAsNumber;
-              draft.accel = { ...(draft.accel ?? { x: 250, y: 250, z: 250 }), z: isFinite(v) ? v : 250 };
-            }} />
+          <button type="button" class="pp-edit-btn" onclick={() => (editorOpen = true)}
+            >Edit templates / axes…</button
+          >
         </div>
-        <label class="check">
-          <input type="checkbox" bind:checked={jerkEnabled} />
-          Enable jerk limits (S-curve, Phase 2)
-        </label>
-        {#if jerkEnabled}
-          <div class="triplet-label">Jerk X / Y / Z <span class="unit">mm/s³</span></div>
-          <div class="triplet">
-            <input type="number" min="0" step="10" aria-label="Jerk X (mm/s³)" bind:value={jerkDraft.x} />
-            <input type="number" min="0" step="10" aria-label="Jerk Y (mm/s³)" bind:value={jerkDraft.y} />
-            <input type="number" min="0" step="10" aria-label="Jerk Z (mm/s³)" bind:value={jerkDraft.z} />
-          </div>
-        {/if}
-      </div>
+      {/if}
 
-      <footer>
-        <button class="secondary" onclick={close}>Cancel</button>
-        <button class="primary" onclick={commit}>OK</button>
-      </footer>
+      <div class="section-title">Kinematics</div>
+      <label
+        >Rapid speed
+        <span class="field"
+          ><input type="number" min="0" step="100" bind:value={draft.rapidSpeed} /><span
+            class="unit">mm/min</span
+          ></span
+        >
+      </label>
+      <label
+        >Tool-change time
+        <span class="field"
+          ><input type="number" min="0" step="0.5" bind:value={draft.toolchangeS} /><span
+            class="unit">s</span
+          ></span
+        >
+      </label>
+      <div class="triplet-label">Acceleration X / Y / Z <span class="unit">mm/s²</span></div>
+      <div class="triplet">
+        <input
+          type="number"
+          min="0"
+          step="10"
+          aria-label="Acceleration X (mm/s²)"
+          value={draft.accel?.x ?? 250}
+          oninput={(e) => {
+            const v = (e.target as HTMLInputElement).valueAsNumber;
+            draft.accel = {
+              ...(draft.accel ?? { x: 250, y: 250, z: 250 }),
+              x: isFinite(v) ? v : 250,
+            };
+          }}
+        />
+        <input
+          type="number"
+          min="0"
+          step="10"
+          aria-label="Acceleration Y (mm/s²)"
+          value={draft.accel?.y ?? 250}
+          oninput={(e) => {
+            const v = (e.target as HTMLInputElement).valueAsNumber;
+            draft.accel = {
+              ...(draft.accel ?? { x: 250, y: 250, z: 250 }),
+              y: isFinite(v) ? v : 250,
+            };
+          }}
+        />
+        <input
+          type="number"
+          min="0"
+          step="10"
+          aria-label="Acceleration Z (mm/s²)"
+          value={draft.accel?.z ?? 250}
+          oninput={(e) => {
+            const v = (e.target as HTMLInputElement).valueAsNumber;
+            draft.accel = {
+              ...(draft.accel ?? { x: 250, y: 250, z: 250 }),
+              z: isFinite(v) ? v : 250,
+            };
+          }}
+        />
+      </div>
+      <label class="check">
+        <input type="checkbox" bind:checked={jerkEnabled} />
+        Enable jerk limits (S-curve, Phase 2)
+      </label>
+      {#if jerkEnabled}
+        <div class="triplet-label">Jerk X / Y / Z <span class="unit">mm/s³</span></div>
+        <div class="triplet">
+          <input
+            type="number"
+            min="0"
+            step="10"
+            aria-label="Jerk X (mm/s³)"
+            bind:value={jerkDraft.x}
+          />
+          <input
+            type="number"
+            min="0"
+            step="10"
+            aria-label="Jerk Y (mm/s³)"
+            bind:value={jerkDraft.y}
+          />
+          <input
+            type="number"
+            min="0"
+            step="10"
+            aria-label="Jerk Z (mm/s³)"
+            bind:value={jerkDraft.z}
+          />
+        </div>
+      {/if}
+    </div>
+
+    <footer>
+      <button class="secondary" onclick={close}>Cancel</button>
+      <button class="primary" onclick={commit}>OK</button>
+    </footer>
   </Modal>
   <PostProcessorEditor
     open={editorOpen}

@@ -52,7 +52,12 @@
       const { writeTextFile } = await import('@tauri-apps/plugin-fs');
       const path = await save({
         defaultPath: filename,
-        filters: [{ name: 'wiaConstructor project', extensions: ['wiac-project.json', 'vc-project.json', 'json'] }],
+        filters: [
+          {
+            name: 'wiaConstructor project',
+            extensions: ['wiac-project.json', 'vc-project.json', 'json'],
+          },
+        ],
       });
       if (typeof path === 'string') {
         try {
@@ -158,7 +163,12 @@
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
     const selected = await open({
       multiple: false,
-      filters: [{ name: 'wiaConstructor project', extensions: ['wiac-project.json', 'vc-project.json', 'json'] }],
+      filters: [
+        {
+          name: 'wiaConstructor project',
+          extensions: ['wiac-project.json', 'vc-project.json', 'json'],
+        },
+      ],
     });
     if (typeof selected !== 'string') return;
     project.loading = true;
@@ -283,13 +293,7 @@
   role="region"
   aria-label="File upload"
 >
-  <input
-    bind:this={inputEl}
-    type="file"
-    accept=".dxf,.svg"
-    onchange={onPick}
-    hidden
-  />
+  <input bind:this={inputEl} type="file" accept=".dxf,.svg" onchange={onPick} hidden />
   <input
     bind:this={projectInput}
     type="file"

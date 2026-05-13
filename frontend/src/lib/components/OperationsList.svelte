@@ -124,33 +124,60 @@
     project.imported?.objects ? new Set(project.imported.objects) : new Set<number>(),
   );
   let importedLayersSet = $derived(
-    project.imported?.layers ? new Set(project.imported.layers.map((l) => l.name)) : new Set<string>(),
+    project.imported?.layers
+      ? new Set(project.imported.layers.map((l) => l.name))
+      : new Set<string>(),
   );
 
   function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad'; reason: string } {
     if (!project.tools.find((t) => t.id === op.toolId)) {
-      return { label: '✘', tone: 'bad', reason: `Tool #${op.toolId} is not in the project's tool library. Pick a tool in the operation properties.` };
+      return {
+        label: '✘',
+        tone: 'bad',
+        reason: `Tool #${op.toolId} is not in the project's tool library. Pick a tool in the operation properties.`,
+      };
     }
     if (!project.imported) {
-      return { label: '⚠', tone: 'warn', reason: 'No drawing imported yet — open a DXF/SVG to apply this operation.' };
+      return {
+        label: '⚠',
+        tone: 'warn',
+        reason: 'No drawing imported yet — open a DXF/SVG to apply this operation.',
+      };
     }
     if (op.sourceObjects && op.sourceObjects.length > 0) {
       const missing = op.sourceObjects.filter((id) => !importedObjectsSet.has(id));
       if (missing.length > 0) {
-        return { label: '⚠', tone: 'warn', reason: `Source includes ${missing.length} object id(s) not present in the current import — they may have come from a different drawing.` };
+        return {
+          label: '⚠',
+          tone: 'warn',
+          reason: `Source includes ${missing.length} object id(s) not present in the current import — they may have come from a different drawing.`,
+        };
       }
     }
     if (op.sourceLayers && op.sourceLayers.length > 0) {
       const missing = op.sourceLayers.filter((l) => !importedLayersSet.has(l));
       if (missing.length > 0) {
-        return { label: '⚠', tone: 'warn', reason: `Source layer(s) "${missing.join(', ')}" not in this drawing.` };
+        return {
+          label: '⚠',
+          tone: 'warn',
+          reason: `Source layer(s) "${missing.join(', ')}" not in this drawing.`,
+        };
       }
     }
     if (project.dirty) {
-      return { label: '⚠', tone: 'warn', reason: 'Project changed since the last Generate — re-Generate to refresh this operation\'s G-code.' };
+      return {
+        label: '⚠',
+        tone: 'warn',
+        reason:
+          "Project changed since the last Generate — re-Generate to refresh this operation's G-code.",
+      };
     }
     if (!project.generated) {
-      return { label: '·', tone: 'warn', reason: 'Not generated yet — click Generate to produce this operation\'s G-code.' };
+      return {
+        label: '·',
+        tone: 'warn',
+        reason: "Not generated yet — click Generate to produce this operation's G-code.",
+      };
     }
     // Pipeline warnings tagged with this op's id (tool-fit, kind
     // mismatch, etc.) — escalate to the bad tone if a structural
@@ -161,9 +188,7 @@
         (w) => w.kind === 'tool_kind_mismatch' || w.kind === 'tool_geometry_impossible',
       );
       const reason = opWarnings.map((w) => w.message).join('\n');
-      return bad
-        ? { label: '✘', tone: 'bad', reason }
-        : { label: '⚠', tone: 'warn', reason };
+      return bad ? { label: '✘', tone: 'bad', reason } : { label: '⚠', tone: 'warn', reason };
     }
     return { label: '✓', tone: 'ok', reason: 'Up to date with the last Generate.' };
   }
@@ -177,9 +202,7 @@
     if (!wasSelected) {
       // Wait one tick so the props panel has been rendered.
       queueMicrotask(() => {
-        const row = document.querySelector(
-          `[data-op-row-id="${id}"]`,
-        ) as HTMLElement | null;
+        const row = document.querySelector(`[data-op-row-id="${id}"]`) as HTMLElement | null;
         row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       });
     }
@@ -252,8 +275,7 @@
     // reorderOperation as separate commands).
     const dragged = project.operations.find((o) => o.id === dragId);
     const target = project.operations.find((o) => o.id === id);
-    const crossGroup =
-      !!dragged && !!target && (dragged.group ?? '') !== (target.group ?? '');
+    const crossGroup = !!dragged && !!target && (dragged.group ?? '') !== (target.group ?? '');
     if (crossGroup) {
       project.history.beginTransaction('Move op');
     }
@@ -324,7 +346,9 @@
   {#if project.operations.length === 0}
     <div class="empty-card">
       <p class="empty-title">No operations yet</p>
-      <p class="empty-sub">An operation tells the machine how to cut a region — pocket, contour, drill, engrave.</p>
+      <p class="empty-sub">
+        An operation tells the machine how to cut a region — pocket, contour, drill, engrave.
+      </p>
       <button class="primary-cta" type="button" onclick={() => (pickerOpen = true)}>
         + Add operation
       </button>
@@ -333,7 +357,7 @@
     {@const groups = groupedOperations()}
     {@const extraEmpty = [...pendingEmptyGroups].filter((g) => !groups.some((b) => b.name === g))}
     <ul role="listbox" class="groups-root">
-      {#each [...extraEmpty.map((name) => ({ name, ops: [] as OpEntry[] })), ...groups] as bucket (bucket.name)}
+      {#each [...extraEmpty.map( (name) => ({ name, ops: [] as OpEntry[] }), ), ...groups] as bucket (bucket.name)}
         {@const collapsed = isGroupCollapsed(bucket.name)}
         {@const allEnabled = isGroupAllEnabled(bucket.ops)}
         {@const dragOverHere = dragOverGroup === bucket.name}
@@ -351,7 +375,8 @@
                 onclick={() => toggleGroupCollapsed(bucket.name)}
                 title={collapsed ? 'Expand group' : 'Collapse group'}
                 aria-label="Toggle group {bucket.name || 'Default Ops Group'}"
-              >{collapsed ? '▸' : '▾'}</button>
+                >{collapsed ? '▸' : '▾'}</button
+              >
               {#if bucket.name !== ''}
                 <input
                   type="checkbox"
@@ -359,7 +384,11 @@
                   title="Toggle every op in this group"
                   aria-label="Enable group {bucket.name}"
                   onclick={(e) => e.stopPropagation()}
-                  onchange={(e) => project.setGroupEnabled(bucket.name, (e.currentTarget as HTMLInputElement).checked)}
+                  onchange={(e) =>
+                    project.setGroupEnabled(
+                      bucket.name,
+                      (e.currentTarget as HTMLInputElement).checked,
+                    )}
                 />
               {/if}
               {#if renamingGroup === bucket.name}
@@ -381,7 +410,8 @@
                   class:ungrouped={bucket.name === ''}
                   ondblclick={() => startRenameGroup(bucket.name)}
                   title={bucket.name === '' ? 'Ungrouped operations' : 'Double-click to rename'}
-                >{bucket.name || 'Default Ops Group'}</span>
+                  >{bucket.name || 'Default Ops Group'}</span
+                >
               {/if}
               <span class="group-count">{bucket.ops.length}</span>
               {#if bucket.name !== ''}
@@ -389,22 +419,20 @@
                   class="group-action"
                   onclick={() => startRenameGroup(bucket.name)}
                   title="Rename group"
-                  aria-label="Rename group {bucket.name}"
-                >✎</button>
+                  aria-label="Rename group {bucket.name}">✎</button
+                >
                 <button
                   class="group-action"
                   onclick={() => project.dissolveGroup(bucket.name)}
                   title="Dissolve group (members become ungrouped)"
-                  aria-label="Dissolve group {bucket.name}"
-                >×</button>
+                  aria-label="Dissolve group {bucket.name}">×</button
+                >
               {/if}
             </div>
             {#if !collapsed}
               <ul class="group-body" role="listbox">
                 {#if bucket.ops.length === 0}
-                  <li class="empty-group">
-                    Empty group. Drop an op here or drag to populate.
-                  </li>
+                  <li class="empty-group">Empty group. Drop an op here or drag to populate.</li>
                 {/if}
                 {#each bucket.ops as op (op.id)}
                   {@const status = statusFor(op)}
@@ -417,7 +445,9 @@
                       ondragover={(e) => onDragOver(e, op.id)}
                       ondrop={(e) => onDrop(e, op.id)}
                       onclick={() => selectOp(op.id)}
-                      onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectOp(op.id); }}
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') selectOp(op.id);
+                      }}
                       role="option"
                       tabindex="0"
                       aria-selected={selected}
@@ -435,35 +465,45 @@
                         ondragstart={(e) => onDragStart(e, op.id)}
                         ondragend={onDragEnd}
                         title="Drag to reorder or move between groups"
-                        aria-hidden="true"
-                      >⋮⋮</span>
+                        aria-hidden="true">⋮⋮</span
+                      >
                       <input
                         type="checkbox"
                         checked={op.enabled}
                         onclick={(e) => e.stopPropagation()}
-                        onchange={(e) => project.updateOperation(op.id, { enabled: (e.currentTarget as HTMLInputElement).checked })}
+                        onchange={(e) =>
+                          project.updateOperation(op.id, {
+                            enabled: (e.currentTarget as HTMLInputElement).checked,
+                          })}
                       />
                       <span class="caret" aria-hidden="true">{selected ? '▾' : '▸'}</span>
                       <span
                         class="ico"
                         title={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
                         aria-label={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
-                      >{KIND_ICON[op.kind]}</span>
+                        >{KIND_ICON[op.kind]}</span
+                      >
                       <span class="name">{op.name}</span>
                       <span class="tool">{toolName(op.toolId)}</span>
                       <span class="status {status.tone}" title={status.reason}>{status.label}</span>
                       <button
                         class="dup"
-                        onclick={(e) => { e.stopPropagation(); project.duplicateOperation(op.id); }}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          project.duplicateOperation(op.id);
+                        }}
                         title="Duplicate"
-                        aria-label={`Duplicate operation ${op.name}`}
-                      >⎘</button>
+                        aria-label={`Duplicate operation ${op.name}`}>⎘</button
+                      >
                       <button
                         class="del"
-                        onclick={(e) => { e.stopPropagation(); project.removeOperation(op.id); }}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          project.removeOperation(op.id);
+                        }}
                         title="Delete operation"
-                        aria-label={`Delete operation ${op.name}`}
-                      >×</button>
+                        aria-label={`Delete operation ${op.name}`}>×</button
+                      >
                     </div>
                     {#if selected}
                       <div class="props">
@@ -488,7 +528,10 @@
             use:focusOnMount
             onkeydown={(e) => {
               if (e.key === 'Enter') commitNewGroup();
-              else if (e.key === 'Escape') { newGroupOpen = false; newGroupDraft = ''; }
+              else if (e.key === 'Escape') {
+                newGroupOpen = false;
+                newGroupDraft = '';
+              }
             }}
             onblur={commitNewGroup}
           />
@@ -664,9 +707,15 @@
     min-width: 1.3rem;
     text-align: center;
   }
-  .status.ok { color: var(--success); }
-  .status.warn { color: var(--warn); }
-  .status.bad { color: var(--error); }
+  .status.ok {
+    color: var(--success);
+  }
+  .status.warn {
+    color: var(--warn);
+  }
+  .status.bad {
+    color: var(--error);
+  }
   .del,
   .dup {
     background: transparent;

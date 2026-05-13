@@ -34,7 +34,15 @@
   // section, which IS supported. Re-add 'helix' here when the
   // standalone emitter lands.
   export const ALL_PICKER_KINDS: PickerKind[] = [
-    'profile', 'pocket', 'pocket_outside', 'drill', 'thread', 'chamfer', 'engrave', 'drag_knife', 'vcarve',
+    'profile',
+    'pocket',
+    'pocket_outside',
+    'drill',
+    'thread',
+    'chamfer',
+    'engrave',
+    'drag_knife',
+    'vcarve',
   ];
 
   export const PICKER_LABEL: Record<PickerKind, string> = {
@@ -59,12 +67,9 @@
       'Pocket the area BETWEEN a frame and the selection. Useful for raised text/graphics where the surrounding area is removed. Requires at least one selected object.',
     drill:
       'Drills holes at point geometry or small closed circles. Choose simple / peck / chip-break cycle.',
-    engrave:
-      'Tool-on engraving along the source path. No offset.',
-    drag_knife:
-      'Drag-knife cuts with trail-compensation arcs at corners.',
-    helix:
-      'Helical descent into a closed contour.',
+    engrave: 'Tool-on engraving along the source path. No offset.',
+    drag_knife: 'Drag-knife cuts with trail-compensation arcs at corners.',
+    helix: 'Helical descent into a closed contour.',
     vcarve:
       'Variable-depth medial-axis carving with a V-bit. Tip dips deepest where the region is widest.',
     chamfer:
@@ -101,9 +106,7 @@
       role="menuitem"
       onclick={() => onPick(k)}
       {disabled}
-      title={disabled
-        ? 'Select one or more objects in the canvas first.'
-        : PICKER_HELP[k] || ''}
+      title={disabled ? 'Select one or more objects in the canvas first.' : PICKER_HELP[k] || ''}
       aria-label={`Add ${PICKER_LABEL[k]} operation`}
     >
       <span class="ico" aria-hidden="true">{PICKER_ICON[k]}</span>

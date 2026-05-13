@@ -6,11 +6,7 @@
 /// emits; the preview's job is to communicate "your knobs do this",
 /// not to be a byte-for-byte gcode generator.
 
-import type {
-  AxesConfig,
-  AxisFormat,
-  PostProfile,
-} from '../state/project.svelte';
+import type { AxesConfig, AxisFormat, PostProfile } from '../state/project.svelte';
 
 /// Mirror of `wiac_core::gcode::post_profile::TokenCtx`.
 export interface PreviewTokenCtx {
@@ -189,10 +185,7 @@ export function renderAxisWord(
 /// configurable section of the profile (header / footer / toolchange /
 /// coolant / per-axis X Y Z I J F S). Used by the live preview pane
 /// in PostProcessorEditor.
-export function previewGcode(
-  profile: PostProfile,
-  ctx: Partial<PreviewTokenCtx> = {},
-): string {
+export function previewGcode(profile: PostProfile, ctx: Partial<PreviewTokenCtx> = {}): string {
   const c: PreviewTokenCtx = { ...DEFAULT_PREVIEW_CTX, ...ctx };
   const axes = profile.axes;
   const out: string[] = [];
@@ -242,14 +235,7 @@ export function previewGcode(
     if (zw) parts.push(zw);
     return parts.join(' ');
   };
-  const arcLine = (
-    g: string,
-    x: number,
-    y: number,
-    z: number,
-    i: number,
-    j: number,
-  ): string => {
+  const arcLine = (g: string, x: number, y: number, z: number, i: number, j: number): string => {
     const parts: string[] = [g];
     const xw = renderAxisWord(axes?.x, 'X', x, '%.3f');
     const yw = renderAxisWord(axes?.y, 'Y', y, '%.3f');
@@ -296,10 +282,7 @@ export function defaultPreviewCtx(): PreviewTokenCtx {
 
 /// Convenience axes accessor matching backend defaults — used by the
 /// editor to compute "summary" diffs vs. the default config.
-export const AXIS_DEFAULTS: Record<
-  keyof AxesConfig,
-  { letter: string; format: string }
-> = {
+export const AXIS_DEFAULTS: Record<keyof AxesConfig, { letter: string; format: string }> = {
   x: { letter: 'X', format: '%.3f' },
   y: { letter: 'Y', format: '%.3f' },
   z: { letter: 'Z', format: '%.3f' },

@@ -27,11 +27,5 @@ export type OpKind =
   | 'vcarve';
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
-export type SourceCombine =
-  | 'auto'
-  | 'union'
-  | 'difference'
-  | 'intersection'
-  | 'xor'
-  | 'none';
+export type SourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
 export type FrameShape = 'rectangle' | 'rounded_rectangle';

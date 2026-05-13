@@ -35,7 +35,9 @@ class ReactiveWorkspaceStore extends WorkspaceStore {
 
   constructor() {
     super();
-    this.subscribe(() => { this.version += 1; });
+    this.subscribe(() => {
+      this.version += 1;
+    });
   }
 }
 

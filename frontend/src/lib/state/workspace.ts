@@ -109,8 +109,12 @@ export function parseWorkspace(raw: string | null | undefined): WorkspaceState {
   if (obj.camera && typeof obj.camera === 'object') {
     const c = obj.camera as Record<string, unknown>;
     if (
-      typeof c.px === 'number' && typeof c.py === 'number' && typeof c.pz === 'number' &&
-      typeof c.tx === 'number' && typeof c.ty === 'number' && typeof c.tz === 'number'
+      typeof c.px === 'number' &&
+      typeof c.py === 'number' &&
+      typeof c.pz === 'number' &&
+      typeof c.tx === 'number' &&
+      typeof c.ty === 'number' &&
+      typeof c.tz === 'number'
     ) {
       out.camera = { px: c.px, py: c.py, pz: c.pz, tx: c.tx, ty: c.ty, tz: c.tz };
     }
@@ -118,9 +122,14 @@ export function parseWorkspace(raw: string | null | undefined): WorkspaceState {
   if (obj.panels && typeof obj.panels === 'object') {
     const p = obj.panels as Record<string, unknown>;
     out.panels = {
-      left_width: typeof p.left_width === 'number' ? p.left_width : DEFAULT_WORKSPACE.panels.left_width,
-      right_width: typeof p.right_width === 'number' ? p.right_width : DEFAULT_WORKSPACE.panels.right_width,
-      bottom_height: typeof p.bottom_height === 'number' ? p.bottom_height : DEFAULT_WORKSPACE.panels.bottom_height,
+      left_width:
+        typeof p.left_width === 'number' ? p.left_width : DEFAULT_WORKSPACE.panels.left_width,
+      right_width:
+        typeof p.right_width === 'number' ? p.right_width : DEFAULT_WORKSPACE.panels.right_width,
+      bottom_height:
+        typeof p.bottom_height === 'number'
+          ? p.bottom_height
+          : DEFAULT_WORKSPACE.panels.bottom_height,
     };
   }
   if (typeof obj.last_post_processor === 'string') {
@@ -135,8 +144,7 @@ export function parseWorkspace(raw: string | null | undefined): WorkspaceState {
         visible_layers: Array.isArray(e.visible_layers)
           ? (e.visible_layers as unknown[]).filter((s): s is string => typeof s === 'string')
           : [],
-        selected_op_id:
-          typeof e.selected_op_id === 'number' ? e.selected_op_id : null,
+        selected_op_id: typeof e.selected_op_id === 'number' ? e.selected_op_id : null,
         playhead: typeof e.playhead === 'number' ? e.playhead : 1.0,
       };
     }

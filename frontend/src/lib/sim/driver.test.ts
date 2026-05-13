@@ -8,7 +8,12 @@ import { describe, expect, it } from 'vitest';
 import { computeFootprint } from './driver';
 import type { ImportResponse } from '../api/types';
 
-function importedWithBbox(min_x: number, min_y: number, max_x: number, max_y: number): ImportResponse {
+function importedWithBbox(
+  min_x: number,
+  min_y: number,
+  max_x: number,
+  max_y: number,
+): ImportResponse {
   return {
     bbox: { min_x, min_y, max_x, max_y },
   } as unknown as ImportResponse;

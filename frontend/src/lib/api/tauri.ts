@@ -197,7 +197,5 @@ export interface SourceFileChangedPayload {
 export async function onSourceFileChanged(
   handler: (payload: SourceFileChangedPayload) => void,
 ): Promise<UnlistenFn> {
-  return listen<SourceFileChangedPayload>('source-file-changed', (e) =>
-    handler(e.payload),
-  );
+  return listen<SourceFileChangedPayload>('source-file-changed', (e) => handler(e.payload));
 }

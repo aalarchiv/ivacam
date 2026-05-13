@@ -90,14 +90,7 @@
       {playing ? '❚❚' : '▶'}
     </button>
     <div class="track">
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.001"
-        value={project.playhead}
-        oninput={onScrub}
-      />
+      <input type="range" min="0" max="1" step="0.001" value={project.playhead} oninput={onScrub} />
       {#if warnings.length > 0}
         <div class="markers" aria-hidden="true">
           {#each warnings as w (w)}
@@ -135,9 +128,10 @@
           project.toolpathCumLen,
           project.toolpathTotalLen,
         );
-        const shown = mapped.segIdx >= 0
-          ? Math.min(total, mapped.segIdx + 1)
-          : Math.round(project.playhead * total);
+        const shown =
+          mapped.segIdx >= 0
+            ? Math.min(total, mapped.segIdx + 1)
+            : Math.round(project.playhead * total);
         return `${shown}/${total}`;
       })()}
     </span>

@@ -10,12 +10,7 @@
 /// shared bug wouldn't slip past.
 
 import { describe, expect, it } from 'vitest';
-import {
-  autoTabTs,
-  polylineAtT,
-  polylineProject,
-  vertexAndMidpointTs,
-} from './tabs';
+import { autoTabTs, polylineAtT, polylineProject, vertexAndMidpointTs } from './tabs';
 import type { Point2 } from '../api/types';
 
 function p(x: number, y: number): Point2 {
@@ -33,9 +28,7 @@ describe('FE arc-length helpers cross-check vs Rust (audit 50u)', () => {
 
   it('autoTabTs open: inset by 0.5/N', () => {
     expect(autoTabTs(2, false)).toEqual([0.25, 0.75]);
-    expect(autoTabTs(4, false).map((t) => +t.toFixed(6))).toEqual([
-      0.125, 0.375, 0.625, 0.875,
-    ]);
+    expect(autoTabTs(4, false).map((t) => +t.toFixed(6))).toEqual([0.125, 0.375, 0.625, 0.875]);
   });
 
   it('polylineAtT closed unit square: t=0 → first vertex; t=0.25 → midway through second edge', () => {

@@ -58,9 +58,15 @@ export class History {
     this.listener = fn;
   }
 
-  get version(): number { return this._version; }
-  get undoSize(): number { return this.undoStack.length; }
-  get redoSize(): number { return this.redoStack.length; }
+  get version(): number {
+    return this._version;
+  }
+  get undoSize(): number {
+    return this.undoStack.length;
+  }
+  get redoSize(): number {
+    return this.redoStack.length;
+  }
 
   exec(cmd: Command, state: unknown): void {
     if (this.transaction) {
@@ -71,10 +77,10 @@ export class History {
     const last = this.undoStack[this.undoStack.length - 1];
     const now = nowMs();
     const coalesces =
-      cmd.coalesce_key != null
-      && last != null
-      && last.coalesce_key === cmd.coalesce_key
-      && now - this.lastCommandTime < History.COALESCE_MS;
+      cmd.coalesce_key != null &&
+      last != null &&
+      last.coalesce_key === cmd.coalesce_key &&
+      now - this.lastCommandTime < History.COALESCE_MS;
     if (coalesces) {
       // Apply the new command but keep the original `revert` so the
       // single undo step takes the user back to before this run started.
@@ -135,7 +141,9 @@ export class History {
     if (!tx || tx.commands.length === 0) return;
     const compound: Command = {
       label: tx.label,
-      apply: (state) => { for (const c of tx.commands) c.apply(state); },
+      apply: (state) => {
+        for (const c of tx.commands) c.apply(state);
+      },
       revert: (state) => {
         // Revert in reverse order so dependent inserts unwind correctly.
         for (let i = tx.commands.length - 1; i >= 0; i--) tx.commands[i].revert(state);
@@ -169,7 +177,9 @@ export class History {
     this.bump();
   }
 
-  inTransaction(): boolean { return this.transaction != null; }
+  inTransaction(): boolean {
+    return this.transaction != null;
+  }
 
   private bump(): void {
     this._version++;

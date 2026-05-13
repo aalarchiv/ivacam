@@ -39,252 +39,307 @@
 </script>
 
 {#if open}
-  <Modal onClose={onClose} modalClass="settings-modal">
+  <Modal {onClose} modalClass="settings-modal">
     <header>
       <h2 id="settings-title">Settings</h2>
       <button class="close" onclick={onClose} aria-label="Close">×</button>
     </header>
 
-      <div class="body">
-        <section>
-          <h3>Appearance</h3>
-          <div class="grid">
-            <label>Theme
-              <div class="seg" role="group" aria-label="Theme">
-                <button
-                  class:active={project.settings.theme === 'auto'}
-                  onclick={() => update('theme', 'auto')}
-                  type="button"
-                >Auto</button>
-                <button
-                  class:active={project.settings.theme === 'light'}
-                  onclick={() => update('theme', 'light')}
-                  type="button"
-                >Light</button>
-                <button
-                  class:active={project.settings.theme === 'dark'}
-                  onclick={() => update('theme', 'dark')}
-                  type="button"
-                >Dark</button>
-              </div>
-            </label>
-
-            <label>Language
-              <div class="seg" role="group" aria-label="Language">
-                <button
-                  class:active={project.settings.language === 'en'}
-                  onclick={() => pickLanguage('en')}
-                  type="button"
-                >EN</button>
-                <button
-                  class:active={project.settings.language === 'de'}
-                  onclick={() => pickLanguage('de')}
-                  type="button"
-                >DE</button>
-              </div>
-            </label>
-          </div>
-        </section>
-
-        <section>
-          <h3>View</h3>
-          <div class="grid">
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={project.settings.showStockBox}
-                onchange={(e) => update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
-              />
-              <span>Show stock outline in 3D</span>
-            </label>
-          </div>
-        </section>
-
-        <section>
-          <h3>Cutting preview</h3>
-          <p class="hint">
-            How the 3D viewport renders the simulated stock once cutting
-            preview lands. These values are stored now so the eventual
-            renderer picks them up automatically.
-          </p>
-          <div class="grid">
-            <label>Default mode
-              <select
-                value={project.settings.previewMode}
-                onchange={(e) => update('previewMode', (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'])}
+    <div class="body">
+      <section>
+        <h3>Appearance</h3>
+        <div class="grid">
+          <label
+            >Theme
+            <div class="seg" role="group" aria-label="Theme">
+              <button
+                class:active={project.settings.theme === 'auto'}
+                onclick={() => update('theme', 'auto')}
+                type="button">Auto</button
               >
-                <option value="wireframe">Wireframe</option>
-                <option value="solid">Solid</option>
-                <option value="both">Both</option>
-              </select>
-            </label>
-
-            <label>Solid color
-              <div class="color">
-                <input
-                  type="color"
-                  value={project.settings.solidColor}
-                  oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
-                />
-                <input
-                  type="text"
-                  class="hex"
-                  value={project.settings.solidColor}
-                  oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
-                />
-              </div>
-            </label>
-
-            <label>Solid opacity
-              <div class="slider-row">
-                <input
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.05"
-                  value={project.settings.solidOpacity}
-                  oninput={(e) => update('solidOpacity', toNumber((e.currentTarget as HTMLInputElement).value, project.settings.solidOpacity, 0.1, 1))}
-                />
-                <span class="num">{project.settings.solidOpacity.toFixed(2)}</span>
-              </div>
-            </label>
-
-            <label>Edge color
-              <div class="color">
-                <input
-                  type="color"
-                  value={project.settings.edgeColor}
-                  oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
-                />
-                <input
-                  type="text"
-                  class="hex"
-                  value={project.settings.edgeColor}
-                  oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
-                />
-              </div>
-            </label>
-
-            <label>Edge opacity
-              <div class="slider-row">
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={project.settings.edgeOpacity}
-                  oninput={(e) => update('edgeOpacity', toNumber((e.currentTarget as HTMLInputElement).value, project.settings.edgeOpacity, 0, 1))}
-                />
-                <span class="num">{project.settings.edgeOpacity.toFixed(2)}</span>
-              </div>
-            </label>
-
-            <label>Cell resolution
-              <select
-                value={project.settings.cellResolutionMode}
-                onchange={(e) => update('cellResolutionMode', (e.currentTarget as HTMLSelectElement).value as AppSettings['cellResolutionMode'])}
+              <button
+                class:active={project.settings.theme === 'light'}
+                onclick={() => update('theme', 'light')}
+                type="button">Light</button
               >
-                <option value="auto">Auto (tool diameter / 15)</option>
-                <option value="manual">Manual</option>
-              </select>
-            </label>
+              <button
+                class:active={project.settings.theme === 'dark'}
+                onclick={() => update('theme', 'dark')}
+                type="button">Dark</button
+              >
+            </div>
+          </label>
 
-            {#if project.settings.cellResolutionMode === 'manual'}
-              <label>Cell size (mm)
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.05"
-                  value={project.settings.cellResolutionMm}
-                  oninput={(e) => update('cellResolutionMm', toNumber((e.currentTarget as HTMLInputElement).value, project.settings.cellResolutionMm, 0.01))}
-                />
-              </label>
-            {/if}
-          </div>
-        </section>
+          <label
+            >Language
+            <div class="seg" role="group" aria-label="Language">
+              <button
+                class:active={project.settings.language === 'en'}
+                onclick={() => pickLanguage('en')}
+                type="button">EN</button
+              >
+              <button
+                class:active={project.settings.language === 'de'}
+                onclick={() => pickLanguage('de')}
+                type="button">DE</button
+              >
+            </div>
+          </label>
+        </div>
+      </section>
 
-        <section>
-          <h3>Performance</h3>
-          <div class="grid">
-            <label class="check">
+      <section>
+        <h3>View</h3>
+        <div class="grid">
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={project.settings.showStockBox}
+              onchange={(e) =>
+                update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Show stock outline in 3D</span>
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h3>Cutting preview</h3>
+        <p class="hint">
+          How the 3D viewport renders the simulated stock once cutting preview lands. These values
+          are stored now so the eventual renderer picks them up automatically.
+        </p>
+        <div class="grid">
+          <label
+            >Default mode
+            <select
+              value={project.settings.previewMode}
+              onchange={(e) =>
+                update(
+                  'previewMode',
+                  (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
+                )}
+            >
+              <option value="wireframe">Wireframe</option>
+              <option value="solid">Solid</option>
+              <option value="both">Both</option>
+            </select>
+          </label>
+
+          <label
+            >Solid color
+            <div class="color">
               <input
-                type="checkbox"
-                checked={project.settings.solidPreviewByDefault}
-                onchange={(e) => update('solidPreviewByDefault', (e.currentTarget as HTMLInputElement).checked)}
+                type="color"
+                value={project.settings.solidColor}
+                oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
               />
-              <span>Enable solid preview by default</span>
-            </label>
+              <input
+                type="text"
+                class="hex"
+                value={project.settings.solidColor}
+                oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
+              />
+            </div>
+          </label>
 
-            <label>Max simulation cells
+          <label
+            >Solid opacity
+            <div class="slider-row">
+              <input
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.05"
+                value={project.settings.solidOpacity}
+                oninput={(e) =>
+                  update(
+                    'solidOpacity',
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.solidOpacity,
+                      0.1,
+                      1,
+                    ),
+                  )}
+              />
+              <span class="num">{project.settings.solidOpacity.toFixed(2)}</span>
+            </div>
+          </label>
+
+          <label
+            >Edge color
+            <div class="color">
+              <input
+                type="color"
+                value={project.settings.edgeColor}
+                oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
+              />
+              <input
+                type="text"
+                class="hex"
+                value={project.settings.edgeColor}
+                oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
+              />
+            </div>
+          </label>
+
+          <label
+            >Edge opacity
+            <div class="slider-row">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={project.settings.edgeOpacity}
+                oninput={(e) =>
+                  update(
+                    'edgeOpacity',
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.edgeOpacity,
+                      0,
+                      1,
+                    ),
+                  )}
+              />
+              <span class="num">{project.settings.edgeOpacity.toFixed(2)}</span>
+            </div>
+          </label>
+
+          <label
+            >Cell resolution
+            <select
+              value={project.settings.cellResolutionMode}
+              onchange={(e) =>
+                update(
+                  'cellResolutionMode',
+                  (e.currentTarget as HTMLSelectElement).value as AppSettings['cellResolutionMode'],
+                )}
+            >
+              <option value="auto">Auto (tool diameter / 15)</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+
+          {#if project.settings.cellResolutionMode === 'manual'}
+            <label
+              >Cell size (mm)
               <input
                 type="number"
-                min="100000"
-                step="100000"
-                value={project.settings.maxSimulationCells}
-                oninput={(e) => update('maxSimulationCells', Math.round(toNumber((e.currentTarget as HTMLInputElement).value, project.settings.maxSimulationCells, 100_000)))}
+                min="0.01"
+                step="0.05"
+                value={project.settings.cellResolutionMm}
+                oninput={(e) =>
+                  update(
+                    'cellResolutionMm',
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.cellResolutionMm,
+                      0.01,
+                    ),
+                  )}
               />
             </label>
-          </div>
-          <p class="hint">
-            Caps the heightmap grid size before resolution gets coarsened
-            automatically. Higher values look sharper at the cost of
-            memory + redraw time.
-          </p>
-        </section>
+          {/if}
+        </div>
+      </section>
 
-        <section>
-          <h3>Sim safety</h3>
-          <div class="grid">
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={project.settings.blockOnCriticalSimWarnings}
-                onchange={(e) => update('blockOnCriticalSimWarnings', (e.currentTarget as HTMLInputElement).checked)}
-              />
-              <span>Block G-code generation on critical sim warnings</span>
-            </label>
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={project.settings.autoRunSimOnSave}
-                onchange={(e) => update('autoRunSimOnSave', (e.currentTarget as HTMLInputElement).checked)}
-              />
-              <span>Auto-run sim on every project save</span>
-            </label>
-          </div>
-          <p class="hint">
-            "Critical" warnings are collisions and rapids cutting through
-            material. With the block enabled, fixing them — or disabling
-            the safety check — is required before downloading G-code.
-          </p>
-        </section>
+      <section>
+        <h3>Performance</h3>
+        <div class="grid">
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={project.settings.solidPreviewByDefault}
+              onchange={(e) =>
+                update('solidPreviewByDefault', (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Enable solid preview by default</span>
+          </label>
 
-        <section>
-          <h3>Source files</h3>
-          <div class="grid">
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={project.settings.autoReloadSources}
-                onchange={(e) => update('autoReloadSources', (e.currentTarget as HTMLInputElement).checked)}
-              />
-              <span>Auto-reload imported DXF / SVG when changed externally</span>
-            </label>
-          </div>
-          <p class="hint">
-            Desktop only. Watches the source file backing the current
-            import and re-runs it when the CAD app saves a new version
-            (one undoable step). Disable to get a "Reload?" toast
-            instead. Network and OneDrive-synced paths can drop events
-            silently — manually re-import if a save doesn't show up
-            within a few seconds.
-          </p>
-        </section>
-      </div>
+          <label
+            >Max simulation cells
+            <input
+              type="number"
+              min="100000"
+              step="100000"
+              value={project.settings.maxSimulationCells}
+              oninput={(e) =>
+                update(
+                  'maxSimulationCells',
+                  Math.round(
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.maxSimulationCells,
+                      100_000,
+                    ),
+                  ),
+                )}
+            />
+          </label>
+        </div>
+        <p class="hint">
+          Caps the heightmap grid size before resolution gets coarsened automatically. Higher values
+          look sharper at the cost of memory + redraw time.
+        </p>
+      </section>
 
-      <footer>
-        <button class="primary" onclick={onClose} type="button">Done</button>
-      </footer>
+      <section>
+        <h3>Sim safety</h3>
+        <div class="grid">
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={project.settings.blockOnCriticalSimWarnings}
+              onchange={(e) =>
+                update('blockOnCriticalSimWarnings', (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Block G-code generation on critical sim warnings</span>
+          </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={project.settings.autoRunSimOnSave}
+              onchange={(e) =>
+                update('autoRunSimOnSave', (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Auto-run sim on every project save</span>
+          </label>
+        </div>
+        <p class="hint">
+          "Critical" warnings are collisions and rapids cutting through material. With the block
+          enabled, fixing them — or disabling the safety check — is required before downloading
+          G-code.
+        </p>
+      </section>
+
+      <section>
+        <h3>Source files</h3>
+        <div class="grid">
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={project.settings.autoReloadSources}
+              onchange={(e) =>
+                update('autoReloadSources', (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Auto-reload imported DXF / SVG when changed externally</span>
+          </label>
+        </div>
+        <p class="hint">
+          Desktop only. Watches the source file backing the current import and re-runs it when the
+          CAD app saves a new version (one undoable step). Disable to get a "Reload?" toast instead.
+          Network and OneDrive-synced paths can drop events silently — manually re-import if a save
+          doesn't show up within a few seconds.
+        </p>
+      </section>
+    </div>
+
+    <footer>
+      <button class="primary" onclick={onClose} type="button">Done</button>
+    </footer>
   </Modal>
 {/if}
 

@@ -4,12 +4,7 @@
 // catch UI regressions.
 
 import { describe, expect, it } from 'vitest';
-import {
-  STYLE_TABLE,
-  describeStyleOp,
-  engravingMismatch,
-  type TextStyle,
-} from './text_style';
+import { STYLE_TABLE, describeStyleOp, engravingMismatch, type TextStyle } from './text_style';
 
 describe('describeStyleOp', () => {
   const TOOL_DIAMETER = 3;
@@ -83,9 +78,14 @@ describe('describeStyleOp', () => {
 
   it('every style has a STYLE_TABLE entry with sane defaults', () => {
     const styles: TextStyle[] = [
-      'engraving', 'carve_inside', 'carve_outside',
-      'pocket_inside', 'pocket_outside',
-      'outline_inside', 'outline_outside', 'plain',
+      'engraving',
+      'carve_inside',
+      'carve_outside',
+      'pocket_inside',
+      'pocket_outside',
+      'outline_inside',
+      'outline_outside',
+      'plain',
     ];
     for (const s of styles) {
       const e = STYLE_TABLE[s];
@@ -97,9 +97,14 @@ describe('describeStyleOp', () => {
 
   it('snapshot-matches the per-style descriptors for "AB"-equivalent input', () => {
     const styles: TextStyle[] = [
-      'engraving', 'carve_inside', 'carve_outside',
-      'pocket_inside', 'pocket_outside',
-      'outline_inside', 'outline_outside', 'plain',
+      'engraving',
+      'carve_inside',
+      'carve_outside',
+      'pocket_inside',
+      'pocket_outside',
+      'outline_inside',
+      'outline_outside',
+      'plain',
     ];
     const ids = [1, 2];
     const snap = styles.map((s) => ({

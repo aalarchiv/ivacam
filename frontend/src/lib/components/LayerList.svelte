@@ -29,13 +29,10 @@
     return ACI[c] ?? 'var(--text-faint)';
   }
 
-  let usableLayers = $derived(
-    project.imported?.layers.filter((l) => l.segment_count > 0) ?? [],
-  );
+  let usableLayers = $derived(project.imported?.layers.filter((l) => l.segment_count > 0) ?? []);
 
   let allVisible = $derived(
-    usableLayers.length > 0
-      && usableLayers.every((l) => project.visibleLayers.has(l.name)),
+    usableLayers.length > 0 && usableLayers.every((l) => project.visibleLayers.has(l.name)),
   );
 
   function setAllVisible(on: boolean) {
@@ -52,8 +49,8 @@
       class="caret-btn"
       onclick={() => (collapsed = !collapsed)}
       title={collapsed ? 'Expand layers' : 'Collapse layers'}
-      aria-label="Toggle layers panel"
-    >{collapsed ? '▸' : '▾'}</button>
+      aria-label="Toggle layers panel">{collapsed ? '▸' : '▾'}</button
+    >
     {#if usableLayers.length > 0}
       <input
         type="checkbox"

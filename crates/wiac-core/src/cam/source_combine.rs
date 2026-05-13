@@ -34,7 +34,7 @@ use crate::project::SourceCombine;
 /// Shape of the synthetic frame built around a Pocket-Outside selection.
 /// Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox
 /// with a quarter-arc bulge at each corner. Oval and TightOutline are
-/// explicit follow-ups — not in v1.
+/// deferred follow-ups (not yet implemented).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FrameShape {

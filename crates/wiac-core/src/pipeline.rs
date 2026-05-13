@@ -16,7 +16,7 @@
 //! a `std::thread`, the HTTP server uses `tokio::task::spawn_blocking`,
 //! and WASM runs it on the JS event loop and yields between events).
 //!
-//! WASM threading (web workers + COOP/COEP) is out of scope for v1 — the
+//! WASM threading (web workers + COOP/COEP) is a follow-up — the
 //! WASM bridge ships single-threaded and pumps events synchronously.
 //!
 //! ## Module split
@@ -1859,7 +1859,7 @@ fn synthesize_op_setup(
     setup.tabs.active = setup.tabs.active
         || !matches!(op.params.tab_mode, crate::project::TabPlacementMode::Off);
     if trochoidal {
-        // Tabs not supported on trochoidal pockets in v1; force-off so
+        // Tabs aren't yet supported on trochoidal pockets; force-off so
         // the gcode emitter doesn't see active tabs.
         setup.tabs.active = false;
     }

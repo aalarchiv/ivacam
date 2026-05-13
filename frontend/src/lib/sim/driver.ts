@@ -32,12 +32,7 @@ interface SimulatorWasm {
     topZ: number,
   ): SimulatorWasm;
   reset(): void;
-  advance(
-    segments: unknown,
-    tool: unknown,
-    from_idx: number,
-    to_idx: number,
-  ): Uint32Array;
+  advance(segments: unknown, tool: unknown, from_idx: number, to_idx: number): Uint32Array;
   set_fixtures(fixtures: unknown): void;
   take_diagnostics(): SimDiagnostics;
   cols(): number;
@@ -128,7 +123,9 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
     // for now (see ToolProfile::from_tool), but ship the fields so
     // the data is there when the sim grows fillet / undercut support.
     ...(t.cornerRadiusMm !== undefined ? { corner_radius_mm: t.cornerRadiusMm } : {}),
-    ...(t.tslotNeckDiameterMm !== undefined ? { tslot_neck_diameter_mm: t.tslotNeckDiameterMm } : {}),
+    ...(t.tslotNeckDiameterMm !== undefined
+      ? { tslot_neck_diameter_mm: t.tslotNeckDiameterMm }
+      : {}),
     ...(t.tslotNeckLengthMm !== undefined ? { tslot_neck_length_mm: t.tslotNeckLengthMm } : {}),
     ...(t.zShiftMm !== undefined ? { z_shift_mm: t.zShiftMm } : {}),
   };
@@ -218,7 +215,13 @@ export class HeightfieldDriver {
     imported: ImportResponse | null;
     generated: GenerateResponse | null;
     tool: ToolEntry | null;
-    stock: { mode: 'auto' | 'manual'; margin: number; thickness: number; customX: number; customY: number };
+    stock: {
+      mode: 'auto' | 'manual';
+      margin: number;
+      thickness: number;
+      customX: number;
+      customY: number;
+    };
     settings: AppSettings;
     fixtures?: Fixture[];
   }) {
@@ -239,14 +242,7 @@ export class HeightfieldDriver {
     }
     const topZ = 0; // stock surface is z=0; carving descends to negative Z
     this.dispose();
-    this.sim = new this.wasm.Simulator(
-      fp.minX,
-      fp.minY,
-      fp.maxX,
-      fp.maxY,
-      effectiveCellSize,
-      topZ,
-    );
+    this.sim = new this.wasm.Simulator(fp.minX, fp.minY, fp.maxX, fp.maxY, effectiveCellSize, topZ);
     this.mesh = new HeightfieldMesh({
       cols: this.sim.cols(),
       rows: this.sim.rows(),
@@ -399,7 +395,9 @@ export class HeightfieldDriver {
 
   /// Live-apply settings changes (color / opacity). Resolution / max
   /// cells changes require a full rebuild via build().
-  applyStyle(settings: Pick<AppSettings, 'solidColor' | 'solidOpacity' | 'edgeColor' | 'edgeOpacity'>) {
+  applyStyle(
+    settings: Pick<AppSettings, 'solidColor' | 'solidOpacity' | 'edgeColor' | 'edgeOpacity'>,
+  ) {
     this.mesh?.setStyle({
       solidColor: settings.solidColor,
       solidOpacity: settings.solidOpacity,

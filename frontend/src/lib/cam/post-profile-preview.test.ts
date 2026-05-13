@@ -44,9 +44,9 @@ describe('substitute', () => {
     ctx.feed = 800;
     ctx.spindle = 18000;
     ctx.version = '0.2.3';
-    expect(
-      substitute('T<t> (<n>) F<f> S<s> wiac <version>', ctx),
-    ).toBe('T7 (3mm endmill) F800 S18000 wiac 0.2.3');
+    expect(substitute('T<t> (<n>) F<f> S<s> wiac <version>', ctx)).toBe(
+      'T7 (3mm endmill) F800 S18000 wiac 0.2.3',
+    );
   });
 
   it('is case-insensitive', () => {
@@ -116,34 +116,19 @@ describe('renderAxisWord', () => {
 
   it('uses the axis name when given', () => {
     expect(
-      renderAxisWord(
-        { enabled: true, name: 'A', format: '%.3f', scale: 1.0 },
-        'X',
-        45.0,
-        '%.3f',
-      ),
+      renderAxisWord({ enabled: true, name: 'A', format: '%.3f', scale: 1.0 }, 'X', 45.0, '%.3f'),
     ).toBe('A45.000');
   });
 
   it('applies scale before formatting', () => {
     expect(
-      renderAxisWord(
-        { enabled: true, name: 'Z', format: '%.3f', scale: -1.0 },
-        'Z',
-        2.5,
-        '%.3f',
-      ),
+      renderAxisWord({ enabled: true, name: 'Z', format: '%.3f', scale: -1.0 }, 'Z', 2.5, '%.3f'),
     ).toBe('Z-2.500');
   });
 
   it('returns null when disabled', () => {
     expect(
-      renderAxisWord(
-        { enabled: false, name: 'Z', format: '%.3f', scale: 1.0 },
-        'Z',
-        1.0,
-        '%.3f',
-      ),
+      renderAxisWord({ enabled: false, name: 'Z', format: '%.3f', scale: 1.0 }, 'Z', 1.0, '%.3f'),
     ).toBeNull();
   });
 });

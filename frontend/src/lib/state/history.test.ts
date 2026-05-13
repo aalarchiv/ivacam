@@ -227,7 +227,9 @@ describe('History clear / version', () => {
     const h = new History();
     const s = freshState();
     let bumps = 0;
-    h.subscribe(() => { bumps++; });
+    h.subscribe(() => {
+      bumps++;
+    });
     h.exec(setCmd(1), s);
     h.exec(setCmd(2), s);
     h.undo(s);

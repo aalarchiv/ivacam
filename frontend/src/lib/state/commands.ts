@@ -363,9 +363,7 @@ export function toggleTabPlacementCommand(
           Math.min(Math.abs(p.t - placement.t), 1 - Math.abs(p.t - placement.t)) < toleranceT,
       );
       const next =
-        matchIdx >= 0
-          ? current.filter((_, i) => i !== matchIdx)
-          : [...current, { ...placement }];
+        matchIdx >= 0 ? current.filter((_, i) => i !== matchIdx) : [...current, { ...placement }];
       // Produce a NEW operations array (and a new op object) so $derived /
       // $effect blocks that depend on operations' reference identity
       // (the 2D ghost tab, 3D tab markers) refire. The previous

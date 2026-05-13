@@ -216,9 +216,7 @@ describe('duplicateOperationCommand', () => {
     const copy: OpEntry = { ...sampleOp(2, 'orig (copy)'), depth: -9 };
     const cmd = duplicateOperationCommand(1, copy, 1);
     cmd.apply(t);
-    t.operations = t.operations.map((o) =>
-      o.id === 1 ? { ...o, depth: -42 } : o,
-    );
+    t.operations = t.operations.map((o) => (o.id === 1 ? { ...o, depth: -42 } : o));
     const inserted = t.operations.find((o) => o.id === 2)!;
     expect(inserted.depth).toBe(-9);
     cmd.revert(t);

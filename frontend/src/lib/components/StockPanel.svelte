@@ -64,9 +64,7 @@
       <select
         value={project.stock.mode}
         onchange={(e) =>
-          patch({ mode: ((e.target as HTMLSelectElement).value === 'manual'
-            ? 'manual'
-            : 'auto') })}
+          patch({ mode: (e.target as HTMLSelectElement).value === 'manual' ? 'manual' : 'auto' })}
       >
         <option value="auto">{$_('stock.auto')}</option>
         <option value="manual">{$_('stock.manual')}</option>
@@ -149,7 +147,9 @@
         class="fix-row"
         class:selected={project.selectedFixtureId === f.id}
         onclick={() => project.selectFixture(f.id)}
-        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') project.selectFixture(f.id); }}
+        onkeydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') project.selectFixture(f.id);
+        }}
         role="button"
         tabindex="0"
       >
@@ -165,8 +165,11 @@
           type="button"
           class="del-btn"
           aria-label="Delete fixture"
-          onclick={(e) => { e.stopPropagation(); project.removeFixture(f.id); }}
-        >×</button>
+          onclick={(e) => {
+            e.stopPropagation();
+            project.removeFixture(f.id);
+          }}>×</button
+        >
       </div>
       {#if project.selectedFixtureId === f.id}
         <div class="fix-edit">
@@ -207,7 +210,10 @@
                 type="number"
                 step="0.1"
                 value={f.z_bottom}
-                onchange={(e) => patchFixture(f.id, { z_bottom: parseFloat((e.target as HTMLInputElement).value) })}
+                onchange={(e) =>
+                  patchFixture(f.id, {
+                    z_bottom: parseFloat((e.target as HTMLInputElement).value),
+                  })}
               />
               <span class="unit">mm</span>
             </span>
@@ -219,7 +225,8 @@
                 type="number"
                 step="0.1"
                 value={f.z_top}
-                onchange={(e) => patchFixture(f.id, { z_top: parseFloat((e.target as HTMLInputElement).value) })}
+                onchange={(e) =>
+                  patchFixture(f.id, { z_top: parseFloat((e.target as HTMLInputElement).value) })}
               />
               <span class="unit">mm</span>
             </span>
@@ -232,7 +239,8 @@
                   type="number"
                   step="0.1"
                   value={f.kind.width}
-                  onchange={(e) => patchKind(f.id, { width: parseFloat((e.target as HTMLInputElement).value) })}
+                  onchange={(e) =>
+                    patchKind(f.id, { width: parseFloat((e.target as HTMLInputElement).value) })}
                 />
                 <span class="unit">mm</span>
               </span>
@@ -244,7 +252,8 @@
                   type="number"
                   step="0.1"
                   value={f.kind.depth}
-                  onchange={(e) => patchKind(f.id, { depth: parseFloat((e.target as HTMLInputElement).value) })}
+                  onchange={(e) =>
+                    patchKind(f.id, { depth: parseFloat((e.target as HTMLInputElement).value) })}
                 />
                 <span class="unit">mm</span>
               </span>
@@ -257,7 +266,8 @@
                   type="number"
                   step="0.1"
                   value={f.kind.radius}
-                  onchange={(e) => patchKind(f.id, { radius: parseFloat((e.target as HTMLInputElement).value) })}
+                  onchange={(e) =>
+                    patchKind(f.id, { radius: parseFloat((e.target as HTMLInputElement).value) })}
                 />
                 <span class="unit">mm</span>
               </span>

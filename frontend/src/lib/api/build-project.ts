@@ -159,13 +159,7 @@ type WireOpKind =
   | { type: 'helix' }
   | { type: 'v_carve' };
 
-type WireSourceCombine =
-  | 'auto'
-  | 'union'
-  | 'difference'
-  | 'intersection'
-  | 'xor'
-  | 'none';
+type WireSourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
 type WireSource =
   | { kind: 'all' }
   | { kind: 'layers'; layers: string[]; combine?: WireSourceCombine }
@@ -225,7 +219,12 @@ interface WireOp {
       width_override_mm?: number;
       height_override_mm?: number;
     }[];
-    leads: { in: 'off' | 'straight' | 'arc'; out: 'off' | 'straight' | 'arc'; in_lenght: number; out_lenght: number };
+    leads: {
+      in: 'off' | 'straight' | 'arc';
+      out: 'off' | 'straight' | 'arc';
+      in_lenght: number;
+      out_lenght: number;
+    };
     cut_direction?: 'conventional' | 'climb';
     finish_cut_direction?: 'conventional' | 'climb';
     plunge?:
@@ -472,9 +471,7 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
     // op into N instances. Single-count linear / grid patterns are
     // equivalent to no pattern, so we still emit them for round-trip
     // fidelity — backend handles the degenerate case efficiently.
-    ...(op.pattern && (op.pattern as { kind?: string }).kind
-      ? { pattern: op.pattern }
-      : {}),
+    ...(op.pattern && (op.pattern as { kind?: string }).kind ? { pattern: op.pattern } : {}),
     source: buildSource(op),
     params: {
       depth: op.depth,
@@ -511,9 +508,7 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
             tab_placements: op.tabPlacements.map((p) => ({
               object_id: p.objectId,
               t: p.t,
-              ...(p.widthOverrideMm !== undefined
-                ? { width_override_mm: p.widthOverrideMm }
-                : {}),
+              ...(p.widthOverrideMm !== undefined ? { width_override_mm: p.widthOverrideMm } : {}),
               ...(p.heightOverrideMm !== undefined
                 ? { height_override_mm: p.heightOverrideMm }
                 : {}),
@@ -534,13 +529,9 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
       ...(op.finishCutDirection && op.finishCutDirection !== 'conventional'
         ? { finish_cut_direction: op.finishCutDirection }
         : {}),
-      ...(op.plunge && op.plunge.kind !== 'direct'
-        ? { plunge: op.plunge }
-        : {}),
+      ...(op.plunge && op.plunge.kind !== 'direct' ? { plunge: op.plunge } : {}),
       // Only emit xy_overlap when set; the Rust default kicks in on 0.
-      ...(op.xyOverlap !== undefined && op.xyOverlap > 0
-        ? { xy_overlap: op.xyOverlap }
-        : {}),
+      ...(op.xyOverlap !== undefined && op.xyOverlap > 0 ? { xy_overlap: op.xyOverlap } : {}),
       ...(op.feedRateOverride !== undefined && op.feedRateOverride > 0
         ? { feed_rate_override: op.feedRateOverride }
         : {}),
@@ -550,32 +541,24 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
       ...(op.cornerFeedReduction !== undefined && op.cornerFeedReduction > 0
         ? { corner_feed_reduction: op.cornerFeedReduction }
         : {}),
-      ...(op.finishStep !== undefined && op.finishStep !== 0
-        ? { finish_step: op.finishStep }
-        : {}),
+      ...(op.finishStep !== undefined && op.finishStep !== 0 ? { finish_step: op.finishStep } : {}),
       ...(op.finishXyAllowanceMm !== undefined && op.finishXyAllowanceMm > 0
         ? { finish_xy_allowance_mm: op.finishXyAllowanceMm }
         : {}),
       ...(op.chamferAfterWidthMm !== undefined && op.chamferAfterWidthMm > 0
         ? { chamfer_after_width_mm: op.chamferAfterWidthMm }
         : {}),
-      ...(op.approachPoint !== undefined
-        ? { approach_point: op.approachPoint }
-        : {}),
+      ...(op.approachPoint !== undefined ? { approach_point: op.approachPoint } : {}),
       ...(op.throughDepth !== undefined && op.throughDepth > 0
         ? { through_depth: op.throughDepth }
         : {}),
-      ...(op.depthList && op.depthList.length > 0
-        ? { depth_list: op.depthList }
-        : {}),
+      ...(op.depthList && op.depthList.length > 0 ? { depth_list: op.depthList } : {}),
       ...(op.carveMaxWidthMm !== undefined && op.carveMaxWidthMm > 0
         ? { carve_max_width_mm: op.carveMaxWidthMm }
         : {}),
       ...(op.multiPassRefine ? { multi_pass_refine: true } : {}),
       ...(op.frameShape !== undefined ? { frame_shape: op.frameShape } : {}),
-      ...(op.framePaddingMm !== undefined
-        ? { frame_padding_mm: op.framePaddingMm }
-        : {}),
+      ...(op.framePaddingMm !== undefined ? { frame_padding_mm: op.framePaddingMm } : {}),
       ...(op.frameCornerRadiusMm !== undefined
         ? { frame_corner_radius_mm: op.frameCornerRadiusMm }
         : {}),

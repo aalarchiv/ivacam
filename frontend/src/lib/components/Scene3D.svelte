@@ -10,11 +10,7 @@
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { HeightfieldDriver, computeFootprint } from '../sim/driver';
-  import {
-    autoTabTs,
-    buildObjectPolylines,
-    polylineAtT,
-  } from '../cam/tabs';
+  import { autoTabTs, buildObjectPolylines, polylineAtT } from '../cam/tabs';
   import type { SimWarning } from '../api/types';
 
   let host: HTMLDivElement;
@@ -130,9 +126,7 @@
   // the source of one *line pair* (two consecutive vertices in the
   // BufferAttribute) so a Raycaster.intersectObject hit can be mapped
   // back to either an imported object id or a toolpath segment index.
-  type LineOwner =
-    | { kind: 'object'; objectId: number }
-    | { kind: 'toolpath'; segIdx: number };
+  type LineOwner = { kind: 'object'; objectId: number } | { kind: 'toolpath'; segIdx: number };
   let linesObject: THREE.LineSegments | undefined;
   let lineOwners: LineOwner[] = [];
   let sceneRadius = 100;
@@ -203,7 +197,7 @@
   /// conjugate so even close ids land far apart on the wheel.
   function opPalette(opId: number): number {
     const phi = 0.6180339887498949;
-    return ((opId * phi) % 1 + 1) % 1;
+    return (((opId * phi) % 1) + 1) % 1;
   }
 
   onMount(() => {
@@ -433,8 +427,7 @@
     const imported = project.imported;
     const generated = project.generated;
     const firstOp = project.operations[0];
-    const tool =
-      project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
+    const tool = project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
     if (!imported || !generated || !tool) {
       driver?.setVisible(false);
       requestRender();
@@ -468,8 +461,12 @@
             fixtures: project.fixtures,
           });
           driver.setVisible(true);
-          driver.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
-          driver.setEdgesVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+          driver.setSolidVisible(
+            settings.previewMode === 'solid' || settings.previewMode === 'both',
+          );
+          driver.setEdgesVisible(
+            settings.previewMode === 'solid' || settings.previewMode === 'both',
+          );
           lastSimKey = key;
           // Replay 0..head so we see the carved state immediately (not
           // an unmilled stock we have to scrub forward through).
@@ -504,8 +501,7 @@
     if (!driver) return;
     const generated = project.generated;
     const firstOp = project.operations[0];
-    const tool =
-      project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
+    const tool = project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
     if (!generated || !tool) return;
     driver.advanceTo(
       project.playhead,
@@ -593,9 +589,10 @@
       project.toolpathCumLen,
       project.toolpathTotalLen,
     );
-    const head = segIdx < 0
-      ? Math.max(0, Math.min(total, Math.round(project.playhead * total)))
-      : Math.max(0, Math.min(total, segIdx + 1));
+    const head =
+      segIdx < 0
+        ? Math.max(0, Math.min(total, Math.round(project.playhead * total)))
+        : Math.max(0, Math.min(total, segIdx + 1));
     if (head === appliedHead) return;
     const attr = linesObject.geometry.attributes.color as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
@@ -783,7 +780,11 @@
     }
     let changed = next.size !== flashingFixtures.size;
     if (!changed) {
-      for (const id of next) if (!flashingFixtures.has(id)) { changed = true; break; }
+      for (const id of next)
+        if (!flashingFixtures.has(id)) {
+          changed = true;
+          break;
+        }
     }
     if (changed) {
       flashingFixtures = next;
@@ -909,7 +910,11 @@
 
       let geom: THREE.BufferGeometry | undefined;
       if (f.kind.shape === 'box') {
-        geom = new THREE.BoxGeometry(Math.max(0.01, f.kind.width), Math.max(0.01, f.kind.depth), sizeZ);
+        geom = new THREE.BoxGeometry(
+          Math.max(0.01, f.kind.width),
+          Math.max(0.01, f.kind.depth),
+          sizeZ,
+        );
       } else if (f.kind.shape === 'cylinder') {
         geom = new THREE.CylinderGeometry(
           Math.max(0.01, f.kind.radius),
@@ -920,9 +925,7 @@
         // CylinderGeometry's axis is +Y; rotate so it stands on +Z.
         geom.rotateX(Math.PI / 2);
       } else if (f.kind.shape === 'polygon') {
-        const shape = new THREE.Shape(
-          f.kind.vertices.map(([x, y]) => new THREE.Vector2(x, y)),
-        );
+        const shape = new THREE.Shape(f.kind.vertices.map(([x, y]) => new THREE.Vector2(x, y)));
         geom = new THREE.ExtrudeGeometry(shape, { depth: sizeZ, bevelEnabled: false });
       }
       if (!geom) continue;
@@ -974,10 +977,7 @@
     const imp = project.imported;
     if (!imp) return;
     const color = cssColor('--tab-marker', 0xffd23a);
-    const radius = Math.max(
-      0.5,
-      ((imp.bbox.max_x - imp.bbox.min_x) || 100) * 0.008,
-    );
+    const radius = Math.max(0.5, (imp.bbox.max_x - imp.bbox.min_x || 100) * 0.008);
     const geom = new THREE.SphereGeometry(radius, 12, 8);
     const mat = new THREE.MeshBasicMaterial({ color });
     // rt1.10 + hr5: tabs are per-op. Manual placements get resolved
@@ -1082,14 +1082,16 @@
     // Fall back to the count-based mapping only if the cum-length table
     // hasn't been built yet (race between setGenerated and the first
     // updateTool tick).
-    const headIdx = mapped.segIdx >= 0
-      ? Math.max(0, Math.min(total - 1, mapped.segIdx))
-      : Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
+    const headIdx =
+      mapped.segIdx >= 0
+        ? Math.max(0, Math.min(total - 1, mapped.segIdx))
+        : Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
     const seg = gen.toolpath[headIdx];
     if (!seg) return;
-    const t = mapped.segIdx >= 0
-      ? Math.max(0, Math.min(1, mapped.segT))
-      : Math.max(0, Math.min(1, project.playhead * total - headIdx));
+    const t =
+      mapped.segIdx >= 0
+        ? Math.max(0, Math.min(1, mapped.segT))
+        : Math.max(0, Math.min(1, project.playhead * total - headIdx));
     const px = seg.from.x + (seg.to.x - seg.from.x) * t;
     const py = seg.from.y + (seg.to.y - seg.from.y) * t;
     const pz = seg.from.z + (seg.to.z - seg.from.z) * t;
@@ -1109,10 +1111,9 @@
     const selOp =
       project.selectedOpId == null
         ? null
-        : project.operations.find((o) => o.id === project.selectedOpId) ?? null;
+        : (project.operations.find((o) => o.id === project.selectedOpId) ?? null);
     const opForTool = selOp ?? segOp ?? project.operations[0];
-    const tool =
-      project.tools.find((t) => t.id === (opForTool?.toolId ?? 0)) ?? project.tools[0];
+    const tool = project.tools.find((t) => t.id === (opForTool?.toolId ?? 0)) ?? project.tools[0];
     const diameter = Math.max(0.2, tool?.diameter ?? 3);
     const mode = project.machine.mode;
     const dragoff = tool?.dragoff;
@@ -1132,7 +1133,17 @@
         toolGroup.remove(toolMesh);
         disposeMesh(toolMesh);
       }
-      toolMesh = buildToolMesh(kind, mode, diameter, tipDiameter, dragoff, colorHex, fluteLen, shankDia, holder);
+      toolMesh = buildToolMesh(
+        kind,
+        mode,
+        diameter,
+        tipDiameter,
+        dragoff,
+        colorHex,
+        fluteLen,
+        shankDia,
+        holder,
+      );
       toolGroup.add(toolMesh);
       toolMeshKey = key;
     } else {
@@ -1238,7 +1249,7 @@
       return new THREE.Mesh(body, mat);
     }
     const pieces: THREE.BufferGeometry[] = [];
-    const shankR = ((shankDia ?? diameter) * 0.5);
+    const shankR = (shankDia ?? diameter) * 0.5;
     let zCursor = 0;
     const fLen = Math.max(0, fluteLen ?? Math.max(diameter * 4, 6));
     if (fLen > 0) {
@@ -1443,7 +1454,12 @@
         const opId = seg.op_id ?? 0;
         const opHue = opId === 0 ? 0.0 : opPalette(opId);
         const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
-        const moveBoost = seg.kind === 'rapid' ? 0.5 : seg.kind === 'plunge' || seg.kind === 'retract' ? 0.85 : 1.15;
+        const moveBoost =
+          seg.kind === 'rapid'
+            ? 0.5
+            : seg.kind === 'plunge' || seg.kind === 'retract'
+              ? 0.85
+              : 1.15;
         const r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
         const g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
         const b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
@@ -1563,7 +1579,12 @@
     }
   }
 
-  function tessellate(seg: { start: { x: number; y: number }; end: { x: number; y: number }; bulge: number; type: string }): [number, number][] {
+  function tessellate(seg: {
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    bulge: number;
+    type: string;
+  }): [number, number][] {
     if (seg.type === 'POINT') return [[seg.start.x, seg.start.y]];
     if (Math.abs(seg.bulge) < 1e-9) {
       return [

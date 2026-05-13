@@ -17,12 +17,7 @@
   import { project } from '../state/project.svelte';
   import { defaultClient } from '../api/http';
   import type { Segment, RenderTextRequest } from '../api/types';
-  import {
-    STYLE_TABLE,
-    describeStyleOp,
-    engravingMismatch,
-    type TextStyle,
-  } from './text_style';
+  import { STYLE_TABLE, describeStyleOp, engravingMismatch, type TextStyle } from './text_style';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -202,11 +197,7 @@
       // one Ctrl+Z reverts both halves of the text-add flow.
       project.history.beginTransaction('Add text');
       txOpen = true;
-      const ids = project.appendImportedSegments(
-        segs,
-        'TEXT',
-        lastFontIsSingleLine === true,
-      );
+      const ids = project.appendImportedSegments(segs, 'TEXT', lastFontIsSingleLine === true);
       if (style !== 'plain') {
         applyStyle(ids);
       }
@@ -244,7 +235,8 @@
     // pending — see issue n4y). Best we can do is point the user at the
     // file picker.
     useUserFont = true;
-    errorMsg = 'Pick a single-line / Hershey TTF via "Custom font" — no engraving font is bundled yet.';
+    errorMsg =
+      'Pick a single-line / Hershey TTF via "Custom font" — no engraving font is bundled yet.';
   }
 
   function onUserFontPick(e: Event) {
@@ -268,98 +260,112 @@
       <button class="close" onclick={close} aria-label="Close">×</button>
     </header>
 
-      <div class="body">
-        <label class="full">
-          <span>Text</span>
-          <textarea bind:value={text} rows="2"></textarea>
-        </label>
+    <div class="body">
+      <label class="full">
+        <span>Text</span>
+        <textarea bind:value={text} rows="2"></textarea>
+      </label>
 
-        <fieldset class="full">
-          <legend>Font</legend>
-          <label class="row">
-            <input type="radio" bind:group={useUserFont} value={false} />
-            <select bind:value={bundledFontPath} disabled={useUserFont}>
-              {#each BUNDLED_FONTS as f (f.path)}
-                <option value={f.path}>{f.label}</option>
-              {/each}
-            </select>
-          </label>
-          <label class="row">
-            <input type="radio" bind:group={useUserFont} value={true} />
-            <span class="picker">
-              <input type="file" accept=".ttf,.otf" onchange={onUserFontPick} />
-              {#if userFontFile}
-                <span class="filename">{userFontFile.name}</span>
-              {/if}
-            </span>
-          </label>
-          {#if lastFontFamily}
-            <p class="font-meta">Loaded: <strong>{lastFontFamily}</strong>{lastFontIsSingleLine ? ' (single-line)' : ''}</p>
-          {/if}
-        </fieldset>
-
-        <label>
-          <span>Size</span>
-          <span class="field"><input type="number" bind:value={sizeMm} step="0.5" min="0.1" /><span class="unit">mm</span></span>
-        </label>
-        <label>
-          <span>Position X</span>
-          <span class="field"><input type="number" bind:value={posX} step="1" /><span class="unit">mm</span></span>
-        </label>
-        <label>
-          <span>Position Y</span>
-          <span class="field"><input type="number" bind:value={posY} step="1" /><span class="unit">mm</span></span>
-        </label>
-
-        <fieldset class="full styles">
-          <legend>Style</legend>
-          <div class="grid">
-            {#each Object.entries(STYLE_TABLE) as [k, spec] (k)}
-              <label class="style-opt" title={spec.help}>
-                <input type="radio" bind:group={style} value={k as TextStyle} />
-                <span>{spec.label}</span>
-              </label>
+      <fieldset class="full">
+        <legend>Font</legend>
+        <label class="row">
+          <input type="radio" bind:group={useUserFont} value={false} />
+          <select bind:value={bundledFontPath} disabled={useUserFont}>
+            {#each BUNDLED_FONTS as f (f.path)}
+              <option value={f.path}>{f.label}</option>
             {/each}
-          </div>
-        </fieldset>
-
-        {#if styleEngravingMismatch}
-          <div class="chip warn">
-            <span>This font is filled-outline. Engraving style needs a single-line / Hershey font.</span>
-            <button class="chip-btn" onclick={switchToEngravingFont}>Switch font</button>
-          </div>
+          </select>
+        </label>
+        <label class="row">
+          <input type="radio" bind:group={useUserFont} value={true} />
+          <span class="picker">
+            <input type="file" accept=".ttf,.otf" onchange={onUserFontPick} />
+            {#if userFontFile}
+              <span class="filename">{userFontFile.name}</span>
+            {/if}
+          </span>
+        </label>
+        {#if lastFontFamily}
+          <p class="font-meta">
+            Loaded: <strong>{lastFontFamily}</strong>{lastFontIsSingleLine ? ' (single-line)' : ''}
+          </p>
         {/if}
+      </fieldset>
 
-        {#if STYLE_TABLE[style].toolKind != null}
-          <label>
-            <span>Tool</span>
-            <select bind:value={toolId}>
-              {#each filteredTools as t (t.id)}
-                <option value={t.id}>{t.name} ({t.kind}, {t.diameter} mm)</option>
-              {/each}
-              {#if filteredTools.length === 0}
-                <option value={0}>(no {STYLE_TABLE[style].toolKind} in library)</option>
-              {/if}
-            </select>
-          </label>
-        {/if}
+      <label>
+        <span>Size</span>
+        <span class="field"
+          ><input type="number" bind:value={sizeMm} step="0.5" min="0.1" /><span class="unit"
+            >mm</span
+          ></span
+        >
+      </label>
+      <label>
+        <span>Position X</span>
+        <span class="field"
+          ><input type="number" bind:value={posX} step="1" /><span class="unit">mm</span></span
+        >
+      </label>
+      <label>
+        <span>Position Y</span>
+        <span class="field"
+          ><input type="number" bind:value={posY} step="1" /><span class="unit">mm</span></span
+        >
+      </label>
 
-        {#if STYLE_TABLE[style].defaultDepth != null}
-          <label>
-            <span>Depth</span>
-            <span class="field"><input type="number" bind:value={depth} step="0.1" /><span class="unit">mm</span></span>
-          </label>
-        {/if}
+      <fieldset class="full styles">
+        <legend>Style</legend>
+        <div class="grid">
+          {#each Object.entries(STYLE_TABLE) as [k, spec] (k)}
+            <label class="style-opt" title={spec.help}>
+              <input type="radio" bind:group={style} value={k as TextStyle} />
+              <span>{spec.label}</span>
+            </label>
+          {/each}
+        </div>
+      </fieldset>
 
-        {#if errorMsg}
-          <p class="error full">{errorMsg}</p>
-        {/if}
-      </div>
+      {#if styleEngravingMismatch}
+        <div class="chip warn">
+          <span
+            >This font is filled-outline. Engraving style needs a single-line / Hershey font.</span
+          >
+          <button class="chip-btn" onclick={switchToEngravingFont}>Switch font</button>
+        </div>
+      {/if}
 
-      <footer>
-        <button class="secondary" onclick={close}>Cancel</button>
-        <button class="primary" onclick={apply} disabled={busy}>Add</button>
-      </footer>
+      {#if STYLE_TABLE[style].toolKind != null}
+        <label>
+          <span>Tool</span>
+          <select bind:value={toolId}>
+            {#each filteredTools as t (t.id)}
+              <option value={t.id}>{t.name} ({t.kind}, {t.diameter} mm)</option>
+            {/each}
+            {#if filteredTools.length === 0}
+              <option value={0}>(no {STYLE_TABLE[style].toolKind} in library)</option>
+            {/if}
+          </select>
+        </label>
+      {/if}
+
+      {#if STYLE_TABLE[style].defaultDepth != null}
+        <label>
+          <span>Depth</span>
+          <span class="field"
+            ><input type="number" bind:value={depth} step="0.1" /><span class="unit">mm</span></span
+          >
+        </label>
+      {/if}
+
+      {#if errorMsg}
+        <p class="error full">{errorMsg}</p>
+      {/if}
+    </div>
+
+    <footer>
+      <button class="secondary" onclick={close}>Cancel</button>
+      <button class="primary" onclick={apply} disabled={busy}>Add</button>
+    </footer>
   </Modal>
 {/if}
 

@@ -4,11 +4,7 @@
 /// tests don't touch localStorage or Tauri.
 
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_WORKSPACE,
-  WorkspaceStore,
-  type WorkspaceTransport,
-} from './workspace';
+import { DEFAULT_WORKSPACE, WorkspaceStore, type WorkspaceTransport } from './workspace';
 
 class MemoryTransport implements WorkspaceTransport {
   blob: string | null = null;
@@ -33,7 +29,11 @@ describe('WorkspaceStore', () => {
     s.update({ camera: { px: 1, py: 2, pz: 3, tx: 4, ty: 5, tz: 6 } });
     s.update({ panels: { left_width: 100, right_width: 200, bottom_height: 300 } });
     s.addRecentProject('/tmp/a.vc-project.json', 'a.vc-project.json');
-    s.setPerProject('/tmp/a.vc-project.json', { visible_layers: ['L1', 'L2'], selected_op_id: 7, playhead: 0.5 });
+    s.setPerProject('/tmp/a.vc-project.json', {
+      visible_layers: ['L1', 'L2'],
+      selected_op_id: 7,
+      playhead: 0.5,
+    });
     await s.save();
 
     const s2 = await freshLoaded(t);
@@ -121,7 +121,9 @@ describe('WorkspaceStore', () => {
 
     // Setting to the current value is a no-op (no spurious save / notify).
     let bumps = 0;
-    s2.subscribe(() => { bumps += 1; });
+    s2.subscribe(() => {
+      bumps += 1;
+    });
     s2.setLastPostProcessor('grbl');
     expect(bumps).toBe(0);
     s2.setLastPostProcessor('hpgl');

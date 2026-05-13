@@ -37,9 +37,10 @@
       project.toolpathCumLen,
       project.toolpathTotalLen,
     );
-    const headIdx = mapped.segIdx >= 0
-      ? Math.max(0, Math.min(total - 1, mapped.segIdx))
-      : Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
+    const headIdx =
+      mapped.segIdx >= 0
+        ? Math.max(0, Math.min(total - 1, mapped.segIdx))
+        : Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
     const line = idx.segments_to_line[headIdx];
     return typeof line === 'number' && line > 0 ? line : null;
   });
@@ -83,12 +84,7 @@
 </script>
 
 {#if project.generated && project.generated.gcode}
-  <div
-    class="gcode"
-    bind:this={host}
-    role="region"
-    aria-label={$_('gcode.title') ?? 'G-code'}
-  >
+  <div class="gcode" bind:this={host} role="region" aria-label={$_('gcode.title') ?? 'G-code'}>
     <div class="gcode-inner">
       {#each lines as text, i (i)}
         {@const line = i + 1}

@@ -174,8 +174,12 @@
   });
 
   let fileMenuOpen = $state(false);
-  function toggleFileMenu() { fileMenuOpen = !fileMenuOpen; }
-  function closeFileMenu() { fileMenuOpen = false; }
+  function toggleFileMenu() {
+    fileMenuOpen = !fileMenuOpen;
+  }
+  function closeFileMenu() {
+    fileMenuOpen = false;
+  }
   /// Reactive view of the workspace recent list. `void workspace.version`
   /// subscribes the derived to the store's mutation counter.
   const recentProjects = $derived.by(() => {
@@ -299,10 +303,7 @@
   });
 
   const tabCount = $derived(
-    project.operations.reduce(
-      (n, op) => n + (op.tabPlacements?.length ?? 0),
-      0,
-    ),
+    project.operations.reduce((n, op) => n + (op.tabPlacements?.length ?? 0), 0),
   );
 
   /// Bumped to `performance.now()` whenever an undo/redo is attempted on
@@ -367,8 +368,12 @@
   const canUndo = $derived(project.canUndo());
   const canRedo = $derived(project.canRedo());
   let editMenuOpen = $state(false);
-  function toggleEditMenu() { editMenuOpen = !editMenuOpen; }
-  function closeEditMenu() { editMenuOpen = false; }
+  function toggleEditMenu() {
+    editMenuOpen = !editMenuOpen;
+  }
+  function closeEditMenu() {
+    editMenuOpen = false;
+  }
   function doUndo() {
     closeEditMenu();
     if (!project.undo()) shake('undo');
@@ -393,16 +398,11 @@
         onclick={toggleFileMenu}
         title="File menu (Recent projects)"
         aria-haspopup="menu"
-        aria-expanded={fileMenuOpen}
-      >File ▾</button>
+        aria-expanded={fileMenuOpen}>File ▾</button
+      >
       {#if fileMenuOpen}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="edit-dropdown"
-          role="menu"
-          tabindex="-1"
-          onmouseleave={closeFileMenu}
-        >
+        <div class="edit-dropdown" role="menu" tabindex="-1" onmouseleave={closeFileMenu}>
           <div class="recent-heading">Recent Projects</div>
           {#if recentProjects.length === 0}
             <div class="recent-empty">No recent projects</div>
@@ -440,16 +440,11 @@
         onclick={toggleEditMenu}
         title="Edit menu (Undo / Redo)"
         aria-haspopup="menu"
-        aria-expanded={editMenuOpen}
-      >Edit ▾</button>
+        aria-expanded={editMenuOpen}>Edit ▾</button
+      >
       {#if editMenuOpen}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="edit-dropdown"
-          role="menu"
-          tabindex="-1"
-          onmouseleave={closeEditMenu}
-        >
+        <div class="edit-dropdown" role="menu" tabindex="-1" onmouseleave={closeEditMenu}>
           <button
             type="button"
             role="menuitem"
@@ -527,7 +522,9 @@
         aria-hidden="true"
       >
         <circle cx="12" cy="12" r="3"></circle>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        <path
+          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+        ></path>
       </svg>
     </button>
     <!-- Tab count chip — read-only summary. Click-to-place lives on
@@ -540,16 +537,10 @@
       {$_('header.tabs', { values: { count: tabCount } })}
     </span>
     <div class="pane-toggle">
-      <button
-        class:active={activePane === '2d'}
-        onclick={() => (activePane = '2d')}
-      >
+      <button class:active={activePane === '2d'} onclick={() => (activePane = '2d')}>
         {$_('header.pane.2d')}
       </button>
-      <button
-        class:active={activePane === '3d'}
-        onclick={() => (activePane = '3d')}
-      >
+      <button class:active={activePane === '3d'} onclick={() => (activePane = '3d')}>
         {$_('header.pane.3d')}
       </button>
     </div>
@@ -598,7 +589,8 @@
             onclick={() => (gcodeOpen = !gcodeOpen)}
             title="Show / hide the G-code text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
           >
-            {gcodeOpen ? '▼' : '▶'} {$_('bottom.gcode') ?? 'G-code'}
+            {gcodeOpen ? '▼' : '▶'}
+            {$_('bottom.gcode') ?? 'G-code'}
             <span class="hint">{project.generated.gcode.split('\n').length} lines</span>
           </button>
         </div>
@@ -611,7 +603,10 @@
     </section>
     <aside class="sidebar">
       <div class="layers-host">
-        <LayerList onOpenFileClick={() => (document.querySelector('button.open-file') as HTMLButtonElement | null)?.click()} />
+        <LayerList
+          onOpenFileClick={() =>
+            (document.querySelector('button.open-file') as HTMLButtonElement | null)?.click()}
+        />
       </div>
       <div class="ops-host">
         <OperationsList />
@@ -622,16 +617,23 @@
           <StockPanel />
         </details>
         {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
-          <label class="region-toggle" title="Show / hide the translucent fill that marks each pocket operation's machined region.">
+          <label
+            class="region-toggle"
+            title="Show / hide the translucent fill that marks each pocket operation's machined region."
+          >
             <input
               type="checkbox"
               checked={project.regionsVisible}
-              onchange={(e) => (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
+              onchange={(e) =>
+                (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
             />
             <span>Show machined regions</span>
           </label>
         {/if}
-        <div class="preview-mode" title="Wireframe = toolpath lines only. Solid = simulated stock with material removed (semi-transparent + edge lines). Both = solid underneath, toolpath on top.">
+        <div
+          class="preview-mode"
+          title="Wireframe = toolpath lines only. Solid = simulated stock with material removed (semi-transparent + edge lines). Both = solid underneath, toolpath on top."
+        >
           <span class="preview-mode-label">3D preview</span>
           <div class="pill-group" role="radiogroup" aria-label="3D preview mode">
             {#each ['wireframe', 'solid', 'both'] as mode (mode)}
@@ -665,7 +667,11 @@
   {#if shortcutHelpOpen}
     <ShortcutHelp onClose={() => (shortcutHelpOpen = false)} />
   {/if}
-  <SourceStaleToast onReload={async (p) => { await project.reimportFromPath(p); }} />
+  <SourceStaleToast
+    onReload={async (p) => {
+      await project.reimportFromPath(p);
+    }}
+  />
 
   <footer>
     {#if project.imported}
@@ -833,11 +839,21 @@
   /* 100ms shake when undo/redo is invoked on an empty stack — surfaces
      the "no-op" without throwing an error popup at the user. */
   @keyframes wiac-undo-shake {
-    0% { transform: translateX(0); }
-    25% { transform: translateX(-3px); }
-    50% { transform: translateX(3px); }
-    75% { transform: translateX(-2px); }
-    100% { transform: translateX(0); }
+    0% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-3px);
+    }
+    50% {
+      transform: translateX(3px);
+    }
+    75% {
+      transform: translateX(-2px);
+    }
+    100% {
+      transform: translateX(0);
+    }
   }
   .edit-item.shake {
     animation: wiac-undo-shake 100ms ease-in-out;

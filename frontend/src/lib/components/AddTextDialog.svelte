@@ -1,13 +1,13 @@
 <script lang="ts">
   /**
-   * AddTextDialog — single-step "add text + create CAM op of style X" flow.
+   * AddTextDialog — single-step "add editable text + create engrave op" flow.
    *
-   * Replaces the multi-step manual flow (import a TEXT'd DXF → add op →
-   * wire its source) with a one-shot dialog that mirrors what Estlcam
-   * users expect: pick text, font, position, and a style.
-   *
-   * Style → op mapping is in `applyStyle()`. The 8 styles plus their
-   * default tool kinds and depths are declared in `STYLE_TABLE` below.
+   * Phase 3 of the text-engraving rework: instead of baking the rendered
+   * glyphs into `project.imported.segments` and creating an op that
+   * targets the resulting object ids, we now create a persistent
+   * `TextLayer` plus an Engrave op pointing at the layer's synthetic
+   * geometry name (`__text_<id>`). Editing the text afterwards happens
+   * via the sidebar TextList — the dialog is purely "create new".
    *
    * Bundled fonts ship under `/fonts/`. Users can also load any TTF via
    * the file picker; single-line / engraving fonts are auto-detected by
@@ -17,7 +17,8 @@
   import { project } from '../state/project.svelte';
   import { defaultClient } from '../api/http';
   import type { Segment, RenderTextRequest } from '../api/types';
-  import { STYLE_TABLE, describeStyleOp, engravingMismatch, type TextStyle } from './text_style';
+  import type { TextFontSource, TextLayer } from '../state/project.svelte';
+  import { STYLE_TABLE, engravingMismatch, type TextStyle } from './text_style';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -182,27 +183,79 @@
     }
   }
 
+  /// Base64-encode a Uint8Array without blowing the JS stack on bigger
+  /// TTFs. String.fromCharCode(...bytes) breaks at ~100 KB; we chunk.
+  function bytesToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
   async function apply() {
     busy = true;
     errorMsg = null;
     let txOpen = false;
     try {
-      // Make sure the latest inputs are reflected before applying.
-      await renderPreview();
-      const segs = previewSegments;
-      if (!segs || segs.length === 0) {
-        throw new Error('No geometry produced — check the text and font.');
+      const bytes = await loadFontBytes();
+      if (!bytes) {
+        throw new Error('No font selected.');
       }
-      // Wrap the geometry append + op insert in a single undo step so
-      // one Ctrl+Z reverts both halves of the text-add flow.
+      const trimmed = text.trim();
+      if (trimmed.length === 0) {
+        throw new Error('Text must not be empty.');
+      }
+      // Refresh the single-line classification one last time so the
+      // TextLayer.singleLine cached flag reflects the current font.
+      await renderPreview();
+
+      const bytes_b64 = bytesToBase64(bytes);
+      const fontSource: TextFontSource = useUserFont
+        ? {
+            kind: 'user',
+            filename: userFontFile?.name ?? 'font.ttf',
+            bytes_b64,
+          }
+        : {
+            kind: 'bundled',
+            path: bundledFontPath,
+            bytes_b64,
+          };
+      const isMultiline = trimmed.includes('\n');
+      const layerSeed: Omit<TextLayer, 'id' | 'name'> = {
+        kind: isMultiline ? 'MTEXT' : 'TEXT',
+        text: trimmed,
+        fontSource,
+        sizeMm,
+        origin: { x: posX, y: posY },
+        rotationDeg: 0,
+        letterSpacingMm: 0,
+        lineSpacingMm: 0,
+        alignment: 'left',
+        singleLine: lastFontIsSingleLine === true,
+      };
+
       project.history.beginTransaction('Add text');
       txOpen = true;
-      const ids = project.appendImportedSegments(segs, 'TEXT', lastFontIsSingleLine === true);
+      const layer = project.addTextLayer(layerSeed);
       if (style !== 'plain') {
-        applyStyle(ids);
+        const op = project.addOperation('engrave');
+        const opName =
+          style === 'engraving' ? `Engrave ${layer.name}` : `${STYLE_TABLE[style].label} ${layer.name}`;
+        project.updateOperation(op.id, {
+          name: opName,
+          toolId,
+          depth,
+          sourceObjects: undefined,
+          sourceLayers: [`__text_${layer.id}`],
+          offset: 'on',
+        });
       }
       project.history.commitTransaction();
       txOpen = false;
+      project.selectedTextLayerId = layer.id;
       onClose();
     } catch (e) {
       if (txOpen) project.history.cancelTransaction(project as unknown as never);
@@ -210,24 +263,6 @@
     } finally {
       busy = false;
     }
-  }
-
-  function applyStyle(objectIds: number[]) {
-    const tool = project.tools.find((t) => t.id === toolId);
-    const toolDiameter = tool?.diameter ?? 3;
-    const desc = describeStyleOp(style, objectIds, toolId, toolDiameter, depth);
-    if (!desc) return;
-    const op = project.addOperation(desc.kind);
-    project.updateOperation(op.id, {
-      name: desc.name,
-      toolId: desc.toolId,
-      depth: desc.depth,
-      sourceObjects: desc.sourceObjects,
-      sourceCombine: desc.sourceCombine,
-      offset: desc.offset,
-      frameShape: desc.frameShape,
-      framePaddingMm: desc.framePaddingMm,
-    });
   }
 
   function switchToEngravingFont() {

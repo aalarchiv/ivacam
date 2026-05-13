@@ -7,6 +7,7 @@
   let Scene3D = $state<Scene3DComp | null>(null);
   let scene3dLoading = $state(false);
   import LayerList from './lib/components/LayerList.svelte';
+  import TextList from './lib/components/TextList.svelte';
   import OperationsList from './lib/components/OperationsList.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
@@ -724,6 +725,9 @@
           onReopenDismiss={dismissReopen}
         />
       </div>
+      <div class="text-list-host">
+        <TextList onAddText={() => (addTextOpen = true)} />
+      </div>
       <div class="ops-host">
         <OperationsList />
       </div>
@@ -1118,12 +1122,14 @@
   }
   .sidebar {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    /* Layers (auto) · Text (auto) · Operations (1fr) · Stock (auto). */
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
   .layers-host,
+  .text-list-host,
   .ops-host,
   .stock-host {
     min-height: 0;

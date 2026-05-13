@@ -264,6 +264,10 @@ class ProjectState {
   /// editing a TextLayer field re-runs the renderer, and a future
   /// `text_engrave` op references one by id.
   textLayers = $state<TextLayer[]>([]);
+  /// id of the currently-selected text layer (drives the sidebar Text
+  /// panel's expanded edit form). Mutually exclusive with selectedOpId
+  /// at the UX level — selecting one collapses the other's form.
+  selectedTextLayerId = $state<number | null>(null);
   /// True when the in-memory project differs from the gcode currently
   /// shown in `generated`. Set by op edits/reorders/enable toggles;
   /// cleared by setGenerated. The status badge in the ops list reads
@@ -915,7 +919,24 @@ class ProjectState {
 
   removeTextLayer(id: number) {
     if (!this.textLayers.some((t) => t.id === id)) return;
-    this.history.exec(deleteTextLayerCommand(id), this.target());
+    const syntheticLayer = `__text_${id}`;
+    // Cascade-delete any ops whose source targets the text layer's
+    // synthetic geometry layer — leaving them around would make the
+    // pipeline raise "no segments on layer __text_<id>".
+    const dependentOps = this.operations.filter(
+      (o) => Array.isArray(o.sourceLayers) && o.sourceLayers.includes(syntheticLayer),
+    );
+    if (dependentOps.length > 0) {
+      this.history.beginTransaction('Delete text');
+      for (const op of dependentOps) {
+        this.history.exec(deleteOperationCommand(op.id), this.target());
+      }
+      this.history.exec(deleteTextLayerCommand(id), this.target());
+      this.history.commitTransaction();
+    } else {
+      this.history.exec(deleteTextLayerCommand(id), this.target());
+    }
+    if (this.selectedTextLayerId === id) this.selectedTextLayerId = null;
   }
 
   /// Deep-clone the op and insert it immediately after the original.

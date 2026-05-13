@@ -332,6 +332,11 @@
       toolMesh = undefined;
     }
     disposeStockGroup();
+    if (workAreaGroup) {
+      disposeGroup(workAreaGroup);
+      scene?.remove(workAreaGroup);
+      workAreaGroup = undefined;
+    }
     driver?.destroy();
     driver = undefined;
     renderer?.dispose();
@@ -389,6 +394,16 @@
     void project.stock;
     void project.settings.showStockBox;
     updateStock();
+    requestRender();
+  });
+
+  // Machine work-area wireframe — the always-visible envelope the user
+  // can't move the cutter outside of. Dotted-style edges so it reads
+  // as "limit, not solid", and dim opacity so it sits in the back of
+  // the scene without competing with the toolpath.
+  $effect(() => {
+    void project.machine.workArea;
+    updateWorkArea();
     requestRender();
   });
 
@@ -718,6 +733,7 @@
 
   let tabsGroup: THREE.Group | undefined;
   let stockGroup: THREE.Group | undefined;
+  let workAreaGroup: THREE.Group | undefined;
   let fixturesGroup: THREE.Group | undefined;
   /// Sim-warning markers (one mesh per critical / holder warning). Lazy
   /// rebuilt whenever project.simDiagnostics changes.
@@ -886,6 +902,59 @@
     const wire = new THREE.LineSegments(edges, lineMat);
     wire.position.set(cx, cy, cz);
     stockGroup.add(wire);
+  }
+
+  /// Build/refresh the machine work-area wireframe. A dashed box from
+  /// (0, 0, 0) to (workArea.x, workArea.y, workArea.z) so the user
+  /// sees the machinable envelope. Rebuilt whenever the user edits the
+  /// work area in MachineDialog.
+  function updateWorkArea() {
+    if (!scene) return;
+    if (!workAreaGroup) {
+      workAreaGroup = new THREE.Group();
+      workAreaGroup.name = 'work-area';
+      scene.add(workAreaGroup);
+    }
+    disposeGroup(workAreaGroup);
+    const wa = project.machine.workArea;
+    if (!wa || wa.x <= 0 || wa.y <= 0 || wa.z <= 0) return;
+    // Center the box on (wa.x/2, wa.y/2, wa.z/2) since BoxGeometry is
+    // centered on its local origin. The work area corner sits at (0, 0, 0).
+    const cx = wa.x * 0.5;
+    const cy = wa.y * 0.5;
+    const cz = wa.z * 0.5;
+    const box = new THREE.BoxGeometry(wa.x, wa.y, wa.z);
+    const edges = new THREE.EdgesGeometry(box);
+    const lineMat = new THREE.LineDashedMaterial({
+      color: cssColor('--text-muted', 0x888888),
+      dashSize: 3,
+      gapSize: 2,
+      transparent: true,
+      opacity: 0.45,
+    });
+    const wire = new THREE.LineSegments(edges, lineMat);
+    wire.computeLineDistances();
+    wire.position.set(cx, cy, cz);
+    workAreaGroup.add(wire);
+    box.dispose();
+  }
+
+  /// Generic group disposer — frees geometry + materials for every
+  /// LineSegments / Mesh child before removing them. Shared by the
+  /// stock + work-area cleanup paths.
+  function disposeGroup(g: THREE.Group) {
+    while (g.children.length > 0) {
+      const child = g.children[0];
+      g.remove(child);
+      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+        child.geometry.dispose();
+        const m = (child as THREE.Mesh | THREE.LineSegments).material as
+          | THREE.Material
+          | THREE.Material[];
+        if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
+        else m.dispose();
+      }
+    }
   }
 
   /// Dispose all geometry + materials inside stockGroup before clearing.

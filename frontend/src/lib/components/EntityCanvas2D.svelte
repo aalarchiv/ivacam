@@ -92,6 +92,8 @@
     void userZoom;
     void userPanX;
     void userPanY;
+    void project.machine.workArea;
+    void project.stock;
     draw();
   });
 
@@ -1028,6 +1030,7 @@
 
     drawGrid(ctx, w, h, scale, offX, offY);
     drawAxes(ctx, w, h, offX, offY);
+    drawWorkArea(ctx, project2);
     lastTransform = { scale, offX, offY };
 
     // Filled-region preview: paint the area each Pocket op will actually
@@ -1560,6 +1563,32 @@
     ctx.moveTo(offX, 0);
     ctx.lineTo(offX, h);
     ctx.stroke();
+  }
+
+  /// Dashed rectangle showing the machine work-area envelope in the
+  /// XY plane (0,0) → (workArea.x, workArea.y). Sits under the
+  /// imported geometry so the user always sees the cuttable area
+  /// regardless of what's loaded. Pairs with the dashed wireframe
+  /// the 3D scene draws for the full XYZ envelope.
+  function drawWorkArea(
+    ctx: CanvasRenderingContext2D,
+    p: (x: number, y: number) => [number, number],
+  ) {
+    const wa = project.machine.workArea;
+    if (!wa || wa.x <= 0 || wa.y <= 0) return;
+    const [x0, y0] = p(0, 0);
+    const [x1, y1] = p(wa.x, wa.y);
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
+    ctx.save();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = themeVar('--text-muted', '#888');
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.75;
+    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+    ctx.restore();
   }
 </script>
 

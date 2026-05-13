@@ -12,6 +12,7 @@
     simWarningSummary,
   } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
+  import { computeFootprint } from '../sim/driver';
   import type { SimWarning, TimeEstimate } from '../api/types';
   import { _ } from 'svelte-i18n';
   import GenerateProgress from './GenerateProgress.svelte';
@@ -81,6 +82,48 @@
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);
   let criticalCount = $derived(warnings.filter((w) => simWarningSeverity(w) === 'critical').length);
   let isClean = $derived(warnings.length === 0);
+
+  /// Post-Generate bounds scan — counts cut/plunge/arc segments whose
+  /// endpoints fall outside the stock OR outside the machine work area.
+  /// Different from the existing sim warnings (which catch rapid-through-
+  /// stock / fixture collision); this is purely an "is your gcode valid
+  /// for this stock + machine envelope" check.
+  const boundsScan = $derived.by(() => {
+    const gen = project.generated;
+    if (!gen) return null;
+    const wa = project.machine.workArea;
+    const stockFp = computeFootprint(project.imported, project.stock, wa);
+    const stockTop = 0;
+    const stockBottom = -Math.max(0.01, project.stock.thickness);
+    const isCut = (k: string) => k === 'cut' || k === 'plunge' || k === 'arc';
+    let outWA = 0;
+    let outStock = 0;
+    let firstWaLine = 0;
+    let firstStockLine = 0;
+    for (const seg of gen.toolpath) {
+      if (!isCut(seg.kind)) continue;
+      const p = seg.to;
+      if (wa && wa.x > 0 && wa.y > 0 && wa.z > 0) {
+        if (p.x < -1e-6 || p.x > wa.x + 1e-6 || p.y < -1e-6 || p.y > wa.y + 1e-6 || p.z < -wa.z - 1e-6 || p.z > 1e-6) {
+          outWA++;
+          if (firstWaLine === 0) firstWaLine = seg.gcode_line;
+        }
+      }
+      if (
+        p.x < stockFp.minX - 1e-6 ||
+        p.x > stockFp.maxX + 1e-6 ||
+        p.y < stockFp.minY - 1e-6 ||
+        p.y > stockFp.maxY + 1e-6 ||
+        p.z < stockBottom - 1e-6 ||
+        p.z > stockTop + 1e-6
+      ) {
+        outStock++;
+        if (firstStockLine === 0) firstStockLine = seg.gcode_line;
+      }
+    }
+    if (outWA === 0 && outStock === 0) return null;
+    return { outWA, outStock, firstWaLine, firstStockLine };
+  });
 
   async function run() {
     if (!project.imported) return;
@@ -334,6 +377,30 @@
       {chipLabel()}
     </button>
   {/if}
+  {#if boundsScan}
+    <span
+      class="sim-chip bounds"
+      title={[
+        boundsScan.outWA > 0
+          ? `${boundsScan.outWA} cut move${boundsScan.outWA === 1 ? '' : 's'} outside the machine work area (first @ gcode line ${boundsScan.firstWaLine || '?'})`
+          : '',
+        boundsScan.outStock > 0
+          ? `${boundsScan.outStock} cut move${boundsScan.outStock === 1 ? '' : 's'} outside the stock (first @ gcode line ${boundsScan.firstStockLine || '?'})`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n')}
+    >
+      <span class="glyph" aria-hidden="true">⚠</span>
+      {#if boundsScan.outWA > 0 && boundsScan.outStock > 0}
+        {boundsScan.outStock} out-of-stock · {boundsScan.outWA} out-of-machine
+      {:else if boundsScan.outWA > 0}
+        {boundsScan.outWA} cut move{boundsScan.outWA === 1 ? '' : 's'} outside work area
+      {:else}
+        {boundsScan.outStock} cut move{boundsScan.outStock === 1 ? '' : 's'} outside stock
+      {/if}
+    </span>
+  {/if}
 </div>
 
 {#if warningPanelOpen}
@@ -509,6 +576,16 @@
     color: var(--text-muted);
     border-color: var(--border);
     font-style: italic;
+    cursor: help;
+  }
+  .sim-chip.bounds {
+    /* Out-of-stock / out-of-work-area count chip. Same warning palette
+       as sim warnings — these are gcode validity issues the user should
+       address before cutting. */
+    background: var(--sim-warn-bg);
+    color: var(--sim-warn-fg);
+    border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+    white-space: nowrap;
     cursor: help;
   }
   .sim-chip.stale {

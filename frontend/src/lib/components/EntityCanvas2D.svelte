@@ -37,10 +37,24 @@
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
 
+  /// Cached resolved theme colors. `themeVar` was previously calling
+  /// `getComputedStyle(container).getPropertyValue(name)` on every
+  /// lookup, which fires a synchronous style recalc — and `draw()`
+  /// invokes it 15-20× per frame. We memoise per CSS var until the
+  /// theme observer (onMount) bumps `themeCacheToken` to invalidate.
+  let themeCache = new Map<string, string>();
+  let themeCacheToken = 0;
   function themeVar(name: string, fallback: string): string {
     if (!container) return fallback;
-    const v = getComputedStyle(container).getPropertyValue(name).trim();
-    return v || fallback;
+    const cached = themeCache.get(name);
+    if (cached !== undefined) return cached;
+    const v = getComputedStyle(container).getPropertyValue(name).trim() || fallback;
+    themeCache.set(name, v);
+    return v;
+  }
+  function resetThemeCache() {
+    themeCache = new Map();
+    themeCacheToken++;
   }
 
   onMount(() => {
@@ -49,7 +63,10 @@
     draw();
     // Re-paint when the user toggles their OS theme or picks a manual one.
     const mql = window.matchMedia('(prefers-color-scheme: light)');
-    const onChange = () => draw();
+    const onChange = () => {
+      resetThemeCache();
+      draw();
+    };
     mql.addEventListener('change', onChange);
     // Diff the data-theme value before redrawing — MutationObserver fires
     // on every attribute write, including same-value writes (e.g. an
@@ -60,6 +77,7 @@
       const cur = document.documentElement.dataset.theme ?? '';
       if (cur === lastTheme) return;
       lastTheme = cur;
+      resetThemeCache();
       draw();
     });
     themeMo.observe(document.documentElement, {
@@ -989,10 +1007,16 @@
     const dpr = window.devicePixelRatio || 1;
     const w = container.clientWidth;
     const h = container.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    // Only reallocate the backing store on real size changes.
+    // Setting canvas.width on every hover-driven redraw allocates a
+    // fresh CPU/GPU buffer and clears it — a >1ms cost per draw on
+    // big canvases.
+    const targetW = w * dpr;
+    const targetH = h * dpr;
+    if (canvas.width !== targetW) canvas.width = targetW;
+    if (canvas.height !== targetH) canvas.height = targetH;
+    if (canvas.style.width !== `${w}px`) canvas.style.width = `${w}px`;
+    if (canvas.style.height !== `${h}px`) canvas.style.height = `${h}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.fillStyle = themeVar('--bg-app', '#0d0d0d');
@@ -1056,11 +1080,16 @@
     // automatically in light theme.
     const haloColor = themeVar('--text-strong', '#ffffff');
     const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
+    // Snapshot the reactive Sets into plain Sets once. Calling .has()
+    // on $state proxies fires a trap per call — 10k segments × 2 calls
+    // = 20k proxy invocations otherwise.
+    const visibleLayersSnap = new Set(project.visibleLayers);
+    const selectedObjectsSnap = new Set(project.selectedObjects);
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
-      if (!project.visibleLayers.has(seg.layer)) continue;
+      if (!visibleLayersSnap.has(seg.layer)) continue;
       const objId = data.objects?.[i] ?? 0;
-      const selected = objId !== 0 && project.selectedObjects.has(objId);
+      const selected = objId !== 0 && selectedObjectsSnap.has(objId);
       const hovered = objId !== 0 && objId === hoverObj;
       // Assignment-tint precedence (top wins):
       //   selected → accent

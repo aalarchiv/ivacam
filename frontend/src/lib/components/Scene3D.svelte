@@ -492,6 +492,21 @@
       return;
     }
     const cellRes = settings.cellResolutionMode === 'manual' ? settings.cellResolutionMm : -1;
+    // Sim-rebuild key uses ONLY the fields the heightfield cares about:
+    // the bbox + stock bounds + tool diameter + cell resolution +
+    // fixture POSITIONS / GEOMETRY (not color or name). Hashing the full
+    // fixture array re-rendered the sim every time the user tweaked a
+    // fixture's color, which is a cosmetic-only change.
+    const fixturesKey = project.fixtures
+      .map((f) => {
+        const k = f.kind;
+        let shape: string;
+        if (k.shape === 'box') shape = `b:${k.width}:${k.depth}`;
+        else if (k.shape === 'cylinder') shape = `c:${k.radius}`;
+        else shape = `p:${k.vertices.map((v) => `${v[0]},${v[1]}`).join('|')}`;
+        return `${f.id}:${f.origin[0]},${f.origin[1]}:${f.z_bottom},${f.z_top}:${shape}`;
+      })
+      .join(';');
     const key = JSON.stringify({
       bbox: imported.bbox,
       stock: project.stock,
@@ -500,7 +515,7 @@
       cellRes,
       maxCells: settings.maxSimulationCells,
       gen_id: project.generatedVersion,
-      fixtures: project.fixtures,
+      fixturesKey,
     });
     if (key === lastSimKey) {
       driver?.setVisible(true);

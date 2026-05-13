@@ -898,6 +898,13 @@
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
     const activeAssignColor = themeVar('--obj-assigned-active', '#39c75c');
     const otherAssignColor = themeVar('--obj-assigned-other', '#2a6f3b');
+    // Halo color = a high-contrast outline drawn UNDER selected /
+    // hovered / op-assigned objects so the state stays visible even
+    // when the underlying layer's ACI color happens to match the state
+    // color (e.g. ACI 3 green vs. our active-op green, ACI 5 blue vs.
+    // our selection accent). The halo uses --text-strong so it inverts
+    // automatically in light theme.
+    const haloColor = themeVar('--text-strong', '#ffffff');
     const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
@@ -913,7 +920,31 @@
       //   else → DXF/SVG layer color
       const inActiveOp = objId !== 0 && activeOpObjects.has(objId);
       const inAnyOp = !inActiveOp && objId !== 0 && objectToOps.has(objId);
-      ctx.lineWidth = selected ? 2.4 : hovered ? 1.8 : inActiveOp ? 1.6 : 1.25;
+      const baseWidth = selected
+        ? 2.4
+        : hovered
+          ? 1.8
+          : inActiveOp
+            ? 1.6
+            : inAnyOp
+              ? 1.4
+              : 1.25;
+      // Halo pass for any state-bearing object — wide soft outline in a
+      // contrasting color so the layer color can't camouflage the state.
+      // Selected / hovered objects get the loudest halo so the focused
+      // item still pops; objects merely assigned to *other* ops use a
+      // dim halo so a project full of assignments doesn't drown in
+      // white.
+      const haloAlpha = selected ? 0.6 : hovered ? 0.55 : inActiveOp ? 0.5 : inAnyOp ? 0.3 : 0;
+      if (haloAlpha > 0) {
+        const prevAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = haloAlpha;
+        ctx.lineWidth = baseWidth + 3;
+        ctx.strokeStyle = haloColor;
+        drawSegment(ctx, seg, project2);
+        ctx.globalAlpha = prevAlpha;
+      }
+      ctx.lineWidth = baseWidth;
       ctx.strokeStyle = selected
         ? accent
         : hovered

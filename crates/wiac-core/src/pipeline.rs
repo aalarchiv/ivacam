@@ -2301,6 +2301,20 @@ fn synthesize_op_setup(
         setup.tabs.active = false;
     }
     setup.leads = op.params.leads.clone();
+    // Laser lead-in (rt1.29 follow-up, kkhf): when the tool is a
+    // laser and the op didn't set its own lead-in, fall back to the
+    // per-tool `laser_lead_in_mm`. Reduces edge burn at the entry
+    // point. Off / `LeadKind::Off` keeps the op's explicit decision.
+    if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
+        if setup.leads.in_lenght <= 0.0 {
+            if let Some(lead_mm) = tool.laser_lead_in_mm.filter(|v| *v > 0.0) {
+                setup.leads.in_lenght = lead_mm;
+                if matches!(setup.leads.r#in, crate::cam::setup::LeadKind::Off) {
+                    setup.leads.r#in = crate::cam::setup::LeadKind::Straight;
+                }
+            }
+        }
+    }
     if matches!(op.kind, OperationKind::DragKnife) {
         setup.machine.mode = MachineMode::Drag;
     }

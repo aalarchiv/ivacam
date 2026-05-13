@@ -1294,6 +1294,14 @@
               }}
             />
             <span class="unit">mm/min</span>
+            {#if op.feedRateOverride !== undefined}
+              <button
+                type="button"
+                class="reset-link"
+                onclick={() => patch('feedRateOverride', undefined)}
+                title="Clear override and inherit from the tool's feed rate."
+              >reset</button>
+            {/if}
           </div>
         </label>
         <label class="row" title="Override the tool's plunge rate (mm/min) for Z descents in this operation. Leave empty to use the tool default.">
@@ -1311,6 +1319,14 @@
               }}
             />
             <span class="unit">mm/min</span>
+            {#if op.plungeRateOverride !== undefined}
+              <button
+                type="button"
+                class="reset-link"
+                onclick={() => patch('plungeRateOverride', undefined)}
+                title="Clear override and inherit from the tool's plunge rate."
+              >reset</button>
+            {/if}
           </div>
         </label>
         <label class="row" title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns.">

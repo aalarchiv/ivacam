@@ -111,6 +111,27 @@
   }
 
   function importJson(file: File) {
+    // Warn before overwriting in-flight edits. The draft is the user's
+    // current working set; a wrong-file import would wipe it without
+    // any chance to recover (no per-dialog undo for this).
+    const hasUnsaved =
+      draft.name ||
+      draft.program_start ||
+      draft.program_end ||
+      draft.tool_change ||
+      draft.coolant_flood_on ||
+      draft.coolant_flood_off ||
+      draft.coolant_mist_on ||
+      draft.coolant_mist_off ||
+      draft.file_extension ||
+      draft.line_ending ||
+      draft.axes;
+    if (hasUnsaved) {
+      const ok = window.confirm(
+        `Importing "${file.name}" will replace the current post-processor draft. Continue?`,
+      );
+      if (!ok) return;
+    }
     file.text().then((text) => {
       try {
         const parsed = JSON.parse(text);

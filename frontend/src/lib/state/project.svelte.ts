@@ -627,13 +627,22 @@ class ProjectState {
   }
 
   /// Snapshot for project save.
+  ///
+  /// View-state fields (`visibleLayers`, `selectedEntities`) are
+  /// intentionally OMITTED — they're per-installation UI preferences
+  /// owned by `workspace.per_project[path].visible_layers`. Including
+  /// them in the .wiac-project save caused a two-source-of-truth
+  /// conflict where workspace silently won on reopen, surprising
+  /// users who expected their saved file to dictate visibility (audit
+  /// vep). Old projects that still carry them load fine via the
+  /// `?? []` fallback in restore().
   snapshot(): ProjectFile {
     return {
       kind: 'wiac-project',
       version: 1,
       imported: this.imported,
-      visibleLayers: [...this.visibleLayers],
-      selectedEntities: [...this.selectedEntities],
+      visibleLayers: [],
+      selectedEntities: [],
       stock: this.stock,
       tools: this.tools,
       machine: this.machine,
@@ -647,8 +656,22 @@ class ProjectState {
       throw new Error('not a wiaConstructor project file');
     }
     if (file.imported) this.setImported(file.imported, null);
-    this.visibleLayers = new Set(file.visibleLayers ?? []);
-    this.selectedEntities = new Set(file.selectedEntities ?? []);
+    // Layer visibility precedence (best wins):
+    //   1. workspace.per_project[path].visible_layers (applied in
+    //      setActiveProjectPath after restore returns).
+    //   2. file.visibleLayers, when the saved project carries any —
+    //      e.g. a shared .wiac-project file from another machine
+    //      whose workspace we don't have.
+    //   3. setImported defaults (all layers visible).
+    // Empty `file.visibleLayers` is treated as "no opinion" and falls
+    // through to setImported defaults — new saves OMIT these fields
+    // (audit vep) so workspace can be the single source of truth.
+    if (Array.isArray(file.visibleLayers) && file.visibleLayers.length > 0) {
+      this.visibleLayers = new Set(file.visibleLayers);
+    }
+    if (Array.isArray(file.selectedEntities) && file.selectedEntities.length > 0) {
+      this.selectedEntities = new Set(file.selectedEntities);
+    }
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
     if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
     if (file.machine) this.machine = { ...this.machine, ...file.machine };

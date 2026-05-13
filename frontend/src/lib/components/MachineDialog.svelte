@@ -240,6 +240,13 @@
         </label>
 
         <div class="section-title">Post-processor profile (rt1.15)</div>
+        {#if draft.mode === 'drag'}
+          <p class="hpgl-note">
+            Drag mode emits HPGL plotter commands, not G-code. The
+            post-processor profile (templates, axes, etc.) is
+            ignored — HPGL has no analogue for these tokens.
+          </p>
+        {/if}
         <label title="Pick a built-in profile or write your own templates below. Built-in profiles fill the templates with sensible defaults for that controller; you can still edit them. 'None' uses wiac's hard-coded defaults.">
           Profile preset
           <span class="field">
@@ -432,6 +439,17 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
+  }
+  .hpgl-note {
+    grid-column: 1 / -1;
+    margin: 0.3rem 0;
+    padding: 0.4rem 0.6rem;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel));
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.4;
   }
   .triplet-label {
     font-size: 0.8rem;

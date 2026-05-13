@@ -919,7 +919,7 @@
                         min="0"
                         placeholder="—"
                         value={tool.laserLeadInMm ?? ''}
-                        title="Per-tool lead-in distance (mm) the laser head travels before reaching the cut path, to reduce edge entry burn. Wire field reserved; emit logic ships in a follow-up. Use the per-op Lead-in field for the same effect today."
+                        title="Per-tool lead-in distance (mm) the laser head travels before reaching the cut path, to reduce edge entry burn. Used as the lead-in length for laser ops that don't override leads themselves."
                         onchange={(e) => {
                           const v = (e.currentTarget as HTMLInputElement).value;
                           updateField(i, 'laserLeadInMm', v === '' ? undefined : parseFloat(v));

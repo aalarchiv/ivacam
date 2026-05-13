@@ -7,6 +7,9 @@ import type {
   ToolEntry as FrontToolEntry,
   OpEntry,
   MachineSettings,
+  TextAlignment,
+  TextLayer,
+  TextLayerKind,
 } from '../state/project.svelte';
 import type { GenerateRequest, ImportResponse } from './types';
 
@@ -276,12 +279,29 @@ export interface WireFixture {
   color: number;
 }
 
+interface WireTextLayer {
+  id: number;
+  kind: TextLayerKind;
+  name: string;
+  text: string;
+  /// TTF/OTF bytes encoded as a JSON array of integers — matches the
+  /// existing render_text request shape.
+  font_bytes: number[];
+  size_mm: number;
+  origin: [number, number];
+  rotation_deg: number;
+  letter_spacing_mm: number;
+  line_spacing_mm: number;
+  alignment: TextAlignment;
+}
+
 export interface WireProject {
   segments: ImportResponse['segments'];
   machine: WireMachine;
   tools: WireToolEntry[];
   operations: WireOp[];
   fixtures?: WireFixture[];
+  text_layers?: WireTextLayer[];
 }
 
 interface ProjectStateView {
@@ -290,6 +310,33 @@ interface ProjectStateView {
   tools: FrontToolEntry[];
   operations: OpEntry[];
   fixtures?: WireFixture[];
+  textLayers?: TextLayer[];
+}
+
+/// Base64 → byte array. Used for embedded TTF/OTF font payloads on the
+/// pipeline request. `atob` returns each byte as a UTF-16 char code so
+/// charCodeAt() yields the raw 0-255 value the JSON serializer expects.
+function decodeFontBytes(b64: string): number[] {
+  const binary = atob(b64);
+  const out: number[] = new Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+function buildTextLayer(layer: TextLayer): WireTextLayer {
+  return {
+    id: layer.id,
+    kind: layer.kind,
+    name: layer.name,
+    text: layer.text,
+    font_bytes: decodeFontBytes(layer.fontSource.bytes_b64),
+    size_mm: layer.sizeMm,
+    origin: [layer.origin.x, layer.origin.y],
+    rotation_deg: layer.rotationDeg,
+    letter_spacing_mm: layer.letterSpacingMm,
+    line_spacing_mm: layer.lineSpacingMm,
+    alignment: layer.alignment,
+  };
 }
 
 function buildMachine(m: MachineSettings): WireMachine {
@@ -578,6 +625,9 @@ export function buildProject(state: ProjectStateView): WireProject | null {
     tools: state.tools.map(buildTool),
     operations: state.operations.map((op) => buildOp(op, state.machine)),
     ...(state.fixtures && state.fixtures.length > 0 ? { fixtures: state.fixtures } : {}),
+    ...(state.textLayers && state.textLayers.length > 0
+      ? { text_layers: state.textLayers.map(buildTextLayer) }
+      : {}),
   };
 }
 

@@ -1621,8 +1621,14 @@ export interface ProjectFile {
 /// those through TextLayer too).
 export type TextAlignment = 'left' | 'center' | 'right';
 export type TextLayerKind = 'TEXT' | 'MTEXT';
+/// Font payload for a TextLayer. The `kind` tag drives display labelling
+/// (bundled-font dropdown vs. user-uploaded filename) but TTF/OTF bytes
+/// are stored as base64 in BOTH variants so the build-project payload
+/// doesn't need async font resolution at every Generate. The caller is
+/// responsible for fetching the bundled .ttf once and stashing the
+/// bytes here.
 export type TextFontSource =
-  | { kind: 'bundled'; path: string }
+  | { kind: 'bundled'; path: string; bytes_b64: string }
   | { kind: 'user'; filename: string; bytes_b64: string };
 export interface TextLayer {
   id: number;

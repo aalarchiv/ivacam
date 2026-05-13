@@ -202,6 +202,50 @@ components:
         - op_id
         - suggested
         type: object
+    AxesConfig:
+      description: Bundle of per-axis output configs. Set on `PostProfile::axes` to take over from the hard-coded axis letters / `%.3f` format in the LinuxCNC / GRBL posts. All seven axes default to their natural letter + sensible format, so `AxesConfig::default()` is the same as the legacy hand-written behavior — the user only changes what they care about.
+      properties:
+        feed:
+          $ref: '#/components/schemas/AxisFormat'
+        i:
+          $ref: '#/components/schemas/AxisFormat'
+        j:
+          $ref: '#/components/schemas/AxisFormat'
+        speed:
+          $ref: '#/components/schemas/AxisFormat'
+        x:
+          $ref: '#/components/schemas/AxisFormat'
+        y:
+          $ref: '#/components/schemas/AxisFormat'
+        z:
+          $ref: '#/components/schemas/AxisFormat'
+      required:
+      - feed
+      - i
+      - j
+      - speed
+      - x
+      - y
+      - z
+      type: object
+    AxisFormat:
+      description: Per-axis output configuration. `enabled=false` means "drop this axis from the line entirely" (laser controllers commonly ignore Z; some lathes ignore Y). `name` is the output letter — rename Z to A for a rotary-as-Z setup. `format` is a tiny printf-ish spec. `scale` is a multiplier applied BEFORE formatting (`-1.0` flips the Z-up vs Z-down convention; `0.0393701` mm→inch).
+      properties:
+        enabled:
+          default: true
+          type: boolean
+        format:
+          type: string
+        name:
+          type: string
+        scale:
+          format: double
+          type: number
+      required:
+      - format
+      - name
+      - scale
+      type: object
     AxisLimits:
       properties:
         x:
@@ -419,7 +463,7 @@ components:
         - vertices
         type: object
     FrameShape:
-      description: Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox with a quarter-arc bulge at each corner. Oval and TightOutline are explicit follow-ups — not in v1.
+      description: Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox with a quarter-arc bulge at each corner. Oval and TightOutline are deferred follow-ups (not yet implemented).
       enum:
       - rectangle
       - rounded_rectangle
@@ -894,6 +938,11 @@ components:
           minimum: 0.0
           type:
           - integer
+          - 'null'
+        group:
+          description: Optional grouping label (rt1.21). Ops with the same `group` string render under a shared collapsible header in OperationsList. `None` = ungrouped; the FE buckets ungrouped ops under an implicit "Other" group at the bottom. The pipeline ignores this field — it's pure UI / project state.
+          type:
+          - string
           - 'null'
         id:
           format: uint32
@@ -1588,6 +1637,11 @@ components:
     PostProfile:
       description: A named bundle of override templates the user attaches to a machine config. Any field left at `None` keeps the built-in emitter's default behavior. The active variant of `PostProcessorKind` is unaffected — wiac's linuxcnc / grbl / hpgl emitters continue to drive line-level formatting (delta encoding, arc fitting, drill cycles). The profile only swaps the PROGRAM-LEVEL strings.
       properties:
+        axes:
+          anyOf:
+          - $ref: '#/components/schemas/AxesConfig'
+          - type: 'null'
+          description: Per-axis output format (hev). When set, replaces the hard-coded `X{val} Y{val} Z{val}` / `I{val} J{val}` / `F{rate}` / `S{rpm}` emission with the user's axis names + printf-ish format + scale, with per-axis enable so disabled axes drop out entirely.
         coolant_flood_off:
           type:
           - string
@@ -1653,6 +1707,11 @@ components:
           description: Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained.
           items:
             $ref: '#/components/schemas/Segment'
+          type: array
+        text_layers:
+          description: First-class editable text entities — content / font / size / position / rotation / spacing. The pipeline pre-pass renders each TextLayer to segments before any op runs so the existing `Engrave` (and friends) op can target the rendered geometry by layer name `__text_<id>`. Edits to a TextLayer re-run the pipeline; cache keys include text_layers content.
+          items:
+            $ref: '#/components/schemas/TextLayer'
           type: array
         tools:
           items:
@@ -2049,6 +2108,18 @@ components:
         type: object
     TabPoint:
       properties:
+        height_override_mm:
+          description: Per-tab height override (mm). When `Some`, the cutter lifts to `cut_z + override` over this tab instead of the op-level `setup.tabs.height`. None ⇒ inherit.
+          format: double
+          type:
+          - number
+          - 'null'
+        width_override_mm:
+          description: 'Per-tab width override (mm). When `Some`, this tab uses the override; when `None`, falls back to the op-level setup width (`setup.tabs.width`). Audit 3wv: was hashed into the cache key but never consumed by `emit_path_with_tabs` — toggling overrides produced identical output. Now drives the per-tab crossing radius + zone half-width.'
+          format: double
+          type:
+          - number
+          - 'null'
         x:
           format: double
           type: number
@@ -2087,6 +2158,82 @@ components:
       - tab_type
       - width
       type: object
+    TextAlignment:
+      enum:
+      - left
+      - center
+      - right
+      type: string
+    TextLayer:
+      description: |-
+        Persistent editable text entity. Phase 2 of the text-engraving rework: the pipeline renders these to segments at generate time so edits propagate to gcode without re-baking.
+
+        Distinct from DXF TEXT/MTEXT entities currently parsed into `project.segments` as opaque polylines (phase 4 will route those through TextLayer too).
+      properties:
+        alignment:
+          allOf:
+          - $ref: '#/components/schemas/TextAlignment'
+          default: left
+        font_bytes:
+          description: TTF/OTF font as a byte vector. JSON serialises as an array of integers — matches the [`crate::input::text::RenderTextRequest`] convention so the same transport-agnostic encoding applies.
+          items:
+            format: uint8
+            minimum: 0.0
+            type: integer
+          type: array
+        id:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        kind:
+          $ref: '#/components/schemas/TextLayerKind'
+        letter_spacing_mm:
+          default: 0.0
+          description: Extra advance between glyphs in mm. `0.0` (default) = font's natural advance.
+          format: double
+          type: number
+        line_spacing_mm:
+          default: 0.0
+          description: MTEXT line spacing in mm. Ignored when `kind == TextLayerKind::Text`. `0.0` (default) = ~1.2 × `size_mm`.
+          format: double
+          type: number
+        name:
+          description: Display name in the sidebar list.
+          type: string
+        origin:
+          description: Anchor in stock XY (mm). Alignment offsets are applied relative to this point (see [`TextAlignment`]).
+          items:
+          - format: double
+            type: number
+          - format: double
+            type: number
+          maxItems: 2
+          minItems: 2
+          type: array
+        rotation_deg:
+          default: 0.0
+          format: double
+          type: number
+        size_mm:
+          format: double
+          type: number
+        text:
+          description: Full string. For `Mtext`, lines are `\n`-separated.
+          type: string
+      required:
+      - font_bytes
+      - id
+      - kind
+      - name
+      - origin
+      - size_mm
+      - text
+      type: object
+    TextLayerKind:
+      enum:
+      - TEXT
+      - MTEXT
+      type: string
     TimeEstimate:
       properties:
         arc_s:

@@ -140,6 +140,8 @@ pub enum PipelineError {
     UnknownTool(u32, u32),
     #[error("operation kind {0:?} is not implemented yet")]
     UnimplementedKind(OperationKind),
+    #[error("text render failed: {0}")]
+    TextRender(String),
     #[error("pipeline cancelled")]
     Cancelled,
 }
@@ -173,6 +175,10 @@ impl PipelineError {
             PipelineError::UnimplementedKind(kind) => Some(
                 Structured::unsupported(format!("operation kind {kind:?} is not implemented yet"))
                     .with_hint("This op kind is not available yet — disable it or pick another."),
+            ),
+            PipelineError::TextRender(msg) => Some(
+                Structured::misconfigured(format!("text render: {msg}"))
+                    .with_hint("Pick a different font or fix the text contents."),
             ),
         }
     }
@@ -328,7 +334,31 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     if cancelled(cancel) {
         return Err(PipelineError::Cancelled);
     }
-    let project = req.project;
+    let mut project = req.project;
+
+    // Pre-pipeline: render every TextLayer to segments and append them
+    // to the project's geometry pool. Each layer's segments live under
+    // the synthetic name `__text_<id>` so ops can target them via
+    // `OperationSource::Layers`. The render is purely additive — the
+    // user-imported `project.segments` are untouched, and a project
+    // with no text layers behaves exactly as before.
+    if !project.text_layers.is_empty() {
+        for layer in &project.text_layers {
+            match crate::input::text::render_text_layer(layer) {
+                Ok(mut segs) => project.segments.append(&mut segs),
+                Err(e) => {
+                    return Err(PipelineError::TextRender(format!(
+                        "text layer {} (\"{}\"): {}",
+                        layer.id, layer.name, e
+                    )));
+                }
+            }
+        }
+        progress("text", 0.10, "rendered text layers");
+        if cancelled(cancel) {
+            return Err(PipelineError::Cancelled);
+        }
+    }
 
     let mut objects = segments_to_objects(&project.segments);
     classify_containment(&mut objects);
@@ -2245,7 +2275,7 @@ mod tests {
     use crate::geometry::Segment;
     use crate::project::{
         Coolant, Operation, OperationKind, OperationParams, OperationSource, PatternConfig,
-        SourceCombine, ToolEntry, ToolKind,
+        SourceCombine, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind,
     };
 
     fn closed_square(side: f64) -> Vec<Segment> {
@@ -2316,7 +2346,73 @@ mod tests {
             tools,
             operations: ops,
             fixtures: Default::default(),
+            text_layers: Default::default(),
         }
+    }
+
+    fn dejavu_font_bytes() -> Vec<u8> {
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("tests/fonts/DejaVuSans.ttf");
+        std::fs::read(p).expect("DejaVuSans.ttf fixture")
+    }
+
+    #[test]
+    fn pipeline_renders_text_layers_and_routes_via_synthetic_layer() {
+        // Engrave op pointing at the synthetic `__text_1` layer.
+        let engrave = Operation {
+            id: 1,
+            name: "Engrave text".into(),
+            enabled: true,
+            kind: OperationKind::Engrave,
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OperationSource::Layers {
+                layers: vec!["__text_1".into()],
+                combine: SourceCombine::default(),
+            },
+            params: OperationParams::mill_default(),
+            pattern: None,
+            group: None,
+        };
+        let text_layer = TextLayer {
+            id: 1,
+            kind: TextLayerKind::Text,
+            name: "Hello".into(),
+            text: "A".into(),
+            font_bytes: dejavu_font_bytes(),
+            size_mm: 10.0,
+            origin: (0.0, 0.0),
+            rotation_deg: 0.0,
+            letter_spacing_mm: 0.0,
+            line_spacing_mm: 0.0,
+            alignment: TextAlignment::Left,
+        };
+        let project = Project {
+            segments: Vec::new(), // pipeline pre-pass appends the rendered text
+            machine: Default::default(),
+            tools: vec![endmill(1, 1.0)],
+            operations: vec![engrave],
+            fixtures: Default::default(),
+            text_layers: vec![text_layer],
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline should run text engraving end-to-end");
+        // Pipeline emitted gcode and at least one cut move tagged to op #1.
+        assert!(resp.gcode.contains("; OP 1"), "no op marker for text op");
+        assert!(
+            resp.toolpath.iter().any(|s| s.op_id == 1),
+            "no cut segments emitted for the text op"
+        );
     }
 
     #[test]
@@ -2473,6 +2569,7 @@ mod tests {
                 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let annulus_project = Project {
             segments,
@@ -2487,6 +2584,7 @@ mod tests {
                 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let baseline = run_pipeline(
             PipelineRequest {
@@ -2563,6 +2661,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2630,6 +2729,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2735,6 +2835,7 @@ mod tests {
                 },
             ],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2823,6 +2924,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2927,6 +3029,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3007,6 +3110,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3049,6 +3153,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3144,6 +3249,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3232,6 +3338,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3314,6 +3421,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3380,6 +3488,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3499,6 +3608,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3569,6 +3679,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3616,6 +3727,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3677,6 +3789,7 @@ mod tests {
                     group: None,
                 }],
                 fixtures: Default::default(),
+                text_layers: Default::default(),
             };
             run_pipeline(
                 PipelineRequest {
@@ -3724,6 +3837,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3795,6 +3909,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3855,6 +3970,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3911,6 +4027,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4001,6 +4118,7 @@ mod tests {
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4042,6 +4160,7 @@ mod tests {
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4086,6 +4205,7 @@ mod tests {
                 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4123,6 +4243,7 @@ mod tests {
                 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4157,6 +4278,7 @@ mod tests {
                 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4227,6 +4349,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4287,6 +4410,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4329,6 +4453,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4371,6 +4496,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4413,6 +4539,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4478,6 +4605,7 @@ mod tests {
             tools: vec![tool],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4523,6 +4651,7 @@ mod tests {
             tools: vec![tool],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4564,6 +4693,7 @@ mod tests {
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4605,6 +4735,7 @@ mod tests {
                 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4689,6 +4820,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4736,6 +4868,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4791,6 +4924,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4817,6 +4951,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4852,6 +4987,7 @@ mod tests {
             }],
             operations: vec![profile_op(1, 7, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4916,6 +5052,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4984,6 +5121,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5028,6 +5166,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp_a = run_pipeline(
             PipelineRequest {
@@ -5095,6 +5234,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp_a = run_pipeline(
             PipelineRequest {
@@ -5185,6 +5325,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5295,6 +5436,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5361,6 +5503,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5446,6 +5589,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5475,6 +5619,7 @@ mod tests {
             tools: vec![tool],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5525,6 +5670,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5587,6 +5733,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5616,6 +5763,7 @@ mod tests {
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5651,6 +5799,7 @@ mod tests {
             tools: vec![tool],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5695,6 +5844,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5723,6 +5873,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5751,6 +5902,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5788,6 +5940,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5826,6 +5979,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5877,6 +6031,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5926,6 +6081,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5970,6 +6126,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6008,6 +6165,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6055,6 +6213,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6092,6 +6251,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6183,6 +6343,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6594,6 +6755,7 @@ mod tests {
                 2.0,
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6631,6 +6793,7 @@ mod tests {
                 0.0,
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6673,6 +6836,7 @@ mod tests {
                 2.0,
             )],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6751,6 +6915,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let mut spiral_project = cascade_project.clone();
         spiral_project.operations[0].kind = OperationKind::Pocket {
@@ -6824,6 +6989,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let gcode = run_pipeline(
             PipelineRequest {
@@ -6902,6 +7068,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let strategies = [
             PocketStrategy::Cascade,
@@ -6972,6 +7139,7 @@ mod tests {
                 tools: vec![endmill(1, 3.0)],
                 operations: vec![profile_op(1, 1, offset)],
                 fixtures: Default::default(),
+                text_layers: Default::default(),
             };
             let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
                 toolpath
@@ -7045,6 +7213,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -7197,6 +7366,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         for offset in [ToolOffset::Outside, ToolOffset::Inside] {
             let resp = run_pipeline(
@@ -7240,6 +7410,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -7330,6 +7501,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let cut_total = |toolpath: &[preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -7413,6 +7585,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -7462,6 +7635,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -7569,6 +7743,7 @@ mod tests {
             tools: vec![vbit],
             operations: vec![op],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -7759,6 +7934,7 @@ mod tests {
                 profile_op(3, 1, ToolOffset::On),
             ],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let cancel = CancelToken::new();
         let mut events: Vec<PipelineEvent> = Vec::new();
@@ -7798,6 +7974,7 @@ mod tests {
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let cancel = CancelToken::new();
         let mut last: Option<PipelineEvent> = None;
@@ -7865,6 +8042,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         let cancel = CancelToken::new();
         let cancel_clone = cancel.clone();
@@ -7946,6 +8124,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         clear_pipeline_cache();
         let first = collect_cached_flags(project.clone());
@@ -7984,6 +8163,7 @@ mod tests {
             tools,
             operations: ops,
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         clear_pipeline_cache();
         let first = collect_cached_flags(project.clone());
@@ -8025,6 +8205,7 @@ mod tests {
                 group: None,
             }],
             fixtures: Default::default(),
+            text_layers: Default::default(),
         };
         clear_pipeline_cache();
         let req = || PipelineRequest {

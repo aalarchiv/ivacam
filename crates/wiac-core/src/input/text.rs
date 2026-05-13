@@ -23,6 +23,9 @@ use ttf_parser::{Face, OutlineBuilder};
 use crate::errors::Error;
 use crate::geometry::{Point2, Segment};
 use crate::math;
+use crate::project::{
+    text_layer_synthetic_layer, TextAlignment, TextLayer, TextLayerKind,
+};
 
 /// Request payload for the cross-transport `/text` endpoint. The frontend
 /// hands us TTF bytes (uploaded by the user or pulled from
@@ -246,6 +249,120 @@ pub fn render_text(
         pen.x += advance;
     }
     Ok(out)
+}
+
+/// Render a full TextLayer (text + font + size + alignment + transform)
+/// to flat segments. Handles MTEXT line breaks (`\n`), per-line
+/// alignment, letter spacing, line spacing, and a rotation pivot at the
+/// layer's `origin`. The output segments live on the synthetic layer
+/// `__text_<id>` so ops can target them via `OperationSource::Layers`.
+pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
+    let face = Face::parse(&layer.font_bytes, 0).map_err(|e| {
+        Error::misconfigured(format!("ttf parse: {e}"))
+            .with_hint("Pick a different font for this text layer.")
+    })?;
+    let single_line = is_single_line_font(&face);
+    let units = face.units_per_em().max(1) as f64;
+    let scale = layer.size_mm / units;
+    let layer_name = text_layer_synthetic_layer(layer.id);
+    // BYLAYER — the canvas uses the assigned-op tint anyway, so the
+    // glyph color is mostly cosmetic.
+    let color = 7;
+
+    let lines: Vec<&str> = if matches!(layer.kind, TextLayerKind::Mtext) {
+        layer.text.split('\n').collect()
+    } else {
+        vec![layer.text.as_str()]
+    };
+    let line_height = if layer.line_spacing_mm > 0.0 {
+        layer.line_spacing_mm
+    } else {
+        layer.size_mm * 1.2
+    };
+
+    let mut out: Vec<Segment> = Vec::new();
+    for (line_idx, line) in lines.iter().enumerate() {
+        let line_width = measure_line_width(&face, line, scale, layer.size_mm, layer.letter_spacing_mm);
+        let x_shift = match layer.alignment {
+            TextAlignment::Left => 0.0,
+            TextAlignment::Center => -line_width / 2.0,
+            TextAlignment::Right => -line_width,
+        };
+        let line_y = -(line_idx as f64) * line_height;
+
+        let mut pen = Point2::new(x_shift, line_y);
+        for ch in line.chars() {
+            let Some(glyph_id) = face.glyph_index(ch) else {
+                // Unknown char → wide-space placeholder.
+                pen.x += layer.size_mm * 0.4 + layer.letter_spacing_mm;
+                continue;
+            };
+            let mut contours: Vec<Vec<Point2>> = Vec::new();
+            {
+                let mut walker = Walker::new(&mut contours, scale, pen);
+                face.outline_glyph(glyph_id, &mut walker);
+                walker.finish_contour();
+            }
+            if single_line {
+                for c in &contours {
+                    push_polyline_unclosed(c, &layer_name, color, &mut out);
+                }
+            } else {
+                for c in &contours {
+                    push_polyline_closed(c, &layer_name, color, &mut out);
+                }
+            }
+            let advance = face.glyph_hor_advance(glyph_id).unwrap_or(0) as f64 * scale;
+            pen.x += advance + layer.letter_spacing_mm;
+        }
+    }
+
+    // World transform: rotate around (0, 0) by `rotation_deg`, then
+    // translate to layer.origin.
+    let pivot = Point2::new(layer.origin.0, layer.origin.1);
+    let theta = layer.rotation_deg.to_radians();
+    let (cos, sin) = if layer.rotation_deg.abs() > 1e-9 {
+        (theta.cos(), theta.sin())
+    } else {
+        (1.0, 0.0)
+    };
+    for seg in &mut out {
+        seg.start = transform_text_point(seg.start, pivot, cos, sin);
+        seg.end = transform_text_point(seg.end, pivot, cos, sin);
+    }
+    Ok(out)
+}
+
+fn measure_line_width(
+    face: &Face,
+    line: &str,
+    scale: f64,
+    size_mm: f64,
+    letter_spacing_mm: f64,
+) -> f64 {
+    let mut width = 0.0;
+    let mut count = 0usize;
+    for ch in line.chars() {
+        let advance = if let Some(gid) = face.glyph_index(ch) {
+            face.glyph_hor_advance(gid).unwrap_or(0) as f64 * scale
+        } else {
+            size_mm * 0.4
+        };
+        width += advance;
+        count += 1;
+    }
+    // letter_spacing_mm applies between glyphs (count - 1 gaps).
+    if count > 1 {
+        width += letter_spacing_mm * (count - 1) as f64;
+    }
+    width
+}
+
+fn transform_text_point(p: Point2, origin: Point2, cos: f64, sin: f64) -> Point2 {
+    Point2::new(
+        origin.x + p.x * cos - p.y * sin,
+        origin.y + p.x * sin + p.y * cos,
+    )
 }
 
 fn push_polyline_closed(pts: &[Point2], layer: &str, color: i32, out: &mut Vec<Segment>) {
@@ -500,5 +617,87 @@ mod tests {
         }
         let width = max_x - min_x;
         assert!(width > 5.0 && width < 30.0, "AB at h=10mm: got width {width}");
+    }
+
+    fn dejavu_layer(text: &str) -> TextLayer {
+        let bytes = std::fs::read(fixture("DejaVuSans.ttf")).expect("DejaVuSans.ttf");
+        TextLayer {
+            id: 1,
+            kind: TextLayerKind::Text,
+            name: "test".into(),
+            text: text.into(),
+            font_bytes: bytes,
+            size_mm: 10.0,
+            origin: (0.0, 0.0),
+            rotation_deg: 0.0,
+            letter_spacing_mm: 0.0,
+            line_spacing_mm: 0.0,
+            alignment: TextAlignment::Left,
+        }
+    }
+
+    #[test]
+    fn render_text_layer_tags_synthetic_layer_name() {
+        let layer = dejavu_layer("AB");
+        let segs = render_text_layer(&layer).expect("render");
+        assert!(!segs.is_empty());
+        assert!(
+            segs.iter().all(|s| s.layer == "__text_1"),
+            "all segments should land on the synthetic text layer"
+        );
+    }
+
+    #[test]
+    fn render_text_layer_mtext_stacks_lines() {
+        let mut layer = dejavu_layer("AB\nCD");
+        layer.kind = TextLayerKind::Mtext;
+        layer.size_mm = 10.0;
+        let segs = render_text_layer(&layer).expect("render");
+        // MTEXT with two lines spans more vertical extent than a single
+        // line — minimum y should be below -size_mm * (1.2 line-height - 1)
+        // because line 2 sits at y ≈ -12 (default line spacing).
+        let min_y = segs
+            .iter()
+            .flat_map(|s| [s.start.y, s.end.y])
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            min_y < -8.0,
+            "two MTEXT lines should reach y < -8 (got {min_y})"
+        );
+    }
+
+    #[test]
+    fn render_text_layer_alignment_shifts_origin() {
+        let left = render_text_layer(&dejavu_layer("AB")).expect("left");
+        let mut centered = dejavu_layer("AB");
+        centered.alignment = TextAlignment::Center;
+        let center = render_text_layer(&centered).expect("center");
+        let min_left = left
+            .iter()
+            .flat_map(|s| [s.start.x, s.end.x])
+            .fold(f64::INFINITY, f64::min);
+        let min_center = center
+            .iter()
+            .flat_map(|s| [s.start.x, s.end.x])
+            .fold(f64::INFINITY, f64::min);
+        // Centered text's leftmost glyph sits to the LEFT of left-aligned.
+        assert!(
+            min_center < min_left,
+            "centered min_x ({min_center}) should be left of left-aligned min_x ({min_left})"
+        );
+    }
+
+    #[test]
+    fn render_text_layer_rotation_is_applied_around_origin() {
+        let mut layer = dejavu_layer("A");
+        layer.rotation_deg = 90.0;
+        let segs = render_text_layer(&layer).expect("rotated");
+        // After 90° rotation around (0, 0), the 'A' glyph (originally in
+        // +x quadrant) lands mostly in the +y quadrant.
+        let max_y = segs
+            .iter()
+            .flat_map(|s| [s.start.y, s.end.y])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(max_y > 4.0, "rotated glyph should extend upward (got {max_y})");
     }
 }

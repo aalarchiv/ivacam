@@ -97,6 +97,9 @@ pub fn components_schemas() -> Value {
     insert::<crate::project::Coolant>(&mut schemas, "Coolant");
     insert::<crate::project::Fixture>(&mut schemas, "Fixture");
     insert::<crate::project::FixtureKind>(&mut schemas, "FixtureKind");
+    insert::<crate::project::TextLayer>(&mut schemas, "TextLayer");
+    insert::<crate::project::TextLayerKind>(&mut schemas, "TextLayerKind");
+    insert::<crate::project::TextAlignment>(&mut schemas, "TextAlignment");
 
     insert::<SimWarning>(&mut schemas, "SimWarning");
     insert::<SimDiagnostics>(&mut schemas, "SimDiagnostics");

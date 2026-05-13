@@ -46,7 +46,7 @@ function sampleTextLayer(id: number, text = 'Hello'): TextLayer {
     kind: 'TEXT',
     name: `TEXT — "${text}"`,
     text,
-    fontSource: { kind: 'bundled', path: '/fonts/DejaVuSans.ttf' },
+    fontSource: { kind: 'bundled', path: '/fonts/DejaVuSans.ttf', bytes_b64: '' },
     sizeMm: 12,
     origin: { x: 0, y: 0 },
     rotationDeg: 0,

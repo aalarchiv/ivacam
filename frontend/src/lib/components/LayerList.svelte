@@ -254,7 +254,7 @@
        context so the absolutely-positioned dropdown can paint above
        later sidebar rows (Text panel, Operations, etc.) instead of
        being painted under by their DOM-order. */
-    z-index: 100;
+    z-index: var(--z-dropdown);
   }
   .add-btn {
     background: var(--bg-elevated);
@@ -287,7 +287,7 @@
     border-radius: 4px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
     padding: 0.2rem;
-    z-index: 60;
+    z-index: var(--z-dropdown);
     display: flex;
     flex-direction: column;
     gap: 0.05rem;

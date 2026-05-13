@@ -124,7 +124,7 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
-    z-index: 1000;
+    z-index: var(--z-drop-catcher);
     background: transparent;
     transition: background 80ms;
   }

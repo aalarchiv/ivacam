@@ -1,116 +1,82 @@
 <script lang="ts">
   /// Static keyboard / mouse shortcut overlay. Opened via the `?` button
-  /// in the 2D canvas corner or the global `?` / F1 keybinding. Closes
-  /// on Escape, click-outside, or via the close button.
+  /// in the 2D canvas corner or the global `?` / F1 keybinding. Wraps
+  /// the shared Modal so focus management + Esc-to-close + click-outside
+  /// follow the same pattern as MachineDialog / ToolLibraryDialog /
+  /// SettingsDialog / AddTextDialog.
+  import Modal from './Modal.svelte';
+
   interface Props {
     onClose: () => void;
   }
   let { onClose }: Props = $props();
-
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      e.preventDefault();
-      onClose();
-    }
-  }
-
-  function onOverlayClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
+<Modal {onClose} modalClass="shortcut-help">
+  <header>
+    <h2 id="shortcut-help-title">Keyboard &amp; mouse shortcuts</h2>
+    <button class="close" onclick={onClose} type="button" aria-label="Close">×</button>
+  </header>
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div
-  class="overlay"
-  role="dialog"
-  tabindex="-1"
-  aria-modal="true"
-  aria-labelledby="shortcut-help-title"
-  onclick={onOverlayClick}
->
-  <div class="modal">
-    <header>
-      <h2 id="shortcut-help-title">Keyboard &amp; mouse shortcuts</h2>
-      <button class="close" onclick={onClose} type="button" aria-label="Close">×</button>
-    </header>
+  <div class="body">
+    <section>
+      <h3>2D Canvas</h3>
+      <dl>
+        <dt><kbd>drag</kbd></dt>
+        <dd>Pan view</dd>
+        <dt><kbd>scroll</kbd></dt>
+        <dd>Zoom in / out</dd>
+        <dt><kbd>click</kbd></dt>
+        <dd>Select object</dd>
+        <dt><kbd>Shift</kbd> + <kbd>click</kbd></dt>
+        <dd>Add to selection</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>click</kbd></dt>
+        <dd>Remove from selection</dd>
+        <dt><kbd>right-click</kbd></dt>
+        <dd>Context menu / deselect</dd>
+      </dl>
+    </section>
 
-    <div class="body">
-      <section>
-        <h3>2D Canvas</h3>
-        <dl>
-          <dt><kbd>drag</kbd></dt>
-          <dd>Pan view</dd>
-          <dt><kbd>scroll</kbd></dt>
-          <dd>Zoom in / out</dd>
-          <dt><kbd>click</kbd></dt>
-          <dd>Select object</dd>
-          <dt><kbd>Shift</kbd> + <kbd>click</kbd></dt>
-          <dd>Add to selection</dd>
-          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>click</kbd></dt>
-          <dd>Remove from selection</dd>
-          <dt><kbd>right-click</kbd></dt>
-          <dd>Context menu / deselect</dd>
-        </dl>
-      </section>
+    <section>
+      <h3>3D View</h3>
+      <dl>
+        <dt><kbd>left-drag</kbd></dt>
+        <dd>Orbit</dd>
+        <dt><kbd>right-drag</kbd></dt>
+        <dd>Pan</dd>
+        <dt><kbd>scroll</kbd></dt>
+        <dd>Zoom in / out</dd>
+      </dl>
+    </section>
 
-      <section>
-        <h3>3D View</h3>
-        <dl>
-          <dt><kbd>left-drag</kbd></dt>
-          <dd>Orbit</dd>
-          <dt><kbd>right-drag</kbd></dt>
-          <dd>Pan</dd>
-          <dt><kbd>scroll</kbd></dt>
-          <dd>Zoom in / out</dd>
-        </dl>
-      </section>
-
-      <section>
-        <h3>Global</h3>
-        <dl>
-          <dt><kbd>T</kbd></dt>
-          <dd>Add Text</dd>
-          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt>
-          <dd>Undo</dd>
-          <dt><kbd>Ctrl</kbd> + <kbd>Y</kbd></dt>
-          <dd>Redo</dd>
-          <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></dt>
-          <dd>Redo</dd>
-          <dt><kbd>?</kbd> / <kbd>F1</kbd></dt>
-          <dd>Show this help</dd>
-          <dt><kbd>Esc</kbd></dt>
-          <dd>Cancel mode / clear selection / close menu</dd>
-        </dl>
-      </section>
-    </div>
-
-    <footer>
-      <button class="primary" onclick={onClose} type="button">Done</button>
-    </footer>
+    <section>
+      <h3>Global</h3>
+      <dl>
+        <dt><kbd>T</kbd></dt>
+        <dd>Add Text</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt>
+        <dd>Undo</dd>
+        <dt><kbd>Ctrl</kbd> + <kbd>Y</kbd></dt>
+        <dd>Redo</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></dt>
+        <dd>Redo</dd>
+        <dt><kbd>?</kbd> / <kbd>F1</kbd></dt>
+        <dd>Show this help</dd>
+        <dt><kbd>Esc</kbd></dt>
+        <dd>Cancel mode / clear selection / close menu</dd>
+      </dl>
+    </section>
   </div>
-</div>
+
+  <footer>
+    <button class="primary" onclick={onClose} type="button">Done</button>
+  </footer>
+</Modal>
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, black 50%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-  }
-  .modal {
+  :global(.shortcut-help) {
     width: min(560px, 95vw);
     max-height: 90vh;
-    background: var(--bg-panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
     display: grid;
     grid-template-rows: auto 1fr auto;
     overflow: hidden;

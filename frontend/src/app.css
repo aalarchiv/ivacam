@@ -58,6 +58,18 @@
   --marker-critical: var(--error);
   --marker-warn: var(--warn);
   --marker-info: var(--accent);
+
+  /* Stacking-context tokens (audit 8u5e). One central scale instead
+     of the per-component zoo of 30 / 40 / 60 / 80 / 100 / 200 / 1000
+     that caused the Add+ dropdown to render under the Text panel.
+     New code consumes `var(--z-…)` instead of hard-coding integers. */
+  --z-anchor: 10;        /* pinned bars / status footer */
+  --z-overlay: 20;       /* loading spinner overlay */
+  --z-floating: 40;      /* on-canvas popovers (sim-warning panel, tab popover) */
+  --z-dropdown: 100;     /* menu / Add+ dropdowns */
+  --z-toast: 200;        /* SourceStaleToast, error toast */
+  --z-modal: 500;        /* MachineDialog / ToolLibraryDialog / SettingsDialog / AddTextDialog */
+  --z-drop-catcher: 1000;/* full-window drag-drop indicator */
 }
 
 /* Light tokens applied for explicit light. */

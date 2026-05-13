@@ -1836,76 +1836,13 @@ export interface TextLayer {
 
 export const project = new ProjectState();
 
-/// Severity mapping for a sim warning. Mirrors
-/// `wiac_core::sim::diagnostics::severity` so the UI can color-code
-/// without a round-trip.
-export function simWarningSeverity(w: SimWarning): SimSeverity {
-  switch (w.kind) {
-    case 'rapid_through_material':
-    case 'fixture_collision':
-    case 'holder_collision':
-      return 'critical';
-    case 'engagement_overload':
-    case 'dragging_rapids':
-      return 'warning';
-  }
-}
-
-/// Segment index a warning attaches to. `dragging_rapids` reports a
-/// run; we anchor it at the first segment in the run for marker
-/// placement.
-export function simWarningSegmentIdx(w: SimWarning): number {
-  if (w.kind === 'dragging_rapids') return w.first_segment_idx;
-  return w.segment_idx;
-}
-
-/// Short human-readable line for tooltips / list rows.
-export function simWarningSummary(w: SimWarning): string {
-  switch (w.kind) {
-    case 'rapid_through_material':
-      return `Rapid through material at segment ${w.segment_idx}, x=${w.worst_x.toFixed(1)} y=${w.worst_y.toFixed(1)}`;
-    case 'fixture_collision':
-      return `Fixture #${w.fixture_id} collision at segment ${w.segment_idx}`;
-    case 'holder_collision':
-      return `Tool holder hits wall at segment ${w.segment_idx} (clearance ${w.required_clearance_mm.toFixed(2)} mm)`;
-    case 'engagement_overload':
-      return `Engagement ${w.engagement_pct.toFixed(0)}% at segment ${w.segment_idx}`;
-    case 'dragging_rapids':
-      return `Dragging rapids: ${w.count} consecutive rapids from segment ${w.first_segment_idx}`;
-  }
-}
-
-/// Map `playhead ∈ [0,1]` (fraction of total arc length) to a segment
-/// index + parametric position within that segment. Returns
-/// `{ segIdx, segT }` where `segT ∈ [0,1]` is the fractional distance
-/// along segment `segIdx`. Returns `{ segIdx: -1, segT: 0 }` when the
-/// toolpath is empty or there is no length to traverse.
-///
-/// Arc-length-based mapping is what makes playback feel uniform: a
-/// 50 mm boundary edge takes ~33× longer than a 1.5 mm zigzag connector
-/// at the same `speed`, instead of both consuming `1/total_segments`
-/// of playback time.
-export function playheadToSegment(
-  playhead: number,
-  cumLen: Float64Array | null,
-  totalLen: number,
-): { segIdx: number; segT: number } {
-  if (!cumLen || cumLen.length === 0 || totalLen <= 0) {
-    return { segIdx: -1, segT: 0 };
-  }
-  const clamped = Math.max(0, Math.min(1, playhead));
-  const target = clamped * totalLen;
-  // Binary search for the smallest i where cumLen[i] >= target.
-  let lo = 0;
-  let hi = cumLen.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (cumLen[mid] < target) lo = mid + 1;
-    else hi = mid;
-  }
-  const segEndLen = cumLen[lo];
-  const segStartLen = lo === 0 ? 0 : cumLen[lo - 1];
-  const segLen = segEndLen - segStartLen;
-  const segT = segLen > 1e-12 ? (target - segStartLen) / segLen : 0;
-  return { segIdx: lo, segT };
-}
+// These helpers used to live in this module; they were moved to
+// `sim/warnings.ts` and `sim/playhead.ts` so vitest can import them
+// without booting the Svelte rune runtime. Re-exported here for
+// backwards-compat with existing call sites.
+export {
+  simWarningSeverity,
+  simWarningSegmentIdx,
+  simWarningSummary,
+} from '../sim/warnings';
+export { playheadToSegment } from '../sim/playhead';

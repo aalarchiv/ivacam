@@ -1783,7 +1783,7 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-    z-index: 40;
+    z-index: var(--z-floating);
     padding: 0.25rem;
   }
   .tab-popover {
@@ -1795,7 +1795,7 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-    z-index: 45;
+    z-index: var(--z-floating);
     padding: 0.55rem 0.6rem 0.5rem;
     display: flex;
     flex-direction: column;

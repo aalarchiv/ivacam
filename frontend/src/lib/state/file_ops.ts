@@ -252,6 +252,43 @@ export async function loadSample(url: string) {
   }
 }
 
+/// Export the current `project.generated.gcode` to disk. Mirrors
+/// `saveProject` — native save dialog on Tauri, anchor-tag download in
+/// the browser. Filename suffix is .plt for HPGL output, .ngc otherwise.
+/// `postProcessor` controls the suffix only; the gcode buffer is
+/// already post-processed by the time it lands in `project.generated`.
+export async function exportGeneratedGcode(
+  postProcessor: 'linuxcnc' | 'grbl' | 'hpgl',
+): Promise<void> {
+  if (!project.generated) return;
+  const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
+  const ext = postProcessor === 'hpgl' ? 'plt' : 'ngc';
+  const filename = `${base}.${ext}`;
+  if (isTauri()) {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+    const path = await save({
+      defaultPath: filename,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    });
+    if (typeof path === 'string') {
+      try {
+        await writeTextFile(path, project.generated.gcode);
+      } catch (e) {
+        project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return;
+  }
+  const blob = new Blob([project.generated.gcode], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /// Combined sample + pre-generated gcode load. Driven by query string
 /// `?sample=X&gen=Y` at startup so demo links can land users on a
 /// fully-loaded project.

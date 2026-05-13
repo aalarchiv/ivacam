@@ -56,7 +56,7 @@
     align-items: flex-start;
     justify-content: center;
     padding-top: 5vh;
-    z-index: 100;
+    z-index: var(--z-modal);
   }
   .modal {
     background: var(--bg-panel);

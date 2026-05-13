@@ -56,6 +56,7 @@
     loadProjectPath,
     loadSample,
     saveProject,
+    exportGeneratedGcode,
     SAMPLES,
   } from './lib/state/file_ops';
   import { onMount } from 'svelte';
@@ -367,8 +368,15 @@
     if (!project.redo()) shake('redo');
   }
 
-  function exportGcode() {
-    (document.querySelector('button.download') as HTMLButtonElement | null)?.click();
+  async function exportGcode() {
+    // Read the last-used post processor from the workspace store so the
+    // File-menu export matches the toolbar's Download button without
+    // having to reach across the DOM (was querySelector('button.download')
+    // .click() — a 'a40m' audit item).
+    const raw = workspace.get().last_post_processor;
+    const post: 'linuxcnc' | 'grbl' | 'hpgl' =
+      raw === 'grbl' || raw === 'hpgl' ? raw : 'linuxcnc';
+    await exportGeneratedGcode(post);
   }
 
   // ---- Resizable layout ------------------------------------------------
@@ -928,7 +936,7 @@
     border-radius: 4px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
     padding: 0.2rem;
-    z-index: 200;
+    z-index: var(--z-dropdown);
     display: flex;
     flex-direction: column;
     gap: 0.05rem;

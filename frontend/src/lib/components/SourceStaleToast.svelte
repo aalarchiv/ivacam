@@ -42,7 +42,7 @@
     position: fixed;
     bottom: 1rem;
     right: 1rem;
-    z-index: 80;
+    z-index: var(--z-toast);
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;

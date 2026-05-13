@@ -12,6 +12,7 @@
     simWarningSummary,
   } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
+  import { exportGeneratedGcode } from '../state/file_ops';
   import { computeFootprint } from '../sim/driver';
   import type { SimWarning, TimeEstimate } from '../api/types';
   import { _ } from 'svelte-i18n';
@@ -227,33 +228,7 @@
   }
 
   async function downloadGcode() {
-    if (!project.generated) return;
-    const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
-    const ext = post === 'hpgl' ? 'plt' : 'ngc';
-    const filename = `${base}.${ext}`;
-    if (isTauri()) {
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-      const path = await save({
-        defaultPath: filename,
-        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-      });
-      if (typeof path === 'string') {
-        try {
-          await writeTextFile(path, project.generated.gcode);
-        } catch (e) {
-          project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      return;
-    }
-    const blob = new Blob([project.generated.gcode], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportGeneratedGcode(post);
   }
 
   function flyToWarning(w: SimWarning) {
@@ -626,7 +601,7 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-    z-index: 40;
+    z-index: var(--z-floating);
     display: flex;
     flex-direction: column;
     overflow: hidden;

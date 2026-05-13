@@ -29,7 +29,7 @@
     justify-content: center;
     background: color-mix(in srgb, var(--bg-app) 60%, transparent);
     backdrop-filter: blur(2px);
-    z-index: 30;
+    z-index: var(--z-overlay);
     pointer-events: all;
   }
   .card {

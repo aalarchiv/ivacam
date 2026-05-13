@@ -438,7 +438,12 @@
                   {@const status = statusFor(op)}
                   {@const selected = project.selectedOpId === op.id}
                   {@const dragOver = dragOverId === op.id}
-                  <li class:selected class:drag-over={dragOver} data-op-row-id={op.id}>
+                  <li
+                    class:selected
+                    class:drag-over={dragOver}
+                    class:op-disabled={!op.enabled}
+                    data-op-row-id={op.id}
+                  >
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <div
                       class="row"
@@ -652,6 +657,17 @@
   li.drag-over {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent) inset;
+  }
+  /* Disabled ops fade so the eye skips them. Pipeline still
+     re-runs without them on the next Generate (`op.enabled` is
+     hashed into the cache key); meanwhile the gcode panel renders
+     their chapter commented-out and the 3D wireframe hides their
+     segments. */
+  li.op-disabled .row {
+    opacity: 0.45;
+  }
+  li.op-disabled .name {
+    text-decoration: line-through;
   }
   .row {
     display: grid;

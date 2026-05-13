@@ -322,6 +322,10 @@
       clearTimeout(cameraSaveTimer);
       cameraSaveTimer = null;
     }
+    if (simRebuildTimer) {
+      clearTimeout(simRebuildTimer);
+      simRebuildTimer = null;
+    }
     controls?.dispose();
     if (toolMesh) {
       disposeMesh(toolMesh);
@@ -436,6 +440,17 @@
   /// stock footprint, grid resolution, or active generated toolpath
   /// changes. Cosmetic settings (color / opacity) are NOT in this key —
   /// those flow through applyStyle without rebuilding.
+  ///
+  /// DEBOUNCED: the sim driver rebuild (heightfield reconstruction +
+  /// WASM cell-grid build + toolpath replay) is heavy. Without a
+  /// debounce, every keystroke in a Stock-thickness / margin /
+  /// cell-resolution input fires a full rebuild and freezes the UI
+  /// while the user is typing. Wait for values to settle before
+  /// kicking the driver. The cheap bbox-box visual (`updateStock`)
+  /// still updates instantly via its own effect.
+  let simRebuildTimer: ReturnType<typeof setTimeout> | null = null;
+  const SIM_REBUILD_DEBOUNCE_MS = 250;
+
   $effect(() => {
     if (!scene) return;
     const settings = project.settings;
@@ -466,14 +481,25 @@
       tool_dia: tool.diameter,
       cellRes,
       maxCells: settings.maxSimulationCells,
-      // Monotonic version counter bumped on every setGenerated — two
-      // runs whose gcode happens to have the same length but different
-      // content now correctly invalidate the sim cache (was: gcode.length
-      // as a cheap-but-unreliable stand-in).
       gen_id: project.generatedVersion,
       fixtures: project.fixtures,
     });
-    if (key !== lastSimKey) {
+    if (key === lastSimKey) {
+      driver?.setVisible(true);
+      driver?.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+      driver?.setEdgesVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
+      requestRender();
+      return;
+    }
+    // Cancel any pending rebuild from a prior keystroke. The effect
+    // re-runs synchronously on every reactive change, so this debounce
+    // collapses a burst of stock edits into a single rebuild after
+    // the user pauses.
+    if (simRebuildTimer != null) {
+      clearTimeout(simRebuildTimer);
+    }
+    simRebuildTimer = setTimeout(() => {
+      simRebuildTimer = null;
       ensureDriver()
         .then(() => {
           if (!driver) return;
@@ -505,17 +531,9 @@
           requestRender();
         })
         .catch((e) => {
-          // Surface async failures the user couldn't otherwise see.
-          // Driver init failures (wasm load) and build failures
-          // (Simulator construction throwing) used to swallow silently.
           project.setError(`solid preview: ${e instanceof Error ? e.message : String(e)}`);
         });
-    } else {
-      driver?.setVisible(true);
-      driver?.setSolidVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
-      driver?.setEdgesVisible(settings.previewMode === 'solid' || settings.previewMode === 'both');
-      requestRender();
-    }
+    }, SIM_REBUILD_DEBOUNCE_MS);
   });
 
   /// Advance the simulation on every playhead change. Falls through
@@ -1258,6 +1276,15 @@
         retract: cssColor('--toolpath-retract', 0x5fd06e),
         arc: cssColor('--toolpath-arc', 0xff8a3a),
       };
+      // Per-op enable filter: when the user disables an op via the
+      // OperationsList checkbox, the previously-generated gcode still
+      // carries its segments — we hide them visually here so the
+      // wireframe matches the (commented-out) gcode-panel view
+      // without forcing a re-Generate.
+      const disabledOpIds = new Set<number>();
+      for (const o of project.operations) {
+        if (!o.enabled) disabledOpIds.add(o.id);
+      }
       const total = gen.toolpath.length;
       // Bake colors at full intensity here; the playhead $effect below
       // applies the past/future fade in-place by mutating the color
@@ -1267,12 +1294,16 @@
       // OrbitControls and made pan/zoom unusable).
       for (let i = 0; i < total; i++) {
         const seg = gen.toolpath[i];
-        const moveTint = moveTints[seg.kind] ?? moveTints.cut;
         // Per-op base hue from a stable hash of op_id; the move tint
         // brightens it 1.5× for cuts, halves it for rapids — so the eye
         // can pick out each operation while still distinguishing
         // rapid/cut/plunge/retract within an op.
         const opId = seg.op_id ?? 0;
+        // Skip segments whose op was disabled by the user — keeps the
+        // wireframe in sync with the gcode panel's commented-out
+        // chapter view without requiring a re-Generate.
+        if (opId > 0 && disabledOpIds.has(opId)) continue;
+        const moveTint = moveTints[seg.kind] ?? moveTints.cut;
         const opHue = opId === 0 ? 0.0 : opPalette(opId);
         const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
         const moveBoost =

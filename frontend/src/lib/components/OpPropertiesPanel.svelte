@@ -269,7 +269,13 @@
       {:else if op.sourceLayers === null}
         <p class="hint">runs on every chain in the import</p>
       {/if}
-      {#if (op.sourceObjects?.length ?? 0) > 1 || (op.sourceLayers !== null && op.sourceLayers.length > 0)}
+      <!-- Drill picks a single XY per selected object (POINT / circle
+           center / bbox center) and emits a drill cycle there. The
+           area-based boolean modes (union / difference / intersection
+           / xor) have no effect — each object gets its own hole no
+           matter what. Hide the Combine selector for Drill to stop
+           promising a knob that does nothing. -->
+      {#if op.kind !== 'drill' && ((op.sourceObjects?.length ?? 0) > 1 || (op.sourceLayers !== null && op.sourceLayers.length > 0))}
         <label class="row" title={$_('op.help.combine.' + (op.sourceCombine ?? 'auto'))}>
           <span>Combine</span>
           <select

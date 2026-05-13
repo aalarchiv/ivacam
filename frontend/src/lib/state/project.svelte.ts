@@ -272,6 +272,7 @@ class ProjectState {
     accel: { x: 250, y: 250, z: 250 },
     toolchangeS: 5,
     rapidSpeed: 5000,
+    workArea: { x: 200, y: 300, z: 50 },
   });
 
   /// Ordered list of operations the program runs. Each op has a kind, a
@@ -1313,6 +1314,10 @@ export interface MachineSettings {
   toolchangeS?: number;
   /// Rapid (G0) speed in mm/min (default 5000).
   rapidSpeed?: number;
+  /// Machine work-area envelope in mm — drives the stock's auto-mode
+  /// fallback when no geometry is imported (the stock sizes to this
+  /// XY footprint). Default 200×300×50 (a typical hobby gantry).
+  workArea?: AxisLimits;
   /// Maximum chord-to-arc deviation (mm) when collapsing line runs into
   /// G2/G3 on emit. Only consulted when `arcs == true`. undefined ⇒
   /// 0.01 mm (the backend default).

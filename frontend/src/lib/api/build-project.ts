@@ -96,6 +96,7 @@ interface WireMachine {
   jerk?: WireAxisLimits;
   toolchange_s?: number;
   rapid_speed?: number;
+  work_area?: WireAxisLimits;
   arc_fit_tolerance_mm?: number;
   decimal_separator?: '.' | ',';
   line_number_start?: number;
@@ -357,6 +358,7 @@ function buildMachine(m: MachineSettings): WireMachine {
       : {}),
     ...(m.plotModeZ ? { plot_mode_z: true } : {}),
     ...(m.postProfile ? { post_profile: m.postProfile } : {}),
+    ...(m.workArea ? { work_area: { x: m.workArea.x, y: m.workArea.y, z: m.workArea.z } } : {}),
   };
 }
 

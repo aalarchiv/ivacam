@@ -20,9 +20,27 @@ function importedWithBbox(
 }
 
 describe('computeFootprint', () => {
-  it('returns a 100x100 default when no import is present', () => {
+  it('returns a 100x100 default when no import AND no work area is present', () => {
     const fp = computeFootprint(null, { mode: 'auto', margin: 5, customX: 50, customY: 50 });
     expect(fp).toEqual({ minX: 0, minY: 0, maxX: 100, maxY: 100 });
+  });
+
+  it('falls back to the machine work area when no drawing is imported', () => {
+    const fp = computeFootprint(
+      null,
+      { mode: 'auto', margin: 5, customX: 0, customY: 0 },
+      { x: 200, y: 300 },
+    );
+    expect(fp).toEqual({ minX: 0, minY: 0, maxX: 200, maxY: 300 });
+  });
+
+  it('honors manual customX/Y centered on the origin when no drawing is present', () => {
+    const fp = computeFootprint(
+      null,
+      { mode: 'manual', margin: 5, customX: 40, customY: 30 },
+      { x: 200, y: 300 },
+    );
+    expect(fp).toEqual({ minX: -20, minY: -15, maxX: 20, maxY: 15 });
   });
 
   it('expands the bbox by the configured margin in auto mode', () => {

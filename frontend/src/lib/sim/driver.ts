@@ -142,14 +142,18 @@ export function computeFootprint(
     customX: number;
     customY: number;
   },
+  workArea?: { x: number; y: number } | null,
 ): { minX: number; minY: number; maxX: number; maxY: number } {
-  if (!imported) {
-    return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
-  }
-  const { min_x, min_y, max_x, max_y } = imported.bbox;
+  // Manual mode: footprint is exactly customX × customY centered on
+  // the imported geometry's bbox center (or origin when none).
   if (stock.mode === 'manual') {
-    const cx = (min_x + max_x) * 0.5;
-    const cy = (min_y + max_y) * 0.5;
+    let cx = 0;
+    let cy = 0;
+    if (imported) {
+      const { min_x, min_y, max_x, max_y } = imported.bbox;
+      cx = (min_x + max_x) * 0.5;
+      cy = (min_y + max_y) * 0.5;
+    }
     return {
       minX: cx - stock.customX * 0.5,
       minY: cy - stock.customY * 0.5,
@@ -157,8 +161,23 @@ export function computeFootprint(
       maxY: cy + stock.customY * 0.5,
     };
   }
-  const m = Math.max(0, stock.margin);
-  return { minX: min_x - m, minY: min_y - m, maxX: max_x + m, maxY: max_y + m };
+  // Auto mode WITH geometry: bbox + margin (the legacy behavior).
+  if (imported) {
+    const { min_x, min_y, max_x, max_y } = imported.bbox;
+    const m = Math.max(0, stock.margin);
+    return { minX: min_x - m, minY: min_y - m, maxX: max_x + m, maxY: max_y + m };
+  }
+  // Auto mode WITHOUT geometry: default to the machine work-area
+  // footprint anchored at the origin. This is the stock-first fallback
+  // — when the user opens a fresh project the canvas still has a
+  // workpiece to act on.
+  if (workArea && workArea.x > 0 && workArea.y > 0) {
+    return { minX: 0, minY: 0, maxX: workArea.x, maxY: workArea.y };
+  }
+  // Final fallback for clients that don't pass a work area (legacy or
+  // mid-load) — keep the 100×100 mm placeholder so we never produce
+  // a degenerate stock footprint.
+  return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
 }
 
 /// Compute cell size from the active tool diameter when settings is in

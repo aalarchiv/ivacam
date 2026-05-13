@@ -486,6 +486,8 @@ export interface components {
             unit: components["schemas"]["UnitSystem"];
             /** @description When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator. */
             use_kinematic_time_estimate?: boolean;
+            /** @description Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in MachineDialog. */
+            work_area?: components["schemas"]["AxisLimits"];
         };
         /** @enum {string} */
         MachineMode: "mill" | "laser" | "drag";

@@ -352,6 +352,13 @@ pub struct MachineConfig {
     /// Set to false for the legacy length/feed-only estimator.
     #[serde(default = "default_use_kinematic", skip_serializing_if = "is_default_use_kinematic")]
     pub use_kinematic_time_estimate: bool,
+    /// Machine work area envelope in mm. Drives the stock's auto-mode
+    /// fallback when no geometry is imported (the stock then sizes to
+    /// the work-area XY footprint), and surfaces as the soft-limit
+    /// reference in future sim warnings. Default 200×300×50 — a typical
+    /// hobby gantry; users override in MachineDialog.
+    #[serde(default = "default_work_area", skip_serializing_if = "is_default_work_area")]
+    pub work_area: AxisLimits,
     /// Maximum deviation (mm) between the fitted G2/G3 arc and the
     /// original chord polyline. None ⇒ 0.01 mm. Only consulted when
     /// `arcs == true`.
@@ -411,6 +418,19 @@ fn is_default_use_kinematic(v: &bool) -> bool {
     *v
 }
 
+fn default_work_area() -> AxisLimits {
+    AxisLimits {
+        x: 200.0,
+        y: 300.0,
+        z: 50.0,
+    }
+}
+
+fn is_default_work_area(v: &AxisLimits) -> bool {
+    let d = default_work_area();
+    (v.x - d.x).abs() < 1e-9 && (v.y - d.y).abs() < 1e-9 && (v.z - d.z).abs() < 1e-9
+}
+
 fn default_decimal_separator_char() -> char {
     '.'
 }
@@ -441,6 +461,7 @@ impl Default for MachineConfig {
             line_number_start: None,
             plot_mode_z: false,
             post_profile: None,
+            work_area: default_work_area(),
         }
     }
 }

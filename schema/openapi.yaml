@@ -877,6 +877,10 @@ components:
         use_kinematic_time_estimate:
           description: When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator.
           type: boolean
+        work_area:
+          allOf:
+          - $ref: '#/components/schemas/AxisLimits'
+          description: Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in MachineDialog.
       required:
       - arcs
       - comments

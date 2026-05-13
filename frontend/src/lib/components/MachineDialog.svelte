@@ -45,6 +45,7 @@
       ...m,
       accel: m.accel ? { ...m.accel } : { x: 250, y: 250, z: 250 },
       jerk: m.jerk ? { ...m.jerk } : undefined,
+      workArea: m.workArea ? { ...m.workArea } : { x: 200, y: 300, z: 50 },
       postProfile: m.postProfile ? { ...m.postProfile } : undefined,
     };
   }
@@ -174,6 +175,63 @@
           ></span
         >
       </label>
+      <fieldset class="work-area">
+        <legend
+          title="Machine work envelope in mm — the stock auto-defaults to this size when no drawing is loaded, and (future) sim checks use it as the soft-limit reference."
+          >Work area</legend
+        >
+        <label
+          >X
+          <span class="field"
+            ><input
+              type="number"
+              min="1"
+              step="10"
+              value={draft.workArea?.x ?? 200}
+              oninput={(e) => {
+                const v = (e.target as HTMLInputElement).valueAsNumber;
+                if (Number.isFinite(v) && v > 0) {
+                  draft.workArea = { x: v, y: draft.workArea?.y ?? 300, z: draft.workArea?.z ?? 50 };
+                }
+              }}
+            /><span class="unit">mm</span></span
+          >
+        </label>
+        <label
+          >Y
+          <span class="field"
+            ><input
+              type="number"
+              min="1"
+              step="10"
+              value={draft.workArea?.y ?? 300}
+              oninput={(e) => {
+                const v = (e.target as HTMLInputElement).valueAsNumber;
+                if (Number.isFinite(v) && v > 0) {
+                  draft.workArea = { x: draft.workArea?.x ?? 200, y: v, z: draft.workArea?.z ?? 50 };
+                }
+              }}
+            /><span class="unit">mm</span></span
+          >
+        </label>
+        <label
+          >Z
+          <span class="field"
+            ><input
+              type="number"
+              min="1"
+              step="5"
+              value={draft.workArea?.z ?? 50}
+              oninput={(e) => {
+                const v = (e.target as HTMLInputElement).valueAsNumber;
+                if (Number.isFinite(v) && v > 0) {
+                  draft.workArea = { x: draft.workArea?.x ?? 200, y: draft.workArea?.y ?? 300, z: v };
+                }
+              }}
+            /><span class="unit">mm</span></span
+          >
+        </label>
+      </fieldset>
       <label class="check">
         <input type="checkbox" bind:checked={draft.comments} />
         Emit comments in G-code

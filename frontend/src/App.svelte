@@ -62,6 +62,22 @@
   import { _ } from 'svelte-i18n';
   import { locale } from './lib/i18n';
   import { isTauri } from './lib/api/env';
+  import { computeFootprint } from './lib/sim/driver';
+
+  /// Live label for the Stock panel summary — shows the current
+  /// dimensions inline so the user sees the workpiece size at a glance
+  /// without expanding the panel. Uses `computeFootprint` so the
+  /// numbers match what Scene3D / sim use (auto mode follows imported
+  /// bbox; manual = customX/Y; no-import fallback = machine work area).
+  const stockDimsLabel = $derived.by<string>(() => {
+    const cfg = project.stock;
+    const fp = computeFootprint(project.imported, cfg, project.machine.workArea);
+    const x = Math.max(0, fp.maxX - fp.minX);
+    const y = Math.max(0, fp.maxY - fp.minY);
+    const z = Math.max(0, cfg.thickness);
+    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(0) : '0');
+    return `${f(x)} × ${f(y)} × ${f(z)} mm`;
+  });
 
   // Keep the i18n locale in sync with the persisted setting on first
   // load. Subsequent changes go through SettingsDialog which calls
@@ -717,6 +733,17 @@
       title="Drag to resize the side panel · double-click to reset"
     />
     <aside class="sidebar">
+      <div class="stock-host">
+        <details open>
+          <summary>
+            <span class="stock-name">Stock</span>
+            <span class="stock-dims" title="Current stock dimensions (X × Y × Z) in mm">
+              {stockDimsLabel}
+            </span>
+          </summary>
+          <StockPanel />
+        </details>
+      </div>
       <div class="layers-host">
         <LayerList
           onOpenFileClick={() => openFile()}
@@ -731,11 +758,7 @@
       <div class="ops-host">
         <OperationsList />
       </div>
-      <div class="stock-host">
-        <details>
-          <summary>Stock</summary>
-          <StockPanel />
-        </details>
+      <div class="stock-extras-host">
         {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
           <label
             class="region-toggle"
@@ -1122,31 +1145,42 @@
   }
   .sidebar {
     display: grid;
-    /* Layers (auto) · Text (auto) · Operations (1fr) · Stock (auto). */
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    /* Stock (auto) · Layers (auto) · Text (auto) · Operations (1fr) ·
+       stock-extras (auto). The stock panel sits at the top — it's the
+       always-present workpiece every layer/op attaches to. The extras
+       row at the bottom carries the region toggle + 3D preview mode
+       pills (visible only when a Generate has produced regions). */
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
+  .stock-host,
   .layers-host,
   .text-list-host,
   .ops-host,
-  .stock-host {
+  .stock-extras-host {
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
-  .stock-host {
-    border-top: 1px solid var(--border);
+  .stock-host,
+  .stock-extras-host {
     background: var(--bg-panel);
     padding: 0.4rem 0.6rem 0.5rem;
     max-height: 30vh;
     overflow: auto;
   }
+  .stock-host {
+    border-bottom: 1px solid var(--border);
+  }
+  .stock-extras-host {
+    border-top: 1px solid var(--border);
+  }
   .stock-host summary {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.4rem;
     padding: 0.2rem 0.35rem;
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -1156,6 +1190,19 @@
     font-weight: 600;
     cursor: pointer;
     list-style: none;
+  }
+  .stock-name {
+    flex: 0 0 auto;
+  }
+  .stock-dims {
+    flex: 1 1 auto;
+    color: var(--text-muted);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .stock-host summary::-webkit-details-marker {
     display: none;

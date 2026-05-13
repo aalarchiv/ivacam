@@ -854,9 +854,9 @@
     const cfg = project.stock;
     if (!cfg.visible || !project.settings.showStockBox) return;
     const data = project.imported;
-    if (!data) return;
-
-    const fp = computeFootprint(data, cfg);
+    // Stock-first: render the stock even without a drawing (falls back
+    // to machine work-area inside computeFootprint).
+    const fp = computeFootprint(data, cfg, project.machine.workArea);
     const sizeX = fp.maxX - fp.minX;
     const sizeY = fp.maxY - fp.minY;
     const thickness = Math.max(0.1, cfg.thickness);

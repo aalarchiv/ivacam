@@ -31,6 +31,7 @@ function blankCommandTarget(): CommandTarget {
     machine: {} as CommandTarget['machine'],
     stock: {} as CommandTarget['stock'],
     settings: {} as CommandTarget['settings'],
+    textLayers: [],
     dirty: false,
   };
 }

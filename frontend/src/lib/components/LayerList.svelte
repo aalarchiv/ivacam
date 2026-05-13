@@ -17,12 +17,7 @@
     onReopenAccept?: () => void;
     onReopenDismiss?: () => void;
   }
-  let {
-    onOpenFileClick,
-    reopenPrompt = null,
-    onReopenAccept,
-    onReopenDismiss,
-  }: Props = $props();
+  let { onOpenFileClick, reopenPrompt = null, onReopenAccept, onReopenDismiss }: Props = $props();
 
   let collapsed = $state(false);
 

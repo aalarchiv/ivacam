@@ -23,9 +23,11 @@ function isAbsolutePath(p: string): boolean {
 import {
   addFixtureCommand,
   addOperationCommand,
+  addTextLayerCommand,
   addToolCommand,
   appendImportedCommand,
   deleteOperationCommand,
+  deleteTextLayerCommand,
   deleteToolCommand,
   duplicateOperationCommand,
   removeFixtureCommand,
@@ -36,6 +38,7 @@ import {
   toggleTabPlacementCommand,
   updateFixtureCommand,
   updateOperationCommand,
+  updateTextLayerCommand,
   type CommandTarget,
 } from './commands';
 
@@ -253,6 +256,14 @@ class ProjectState {
   operations = $state<OpEntry[]>([]);
   /// id of the currently-selected op (drives OpPropertiesPanel).
   selectedOpId = $state<number | null>(null);
+
+  /// Persistent text entities — phase 1 of the text-engraving rework.
+  /// Each entry holds the editable inputs (text content, font, size,
+  /// transform, spacing) that the pipeline turns into segments at
+  /// generate time. Distinct from baked TEXT segments in `imported`:
+  /// editing a TextLayer field re-runs the renderer, and a future
+  /// `text_engrave` op references one by id.
+  textLayers = $state<TextLayer[]>([]);
   /// True when the in-memory project differs from the gcode currently
   /// shown in `generated`. Set by op edits/reorders/enable toggles;
   /// cleared by setGenerated. The status badge in the ops list reads
@@ -666,6 +677,7 @@ class ProjectState {
       machine: this.machine,
       operations: this.operations,
       fixtures: this.fixtures,
+      textLayers: this.textLayers,
     };
   }
 
@@ -695,6 +707,7 @@ class ProjectState {
     if (file.machine) this.machine = { ...this.machine, ...file.machine };
     if (Array.isArray(file.operations)) this.operations = file.operations;
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
+    this.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
     this.selectedFixtureId = null;
     this.selectedOpId = null;
     // Loading a project resets to a clean undo baseline.
@@ -878,6 +891,31 @@ class ProjectState {
     if (!this.operations.some((o) => o.id === id)) return;
     this.history.exec(deleteOperationCommand(id), this.target());
     if (this.selectedOpId === id) this.selectedOpId = null;
+  }
+
+  /// Insert a text layer with the given configuration; `id` and the
+  /// default `name` are filled in if absent. Returns the inserted
+  /// layer (with the assigned id). Undoable.
+  addTextLayer(
+    seed: Omit<TextLayer, 'id' | 'name'> & Partial<Pick<TextLayer, 'id' | 'name'>>,
+  ): TextLayer {
+    const nextId = seed.id ?? this.textLayers.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+    const previewText = seed.text.split(/\r?\n/, 1)[0] ?? '';
+    const truncated = previewText.length > 20 ? `${previewText.slice(0, 20)}…` : previewText;
+    const defaultName = `${seed.kind} — "${truncated}"`;
+    const layer: TextLayer = { ...seed, id: nextId, name: seed.name ?? defaultName };
+    this.history.exec(addTextLayerCommand(layer), this.target());
+    return layer;
+  }
+
+  updateTextLayer(id: number, patch: Partial<TextLayer>) {
+    if (!this.textLayers.some((t) => t.id === id)) return;
+    this.history.exec(updateTextLayerCommand(id, patch), this.target());
+  }
+
+  removeTextLayer(id: number) {
+    if (!this.textLayers.some((t) => t.id === id)) return;
+    this.history.exec(deleteTextLayerCommand(id), this.target());
   }
 
   /// Deep-clone the op and insert it immediately after the original.
@@ -1572,6 +1610,41 @@ export interface ProjectFile {
   machine?: MachineSettings;
   operations?: OpEntry[];
   fixtures?: Fixture[];
+  textLayers?: TextLayer[];
+}
+
+/// Persistent text entity — editable text + typography + transform.
+/// Phase 1 of the text-engraving rework: the pipeline (phase 2) will
+/// render these to segments at generate time so edits propagate to
+/// gcode without re-baking. Distinct from DXF TEXT/MTEXT segments that
+/// currently land in `imported` as opaque polylines (phase 4 will route
+/// those through TextLayer too).
+export type TextAlignment = 'left' | 'center' | 'right';
+export type TextLayerKind = 'TEXT' | 'MTEXT';
+export type TextFontSource =
+  | { kind: 'bundled'; path: string }
+  | { kind: 'user'; filename: string; bytes_b64: string };
+export interface TextLayer {
+  id: number;
+  kind: TextLayerKind;
+  /// Display name in the sidebar list. Defaults to e.g. `TEXT — "Hello"`
+  /// but the user can rename via the inline edit form (phase 3).
+  name: string;
+  /// Full string. For MTEXT, `\n` separates lines.
+  text: string;
+  fontSource: TextFontSource;
+  sizeMm: number;
+  origin: { x: number; y: number };
+  rotationDeg: number;
+  letterSpacingMm: number;
+  /// MTEXT line spacing in mm. Ignored when kind === 'TEXT'. 0 = default
+  /// (~1.2 * sizeMm — the renderer picks the value).
+  lineSpacingMm: number;
+  alignment: TextAlignment;
+  /// Detection from `is_single_line_font` on the most recent render —
+  /// cached so the UI can show "single-line" without re-fetching the
+  /// font. Refreshed when fontSource changes.
+  singleLine: boolean;
 }
 
 export const project = new ProjectState();

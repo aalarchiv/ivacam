@@ -26,9 +26,36 @@ import {
   toggleTabPlacementCommand,
   updateFixtureCommand,
   updateOperationCommand,
+  addTextLayerCommand,
+  deleteTextLayerCommand,
+  updateTextLayerCommand,
   type CommandTarget,
 } from './commands';
-import type { Fixture, MachineSettings, OpEntry, StockConfig, ToolEntry } from './project.svelte';
+import type {
+  Fixture,
+  MachineSettings,
+  OpEntry,
+  StockConfig,
+  TextLayer,
+  ToolEntry,
+} from './project.svelte';
+
+function sampleTextLayer(id: number, text = 'Hello'): TextLayer {
+  return {
+    id,
+    kind: 'TEXT',
+    name: `TEXT — "${text}"`,
+    text,
+    fontSource: { kind: 'bundled', path: '/fonts/DejaVuSans.ttf' },
+    sizeMm: 12,
+    origin: { x: 0, y: 0 },
+    rotationDeg: 0,
+    letterSpacingMm: 0,
+    lineSpacingMm: 0,
+    alignment: 'left',
+    singleLine: false,
+  };
+}
 
 function blankTarget(): CommandTarget {
   return {
@@ -53,6 +80,7 @@ function blankTarget(): CommandTarget {
       customY: 100,
     } as StockConfig,
     settings: {} as CommandTarget['settings'],
+    textLayers: [],
     dirty: false,
   };
 }
@@ -506,5 +534,58 @@ describe('autoFixToCommand', () => {
     cmd.apply(t);
     expect(t.settings.cellResolutionMm).toBe(0.3);
     expect(t.settings.cellResolutionMode).toBe('manual');
+  });
+});
+
+describe('text-layer commands', () => {
+  it('add → revert removes the inserted layer', () => {
+    const t = blankTarget();
+    const layer = sampleTextLayer(1, 'Hi');
+    const cmd = addTextLayerCommand(layer);
+    cmd.apply(t);
+    expect(t.textLayers).toHaveLength(1);
+    expect(t.textLayers[0]).toEqual(layer);
+    expect(t.dirty).toBe(true);
+    cmd.revert(t);
+    expect(t.textLayers).toEqual([]);
+  });
+
+  it('delete → revert restores the layer at its original index', () => {
+    const t = blankTarget();
+    t.textLayers = [sampleTextLayer(1, 'a'), sampleTextLayer(2, 'b'), sampleTextLayer(3, 'c')];
+    const cmd = deleteTextLayerCommand(2);
+    cmd.apply(t);
+    expect(t.textLayers.map((tl) => tl.id)).toEqual([1, 3]);
+    cmd.revert(t);
+    expect(t.textLayers.map((tl) => tl.id)).toEqual([1, 2, 3]);
+    expect(t.textLayers[1].text).toBe('b');
+  });
+
+  it('update merges patch and revert restores the prior value', () => {
+    const t = blankTarget();
+    t.textLayers = [sampleTextLayer(7, 'before')];
+    const cmd = updateTextLayerCommand(7, { text: 'after', sizeMm: 24 });
+    cmd.apply(t);
+    expect(t.textLayers[0].text).toBe('after');
+    expect(t.textLayers[0].sizeMm).toBe(24);
+    cmd.revert(t);
+    expect(t.textLayers[0].text).toBe('before');
+    expect(t.textLayers[0].sizeMm).toBe(12);
+  });
+
+  it('update coalesces drags of the same field into one undo step', () => {
+    // Two single-field updates of the same (id, key) share a coalesce
+    // key — the History engine collapses them. Cross-field edits get
+    // independent keys.
+    const a = updateTextLayerCommand(1, { sizeMm: 10 });
+    const b = updateTextLayerCommand(1, { sizeMm: 14 });
+    const c = updateTextLayerCommand(1, { rotationDeg: 45 });
+    expect(a.coalesce_key).toBe(b.coalesce_key);
+    expect(a.coalesce_key).not.toBe(c.coalesce_key);
+  });
+
+  it('multi-field updates skip coalescing', () => {
+    const cmd = updateTextLayerCommand(1, { sizeMm: 10, rotationDeg: 45 });
+    expect(cmd.coalesce_key).toBeUndefined();
   });
 });

@@ -920,15 +920,7 @@
       //   else → DXF/SVG layer color
       const inActiveOp = objId !== 0 && activeOpObjects.has(objId);
       const inAnyOp = !inActiveOp && objId !== 0 && objectToOps.has(objId);
-      const baseWidth = selected
-        ? 2.4
-        : hovered
-          ? 1.8
-          : inActiveOp
-            ? 1.6
-            : inAnyOp
-              ? 1.4
-              : 1.25;
+      const baseWidth = selected ? 2.4 : hovered ? 1.8 : inActiveOp ? 1.6 : inAnyOp ? 1.4 : 1.25;
       // Halo pass for any state-bearing object — wide soft outline in a
       // contrasting color so the layer color can't camouflage the state.
       // Selected / hovered objects get the loudest halo so the focused

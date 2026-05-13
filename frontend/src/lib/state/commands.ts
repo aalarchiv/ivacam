@@ -16,6 +16,7 @@ import type {
   OpEntry,
   StockConfig,
   TabPlacement,
+  TextLayer,
   ToolEntry,
 } from './project.svelte';
 import type { ImportResponse, WiacAutoFix } from '../api/types';
@@ -47,6 +48,7 @@ export interface CommandTarget {
   machine: MachineSettings;
   stock: StockConfig;
   settings: AppSettings;
+  textLayers: TextLayer[];
   dirty: boolean;
 }
 
@@ -332,6 +334,81 @@ export function updateFixtureCommand(id: number, patch: Partial<Fixture>): Comma
     },
     coalesce_key: coalesceKeyForFixturePatch(id, patch),
   };
+}
+
+// ── text layers ──────────────────────────────────────────────────────
+
+export function addTextLayerCommand(layer: TextLayer): Command {
+  return {
+    label: 'Add text',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      t.textLayers = [...t.textLayers, clone(layer)];
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.textLayers = t.textLayers.filter((tl) => tl.id !== layer.id);
+      t.dirty = true;
+    },
+  };
+}
+
+export function deleteTextLayerCommand(id: number): Command {
+  let savedIdx = -1;
+  let savedLayer: TextLayer | undefined;
+  return {
+    label: 'Delete text',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      savedIdx = t.textLayers.findIndex((tl) => tl.id === id);
+      if (savedIdx >= 0) {
+        savedLayer = clone(t.textLayers[savedIdx]);
+        t.textLayers = t.textLayers.filter((tl) => tl.id !== id);
+        t.dirty = true;
+      }
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      if (savedIdx >= 0 && savedLayer) {
+        const next = [...t.textLayers];
+        next.splice(savedIdx, 0, clone(savedLayer));
+        t.textLayers = next;
+        t.dirty = true;
+      }
+    },
+  };
+}
+
+export function updateTextLayerCommand(id: number, patch: Partial<TextLayer>): Command {
+  let prevPatch: Partial<TextLayer> = {};
+  return {
+    label: 'Edit text',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      const cur = t.textLayers.find((tl) => tl.id === id);
+      if (!cur) return;
+      prevPatch = {};
+      for (const k of Object.keys(patch) as (keyof TextLayer)[]) {
+        (prevPatch as Record<string, unknown>)[k as string] = cur[k];
+      }
+      t.textLayers = t.textLayers.map((tl) => (tl.id === id ? { ...tl, ...patch } : tl));
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.textLayers = t.textLayers.map((tl) => (tl.id === id ? { ...tl, ...prevPatch } : tl));
+      t.dirty = true;
+    },
+    /// Slider / number-field drags collapse into one undo step per (id, field).
+    coalesce_key: coalesceKeyForTextPatch(id, patch),
+  };
+}
+
+function coalesceKeyForTextPatch(id: number, patch: Partial<TextLayer>): string | undefined {
+  const keys = Object.keys(patch);
+  if (keys.length !== 1) return undefined;
+  return `text:${id}:${keys[0]}`;
 }
 
 // ── tabs (rt1.10) ─────────────────────────────────────────────────────

@@ -555,8 +555,6 @@ export interface components {
              * @description Optional finish tool id for dual-tool Pocket ops (rt1.33 / Estlcam TS slot). When `Some(id)` and `id != tool_id`, the pipeline emits a toolchange after the rough cascade and runs the wall-defining ring with the finish tool's geometry + finish-set feed/speed. When `None` or equal to `tool_id`, the op runs single-tool (current behavior).
              */
             finish_tool_id?: number | null;
-            /** @description Optional grouping label (rt1.21). Ops with the same `group` string render under a shared collapsible header in OperationsList. `None` = ungrouped; the FE buckets ungrouped ops under an implicit "Other" group at the bottom. The pipeline ignores this field — it's pure UI / project state. */
-            group?: string | null;
             /** Format: uint32 */
             id: number;
             kind: components["schemas"]["OperationKind"];

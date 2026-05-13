@@ -176,9 +176,6 @@ interface WireOp {
   kind: WireOpKind;
   tool_id: number;
   finish_tool_id?: number;
-  /// Optional UI grouping label (rt1.21). Preserved through save/load
-  /// so reopening a project restores the user's group layout.
-  group?: string;
   /// Optional pattern repetition (rt1.5). When set, the pipeline
   /// expands this op into N instances with translated / rotated
   /// source geometry. The (0,0)/0° instance is the original.
@@ -516,7 +513,6 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
     ...(op.finishToolId !== undefined && op.finishToolId !== op.toolId
       ? { finish_tool_id: op.finishToolId }
       : {}),
-    ...(op.group ? { group: op.group } : {}),
     // Pattern repetition (rt1.5). When set, the pipeline expands the
     // op into N instances. Single-count linear / grid patterns are
     // equivalent to no pattern, so we still emit them for round-trip

@@ -989,11 +989,6 @@ components:
           type:
           - integer
           - 'null'
-        group:
-          description: Optional grouping label (rt1.21). Ops with the same `group` string render under a shared collapsible header in OperationsList. `None` = ungrouped; the FE buckets ungrouped ops under an implicit "Other" group at the bottom. The pipeline ignores this field — it's pure UI / project state.
-          type:
-          - string
-          - 'null'
         id:
           format: uint32
           minimum: 0.0

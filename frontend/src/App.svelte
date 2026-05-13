@@ -88,7 +88,6 @@
     });
 
     if (isTauri()) {
-      void wireMenuEvents();
       void wireSourceWatch();
     }
     void loadWorkspaceAndMaybeReopen();
@@ -177,40 +176,6 @@
         await project.reimportFromPath(path);
       } else {
         project.sourceFileStaleNotice = { path, auto_reload: false };
-      }
-    });
-  }
-
-  /// Native-menu bridge — fires synthetic actions when the user picks
-  /// items from the Tauri OS menu (crates/wiac-tauri/src/menu.rs).
-  async function wireMenuEvents() {
-    const { listen } = await import('@tauri-apps/api/event');
-    await listen<string>('app:menu', (event) => {
-      const id = event.payload;
-      switch (id) {
-        case 'file:open':
-          void openFile();
-          break;
-        case 'file:open_project':
-          void openProject();
-          break;
-        case 'file:save_project':
-          void saveProject();
-          break;
-        case 'file:export_gcode':
-          (document.querySelector('button.download') as HTMLButtonElement | null)?.click();
-          break;
-        case 'view:2d':
-          activePane = '2d';
-          break;
-        case 'view:3d':
-          activePane = '3d';
-          break;
-        case 'view:toggle_tabs':
-          break;
-        case 'help:check_update':
-          void runUpdateCheck();
-          break;
       }
     });
   }

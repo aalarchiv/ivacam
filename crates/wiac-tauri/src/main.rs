@@ -7,7 +7,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
-mod menu;
 mod watcher;
 
 use std::sync::Mutex;
@@ -58,9 +57,9 @@ fn run() -> tauri::Result<()> {
             app.manage(AppState {
                 watcher: Mutex::new(ProjectWatcher::new(handle.clone())),
             });
-            let m = menu::build_menu(&handle)?;
-            app.set_menu(m)?;
-            app.on_menu_event(move |app, event| menu::handle_menu_event(app, event.id().as_ref()));
+            // No native window menu — the Svelte UI owns the menubar so the
+            // user sees one consistent set of File / Edit / View / Tools /
+            // Help dropdowns instead of duplicates above and below.
 
             // OS file-association launches deliver the path as argv. Forward
             // it to the frontend so the same import flow runs as if the user

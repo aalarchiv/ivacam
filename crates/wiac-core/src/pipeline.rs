@@ -386,10 +386,15 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         PostProcessorKind::Grbl => 1,
         PostProcessorKind::Hpgl => 2,
     };
+    // One working copy of `objects` for the chosen post — the original
+    // is kept intact for the region-preview pass below. Previously each
+    // match arm called `objects.clone()`, which made the compiler evaluate
+    // all three even though only one runs (jzpl).
+    let mut work_objects = objects.clone();
     let gcode = match post_kind {
         PostProcessorKind::Linuxcnc => run_per_op(
             &project,
-            &mut objects.clone(),
+            &mut work_objects,
             &header_setup,
             &mut linuxcnc::Post::new(),
             &stats_collector,
@@ -403,7 +408,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         )?,
         PostProcessorKind::Grbl => run_per_op(
             &project,
-            &mut objects.clone(),
+            &mut work_objects,
             &header_setup,
             &mut grbl::Post::new(),
             &stats_collector,
@@ -417,7 +422,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         )?,
         PostProcessorKind::Hpgl => run_per_op(
             &project,
-            &mut objects.clone(),
+            &mut work_objects,
             &header_setup,
             &mut hpgl::Post::new(),
             &stats_collector,
@@ -1396,8 +1401,8 @@ fn push_ramp_with_arcs_warning(
     ) {
         return;
     }
-    let has_arc = objects.iter().any(|obj| {
-        op_includes_object(op, obj, objects.iter().position(|o| std::ptr::eq(o, obj)).unwrap_or(usize::MAX))
+    let has_arc = objects.iter().enumerate().any(|(idx, obj)| {
+        op_includes_object(op, obj, idx)
             && obj
                 .segments
                 .iter()

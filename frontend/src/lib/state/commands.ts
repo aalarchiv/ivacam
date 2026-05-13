@@ -265,6 +265,9 @@ export function replaceToolsCommand(nextTools: ToolEntry[]): Command {
       t.tools = prev.map((x) => clone(x));
       t.dirty = true;
     },
+    // Bulk replace from ToolLibraryDialog — successive edits within a
+    // single dialog session collapse into one undo step.
+    coalesce_key: 'replaceTools',
   };
 }
 
@@ -483,6 +486,10 @@ export function setMachineCommand(next: MachineSettings): Command {
       if (prev) t.machine = clone(prev);
       t.dirty = true;
     },
+    // Rapid edits in MachineDialog (each spin / keystroke flushes via
+    // commit() on close, but multi-field edits should collapse into
+    // one undo step too).
+    coalesce_key: 'setMachine',
   };
 }
 

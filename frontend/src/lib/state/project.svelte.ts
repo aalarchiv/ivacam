@@ -526,6 +526,8 @@ class ProjectState {
   }
 
   updateFixture(id: number, patch: Partial<Fixture>) {
+    if (Object.keys(patch).length === 0) return;
+    if (!this.fixtures.some((f) => f.id === id)) return;
     this.history.exec(updateFixtureCommand(id, patch), this.target());
   }
 
@@ -574,7 +576,7 @@ class ProjectState {
       max_x: Math.max(cur.bbox.max_x, r.bbox.max_x),
       max_y: Math.max(cur.bbox.max_y, r.bbox.max_y),
     };
-    this.imported = {
+    const after: ImportResponse = {
       ...cur,
       segments: [...cur.segments, ...r.segments],
       layers: mergedLayers,
@@ -583,12 +585,17 @@ class ProjectState {
       object_meta: [...(cur.object_meta ?? []), ...newObjectMeta],
       text_entities: [...(cur.text_entities ?? []), ...(r.text_entities ?? [])],
     };
-    // Make every newly-arrived layer visible.
+    // Route the merge through the imported-replace command so the new
+    // file is undoable in one Ctrl+Z. Visibility is non-history view
+    // state, so we update it separately.
+    this.history.exec(
+      replaceImportedCommand(cur, after, `Add ${sourcePath?.split(/[\\/]/).pop() ?? 'drawing'}`),
+      this.target(),
+    );
     const nextVis = new Set(this.visibleLayers);
     for (const l of r.layers) nextVis.add(l.name);
     this.visibleLayers = nextVis;
     if (sourcePath !== undefined) this.lastImportPath = sourcePath;
-    this.dirty = true;
     void this.refreshSourceWatch();
   }
 
@@ -1064,6 +1071,7 @@ class ProjectState {
   }
 
   updateTextLayer(id: number, patch: Partial<TextLayer>) {
+    if (Object.keys(patch).length === 0) return;
     if (!this.textLayers.some((t) => t.id === id)) return;
     this.history.exec(updateTextLayerCommand(id, patch), this.target());
   }
@@ -1151,6 +1159,7 @@ class ProjectState {
   }
 
   updateOperation(id: number, patch: Partial<OpEntry>) {
+    if (Object.keys(patch).length === 0) return;
     if (!this.operations.some((o) => o.id === id)) return;
     this.history.exec(updateOperationCommand(id, patch), this.target());
   }

@@ -70,8 +70,9 @@ export class History {
 
   exec(cmd: Command, state: unknown): void {
     if (this.transaction) {
-      cmd.apply(state);
-      this.transaction.commands.push(cmd);
+      const wrapped = wrapWithDirty(cmd, state);
+      wrapped.apply(state);
+      this.transaction.commands.push(wrapped);
       return;
     }
     const last = this.undoStack[this.undoStack.length - 1];
@@ -84,10 +85,14 @@ export class History {
     if (coalesces) {
       // Apply the new command but keep the original `revert` so the
       // single undo step takes the user back to before this run started.
+      // The original wrapper's prevDirty already captures the pre-edit
+      // dirty state from when the first command ran.
       cmd.apply(state);
+      markDirty(state);
     } else {
-      cmd.apply(state);
-      this.undoStack.push(cmd);
+      const wrapped = wrapWithDirty(cmd, state);
+      wrapped.apply(state);
+      this.undoStack.push(wrapped);
       if (this.undoStack.length > History.MAX_DEPTH) this.undoStack.shift();
     }
     this.redoStack = [];
@@ -192,4 +197,38 @@ function nowMs(): number {
     return performance.now();
   }
   return Date.now();
+}
+
+/// Wrap a command so dirty-bookkeeping rides along with apply/revert:
+///   * the closure captures the pre-apply `dirty` value
+///   * apply() runs the wrapped body, then forces `dirty = true`
+///   * revert() runs the wrapped body, then restores the pre-apply
+///     dirty — so undoing back to a clean state actually clears the
+///     dirty flag, instead of leaving the project marked dirty after
+///     every Ctrl+Z (which the legacy `t.dirty = true` in every
+///     command's revert did).
+///
+/// Tolerant of states without a `dirty` field — generic Command isn't
+/// coupled to ProjectState here.
+function wrapWithDirty(cmd: Command, state: unknown): Command {
+  const target = state as { dirty?: boolean };
+  const prevDirty = 'dirty' in target ? !!target.dirty : false;
+  return {
+    label: cmd.label,
+    coalesce_key: cmd.coalesce_key,
+    apply(s) {
+      cmd.apply(s);
+      markDirty(s);
+    },
+    revert(s) {
+      cmd.revert(s);
+      const t = s as { dirty?: boolean };
+      if ('dirty' in t) t.dirty = prevDirty;
+    },
+  };
+}
+
+function markDirty(state: unknown): void {
+  const t = state as { dirty?: boolean };
+  if ('dirty' in t) t.dirty = true;
 }

@@ -18,6 +18,12 @@
     if (!structured?.auto_fix) return;
     const cmd = autoFixToCommand(structured.auto_fix);
     project.history.exec(cmd, project);
+    // The LowerSimResolution auto-fix mutates project.settings — its
+    // backing store is localStorage (separate from the project file),
+    // so persist immediately or the change is lost on reload.
+    if (structured.auto_fix.kind === 'lower_sim_resolution') {
+      project.saveSettings();
+    }
     project.clearError();
   }
 

@@ -2207,13 +2207,15 @@ fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
             center_x,
             center_y,
             angle_step_deg,
+            start_angle_deg,
         } => {
             let step_rad = angle_step_deg.to_radians();
+            let start_rad = start_angle_deg.to_radians();
             for i in 0..count.max(0) {
                 out.push(PatternInstance::polar(
                     center_x,
                     center_y,
-                    (i as f64) * step_rad,
+                    start_rad + (i as f64) * step_rad,
                 ));
             }
         }
@@ -6527,6 +6529,7 @@ mod tests {
                 center_x: 0.0,
                 center_y: 0.0,
                 angle_step_deg: 90.0,
+                start_angle_deg: 0.0,
             })],
             vec![endmill(1, 3.0)],
         );

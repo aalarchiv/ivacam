@@ -599,12 +599,14 @@ fn hash_pattern<H: Hasher>(p: PatternConfig, h: &mut H) {
             center_x,
             center_y,
             angle_step_deg,
+            start_angle_deg,
         } => {
             h.write_u8(2);
             count.hash(h);
             hash_f64(center_x, h);
             hash_f64(center_y, h);
             hash_f64(angle_step_deg, h);
+            hash_f64(start_angle_deg, h);
         }
     }
 }

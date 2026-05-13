@@ -1572,6 +1572,9 @@ export type PatternConfig =
       center_x: number;
       center_y: number;
       angle_step_deg: number;
+      /// First-instance angle offset around the center (degrees).
+      /// Default 0 — instance 0 sits at angle_step_deg * 0 + start.
+      start_angle_deg?: number;
     };
 
 /// Per-op tab placement mode (rt1.10). Maps to

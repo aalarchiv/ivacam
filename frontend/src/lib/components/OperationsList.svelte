@@ -83,20 +83,16 @@
       newGroupOpen = false;
       return;
     }
-    // Apply to currently selected op; otherwise create an empty
-    // placeholder bucket so the user has a drop target for the next
-    // op they drag in.
-    if (project.selectedOpId != null) {
-      project.setOpGroup(project.selectedOpId, name);
-    } else {
-      // Make sure the new group is visible (not collapsed) on
-      // creation, and pin it in pendingEmptyGroups so it renders
-      // even though no op carries the label yet.
-      const next = new Set(collapsedGroups);
-      next.delete(name);
-      collapsedGroups = next;
-      pendingEmptyGroups = new Set(pendingEmptyGroups).add(name);
-    }
+    // "+ New group" ALWAYS creates an empty bucket regardless of any
+    // op currently being selected. The user can drag ops into the new
+    // bucket OR change op.group via the op-properties panel; mixing
+    // "create group" with "assign selected op" produced confusing
+    // results (the selected op silently jumped to a new bucket and
+    // the user thought New-group hadn't worked).
+    const next = new Set(collapsedGroups);
+    next.delete(name);
+    collapsedGroups = next;
+    pendingEmptyGroups = new Set(pendingEmptyGroups).add(name);
     newGroupDraft = '';
     newGroupOpen = false;
   }
@@ -374,7 +370,7 @@
                 class="caret-btn"
                 onclick={() => toggleGroupCollapsed(bucket.name)}
                 title={collapsed ? 'Expand group' : 'Collapse group'}
-                aria-label="Toggle group {bucket.name || 'Default Ops Group'}"
+                aria-label="Toggle group {bucket.name || 'Ungrouped'}"
                 >{collapsed ? '▸' : '▾'}</button
               >
               {#if bucket.name !== ''}
@@ -410,17 +406,11 @@
                   class:ungrouped={bucket.name === ''}
                   ondblclick={() => startRenameGroup(bucket.name)}
                   title={bucket.name === '' ? 'Ungrouped operations' : 'Double-click to rename'}
-                  >{bucket.name || 'Default Ops Group'}</span
+                  >{bucket.name || 'Ungrouped'}</span
                 >
               {/if}
               <span class="group-count">{bucket.ops.length}</span>
               {#if bucket.name !== ''}
-                <button
-                  class="group-action"
-                  onclick={() => startRenameGroup(bucket.name)}
-                  title="Rename group"
-                  aria-label="Rename group {bucket.name}">✎</button
-                >
                 <button
                   class="group-action"
                   onclick={() => project.dissolveGroup(bucket.name)}

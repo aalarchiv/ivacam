@@ -1419,7 +1419,7 @@ components:
         - dy
         - kind
         type: object
-      - description: Polar (rotational) array. `count` instances around (`center_x`, `center_y`), with `angle_step_deg` between consecutive instances. Instance i is rotated by i * angle_step_deg about that center.
+      - description: Polar (rotational) array. `count` instances around (`center_x`, `center_y`), with `angle_step_deg` between consecutive instances. Instance i is rotated by `start_angle_deg + i * angle_step_deg` about the center — `start_angle_deg` shifts the whole ring so the first instance doesn't have to land at 0°.
         properties:
           angle_step_deg:
             format: double
@@ -1438,6 +1438,9 @@ components:
             enum:
             - polar
             type: string
+          start_angle_deg:
+            format: double
+            type: number
         required:
         - angle_step_deg
         - center_x

@@ -2,13 +2,42 @@
   /// Pattern (repeat-this-op) fieldset. Universal — applies to every
   /// op kind. Styles inherited from OpPropertiesPanel's :global(.props ...)
   /// rules.
-  import type { OpEntry } from '../../state/project.svelte';
+  import { project, type OpEntry, type PatternConfig } from '../../state/project.svelte';
 
   interface Props {
     op: OpEntry;
     patch: <K extends keyof OpEntry>(field: K, value: OpEntry[K]) => void;
   }
   let { op, patch }: Props = $props();
+
+  /// Compute the bbox center of the currently-selected imported
+  /// objects and write it into the polar-pattern center fields.
+  /// No-op when nothing is selected (button is disabled in that
+  /// state). Uses `object_meta[id-1].bbox` so the math matches the
+  /// pipeline / box-select hit-test (data-space, not pixels).
+  function setCenterFromSelection(pol: Extract<PatternConfig, { kind: 'polar' }>) {
+    const meta = project.imported?.object_meta ?? [];
+    const sel = project.selectedObjects;
+    if (sel.size === 0 || meta.length === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const id of sel) {
+      const m = meta.find((mm) => mm.id === id);
+      if (!m) continue;
+      if (m.bbox.min_x < minX) minX = m.bbox.min_x;
+      if (m.bbox.min_y < minY) minY = m.bbox.min_y;
+      if (m.bbox.max_x > maxX) maxX = m.bbox.max_x;
+      if (m.bbox.max_y > maxY) maxY = m.bbox.max_y;
+    }
+    if (!Number.isFinite(minX)) return;
+    patch('pattern', {
+      ...pol,
+      center_x: (minX + maxX) * 0.5,
+      center_y: (minY + maxY) * 0.5,
+    });
+  }
 </script>
 
 <fieldset>
@@ -219,5 +248,59 @@
         <span class="unit">°</span>
       </div>
     </label>
+    <label
+      class="row"
+      title="Angle of the first instance — shifts the whole ring so it doesn't have to start at 0°."
+    >
+      <span>Start</span>
+      <div class="num-cell">
+        <input
+          type="number"
+          step="1"
+          value={pol.start_angle_deg ?? 0}
+          onchange={(e) => {
+            const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+            if (Number.isFinite(v)) patch('pattern', { ...pol, start_angle_deg: v });
+          }}
+        />
+        <span class="unit">°</span>
+      </div>
+    </label>
+    <div class="row">
+      <span></span>
+      <button
+        type="button"
+        class="center-btn"
+        onclick={() => setCenterFromSelection(pol)}
+        disabled={project.selectedObjects.size === 0}
+        title={project.selectedObjects.size === 0
+          ? 'Select one or more objects on the canvas first.'
+          : 'Compute center X / Y as the bbox center of the currently selected objects.'}
+      >
+        Set center from selection
+      </button>
+    </div>
   {/if}
 </fieldset>
+
+<style>
+  .center-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.74rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .center-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .center-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+</style>

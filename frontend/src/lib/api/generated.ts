@@ -827,6 +827,8 @@ export interface components {
             count: number;
             /** @enum {string} */
             kind: "polar";
+            /** Format: double */
+            start_angle_deg?: number;
         };
         PipelineStats: {
             /** Format: uint */

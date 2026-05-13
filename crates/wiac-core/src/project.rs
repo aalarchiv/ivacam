@@ -509,12 +509,16 @@ pub enum PatternConfig {
     /// Polar (rotational) array. `count` instances around
     /// (`center_x`, `center_y`), with `angle_step_deg` between
     /// consecutive instances. Instance i is rotated by
-    /// i * angle_step_deg about that center.
+    /// `start_angle_deg + i * angle_step_deg` about the center —
+    /// `start_angle_deg` shifts the whole ring so the first instance
+    /// doesn't have to land at 0°.
     Polar {
         count: u32,
         center_x: f64,
         center_y: f64,
         angle_step_deg: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        start_angle_deg: f64,
     },
 }
 

@@ -191,6 +191,7 @@ interface WireOp {
         center_x: number;
         center_y: number;
         angle_step_deg: number;
+        start_angle_deg?: number;
       };
   source: WireSource;
   params: {

@@ -14,6 +14,7 @@ import type {
 } from '../api/types';
 import { History } from './history';
 import { workspace } from './workspace.svelte';
+import { invalidatePreview, resetPreviewCache } from './text_preview.svelte';
 import { isTauri as isTauriEnv } from '../api/env';
 
 function isAbsolutePath(p: string): boolean {
@@ -604,6 +605,10 @@ class ProjectState {
     this.hoverSegment = null;
     if (sourcePath !== undefined) this.lastImportPath = sourcePath;
     this.sourceFileStaleNotice = null;
+    // Replacing the imported geometry implies a new project boundary —
+    // drop any text-preview segments cached from the previous project
+    // so we don't paint stale TextLayer glyphs over the new file.
+    resetPreviewCache();
     // Imports cross a project boundary; undoing back across that boundary
     // would mix incompatible geometry/op state, so drop history here.
     this.history.clear();
@@ -826,6 +831,8 @@ class ProjectState {
       operations: this.operations,
       fixtures: this.fixtures,
       textLayers: this.textLayers,
+      // Save the source-DXF/SVG path so reopen restores the watcher.
+      ...(this.lastImportPath ? { lastImportPath: this.lastImportPath } : {}),
     };
   }
 
@@ -833,7 +840,7 @@ class ProjectState {
     if (file.kind !== 'wiac-project') {
       throw new Error('not a wiaConstructor project file');
     }
-    if (file.imported) this.setImported(file.imported, null);
+    if (file.imported) this.setImported(file.imported, file.lastImportPath ?? null);
     // Layer visibility precedence (best wins):
     //   1. workspace.per_project[path].visible_layers (applied in
     //      setActiveProjectPath after restore returns).
@@ -1102,6 +1109,9 @@ class ProjectState {
   removeTextLayer(id: number) {
     if (!this.textLayers.some((t) => t.id === id)) return;
     const syntheticLayer = `__text_${id}`;
+    // Drop the cached preview segments so the canvas doesn't keep
+    // painting glyphs from a layer that no longer exists.
+    invalidatePreview(id);
     // Cascade-delete any ops whose source targets the text layer's
     // synthetic geometry layer — leaving them around would make the
     // pipeline raise "no segments on layer __text_<id>".
@@ -1767,6 +1777,12 @@ export interface ProjectFile {
   operations?: OpEntry[];
   fixtures?: Fixture[];
   textLayers?: TextLayer[];
+  /// Absolute path on disk to the most recent DXF / SVG that backed
+  /// this project's geometry. Persisted so reopening a .wiac-project
+  /// restores the source-file watcher + "Reload changed file" toast —
+  /// otherwise restore() would clear lastImportPath to null and the
+  /// auto-reload path goes dead.
+  lastImportPath?: string | null;
 }
 
 /// Persistent text entity — editable text + typography + transform.

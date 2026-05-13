@@ -218,7 +218,7 @@ export class HeightfieldDriver {
   /// driver only triggers a rebuild every EDGE_REBUILD_MS or at the
   /// end of a playback session.
   private lastEdgeRebuild = 0;
-  private edgeRebuildScheduled = false;
+  private edgeRebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly EDGE_REBUILD_MS = 120;
 
   constructor(private opts: DriverOptions) {
@@ -446,6 +446,10 @@ export class HeightfieldDriver {
   }
 
   destroy() {
+    if (this.edgeRebuildTimer != null) {
+      clearTimeout(this.edgeRebuildTimer);
+      this.edgeRebuildTimer = null;
+    }
     this.dispose();
     this.opts.scene.remove(this.group);
   }
@@ -480,15 +484,20 @@ export class HeightfieldDriver {
     if (now - this.lastEdgeRebuild >= HeightfieldDriver.EDGE_REBUILD_MS) {
       this.mesh.rebuildEdges();
       this.lastEdgeRebuild = now;
-      this.edgeRebuildScheduled = false;
+      if (this.edgeRebuildTimer != null) {
+        clearTimeout(this.edgeRebuildTimer);
+        this.edgeRebuildTimer = null;
+      }
       return;
     }
-    if (this.edgeRebuildScheduled) return;
-    this.edgeRebuildScheduled = true;
-    setTimeout(() => {
-      this.edgeRebuildScheduled = false;
+    if (this.edgeRebuildTimer != null) return;
+    this.edgeRebuildTimer = setTimeout(() => {
+      this.edgeRebuildTimer = null;
       this.lastEdgeRebuild = performance.now();
-      this.mesh?.rebuildEdges();
+      // Guard the dispose race — by the time the debounced rebuild
+      // fires, dispose() / destroy() may have cleared the mesh.
+      if (!this.mesh) return;
+      this.mesh.rebuildEdges();
       this.opts.requestRender();
     }, HeightfieldDriver.EDGE_REBUILD_MS);
   }

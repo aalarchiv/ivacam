@@ -879,6 +879,7 @@ fn build_op_offsets(
     // tool-kind / op-kind mismatches and impossible tool geometry.
     push_tool_fit_kind_warnings(op, project, setup, warnings);
     push_trochoidal_warnings(op, warnings);
+    push_ramp_with_arcs_warning(op, objects, warnings);
     // Per-op tab positions (rt1.10): the op's `tab_mode` +
     // `tab_placements` drive Manual / Auto / Mixed; Off ⇒ no tabs.
     // Resolves to a (object_idx → Vec<TabPoint>) map the existing
@@ -1822,6 +1823,42 @@ fn pocket_emit_for(strategy: PocketStrategy, op: &Operation) -> PocketEmit {
 /// plunge must be Helix. We emit warnings for unsupported tabs and
 /// override Direct/Ramp plunges to Helix at the synthesize_op_setup
 /// site (see `effective_plunge_for`).
+/// Surface the v1 limitation that the ramp-pass emitter treats
+/// boundary-crossing arcs as regular segments (instant Z descent at
+/// the arc's start), not as ramped sections. Users with ramp plunge
+/// on an arc-heavy source need to know the cutter dives at the arc
+/// instead of sloping through it (audit 8so).
+fn push_ramp_with_arcs_warning(
+    op: &Operation,
+    objects: &[VcObject],
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    use crate::geometry::SegmentKind;
+    if !matches!(
+        op.params.plunge,
+        crate::cam::setup::PlungeStrategy::Ramp { .. }
+    ) {
+        return;
+    }
+    let has_arc = objects.iter().any(|obj| {
+        op_includes_object(op, obj, objects.iter().position(|o| std::ptr::eq(o, obj)).unwrap_or(usize::MAX))
+            && obj
+                .segments
+                .iter()
+                .any(|s| matches!(s.kind, SegmentKind::Arc | SegmentKind::Circle))
+    });
+    if has_arc {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "ramp_arcs_at_boundary".into(),
+            message: format!(
+                "op '{}': ramp plunge with arc / circle source segments. The cutter ramps along line segments correctly but dives straight down at the start of any arc that crosses the ramp boundary — surface finish near arc entries may show a small step. Use Helix plunge or a finer ramp angle for a smoother entry.",
+                op.name
+            ),
+        });
+    }
+}
+
 fn push_trochoidal_warnings(op: &Operation, warnings: &mut Vec<PipelineWarning>) {
     if !matches!(op.kind, OperationKind::Pocket {
         strategy: PocketStrategy::Trochoidal { .. }

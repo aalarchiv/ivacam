@@ -925,6 +925,29 @@
         {/if}
       </fieldset>
     {:else if op.kind === 'pocket'}
+      {#if op.frameShape == null}
+        {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
+        <fieldset>
+          <legend>Pocket Outside</legend>
+          <p class="hint">
+            Convert this Pocket into a Pocket Outside operation: the
+            pipeline auto-derives a frame around the selection at
+            generate time and carves the area BETWEEN the frame and
+            the selection.
+          </p>
+          <button
+            type="button"
+            class="reset-link"
+            title="Convert this op to a Pocket Outside by attaching a synthetic frame around its source selection."
+            onclick={() => {
+              const diameter = opTool ? opTool.diameter : 3;
+              patch('frameShape', 'rectangle');
+              patch('framePaddingMm', 3 * diameter);
+              patch('sourceCombine', 'difference');
+            }}
+          >Convert to Pocket Outside →</button>
+        </fieldset>
+      {/if}
       {#if op.frameShape != null}
         {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
         <fieldset>

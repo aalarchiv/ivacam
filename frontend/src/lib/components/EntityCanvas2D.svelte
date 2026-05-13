@@ -89,6 +89,9 @@
     void hoverIdx;
     void ghostTab;
     void boxSelect;
+    void userZoom;
+    void userPanX;
+    void userPanY;
     draw();
   });
 
@@ -135,6 +138,35 @@
   const HIT_PIXEL_TOL = 8;
   let hoverIdx = $state<number | null>(null);
   let lastTransform: { scale: number; offX: number; offY: number } | null = null;
+  /// Last-computed AUTO-FIT (base) transform — the scale/offset the
+  /// canvas would use with zoom=1 and no pan. Stored separately so the
+  /// wheel-zoom math can solve for a user pan that keeps the cursor
+  /// over the same data-space point as the zoom multiplier changes.
+  let lastBaseTransform: { scale: number; offX: number; offY: number } | null = null;
+
+  /// User-applied pan + zoom on top of the auto-fit transform. zoom = 1
+  /// + panX/panY = 0 → auto-fit (the default after every new import).
+  /// Wheel zooms around the cursor; middle-button drag pans; double-
+  /// click empty space resets both to default.
+  let userZoom = $state(1);
+  let userPanX = $state(0);
+  let userPanY = $state(0);
+  /// Active pan drag — started on middle-button down, ended on pointer up.
+  let panDrag = $state<{ startX: number; startY: number; pointerId: number } | null>(null);
+
+  /// Reset pan + zoom when the imported file changes (different filename
+  /// or going from no-import to imported). Keeps mid-session zooms
+  /// intact across normal redraws.
+  let _lastImportedKey: string | null = null;
+  $effect(() => {
+    const key = project.imported?.filename ?? null;
+    if (key !== _lastImportedKey) {
+      _lastImportedKey = key;
+      userZoom = 1;
+      userPanX = 0;
+      userPanY = 0;
+    }
+  });
 
   /// FreeCAD-style box-select state. Captured on pointerdown over
   /// empty canvas; commits to a box drag once the cursor has moved
@@ -325,6 +357,17 @@
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    // Active pan drag: translate the user-pan offsets by the cursor
+    // delta. Each move is RELATIVE so we anchor on the previous frame's
+    // screen position, then update the anchor for the next frame.
+    if (panDrag) {
+      const dx = e.clientX - panDrag.startX;
+      const dy = e.clientY - panDrag.startY;
+      userPanX += dx;
+      userPanY += dy;
+      panDrag = { ...panDrag, startX: e.clientX, startY: e.clientY };
+      return;
+    }
     // Box-select drag: once the cursor crosses BOX_DRAG_THRESHOLD px
     // from the arm point, commit to a box drag. While dragging,
     // suppress hover hit-testing so the cursor stays a crosshair.
@@ -361,6 +404,15 @@
   }
 
   function onPointerUp(e: PointerEvent) {
+    // End any active pan drag.
+    if (panDrag && e.pointerId === panDrag.pointerId) {
+      panDrag = null;
+      canvas.style.cursor = 'default';
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
     // Commit any pending box-select. A box-select that never crossed
     // the threshold collapses to a plain "click on empty" — handled
     // already in onPointerDown's empty-hit branch — so here we only
@@ -377,6 +429,44 @@
     } catch {
       /* may already be released; harmless */
     }
+  }
+
+  /// Wheel = cursor-pivot zoom. deltaY < 0 (scroll up) zooms in; > 0
+  /// zooms out. The pan offsets are adjusted so the data-space point
+  /// under the cursor stays under the cursor across the zoom.
+  function onWheel(e: WheelEvent) {
+    if (!lastBaseTransform) return;
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const { scale: baseScale, offX: baseOffX, offY: baseOffY } = lastBaseTransform;
+    const oldScale = baseScale * userZoom;
+    const oldOffX = baseOffX + userPanX;
+    const oldOffY = baseOffY + userPanY;
+    // Data-space point under the cursor right now.
+    const dataX = (cx - oldOffX) / oldScale;
+    const dataY = (oldOffY - cy) / oldScale;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const nextZoom = Math.max(0.05, Math.min(80, userZoom * factor));
+    const newScale = baseScale * nextZoom;
+    // Solve for offset that keeps (dataX, dataY) under the cursor.
+    const newOffX = cx - dataX * newScale;
+    const newOffY = cy + dataY * newScale;
+    userZoom = nextZoom;
+    userPanX = newOffX - baseOffX;
+    userPanY = newOffY - baseOffY;
+  }
+
+  /// Double-click on empty space = reset pan + zoom to auto-fit.
+  function onDblClick(e: MouseEvent) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    if (pixelHit(cx, cy) != null) return; // hit something — don't reset
+    userZoom = 1;
+    userPanX = 0;
+    userPanY = 0;
   }
 
   /// Return the set of object ids whose bbox intersects the screen
@@ -732,6 +822,18 @@
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
+    // Middle-button drag = pan. Capture the pointer so the drag
+    // continues if the cursor leaves the canvas.
+    if (e.button === 1) {
+      e.preventDefault();
+      panDrag = { startX: e.clientX, startY: e.clientY, pointerId: e.pointerId };
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {}
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+
     // rt1.10: tab-placement mode (selected op has Manual / Mixed
     // tab_mode). Click toggles a placement at the contour projection
     // — Estlcam-style. ToleranceT picks the "is this near an existing
@@ -902,15 +1004,22 @@
       return;
     }
 
-    // Fit-to-view transform.
+    // Auto-fit transform — the baseline before the user's pan/zoom
+    // multipliers are applied.
     const { min_x, min_y, max_x, max_y } = data.bbox;
     const dataW = Math.max(max_x - min_x, 1e-6);
     const dataH = Math.max(max_y - min_y, 1e-6);
     const margin = 32;
-    const scale = Math.min((w - 2 * margin) / dataW, (h - 2 * margin) / dataH);
-    const offX = margin - min_x * scale + (w - 2 * margin - dataW * scale) / 2;
+    const baseScale = Math.min((w - 2 * margin) / dataW, (h - 2 * margin) / dataH);
+    const baseOffX = margin - min_x * baseScale + (w - 2 * margin - dataW * baseScale) / 2;
     // Y flipped: DXF y-up, canvas y-down.
-    const offY = h - margin - -min_y * scale - (h - 2 * margin - dataH * scale) / 2;
+    const baseOffY = h - margin - -min_y * baseScale - (h - 2 * margin - dataH * baseScale) / 2;
+    lastBaseTransform = { scale: baseScale, offX: baseOffX, offY: baseOffY };
+
+    // Apply user pan+zoom on top of the auto-fit baseline.
+    const scale = baseScale * userZoom;
+    const offX = baseOffX + userPanX;
+    const offY = baseOffY + userPanY;
 
     const project2 = (px: number, py: number): [number, number] => [
       px * scale + offX,
@@ -1474,6 +1583,8 @@
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
     oncontextmenu={onContextMenu}
+    onwheel={onWheel}
+    ondblclick={onDblClick}
   ></canvas>
   {#if project.selectedEntities.size > 0}
     <div class="selection-hud">{project.selectedEntities.size} selected · esc to clear</div>

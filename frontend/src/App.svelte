@@ -785,7 +785,20 @@
     }}
   />
 
-  <footer>
+  <footer
+    title={project.imported
+      ? $_('footer.bbox', {
+          values: {
+            minX: project.imported.bbox.min_x.toFixed(2),
+            minY: project.imported.bbox.min_y.toFixed(2),
+            maxX: project.imported.bbox.max_x.toFixed(2),
+            maxY: project.imported.bbox.max_y.toFixed(2),
+            count: project.imported.segments.length,
+            unit: project.imported.unit_scale,
+          },
+        })
+      : $_('footer.ready')}
+  >
     {#if project.imported}
       {$_('footer.bbox', {
         values: {
@@ -805,10 +818,26 @@
 
 <style>
   .app {
-    display: grid;
-    grid-template-rows: auto auto auto 1fr auto;
+    /* Flex column instead of grid so optional rows (reopen banner,
+       dialogs rendered as direct children) can't shift the 1fr slot
+       onto the footer. main.split owns the flex:1; everything else is
+       fixed-height auto. */
+    display: flex;
+    flex-direction: column;
     height: 100vh;
     width: 100vw;
+  }
+  .app > .menubar,
+  .app > .toolbar,
+  .app > .reopen-banner {
+    flex: 0 0 auto;
+  }
+  .app > main.split {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .app > footer {
+    flex: 0 0 auto;
   }
 
   /* ---------- menu bar ----------------------------------------- */
@@ -1209,11 +1238,18 @@
     color: white;
   }
   footer {
+    /* Fixed-height single-line status bar — never grows. Long content
+       truncates with ellipsis; the full text is on the title tooltip. */
+    height: 1.6rem;
+    line-height: 1.6rem;
+    padding: 0 0.9rem;
     background: var(--bg-panel);
     border-top: 1px solid var(--border);
-    padding: 0.35rem 0.9rem;
     font-size: 0.75rem;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>

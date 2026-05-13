@@ -131,6 +131,30 @@ describe('WorkspaceStore', () => {
     expect(s2.get().last_post_processor).toBe('hpgl');
   });
 
+  it('set_panels_merges_and_skips_no_op', async () => {
+    const t = new MemoryTransport();
+    const s = await freshLoaded(t);
+    let bumps = 0;
+    s.subscribe(() => {
+      bumps += 1;
+    });
+    s.setPanels({ right_width: 480 });
+    expect(s.get().panels).toEqual({
+      ...DEFAULT_WORKSPACE.panels,
+      right_width: 480,
+    });
+    expect(bumps).toBe(1);
+
+    // Identical patch is a no-op (no spurious notify / save).
+    s.setPanels({ right_width: 480 });
+    expect(bumps).toBe(1);
+
+    s.setPanels({ bottom_height: 320 });
+    expect(s.get().panels.right_width).toBe(480);
+    expect(s.get().panels.bottom_height).toBe(320);
+    expect(bumps).toBe(2);
+  });
+
   it('clear_recent_empties', async () => {
     const t = new MemoryTransport();
     const s = await freshLoaded(t);

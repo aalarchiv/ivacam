@@ -61,8 +61,20 @@
         onchange={(e) => setAllVisible((e.currentTarget as HTMLInputElement).checked)}
       />
     {/if}
-    <span class="group-name">Layers</span>
-    <span class="group-count">{usableLayers.length}</span>
+    {#if project.imported?.filename}
+      <span class="filename" title={project.imported.filename}>
+        {project.imported.filename}
+      </span>
+      <span class="file-stats" title="Segments · layers · units">
+        {project.imported.segments.length} seg · {usableLayers.length} layer{usableLayers.length ===
+        1
+          ? ''
+          : 's'}
+      </span>
+    {:else}
+      <span class="group-name">Layers</span>
+      <span class="group-count">{usableLayers.length}</span>
+    {/if}
   </div>
   {#if !collapsed}
     <div class="group-body">
@@ -146,6 +158,19 @@
     background: var(--bg);
     border-radius: 10px;
     line-height: 1.4;
+  }
+  .filename {
+    color: var(--text-strong);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-stats {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .group-body {
     margin: 0.2rem 0 0 0.5rem;

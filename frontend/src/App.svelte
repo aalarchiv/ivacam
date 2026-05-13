@@ -19,6 +19,7 @@
   import SourceStaleToast from './lib/components/SourceStaleToast.svelte';
   import ShortcutHelp from './lib/components/ShortcutHelp.svelte';
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
+  import Splitter from './lib/components/Splitter.svelte';
 
   let machineOpen = $state(false);
   let toolsOpen = $state(false);
@@ -47,9 +48,18 @@
   let gcodeOpen = $state(false);
   import { project } from './lib/state/project.svelte';
   import { workspace } from './lib/state/workspace.svelte';
+  import {
+    openFile,
+    openProject,
+    loadFromPath,
+    loadProjectPath,
+    loadSample,
+    saveProject,
+    SAMPLES,
+  } from './lib/state/file_ops';
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
-  import { setLocale, locale } from './lib/i18n';
+  import { locale } from './lib/i18n';
   import { isTauri } from './lib/api/env';
 
   // Keep the i18n locale in sync with the persisted setting on first
@@ -88,8 +98,7 @@
   /// prune any per-project / recent entries pointing at files that have
   /// disappeared (Tauri only — browser localStorage has no fs probe).
   /// On Tauri, optionally prompt the user to reopen the last project so
-  /// they don't have to navigate the file picker every launch. Browser
-  /// builds skip the prompt because we have no path-based load there.
+  /// they don't have to navigate the file picker every launch.
   async function loadWorkspaceAndMaybeReopen() {
     try {
       await workspace.load();
@@ -110,7 +119,9 @@
     if (!reopenPrompt) return;
     const path = reopenPrompt.path;
     reopenPrompt = null;
-    await openProjectPath(path);
+    const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
+    if (isProjectFile) await loadProjectPath(path);
+    else await loadFromPath(path);
   }
   function dismissReopen() {
     reopenPrompt = null;
@@ -118,8 +129,7 @@
 
   // Auto-dismiss the reopen banner once a project / drawing is loaded by
   // any path (the user clicked Open, dragged a file, or accepted the
-  // banner). The banner only makes sense as a startup affordance —
-  // keeping it visible after the user is already working is noise.
+  // banner). The banner only makes sense as a startup affordance.
   $effect(() => {
     void project.imported;
     void project.activeProjectPath;
@@ -128,42 +138,8 @@
     }
   });
 
-  /// Load a project by absolute path. Picks the import path vs.
-  /// .vc-project loader by the file extension. Mirrors what
-  /// FileUpload.svelte's loadFromPath / openProjectNative flows do —
-  /// kept here so the recent-projects submenu and the reopen prompt
-  /// can drive loads without poking at FileUpload's internals.
-  async function openProjectPath(path: string) {
-    if (!isTauri()) return;
-    const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
-    project.loading = true;
-    project.loadingMessage = isProjectFile ? 'Loading project…' : 'Parsing file…';
-    project.error = null;
-    try {
-      if (isProjectFile) {
-        const { readTextFile } = await import('@tauri-apps/plugin-fs');
-        const text = await readTextFile(path);
-        project.restore(JSON.parse(text));
-      } else {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const result = await invoke('import_path', { path });
-        project.setImported(result as Parameters<typeof project.setImported>[0]);
-      }
-      const filename = path.split(/[\\/]/).pop() ?? path;
-      workspace.addRecentProject(path, filename);
-      project.setActiveProjectPath(path);
-    } catch (e) {
-      project.setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      project.loading = false;
-      project.loadingMessage = null;
-    }
-  }
-
   /// Persist per-project workspace state when the user adjusts visible
-  /// layers / selected op / playhead. Skipped when no project path is
-  /// known (samples, browser drag-and-drop) — there's no key to store
-  /// against. The store debounces writes, so this fires often.
+  /// layers / selected op / playhead.
   $effect(() => {
     void project.visibleLayers;
     void project.selectedOpId;
@@ -173,33 +149,26 @@
     }
   });
 
-  let fileMenuOpen = $state(false);
-  function toggleFileMenu() {
-    fileMenuOpen = !fileMenuOpen;
-  }
-  function closeFileMenu() {
-    fileMenuOpen = false;
-  }
   /// Reactive view of the workspace recent list. `void workspace.version`
   /// subscribes the derived to the store's mutation counter.
   const recentProjects = $derived.by(() => {
     void workspace.version;
     return workspace.get().recent_projects;
   });
-  function clickRecent(path: string) {
-    closeFileMenu();
-    void openProjectPath(path);
+
+  async function clickRecent(path: string) {
+    closeAllMenus();
+    const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
+    if (isProjectFile) await loadProjectPath(path);
+    else await loadFromPath(path);
   }
   function clickClearRecents() {
-    closeFileMenu();
+    closeAllMenus();
     workspace.clearRecentProjects();
   }
 
   /// Subscribe to backend `source-file-changed` events emitted by the
-  /// project watcher. With auto-reload enabled, swap the geometry in
-  /// silently as a single undoable transaction; otherwise surface the
-  /// "Reload?" toast. The unlisten fn is intentionally not stored —
-  /// the watch lives for the lifetime of the window.
+  /// project watcher.
   async function wireSourceWatch() {
     const { onSourceFileChanged } = await import('./lib/api/tauri');
     await onSourceFileChanged(async ({ path }) => {
@@ -212,25 +181,21 @@
     });
   }
 
-  /**
-   * Bridge native menu actions emitted from crates/wiac-tauri/src/menu.rs.
-   * Each menu item's id (e.g. 'file:open', 'view:2d') maps to a UI action
-   * that already exists elsewhere in the app — we mostly dispatch synthetic
-   * clicks against the visible buttons so behavior stays in one place.
-   */
+  /// Native-menu bridge — fires synthetic actions when the user picks
+  /// items from the Tauri OS menu (crates/wiac-tauri/src/menu.rs).
   async function wireMenuEvents() {
     const { listen } = await import('@tauri-apps/api/event');
     await listen<string>('app:menu', (event) => {
       const id = event.payload;
       switch (id) {
         case 'file:open':
-          (document.querySelector('button.open-file') as HTMLButtonElement | null)?.click();
+          void openFile();
           break;
         case 'file:open_project':
-          (document.querySelector('button.open-project') as HTMLButtonElement | null)?.click();
+          void openProject();
           break;
         case 'file:save_project':
-          (document.querySelector('button.save-project') as HTMLButtonElement | null)?.click();
+          void saveProject();
           break;
         case 'file:export_gcode':
           (document.querySelector('button.download') as HTMLButtonElement | null)?.click();
@@ -242,9 +207,6 @@
           activePane = '3d';
           break;
         case 'view:toggle_tabs':
-          // rt1.10: tab-mode is now per-op via OpPropertiesPanel. The
-          // menu item lands the user on the Tabs fieldset of the
-          // selected op (no-op if no op is selected).
           break;
         case 'help:check_update':
           void runUpdateCheck();
@@ -253,21 +215,11 @@
     });
   }
 
-  /**
-   * Manual auto-update check. Pulls the latest manifest from the configured
-   * endpoint, prompts the user via the plugin's built-in dialog, downloads
-   * + installs + relaunches if accepted. Failures surface as a toast in
-   * project.error so they don't crash silently.
-   */
   async function runUpdateCheck() {
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();
-      if (!update) {
-        return;
-      }
-      // The plugin has a built-in dialog when configured in tauri.conf.json,
-      // so we just trigger downloadAndInstall on confirmation.
+      if (!update) return;
       await update.downloadAndInstall();
       const { relaunch } = await import('@tauri-apps/plugin-process');
       await relaunch();
@@ -276,9 +228,6 @@
     }
   }
 
-  // Reactively apply the current theme. Persistence is handled inside
-  // project.updateSettings() so we just mirror the current value into
-  // the document dataset for the CSS [data-theme] selectors.
   $effect(() => {
     document.documentElement.dataset.theme = project.settings.theme;
   });
@@ -302,10 +251,6 @@
     }
   });
 
-  const tabCount = $derived(
-    project.operations.reduce((n, op) => n + (op.tabPlacements?.length ?? 0), 0),
-  );
-
   /// Bumped to `performance.now()` whenever an undo/redo is attempted on
   /// an empty stack — drives the shake animation on the Edit-menu items.
   let undoShakeAt = $state(0);
@@ -324,9 +269,6 @@
   }
 
   function onKeyDown(e: KeyboardEvent) {
-    // Ctrl/Cmd+Z = undo, Ctrl+Y / Ctrl+Shift+Z / Cmd+Shift+Z = redo.
-    // Skip when a text input is focused so the browser's native field-
-    // level undo still works.
     const mod = e.ctrlKey || e.metaKey;
     if (mod && !e.altKey) {
       const k = e.key.toLowerCase();
@@ -342,20 +284,29 @@
         if (!project.redo()) shake('redo');
         return;
       }
+      if (k === 'o' && !e.shiftKey) {
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        void openFile();
+        return;
+      }
+      if (k === 's' && !e.shiftKey) {
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        void saveProject();
+        return;
+      }
     }
     if (e.key === 'Escape') {
       if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
+      closeAllMenus();
       return;
     }
-    // Keyboard shortcut: T = Add Text. Skip when typing in any text input
-    // and skip when modifier keys are held so it doesn't shadow Ctrl-T etc.
     if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (isTypingTarget(e.target)) return;
       addTextOpen = true;
       e.preventDefault();
     }
-    // Shortcut cheatsheet: '?' (Shift+/) or F1. Skip when typing so the
-    // user can still type '?' into text fields.
     if ((e.key === '?' || e.key === 'F1') && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (isTypingTarget(e.target)) return;
       shortcutHelpOpen = true;
@@ -367,117 +318,337 @@
   const redoLabel = $derived(project.redoLabel());
   const canUndo = $derived(project.canUndo());
   const canRedo = $derived(project.canRedo());
-  let editMenuOpen = $state(false);
-  function toggleEditMenu() {
-    editMenuOpen = !editMenuOpen;
+
+  // ---- Menu bar ---------------------------------------------------------
+  type MenuId = 'file' | 'edit' | 'view' | 'tools' | 'help';
+  let openMenu = $state<MenuId | null>(null);
+  function toggleMenu(id: MenuId) {
+    openMenu = openMenu === id ? null : id;
   }
-  function closeEditMenu() {
-    editMenuOpen = false;
+  function closeAllMenus() {
+    openMenu = null;
+  }
+  function onWindowClick(e: MouseEvent) {
+    if (openMenu == null) return;
+    const target = e.target as HTMLElement | null;
+    // Clicks inside the menu (button or dropdown) keep it open — the
+    // item handlers themselves call closeAllMenus when they should.
+    if (target?.closest('.menu')) return;
+    closeAllMenus();
+  }
+  function pickMenu<T>(fn: () => T): T {
+    closeAllMenus();
+    return fn();
   }
   function doUndo() {
-    closeEditMenu();
+    closeAllMenus();
     if (!project.undo()) shake('undo');
   }
   function doRedo() {
-    closeEditMenu();
+    closeAllMenus();
     if (!project.redo()) shake('redo');
+  }
+
+  function exportGcode() {
+    (document.querySelector('button.download') as HTMLButtonElement | null)?.click();
+  }
+
+  // ---- Resizable layout ------------------------------------------------
+  // Sidebar width in px; clamped 240..720. Persisted in workspace so
+  // the user's preferred ratio survives restart.
+  const SIDEBAR_DEFAULT = 360;
+  let sidebarWidth = $state<number>(SIDEBAR_DEFAULT);
+  // Gcode panel height in px; clamped 120..720. Default ~35vh.
+  const GCODE_DEFAULT = Math.round(window.innerHeight * 0.35);
+  let gcodeHeight = $state<number>(GCODE_DEFAULT);
+
+  // Restore persisted sizes from the workspace store once it has loaded.
+  $effect(() => {
+    void workspace.version;
+    const panels = workspace.get().panels;
+    if (panels.right_width > 0) sidebarWidth = clampSidebar(panels.right_width);
+    if (panels.bottom_height > 0) gcodeHeight = clampGcode(panels.bottom_height);
+  });
+
+  function clampSidebar(v: number): number {
+    return Math.max(240, Math.min(720, v));
+  }
+  function clampGcode(v: number): number {
+    return Math.max(120, Math.min(Math.round(window.innerHeight * 0.7), v));
+  }
+
+  function persistLayout() {
+    try {
+      workspace.setPanels({ right_width: sidebarWidth, bottom_height: gcodeHeight });
+    } catch (e) {
+      console.warn('persist layout:', e);
+    }
+  }
+
+  function onSidebarResize(delta: number) {
+    sidebarWidth = clampSidebar(sidebarWidth - delta); // splitter is LEFT of sidebar → drag-right shrinks sidebar
+    persistLayout();
+  }
+  function resetSidebar() {
+    sidebarWidth = SIDEBAR_DEFAULT;
+    persistLayout();
+  }
+  function onGcodeResize(delta: number) {
+    gcodeHeight = clampGcode(gcodeHeight - delta); // splitter is ABOVE gcode → drag-down shrinks
+    persistLayout();
+  }
+  function resetGcode() {
+    gcodeHeight = Math.round(window.innerHeight * 0.35);
+    persistLayout();
   }
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
+<svelte:window onkeydown={onKeyDown} onclick={onWindowClick} />
 
 <div class="app">
-  <header>
-    <h1>{$_('app.title')}</h1>
-    <span class="tagline">{$_('app.tagline')}</span>
-    <div class="spacer"></div>
-    <div class="edit-menu" class:open={fileMenuOpen}>
+  <!-- ============== MENU BAR =================================== -->
+  <nav class="menubar" aria-label="Main menu">
+    <div class="menu" class:open={openMenu === 'file'}>
       <button
         type="button"
-        class="config-btn"
-        onclick={toggleFileMenu}
-        title="File menu (Recent projects)"
+        class="menu-btn"
+        onclick={() => toggleMenu('file')}
         aria-haspopup="menu"
-        aria-expanded={fileMenuOpen}>File ▾</button
+        aria-expanded={openMenu === 'file'}>File</button
       >
-      {#if fileMenuOpen}
+      {#if openMenu === 'file'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="edit-dropdown" role="menu" tabindex="-1" onmouseleave={closeFileMenu}>
-          <div class="recent-heading">Recent Projects</div>
-          {#if recentProjects.length === 0}
-            <div class="recent-empty">No recent projects</div>
-          {:else}
-            {#each recentProjects as r (r.path)}
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+          <button role="menuitem" class="item" onclick={() => pickMenu(openFile)}>
+            <span class="label">Open file…</span><span class="kbd">Ctrl+O</span>
+          </button>
+          <button role="menuitem" class="item" onclick={() => pickMenu(openProject)}>
+            <span class="label">Open project…</span>
+          </button>
+          <button
+            role="menuitem"
+            class="item"
+            disabled={!project.imported}
+            onclick={() => pickMenu(saveProject)}
+          >
+            <span class="label">Save project…</span><span class="kbd">Ctrl+S</span>
+          </button>
+          <button
+            role="menuitem"
+            class="item"
+            disabled={!project.generated}
+            onclick={() => pickMenu(exportGcode)}
+          >
+            <span class="label">Export G-code…</span>
+          </button>
+          <div class="divider"></div>
+          <div class="submenu">
+            <div class="sub-head">Samples</div>
+            {#each SAMPLES as s (s.url)}
               <button
-                type="button"
                 role="menuitem"
-                class="edit-item"
-                onclick={() => clickRecent(r.path)}
-                title={r.path}
+                class="item"
+                onclick={() => pickMenu(() => loadSample(s.url))}
               >
-                <span class="edit-label">{r.filename}</span>
+                <span class="label">{s.label}</span>
               </button>
             {/each}
-          {/if}
-          <div class="menu-divider"></div>
-          <button
-            type="button"
-            role="menuitem"
-            class="edit-item"
-            disabled={recentProjects.length === 0}
-            onclick={clickClearRecents}
-            title="Clear the recent projects list"
-          >
-            <span class="edit-label">Clear recent projects</span>
-          </button>
+          </div>
+          <div class="divider"></div>
+          <div class="submenu">
+            <div class="sub-head">Recent projects</div>
+            {#if recentProjects.length === 0}
+              <div class="item empty">No recent projects</div>
+            {:else}
+              {#each recentProjects as r (r.path)}
+                <button
+                  role="menuitem"
+                  class="item"
+                  title={r.path}
+                  onclick={() => clickRecent(r.path)}
+                >
+                  <span class="label">{r.filename}</span>
+                </button>
+              {/each}
+              <button
+                role="menuitem"
+                class="item subtle"
+                onclick={clickClearRecents}
+                title="Clear the recent projects list"
+              >
+                <span class="label">Clear recent projects</span>
+              </button>
+            {/if}
+          </div>
         </div>
       {/if}
     </div>
-    <div class="edit-menu" class:open={editMenuOpen}>
+
+    <div class="menu" class:open={openMenu === 'edit'}>
       <button
         type="button"
-        class="config-btn"
-        onclick={toggleEditMenu}
-        title="Edit menu (Undo / Redo)"
+        class="menu-btn"
+        onclick={() => toggleMenu('edit')}
         aria-haspopup="menu"
-        aria-expanded={editMenuOpen}>Edit ▾</button
+        aria-expanded={openMenu === 'edit'}>Edit</button
       >
-      {#if editMenuOpen}
+      {#if openMenu === 'edit'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="edit-dropdown" role="menu" tabindex="-1" onmouseleave={closeEditMenu}>
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
           <button
-            type="button"
             role="menuitem"
-            class="edit-item"
+            class="item"
             class:shake={undoShakeAt > 0}
             onanimationend={() => (undoShakeAt = 0)}
             disabled={!canUndo}
             onclick={doUndo}
-            title="Ctrl+Z"
           >
-            <span class="edit-label">Undo{undoLabel ? `: ${undoLabel}` : ''}</span>
-            <span class="edit-kbd">Ctrl+Z</span>
+            <span class="label">Undo{undoLabel ? `: ${undoLabel}` : ''}</span>
+            <span class="kbd">Ctrl+Z</span>
           </button>
           <button
-            type="button"
             role="menuitem"
-            class="edit-item"
+            class="item"
             class:shake={redoShakeAt > 0}
             onanimationend={() => (redoShakeAt = 0)}
             disabled={!canRedo}
             onclick={doRedo}
-            title="Ctrl+Y / Ctrl+Shift+Z"
           >
-            <span class="edit-label">Redo{redoLabel ? `: ${redoLabel}` : ''}</span>
-            <span class="edit-kbd">Ctrl+Y</span>
+            <span class="label">Redo{redoLabel ? `: ${redoLabel}` : ''}</span>
+            <span class="kbd">Ctrl+Y</span>
           </button>
         </div>
       {/if}
     </div>
+
+    <div class="menu" class:open={openMenu === 'view'}>
+      <button
+        type="button"
+        class="menu-btn"
+        onclick={() => toggleMenu('view')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'view'}>View</button
+      >
+      {#if openMenu === 'view'}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+          <button
+            role="menuitem"
+            class="item"
+            class:checked={activePane === '2d'}
+            onclick={() => pickMenu(() => (activePane = '2d'))}
+          >
+            <span class="label">2D view</span>
+          </button>
+          <button
+            role="menuitem"
+            class="item"
+            class:checked={activePane === '3d'}
+            onclick={() => pickMenu(() => (activePane = '3d'))}
+          >
+            <span class="label">3D view</span>
+          </button>
+          <div class="divider"></div>
+          <button
+            role="menuitem"
+            class="item"
+            class:checked={gcodeOpen}
+            disabled={!project.generated}
+            onclick={() => pickMenu(() => (gcodeOpen = !gcodeOpen))}
+          >
+            <span class="label">G-code panel</span>
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <div class="menu" class:open={openMenu === 'tools'}>
+      <button
+        type="button"
+        class="menu-btn"
+        onclick={() => toggleMenu('tools')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'tools'}>Tools</button
+      >
+      {#if openMenu === 'tools'}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+          <button role="menuitem" class="item" onclick={() => pickMenu(() => (toolsOpen = true))}>
+            <span class="label">Tool library…</span>
+          </button>
+          <button role="menuitem" class="item" onclick={() => pickMenu(() => (machineOpen = true))}>
+            <span class="label">Machine…</span>
+          </button>
+          <button
+            role="menuitem"
+            class="item"
+            onclick={() => pickMenu(() => (settingsOpen = true))}
+          >
+            <span class="label">Settings…</span>
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <div class="menu" class:open={openMenu === 'help'}>
+      <button
+        type="button"
+        class="menu-btn"
+        onclick={() => toggleMenu('help')}
+        aria-haspopup="menu"
+        aria-expanded={openMenu === 'help'}>Help</button
+      >
+      {#if openMenu === 'help'}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+          <button
+            role="menuitem"
+            class="item"
+            onclick={() => pickMenu(() => (shortcutHelpOpen = true))}
+          >
+            <span class="label">Keyboard shortcuts…</span><span class="kbd">?</span>
+          </button>
+          {#if isTauri()}
+            <button role="menuitem" class="item" onclick={() => pickMenu(runUpdateCheck)}>
+              <span class="label">Check for updates…</span>
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </nav>
+
+  <!-- ============== TOOLBAR (single row) ====================== -->
+  <div class="toolbar">
     <button
-      class="config-btn icon"
+      class="tb-btn primary"
+      onclick={() => openFile()}
+      disabled={project.loading}
+      title="Open a DXF or SVG file (Ctrl+O)"
+    >
+      Open file
+    </button>
+    <button
+      class="tb-btn"
+      onclick={() => openProject()}
+      disabled={project.loading}
+      title="Open a saved .wiac-project.json"
+    >
+      Open project
+    </button>
+    <button
+      class="tb-btn"
+      onclick={() => saveProject()}
+      disabled={!project.imported}
+      title="Save the current project (Ctrl+S)"
+    >
+      Save
+    </button>
+    <span class="tb-sep"></span>
+    <button
+      class="tb-btn icon"
       onclick={() => (addTextOpen = true)}
-      title="Add Text (T)"
+      title="Add text geometry (T)"
       aria-label="Add Text"
     >
       <svg
@@ -498,53 +669,26 @@
       </svg>
       <span>Text</span>
     </button>
-    <button class="config-btn" onclick={() => (toolsOpen = true)} title="Tool library">
-      Tools…
-    </button>
-    <button class="config-btn" onclick={() => (machineOpen = true)} title="Machine settings">
-      Machine…
-    </button>
-    <button
-      class="config-btn icon"
-      onclick={() => (settingsOpen = true)}
-      title="Settings"
-      aria-label="Settings"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+    <span class="tb-sep"></span>
+    <GenerateBar />
+    <span class="tb-flex"></span>
+    <div class="pane-toggle" role="tablist" aria-label="Viewport mode">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activePane === '2d'}
+        class:active={activePane === '2d'}
+        onclick={() => (activePane = '2d')}>{$_('header.pane.2d')}</button
       >
-        <circle cx="12" cy="12" r="3"></circle>
-        <path
-          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-        ></path>
-      </svg>
-    </button>
-    <!-- Tab count chip — read-only summary. Click-to-place lives on
-         the 2D canvas and per-op Tabs section (audit C11). -->
-    <span
-      class="tab-count-chip"
-      title="Total tabs across all operations. Select an op and click on its contour in the 2D canvas to add or remove a tab."
-      aria-label={$_('header.tabs', { values: { count: tabCount } })}
-    >
-      {$_('header.tabs', { values: { count: tabCount } })}
-    </span>
-    <div class="pane-toggle">
-      <button class:active={activePane === '2d'} onclick={() => (activePane = '2d')}>
-        {$_('header.pane.2d')}
-      </button>
-      <button class:active={activePane === '3d'} onclick={() => (activePane = '3d')}>
-        {$_('header.pane.3d')}
-      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activePane === '3d'}
+        class:active={activePane === '3d'}
+        onclick={() => (activePane = '3d')}>{$_('header.pane.3d')}</button
+      >
     </div>
-  </header>
+  </div>
 
   {#if reopenPrompt}
     <div class="reopen-banner" role="alert">
@@ -557,17 +701,11 @@
   {/if}
 
   <FileUpload />
-  <GenerateBar />
 
-  <main>
+  <!-- ============== SPLIT VIEW ================================ -->
+  <main class="split" style:--sidebar-width="{sidebarWidth}px">
     <section class="viewport">
       <div class="canvas-area">
-        <!-- Keep both panes mounted so the 3D camera angle and the
-             heightfield mesh state survive 2D ↔ 3D toggles. The hidden
-             pane has display:none, so its IntersectionObserver reports
-             non-intersecting and Scene3D's RAF pauses (see 9js). The
-             user only pays the Scene3D mount cost once, on first 3D
-             activation. -->
         <div class:pane-hidden={activePane !== '2d'} class="pane">
           <EntityCanvas2D onShowHelp={() => (shortcutHelpOpen = true)} />
         </div>
@@ -595,18 +733,27 @@
           </button>
         </div>
         {#if gcodeOpen}
-          <div class="gcode-row">
+          <Splitter
+            direction="vertical"
+            onResize={onGcodeResize}
+            onReset={resetGcode}
+            title="Drag to resize the G-code panel · double-click to reset"
+          />
+          <div class="gcode-row" style:height="{gcodeHeight}px">
             <GcodePanel />
           </div>
         {/if}
       {/if}
     </section>
+    <Splitter
+      direction="horizontal"
+      onResize={onSidebarResize}
+      onReset={resetSidebar}
+      title="Drag to resize the side panel · double-click to reset"
+    />
     <aside class="sidebar">
       <div class="layers-host">
-        <LayerList
-          onOpenFileClick={() =>
-            (document.querySelector('button.open-file') as HTMLButtonElement | null)?.click()}
-        />
+        <LayerList onOpenFileClick={() => openFile()} />
       </div>
       <div class="ops-host">
         <OperationsList />
@@ -692,6 +839,225 @@
 </div>
 
 <style>
+  .app {
+    display: grid;
+    grid-template-rows: auto auto auto 1fr auto;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ---------- menu bar ----------------------------------------- */
+  .menubar {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0 0.25rem;
+    min-height: 1.85rem;
+  }
+  .menu {
+    position: relative;
+  }
+  .menu-btn {
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border-radius: 3px;
+    line-height: 1.3;
+  }
+  .menu-btn:hover {
+    background: var(--bg-elevated);
+  }
+  .menu.open .menu-btn {
+    background: var(--bg-elevated);
+    color: var(--text-strong);
+  }
+  .dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 240px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    padding: 0.2rem;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+  .dropdown .item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.7rem;
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+  }
+  .dropdown .item:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .dropdown .item:disabled {
+    color: var(--text-faint);
+    cursor: not-allowed;
+  }
+  .dropdown .item.checked .label::before {
+    content: '✓ ';
+    color: var(--accent);
+  }
+  .dropdown .item.empty {
+    color: var(--text-faint);
+    font-style: italic;
+    cursor: default;
+  }
+  .dropdown .item.subtle {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+  }
+  .dropdown .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 280px;
+  }
+  .dropdown .kbd {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .dropdown .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.2rem 0.05rem;
+  }
+  .dropdown .submenu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+  .dropdown .sub-head {
+    padding: 0.25rem 0.55rem 0.05rem;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+  /* Shake animation on undo/redo when stack is empty. */
+  @keyframes wiac-undo-shake {
+    0% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-3px);
+    }
+    50% {
+      transform: translateX(3px);
+    }
+    75% {
+      transform: translateX(-2px);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+  .dropdown .item.shake {
+    animation: wiac-undo-shake 100ms ease-in-out;
+  }
+
+  /* ---------- toolbar ------------------------------------------ */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.7rem;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .toolbar :global(.bar) {
+    /* GenerateBar's inner `.bar` — flatten its panel background so it
+       inherits the toolbar styling and doesn't render a second band. */
+    background: transparent;
+    border: 0;
+    padding: 0;
+    gap: 0.45rem;
+  }
+  .tb-btn {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.28rem 0.7rem;
+    border-radius: 3px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+  .tb-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .tb-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .tb-btn.primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .tb-btn.primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: white;
+  }
+  .tb-btn.icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .tb-sep {
+    width: 1px;
+    height: 1.4rem;
+    background: var(--border);
+    margin: 0 0.1rem;
+  }
+  .tb-flex {
+    flex: 1;
+  }
+  .pane-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .pane-toggle button {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 0;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .pane-toggle button.active {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* ---------- reopen banner ----------------------------------- */
   .reopen-banner {
     display: flex;
     align-items: center;
@@ -720,196 +1086,20 @@
     color: #fff;
     border-color: var(--accent);
   }
-  .reopen-accept:hover {
-    background: var(--accent-strong, var(--accent));
-  }
-  .reopen-dismiss:hover {
-    background: var(--bg);
-  }
-  .tab-count-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.18rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--bg-elevated);
-    color: var(--text-muted);
-    font-size: 0.78rem;
-    line-height: 1.2;
-  }
-  .app {
+
+  /* ---------- split view ------------------------------------- */
+  .split {
     display: grid;
-    grid-template-rows: auto auto auto 1fr auto;
-    height: 100vh;
-    width: 100vw;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.5rem 0.9rem;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
-  }
-  h1 {
-    font-size: 1rem;
-    margin: 0;
-    color: var(--text-strong);
-    font-weight: 600;
-  }
-  .tagline {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-  .spacer {
-    flex: 1;
-  }
-  .config-btn {
-    background: var(--bg-elevated);
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 0.3rem 0.7rem;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    cursor: pointer;
-  }
-  .config-btn:hover {
-    color: var(--text-strong);
-    border-color: var(--accent);
-  }
-  .config-btn.icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.55rem;
-  }
-  .edit-menu {
-    position: relative;
-    display: inline-block;
-  }
-  .edit-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    min-width: 240px;
-    background: var(--bg-elevated);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
-    padding: 0.2rem;
-    z-index: 60;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-  .edit-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.6rem;
-    background: transparent;
-    color: var(--text);
-    border: 0;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.78rem;
-    border-radius: 3px;
-    cursor: pointer;
-    text-align: left;
-  }
-  .edit-item:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-  }
-  .edit-item:disabled {
-    color: var(--text-faint);
-    cursor: not-allowed;
-  }
-  .edit-kbd {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .edit-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 220px;
-  }
-  /* 100ms shake when undo/redo is invoked on an empty stack — surfaces
-     the "no-op" without throwing an error popup at the user. */
-  @keyframes wiac-undo-shake {
-    0% {
-      transform: translateX(0);
-    }
-    25% {
-      transform: translateX(-3px);
-    }
-    50% {
-      transform: translateX(3px);
-    }
-    75% {
-      transform: translateX(-2px);
-    }
-    100% {
-      transform: translateX(0);
-    }
-  }
-  .edit-item.shake {
-    animation: wiac-undo-shake 100ms ease-in-out;
-  }
-  .recent-heading {
-    padding: 0.25rem 0.55rem 0.1rem;
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .recent-empty {
-    padding: 0.25rem 0.55rem;
-    font-size: 0.75rem;
-    color: var(--text-faint);
-    font-style: italic;
-  }
-  .menu-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 0.2rem 0.1rem;
-  }
-  .pane-toggle {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  .pane-toggle button {
-    background: var(--bg-elevated);
-    color: var(--text-muted);
-    border: 0;
-    padding: 0.3rem 0.7rem;
-    font-size: 0.8rem;
-    cursor: pointer;
-  }
-  .pane-toggle button.active {
-    background: var(--accent);
-    color: white;
-  }
-  main {
-    display: grid;
-    grid-template-columns: 1fr 360px;
+    grid-template-columns: minmax(0, 1fr) auto var(--sidebar-width, 360px);
     overflow: hidden;
     min-height: 0;
-  }
-  @media (max-width: 1100px) {
-    main {
-      grid-template-columns: 1fr 320px;
-    }
   }
   .viewport {
     position: relative;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
   .canvas-area {
     flex: 1;
@@ -955,21 +1145,12 @@
     font-size: 0.7rem;
   }
   .gcode-row {
-    border-top: 1px solid var(--border);
     background: var(--bg-input);
-    /* Vertical split: capped so the canvas stays usable on small screens. */
-    height: clamp(180px, 35vh, 480px);
     overflow: hidden;
     min-height: 0;
   }
   .sidebar {
     display: grid;
-    /* Layers row sizes to its own content via `auto` — collapsed
-       layers panel = single header row; expanded = capped via
-       LayerList's own max-height. Ops fills the rest. Stock sits
-       at the bottom. This makes the panel feel like one stack of
-       collapsible blocks (Layers / Operations / Stock) rather than
-       three rows with fixed minimums. */
     grid-template-rows: auto minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
@@ -989,9 +1170,6 @@
     max-height: 30vh;
     overflow: auto;
   }
-  /* Disclosure header restyled to match LayerList / OperationsList
-     group-head — consistent collapsible-section visual across the
-     sidebar's three blocks (Layers / Operations / Stock). */
   .stock-host summary {
     display: flex;
     align-items: center;

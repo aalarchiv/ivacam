@@ -266,6 +266,24 @@ export class WorkspaceStore {
     this.scheduleSave();
   }
 
+  /// Update the panel layout dimensions. The App's split-pane drag
+  /// handles call this with the current sidebar width / gcode height
+  /// after every drag — the debounced save then flushes to disk.
+  setPanels(patch: Partial<PanelLayout>) {
+    const cur = this.state.panels;
+    const next: PanelLayout = { ...cur, ...patch };
+    if (
+      next.left_width === cur.left_width &&
+      next.right_width === cur.right_width &&
+      next.bottom_height === cur.bottom_height
+    ) {
+      return;
+    }
+    this.state = { ...this.state, panels: next };
+    this.notify();
+    this.scheduleSave();
+  }
+
   setLastPostProcessor(post: string) {
     if (this.state.last_post_processor === post) return;
     this.state = { ...this.state, last_post_processor: post };

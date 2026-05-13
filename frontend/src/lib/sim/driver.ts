@@ -344,11 +344,19 @@ export class HeightfieldDriver {
     }
     if (newHead === this.appliedHead) return false;
     if (newHead < this.appliedHead) {
-      // Backward scrub: can't undo cuts, replay from zero.
+      // Backward scrub: the heightfield is monotone — cuts can only
+      // deepen — so we reset the simulator and replay forward. The mesh
+      // also has to be refreshed from the now-clean sim heights BEFORE
+      // the forward replay; otherwise cells outside the replay's dirty
+      // AABB keep the stale (deeper) heights from the previous playhead
+      // position, and the user sees material that's still "removed"
+      // ahead of where the tool actually is.
       this.sim.reset();
       this.appliedHead = 0;
       this.diagnostics = { warnings: [] };
       this.notifyDiagnostics();
+      this.refreshHeightView();
+      if (this.heightView && this.mesh) this.mesh.updateHeights(this.heightView);
     }
     if (newHead > this.appliedHead) {
       const wireTool = toWireTool(tool);
@@ -363,19 +371,7 @@ export class HeightfieldDriver {
       } else if (this.heightView) {
         this.mesh.updateHeights(this.heightView);
       }
-      this.scheduleEdgeRebuild();
-      this.opts.requestRender();
-      return true;
     }
-    // Backward scrub fell through: replay 0..newHead in one shot.
-    if (newHead > 0) {
-      const wireTool = toWireTool(tool);
-      this.sim.advance(segments, wireTool, 0, newHead);
-      this.appliedHead = newHead;
-      this.collectDiagnostics();
-    }
-    this.refreshHeightView();
-    if (this.heightView) this.mesh.updateHeights(this.heightView);
     this.scheduleEdgeRebuild();
     this.opts.requestRender();
     return true;

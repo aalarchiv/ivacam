@@ -181,6 +181,19 @@ interface WireOp {
   /// Optional UI grouping label (rt1.21). Preserved through save/load
   /// so reopening a project restores the user's group layout.
   group?: string;
+  /// Optional pattern repetition (rt1.5). When set, the pipeline
+  /// expands this op into N instances with translated / rotated
+  /// source geometry. The (0,0)/0° instance is the original.
+  pattern?:
+    | { kind: 'linear'; count: number; dx: number; dy: number }
+    | { kind: 'grid'; count_x: number; count_y: number; dx: number; dy: number }
+    | {
+        kind: 'polar';
+        count: number;
+        center_x: number;
+        center_y: number;
+        angle_step_deg: number;
+      };
   source: WireSource;
   params: {
     depth: number;
@@ -455,6 +468,13 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
       ? { finish_tool_id: op.finishToolId }
       : {}),
     ...(op.group ? { group: op.group } : {}),
+    // Pattern repetition (rt1.5). When set, the pipeline expands the
+    // op into N instances. Single-count linear / grid patterns are
+    // equivalent to no pattern, so we still emit them for round-trip
+    // fidelity — backend handles the degenerate case efficiently.
+    ...(op.pattern && (op.pattern as { kind?: string }).kind
+      ? { pattern: op.pattern }
+      : {}),
     source: buildSource(op),
     params: {
       depth: op.depth,

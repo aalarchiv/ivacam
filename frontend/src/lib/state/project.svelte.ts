@@ -1296,6 +1296,22 @@ export type HalfpipeProfile =
   | { kind: 'circular_arc'; radius_mm: number }
   | { kind: 'v_bottom'; included_angle_deg: number };
 
+/// Pattern repetition for an Operation. Mirrors
+/// `wiac_core::project::PatternConfig`. Each tagged variant matches
+/// the Rust snake_case discriminator. The (0, 0) / 0° instance is
+/// the original geometry, so a single-count pattern is identical to
+/// no pattern.
+export type PatternConfig =
+  | { kind: 'linear'; count: number; dx: number; dy: number }
+  | { kind: 'grid'; count_x: number; count_y: number; dx: number; dy: number }
+  | {
+      kind: 'polar';
+      count: number;
+      center_x: number;
+      center_y: number;
+      angle_step_deg: number;
+    };
+
 /// Per-op tab placement mode (rt1.10). Maps to
 /// `wiac_core::project::TabPlacementMode`.
 export type TabPlacementMode =
@@ -1525,6 +1541,11 @@ export interface OpEntry {
   /// Corner radius (mm) for `frameShape === 'rounded_rectangle'`. Ignored
   /// otherwise. Undefined ⇒ backend defaults to `framePaddingMm`.
   frameCornerRadiusMm?: number;
+  /// Pattern repetition (rt1.5 backend). When set, the pipeline runs
+  /// this op once per pattern instance with the source geometry
+  /// translated / rotated. The (0, 0) / 0° instance is the original,
+  /// so single-count patterns are equivalent to no pattern.
+  pattern?: PatternConfig;
   /// Operation group label (rt1.21). Ops sharing the same `group`
   /// string render under a collapsible header in OperationsList.
   /// Undefined = ungrouped (rendered under an implicit "Other"

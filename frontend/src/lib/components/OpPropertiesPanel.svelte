@@ -17,6 +17,10 @@
   import { defaultClient } from '../api/http';
   import type { HelixRadiusResponse } from '../api/types';
   import { _ } from 'svelte-i18n';
+  import VCarveSection from './op_properties/VCarveSection.svelte';
+  import ChamferSection from './op_properties/ChamferSection.svelte';
+  import ThreadSection from './op_properties/ThreadSection.svelte';
+  import PatternSection from './op_properties/PatternSection.svelte';
 
   const apiClient = defaultClient();
   const HELIX_PREVIEW_DEBOUNCE_MS = 300;
@@ -1458,155 +1462,15 @@
     {/if}
 
     {#if op.kind === 'vcarve'}
-      {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
-      <fieldset>
-        <legend>V-Carve</legend>
-        {#if opTool && opTool.kind !== 'v_bit'}
-          <p
-            class="warn-chip"
-            title="V-Carve assumes a V-bit cone — pick a V-bit in the tool library or the carve depth math won't match the actual cutter."
-          >
-            Tool kind mismatch — V-Carve needs a V-bit.
-          </p>
-        {/if}
-        <details class="subsection" open>
-          <summary>{$_('op.section.vcarve_advanced')}</summary>
-          <label
-            class="row"
-            title="Optional cap on the inscribed-circle radius (mm). Leave empty for no cap. Useful when a wide region would otherwise drive the V deeper than the bit's usable shoulder."
-          >
-            <span>Max width</span>
-            <div class="num-cell">
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                placeholder="no cap"
-                value={op.carveMaxWidthMm ?? ''}
-                onchange={(e) => {
-                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                  patch('carveMaxWidthMm', isNaN(v) || v <= 0 ? undefined : v);
-                }}
-              />
-              <span class="unit">mm</span>
-            </div>
-          </label>
-          <label
-            class="row"
-            title="Planned for a future release: re-cut only the points whose first pass fell short of the geometric target depth. The control is disabled until the refinement pass ships — the flag is wire-only today, never inspected by the V-Carve emitter."
-          >
-            <span>Refine pass</span>
-            <input type="checkbox" checked={false} disabled />
-            <span class="hint" style="margin-left:0.5rem">not yet implemented</span>
-          </label>
-        </details>
-      </fieldset>
+      <VCarveSection {op} {patch} />
     {/if}
 
     {#if op.kind === 'chamfer'}
-      {@const opTool = project.tools.find((tt) => tt.id === op.toolId)}
-      <fieldset>
-        <legend>Chamfer</legend>
-        {#if opTool && opTool.kind !== 'v_bit'}
-          <p
-            class="warn-chip"
-            title="Chamfer assumes a V-bit cone; flat / ball tools won't produce a true bevel. Pick a V-bit in the tool library."
-          >
-            Tool kind mismatch — Chamfer needs a V-bit.
-          </p>
-        {/if}
-        <label
-          class="row"
-          title="Horizontal width of the chamfer cut on the workpiece. The Z depth is computed automatically from the V-bit's apex angle: depth = -width / tan(tipAngle/2). Default 1 mm."
-        >
-          <span>Width</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              placeholder="1"
-              value={op.chamferWidthMm ?? ''}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                patch('chamferWidthMm', isNaN(v) || v <= 0 ? undefined : v);
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-        <label
-          class="row"
-          title="Cut the chamfer twice — once at the rough feed (cleanup) and once at the tool's finish-set feed (rt1.27) for surface quality."
-        >
-          <span>Finish pass</span>
-          <input
-            type="checkbox"
-            checked={op.chamferFinishPass ?? false}
-            onchange={(e) =>
-              patch('chamferFinishPass', (e.currentTarget as HTMLInputElement).checked)}
-          />
-        </label>
-      </fieldset>
+      <ChamferSection {op} {patch} />
     {/if}
 
     {#if op.kind === 'thread'}
-      <fieldset>
-        <legend>Thread</legend>
-        <p
-          class="hint"
-          title="Source must be a closed circle (drilled hole or stud diameter). The cutter walks a helix at one pitch of Z descent per revolution between Start depth and Depth."
-        >
-          Thread requires a closed circle as the source.
-        </p>
-        <label
-          class="row"
-          title="Z descent per full revolution. Picks the thread series: M6×1.0 → 1.0 mm, M3×0.5 → 0.5 mm. Positive value."
-        >
-          <span>Pitch</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.05"
-              min="0"
-              placeholder="1"
-              value={op.threadPitchMm ?? ''}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                patch('threadPitchMm', isNaN(v) || v <= 0 ? undefined : v);
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-        <label
-          class="row"
-          title="Internal = tap-style (cutter inside the bore). External = die-style (cutter around a stud)."
-        >
-          <span>Direction</span>
-          <select
-            value={(op.threadInternal ?? true) ? 'internal' : 'external'}
-            onchange={(e) => {
-              const v = (e.currentTarget as HTMLSelectElement).value;
-              patch('threadInternal', v === 'internal');
-            }}
-          >
-            <option value="internal">Internal (bore)</option>
-            <option value="external">External (stud)</option>
-          </select>
-        </label>
-        <label
-          class="row"
-          title="Climb (CCW helix on a right-hand spindle) vs conventional (CW). Default off (conventional) — almost always best for surface quality on hobby machines."
-        >
-          <span>Climb</span>
-          <input
-            type="checkbox"
-            checked={op.threadClimb ?? false}
-            onchange={(e) => patch('threadClimb', (e.currentTarget as HTMLInputElement).checked)}
-          />
-        </label>
-      </fieldset>
+      <ThreadSection {op} {patch} />
     {/if}
 
     {#if op.kind === 'helix'}
@@ -1617,216 +1481,7 @@
       </p>
     {/if}
 
-    <fieldset>
-      <legend>Pattern (repeat this op)</legend>
-      <p class="hint">
-        Run this operation once per pattern instance with the source geometry translated or rotated.
-        The original geometry stays at the (0, 0) / 0° instance — single-count patterns are
-        equivalent to no pattern.
-      </p>
-      <label
-        class="row"
-        title="Pattern shape — Linear array, rectangular Grid, or Polar (rotational) array."
-      >
-        <span>Pattern</span>
-        <select
-          value={op.pattern?.kind ?? 'none'}
-          onchange={(e) => {
-            const v = (e.currentTarget as HTMLSelectElement).value;
-            if (v === 'none') {
-              patch('pattern', undefined);
-            } else if (v === 'linear') {
-              patch('pattern', { kind: 'linear', count: 2, dx: 10, dy: 0 });
-            } else if (v === 'grid') {
-              patch('pattern', { kind: 'grid', count_x: 2, count_y: 2, dx: 10, dy: 10 });
-            } else if (v === 'polar') {
-              patch('pattern', {
-                kind: 'polar',
-                count: 4,
-                center_x: 0,
-                center_y: 0,
-                angle_step_deg: 90,
-              });
-            }
-          }}
-        >
-          <option value="none">None</option>
-          <option value="linear">Linear array</option>
-          <option value="grid">Rectangular grid</option>
-          <option value="polar">Polar array</option>
-        </select>
-      </label>
-      {#if op.pattern?.kind === 'linear'}
-        {@const lin = op.pattern}
-        <label
-          class="row"
-          title="Total number of instances along the array, including the original at offset (0, 0)."
-        >
-          <span>Count</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={lin.count}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (Number.isFinite(v) && v >= 1) patch('pattern', { ...lin, count: v });
-            }}
-          />
-        </label>
-        <label class="row" title="X offset between consecutive instances (mm).">
-          <span>Δx</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.5"
-              value={lin.dx}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(v)) patch('pattern', { ...lin, dx: v });
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-        <label class="row" title="Y offset between consecutive instances (mm).">
-          <span>Δy</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.5"
-              value={lin.dy}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(v)) patch('pattern', { ...lin, dy: v });
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-      {:else if op.pattern?.kind === 'grid'}
-        {@const grid = op.pattern}
-        <label class="row" title="Instances along the X axis.">
-          <span>Count X</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={grid.count_x}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (Number.isFinite(v) && v >= 1) patch('pattern', { ...grid, count_x: v });
-            }}
-          />
-        </label>
-        <label class="row" title="Instances along the Y axis.">
-          <span>Count Y</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={grid.count_y}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (Number.isFinite(v) && v >= 1) patch('pattern', { ...grid, count_y: v });
-            }}
-          />
-        </label>
-        <label class="row" title="X spacing between grid columns (mm).">
-          <span>Δx</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.5"
-              value={grid.dx}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(v)) patch('pattern', { ...grid, dx: v });
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-        <label class="row" title="Y spacing between grid rows (mm).">
-          <span>Δy</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.5"
-              value={grid.dy}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(v)) patch('pattern', { ...grid, dy: v });
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-      {:else if op.pattern?.kind === 'polar'}
-        {@const pol = op.pattern}
-        <label class="row" title="Total instances around the center, including the original at 0°.">
-          <span>Count</span>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={pol.count}
-            onchange={(e) => {
-              const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-              if (Number.isFinite(v) && v >= 1) patch('pattern', { ...pol, count: v });
-            }}
-          />
-        </label>
-        <label class="row" title="X coordinate of the rotation center (mm).">
-          <span>Center X</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.5"
-              value={pol.center_x}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(v)) patch('pattern', { ...pol, center_x: v });
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-        <label class="row" title="Y coordinate of the rotation center (mm).">
-          <span>Center Y</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.5"
-              value={pol.center_y}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(v)) patch('pattern', { ...pol, center_y: v });
-              }}
-            />
-            <span class="unit">mm</span>
-          </div>
-        </label>
-        <label
-          class="row"
-          title="Angle between consecutive instances (degrees). 360 / count for a full revolution."
-        >
-          <span>Step</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="1"
-              value={pol.angle_step_deg}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(v)) patch('pattern', { ...pol, angle_step_deg: v });
-              }}
-            />
-            <span class="unit">°</span>
-          </div>
-        </label>
-      {/if}
-    </fieldset>
+    <PatternSection {op} {patch} />
   {/if}
 </aside>
 
@@ -1848,29 +1503,29 @@
     background: transparent;
     padding: 0.4rem 0.5rem 0.6rem 1.6rem;
   }
-  h3 {
+  :global(.props h3) {
     margin: 0 0 0.4rem 0;
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
   }
-  .empty {
+  :global(.props .empty) {
     color: var(--text-faint);
     font-size: 0.78rem;
   }
-  .empty.embedded-empty {
+  :global(.props .empty.embedded-empty) {
     text-align: center;
     font-size: 0.72rem;
     opacity: 0.7;
     margin: 0.4rem 0;
   }
-  .placeholder {
+  :global(.props .placeholder) {
     color: var(--text-faint);
     font-size: 0.78rem;
     font-style: italic;
   }
-  .row {
+  :global(.props .row) {
     display: grid;
     grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
     gap: 0.5rem;
@@ -1878,22 +1533,22 @@
     margin: 0.2rem 0;
     font-size: 0.78rem;
   }
-  fieldset {
+  :global(.props fieldset) {
     border: 1px solid var(--border);
     border-radius: 3px;
     margin: 0.4rem 0;
     padding: 0.3rem 0.5rem 0.4rem;
     background: var(--bg-elevated);
   }
-  legend {
+  :global(.props legend) {
     font-size: 0.7rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 0.3rem;
   }
-  input,
-  select {
+  :global(.props input),
+  :global(.props select) {
     background: var(--bg-input);
     color: var(--text);
     border: 1px solid var(--border);
@@ -1904,26 +1559,26 @@
     width: 100%;
     box-sizing: border-box;
   }
-  .hint {
+  :global(.props .hint) {
     margin: 0.2rem 0 0;
     font-size: 0.72rem;
     color: var(--text-muted);
   }
-  .hint.warn {
+  :global(.props .hint.warn) {
     color: var(--warn, #b86f00);
     background: var(--warn-bg, rgba(184, 111, 0, 0.08));
     border-left: 2px solid var(--warn, #b86f00);
     padding: 0.15rem 0.4rem;
     border-radius: 2px;
   }
-  .num {
+  :global(.props .num) {
     font-variant-numeric: tabular-nums;
     font-size: 0.78rem;
     color: var(--text-muted);
     min-width: 3em;
     text-align: right;
   }
-  .from-selection {
+  :global(.props .from-selection) {
     margin-top: 0.3rem;
     background: var(--bg-elevated);
     color: var(--text);
@@ -1934,14 +1589,14 @@
     cursor: pointer;
     width: 100%;
   }
-  .from-selection:disabled {
+  :global(.props .from-selection:disabled) {
     cursor: not-allowed;
   }
-  .from-selection.ghost {
+  :global(.props .from-selection.ghost) {
     opacity: 0.5;
     border-style: dashed;
   }
-  .warn-chip {
+  :global(.props .warn-chip) {
     margin: 0.2rem 0;
     padding: 0.2rem 0.4rem;
     border-radius: 3px;
@@ -1950,38 +1605,38 @@
     border: 1px solid var(--warn);
     font-size: 0.72rem;
   }
-  .step-cell {
+  :global(.props .step-cell) {
     display: flex;
     align-items: center;
     gap: 0.3rem;
     min-width: 0;
   }
-  .step-cell input {
+  :global(.props .step-cell input) {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .num-cell {
+  :global(.props .num-cell) {
     display: flex;
     align-items: center;
     gap: 0.25rem;
     min-width: 0;
   }
-  .num-cell input {
+  :global(.props .num-cell input) {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .num-cell-pair input {
+  :global(.props .num-cell-pair input) {
     flex: 1 1 0;
     min-width: 0;
   }
-  .segmented {
+  :global(.props .segmented) {
     display: inline-flex;
     border: 1px solid var(--border);
     border-radius: 3px;
     overflow: hidden;
     background: var(--bg-elevated);
   }
-  .segmented button {
+  :global(.props .segmented button) {
     background: transparent;
     color: var(--text);
     border: 0;
@@ -1991,52 +1646,52 @@
     text-transform: capitalize;
     cursor: pointer;
   }
-  .segmented button:first-child {
+  :global(.props .segmented button:first-child) {
     border-left: 0;
   }
-  .segmented button.active {
+  :global(.props .segmented button.active) {
     background: color-mix(in srgb, var(--accent) 30%, transparent);
     color: var(--text-strong);
   }
-  .segmented button:hover:not(.active) {
+  :global(.props .segmented button:hover:not(.active)) {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
-  .unit {
+  :global(.props .unit) {
     font-size: 0.7rem;
     color: var(--text-muted);
     margin-left: 0.25rem;
     white-space: nowrap;
     flex: 0 0 auto;
   }
-  .range-cell {
+  :global(.props .range-cell) {
     display: flex;
     align-items: center;
     gap: 0.3rem;
     min-width: 0;
   }
-  .range-cell input[type='range'] {
+  :global(.props .range-cell input[type='range']) {
     flex: 1 1 auto;
     min-width: 0;
     padding: 0;
   }
   .range-min,
-  .range-max {
+  :global(.props .range-max) {
     font-size: 0.68rem;
     color: var(--text-faint);
     flex: 0 0 auto;
     white-space: nowrap;
   }
-  .tool-cell {
+  :global(.props .tool-cell) {
     display: flex;
     align-items: center;
     gap: 0.3rem;
     min-width: 0;
   }
-  .tool-cell select {
+  :global(.props .tool-cell select) {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .tool-edit {
+  :global(.props .tool-edit) {
     background: var(--bg-elevated);
     color: var(--text-muted);
     border: 1px solid var(--border);
@@ -2047,18 +1702,18 @@
     cursor: pointer;
     flex: 0 0 auto;
   }
-  .tool-edit:hover {
+  :global(.props .tool-edit:hover) {
     color: var(--accent-strong);
     border-color: var(--accent);
   }
-  input.inherit::placeholder {
+  :global(.props input.inherit::placeholder) {
     font-style: italic;
     color: var(--text-faint);
   }
-  input.invalid {
+  :global(.props input.invalid) {
     border-color: var(--danger, #c44);
   }
-  .reset-link {
+  :global(.props .reset-link) {
     background: transparent;
     border: 0;
     color: var(--text-muted);
@@ -2068,7 +1723,7 @@
     padding: 0;
     white-space: nowrap;
   }
-  .step-error {
+  :global(.props .step-error) {
     margin: 0.1rem 0 0.2rem;
     padding: 0.15rem 0.4rem;
     background: color-mix(in srgb, var(--danger, #c44) 18%, transparent);
@@ -2078,12 +1733,12 @@
     font-size: 0.72rem;
     width: max-content;
   }
-  .subsection {
+  :global(.props .subsection) {
     margin: 0.3rem 0 0.1rem;
     border-top: 1px solid var(--border);
     padding-top: 0.2rem;
   }
-  .subsection > summary {
+  :global(.props .subsection > summary) {
     cursor: pointer;
     font-size: 0.7rem;
     text-transform: uppercase;
@@ -2096,16 +1751,16 @@
     gap: 0.3rem;
     user-select: none;
   }
-  .subsection > summary::-webkit-details-marker {
+  :global(.props .subsection > summary::-webkit-details-marker) {
     display: none;
   }
-  .subsection > summary::before {
+  :global(.props .subsection > summary::before) {
     content: '▸';
     font-size: 0.6rem;
     transition: transform 0.12s ease;
     color: var(--text-faint);
   }
-  .subsection[open] > summary::before {
+  :global(.props .subsection[open] > summary::before) {
     transform: rotate(90deg);
   }
 </style>

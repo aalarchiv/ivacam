@@ -11,6 +11,8 @@
   import { workspace } from '../state/workspace.svelte';
   import { HeightfieldDriver, computeFootprint } from '../sim/driver';
   import { autoTabTs, buildObjectPolylines, polylineAtT } from '../cam/tabs';
+  import { tessellate } from '../scene3d/tessellate';
+  import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
   import type { SimWarning } from '../api/types';
 
   let host: HTMLDivElement;
@@ -352,22 +354,45 @@
   // Mirror imported geometry into the 3D scene as flat polylines on Z=0.
   // When a /generate response is also available, draw the 3D toolpath on
   // top with depth + color coded by move kind (rapid/cut/plunge/retract).
-  // Splitting these effects keeps OrbitControls responsive during playback —
-  // every frame `project.playhead` ticks at 60 Hz, and rebuildGeometry +
-  // updateStock + updateTabs are far too expensive to run that often. Only
-  // updateTool needs to follow the playhead.
+  // Per-concern effects (audit gk8). The previous mega-effect read
+  // seven project.* fields and rebuilt geometry+tabs+stock+fixtures
+  // on every change — toggling a fixture's color used to rebuild the
+  // toolpath wireframe. Split so each builder only refires when its
+  // own inputs change.
+
+  // Geometry wireframe: imported drawing, layer toggles, generated
+  // toolpath, and the op set (color stamps follow op_id).
   $effect(() => {
     void project.imported;
     void project.visibleLayers;
     void project.generated;
-    void project.stock;
     void project.operations;
+    rebuildGeometry();
+    requestRender();
+  });
+
+  // Tab markers: per-op tab placements + tabMode.
+  $effect(() => {
+    void project.imported;
+    void project.operations;
+    updateTabs();
+    requestRender();
+  });
+
+  // Stock bbox visual: stock config + toggle. Doesn't touch the
+  // toolpath wireframe.
+  $effect(() => {
+    void project.stock;
+    void project.settings.showStockBox;
+    updateStock();
+    requestRender();
+  });
+
+  // Fixture meshes: fixtures themselves + selection / playback flash.
+  // No reason to rebuild the toolpath when the user clicks a fixture.
+  $effect(() => {
     void project.fixtures;
     void project.selectedFixtureId;
-    void project.settings.showStockBox;
-    rebuildGeometry();
-    updateTabs();
-    updateStock();
     updateFixtures();
     requestRender();
   });
@@ -1154,210 +1179,6 @@
     toolMesh.position.set(px, py, pz);
   }
 
-  function disposeMesh(mesh: THREE.Mesh) {
-    mesh.geometry.dispose();
-    const m = mesh.material as THREE.Material | THREE.Material[];
-    if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-    else m.dispose();
-  }
-
-  /// Build the tool-tip mesh for the given spec. Each piece is built
-  /// with its axis along +Z (Z-up world) and the cutting tip at z=0 so
-  /// mesh.position.set(px, py, pz) lands the tip exactly on the
-  /// toolpath point.
-  function buildToolMesh(
-    kind: string,
-    mode: string,
-    diameter: number,
-    tipDiameter: number | undefined,
-    dragoff: number | undefined,
-    colorHex: number,
-    fluteLen?: number,
-    shankDia?: number,
-    holder?: import('../state/project.svelte').HolderShape,
-  ): THREE.Mesh {
-    const radius = diameter * 0.5;
-    const mat = new THREE.MeshBasicMaterial({
-      color: colorHex,
-      transparent: true,
-      opacity: 0.85,
-    });
-    if (mode === 'drag' || kind === 'drag_knife') {
-      const off = dragoff ?? 0;
-      const bladeLen = Math.max(diameter * 4, 4);
-      const bladeT = Math.max(0.4, diameter * 0.4);
-      const geom = new THREE.BoxGeometry(bladeT, off > 0 ? off * 2 : bladeT, bladeLen);
-      geom.translate(0, 0, bladeLen / 2);
-      return new THREE.Mesh(geom, mat);
-    }
-    if (mode === 'laser' || kind === 'laser_beam') {
-      const beamLen = Math.max(8, diameter * 6);
-      const geom = new THREE.CylinderGeometry(0.3, 0.3, beamLen, 12);
-      geom.rotateX(Math.PI / 2); // CylinderGeometry's axis is +Y → put on +Z
-      geom.translate(0, 0, beamLen / 2);
-      return new THREE.Mesh(geom, mat);
-    }
-    if (kind === 'v_bit' || kind === 'engraver' || kind === 'drill') {
-      // Tapered cutter: cone with apex at the cutting tip.
-      const len = Math.max(diameter * 4, 8);
-      const tipR = (tipDiameter ?? 0) * 0.5;
-      const geom = new THREE.CylinderGeometry(radius, Math.max(tipR, 0.05), len, 24);
-      // CylinderGeometry's axis is +Y; the *first* radius is the +Y end and
-      // the second is the -Y end. After rotateX(π/2), +Y → -Z so the small
-      // (tip) end lands at -Z. Then translate so the tip sits at z=0.
-      geom.rotateX(Math.PI / 2);
-      geom.translate(0, 0, len / 2);
-      return new THREE.Mesh(geom, mat);
-    }
-    if (kind === 'ball_nose') {
-      // Cylinder body with a hemisphere at the cutting end.
-      const bodyLen = Math.max(diameter * 5, 8);
-      const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
-      body.rotateX(Math.PI / 2);
-      body.translate(0, 0, radius + bodyLen / 2);
-      const ball = new THREE.SphereGeometry(radius, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-      // Default sphere: top half is +Y. After rotateX(π) it's -Y; we want
-      // -Z, so rotateX(-π/2) puts the dome face at -Z. Translate so the
-      // pole sits at z=0.
-      ball.rotateX(-Math.PI / 2);
-      ball.translate(0, 0, radius);
-      const merged = mergeBufferGeometries([body, ball]);
-      return new THREE.Mesh(merged, mat);
-    }
-    // Endmill / generic: stack flutes + (optional) shank + (optional) holder.
-    return buildEndmillStack(diameter, mat, fluteLen, shankDia, holder);
-  }
-
-  /// Build a stacked tool envelope for endmill-like cutters. When the
-  /// tool entry has flute length / shank / holder fields set, render
-  /// each region as a distinct cylinder/cone segment so the user sees
-  /// the same envelope the holder-collision sweep uses. When everything
-  /// is default, falls back to the legacy single-cylinder body.
-  function buildEndmillStack(
-    diameter: number,
-    mat: THREE.MeshBasicMaterial,
-    fluteLen?: number,
-    shankDia?: number,
-    holder?: import('../state/project.svelte').HolderShape,
-  ): THREE.Mesh {
-    const radius = diameter * 0.5;
-    if (fluteLen === undefined && shankDia === undefined && !holder) {
-      const bodyLen = Math.max(diameter * 6, 8);
-      const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
-      body.rotateX(Math.PI / 2);
-      body.translate(0, 0, bodyLen / 2);
-      return new THREE.Mesh(body, mat);
-    }
-    const pieces: THREE.BufferGeometry[] = [];
-    const shankR = (shankDia ?? diameter) * 0.5;
-    let zCursor = 0;
-    const fLen = Math.max(0, fluteLen ?? Math.max(diameter * 4, 6));
-    if (fLen > 0) {
-      const flutes = new THREE.CylinderGeometry(radius, radius, fLen, 24);
-      flutes.rotateX(Math.PI / 2);
-      flutes.translate(0, 0, zCursor + fLen / 2);
-      pieces.push(flutes);
-      zCursor += fLen;
-    }
-    // Shank: from top of flutes up to the bottom of the holder. When the
-    // holder is undefined, give the shank a sensible default length so
-    // the user can still see "this is the non-cutting part of the tool"
-    // sticking out.
-    const shankLen = holder ? Math.max(diameter * 2, 4) : Math.max(diameter * 4, 6);
-    if (shankR > 0 && shankLen > 0) {
-      const shank = new THREE.CylinderGeometry(shankR, shankR, shankLen, 18);
-      shank.rotateX(Math.PI / 2);
-      shank.translate(0, 0, zCursor + shankLen / 2);
-      pieces.push(shank);
-      zCursor += shankLen;
-    }
-    if (holder) {
-      if (holder.kind === 'cylinder') {
-        const r = holder.diameter_mm * 0.5;
-        const len = holder.length_mm;
-        if (r > 0 && len > 0) {
-          const g = new THREE.CylinderGeometry(r, r, len, 18);
-          g.rotateX(Math.PI / 2);
-          g.translate(0, 0, zCursor + len / 2);
-          pieces.push(g);
-        }
-      } else if (holder.kind === 'cone') {
-        const rb = holder.bottom_diameter_mm * 0.5;
-        const rt = holder.top_diameter_mm * 0.5;
-        const len = holder.length_mm;
-        if (Math.max(rb, rt) > 0 && len > 0) {
-          // CylinderGeometry: first arg is +Y (upper) radius, second arg is
-          // -Y (lower) radius. After rotateX(π/2): +Y → -Z, -Y → +Z. So we
-          // pass (top, bottom) swapped to keep the bottom at z = zCursor.
-          const g = new THREE.CylinderGeometry(rt, rb, len, 18);
-          g.rotateX(Math.PI / 2);
-          g.translate(0, 0, zCursor + len / 2);
-          pieces.push(g);
-        }
-      } else if (holder.kind === 'stepped') {
-        const cylR = holder.cylinder_diameter_mm * 0.5;
-        const cylLen = holder.cylinder_length_mm;
-        const coneTopR = holder.cone_top_diameter_mm * 0.5;
-        const coneLen = holder.cone_length_mm;
-        if (cylR > 0 && cylLen > 0) {
-          const g = new THREE.CylinderGeometry(cylR, cylR, cylLen, 18);
-          g.rotateX(Math.PI / 2);
-          g.translate(0, 0, zCursor + cylLen / 2);
-          pieces.push(g);
-          zCursor += cylLen;
-        }
-        if (Math.max(cylR, coneTopR) > 0 && coneLen > 0) {
-          const g = new THREE.CylinderGeometry(coneTopR, cylR, coneLen, 18);
-          g.rotateX(Math.PI / 2);
-          g.translate(0, 0, zCursor + coneLen / 2);
-          pieces.push(g);
-        }
-      }
-    }
-    const merged = pieces.length === 1 ? pieces[0] : mergeBufferGeometries(pieces);
-    return new THREE.Mesh(merged, mat);
-  }
-
-  /// Tiny helper because three.js's BufferGeometryUtils requires a separate
-  /// import. Manually splice positions/indices for our two-piece tool.
-  function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry {
-    const out = new THREE.BufferGeometry();
-    let posCount = 0;
-    let idxCount = 0;
-    for (const g of geometries) {
-      posCount += g.attributes.position.count;
-      idxCount += g.index ? g.index.count : g.attributes.position.count;
-    }
-    const positions = new Float32Array(posCount * 3);
-    const indices = new Uint32Array(idxCount);
-    let posOffset = 0;
-    let idxOffset = 0;
-    let vertexBase = 0;
-    for (const g of geometries) {
-      const p = g.attributes.position.array as Float32Array;
-      positions.set(p, posOffset * 3);
-      const idx = g.index ? (g.index.array as ArrayLike<number>) : null;
-      const n = g.attributes.position.count;
-      if (idx) {
-        for (let i = 0; i < idx.length; i++) {
-          indices[idxOffset + i] = idx[i] + vertexBase;
-        }
-        idxOffset += idx.length;
-      } else {
-        for (let i = 0; i < n; i++) {
-          indices[idxOffset + i] = i + vertexBase;
-        }
-        idxOffset += n;
-      }
-      vertexBase += n;
-      posOffset += n;
-    }
-    out.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    out.setIndex(new THREE.BufferAttribute(indices, 1));
-    out.computeVertexNormals();
-    return out;
-  }
-
   function rebuildGeometry() {
     if (!geometryGroup || !scene) return;
     geometryGroup.clear();
@@ -1579,47 +1400,6 @@
     }
   }
 
-  function tessellate(seg: {
-    start: { x: number; y: number };
-    end: { x: number; y: number };
-    bulge: number;
-    type: string;
-  }): [number, number][] {
-    if (seg.type === 'POINT') return [[seg.start.x, seg.start.y]];
-    if (Math.abs(seg.bulge) < 1e-9) {
-      return [
-        [seg.start.x, seg.start.y],
-        [seg.end.x, seg.end.y],
-      ];
-    }
-    // Recompute arc center from start/end/bulge (canonical formula).
-    const dx = seg.end.x - seg.start.x;
-    const dy = seg.end.y - seg.start.y;
-    const chord = Math.hypot(dx, dy);
-    if (chord < 1e-9) return [[seg.start.x, seg.start.y]];
-    const sagitta = (seg.bulge * chord) / 2;
-    const r = (chord / 2) ** 2 / (2 * Math.abs(sagitta)) + Math.abs(sagitta) / 2;
-    const mx = (seg.start.x + seg.end.x) / 2;
-    const my = (seg.start.y + seg.end.y) / 2;
-    const ux = -dy / chord;
-    const uy = dx / chord;
-    const h = r - Math.abs(sagitta);
-    const sign = seg.bulge > 0 ? 1 : -1;
-    const cx = mx + ux * h * sign;
-    const cy = my + uy * h * sign;
-    const a0 = Math.atan2(seg.start.y - cy, seg.start.x - cx);
-    const a1 = Math.atan2(seg.end.y - cy, seg.end.x - cx);
-    let sweep = a1 - a0;
-    if (seg.bulge > 0 && sweep < 0) sweep += Math.PI * 2;
-    if (seg.bulge < 0 && sweep > 0) sweep -= Math.PI * 2;
-    const steps = Math.max(8, Math.ceil(Math.abs(sweep) / (Math.PI / 18))); // ≤10° per step
-    const pts: [number, number][] = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = a0 + (sweep * i) / steps;
-      pts.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
-    }
-    return pts;
-  }
 
   function aciColor(c: number): THREE.Color {
     const fixed: Record<number, number> = {

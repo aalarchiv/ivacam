@@ -121,6 +121,15 @@
     const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
     if (isProjectFile) await loadProjectPath(path);
     else await loadFromPath(path);
+    // The per-project workspace state restores the user's last layer-
+    // visibility selection, but reopens are a fresh session — if the
+    // user accidentally hid a layer right before closing they'd open
+    // the app to a blank canvas with no obvious "show it" affordance.
+    // Reset to all-visible on reopen so the geometry is visible
+    // immediately; subsequent toggles still persist within the session.
+    if (project.imported) {
+      project.visibleLayers = new Set(project.imported.layers.map((l) => l.name));
+    }
   }
   function dismissReopen() {
     reopenPrompt = null;
@@ -655,16 +664,6 @@
     </div>
   </div>
 
-  {#if reopenPrompt}
-    <div class="reopen-banner" role="alert">
-      <span class="reopen-text">
-        Reopen <strong>{reopenPrompt.filename}</strong>?
-      </span>
-      <button class="reopen-accept" type="button" onclick={acceptReopen}>Open</button>
-      <button class="reopen-dismiss" type="button" onclick={dismissReopen}>Dismiss</button>
-    </div>
-  {/if}
-
   <FileUpload />
 
   <!-- ============== SPLIT VIEW ================================ -->
@@ -718,7 +717,12 @@
     />
     <aside class="sidebar">
       <div class="layers-host">
-        <LayerList onOpenFileClick={() => openFile()} />
+        <LayerList
+          onOpenFileClick={() => openFile()}
+          reopenPrompt={reopenPrompt}
+          onReopenAccept={acceptReopen}
+          onReopenDismiss={dismissReopen}
+        />
       </div>
       <div class="ops-host">
         <OperationsList />
@@ -828,8 +832,7 @@
     width: 100vw;
   }
   .app > .menubar,
-  .app > .toolbar,
-  .app > .reopen-banner {
+  .app > .toolbar {
     flex: 0 0 auto;
   }
   .app > main.split {
@@ -1049,36 +1052,6 @@
   .pane-toggle button.active {
     background: var(--accent);
     color: white;
-  }
-
-  /* ---------- reopen banner ----------------------------------- */
-  .reopen-banner {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.35rem 0.75rem;
-    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
-    border-bottom: 1px solid var(--border);
-    font-size: 0.85rem;
-    color: var(--text);
-  }
-  .reopen-text {
-    flex: 1;
-  }
-  .reopen-accept,
-  .reopen-dismiss {
-    border: 1px solid var(--border);
-    background: var(--bg-elevated);
-    color: var(--text);
-    padding: 0.2rem 0.6rem;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.82rem;
-  }
-  .reopen-accept {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
   }
 
   /* ---------- split view ------------------------------------- */

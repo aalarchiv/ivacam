@@ -9,8 +9,20 @@
 
   interface Props {
     onOpenFileClick?: () => void;
+    /// Startup reopen affordance — replaces the old top-of-window
+    /// reopen banner. When set, the empty card offers a "Reopen <name>"
+    /// button beside the regular Open file CTA so the no-drawing state
+    /// is the single coherent surface for getting a project loaded.
+    reopenPrompt?: { path: string; filename: string } | null;
+    onReopenAccept?: () => void;
+    onReopenDismiss?: () => void;
   }
-  let { onOpenFileClick }: Props = $props();
+  let {
+    onOpenFileClick,
+    reopenPrompt = null,
+    onReopenAccept,
+    onReopenDismiss,
+  }: Props = $props();
 
   let collapsed = $state(false);
 
@@ -103,6 +115,21 @@
             <button class="primary-cta" type="button" onclick={onOpenFileClick}>
               + Open file
             </button>
+          {/if}
+          {#if reopenPrompt}
+            <div class="reopen">
+              <span class="reopen-text">
+                Reopen <strong>{reopenPrompt.filename}</strong>?
+              </span>
+              <div class="reopen-actions">
+                <button class="reopen-accept" type="button" onclick={() => onReopenAccept?.()}>
+                  Reopen
+                </button>
+                <button class="reopen-dismiss" type="button" onclick={() => onReopenDismiss?.()}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
           {/if}
         </div>
       {/if}
@@ -255,5 +282,54 @@
   }
   .primary-cta:hover {
     background: var(--accent-strong);
+  }
+  /* Startup reopen-last-project affordance. Lives below the Open file
+     CTA so the no-drawing state surfaces both ways to get a project
+     loaded in one place. */
+  .reopen {
+    margin-top: 0.45rem;
+    padding-top: 0.45rem;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: left;
+  }
+  .reopen-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reopen-text strong {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .reopen-actions {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .reopen-accept,
+  .reopen-dismiss {
+    flex: 1;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.74rem;
+  }
+  .reopen-accept {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .reopen-accept:hover {
+    background: var(--accent-strong);
+  }
+  .reopen-dismiss:hover {
+    background: var(--bg-input);
   }
 </style>

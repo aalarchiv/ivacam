@@ -225,8 +225,16 @@
     }
   }
 
+  /// Sim status goes STALE the moment the user edits anything that
+  /// would change gcode (project.dirty flips true on every op / tool /
+  /// stock / text mutation, and clears on the next successful Generate).
+  /// The chip reflects this so the user knows the previous sim verdict
+  /// no longer matches what's on the canvas.
+  let simStale = $derived(project.simDiagnostics != null && project.dirty);
+
   function chipClass(): string {
     if (project.simDiagnostics == null) return 'sim-chip idle';
+    if (simStale) return 'sim-chip stale';
     if (criticalCount > 0) return 'sim-chip critical';
     if (warnings.length > 0) return 'sim-chip warning';
     return 'sim-chip clean';
@@ -234,6 +242,7 @@
 
   function chipLabel(): string {
     if (project.simDiagnostics == null) return 'Sim: not run yet — Generate first';
+    if (simStale) return 'Sim: stale — re-Generate';
     if (isClean) return 'Sim clean';
     if (criticalCount > 0) {
       return `Sim: ${warnings.length} warning${warnings.length === 1 ? '' : 's'} (${criticalCount} critical)`;
@@ -243,6 +252,7 @@
 
   function chipGlyph(): string {
     if (project.simDiagnostics == null) return '🛡';
+    if (simStale) return '↻';
     if (isClean) return '✓';
     if (criticalCount > 0) return '⛔';
     return '⚠';
@@ -500,6 +510,15 @@
     border-color: var(--border);
     font-style: italic;
     cursor: help;
+  }
+  .sim-chip.stale {
+    /* Neutral / dim variant — signals "the previous sim verdict no
+       longer reflects the current project". Same shape as the other
+       chips so it doesn't grab the eye like a warning would. */
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border-color: color-mix(in srgb, var(--text-muted) 50%, transparent);
+    font-style: italic;
   }
   .sim-chip.clean {
     background: var(--sim-clean-bg);

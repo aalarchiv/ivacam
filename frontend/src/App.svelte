@@ -690,6 +690,20 @@
     <span class="tb-sep"></span>
     <GenerateBar />
     <span class="tb-flex"></span>
+    {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
+      <label
+        class="region-toggle"
+        title="Show / hide the translucent fill that marks each pocket operation's machined region."
+      >
+        <input
+          type="checkbox"
+          checked={project.regionsVisible}
+          onchange={(e) =>
+            (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
+        />
+        <span>Regions</span>
+      </label>
+    {/if}
     <div class="pane-toggle" role="tablist" aria-label="Viewport mode">
       <button
         type="button"
@@ -798,22 +812,6 @@
       <div class="ops-host">
         <OperationsList />
       </div>
-      {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
-        <div class="stock-extras-host">
-          <label
-            class="region-toggle"
-            title="Show / hide the translucent fill that marks each pocket operation's machined region."
-          >
-            <input
-              type="checkbox"
-              checked={project.regionsVisible}
-              onchange={(e) =>
-                (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Show machined regions</span>
-          </label>
-        </div>
-      {/if}
     </aside>
   </main>
 
@@ -1165,12 +1163,10 @@
   }
   .sidebar {
     display: grid;
-    /* Stock (auto) · Layers (auto) · Text (auto) · Operations (1fr) ·
-       stock-extras (auto). The stock panel sits at the top — it's the
-       always-present workpiece every layer/op attaches to. The extras
-       row at the bottom carries the region toggle + 3D preview mode
-       pills (visible only when a Generate has produced regions). */
-    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    /* Stock (auto) · Layers (auto) · Text (auto) · Operations (1fr).
+       The stock panel sits at the top — it's the always-present
+       workpiece every layer/op attaches to. */
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     min-height: 0;
     min-width: 0;
     overflow: hidden;
@@ -1178,8 +1174,7 @@
   .stock-host,
   .layers-host,
   .text-list-host,
-  .ops-host,
-  .stock-extras-host {
+  .ops-host {
     min-height: 0;
     min-width: 0;
     /* overflow: visible so per-panel dropdowns (Add+ etc.) escape the
@@ -1192,20 +1187,12 @@
        scroll, so re-clip here. */
     overflow: hidden;
   }
-  .stock-host,
-  .stock-extras-host {
+  .stock-host {
     background: var(--bg-panel);
     padding: 0.4rem 0.6rem 0.5rem;
-  }
-  .stock-host {
     max-height: 50vh;
     overflow: auto;
     border-bottom: 1px solid var(--border);
-  }
-  .stock-extras-host {
-    max-height: 30vh;
-    overflow: auto;
-    border-top: 1px solid var(--border);
   }
   /* Stock panel header mirrors LayerList's .group-head so all three
      sidebar panels (Stock / Layers / Operations) share one visual
@@ -1255,13 +1242,27 @@
     border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   }
   .region-toggle {
-    display: flex;
+    /* Lives in the toolbar next to the 2D/3D switch (visible only
+       when a Generate has produced regions). Compact label so it
+       reads as a peer of the pane-toggle pills. */
+    display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    margin-top: 0.4rem;
-    font-size: 0.72rem;
+    gap: 0.3rem;
+    font-size: 0.74rem;
     color: var(--text-muted);
     cursor: pointer;
+    padding: 0.18rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-elevated);
+    user-select: none;
+  }
+  .region-toggle:hover {
+    color: var(--text-strong);
+    border-color: var(--accent);
+  }
+  .region-toggle input[type='checkbox'] {
+    accent-color: var(--accent);
   }
   footer {
     /* Fixed-height single-line status bar — never grows. Long content

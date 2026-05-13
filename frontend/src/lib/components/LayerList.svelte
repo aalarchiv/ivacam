@@ -249,6 +249,13 @@
   .add-menu {
     position: relative;
   }
+  .add-menu.open {
+    /* When open, lift the entire `.add-menu` into its own stacking
+       context so the absolutely-positioned dropdown can paint above
+       later sidebar rows (Text panel, Operations, etc.) instead of
+       being painted under by their DOM-order. */
+    z-index: 100;
+  }
   .add-btn {
     background: var(--bg-elevated);
     border: 1px solid var(--border);

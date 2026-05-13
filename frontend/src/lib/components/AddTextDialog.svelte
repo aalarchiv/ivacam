@@ -19,6 +19,7 @@
   import type { Segment, RenderTextRequest } from '../api/types';
   import type { TextFontSource, TextLayer } from '../state/project.svelte';
   import { STYLE_TABLE, engravingMismatch, type TextStyle } from './text_style';
+  import { computeFootprint } from '../sim/driver';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -100,15 +101,14 @@
   });
 
   function defaultPosition(): { x: number; y: number } {
-    const stock = project.stock;
-    if (project.imported && project.imported.bbox) {
-      const b = project.imported.bbox;
-      return { x: (b.min_x + b.max_x) / 2, y: (b.min_y + b.max_y) / 2 };
-    }
-    if (stock.mode === 'manual') {
-      return { x: stock.customX / 2, y: stock.customY / 2 };
-    }
-    return { x: 0, y: 0 };
+    // Center the new text on the effective stock footprint — same
+    // computation Scene3D / sim use, so the preview lands inside the
+    // visible workpiece regardless of whether a drawing is loaded.
+    const fp = computeFootprint(project.imported, project.stock, project.machine.workArea);
+    return {
+      x: (fp.minX + fp.maxX) / 2,
+      y: (fp.minY + fp.maxY) / 2,
+    };
   }
 
   function pickDefaultTool(s: TextStyle): number {

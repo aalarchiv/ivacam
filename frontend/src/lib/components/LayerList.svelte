@@ -9,6 +9,10 @@
 
   interface Props {
     onOpenFileClick?: () => void;
+    /// Add Text entry point — phase B of the stock-first rework. When
+    /// provided, the panel header sprouts an Add+ dropdown that offers
+    /// both creation paths in one place.
+    onAddTextClick?: () => void;
     /// Startup reopen affordance — replaces the old top-of-window
     /// reopen banner. When set, the empty card offers a "Reopen <name>"
     /// button beside the regular Open file CTA so the no-drawing state
@@ -17,9 +21,39 @@
     onReopenAccept?: () => void;
     onReopenDismiss?: () => void;
   }
-  let { onOpenFileClick, reopenPrompt = null, onReopenAccept, onReopenDismiss }: Props = $props();
+  let {
+    onOpenFileClick,
+    onAddTextClick,
+    reopenPrompt = null,
+    onReopenAccept,
+    onReopenDismiss,
+  }: Props = $props();
 
   let collapsed = $state(false);
+  /// Add+ dropdown visibility. Closes on any item click and on the
+  /// next window click outside the panel (svelte:window onclick handler
+  /// below).
+  let addMenuOpen = $state(false);
+  function toggleAddMenu() {
+    addMenuOpen = !addMenuOpen;
+  }
+  function closeAddMenu() {
+    addMenuOpen = false;
+  }
+  function clickAddFile() {
+    closeAddMenu();
+    onOpenFileClick?.();
+  }
+  function clickAddText() {
+    closeAddMenu();
+    onAddTextClick?.();
+  }
+  function onWindowClick(e: MouseEvent) {
+    if (!addMenuOpen) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('.add-menu')) return;
+    closeAddMenu();
+  }
 
   const ACI: Record<number, string> = {
     1: '#ff0000',
@@ -49,6 +83,8 @@
     }
   }
 </script>
+
+<svelte:window onclick={onWindowClick} />
 
 <aside class="layers">
   <div class="group-head">
@@ -81,6 +117,47 @@
     {:else}
       <span class="group-name">Layers</span>
       <span class="group-count">{usableLayers.length}</span>
+    {/if}
+    {#if onOpenFileClick || onAddTextClick}
+      <div class="add-menu" class:open={addMenuOpen}>
+        <button
+          type="button"
+          class="add-btn"
+          onclick={toggleAddMenu}
+          aria-haspopup="menu"
+          aria-expanded={addMenuOpen}
+          title="Add a layer — open a drawing or add text geometry"
+        >
+          + Add
+        </button>
+        {#if addMenuOpen}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="add-dropdown" role="menu" tabindex="-1" onmouseleave={closeAddMenu}>
+            {#if onOpenFileClick}
+              <button
+                type="button"
+                role="menuitem"
+                class="add-item"
+                onclick={clickAddFile}
+                title="Open a DXF or SVG file"
+              >
+                <span class="label">Open drawing file…</span>
+              </button>
+            {/if}
+            {#if onAddTextClick}
+              <button
+                type="button"
+                role="menuitem"
+                class="add-item"
+                onclick={clickAddText}
+                title="Add editable text geometry"
+              >
+                <span class="label">Add text…</span>
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
   </div>
   {#if !collapsed}
@@ -145,10 +222,12 @@
     min-height: 0;
     overflow: hidden;
   }
-  /* Header mirrors OperationsList's group-head for visual parity. */
+  /* Header mirrors OperationsList's group-head for visual parity.
+     Five-column layout: caret · all-visible toggle · filename / label ·
+     count / file-stats · Add+ menu. */
   .group-head {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
     gap: 0.3rem;
     align-items: center;
     padding: 0.2rem 0.35rem;
@@ -156,6 +235,66 @@
     border-radius: 3px;
     background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
     font-size: 0.78rem;
+  }
+  .add-menu {
+    position: relative;
+  }
+  .add-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .add-btn:hover {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .add-menu.open .add-btn {
+    background: var(--bg-elevated);
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .add-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 200px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    padding: 0.2rem;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    margin-top: 4px;
+  }
+  .add-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+  }
+  .add-item:hover {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .add-item .label {
+    white-space: nowrap;
   }
   .caret-btn {
     background: transparent;

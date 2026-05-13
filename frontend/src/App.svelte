@@ -747,6 +747,7 @@
       <div class="layers-host">
         <LayerList
           onOpenFileClick={() => openFile()}
+          onAddTextClick={() => (addTextOpen = true)}
           {reopenPrompt}
           onReopenAccept={acceptReopen}
           onReopenDismiss={dismissReopen}

@@ -20,6 +20,32 @@ function isAbsolutePath(p: string): boolean {
   return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
 }
 
+/// Memoised bundled-font fetch — the DejaVu Sans bytes used as the
+/// default font for imported DXF TEXT/MTEXT entities. Resolved once
+/// per session and shared across every TextLayer created from
+/// `imported.text_entities`. Returns base64 because that's the form
+/// TextFontSource carries.
+let _defaultFontBytesB64: Promise<string | null> | null = null;
+function loadDefaultFontBytesB64(): Promise<string | null> {
+  if (_defaultFontBytesB64) return _defaultFontBytesB64;
+  _defaultFontBytesB64 = (async () => {
+    try {
+      const res = await fetch('/fonts/DejaVuSans.ttf');
+      if (!res.ok) return null;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < buf.length; i += chunk) {
+        binary += String.fromCharCode(...buf.subarray(i, i + chunk));
+      }
+      return btoa(binary);
+    } catch {
+      return null;
+    }
+  })();
+  return _defaultFontBytesB64;
+}
+
 import {
   addFixtureCommand,
   addOperationCommand,
@@ -915,6 +941,40 @@ class ProjectState {
   updateTextLayer(id: number, patch: Partial<TextLayer>) {
     if (!this.textLayers.some((t) => t.id === id)) return;
     this.history.exec(updateTextLayerCommand(id, patch), this.target());
+  }
+
+  /// Convert any `imported.text_entities` from the most recent setImported
+  /// call into editable `TextLayer` entries. Each entity gets the bundled
+  /// DejaVu Sans by default so the user sees the text immediately; they
+  /// can swap fonts later from the sidebar. No-op when nothing was
+  /// imported or no TEXT/MTEXT entities were present.
+  async convertImportedTextEntities(): Promise<void> {
+    const entities = this.imported?.text_entities;
+    if (!entities || entities.length === 0) return;
+    const bytes_b64 = await loadDefaultFontBytesB64();
+    if (!bytes_b64) return;
+    this.history.beginTransaction('Import text entities');
+    try {
+      for (const e of entities) {
+        const isMtext = e.kind === 'MTEXT';
+        this.addTextLayer({
+          kind: isMtext ? 'MTEXT' : 'TEXT',
+          text: e.text,
+          fontSource: { kind: 'bundled', path: '/fonts/DejaVuSans.ttf', bytes_b64 },
+          sizeMm: e.size_mm,
+          origin: { x: e.origin[0], y: e.origin[1] },
+          rotationDeg: e.rotation_deg ?? 0,
+          letterSpacingMm: 0,
+          lineSpacingMm: 0,
+          alignment: 'left',
+          singleLine: false,
+        });
+      }
+      this.history.commitTransaction();
+    } catch (err) {
+      this.history.cancelTransaction(this.target());
+      throw err;
+    }
   }
 
   removeTextLayer(id: number) {

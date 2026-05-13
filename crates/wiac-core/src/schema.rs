@@ -73,6 +73,8 @@ pub fn components_schemas() -> Value {
     insert::<Layer>(&mut schemas, "Layer");
     insert::<Segment>(&mut schemas, "Segment");
     insert::<ImportOutput>(&mut schemas, "ImportResponse");
+    insert::<crate::input::ImportedTextEntity>(&mut schemas, "ImportedTextEntity");
+    insert::<crate::input::ImportedTextKind>(&mut schemas, "ImportedTextKind");
     insert::<VcObject>(&mut schemas, "VcObject");
     insert::<PolylineOffset>(&mut schemas, "PolylineOffset");
     insert::<ToolpathSegment>(&mut schemas, "ToolpathSegment");

@@ -61,6 +61,7 @@ pub fn import_svg_bytes(
         warnings: Vec::new(),
         objects,
         object_meta,
+        text_entities: Vec::new(),
     })
 }
 

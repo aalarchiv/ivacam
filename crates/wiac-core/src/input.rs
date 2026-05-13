@@ -68,6 +68,41 @@ pub struct ImportOutput {
     /// 1-based id — `object_meta[id - 1]` is the entry for object `id`.
     #[serde(default)]
     pub object_meta: Vec<ImportedObject>,
+    /// DXF TEXT / MTEXT entities — emitted as editable metadata instead
+    /// of being rendered to opaque polylines at import time. The frontend
+    /// converts each into a `TextLayer` so the user can edit the content,
+    /// font, size, rotation, etc., and the pipeline re-renders them at
+    /// Generate. Empty for formats that don't carry text entities (SVG).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_entities: Vec<ImportedTextEntity>,
+}
+
+/// Metadata for a TEXT / MTEXT entity captured during import. Carries
+/// just enough for the frontend to construct a `TextLayer` — the
+/// editable inputs the pipeline pre-pass uses to render glyphs.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ImportedTextEntity {
+    pub kind: ImportedTextKind,
+    /// Original DXF layer name — preserved so the user knows where the
+    /// text came from (the synthetic `__text_<id>` name takes over at
+    /// pipeline time).
+    pub source_layer: String,
+    /// Full string. For Mtext, lines are `\n`-separated.
+    pub text: String,
+    pub size_mm: f64,
+    /// Anchor in stock XY (mm).
+    pub origin: (f64, f64),
+    /// CCW degrees around `origin`.
+    #[serde(default)]
+    pub rotation_deg: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ImportedTextKind {
+    #[serde(rename = "TEXT")]
+    Text,
+    #[serde(rename = "MTEXT")]
+    Mtext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

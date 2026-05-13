@@ -386,6 +386,8 @@ export interface components {
              */
             objects: number[];
             segments: components["schemas"]["Segment"][];
+            /** @description DXF TEXT / MTEXT entities — emitted as editable metadata instead of being rendered to opaque polylines at import time. The frontend converts each into a `TextLayer` so the user can edit the content, font, size, rotation, etc., and the pipeline re-renders them at Generate. Empty for formats that don't carry text entities (SVG). */
+            text_entities?: components["schemas"]["ImportedTextEntity"][];
             /** Format: double */
             unit_scale: number;
             warnings: string[];
@@ -399,6 +401,29 @@ export interface components {
             id: number;
             layer: string;
         };
+        /** @description Metadata for a TEXT / MTEXT entity captured during import. Carries just enough for the frontend to construct a `TextLayer` — the editable inputs the pipeline pre-pass uses to render glyphs. */
+        ImportedTextEntity: {
+            kind: components["schemas"]["ImportedTextKind"];
+            /** @description Anchor in stock XY (mm). */
+            origin: [
+                number,
+                number
+            ];
+            /**
+             * Format: double
+             * @description CCW degrees around `origin`.
+             * @default 0
+             */
+            rotation_deg: number;
+            /** Format: double */
+            size_mm: number;
+            /** @description Original DXF layer name — preserved so the user knows where the text came from (the synthetic `__text_<id>` name takes over at pipeline time). */
+            source_layer: string;
+            /** @description Full string. For Mtext, lines are `\n`-separated. */
+            text: string;
+        };
+        /** @enum {string} */
+        ImportedTextKind: "TEXT" | "MTEXT";
         Layer: {
             /** Format: int32 */
             color: number;

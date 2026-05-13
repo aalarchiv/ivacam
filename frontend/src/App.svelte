@@ -90,7 +90,12 @@
   $effect(() => {
     const cur = $locale;
     if ((cur === 'en' || cur === 'de') && cur !== project.settings.language) {
-      project.updateSettings({ language: cur });
+      // Defer the settings write off the effect flush so the localStorage
+      // round-trip + dependent $state mutation don't run inside the
+      // reactivity scheduler. Bad practice to mutate $state synchronously
+      // from inside another effect — Svelte 5 silently aborts the
+      // scheduler on the next throw if it happens during a flush.
+      queueMicrotask(() => project.updateSettings({ language: cur }));
     }
   });
 
@@ -113,6 +118,10 @@
       void wireSourceWatch();
     }
     void loadWorkspaceAndMaybeReopen();
+    return () => {
+      unlistenSourceWatch?.();
+      unlistenSourceWatch = null;
+    };
   });
 
   /// Pull persisted workspace state at startup. After load completes,
@@ -199,9 +208,14 @@
 
   /// Subscribe to backend `source-file-changed` events emitted by the
   /// project watcher.
+  /// Stored so onMount's cleanup can disable the watch on HMR /
+  /// component-tree teardown. Without this the listener leaks every
+  /// time App.svelte is reloaded during dev, which compounds into
+  /// "why does the same file fire ten reload events" mysteries.
+  let unlistenSourceWatch: (() => void) | null = null;
   async function wireSourceWatch() {
     const { onSourceFileChanged } = await import('./lib/api/tauri');
-    await onSourceFileChanged(async ({ path }) => {
+    unlistenSourceWatch = await onSourceFileChanged(async ({ path }) => {
       if (path !== project.lastImportPath) return;
       if (project.settings.autoReloadSources) {
         await project.reimportFromPath(path);

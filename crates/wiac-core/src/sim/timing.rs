@@ -282,11 +282,13 @@ fn trapezoidal_time(s: f64, v0: f64, v1: f64, vf: f64, a: f64) -> f64 {
 /// recover the F value modal at each segment. Segments produced by the
 /// arc tessellator share the F of the originating G2/G3 line.
 fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
-    use std::collections::HashMap;
-    let mut feed_by_line: HashMap<u32, f64> = HashMap::new();
+    // gcode lines are 1..n contiguous, so a dense Vec<f64> indexed by
+    // line_no is one allocation and O(1) lookup — no hashing cost.
+    // Index 0 stays at 0.0 since gcode lines are 1-based.
+    let line_count = gcode.lines().count();
+    let mut feed_by_line: Vec<f64> = vec![0.0; line_count + 1];
     let mut current: f64 = 0.0;
     for (idx0, raw) in gcode.lines().enumerate() {
-        let line_no = (idx0 + 1) as u32;
         let line = strip_comment(raw);
         for tok in line.split_whitespace() {
             if let Some(rest) = tok.strip_prefix(['F', 'f']) {
@@ -297,11 +299,14 @@ fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
                 }
             }
         }
-        feed_by_line.insert(line_no, current);
+        feed_by_line[idx0 + 1] = current;
     }
     segments
         .iter()
-        .map(|s| feed_by_line.get(&s.gcode_line).copied().unwrap_or(0.0))
+        .map(|s| {
+            let i = s.gcode_line as usize;
+            if i < feed_by_line.len() { feed_by_line[i] } else { 0.0 }
+        })
         .collect()
 }
 

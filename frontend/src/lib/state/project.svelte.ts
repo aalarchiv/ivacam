@@ -538,6 +538,59 @@ class ProjectState {
     this.selectedFixtureId = id;
   }
 
+  /// Merge an additional imported file into the current project. Unlike
+  /// `setImported` (which replaces everything), this preserves existing
+  /// segments / layers / objects so the user can build a workspace from
+  /// multiple drawings. Object ids are renumbered to follow existing
+  /// ones; layers with matching names merge their segment counts;
+  /// bbox is unioned. Layer visibility opens for newly-arrived layer
+  /// names so the user sees what they just added.
+  addImported(r: ImportResponse, sourcePath?: string | null) {
+    if (!this.imported) {
+      this.setImported(r, sourcePath);
+      return;
+    }
+    const cur = this.imported;
+    // Renumber new object ids to follow the existing pool. Zero stays
+    // zero (means "didn't chain into an object").
+    const curMaxId = Math.max(
+      0,
+      ...(cur.objects ?? []),
+      ...((cur.object_meta ?? []).map((m) => m.id)),
+    );
+    const newObjects = (r.objects ?? []).map((o) => (o === 0 ? 0 : o + curMaxId));
+    const newObjectMeta = (r.object_meta ?? []).map((m) => ({ ...m, id: m.id + curMaxId }));
+    // Merge layers — same-name layers add their counts; new names append.
+    const mergedLayers = cur.layers.map((l) => ({ ...l }));
+    for (const l of r.layers) {
+      const existing = mergedLayers.find((ml) => ml.name === l.name);
+      if (existing) existing.segment_count += l.segment_count;
+      else mergedLayers.push({ ...l });
+    }
+    const bbox = {
+      min_x: Math.min(cur.bbox.min_x, r.bbox.min_x),
+      min_y: Math.min(cur.bbox.min_y, r.bbox.min_y),
+      max_x: Math.max(cur.bbox.max_x, r.bbox.max_x),
+      max_y: Math.max(cur.bbox.max_y, r.bbox.max_y),
+    };
+    this.imported = {
+      ...cur,
+      segments: [...cur.segments, ...r.segments],
+      layers: mergedLayers,
+      bbox,
+      objects: [...(cur.objects ?? []), ...newObjects],
+      object_meta: [...(cur.object_meta ?? []), ...newObjectMeta],
+      text_entities: [...(cur.text_entities ?? []), ...(r.text_entities ?? [])],
+    };
+    // Make every newly-arrived layer visible.
+    const nextVis = new Set(this.visibleLayers);
+    for (const l of r.layers) nextVis.add(l.name);
+    this.visibleLayers = nextVis;
+    if (sourcePath !== undefined) this.lastImportPath = sourcePath;
+    this.dirty = true;
+    void this.refreshSourceWatch();
+  }
+
   setImported(r: ImportResponse, sourcePath?: string | null) {
     this.imported = r;
     this.generated = null;
@@ -1014,7 +1067,8 @@ class ProjectState {
   /// can swap fonts later from the sidebar. No-op when nothing was
   /// imported or no TEXT/MTEXT entities were present.
   async convertImportedTextEntities(): Promise<void> {
-    const entities = this.imported?.text_entities;
+    if (!this.imported) return;
+    const entities = this.imported.text_entities;
     if (!entities || entities.length === 0) return;
     const bytes_b64 = await loadDefaultFontBytesB64();
     if (!bytes_b64) return;
@@ -1040,6 +1094,9 @@ class ProjectState {
       this.history.cancelTransaction(this.target());
       throw err;
     }
+    // Consume the queue so subsequent addImported() calls don't try
+    // to convert the same entities again into duplicate TextLayers.
+    this.imported = { ...this.imported, text_entities: [] };
   }
 
   removeTextLayer(id: number) {

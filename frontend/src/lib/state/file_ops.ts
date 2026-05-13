@@ -124,7 +124,8 @@ export async function loadFromPath(path: string) {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const result = await invoke<ImportResponse>('import_path', { path });
-    project.setImported(result, path);
+    // ADD (not REPLACE) — drawings stack onto the current workspace.
+    project.addImported(result, path);
     await project.convertImportedTextEntities();
     const filename = path.split(/[\\/]/).pop() ?? path;
     await pushRecent({ path, filename, lastOpened: new Date().toISOString() });
@@ -170,7 +171,8 @@ export async function loadFile(file: File) {
   project.error = null;
   try {
     const result = await client.importFile(file);
-    project.setImported(result);
+    // ADD (not REPLACE) — drawings stack onto the current workspace.
+    project.addImported(result);
     await project.convertImportedTextEntities();
   } catch (e) {
     reportError(e);

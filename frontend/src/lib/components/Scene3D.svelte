@@ -1434,7 +1434,6 @@
     }
   }
 
-
   function aciColor(c: number): THREE.Color {
     const fixed: Record<number, number> = {
       1: 0xff0000,

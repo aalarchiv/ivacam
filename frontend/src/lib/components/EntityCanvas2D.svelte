@@ -314,10 +314,7 @@
     if (boxSelect) {
       const dx = cx - boxSelect.startX;
       const dy = cy - boxSelect.startY;
-      if (
-        !boxSelect.armed ||
-        Math.hypot(dx, dy) >= BOX_DRAG_THRESHOLD
-      ) {
+      if (!boxSelect.armed || Math.hypot(dx, dy) >= BOX_DRAG_THRESHOLD) {
         boxSelect = { ...boxSelect, curX: cx, curY: cy, armed: false };
         canvas.style.cursor = 'crosshair';
         return;

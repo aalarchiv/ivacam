@@ -5,9 +5,14 @@
   // and active line. Arc-length interpretation keeps cutter speed
   // visually consistent across short connectors and long edges.
   //
-  // Renders sim-warning markers along the timeline at the segment
-  // positions where they fired. Critical = red, warning = yellow.
-  // Click a marker to scrub the playhead onto it.
+  // Renders two overlays on the timeline:
+  //   * Op-chapter TICKS — vertical bars at the first segment of each
+  //     `; OP N` chapter. Clicking a tick (or the ⏮/⏭ buttons flanking
+  //     play) jumps the playhead onto that op so the gcode + scene
+  //     follow. Ticks live here (not just in GcodePanel) so they remain
+  //     usable when the gcode panel is collapsed.
+  //   * Sim-warning markers at the segment positions where they fired.
+  //     Critical = red, warning = yellow. Click to scrub onto it.
 
   import {
     project,
@@ -16,6 +21,11 @@
     simWarningSegmentIdx,
     simWarningSummary,
   } from '../state/project.svelte';
+  import {
+    parseGcodeChapters,
+    firstSegmentInRange,
+    type GcodeChapter,
+  } from '../state/gcode_chapters';
   import type { SimWarning } from '../api/types';
 
   let speed = $state(1.0);
@@ -77,11 +87,108 @@
   }
 
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);
+
+  // Op chapters — driven by the same `; OP N` markers GcodePanel reads.
+  // Each chapter that produces at least one motion segment becomes a
+  // tick on the timeline and a stop on the prev/next nav.
+  interface ChapterTick {
+    chapter: GcodeChapter;
+    segIdx: number;
+    fraction: number;
+  }
+  const gcodeLines = $derived(project.generated?.gcode.split('\n') ?? []);
+  const gcodeIdx = $derived(project.generated?.gcode_index ?? null);
+  const chapters = $derived(parseGcodeChapters(gcodeLines, project.operations));
+
+  const chapterTicks = $derived.by<ChapterTick[]>(() => {
+    if (!gcodeIdx) return [];
+    const out: ChapterTick[] = [];
+    for (const ch of chapters) {
+      if (ch.opId === 0) continue; // skip program header
+      const segIdx = firstSegmentInRange(gcodeIdx.lines_to_segment, ch.startLine, ch.endLine);
+      if (segIdx == null) continue;
+      const f = segIdxToFraction(segIdx);
+      if (f == null) continue;
+      out.push({ chapter: ch, segIdx, fraction: f });
+    }
+    return out;
+  });
+
+  /// Index (into chapterTicks) of the chapter the playhead currently sits in.
+  /// Returns -1 when the playhead is BEFORE the first op chapter.
+  const activeTickIdx = $derived.by<number>(() => {
+    if (chapterTicks.length === 0) return -1;
+    const h = project.playhead;
+    let result = -1;
+    for (let i = 0; i < chapterTicks.length; i++) {
+      if (chapterTicks[i].fraction <= h + 1e-6) result = i;
+      else break;
+    }
+    return result;
+  });
+
+  function jumpToTick(t: ChapterTick) {
+    project.playhead = t.fraction;
+    playing = false;
+  }
+
+  function jumpPrevOp() {
+    if (chapterTicks.length === 0) return;
+    // If we're past the first tick by more than a hair, snap to the
+    // start of the CURRENT chapter (common DAW prev-track behavior).
+    const cur = activeTickIdx;
+    if (cur >= 0) {
+      const here = chapterTicks[cur].fraction;
+      if (project.playhead - here > 0.005) {
+        jumpToTick(chapterTicks[cur]);
+        return;
+      }
+      if (cur > 0) {
+        jumpToTick(chapterTicks[cur - 1]);
+        return;
+      }
+    }
+    jumpToTick(chapterTicks[0]);
+  }
+  function jumpNextOp() {
+    if (chapterTicks.length === 0) return;
+    const cur = activeTickIdx;
+    const next = cur + 1;
+    if (next < chapterTicks.length) jumpToTick(chapterTicks[next]);
+  }
+
+  const hasChapters = $derived(chapterTicks.length > 0);
+  const prevOpLabel = $derived.by<string>(() => {
+    if (!hasChapters) return 'Previous op';
+    const cur = activeTickIdx;
+    const target =
+      cur > 0 && project.playhead - chapterTicks[cur].fraction <= 0.005
+        ? chapterTicks[cur - 1]
+        : (chapterTicks[Math.max(0, cur)] ?? chapterTicks[0]);
+    return `Previous op (${target.chapter.name})`;
+  });
+  const nextOpLabel = $derived.by<string>(() => {
+    if (!hasChapters) return 'Next op';
+    const cur = activeTickIdx;
+    const target = chapterTicks[cur + 1];
+    return target ? `Next op (${target.chapter.name})` : 'Next op';
+  });
 </script>
 
 {#if project.generated && project.generated.toolpath.length > 0}
   <div class="bar">
     <button
+      type="button"
+      class="op-nav"
+      onclick={jumpPrevOp}
+      disabled={!hasChapters}
+      aria-label={prevOpLabel}
+      title={prevOpLabel}
+    >
+      ⏮
+    </button>
+    <button
+      class="play"
       onclick={togglePlay}
       disabled={!project.generated}
       aria-label={playing ? 'Pause' : 'Play'}
@@ -89,8 +196,34 @@
     >
       {playing ? '❚❚' : '▶'}
     </button>
+    <button
+      type="button"
+      class="op-nav"
+      onclick={jumpNextOp}
+      disabled={!hasChapters || activeTickIdx + 1 >= chapterTicks.length}
+      aria-label={nextOpLabel}
+      title={nextOpLabel}
+    >
+      ⏭
+    </button>
     <div class="track">
       <input type="range" min="0" max="1" step="0.001" value={project.playhead} oninput={onScrub} />
+      {#if chapterTicks.length > 0}
+        <div class="chapter-ticks" aria-hidden="true">
+          {#each chapterTicks as t, i (i)}
+            <button
+              type="button"
+              class="chapter-tick"
+              class:disabled={t.chapter.disabled}
+              class:active={activeTickIdx === i}
+              style:left={`${(t.fraction * 100).toFixed(2)}%`}
+              title={`${t.chapter.name}${t.chapter.disabled ? ' (silenced)' : ''}`}
+              aria-label={`Jump to ${t.chapter.name}`}
+              onclick={() => jumpToTick(t)}
+            ></button>
+          {/each}
+        </div>
+      {/if}
       {#if warnings.length > 0}
         <div class="markers" aria-hidden="true">
           {#each warnings as w (w)}
@@ -149,7 +282,7 @@
     color: var(--text-muted);
     font-size: 0.74rem;
   }
-  button {
+  .play {
     background: var(--accent);
     color: white;
     border: 0;
@@ -159,11 +292,62 @@
     cursor: pointer;
     min-width: 2.2rem;
   }
+  .op-nav {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    line-height: 1;
+    min-width: 2rem;
+  }
+  .op-nav:hover:not(:disabled) {
+    background: var(--bg-input);
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .op-nav:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
   .track {
     position: relative;
     flex: 1;
     display: flex;
     align-items: center;
+  }
+  .chapter-ticks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .chapter-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: color-mix(in srgb, var(--accent) 70%, transparent);
+    cursor: pointer;
+    pointer-events: auto;
+    transform: translateX(-50%);
+    z-index: 2;
+    min-width: 0;
+  }
+  .chapter-tick:hover {
+    width: 3px;
+    background: var(--accent);
+  }
+  .chapter-tick.active {
+    background: var(--accent-strong);
+    box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  .chapter-tick.disabled {
+    background: color-mix(in srgb, var(--text-muted) 60%, transparent);
   }
   input[type='range'] {
     flex: 1;

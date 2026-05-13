@@ -7,103 +7,27 @@
   ///     the active line into view + highlights it.
   ///
   /// The panel is divided into per-op CHAPTERS detected via the
-  /// `; OP <id>` markers the backend emits. The header offers
-  /// prev/next-op jump buttons. When the user disables an op in the
-  /// OperationsList (without re-Generating), that op's chapter renders
-  /// commented-out — the actual gcode bytes don't change until the
-  /// user clicks Generate again.
+  /// `; OP <id>` markers the backend emits — each chapter renders a
+  /// header row labeled with the op name. Prev/next-op jump buttons
+  /// live in the PlaybackBar so they stay reachable when this panel is
+  /// folded. When the user disables an op in the OperationsList
+  /// (without re-Generating), that op's chapter renders commented-out —
+  /// the actual gcode bytes don't change until the user clicks Generate
+  /// again.
   ///
   /// Powered by project.generated.gcode_index (lines_to_segment +
   /// segments_to_line) emitted by wiac_core::gcode::preview.
 
   import { project, playheadToSegment } from '../state/project.svelte';
+  import { parseGcodeChapters, NO_SEGMENT } from '../state/gcode_chapters';
   import { _ } from 'svelte-i18n';
-
-  type GcodeIndex = {
-    lines_to_segment: number[];
-    segments_to_line: number[];
-  };
 
   // Split the gcode lazily — only when the project's generated output
   // changes — so scrolling a 5000-line program doesn't redo work.
   const lines = $derived(project.generated?.gcode.split('\n') ?? []);
-  const idx = $derived(
-    (project.generated as { gcode_index?: GcodeIndex } | null)?.gcode_index ?? null,
-  );
+  const idx = $derived(project.generated?.gcode_index ?? null);
 
-  /// Chapter = one op's run of lines, demarcated by `; OP <id>`
-  /// markers the backend emits between ops. The header line that
-  /// declares the marker counts as the chapter start. The implicit
-  /// "header" chapter at the program start (lines before the first
-  /// marker, e.g. G21 / G90) gets opId=0 and a synthetic name.
-  interface Chapter {
-    opId: number;
-    name: string;
-    startLine: number; // 1-based
-    endLine: number; // 1-based, inclusive
-    disabled: boolean;
-  }
-
-  function parseOpMarker(raw: string): number | null {
-    const s = raw.trim();
-    const body = s.startsWith(';')
-      ? s.slice(1).trim()
-      : s.startsWith('(') && s.endsWith(')')
-        ? s.slice(1, -1).trim()
-        : null;
-    if (body === null) return null;
-    const rest = body.startsWith('OP ')
-      ? body.slice(3).trim()
-      : body.startsWith('op ')
-        ? body.slice(3).trim()
-        : null;
-    if (rest === null) return null;
-    const n = parseInt(rest, 10);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }
-
-  const chapters = $derived.by<Chapter[]>(() => {
-    const out: Chapter[] = [];
-    if (lines.length === 0) return out;
-    const opById = new Map(project.operations.map((o) => [o.id, o]));
-    const nameFor = (id: number) => {
-      if (id === 0) return 'Program header';
-      const op = opById.get(id);
-      return op ? `#${op.id} ${op.name}` : `Op #${id}`;
-    };
-    const disabledFor = (id: number) => {
-      if (id === 0) return false;
-      const op = opById.get(id);
-      return op ? !op.enabled : false;
-    };
-    let curOp = 0;
-    let curStart = 1;
-    for (let i = 0; i < lines.length; i++) {
-      const opId = parseOpMarker(lines[i]);
-      if (opId != null) {
-        // Close the previous chapter at the line before the marker.
-        if (i > 0) {
-          out.push({
-            opId: curOp,
-            name: nameFor(curOp),
-            startLine: curStart,
-            endLine: i, // 1-based, inclusive of the line just before this marker
-            disabled: disabledFor(curOp),
-          });
-        }
-        curOp = opId;
-        curStart = i + 1; // marker line is the chapter start
-      }
-    }
-    out.push({
-      opId: curOp,
-      name: nameFor(curOp),
-      startLine: curStart,
-      endLine: lines.length,
-      disabled: disabledFor(curOp),
-    });
-    return out;
-  });
+  const chapters = $derived(parseGcodeChapters(lines, project.operations));
 
   /// Lookup: line → chapter index. Fast for the prev/next nav + the
   /// per-line "is this line silenced" check inside the row render.
@@ -160,7 +84,6 @@
     if (!gen || !idx) return;
     // 1-based → array index. Walk back to the nearest preceding line
     // that does have a segment (comment-only lines have NO_SEGMENT).
-    const NO_SEGMENT = 4_294_967_295; // u32::MAX
     let probe = line - 1;
     while (probe >= 0 && idx.lines_to_segment[probe] === NO_SEGMENT) probe--;
     if (probe < 0) return;
@@ -178,77 +101,26 @@
     }
   }
 
-  function jumpToChapter(ci: number) {
-    if (ci < 0 || ci >= chapters.length) return;
-    const ch = chapters[ci];
-    jumpToLine(ch.startLine);
-    // jumpToLine walks backward to the nearest line that has a
-    // segment; if the chapter starts with comment-only lines, the
-    // playhead lands BEFORE this chapter. Force the panel to scroll
-    // the chapter header into view regardless.
-    queueMicrotask(() => {
-      const el = host?.querySelector(`[data-chapter-idx="${ci}"]`);
-      (el as HTMLElement | null)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    });
-  }
-
-  /// Index of the chapter currently under the playhead.
-  const activeChapter = $derived.by<number | null>(() => {
-    if (activeLine == null) return null;
-    return lineChapter[activeLine - 1] ?? null;
+  /// When the playhead moves onto a new chapter (driven by PlaybackBar's
+  /// prev/next-op buttons), scroll the chapter header into view. Without
+  /// this nudge the row-level $effect lands on `block: 'nearest'` of the
+  /// first segment line, which can leave the chapter header off-screen
+  /// when the chapter starts with comment-only setup lines.
+  let prevChapterIdx = $state<number | null>(null);
+  $effect(() => {
+    const ci = activeLine == null ? null : (lineChapter[activeLine - 1] ?? null);
+    if (ci != null && ci !== prevChapterIdx && host) {
+      prevChapterIdx = ci;
+      queueMicrotask(() => {
+        const el = host?.querySelector(`[data-chapter-idx="${ci}"]`);
+        (el as HTMLElement | null)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    }
   });
-
-  function jumpPrevOp() {
-    const cur = activeChapter ?? 0;
-    // Find the nearest preceding op chapter (skip the program header
-    // chapter (opId=0) if we're already at chapter 1+).
-    for (let i = cur - 1; i >= 0; i--) {
-      if (chapters[i].opId !== 0) {
-        jumpToChapter(i);
-        return;
-      }
-    }
-    if (chapters.length > 0) jumpToChapter(0);
-  }
-  function jumpNextOp() {
-    const cur = activeChapter ?? -1;
-    for (let i = cur + 1; i < chapters.length; i++) {
-      if (chapters[i].opId !== 0) {
-        jumpToChapter(i);
-        return;
-      }
-    }
-  }
-
-  let opChapterCount = $derived(chapters.filter((c) => c.opId !== 0).length);
 </script>
 
 {#if project.generated && project.generated.gcode}
   <div class="gcode" bind:this={host} role="region" aria-label={$_('gcode.title') ?? 'G-code'}>
-    {#if opChapterCount > 0}
-      <div class="chapter-nav">
-        <button
-          type="button"
-          class="nav-btn"
-          title="Jump to previous op chapter"
-          aria-label="Previous op"
-          onclick={jumpPrevOp}>⏮</button
-        >
-        <button
-          type="button"
-          class="nav-btn"
-          title="Jump to next op chapter"
-          aria-label="Next op"
-          onclick={jumpNextOp}>⏭</button
-        >
-        <span class="nav-summary">
-          {opChapterCount} op{opChapterCount === 1 ? '' : 's'}
-          {#if activeChapter != null && chapters[activeChapter].opId !== 0}
-            · at <strong>{chapters[activeChapter].name}</strong>
-          {/if}
-        </span>
-      </div>
-    {/if}
     <div class="gcode-inner">
       {#each lines as text, i (i)}
         {@const line = i + 1}
@@ -260,7 +132,11 @@
             <span class="chapter-caret">▾</span>
             <span class="chapter-name">{ch.name}</span>
             {#if ch.disabled}
-              <span class="chapter-tag" title="This op is disabled — commented-out below and hidden in 3D. Toggle the checkbox in the operations list to re-enable. Click Generate to bake the change into the gcode.">silenced</span>
+              <span
+                class="chapter-tag"
+                title="This op is disabled — commented-out below and hidden in 3D. Toggle the checkbox in the operations list to re-enable. Click Generate to bake the change into the gcode."
+                >silenced</span
+              >
             {/if}
           </div>
         {/if}
@@ -293,39 +169,6 @@
     line-height: 1.35;
     color: var(--text);
     contain: strict; /* keeps layout costs sane on big programs */
-  }
-  .chapter-nav {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem 0.55rem;
-    background: var(--bg-elevated);
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 1;
-  }
-  .nav-btn {
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 0.1rem 0.45rem;
-    font-size: 0.85rem;
-    cursor: pointer;
-    line-height: 1;
-  }
-  .nav-btn:hover {
-    background: var(--bg-input);
-    border-color: var(--accent);
-  }
-  .nav-summary {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-  }
-  .nav-summary strong {
-    color: var(--text-strong);
-    font-weight: 600;
   }
   .gcode-inner {
     /* Fixed-row baseline so scrollIntoView lands cleanly. */

@@ -1090,10 +1090,9 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 2.5rem minmax(0, 1.6fr) minmax(
-        0,
-        1fr
-      ) 4.5rem 4.5rem 3.5rem 5rem 5rem 5rem 4.5rem minmax(0, 1fr) 2rem;
+    grid-template-columns:
+      2.5rem minmax(0, 1.6fr) minmax(0, 1fr)
+      4.5rem 4.5rem 3.5rem 5rem 5rem 5rem 4.5rem minmax(0, 1fr) 2rem;
     gap: 0.3rem;
     align-items: center;
     font-size: 0.78rem;

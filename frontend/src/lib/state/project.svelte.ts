@@ -178,7 +178,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cellResolutionMode: 'auto',
   cellResolutionMm: 0.2,
   solidPreviewByDefault: false,
-  maxSimulationCells: 4_000_000,
+  // Stepped voxel mesh is ~280 bytes / cell (positions + normals +
+  // indices). 1M cells is ~280 MB of GPU memory — comfortable on
+  // integrated GPUs and most laptops. Users on discrete-GPU desktops
+  // can raise this in Settings → Performance. (audit-auim)
+  maxSimulationCells: 1_000_000,
   blockOnCriticalSimWarnings: false,
   autoRunSimOnSave: true,
   autoReloadSources: true,

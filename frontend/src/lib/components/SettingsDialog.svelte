@@ -282,7 +282,8 @@
         </div>
         <p class="hint">
           Caps the heightmap grid size before resolution gets coarsened automatically. Higher values
-          look sharper at the cost of memory + redraw time.
+          look sharper at the cost of memory + redraw time. The stepped voxel mesh uses about
+          280 bytes per cell — 1M cells ≈ 280 MB of GPU memory.
         </p>
       </section>
 

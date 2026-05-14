@@ -106,14 +106,31 @@ export function tryParseStructuredError(input: unknown): WiacError | null {
   if (candidate == null || typeof candidate !== 'object') return null;
   const obj = candidate as Record<string, unknown>;
   if (typeof obj.kind !== 'string' || typeof obj.message !== 'string') return null;
-  const knownKinds = new Set([
+  const knownKinds: WiacError['kind'][] = [
     'bad_input',
     'misconfigured',
     'limit',
     'unsupported',
     'io',
     'internal',
-  ]);
-  if (!knownKinds.has(obj.kind)) return null;
-  return obj as unknown as WiacError;
+  ];
+  if (!(knownKinds as string[]).includes(obj.kind)) return null;
+  // Optional fields: drop them if their shape doesn't match (don't
+  // reject the whole error — a malformed `span` or `auto_fix` shouldn't
+  // hide a perfectly good error message). `recovery_hint` is a plain
+  // string; `span` / `auto_fix` are structured objects.
+  const out: WiacError = {
+    kind: obj.kind as WiacError['kind'],
+    message: obj.message,
+  };
+  if (typeof obj.recovery_hint === 'string') {
+    out.recovery_hint = obj.recovery_hint;
+  }
+  if (obj.span != null && typeof obj.span === 'object') {
+    out.span = obj.span as WiacError['span'];
+  }
+  if (obj.auto_fix != null && typeof obj.auto_fix === 'object') {
+    out.auto_fix = obj.auto_fix as WiacError['auto_fix'];
+  }
+  return out;
 }

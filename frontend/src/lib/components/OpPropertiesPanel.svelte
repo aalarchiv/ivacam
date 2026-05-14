@@ -70,6 +70,14 @@
   const toolDefaultStep = $derived<number | null>(
     op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.defaultStep ?? null),
   );
+  /// Tool defaults that the per-op feed / plunge fields inherit when
+  /// unset. Placeholders below show these as concrete numbers (audit-bv6).
+  const toolFeedRate = $derived<number | null>(
+    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.feedRate ?? null),
+  );
+  const toolPlungeRate = $derived<number | null>(
+    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.plungeRate ?? null),
+  );
   const stepInheriting = $derived(op != null && (op.step === null || op.step === undefined));
   const stepMissing = $derived(
     stepInheriting && (toolDefaultStep === null || toolDefaultStep >= 0),
@@ -1398,7 +1406,7 @@
               type="number"
               step="50"
               min="0"
-              placeholder="tool default"
+              placeholder={toolFeedRate != null ? String(toolFeedRate) : 'tool default'}
               value={op.feedRateOverride ?? ''}
               onchange={(e) => {
                 const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
@@ -1426,7 +1434,7 @@
               type="number"
               step="10"
               min="0"
-              placeholder="tool default"
+              placeholder={toolPlungeRate != null ? String(toolPlungeRate) : 'tool default'}
               value={op.plungeRateOverride ?? ''}
               onchange={(e) => {
                 const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);

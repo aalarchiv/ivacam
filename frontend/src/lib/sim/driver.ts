@@ -267,9 +267,18 @@ export class HeightfieldDriver {
     const cols = Math.ceil((fp.maxX - fp.minX) / cellSize) + 1;
     const rows = Math.ceil((fp.maxY - fp.minY) / cellSize) + 1;
     const cellCount = cols * rows;
+    // Mesh memory hard backstop. The stepped voxel BufferGeometry
+    // uses ~280 bytes/cell of GPU memory; existing users still
+    // carrying a 4M-cell persisted setting from the old InstancedMesh
+    // renderer would push it to ~1.2 GB and observe partial-mesh
+    // allocation failures. 1.5M cells (~420 MB) is a safe ceiling
+    // across iGPUs and mid-range discrete GPUs; the per-user setting
+    // remains the primary throttle, this clamps the worst case.
+    const MESH_CELL_HARD_LIMIT = 1_500_000;
+    const effectiveCap = Math.min(input.settings.maxSimulationCells, MESH_CELL_HARD_LIMIT);
     let effectiveCellSize = cellSize;
-    if (cellCount > input.settings.maxSimulationCells) {
-      const scale = Math.sqrt(cellCount / input.settings.maxSimulationCells);
+    if (cellCount > effectiveCap) {
+      const scale = Math.sqrt(cellCount / effectiveCap);
       effectiveCellSize = cellSize * scale;
     }
     const topZ = 0; // stock surface is z=0; carving descends to negative Z

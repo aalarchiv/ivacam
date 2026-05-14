@@ -69,6 +69,10 @@ export class HeightfieldMesh {
   private readonly UP_BASE: number; // 4 * N
   private readonly LEFT_BASE: number; // 4 * rows
   private readonly BOTTOM_BASE: number; // 4 * cols
+  /// Single flat quad at floorZ closing the underside of the stock so
+  /// the user sees a solid block from any camera angle (regression
+  /// fix euxi). 4 static verts, never updated after init.
+  private readonly FLOOR_BASE: number; // 4
   private readonly TOTAL_VERTS: number;
 
   private readonly positions: Float32Array;
@@ -92,15 +96,14 @@ export class HeightfieldMesh {
     this.UP_BASE = 8 * n;
     this.LEFT_BASE = 12 * n;
     this.BOTTOM_BASE = this.LEFT_BASE + 4 * this.rows;
-    this.TOTAL_VERTS = this.BOTTOM_BASE + 4 * this.cols;
+    this.FLOOR_BASE = this.BOTTOM_BASE + 4 * this.cols;
+    this.TOTAL_VERTS = this.FLOOR_BASE + 4;
 
     this.positions = new Float32Array(this.TOTAL_VERTS * 3);
     const normals = new Float32Array(this.TOTAL_VERTS * 3);
-    // 2 triangles × 6 face types per cell, plus boundary fringes
-    // (excluding right/top edges that are already covered by per-cell
-    // walls). Triangles: top(2) + right(2) + up(2) = 6 per cell, plus
-    // 2 per fringe wall.
-    const indices = new Uint32Array(6 * n + 6 * this.rows + 6 * this.cols);
+    // Per cell: top(2) + right(2) + up(2) = 6 triangles. Per fringe
+    // wall: 2 triangles. Plus 2 triangles for the single floor quad.
+    const indices = new Uint32Array(6 * n + 6 * this.rows + 6 * this.cols + 6);
 
     this.initStaticBuffers(normals, indices);
 
@@ -154,6 +157,10 @@ export class HeightfieldMesh {
     // to degenerate triangles automatically.
     for (let i = 0; i < this.TOTAL_VERTS; i++) {
       this.positions[i * 3 + 2] = this.topZ;
+    }
+    // FLOOR quad is fixed at floorZ regardless of carve state.
+    for (let k = 0; k < 4; k++) {
+      this.positions[(this.FLOOR_BASE + k) * 3 + 2] = this.floorZ;
     }
     this.positionAttr.needsUpdate = true;
   }
@@ -275,6 +282,25 @@ export class HeightfieldMesh {
       pushQuad(indexOff, bBase + 0, bBase + 1, bBase + 2, bBase + 3);
       indexOff += 6;
     }
+    // FLOOR: single quad closing the underside of the stock so the
+    // mesh looks solid from any camera angle (regression euxi). Z is
+    // floorZ and gets written by the constructor's initial-state
+    // loop along with everything else.
+    const fxR = ox + cols * cell;
+    const fyT = oy + rows * cell;
+    const f = this.FLOOR_BASE;
+    writeVertex(f + 0, ox, oy);
+    writeVertex(f + 1, fxR, oy);
+    writeVertex(f + 2, fxR, fyT);
+    writeVertex(f + 3, ox, fyT);
+    writeNormal(f + 0, 0, 0, -1);
+    writeNormal(f + 1, 0, 0, -1);
+    writeNormal(f + 2, 0, 0, -1);
+    writeNormal(f + 3, 0, 0, -1);
+    // CCW from below = (v0, v3, v1) + (v1, v3, v2) so the normal
+    // computed from the winding agrees with the stored (-Z) normal.
+    pushQuad(indexOff, f + 0, f + 3, f + 1, f + 2);
+    indexOff += 6;
   }
 
   /// Clamp a cell's Z to [floorZ, topZ]. Cells carved below floorZ

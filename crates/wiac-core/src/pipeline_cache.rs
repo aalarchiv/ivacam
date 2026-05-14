@@ -236,17 +236,6 @@ fn hash_point<H: Hasher>(p: Point2, h: &mut H) {
     hash_f64(p.y, h);
 }
 
-fn hash_axis_limits_opt<H: Hasher>(v: Option<&AxisLimits>, h: &mut H) {
-    match v {
-        None => h.write_u8(0),
-        Some(a) => {
-            h.write_u8(1);
-            hash_f64(a.x, h);
-            hash_f64(a.y, h);
-            hash_f64(a.z, h);
-        }
-    }
-}
 
 // ─── geometry ─────────────────────────────────────────────────────────
 

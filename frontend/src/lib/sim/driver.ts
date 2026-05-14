@@ -32,8 +32,11 @@ interface SimulatorWasm {
     topZ: number,
   ): SimulatorWasm;
   reset(): void;
-  advance(segments: unknown, tool: unknown, from_idx: number, to_idx: number): Uint32Array;
+  advance(tool: unknown, from_idx: number, to_idx: number): Uint32Array;
   set_fixtures(fixtures: unknown): void;
+  set_toolpath(segments: unknown): number;
+  clear_toolpath(): void;
+  toolpath_len(): number;
   take_diagnostics(): SimDiagnostics;
   cols(): number;
   rows(): number;
@@ -207,6 +210,11 @@ export class HeightfieldDriver {
   /// Cached buffer view; valid until the next advance() that may grow
   /// WASM linear memory. Re-taken after every advance.
   private heightView: Float32Array | null = null;
+  /// Reference to the toolpath array that's currently cached on the
+  /// WASM Simulator. Used to detect identity drift (e.g. a stale
+  /// driver picking up a new Generate response) and trigger a single
+  /// re-cache rather than re-deserializing per frame (audit-9l52).
+  private cachedToolpath: ToolpathSegment[] | null = null;
   private appliedHead = 0;
   /// Cumulative sim warnings collected since the last replay. Cleared on
   /// dispose / reset; merged-into on every forward advance() so the UI
@@ -291,6 +299,12 @@ export class HeightfieldDriver {
     } else {
       this.sim.set_fixtures([]);
     }
+    // Cache the toolpath on the WASM side ONCE per Generate so per-frame
+    // advance() doesn't re-deserialize the whole segment array
+    // (audit-9l52). The cached toolpath is the reference identity tracked
+    // by `cachedToolpath` below.
+    this.sim.set_toolpath(input.generated.toolpath);
+    this.cachedToolpath = input.generated.toolpath;
     this.appliedHead = 0;
     this.diagnostics = { warnings: [] };
     this.notifyDiagnostics();
@@ -390,7 +404,15 @@ export class HeightfieldDriver {
     }
     if (newHead > this.appliedHead) {
       const wireTool = toWireTool(tool);
-      const aabb = this.sim.advance(segments, wireTool, this.appliedHead, newHead);
+      // Defensive re-cache if the toolpath identity drifts from the
+      // build()-time snapshot (e.g. a Generate response replaced
+      // `project.generated.toolpath` without going through build()).
+      // The common path is a no-op compare (audit-9l52).
+      if (segments !== this.cachedToolpath) {
+        this.sim.set_toolpath(segments);
+        this.cachedToolpath = segments;
+      }
+      const aabb = this.sim.advance(wireTool, this.appliedHead, newHead);
       this.appliedHead = newHead;
       this.collectDiagnostics();
       // Memory may have grown — re-take the view before reading cells.
@@ -445,6 +467,7 @@ export class HeightfieldDriver {
     }
     this.heightView = null;
     this.appliedHead = 0;
+    this.cachedToolpath = null;
     if (this.diagnostics.warnings.length > 0) {
       this.diagnostics = { warnings: [] };
       this.notifyDiagnostics();

@@ -11,11 +11,11 @@
 //! * `tool`: serde-serialized `ToolEntry` (same shape as the project's
 //!   tool library entries — `snake_case` fields).
 //!
-//! Perf note: re-deserializing the segment slice every `advance()` is
-//! fine for v1 (60 fps × ~tens of segments/frame). If profiling later
-//! shows JS↔WASM overhead dominating, swap `segments` to a flat
-//! `Float32Array` segment buffer (`[fx, fy, fz, tx, ty, tz, kind_u8,
-//! …]`) and parse it inside Rust without serde.
+//! Perf: the toolpath is deserialized ONCE per Generate via
+//! `set_toolpath(...)` and cached on the Simulator. `advance(from, to,
+//! tool)` then indexes into the cached vec — no per-frame serde of the
+//! full segment array (audit-9l52). Tool stays as an `advance()` arg
+//! because it's tiny and may change between ops.
 
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -46,6 +46,11 @@ pub struct Simulator {
     /// fixture-collision check fires per segment. Set via
     /// `set_fixtures(...)`; default empty.
     fixtures: Vec<Fixture>,
+    /// Toolpath cached at Generate time so subsequent `advance()`
+    /// calls don't re-deserialize the whole array per frame
+    /// (audit-9l52). Refreshed via `set_toolpath(...)` whenever a
+    /// new toolpath replaces the previous one.
+    toolpath: Vec<ToolpathSegment>,
 }
 
 #[wasm_bindgen]
@@ -67,6 +72,7 @@ impl Simulator {
             heightmap: Heightmap::from_bbox(min_x, min_y, max_x, max_y, cell_size, top_z),
             last_diagnostics: SimDiagnostics::new(),
             fixtures: Vec::new(),
+            toolpath: Vec::new(),
         }
     }
 
@@ -76,6 +82,31 @@ impl Simulator {
     pub fn reset(&mut self) {
         self.heightmap.reset();
         self.last_diagnostics = SimDiagnostics::new();
+    }
+
+    /// Cache the full toolpath on the WASM side. Called once per
+    /// Generate; subsequent `advance(...)` calls index into this vec
+    /// without per-frame serde. Returns the cached segment count so the
+    /// caller can assert the round-trip succeeded.
+    pub fn set_toolpath(&mut self, segments: JsValue) -> Result<u32, JsValue> {
+        let parsed: Vec<ToolpathSegment> =
+            serde_wasm_bindgen::from_value(segments).map_err(into_js_error)?;
+        let n = parsed.len() as u32;
+        self.toolpath = parsed;
+        Ok(n)
+    }
+
+    /// Drop the cached toolpath. Call when the project's toolpath is
+    /// invalidated (e.g. the Generate response is cleared) to free
+    /// WASM-side memory.
+    pub fn clear_toolpath(&mut self) {
+        self.toolpath = Vec::new();
+    }
+
+    /// Number of cached segments.
+    #[must_use]
+    pub fn toolpath_len(&self) -> u32 {
+        self.toolpath.len() as u32
     }
 
     /// Replace the simulator's fixture set. Pass the project's fixtures
@@ -96,22 +127,43 @@ impl Simulator {
         serde_wasm_bindgen::to_value(&taken).map_err(into_js_error)
     }
 
-    /// Apply sweeps for toolpath segments `[from_idx, to_idx)`. Returns
-    /// the resulting dirty AABB encoded as `[ix0, iy0, ix1, iy1]` so the
+    /// Apply sweeps for toolpath segments `[from_idx, to_idx)` from the
+    /// cached toolpath (set via `set_toolpath(...)`). Returns the
+    /// resulting dirty AABB encoded as `[ix0, iy0, ix1, iy1]` so the
     /// JS renderer knows which mesh vertices to update; an empty `Vec`
     /// means no cells changed. The heightmap's internal dirty AABB is
     /// cleared first so the returned bounds reflect only this call.
+    /// `tool` stays as an arg because it's tiny and may change between
+    /// ops within a single toolpath.
     pub fn advance(
         &mut self,
-        segments: JsValue,
         tool: JsValue,
         from_idx: u32,
         to_idx: u32,
     ) -> Result<Vec<u32>, JsValue> {
-        let segs: Vec<ToolpathSegment> =
-            serde_wasm_bindgen::from_value(segments).map_err(into_js_error)?;
         let tool_entry: ToolEntry = from_tool_value(tool)?;
-        Ok(self.advance_inner(&segs, &tool_entry, from_idx, to_idx))
+        // Inline the body that advance_inner provides for the test-only
+        // path. We need disjoint borrows of `self.toolpath` (read) and
+        // `self.heightmap` / `self.last_diagnostics` (mutate), which
+        // Rust's field-level split borrowing allows here.
+        self.heightmap.clear_dirty();
+        self.last_diagnostics = SimDiagnostics::new();
+        let profile = ToolProfile::from_tool(&tool_entry);
+        let holder = HolderProfile::from_tool(&tool_entry);
+        let _touched = sweep_range(
+            &mut self.heightmap,
+            &self.toolpath,
+            from_idx as usize,
+            to_idx as usize,
+            profile,
+            &self.fixtures,
+            holder.as_ref(),
+            &mut self.last_diagnostics,
+        );
+        Ok(match self.heightmap.dirty_aabb() {
+            Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
+            None => Vec::new(),
+        })
     }
 
     /// Number of grid columns (X cells).
@@ -168,7 +220,9 @@ impl Simulator {
 
 impl Simulator {
     /// Pure-Rust core of `advance()` — used by tests that don't want to
-    /// route through `JsValue`.
+    /// route through `JsValue`. Gated behind `#[cfg(test)]` to silence
+    /// `dead_code` on the wasm production build.
+    #[cfg(test)]
     pub(crate) fn advance_inner(
         &mut self,
         segments: &[ToolpathSegment],

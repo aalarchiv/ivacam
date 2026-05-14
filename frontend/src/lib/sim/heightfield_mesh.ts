@@ -122,19 +122,31 @@ export class HeightfieldMesh {
       new THREE.Sphere(),
     );
 
+    const isTransparent = opts.solidOpacity < 1;
     this.material = new THREE.MeshStandardMaterial({
       color: new THREE.Color(opts.solidColor),
       opacity: opts.solidOpacity,
-      transparent: opts.solidOpacity < 1,
-      // No self-overlap in a stepped heightfield, so depth writes are
-      // safe; back faces stay visible via DoubleSide.
-      depthWrite: true,
+      transparent: isTransparent,
+      // For the translucent default (opacity 0.5) we must NOT write
+      // depth — the stepped mesh emits TOP + WALL triangles in
+      // geometry order, not back-to-front, so depthWrite=true causes
+      // earlier-drawn faces to occlude later same-pixel faces and the
+      // user sees random chunks missing. depthWrite=false lets every
+      // visible fragment blend; fully opaque still writes depth as
+      // normal.
+      depthWrite: !isTransparent,
       side: THREE.DoubleSide,
       roughness: 0.8,
       metalness: 0.0,
     });
 
     this.mesh = new THREE.Mesh(this.geometry, this.material);
+    // Defensive: with the manually-set boundingBox / boundingSphere a
+    // tilted camera at the wrong distance occasionally culled the
+    // whole mesh on the previous voxel-box renderer; the stepped mesh
+    // is large enough that a stale sphere is the obvious regression
+    // culprit, so just opt out of frustum culling entirely.
+    this.mesh.frustumCulled = false;
     this.group = new THREE.Group();
     this.group.add(this.mesh);
 
@@ -409,7 +421,12 @@ export class HeightfieldMesh {
     }
     if (opts.solidOpacity !== undefined) {
       this.material.opacity = opts.solidOpacity;
-      this.material.transparent = opts.solidOpacity < 1;
+      const transparent = opts.solidOpacity < 1;
+      this.material.transparent = transparent;
+      // Mirror the depthWrite policy from the constructor — see the
+      // comment there for why transparent + depthWrite=true hides
+      // chunks of the stepped mesh.
+      this.material.depthWrite = !transparent;
     }
     this.material.needsUpdate = true;
   }

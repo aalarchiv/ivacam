@@ -61,6 +61,15 @@ impl Heightmap {
         if ix >= self.cols || iy >= self.rows {
             return;
         }
+        self.lower_at_unchecked(ix, iy, z);
+    }
+
+    /// Same contract as `lower_at`, minus the bounds check. The sweep
+    /// loop pre-clamps to the heightmap's cell rectangle so the safe
+    /// `lower_at` path's branch is redundant on every cell write
+    /// (audit-5el3). Public callers should prefer `lower_at`.
+    #[inline]
+    pub fn lower_at_unchecked(&mut self, ix: u32, iy: u32, z: f32) {
         let idx = (iy as usize) * (self.cols as usize) + (ix as usize);
         if z < self.data[idx] {
             self.data[idx] = z;

@@ -114,9 +114,12 @@ pub fn sweep_segment(
 
     let layout = HeightmapLayout::of(heightmap);
     let mut touched = 0u32;
+    // `for_each_swept_cell` clamps (ix, iy) to the heightmap's cell
+    // rectangle, so the safe `lower_at`'s bounds branch is redundant
+    // every frame — use the unchecked path here (audit-5el3).
     for_each_swept_cell(&layout, segment, profile, |ix, iy, _r, cutter_pz, dz| {
         let surface_z = cutter_pz as f32 + dz;
-        heightmap.lower_at(ix, iy, surface_z);
+        heightmap.lower_at_unchecked(ix, iy, surface_z);
         touched += 1;
     });
     touched

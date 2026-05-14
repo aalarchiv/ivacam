@@ -157,10 +157,41 @@ export class HeightfieldMesh {
     this.group = new THREE.Group();
     this.group.add(this.mesh);
 
-    // Initial state: every cell at topZ (uncut stock). Walls collapse
-    // to degenerate triangles automatically.
+    // Initial state: every cell at topZ (uncut stock). Walls between
+    // INTERIOR cells collapse to degenerate triangles automatically
+    // (both sides at topZ). Boundary walls — the outward-facing sides
+    // of the stock — need their "outside" verts set to floorZ so the
+    // uncarved block shows complete vertical sides from frame zero;
+    // otherwise the sides look open until the cell first carves.
     for (let i = 0; i < this.TOTAL_VERTS; i++) {
       this.positions[i * 3 + 2] = this.topZ;
+    }
+    // RIGHT wall outside verts (v2/v3) for the rightmost column drop
+    // to floorZ; interior right walls stay at topZ (degenerate).
+    for (let iy = 0; iy < this.rows; iy++) {
+      const cellIdx = iy * this.cols + (this.cols - 1);
+      const p = (this.RIGHT_BASE + cellIdx * 4) * 3;
+      this.positions[p + 8] = this.floorZ;
+      this.positions[p + 11] = this.floorZ;
+    }
+    // TOP wall outside verts (v2/v3) for the topmost row drop to floorZ.
+    for (let ix = 0; ix < this.cols; ix++) {
+      const cellIdx = (this.rows - 1) * this.cols + ix;
+      const p = (this.UP_BASE + cellIdx * 4) * 3;
+      this.positions[p + 8] = this.floorZ;
+      this.positions[p + 11] = this.floorZ;
+    }
+    // LEFT and BOTTOM fringes: v0/v1 = outside (floorZ), v2/v3 stay at
+    // topZ (this cell's top, which equals topZ until a carve lands).
+    for (let iy = 0; iy < this.rows; iy++) {
+      const p = (this.LEFT_BASE + iy * 4) * 3;
+      this.positions[p + 2] = this.floorZ;
+      this.positions[p + 5] = this.floorZ;
+    }
+    for (let ix = 0; ix < this.cols; ix++) {
+      const p = (this.BOTTOM_BASE + ix * 4) * 3;
+      this.positions[p + 2] = this.floorZ;
+      this.positions[p + 5] = this.floorZ;
     }
     // FLOOR quad is fixed at floorZ regardless of carve state.
     for (let k = 0; k < 4; k++) {
@@ -336,10 +367,13 @@ export class HeightfieldMesh {
 
   /// Rewrite the four +X wall vertex Z values for cell (ix, iy)'s
   /// right wall. v0/v1 ride on this cell (zA); v2/v3 on the ix+1
-  /// neighbor (zB) — or topZ when this cell is on the right edge.
+  /// neighbor (zB). At the grid's right edge (ix == cols-1) the
+  /// "neighbor" is open air — the wall must drop from this cell's
+  /// top down to floorZ to close the side of the stock, not up to
+  /// topZ (which left the side looking open).
   private writeRightWall(ix: number, iy: number, zA: number, view: Float32Array): void {
     const cellIdx = iy * this.cols + ix;
-    const zB = ix + 1 < this.cols ? this.cellZ(view, ix + 1, iy) : this.topZ;
+    const zB = ix + 1 < this.cols ? this.cellZ(view, ix + 1, iy) : this.floorZ;
     const p = (this.RIGHT_BASE + cellIdx * 4) * 3;
     this.positions[p + 2] = zA;
     this.positions[p + 5] = zA;
@@ -348,10 +382,10 @@ export class HeightfieldMesh {
   }
 
   /// Rewrite the four +Y wall vertex Z values for cell (ix, iy)'s
-  /// top wall.
+  /// top wall. Same outside-of-grid handling as the right wall.
   private writeTopWall(ix: number, iy: number, zA: number, view: Float32Array): void {
     const cellIdx = iy * this.cols + ix;
-    const zB = iy + 1 < this.rows ? this.cellZ(view, ix, iy + 1) : this.topZ;
+    const zB = iy + 1 < this.rows ? this.cellZ(view, ix, iy + 1) : this.floorZ;
     const p = (this.UP_BASE + cellIdx * 4) * 3;
     this.positions[p + 2] = zA;
     this.positions[p + 5] = zA;
@@ -360,11 +394,13 @@ export class HeightfieldMesh {
   }
 
   /// LEFT fringe: vertex Zs for cell (0, iy)'s outside-facing wall.
-  /// v0/v1 = topZ (outside the stock), v2/v3 = this cell's Z.
+  /// v0/v1 = floorZ (open air outside the stock — nothing material
+  /// above floorZ on that side), v2/v3 = this cell's Z (top of the
+  /// remaining material in this column).
   private writeLeftFringe(iy: number, zA: number): void {
     const p = (this.LEFT_BASE + iy * 4) * 3;
-    this.positions[p + 2] = this.topZ;
-    this.positions[p + 5] = this.topZ;
+    this.positions[p + 2] = this.floorZ;
+    this.positions[p + 5] = this.floorZ;
     this.positions[p + 8] = zA;
     this.positions[p + 11] = zA;
   }
@@ -372,8 +408,8 @@ export class HeightfieldMesh {
   /// BOTTOM fringe: vertex Zs for cell (ix, 0)'s outside-facing wall.
   private writeBottomFringe(ix: number, zA: number): void {
     const p = (this.BOTTOM_BASE + ix * 4) * 3;
-    this.positions[p + 2] = this.topZ;
-    this.positions[p + 5] = this.topZ;
+    this.positions[p + 2] = this.floorZ;
+    this.positions[p + 5] = this.floorZ;
     this.positions[p + 8] = zA;
     this.positions[p + 11] = zA;
   }

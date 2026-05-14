@@ -1231,6 +1231,9 @@
     border-radius: 3px;
     background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
     font-size: 0.78rem;
+    line-height: 1.2;
+    min-height: 1.55rem;
+    box-sizing: border-box;
     color: var(--text-strong);
     font-weight: 600;
     cursor: pointer;

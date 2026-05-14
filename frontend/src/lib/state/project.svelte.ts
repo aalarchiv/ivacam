@@ -25,6 +25,42 @@ function isAbsolutePath(p: string): boolean {
 /// the imported.bbox without touching every other field. Returns a
 /// safe zero-extent bbox when the list is empty (matches what the
 /// Rust BBox::from_segments would do).
+/// Liang-Barsky line-vs-AABB clip — returns true when the closed
+/// segment [p0, p1] enters or touches the axis-aligned bbox. Used by
+/// `seriesSelectTo` so a Shift+click sweeps every object the imaginary
+/// anchor→target line crosses.
+function lineCrossesBBox(
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  b: { min_x: number; min_y: number; max_x: number; max_y: number },
+): boolean {
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  let tMin = 0;
+  let tMax = 1;
+  if (Math.abs(dx) < 1e-12) {
+    if (p0.x < b.min_x || p0.x > b.max_x) return false;
+  } else {
+    let t1 = (b.min_x - p0.x) / dx;
+    let t2 = (b.max_x - p0.x) / dx;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return false;
+  }
+  if (Math.abs(dy) < 1e-12) {
+    if (p0.y < b.min_y || p0.y > b.max_y) return false;
+  } else {
+    let t1 = (b.min_y - p0.y) / dy;
+    let t2 = (b.max_y - p0.y) / dy;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return false;
+  }
+  return true;
+}
+
 function bboxOfSegments(segs: Segment[]): {
   min_x: number;
   min_y: number;
@@ -224,6 +260,10 @@ class ProjectState {
   /// imported.objects (0 = unchained segment). Used by the operations
   /// list when the user clicks "Set source from selection".
   selectedObjects = $state<Set<number>>(new Set());
+  /// Anchor for Shift+click series-select — the last object the user
+  /// clicked on directly (plain click or Ctrl+click that added it).
+  /// Cleared when the selection is fully cleared.
+  selectionAnchorObjectId = $state<number | null>(null);
   /// Legacy entity-level selection (per-segment); kept for the project
   /// file but no longer drives the UI.
   selectedEntities = $state<Set<number>>(new Set());
@@ -718,22 +758,70 @@ class ProjectState {
     const incoming = [...ids].filter((id) => id > 0);
     if (mode === 'replace') {
       this.selectedObjects = new Set(incoming);
+      // Anchor for series-select tracks the canonical last clicked id —
+      // a single-id replace counts as a fresh anchor; a bulk replace
+      // (box-select) leaves the anchor undefined so a follow-up Shift+
+      // click doesn't draw a line from a hard-to-predict centroid.
+      this.selectionAnchorObjectId = incoming.length === 1 ? incoming[0] : null;
       return;
     }
     const next = new Set(this.selectedObjects);
     if (mode === 'add') {
       for (const id of incoming) next.add(id);
+      if (incoming.length === 1) this.selectionAnchorObjectId = incoming[0];
     } else {
       // toggle
       for (const id of incoming) {
         if (next.has(id)) next.delete(id);
         else next.add(id);
       }
+      // Only update the anchor when the toggle ADDED the id (so a
+      // re-click that deselects doesn't move the series-select anchor
+      // to the now-removed object).
+      if (incoming.length === 1 && next.has(incoming[0])) {
+        this.selectionAnchorObjectId = incoming[0];
+      }
     }
     this.selectedObjects = next;
   }
+  /// Series-select: extend the selection from the current anchor object
+  /// to `targetId`, picking every visible object whose bbox is crossed
+  /// by the straight line between the two bbox centroids. Falls back to
+  /// a plain replace when no anchor exists. Honors visibleLayers so
+  /// hidden chains can't be accidentally swept in. (audit-eqxd)
+  seriesSelectTo(targetId: number) {
+    if (targetId <= 0) return;
+    const anchorId = this.selectionAnchorObjectId;
+    const meta = this.imported?.object_meta ?? [];
+    if (anchorId == null || anchorId === targetId || meta.length === 0) {
+      this.selectObjects([targetId], 'replace');
+      return;
+    }
+    const visible = this.visibleLayers;
+    const byId = new Map<number, (typeof meta)[number]>();
+    for (const m of meta) byId.set(m.id, m);
+    const a = byId.get(anchorId);
+    const t = byId.get(targetId);
+    if (!a || !t) {
+      this.selectObjects([targetId], 'replace');
+      return;
+    }
+    const p0 = { x: (a.bbox.min_x + a.bbox.max_x) * 0.5, y: (a.bbox.min_y + a.bbox.max_y) * 0.5 };
+    const p1 = { x: (t.bbox.min_x + t.bbox.max_x) * 0.5, y: (t.bbox.min_y + t.bbox.max_y) * 0.5 };
+    const picked: number[] = [anchorId, targetId];
+    for (const m of meta) {
+      if (m.id === anchorId || m.id === targetId) continue;
+      if (!visible.has(m.layer)) continue;
+      if (lineCrossesBBox(p0, p1, m.bbox)) picked.push(m.id);
+    }
+    this.selectObjects(picked, 'add');
+    // Anchor moves to the target so consecutive Shift+clicks chain
+    // (anchor → click → click → click).
+    this.selectionAnchorObjectId = targetId;
+  }
   clearSelection() {
     this.selectedObjects = new Set();
+    this.selectionAnchorObjectId = null;
   }
 
   setGenerated(r: GenerateResponse) {

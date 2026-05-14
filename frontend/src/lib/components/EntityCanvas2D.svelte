@@ -880,13 +880,16 @@
     }
 
     const idx = pixelHit(cx, cy);
-    // FreeCAD-style modifier semantics:
-    //   * Shift+click → ADD to selection
-    //   * Ctrl/Cmd+click → TOGGLE in selection
-    //   * plain click → REPLACE selection (clear + select what's under
-    //     the cursor, or clear-all if nothing's there)
-    const mode: 'replace' | 'add' | 'toggle' = e.shiftKey
-      ? 'add'
+    // Modifier semantics (audit-eqxd):
+    //   * Shift+click  → SERIES select — extend the selection from the
+    //                    anchor object (last single-clicked) to the
+    //                    clicked one, sweeping every object whose bbox
+    //                    is crossed by the imaginary line between them.
+    //                    Falls back to plain replace when no anchor.
+    //   * Ctrl/Cmd+click → TOGGLE in selection (add or deselect).
+    //   * plain click  → REPLACE selection.
+    const mode: 'replace' | 'add' | 'toggle' | 'series' = e.shiftKey
+      ? 'series'
       : e.ctrlKey || e.metaKey
         ? 'toggle'
         : 'replace';
@@ -895,13 +898,16 @@
       // pointer comes back up without ever moving past
       // BOX_DRAG_THRESHOLD, this collapses to a "click on empty"
       // which clears the selection for `replace` mode and is a
-      // no-op for `add` / `toggle` (so the user can't accidentally
-      // drop their selection mid-modifier).
+      // no-op for `add` / `toggle` / `series` (so the user can't
+      // accidentally drop their selection mid-modifier).
       if (mode === 'replace') {
         project.clearSelection();
         project.selectFixture(null);
       }
-      boxSelect = { startX: cx, startY: cy, curX: cx, curY: cy, mode, armed: true };
+      // Series-select needs an object target — on empty space we fall
+      // back to additive box-select so Shift+drag stays useful.
+      const boxMode: 'replace' | 'add' | 'toggle' = mode === 'series' ? 'add' : mode;
+      boxSelect = { startX: cx, startY: cy, curX: cx, curY: cy, mode: boxMode, armed: true };
       // Capture so pointermove keeps firing if the user drags past the
       // canvas edge — otherwise the box-select would freeze at the
       // last point inside the canvas.
@@ -915,7 +921,11 @@
     // Map segment index → its 1-based object id from the chaining pass.
     const objId = project.imported?.objects?.[idx] ?? 0;
     if (objId === 0) return;
-    project.selectObjects([objId], mode);
+    if (mode === 'series') {
+      project.seriesSelectTo(objId);
+    } else {
+      project.selectObjects([objId], mode);
+    }
     // Clicking an object that's already wired into an operation makes
     // that op the active one — surfaces the right edit form on the
     // right-hand panel without a separate trip to the operations list.

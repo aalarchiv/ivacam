@@ -245,6 +245,9 @@
     border-radius: 3px;
     background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
     font-size: 0.78rem;
+    line-height: 1.2;
+    min-height: 1.55rem;
+    box-sizing: border-box;
   }
   .add-menu {
     position: relative;
@@ -261,10 +264,12 @@
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: 3px;
-    padding: 0.15rem 0.4rem;
+    padding: 0 0.4rem;
     font-size: 0.7rem;
     cursor: pointer;
     line-height: 1.2;
+    /* Don't push the row taller than the Stock / Text headers. */
+    min-height: 0;
   }
   .add-btn:hover {
     background: color-mix(in srgb, var(--accent) 18%, transparent);

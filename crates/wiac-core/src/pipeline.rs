@@ -514,8 +514,14 @@ fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionP
         // driver does (`synthesize_pocket_outside_objects`) so preview
         // and emit stay in lockstep.
         if op.params.frame_shape.is_some() {
+            let tool_radius = project
+                .tools
+                .iter()
+                .find(|t| t.id == op.tool_id)
+                .map(|t| t.diameter * 0.5)
+                .unwrap_or(0.0);
             if let Some((local_objects, ordered)) =
-                synthesize_pocket_outside_objects(op, objects)
+                synthesize_pocket_outside_objects(op, objects, tool_radius)
             {
                 let regions = combine_source_regions(
                     &local_objects,
@@ -878,9 +884,17 @@ fn object_bbox_center(obj: &VcObject) -> Option<Point2> {
 /// empty. Single source of truth used by both the preview pass
 /// (`build_region_previews`) and the toolpath driver (`build_op_offsets`)
 /// so they cannot drift.
+///
+/// `tool_radius_mm` clamps the lower bound of `frame_padding_mm`. With
+/// frame `tool_offset = Inside`, the cutter centerline walks at
+/// `bbox + padding - tool_radius`; if `padding < tool_radius` the
+/// centerline ends up INSIDE the selection's bbox, so the cutter cuts
+/// into the very shape it should be carving around. Clamping ensures
+/// the geometry is well-formed regardless of user input.
 fn synthesize_pocket_outside_objects(
     op: &Operation,
     objects: &[VcObject],
+    tool_radius_mm: f64,
 ) -> Option<(Vec<VcObject>, Vec<usize>)> {
     let frame_shape = op.params.frame_shape?;
     let selected_indices: Vec<usize> = (0..objects.len())
@@ -892,7 +906,8 @@ fn synthesize_pocket_outside_objects(
     let frame = {
         let frame_selection: Vec<&VcObject> =
             selected_indices.iter().map(|&i| &objects[i]).collect();
-        let padding = op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
+        let user_padding = op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
+        let padding = user_padding.max(tool_radius_mm.max(0.0));
         build_frame(
             &frame_selection,
             frame_shape,
@@ -987,8 +1002,25 @@ fn build_op_offsets(
     let frame_op_storage: Option<Operation> = {
         let cur_op: &Operation = effective_op_storage.as_ref().unwrap_or(op);
         if cur_op.params.frame_shape.is_some() {
+            let tool_radius_mm = setup.tool.diameter * 0.5;
+            let user_padding_mm = cur_op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
+            if user_padding_mm < tool_radius_mm {
+                warnings.push(PipelineWarning {
+                    op_id: Some(cur_op.id),
+                    kind: "frame_padding_below_tool_radius".into(),
+                    message: format!(
+                        "Frame padding {user:.3} mm is below the cutter radius {radius:.3} mm \
+                         and was bumped to {radius:.3} mm so the cutter stays outside the \
+                         selection. Set padding above the tool diameter ({diam:.3} mm) to \
+                         actually carve material outside the shape.",
+                        user = user_padding_mm,
+                        radius = tool_radius_mm,
+                        diam = setup.tool.diameter,
+                    ),
+                });
+            }
             if let Some((new_objects, ordered_indices)) =
-                synthesize_pocket_outside_objects(cur_op, objects)
+                synthesize_pocket_outside_objects(cur_op, objects, tool_radius_mm)
             {
                 // Replace the working vec with the frame-augmented set.
                 *objects = new_objects;
@@ -2778,6 +2810,81 @@ mod tests {
         assert!(
             !cut_inside_inner,
             "Pocket-Outside should NOT cut deep inside the source selection",
+        );
+    }
+
+    /// Pocket-Outside (rt1.3) regression: when the user enters a frame
+    /// padding smaller than the cutter radius, the pipeline must clamp
+    /// the padding up to (at least) the tool radius and emit a warning
+    /// — otherwise the synthetic frame's "Inside" offset puts the
+    /// cutter inside the very shape it should be carving around.
+    #[test]
+    fn pocket_outside_clamps_padding_below_tool_radius() {
+        let segments = closed_square_offset(50.0, 0.0, 0.0);
+        let mut params = OperationParams::mill_default();
+        params.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
+        params.frame_padding_mm = Some(1.0); // < tool radius (3.0)
+        let project = Project {
+            segments,
+            machine: Default::default(),
+            tools: vec![endmill(1, 6.0)], // 6 mm Ø ⇒ 3 mm radius
+            operations: vec![Operation {
+                id: 1,
+                name: "Pocket-Outside-tight".into(),
+                enabled: true,
+                kind: OperationKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OperationSource::Objects {
+                    ids: vec![1],
+                    combine: SourceCombine::Difference,
+                },
+                params,
+                pattern: None,
+            }],
+            fixtures: Default::default(),
+            text_layers: Default::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let warned = resp.warnings.iter().any(|w| {
+            w.kind == "frame_padding_below_tool_radius" && w.op_id == Some(1)
+        });
+        assert!(
+            warned,
+            "expected frame_padding_below_tool_radius warning, got {:?}",
+            resp.warnings,
+        );
+        // After the clamp the cutter centerline can sit on the bbox
+        // boundary at worst, but must never step into the interior of
+        // the source square — that's the very thing the clamp prevents.
+        let cuts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .collect();
+        let inner_carve_min = 1.0;
+        let inner_carve_max = 49.0;
+        let cut_inside_inner = cuts.iter().any(|s| {
+            let deep_inside = |x: f64, y: f64| {
+                x > inner_carve_min
+                    && x < inner_carve_max
+                    && y > inner_carve_min
+                    && y < inner_carve_max
+            };
+            deep_inside(s.from.x, s.from.y) && deep_inside(s.to.x, s.to.y)
+        });
+        assert!(
+            !cut_inside_inner,
+            "clamped Pocket-Outside must not cut inside the source square",
         );
     }
 

@@ -265,6 +265,11 @@ export class HeightfieldDriver {
       effectiveCellSize = cellSize * scale;
     }
     const topZ = 0; // stock surface is z=0; carving descends to negative Z
+    // Stepped voxel renderer needs a finite floor — match the physical
+    // stock bottom so the rendered boxes have the right thickness when
+    // viewed from below. Default to 10 mm so an unconfigured project
+    // still has a visible stock height.
+    const stockThickness = input.stock.thickness > 0 ? input.stock.thickness : 10.0;
     this.dispose();
     this.sim = new this.wasm.Simulator(fp.minX, fp.minY, fp.maxX, fp.maxY, effectiveCellSize, topZ);
     this.mesh = new HeightfieldMesh({
@@ -274,6 +279,7 @@ export class HeightfieldDriver {
       originX: this.sim.origin_x(),
       originY: this.sim.origin_y(),
       topZ: this.sim.top_z(),
+      floorZ: this.sim.top_z() - stockThickness,
       solidColor: input.settings.solidColor,
       solidOpacity: input.settings.solidOpacity,
       edgeColor: input.settings.edgeColor,

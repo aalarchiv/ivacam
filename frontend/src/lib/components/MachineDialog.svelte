@@ -32,13 +32,28 @@
   let jerkEnabled = $state(!!project.machine.jerk);
   let jerkDraft = $state<AxisLimits>(project.machine.jerk ?? { x: 100, y: 100, z: 50 });
 
+  // Snapshot captured at open — the dirty check stringifies draft+jerk
+  // and compares to this string so X / Esc / click-outside can prompt
+  // before silently discarding edits (audit-dh1n).
+  let pristine = $state<string>('');
+
+  function snapshotKey(): string {
+    return JSON.stringify({
+      draft,
+      jerk: jerkEnabled ? jerkDraft : null,
+    });
+  }
+
   $effect(() => {
     if (open) {
       draft = cloneSettings(project.machine);
       jerkEnabled = !!project.machine.jerk;
       jerkDraft = project.machine.jerk ? { ...project.machine.jerk } : { x: 100, y: 100, z: 50 };
+      pristine = snapshotKey();
     }
   });
+
+  let isDirty = $derived.by(() => open && snapshotKey() !== pristine);
 
   function cloneSettings(m: MachineSettings): MachineSettings {
     return {
@@ -140,6 +155,7 @@
   }
 
   function close() {
+    if (isDirty && !window.confirm('Discard unsaved Machine changes?')) return;
     onClose();
   }
 </script>

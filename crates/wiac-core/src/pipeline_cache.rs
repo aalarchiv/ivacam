@@ -56,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 20;
+pub const PIPELINE_VERSION: u32 = 21;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
 /// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
@@ -376,11 +376,12 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     m.comments.hash(h);
     m.arcs.hash(h);
     m.supports_toolchange.hash(h);
-    hash_axis_limits_opt(m.accel.as_ref(), h);
-    hash_axis_limits_opt(m.jerk.as_ref(), h);
-    hash_f64(m.toolchange_s, h);
-    hash_opt_f64(m.rapid_speed, h);
-    m.use_kinematic_time_estimate.hash(h);
+    // accel / jerk / toolchange_s / rapid_speed / use_kinematic_time_estimate
+    // are intentionally NOT hashed: these fields drive the post-toolpath
+    // time estimator (sim/timing.rs) only, not the emitted G-code body.
+    // The estimator re-runs on every Generate regardless of cache hits,
+    // so tweaking them updates the time estimate without invalidating
+    // any cached op output (audit-4zf).
     hash_opt_f64(m.arc_fit_tolerance_mm, h);
     h.write_u32(m.decimal_separator as u32);
     hash_opt_u32(m.line_number_start, h);
@@ -853,7 +854,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x99da_d059_ecd9_5416_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0xc548_f2ef_ca7d_9550_u64, "got {:#018x}", key.0);
     }
 
     #[test]
@@ -921,6 +922,44 @@ mod tests {
         let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
         let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 1);
         assert_ne!(k1, k2);
+    }
+
+    /// Regression for audit-4zf: estimator-only MachineConfig fields
+    /// (accel, jerk, toolchange_s, rapid_speed,
+    /// use_kinematic_time_estimate) do not affect the emitted G-code
+    /// and must NOT be folded into the per-op cache key. Tweaking the
+    /// estimator should hit the cache for every op and only re-run the
+    /// (cheap) post-toolpath time estimator.
+    #[test]
+    fn estimator_only_machine_fields_do_not_change_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let key_base = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+
+        // Each clone tweaks one estimator-only field.
+        let mut m_accel = base.clone();
+        m_accel.accel = Some(crate::cam::setup::AxisLimits { x: 5000.0, y: 5000.0, z: 1000.0 });
+        let mut m_jerk = base.clone();
+        m_jerk.jerk = Some(crate::cam::setup::AxisLimits { x: 1500.0, y: 1500.0, z: 500.0 });
+        let mut m_tc = base.clone();
+        m_tc.toolchange_s = 12.5;
+        let mut m_rapid = base.clone();
+        m_rapid.rapid_speed = Some(9000.0);
+        let mut m_kin = base.clone();
+        m_kin.use_kinematic_time_estimate = !base.use_kinematic_time_estimate;
+
+        for (name, m) in [
+            ("accel", &m_accel),
+            ("jerk", &m_jerk),
+            ("toolchange_s", &m_tc),
+            ("rapid_speed", &m_rapid),
+            ("use_kinematic", &m_kin),
+        ] {
+            let key = op_cache_key(&op, &tool, m, &segs, &[], 0);
+            assert_eq!(key, key_base, "estimator-only field {name} changed the cache key");
+        }
     }
 
     /// Sanity: bumping PIPELINE_VERSION must change every cache key for

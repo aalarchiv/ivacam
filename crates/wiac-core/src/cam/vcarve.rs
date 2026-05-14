@@ -124,12 +124,23 @@ pub fn medial_axis_cancellable(
         return Vec::new();
     };
 
-    // Per-triangle circumcenter and circumradius. Triangles index into
-    // tri.triangles in groups of 3 (vertex indices into samples). The
-    // halfedges array maps half-edge i to its twin in an adjacent
-    // triangle, or INVALID_INDEX on the convex hull.
+    // Per-triangle circumcenter. Triangles index into tri.triangles in
+    // groups of 3 (vertex indices into samples). The halfedges array
+    // maps half-edge i to its twin in an adjacent triangle, or
+    // INVALID_INDEX on the convex hull.
+    //
+    // The circumradius is NOT used as the medial-axis radius. With
+    // discrete boundary samples, the circumradius equals the distance
+    // from the circumcenter to its three witness samples — but near
+    // re-entrant corners or features close to the boundary, the
+    // perpendicular distance to a nearby boundary EDGE can be smaller
+    // than the distance to those witnesses. Using the circumradius
+    // overestimates the inscribed circle, which becomes over-cut depth
+    // for V-bit / ball-nose halfpipe ops downstream. We instead compute
+    // the actual distance from each circumcenter to the nearest
+    // boundary segment below.
     let n_tri = tri.len();
-    let mut centers: Vec<Option<(Point2, f64)>> = Vec::with_capacity(n_tri);
+    let mut centers: Vec<Option<Point2>> = Vec::with_capacity(n_tri);
     for t in 0..n_tri {
         let i0 = tri.triangles[3 * t];
         let i1 = tri.triangles[3 * t + 1];
@@ -137,20 +148,27 @@ pub fn medial_axis_cancellable(
         let a = samples[i0];
         let b = samples[i1];
         let c = samples[i2];
-        if let Some((cx, cy, r)) = circumcircle(a, b, c) {
-            centers.push(Some((Point2::new(cx, cy), r)));
+        if let Some((cx, cy, _)) = circumcircle(a, b, c) {
+            centers.push(Some(Point2::new(cx, cy)));
         } else {
             centers.push(None);
         }
     }
 
+    // Boundary segments — used to compute the true inscribed-circle
+    // radius at each medial-axis vertex (perpendicular distance to the
+    // nearest input edge, not to the discrete sample points).
+    let boundary_segments = collect_boundary_segments(region);
+
     // A medial-axis vertex is a circumcenter that lies inside the
-    // region. Build a parallel list of VPoints aligned to `centers`.
+    // region. Build a parallel list of VPoints aligned to `centers`,
+    // each tagged with its true inscribed radius.
     let inside: Vec<Option<VPoint>> = centers
         .iter()
         .map(|c| {
-            c.and_then(|(p, r)| {
+            c.and_then(|p| {
                 if point_in_region(region, p) {
+                    let r = nearest_boundary_distance(p, &boundary_segments);
                     Some(VPoint { x: p.x, y: p.y, r })
                 } else {
                     None
@@ -345,6 +363,67 @@ pub fn polyline_to_z(
     (out, depth_limited)
 }
 
+/// Flatten the region's outer ring + every hole into one list of
+/// boundary segments. Each segment is `(a, b)` where `a` and `b` are
+/// consecutive points along the closed ring. Used by
+/// `nearest_boundary_distance` to compute the true inscribed-circle
+/// radius at each medial-axis vertex.
+fn collect_boundary_segments(region: &VcRegion) -> Vec<(Point2, Point2)> {
+    let mut out: Vec<(Point2, Point2)> = Vec::new();
+    let push_ring = |ring: &[Point2], out: &mut Vec<(Point2, Point2)>| {
+        if ring.len() < 2 {
+            return;
+        }
+        for i in 0..ring.len() {
+            let a = ring[i];
+            let b = ring[(i + 1) % ring.len()];
+            if a.distance(b) > 1e-12 {
+                out.push((a, b));
+            }
+        }
+    };
+    push_ring(&region.outer, &mut out);
+    for h in &region.holes {
+        push_ring(h, &mut out);
+    }
+    out
+}
+
+/// Minimum perpendicular distance from `p` to any of `segments`. Each
+/// segment is `(a, b)`; projection is clamped to `t ∈ [0, 1]` so the
+/// distance is to the segment (not the infinite line). Used as the
+/// inscribed-circle radius at a medial-axis vertex.
+fn nearest_boundary_distance(p: Point2, segments: &[(Point2, Point2)]) -> f64 {
+    let mut best_sq = f64::INFINITY;
+    for &(a, b) in segments {
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let len_sq = dx * dx + dy * dy;
+        let (qx, qy) = if len_sq < 1e-18 {
+            (a.x, a.y)
+        } else {
+            let mut t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
+            if t < 0.0 {
+                t = 0.0;
+            } else if t > 1.0 {
+                t = 1.0;
+            }
+            (a.x + t * dx, a.y + t * dy)
+        };
+        let ex = p.x - qx;
+        let ey = p.y - qy;
+        let d_sq = ex * ex + ey * ey;
+        if d_sq < best_sq {
+            best_sq = d_sq;
+        }
+    }
+    if best_sq.is_finite() {
+        best_sq.sqrt()
+    } else {
+        0.0
+    }
+}
+
 /// Circumcircle (center + radius) for triangle `(a, b, c)`. Returns
 /// None on degenerate (colinear) input.
 fn circumcircle(a: Point2, b: Point2, c: Point2) -> Option<(f64, f64, f64)> {
@@ -430,6 +509,69 @@ mod tests {
         assert!(
             approx(z_min_all, expected_z, 0.05),
             "min Z = {z_min_all}, expected ≈ {expected_z}"
+        );
+    }
+
+    /// Regression for the circumradius-vs-inscribed-radius fix (gjk):
+    /// nearest_boundary_distance must measure the perpendicular drop
+    /// onto each segment, not the distance to the endpoint sample. For
+    /// a vertex sitting directly above the middle of a horizontal
+    /// segment, the answer is the perpendicular distance even if the
+    /// nearest endpoint is much farther away.
+    #[test]
+    fn nearest_boundary_distance_uses_perpendicular_foot() {
+        let segs = vec![(Point2::new(-50.0, 0.0), Point2::new(50.0, 0.0))];
+        let d = nearest_boundary_distance(Point2::new(0.0, 3.0), &segs);
+        assert!(approx(d, 3.0, 1e-9), "perpendicular dist = {d}, want 3");
+        // Endpoint sample dist would be ≈ √(50²+3²) ≈ 50.09 — confirm
+        // we did NOT pick the endpoint distance.
+        assert!(d < 5.0);
+    }
+
+    /// Regression for gjk: at a re-entrant corner the inscribed-circle
+    /// radius along the medial axis must drop to ~0, not the
+    /// (potentially much larger) circumradius of the witness samples.
+    /// A "+"-shaped region with a 4 mm wide cross has four such
+    /// corners; the medial-axis radius near each corner should taper
+    /// down toward the corner, never inflate above the local half-width.
+    #[test]
+    fn plus_shape_radius_does_not_exceed_local_half_width() {
+        // 4-mm-thick plus, 20 mm tip-to-tip.
+        let w = 2.0; // half-thickness
+        let l = 10.0; // half tip-to-tip
+        let outer = vec![
+            Point2::new(-w, -l),
+            Point2::new(w, -l),
+            Point2::new(w, -w),
+            Point2::new(l, -w),
+            Point2::new(l, w),
+            Point2::new(w, w),
+            Point2::new(w, l),
+            Point2::new(-w, l),
+            Point2::new(-w, w),
+            Point2::new(-l, w),
+            Point2::new(-l, -w),
+            Point2::new(-w, -w),
+        ];
+        let region = VcRegion {
+            outer,
+            holes: Vec::new(),
+        };
+        let polys = medial_axis(&region);
+        assert!(!polys.is_empty());
+        // The plus has no inscribed circle larger than the central
+        // 2·w-square's incircle, R = w·√2 ≈ 2.83 mm. The old
+        // circumradius-based implementation routinely reported larger
+        // R values near the re-entrant corners.
+        let r_max = polys
+            .iter()
+            .flat_map(|p| p.iter())
+            .map(|v| v.r)
+            .fold(0.0_f64, f64::max);
+        let r_bound = w * std::f64::consts::SQRT_2 + 0.1;
+        assert!(
+            r_max <= r_bound,
+            "R_max = {r_max} on plus, expected ≤ {r_bound} (= w·√2 + slack)",
         );
     }
 

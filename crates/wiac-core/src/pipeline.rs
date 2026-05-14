@@ -625,7 +625,7 @@ where
                 tool,
                 finish_tool,
                 &project.machine,
-                &resolve_op_segments(op, &project.segments),
+                &resolve_op_segments(op, &project.segments, objects),
                 &project.fixtures,
                 post_tag,
             ))
@@ -831,11 +831,17 @@ where
 /// Slice the project's segments down to the subset this op consumes.
 /// Used by the cache key — hashing the relevant segments only keeps the
 /// hit rate up when the user adds unrelated geometry on a different
-/// layer. For OperationSource::Objects we conservatively hash all
-/// segments because mapping object ids back to original segments
-/// requires running `segments_to_objects` again, which the cache
-/// shouldn't bear.
-fn resolve_op_segments(op: &Operation, all: &[Segment]) -> Vec<Segment> {
+/// layer or another object that this op never touches.
+///
+/// `objects` is the current chained-object set (which the per-op loop
+/// may have expanded with patterns or frame synthesis); for
+/// `OperationSource::Objects { ids }` we walk only the segments owned
+/// by the selected objects in id order so adding an unrelated object
+/// doesn't invalidate this op's cached output. Ids are 1-based; ids
+/// that fall outside the current `objects` set are silently skipped
+/// (e.g. after a prior op's pattern expansion replaced the chained
+/// set — the resulting empty segment list still hashes deterministically).
+fn resolve_op_segments(op: &Operation, all: &[Segment], objects: &[VcObject]) -> Vec<Segment> {
     match &op.source {
         OperationSource::All => all.to_vec(),
         OperationSource::Layers { layers, .. } => all
@@ -843,7 +849,16 @@ fn resolve_op_segments(op: &Operation, all: &[Segment]) -> Vec<Segment> {
             .filter(|s| layers.iter().any(|l| l == &s.layer))
             .cloned()
             .collect(),
-        OperationSource::Objects { .. } => all.to_vec(),
+        OperationSource::Objects { ids, .. } => {
+            let mut out = Vec::new();
+            for &id in ids {
+                let idx = (id as usize).saturating_sub(1);
+                if let Some(obj) = objects.get(idx) {
+                    out.extend(obj.segments.iter().cloned());
+                }
+            }
+            out
+        }
     }
 }
 
@@ -1617,9 +1632,16 @@ pub(super) fn ordered_selection(op: &Operation, objects: &[VcObject]) -> Vec<usi
     }
 }
 
-/// Pull the SourceCombine mode out of an op's source. Defaults to Auto
-/// when the source is `All` (no combine choice applies) or when no
-/// combine field is set (back-compat for pre-p5o projects).
+/// Pull the SourceCombine mode out of an op's source.
+///
+/// `OperationSource::All` always reports `Auto` — by design. "All
+/// objects" has no UI affordance for a combine selector, so the
+/// pipeline treats it as "let each op kind decide". Pocket then falls
+/// through to its containment-aware per-object loop (outer carves +
+/// inner holes); Profile / Engrave / DragKnife emit one path per
+/// selected object. Layers / Objects sources carry an explicit
+/// `combine` field and that value is honored verbatim — including
+/// `Auto`, which means the same per-op-kind dispatch path.
 pub(super) fn source_combine_mode(op: &Operation) -> SourceCombine {
     match &op.source {
         OperationSource::All => SourceCombine::Auto,

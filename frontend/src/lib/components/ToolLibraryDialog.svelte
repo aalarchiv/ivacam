@@ -27,13 +27,25 @@
   /// request (the "edit this tool" link in OpPropertiesPanel).
   let highlightedId = $state<number | null>(null);
   let bodyEl = $state<HTMLDivElement | null>(null);
+  /// Snapshot captured at open — dirty check compares stringified draft
+  /// to this so X / Esc / click-outside can prompt before silently
+  /// discarding edits (audit-dh1n).
+  let pristine = $state<string>('');
 
   $effect(() => {
     if (open) {
       draft = project.tools.map((t) => ({ ...t }));
       expanded = new Set();
+      pristine = JSON.stringify(draft);
     }
   });
+
+  let isDirty = $derived.by(() => open && JSON.stringify(draft) !== pristine);
+
+  function close() {
+    if (isDirty && !window.confirm('Discard unsaved Tool Library changes?')) return;
+    onClose();
+  }
 
   $effect(() => {
     const focusId = project.toolsDialogFocusId;
@@ -305,10 +317,10 @@
 </script>
 
 {#if open}
-  <Modal {onClose} persistKey="tool-library" modalClass="tools-modal">
+  <Modal onClose={close} persistKey="tool-library" modalClass="tools-modal">
     <header>
       <h2 id="tools-title">Tool library</h2>
-      <button class="close" onclick={onClose} aria-label="Close">×</button>
+      <button class="close" onclick={close} aria-label="Close">×</button>
     </header>
     <div class="body" bind:this={bodyEl}>
       <div class="table">
@@ -1048,7 +1060,7 @@
       <button class="add" onclick={addTool}>+ Add tool</button>
     </div>
     <footer>
-      <button class="secondary" onclick={onClose}>Cancel</button>
+      <button class="secondary" onclick={close}>Cancel</button>
       <button class="primary" onclick={commit}>OK</button>
     </footer>
   </Modal>

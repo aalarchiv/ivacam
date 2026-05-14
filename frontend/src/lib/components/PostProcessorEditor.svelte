@@ -209,6 +209,30 @@
           />
         </label>
 
+        <details class="full token-legend">
+          <summary>Template tokens (click to expand)</summary>
+          <p class="hint">
+            Tokens are case-insensitive <code>&lt;name&gt;</code> placeholders. Type them
+            verbatim into any template field (header / footer / tool-change). Unknown
+            tokens pass through unchanged.
+          </p>
+          <table class="legend-grid">
+            <tbody>
+              <tr><td><code>&lt;version&gt;</code></td><td>wiac version string</td></tr>
+              <tr><td><code>&lt;unit&gt;</code></td><td><code>mm</code> or <code>in</code></td></tr>
+              <tr><td><code>&lt;t&gt;</code></td><td>tool number</td></tr>
+              <tr><td><code>&lt;n&gt;</code></td><td>tool name</td></tr>
+              <tr><td><code>&lt;d&gt;</code></td><td>tool diameter</td></tr>
+              <tr><td><code>&lt;f&gt;</code></td><td>feed (mm/min)</td></tr>
+              <tr><td><code>&lt;s&gt;</code></td><td>spindle (rpm)</td></tr>
+              <tr><td><code>&lt;op&gt;</code></td><td>current operation name</td></tr>
+              <tr><td><code>&lt;tools&gt;</code></td><td>full tool-library listing (one per line)</td></tr>
+              <tr><td><code>&lt;project&gt;</code></td><td>project name (save-file basename)</td></tr>
+              <tr><td><code>&lt;nl&gt;</code></td><td>explicit newline</td></tr>
+            </tbody>
+          </table>
+        </details>
+
         <details open>
           <summary>File output</summary>
           <label>
@@ -491,6 +515,31 @@
   .pp-form details summary {
     font-weight: 600;
     cursor: pointer;
+  }
+  .pp-form .token-legend .hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin: 0.4rem 0;
+  }
+  .pp-form .token-legend code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8em;
+    background: var(--bg-input);
+    padding: 0 0.2rem;
+    border-radius: 2px;
+  }
+  .pp-form .legend-grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  .pp-form .legend-grid td {
+    padding: 0.15rem 0.4rem;
+    vertical-align: top;
+  }
+  .pp-form .legend-grid td:first-child {
+    width: 7rem;
+    white-space: nowrap;
   }
   .pp-form label {
     display: grid;

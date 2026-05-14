@@ -101,9 +101,13 @@ export class HeightfieldMesh {
 
     this.positions = new Float32Array(this.TOTAL_VERTS * 3);
     const normals = new Float32Array(this.TOTAL_VERTS * 3);
-    // Per cell: top(2) + right(2) + up(2) = 6 triangles. Per fringe
-    // wall: 2 triangles. Plus 2 triangles for the single floor quad.
-    const indices = new Uint32Array(6 * n + 6 * this.rows + 6 * this.cols + 6);
+    // Per cell: top(2) + right(2) + up(2) = 6 triangles × 3 indices
+    // = 18 indices. Per fringe wall: 2 triangles = 6 indices. Plus 6
+    // for the floor quad's 2 triangles. The old `6 * n` allocation
+    // (audit-euxi) was sized as triangle COUNT not index count, so
+    // writes past index 6*N silently no-op'd — explained the
+    // half-missing-mesh regression.
+    const indices = new Uint32Array(18 * n + 6 * this.rows + 6 * this.cols + 6);
 
     this.initStaticBuffers(normals, indices);
 

@@ -489,10 +489,12 @@
     userPanY = 0;
   }
 
-  /// Return the set of object ids whose bbox intersects the screen
-  /// rectangle drawn between (x0,y0) and (x1,y1). Works in DATA
+  /// Return the set of object ids whose bbox lies fully INSIDE the
+  /// screen rectangle drawn between (x0,y0) and (x1,y1) — Illustrator /
+  /// Inkscape style containment select, so dragging the rubber-band
+  /// across part of an object does NOT pick it. Works in DATA
   /// coordinates: we transform the rectangle once into data space and
-  /// AABB-test each object's bbox.
+  /// containment-test each object's bbox (audit-1dqh).
   function objectsInBox(x0: number, y0: number, x1: number, y1: number): number[] {
     const data = project.imported;
     if (!data || !lastTransform) return [];
@@ -513,7 +515,9 @@
       // hidden chains.
       if (!visibleLayers.has(m.layer)) continue;
       const b = m.bbox;
-      if (b.max_x < minX || b.min_x > maxX || b.max_y < minY || b.min_y > maxY) continue;
+      // Containment: every corner of the object's bbox must lie inside
+      // the selection rectangle.
+      if (b.min_x < minX || b.max_x > maxX || b.min_y < minY || b.max_y > maxY) continue;
       out.push(m.id);
     }
     return out;

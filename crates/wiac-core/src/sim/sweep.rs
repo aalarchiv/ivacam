@@ -189,6 +189,13 @@ pub(super) fn for_each_swept_cell<F>(
     let cell = layout.cell;
     let r_tool_sq = r_tool * r_tool;
 
+    // Flat-bottom profiles (Endmill / Drill / Laser / DragKnife) have
+    // `eval(r) = Some(0.0)` for every `r ≤ r_tool` — which is already
+    // implied by `r_sq ≤ r_tool_sq`. Skip both the sqrt and the
+    // per-cell eval branch for those (audit-xnmp). The compiler can
+    // also hoist this constant decision out of the inner loop.
+    let flat_bottom = profile.is_flat_bottom();
+
     for iy in iy0..=iy1 {
         for ix in ix0..=ix1 {
             let cx = layout.origin_x + (ix as f64 + 0.5) * cell;
@@ -213,12 +220,16 @@ pub(super) fn for_each_swept_cell<F>(
             if r_sq > r_tool_sq {
                 continue;
             }
-            let r = r_sq.sqrt() as f32;
-            let dz = match profile.eval(r) {
-                Some(v) => v,
-                None => continue,
-            };
-            body(ix, iy, r, cutter_pz, dz);
+            if flat_bottom {
+                body(ix, iy, 0.0, cutter_pz, 0.0);
+            } else {
+                let r = r_sq.sqrt() as f32;
+                let dz = match profile.eval(r) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                body(ix, iy, r, cutter_pz, dz);
+            }
         }
     }
 }

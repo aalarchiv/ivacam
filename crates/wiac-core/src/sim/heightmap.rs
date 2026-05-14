@@ -161,6 +161,21 @@ impl ToolProfile {
         }
     }
 
+    /// True for flat-bottomed profiles (Endmill / Drill / Laser /
+    /// DragKnife) — every cell within the cutter radius carves to
+    /// the same `cutter_pz`, no per-r profile offset. The sweep can
+    /// then skip both the sqrt and the eval() branch (audit-xnmp).
+    #[must_use]
+    pub fn is_flat_bottom(&self) -> bool {
+        matches!(
+            self,
+            ToolProfile::Endmill { .. }
+                | ToolProfile::Drill { .. }
+                | ToolProfile::LaserBeam { .. }
+                | ToolProfile::DragKnife { .. }
+        )
+    }
+
     #[must_use]
     pub fn eval(&self, r: f32) -> Option<f32> {
         match *self {

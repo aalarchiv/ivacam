@@ -258,7 +258,7 @@
       project.selectedTextLayerId = layer.id;
       onClose();
     } catch (e) {
-      if (txOpen) project.history.cancelTransaction(project as unknown as never);
+      if (txOpen) project.cancelTransaction();
       errorMsg = e instanceof Error ? e.message : String(e);
     } finally {
       busy = false;

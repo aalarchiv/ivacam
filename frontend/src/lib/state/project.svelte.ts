@@ -499,6 +499,12 @@ class ProjectState {
   redo(): boolean {
     return this.history.redo(this.target());
   }
+  /// Public façade for `history.cancelTransaction` that hides the
+  /// `CommandTarget` cast — call sites in the UI can stay free of
+  /// `as unknown as never` workarounds (audit-jbz1).
+  cancelTransaction(): void {
+    this.history.cancelTransaction(this.target());
+  }
   canUndo(): boolean {
     void this.historyVersion;
     return this.history.undoSize > 0;

@@ -840,7 +840,7 @@
       }
       project.history.commitTransaction();
     } catch (e) {
-      project.history.cancelTransaction(project as unknown as never);
+      project.cancelTransaction();
       throw e;
     }
     ctxMenu = null;

@@ -26,11 +26,15 @@
 //! orchestrator (`run_pipeline_impl` / `run_per_op`) and the offset /
 //! pocket logic remain in this file.
 
+mod frame;
 mod op_drivers;
 mod patterns;
+mod tabs;
 
+use frame::synthesize_pocket_outside_objects;
 use op_drivers::{emit_stufenfase, run_halfpipe_op, run_thread_op, run_vcarve_op};
 use patterns::{apply_pattern_to_point, apply_pattern_to_segments, pattern_offsets};
+use tabs::build_op_tabs_by_object;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,7 +50,7 @@ use crate::cam::offsets::{
     TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
-use crate::cam::source_combine::{build_frame, combine_source_regions, CombinedRegion};
+use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::{segments_to_points, VcObject};
 use crate::gcode::{
     emit_drill_block, emit_polylines_block, emit_program_begin, emit_program_end, grbl, hpgl,
@@ -888,57 +892,6 @@ fn object_bbox_center(obj: &VcObject) -> Option<Point2> {
         return None;
     }
     Some(Point2::new((min_x + max_x) * 0.5, (min_y + max_y) * 0.5))
-}
-
-/// Pocket-Outside (rt1.3) helper. When the op carries `frame_shape`,
-/// builds the synthetic frame around the op's current selection and
-/// returns `(new_objects, ordered_indices)` where:
-///   * `new_objects` is `objects` with the frame appended at the end.
-///   * `ordered_indices` lists `[frame_idx, ...selection_idxs]` so
-///     downstream `SourceCombine::Difference` carves between the
-///     frame and the original selection.
-/// Returns `None` when the op has no frame_shape or the selection is
-/// empty. Single source of truth used by both the preview pass
-/// (`build_region_previews`) and the toolpath driver (`build_op_offsets`)
-/// so they cannot drift.
-///
-/// `tool_radius_mm` clamps the lower bound of `frame_padding_mm`. With
-/// frame `tool_offset = Inside`, the cutter centerline walks at
-/// `bbox + padding - tool_radius`; if `padding < tool_radius` the
-/// centerline ends up INSIDE the selection's bbox, so the cutter cuts
-/// into the very shape it should be carving around. Clamping ensures
-/// the geometry is well-formed regardless of user input.
-fn synthesize_pocket_outside_objects(
-    op: &Operation,
-    objects: &[VcObject],
-    tool_radius_mm: f64,
-) -> Option<(Vec<VcObject>, Vec<usize>)> {
-    let frame_shape = op.params.frame_shape?;
-    let selected_indices: Vec<usize> = (0..objects.len())
-        .filter(|i| op_includes_object(op, &objects[*i], *i))
-        .collect();
-    if selected_indices.is_empty() {
-        return None;
-    }
-    let frame = {
-        let frame_selection: Vec<&VcObject> =
-            selected_indices.iter().map(|&i| &objects[i]).collect();
-        let user_padding = op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
-        let padding = user_padding.max(tool_radius_mm.max(0.0));
-        build_frame(
-            &frame_selection,
-            frame_shape,
-            padding,
-            op.params.frame_corner_radius_mm,
-        )
-    };
-    let mut new_objects = objects.to_vec();
-    let frame_idx = new_objects.len();
-    new_objects.push(frame);
-    let mut ordered = Vec::with_capacity(selected_indices.len() + 1);
-    ordered.push(frame_idx);
-    ordered.extend(selected_indices);
-    Some((new_objects, ordered))
 }
 
 fn build_op_offsets(
@@ -2131,59 +2084,6 @@ fn header_setup_for(project: &Project) -> Setup {
         };
     }
     setup
-}
-
-/// Resolve an op's tab placements + auto-spacing into a per-object
-/// `TabPoint` map for `attach_tabs_to_offsets` (rt1.10). Manual
-/// placements walk `cam/tabs::polyline_at_t`; auto placements use
-/// evenly spaced parameters over each closed source object's chain.
-fn build_op_tabs_by_object(
-    op: &Operation,
-    objects: &[VcObject],
-) -> HashMap<usize, Vec<TabPoint>> {
-    use crate::cam::tabs::{auto_tab_ts, polyline_at_t, resolve_tab_placements};
-    use crate::project::TabPlacementMode;
-
-    let mut out: HashMap<usize, Vec<TabPoint>> =
-        match op.params.tab_mode {
-            TabPlacementMode::Off => return HashMap::new(),
-            TabPlacementMode::Manual => {
-                resolve_tab_placements(&op.params.tab_placements, objects, 6)
-            }
-            TabPlacementMode::Auto { .. } | TabPlacementMode::Mixed { .. } => HashMap::new(),
-        };
-    // Auto + Mixed: add evenly-spaced tabs on every selected closed
-    // object.
-    if let TabPlacementMode::Auto { count } | TabPlacementMode::Mixed { auto_count: count } =
-        op.params.tab_mode
-    {
-        if count > 0 {
-            let auto_ts = auto_tab_ts(count, true);
-            let auto_ts_open = auto_tab_ts(count, false);
-            for (idx, obj) in objects.iter().enumerate() {
-                if !op_includes_object(op, obj, idx) {
-                    continue;
-                }
-                let pts = segments_to_points(&obj.segments, 6);
-                if pts.len() < 2 {
-                    continue;
-                }
-                let ts = if obj.closed { &auto_ts } else { &auto_ts_open };
-                for &t in ts {
-                    let (p, _) = polyline_at_t(&pts, t, obj.closed);
-                    out.entry(idx).or_default().push(TabPoint { x: p.x, y: p.y, width_override_mm: None, height_override_mm: None });
-                }
-            }
-        }
-    }
-    // For Mixed, also include manual placements (Manual was handled
-    // above; Mixed enters this branch with no manual entries yet).
-    if matches!(op.params.tab_mode, TabPlacementMode::Mixed { .. }) {
-        for (k, v) in resolve_tab_placements(&op.params.tab_placements, objects, 6) {
-            out.entry(k).or_default().extend(v);
-        }
-    }
-    out
 }
 
 #[cfg(test)]

@@ -791,6 +791,11 @@
   }
 
   function onCtxDocClick(e: MouseEvent) {
+    // Cheap bail when neither the context menu nor the tab popover
+    // is open — the global onclick from <svelte:window> fires on
+    // every document click and we don't want to walk the DOM with
+    // `closest` per click when there's nothing to dismiss (audit-pgxb).
+    if (!ctxMenu && !tabPopover) return;
     const target = e.target as HTMLElement | null;
     if (tabPopover) {
       if (!(target && target.closest('.tab-popover'))) {

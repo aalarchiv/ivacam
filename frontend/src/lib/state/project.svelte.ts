@@ -865,6 +865,89 @@ class ProjectState {
     this.error = null;
   }
 
+  /// Pipeline-state lifecycle helpers — wrap the direct field writes
+  /// GenerateBar used to do inline. Single source of truth for the
+  /// state transitions so future callers (e.g. an alt-Generate path
+  /// from a menu / shortcut) can't drift (audit-pgxb).
+  beginGenerate() {
+    this.generating = true;
+    this.pipelineState = 'running';
+    this.pipelineProgress = null;
+    this.error = null;
+    this.lastGenerateCachedCount = 0;
+    this.lastGenerateOpCount = 0;
+  }
+
+  /// Apply a streaming pipeline event from the backend. `cached` and
+  /// the per-op-progress arithmetic live here so the UI component
+  /// stays render-only.
+  notePipelineEvent(
+    ev:
+      | { kind: 'op_started'; idx: number; total: number; name: string }
+      | { kind: 'op_progress'; fraction: number; message: string }
+      | { kind: 'op_completed'; cached: boolean }
+      | { kind: 'done' },
+  ) {
+    if (ev.kind === 'op_started') {
+      this.pipelineProgress = {
+        opIdx: ev.idx,
+        opTotal: ev.total,
+        opFraction: 0,
+        opName: ev.name,
+      };
+    } else if (ev.kind === 'op_progress') {
+      if (this.pipelineProgress) {
+        this.pipelineProgress = {
+          ...this.pipelineProgress,
+          opFraction: ev.fraction,
+        };
+      }
+    } else if (ev.kind === 'op_completed') {
+      this.lastGenerateOpCount += 1;
+      if (ev.cached) this.lastGenerateCachedCount += 1;
+      if (this.pipelineProgress) {
+        this.pipelineProgress = {
+          ...this.pipelineProgress,
+          opFraction: 1,
+          opIdx: this.pipelineProgress.opIdx + 1,
+        };
+      }
+    }
+  }
+
+  /// Successful pipeline completion. Briefly shows the `completed`
+  /// state so the UI can flash the success indicator before reverting
+  /// to idle.
+  finishGenerate() {
+    this.pipelineState = 'completed';
+    setTimeout(() => {
+      if (this.pipelineState === 'completed') this.pipelineState = 'idle';
+    }, 1000);
+  }
+
+  /// Pipeline aborted by the user (Cancel button or AbortSignal). Drop
+  /// straight to idle without the success flash.
+  cancelGenerate() {
+    if (this.pipelineState === 'running') {
+      this.pipelineState = 'cancelling';
+    }
+  }
+
+  /// Pipeline failure path. Caller passes the surfacable error; we
+  /// route it through setError and snap back to idle.
+  failGenerate(err: string | WiacError) {
+    this.setError(err);
+    this.pipelineState = 'idle';
+  }
+
+  /// Reset transient generate state regardless of how the run ended.
+  /// Always pairs with `beginGenerate` so the UI doesn't leak a stale
+  /// progress card after the awaited generate promise settles.
+  endGenerate() {
+    this.generating = false;
+    this.pipelineProgress = null;
+  }
+
   toggleLayer(name: string) {
     const next = new Set(this.visibleLayers);
     if (next.has(name)) next.delete(name);

@@ -76,7 +76,7 @@
 
   function cancelRun() {
     if (project.pipelineState !== 'running') return;
-    project.pipelineState = 'cancelling';
+    project.cancelGenerate();
     abortController?.abort();
   }
 
@@ -134,12 +134,7 @@
       );
       return;
     }
-    project.generating = true;
-    project.pipelineState = 'running';
-    project.pipelineProgress = null;
-    project.error = null;
-    project.lastGenerateCachedCount = 0;
-    project.lastGenerateOpCount = 0;
+    project.beginGenerate();
     progressMsg = '';
     progressFrac = 0;
     abortController = new AbortController();
@@ -164,29 +159,14 @@
         r = await client.generateStreaming(
           req,
           (ev) => {
+            project.notePipelineEvent(ev);
             if (ev.kind === 'op_started') {
-              project.pipelineProgress = {
-                opIdx: ev.idx,
-                opTotal: ev.total,
-                opFraction: 0,
-                opName: ev.name,
-              };
               progressMsg = ev.name;
               progressFrac = ev.idx / Math.max(1, ev.total);
             } else if (ev.kind === 'op_progress') {
-              if (project.pipelineProgress) {
-                project.pipelineProgress = { ...project.pipelineProgress, opFraction: ev.fraction };
-              }
               progressMsg = ev.message;
             } else if (ev.kind === 'op_completed') {
-              project.lastGenerateOpCount += 1;
-              if (ev.cached) project.lastGenerateCachedCount += 1;
               if (project.pipelineProgress) {
-                project.pipelineProgress = {
-                  ...project.pipelineProgress,
-                  opFraction: 1,
-                  opIdx: project.pipelineProgress.opIdx + 1,
-                };
                 progressFrac =
                   project.pipelineProgress.opIdx / Math.max(1, project.pipelineProgress.opTotal);
               }
@@ -205,22 +185,18 @@
         r = await client.generate(req);
       }
       project.setGenerated(r);
-      project.pipelineState = 'completed';
-      setTimeout(() => {
-        if (project.pipelineState === 'completed') project.pipelineState = 'idle';
-      }, 1000);
+      project.finishGenerate();
     } catch (e) {
       if (e instanceof CancelledError) {
+        // Cancelled by the user — just snap back to idle.
         project.pipelineState = 'idle';
       } else {
         const raw = e instanceof Error ? e.message : String(e);
         const structured = tryParseStructuredError(raw);
-        project.setError(structured ?? raw);
-        project.pipelineState = 'idle';
+        project.failGenerate(structured ?? raw);
       }
     } finally {
-      project.generating = false;
-      project.pipelineProgress = null;
+      project.endGenerate();
       abortController = null;
       progressMsg = '';
       progressFrac = 0;

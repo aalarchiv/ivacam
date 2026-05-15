@@ -41,7 +41,7 @@ use lru::LruCache;
 use seahash::SeaHasher;
 
 use crate::cam::setup::{
-    AxisLimits, LeadKind, LeadsConfig, MachineConfig, MachineMode, ObjectOrder, PlungeStrategy,
+    LeadKind, LeadsConfig, MachineConfig, MachineMode, ObjectOrder, PlungeStrategy,
     TabType, TabsConfig, ToolOffset, UnitSystem,
 };
 use crate::cam::source_combine::FrameShape;

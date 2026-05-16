@@ -33,9 +33,10 @@ use crate::cam::VcObject;
 use crate::gcode::PostProcessor;
 use crate::geometry::Point2;
 use crate::pipeline::{
-    cancelled, effective_step, op_includes_object, ordered_selection, push_tool_fit_kind_warnings,
-    source_combine_mode, synthesize_finish_setup, CancelToken, PipelineError, PipelineWarning,
+    cancelled, effective_step, op_includes_object, ordered_selection, source_combine_mode,
+    synthesize_finish_setup, CancelToken, PipelineError, PipelineWarning,
 };
+use super::warnings::push_tool_fit_kind_warnings;
 use crate::project::{Operation, OperationKind, PocketStrategy, Project};
 
 /// V-Carve op driver. Builds the medial axis of the source region(s)

@@ -166,7 +166,7 @@ const NO_SEGMENT: u32 = u32::MAX;
             let retracted = Pose3 { x, y, z: r_z };
             let from = state;
             let mut push = |from: Pose3, to: Pose3, kind: MoveKind| {
-                if from.x == to.x && from.y == to.y && from.z == to.z {
+                if from == to {
                     return;
                 }
                 let seg_idx = out.len() as u32;
@@ -196,14 +196,15 @@ const NO_SEGMENT: u32 = u32::MAX;
         }
         let from = state;
         let to = Pose3 { x, y, z };
-        let moved = from.x != to.x || from.y != to.y || from.z != to.z;
-        if !moved {
+        if from == to {
             continue;
         }
         let kind = match active_code {
             0 => MoveKind::Rapid,
             1 => {
-                if had_z && from.x == to.x && from.y == to.y {
+                #[allow(clippy::float_cmp)] // x/y/z copied verbatim through gcode parse — exact equality is the right test.
+                let xy_match = had_z && from.x == to.x && from.y == to.y;
+                if xy_match {
                     if to.z > from.z {
                         MoveKind::Retract
                     } else {
@@ -351,6 +352,10 @@ fn strip_comment(line: &str) -> String {
 }
 
 #[cfg(test)]
+// Asserts compare gcode coordinates parsed verbatim from string literals
+// (e.g. "G1 X10 Y10" → 10.0) against the same literal — exact float
+// equality is the right test, not epsilon comparison.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

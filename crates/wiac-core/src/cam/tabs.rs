@@ -220,6 +220,9 @@ use crate::project::TabPlacement;
 }
 
 #[cfg(test)]
+// Cumulative arc-length on a unit square: each side is exactly 10.0 →
+// running sum is bit-exact.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

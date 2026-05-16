@@ -355,6 +355,9 @@ fn strip_comment(line: &str) -> String {
 }
 
 #[cfg(test)]
+// `assert_eq!(feed, 800.0)` etc. — the value 800 came from a gcode literal
+// "F800" parsed verbatim, so exact equality is the right check.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

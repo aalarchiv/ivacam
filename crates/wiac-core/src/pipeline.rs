@@ -1468,6 +1468,10 @@ pub(super) fn synthesize_finish_setup(
 }
 
 #[cfg(test)]
+// Test assertions like `assert_eq!(effective_step(&op, &tool).unwrap(), -0.5)`
+// compare values that propagate through the pipeline by direct assignment
+// from a literal — exact equality is the right test.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::cam::setup::{MachineConfig, TabType, TabsConfig, ToolOffset};

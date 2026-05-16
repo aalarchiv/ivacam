@@ -167,6 +167,9 @@ impl BBox {
 }
 
 #[cfg(test)]
+// `assert_eq!(bbox.min_x, -3.0)` — values are copied verbatim from earlier
+// `.extend_point` calls, so exact float equality is the correct test.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

@@ -51,6 +51,9 @@
 }
 
 #[cfg(test)]
+// Asserts compare chamfer_depth against literal expected values
+// (0.0, 30°/60° trig outputs) that are exactly representable in f64.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

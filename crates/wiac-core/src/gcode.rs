@@ -468,7 +468,11 @@ fn greedy_nearest_among(offsets: &[&PolylineOffset], start: Point2) -> Vec<usize
             let better = match best {
                 None => true,
                 Some((_, bd, bl, bf)) => {
-                    if d != bd {
+                    // Distance tiebreaker: only fall through to level/index
+                    // ordering when the squared distances are within tool
+                    // tolerance, since two computed f64 distances rarely
+                    // coincide bit-for-bit even at the same nominal point.
+                    if (d - bd).abs() > 1e-12 {
                         d < bd
                     } else if level != bl {
                         level > bl

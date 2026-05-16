@@ -15,6 +15,35 @@ import type {
   VersionResponse,
 } from './types';
 
+/**
+ * Read a failed Response body and throw an Error whose `.message` carries
+ * the structured `wiac_core::Error` shape verbatim when the server sent one
+ * (luf1). Frontend `tryParseStructuredError` recognises the JSON string and
+ * extracts kind / recovery_hint / auto_fix / span; otherwise callers see
+ * the legacy `<label> returned <status>: <detail>` form.
+ */
+async function throwHttpError(label: string, res: Response): Promise<never> {
+  let detail: unknown;
+  try {
+    detail = await res.json();
+  } catch {
+    detail = await res.text();
+  }
+  if (looksLikeStructuredError(detail)) {
+    // Stringify so tryParseStructuredError(e.message) — which expects a
+    // string starting with '{' — parses it back into a WiacError. This
+    // keeps a single error-detection codepath across HTTP/Tauri/WASM.
+    throw new Error(JSON.stringify(detail));
+  }
+  throw new Error(`${label} returned ${res.status}: ${JSON.stringify(detail)}`);
+}
+
+function looksLikeStructuredError(detail: unknown): boolean {
+  if (detail == null || typeof detail !== 'object') return false;
+  const d = detail as Record<string, unknown>;
+  return typeof d.kind === 'string' && typeof d.message === 'string';
+}
+
 export class HttpWiacClient implements WiacClient {
   constructor(private readonly base: string) {}
 
@@ -36,15 +65,7 @@ export class HttpWiacClient implements WiacClient {
     form.append('file', file);
     if (format) form.append('format', format);
     const res = await fetch(`${this.base}/import`, { method: 'POST', body: form });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = await res.text();
-      }
-      throw new Error(`/import returned ${res.status}: ${JSON.stringify(detail)}`);
-    }
+    if (!res.ok) await throwHttpError('/import', res);
     return (await res.json()) as ImportResponse;
   }
 
@@ -54,15 +75,7 @@ export class HttpWiacClient implements WiacClient {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(request),
     });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = await res.text();
-      }
-      throw new Error(`/generate returned ${res.status}: ${JSON.stringify(detail)}`);
-    }
+    if (!res.ok) await throwHttpError('/generate', res);
     return (await res.json()) as GenerateResponse;
   }
 
@@ -72,15 +85,7 @@ export class HttpWiacClient implements WiacClient {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(request),
     });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = await res.text();
-      }
-      throw new Error(`/text returned ${res.status}: ${JSON.stringify(detail)}`);
-    }
+    if (!res.ok) await throwHttpError('/text', res);
     return (await res.json()) as RenderTextResponse;
   }
 
@@ -90,15 +95,7 @@ export class HttpWiacClient implements WiacClient {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(layer),
     });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = await res.text();
-      }
-      throw new Error(`/text/layer returned ${res.status}: ${JSON.stringify(detail)}`);
-    }
+    if (!res.ok) await throwHttpError('/text/layer', res);
     return (await res.json()) as RenderTextLayerResponse;
   }
 
@@ -108,15 +105,7 @@ export class HttpWiacClient implements WiacClient {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(request),
     });
-    if (!res.ok) {
-      let detail: unknown;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = await res.text();
-      }
-      throw new Error(`/helix-radius returned ${res.status}: ${JSON.stringify(detail)}`);
-    }
+    if (!res.ok) await throwHttpError('/helix-radius', res);
     return (await res.json()) as HelixRadiusResponse;
   }
 
@@ -135,21 +124,16 @@ export class HttpWiacClient implements WiacClient {
       headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
       body: JSON.stringify(request),
     });
-    if (!res.ok || !res.body) {
-      let detail: unknown;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = await res.text();
-      }
-      throw new Error(`/generate/stream returned ${res.status}: ${JSON.stringify(detail)}`);
-    }
+    if (!res.ok || !res.body) await throwHttpError('/generate/stream', res);
 
-    const reader = res.body.getReader();
+    const reader = res.body!.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
     let result: GenerateResponse | undefined;
-    let errorPayload: { status: number; message: string } | undefined;
+    // Raw event-data string from the SSE `error` event. Server emits the
+    // full structured `wiac_core::Error` as the payload (luf1); we rethrow
+    // it as a JSON string so tryParseStructuredError() works downstream.
+    let errorPayload: string | undefined;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -175,7 +159,7 @@ export class HttpWiacClient implements WiacClient {
           } else if (eventName === 'result') {
             result = JSON.parse(data) as GenerateResponse;
           } else if (eventName === 'error') {
-            errorPayload = JSON.parse(data) as { status: number; message: string };
+            errorPayload = data;
           }
         } catch {
           // Malformed frame — drop and keep reading.
@@ -183,8 +167,8 @@ export class HttpWiacClient implements WiacClient {
       }
     }
 
-    if (errorPayload) {
-      throw new Error(`/generate/stream errored ${errorPayload.status}: ${errorPayload.message}`);
+    if (errorPayload !== undefined) {
+      throw new Error(errorPayload);
     }
     if (!result) {
       throw new Error('/generate/stream closed before emitting a result');
@@ -209,22 +193,17 @@ export class HttpWiacClient implements WiacClient {
       headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
       body: JSON.stringify(request),
     });
-    if (!res.ok || !res.body) {
-      let detail: unknown;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = await res.text();
-      }
-      throw new Error(`/generate/stream returned ${res.status}: ${JSON.stringify(detail)}`);
-    }
+    if (!res.ok || !res.body) await throwHttpError('/generate/stream', res);
 
-    const reader = res.body.getReader();
+    const reader = res.body!.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
     let result: GenerateResponse | undefined;
     let cancelled = false;
-    let errorPayload: { status: number; message: string } | undefined;
+    // Raw event-data from the SSE `error` event — the full structured
+    // `wiac_core::Error` JSON. Rethrown verbatim so the call site can
+    // parse it via tryParseStructuredError().
+    let errorPayload: string | undefined;
     let tokenId: number | undefined;
     let abortHandler: (() => void) | undefined;
 
@@ -267,7 +246,7 @@ export class HttpWiacClient implements WiacClient {
               cancelled = true;
               onEvent({ kind: 'cancelled' });
             } else if (eventName === 'error') {
-              errorPayload = JSON.parse(data) as { status: number; message: string };
+              errorPayload = data;
             }
           } catch {
             // Malformed frame — drop and keep reading.
@@ -281,8 +260,8 @@ export class HttpWiacClient implements WiacClient {
     }
 
     if (cancelled) throw new CancelledError();
-    if (errorPayload) {
-      throw new Error(`/generate/stream errored ${errorPayload.status}: ${errorPayload.message}`);
+    if (errorPayload !== undefined) {
+      throw new Error(errorPayload);
     }
     if (!result) {
       throw new Error('/generate/stream closed before emitting a result');

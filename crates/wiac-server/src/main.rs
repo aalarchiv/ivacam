@@ -336,14 +336,16 @@ async fn generate_stream(
                     .expect("cancelled payload"),
             ),
             Err(err) => {
+                // Stream the full structured `wiac_core::Error` so the frontend
+                // sees the same shape on SSE that it sees on /generate (luf1).
+                // The HTTP status of the SSE response itself is already 200
+                // (sent at stream open); the per-event payload carries the
+                // error semantics.
                 let app_err = AppError::from(err);
                 send(
                     SseEvent::default()
                         .event("error")
-                        .json_data(serde_json::json!({
-                            "status": app_err.status.as_u16(),
-                            "message": app_err.message,
-                        }))
+                        .json_data(&app_err.inner)
                         .expect("error payload"),
                 );
             }
@@ -372,49 +374,55 @@ async fn generate_cancel(
 
 // ─── error type ────────────────────────────────────────────────────────────
 
+/// HTTP error wrapper around the cross-transport `wiac_core::Error`.
+///
+/// The full structured form (`kind` / `message` / `recovery_hint` / `auto_fix`
+/// / `span`) is serialized as the JSON response body so HTTP clients see the
+/// same shape the Tauri and WASM transports surface (luf1). The HTTP status
+/// code is derived from `wiac_core::ErrorKind` so the response also remains
+/// REST-ful.
 #[derive(Debug)]
 struct AppError {
     status: StatusCode,
-    message: String,
+    inner: wiac_core::Error,
 }
 
 impl AppError {
-    fn internal(msg: impl Into<String>) -> Self {
+    fn from_core(inner: wiac_core::Error) -> Self {
         Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: msg.into(),
+            status: status_for_kind(inner.kind),
+            inner,
         }
     }
     fn bad_request(msg: impl Into<String>) -> Self {
-        Self {
-            status: StatusCode::BAD_REQUEST,
-            message: msg.into(),
+        Self::from_core(wiac_core::Error::bad_input(msg))
+    }
+    fn internal(msg: impl Into<String>) -> Self {
+        Self::from_core(wiac_core::Error::internal(msg))
+    }
+}
+
+fn status_for_kind(kind: wiac_core::ErrorKind) -> StatusCode {
+    use wiac_core::ErrorKind;
+    match kind {
+        ErrorKind::BadInput | ErrorKind::Unsupported | ErrorKind::Misconfigured => {
+            StatusCode::BAD_REQUEST
         }
+        ErrorKind::Limit => StatusCode::PAYLOAD_TOO_LARGE,
+        ErrorKind::Io => StatusCode::UNPROCESSABLE_ENTITY,
+        ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let body = serde_json::json!({ "error": self.message });
-        (self.status, Json(body)).into_response()
+        (self.status, Json(self.inner)).into_response()
     }
 }
 
 impl From<wiac_core::Error> for AppError {
     fn from(e: wiac_core::Error) -> Self {
-        use wiac_core::ErrorKind;
-        let status = match e.kind {
-            ErrorKind::BadInput | ErrorKind::Unsupported | ErrorKind::Misconfigured => {
-                StatusCode::BAD_REQUEST
-            }
-            ErrorKind::Limit => StatusCode::PAYLOAD_TOO_LARGE,
-            ErrorKind::Io => StatusCode::UNPROCESSABLE_ENTITY,
-            ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        Self {
-            status,
-            message: e.to_string(),
-        }
+        Self::from_core(e)
     }
 }
 
@@ -422,18 +430,29 @@ impl From<wiac_core::pipeline::PipelineError> for AppError {
     fn from(e: wiac_core::pipeline::PipelineError) -> Self {
         use wiac_core::pipeline::PipelineError;
         match e {
+            // Client's cancel arrived after the response stream began (or the
+            // synchronous /generate handler raced cancellation). 408 keeps the
+            // legacy mapping; the body still carries the uniform structured
+            // shape so frontend error parsing remains a single code path.
             PipelineError::Cancelled => Self {
                 status: StatusCode::REQUEST_TIMEOUT,
-                message: e.to_string(),
+                inner: wiac_core::Error::internal(e.to_string()),
             },
-            other => Self::bad_request(other.to_string()),
+            // Anything else routes through the structured-error converter so
+            // recovery hints + auto-fix survive into the HTTP body.
+            other => {
+                let inner = other
+                    .to_structured(None)
+                    .unwrap_or_else(|| wiac_core::Error::misconfigured(other.to_string()));
+                Self::from_core(inner)
+            }
         }
     }
 }
 
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
-        Self::internal(e.to_string())
+        Self::from_core(wiac_core::Error::io(e.to_string()))
     }
 }
 
@@ -458,4 +477,104 @@ fn uuid_like() -> String {
         .unwrap_or(0);
     let pid = std::process::id();
     format!("{nanos:x}-{pid:x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use wiac_core::{AutoFix, Error as WiacError, ErrorKind, SourceSpan};
+
+    async fn body_json(resp: Response) -> serde_json::Value {
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn http_error_response_carries_full_structured_shape() {
+        // The whole point of luf1: a `wiac_core::Error` with recovery hint
+        // + auto-fix + source span must survive the HTTP round-trip with
+        // every field intact, not collapse to `{error: "msg"}`.
+        let inner = WiacError::misconfigured("op 2 references missing tool 9")
+            .with_hint("Pick a tool from the library.")
+            .with_auto_fix(AutoFix::AssignTool {
+                op_id: 2,
+                suggested_tool_id: 1,
+            })
+            .with_span(SourceSpan {
+                file: "test.dxf".into(),
+                line: 12,
+                column: 3,
+            });
+        let app_err = AppError::from(inner.clone());
+        assert_eq!(app_err.status, StatusCode::BAD_REQUEST);
+
+        let resp = app_err.into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = body_json(resp).await;
+        let parsed: WiacError = serde_json::from_value(body).unwrap();
+        assert_eq!(parsed, inner);
+    }
+
+    #[test]
+    fn status_for_kind_matches_legacy_mapping() {
+        assert_eq!(status_for_kind(ErrorKind::BadInput), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            status_for_kind(ErrorKind::Misconfigured),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_for_kind(ErrorKind::Unsupported),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_for_kind(ErrorKind::Limit),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+        assert_eq!(status_for_kind(ErrorKind::Io), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            status_for_kind(ErrorKind::Internal),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn bad_request_helper_synthesizes_structured_error() {
+        // Plain `bad_request("...")` (used for multipart / missing-field
+        // failures) still emits a structured body so the frontend always
+        // sees `{kind, message}` regardless of which path raised the error.
+        let app_err = AppError::bad_request("file field missing");
+        assert_eq!(app_err.status, StatusCode::BAD_REQUEST);
+        assert_eq!(app_err.inner.kind, ErrorKind::BadInput);
+        assert_eq!(app_err.inner.message, "file field missing");
+    }
+
+    #[test]
+    fn internal_helper_synthesizes_structured_error() {
+        let app_err = AppError::internal("join error");
+        assert_eq!(app_err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(app_err.inner.kind, ErrorKind::Internal);
+    }
+
+    #[test]
+    fn pipeline_unknown_tool_promotes_auto_fix_into_http_body() {
+        // PipelineError::UnknownTool carries enough context to produce a
+        // structured Error with AutoFix::AssignTool. Verify the From<> impl
+        // routes through to_structured() instead of stringifying.
+        let pe = wiac_core::pipeline::PipelineError::UnknownTool(2, 99);
+        let app_err = AppError::from(pe);
+        assert_eq!(app_err.status, StatusCode::BAD_REQUEST);
+        assert_eq!(app_err.inner.kind, ErrorKind::Misconfigured);
+        assert!(app_err.inner.recovery_hint.is_some());
+    }
+
+    #[test]
+    fn pipeline_cancelled_maps_to_408_with_structured_body() {
+        let pe = wiac_core::pipeline::PipelineError::Cancelled;
+        let app_err = AppError::from(pe);
+        assert_eq!(app_err.status, StatusCode::REQUEST_TIMEOUT);
+        // Still a structured body; clients can distinguish via the 408
+        // status without parsing the message text.
+        assert_eq!(app_err.inner.kind, ErrorKind::Internal);
+    }
 }

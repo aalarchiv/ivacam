@@ -5,7 +5,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpWiacClient } from './http';
-import type { HelixRadiusRequest, HelixRadiusResponse } from './types';
+import { tryParseStructuredError } from './client';
+import type { HelixRadiusRequest, HelixRadiusResponse, WiacError } from './types';
 
 describe('HttpWiacClient.computeHelixRadius', () => {
   const realFetch = globalThis.fetch;
@@ -81,5 +82,34 @@ describe('HttpWiacClient.computeHelixRadius', () => {
     await expect(
       client.computeHelixRadius({ segments: [], object_ids: [], tool_diameter_mm: 6 }),
     ).rejects.toThrow(/helix-radius returned 400/);
+  });
+
+  // luf1: when the server returns the full structured `wiac_core::Error`
+  // (post-luf1 envelope), the thrown Error.message is the JSON itself so
+  // tryParseStructuredError() reconstructs every field — including
+  // recovery_hint and auto_fix — for ErrorToast / GenerateBar to render.
+  it('rethrows structured-error responses verbatim so the frontend recovers kind+hint+auto_fix', async () => {
+    const wiac: WiacError = {
+      kind: 'misconfigured',
+      message: 'op 2 references missing tool 9',
+      recovery_hint: 'Pick a tool from the library.',
+      auto_fix: { kind: 'assign_tool', op_id: 2, suggested_tool_id: 1 },
+    };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(JSON.stringify(wiac), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const client = new HttpWiacClient('http://example.test');
+    let captured: unknown;
+    try {
+      await client.computeHelixRadius({ segments: [], object_ids: [], tool_diameter_mm: 6 });
+    } catch (e) {
+      captured = e;
+    }
+    expect(captured).toBeInstanceOf(Error);
+    const parsed = tryParseStructuredError((captured as Error).message);
+    expect(parsed).toEqual(wiac);
   });
 });

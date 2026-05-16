@@ -436,28 +436,34 @@ mod tests {
 
     #[test]
     fn substitute_replaces_basic_tokens() {
-        let mut ctx = TokenCtx::default();
-        ctx.tool_number = 7;
-        ctx.tool_name = "3mm endmill".into();
-        ctx.feed = 800;
-        ctx.spindle = 18000;
-        ctx.version = "0.1.0".into();
+        let ctx = TokenCtx {
+            tool_number: 7,
+            tool_name: "3mm endmill".into(),
+            feed: 800,
+            spindle: 18000,
+            version: "0.1.0".into(),
+            ..TokenCtx::default()
+        };
         let s = substitute("T<t> (<n>) F<f> S<s> wiac <version>", &ctx);
         assert_eq!(s, "T7 (3mm endmill) F800 S18000 wiac 0.1.0");
     }
 
     #[test]
     fn substitute_case_insensitive() {
-        let mut ctx = TokenCtx::default();
-        ctx.tool_number = 5;
+        let ctx = TokenCtx {
+            tool_number: 5,
+            ..TokenCtx::default()
+        };
         let s = substitute("<T> <t> <T>", &ctx);
         assert_eq!(s, "5 5 5");
     }
 
     #[test]
     fn substitute_unit_token() {
-        let mut ctx = TokenCtx::default();
-        ctx.unit = UnitSystem::Inch;
+        let mut ctx = TokenCtx {
+            unit: UnitSystem::Inch,
+            ..TokenCtx::default()
+        };
         assert_eq!(substitute("(unit: <unit>)", &ctx), "(unit: in)");
         ctx.unit = UnitSystem::Mm;
         assert_eq!(substitute("(unit: <unit>)", &ctx), "(unit: mm)");
@@ -472,8 +478,10 @@ mod tests {
 
     #[test]
     fn substitute_diameter_three_decimals() {
-        let mut ctx = TokenCtx::default();
-        ctx.tool_diameter = 3.175;
+        let ctx = TokenCtx {
+            tool_diameter: 3.175,
+            ..TokenCtx::default()
+        };
         assert_eq!(substitute("(d=<d>)", &ctx), "(d=3.175)");
     }
 
@@ -486,8 +494,10 @@ mod tests {
 
     #[test]
     fn template_lines_substitutes_nl_token_before_split() {
-        let mut ctx = TokenCtx::default();
-        ctx.tool_number = 2;
+        let ctx = TokenCtx {
+            tool_number: 2,
+            ..TokenCtx::default()
+        };
         let v = template_lines("T<t><nl>(start)", &ctx);
         assert_eq!(v, vec!["T2", "(start)"]);
     }

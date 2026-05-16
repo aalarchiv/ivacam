@@ -1469,10 +1469,12 @@ mod tests {
             },
         ];
         for s in shapes {
-            let mut tool = ToolEntry::default();
-            tool.flute_length_mm = Some(15.0);
-            tool.shank_diameter_mm = Some(6.0);
-            tool.holder = Some(s);
+            let tool = ToolEntry {
+                flute_length_mm: Some(15.0),
+                shank_diameter_mm: Some(6.0),
+                holder: Some(s),
+                ..ToolEntry::default()
+            };
             let json = serde_json::to_string(&tool).expect("serialize");
             let back: ToolEntry = serde_json::from_str(&json).expect("deserialize");
             match (s, back.holder.expect("holder survives")) {

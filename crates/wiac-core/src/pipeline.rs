@@ -4109,8 +4109,10 @@ mod tests {
         finish_tool.speed = 24_000;
         finish_tool.feed_rate_finish = Some(300);
 
-        let mut machine = MachineConfig::default();
-        machine.supports_toolchange = true;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine,
@@ -4230,13 +4232,15 @@ mod tests {
     #[test]
     fn post_profile_overrides_program_start_and_end() {
         use crate::gcode::post_profile::PostProfile;
-        let mut machine = MachineConfig::default();
-        machine.post_profile = Some(PostProfile {
-            name: "Test".into(),
-            program_start: Some("; wiac <version>\n; tool <t> <n>".into()),
-            program_end: Some("; bye\nM30".into()),
-            ..Default::default()
-        });
+        let machine = MachineConfig {
+            post_profile: Some(PostProfile {
+                name: "Test".into(),
+                program_start: Some("; wiac <version>\n; tool <t> <n>".into()),
+                program_end: Some("; bye\nM30".into()),
+                ..Default::default()
+            }),
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,
@@ -4300,12 +4304,14 @@ mod tests {
             format: "%.2f".into(),
             scale: 1.0,
         };
-        let mut machine = MachineConfig::default();
-        machine.post_profile = Some(PostProfile {
-            name: "Test axes".into(),
-            axes: Some(axes),
-            ..Default::default()
-        });
+        let machine = MachineConfig {
+            post_profile: Some(PostProfile {
+                name: "Test axes".into(),
+                axes: Some(axes),
+                ..Default::default()
+            }),
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,
@@ -4374,12 +4380,14 @@ mod tests {
         use crate::gcode::post_profile::{AxesConfig, PostProfile};
         let mut axes = AxesConfig::default();
         axes.z.enabled = false;
-        let mut machine = MachineConfig::default();
-        machine.post_profile = Some(PostProfile {
-            name: "No Z".into(),
-            axes: Some(axes),
-            ..Default::default()
-        });
+        let machine = MachineConfig {
+            post_profile: Some(PostProfile {
+                name: "No Z".into(),
+                axes: Some(axes),
+                ..Default::default()
+            }),
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,
@@ -4415,13 +4423,15 @@ mod tests {
     #[test]
     fn post_profile_without_axes_keeps_legacy_output() {
         use crate::gcode::post_profile::PostProfile;
-        let mut machine_with = MachineConfig::default();
-        machine_with.post_profile = Some(PostProfile {
-            name: "Test".into(),
-            program_start: Some("; header".into()),
-            axes: None,
-            ..Default::default()
-        });
+        let machine_with = MachineConfig {
+            post_profile: Some(PostProfile {
+                name: "Test".into(),
+                program_start: Some("; header".into()),
+                axes: None,
+                ..Default::default()
+            }),
+            ..MachineConfig::default()
+        };
         let machine_without = MachineConfig::default();
         let project = |m: crate::cam::setup::MachineConfig| Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
@@ -4673,8 +4683,10 @@ mod tests {
     /// intermediate Z values from a step-down schedule.
     #[test]
     fn plot_mode_emits_only_two_z_values() {
-        let mut machine = MachineConfig::default();
-        machine.plot_mode_z = true;
+        let machine = MachineConfig {
+            plot_mode_z: true,
+            ..MachineConfig::default()
+        };
         let mut params = OperationParams::mill_default();
         params.depth = -3.0; // would normally cascade through Z=-1, -2, -3
         params.start_depth = 0.0;
@@ -4837,8 +4849,10 @@ mod tests {
         let mut tool = endmill(1, 0.1);
         tool.kind = ToolKind::LaserBeam;
         tool.laser_pierce_sec = Some(0.3);
-        let mut machine = MachineConfig::default();
-        machine.mode = crate::cam::setup::MachineMode::Laser;
+        let machine = MachineConfig {
+            mode: crate::cam::setup::MachineMode::Laser,
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,
@@ -4974,8 +4988,10 @@ mod tests {
         vbit_finish.id = 2;
         vbit_finish.diameter = 6.35;
         vbit_finish.tip_angle_deg = 90.0;
-        let mut machine = MachineConfig::default();
-        machine.supports_toolchange = true;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
         let center = Point2::new(5.0, 7.0);
         let mut params = OperationParams::mill_default();
         params.depth = -3.0;
@@ -5089,8 +5105,10 @@ mod tests {
         let rough_tool = endmill(1, 6.0);
         let mut finish_tool = endmill(2, 3.0);
         finish_tool.z_shift_mm = Some(1.25);
-        let mut machine = MachineConfig::default();
-        machine.supports_toolchange = true;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine,
@@ -5159,8 +5177,10 @@ mod tests {
     /// `X1,5` instead of `X1.5`. Activated via `MachineConfig`.
     #[test]
     fn comma_decimal_separator_emits_commas_in_numbers() {
-        let mut machine = MachineConfig::default();
-        machine.decimal_separator = ',';
+        let machine = MachineConfig {
+            decimal_separator: ',',
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(20.0, 0.5, 0.5),
             machine,
@@ -5197,8 +5217,10 @@ mod tests {
     /// Some(10), every emitted line gets `N10`, `N20`, … prefix.
     #[test]
     fn line_numbering_prefixes_every_line() {
-        let mut machine = MachineConfig::default();
-        machine.line_number_start = Some(10);
+        let machine = MachineConfig {
+            line_number_start: Some(10),
+            ..MachineConfig::default()
+        };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,

@@ -485,19 +485,21 @@ mod tests {
 
     #[test]
     fn machine_config_round_trips_kinematic_fields() {
-        let mut m = MachineConfig::default();
-        m.accel = Some(AxisLimits {
-            x: 300.0,
-            y: 280.0,
-            z: 120.0,
-        });
-        m.jerk = Some(AxisLimits {
-            x: 5000.0,
-            y: 5000.0,
-            z: 1500.0,
-        });
-        m.toolchange_s = 7.5;
-        m.rapid_speed = Some(8000.0);
+        let m = MachineConfig {
+            accel: Some(AxisLimits {
+                x: 300.0,
+                y: 280.0,
+                z: 120.0,
+            }),
+            jerk: Some(AxisLimits {
+                x: 5000.0,
+                y: 5000.0,
+                z: 1500.0,
+            }),
+            toolchange_s: 7.5,
+            rapid_speed: Some(8000.0),
+            ..MachineConfig::default()
+        };
         let json = serde_json::to_string(&m).unwrap();
         let back: MachineConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.accel, m.accel);

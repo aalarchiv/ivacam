@@ -159,6 +159,32 @@ pub struct CombinedRegion {
 /// constant the per-op driver uses for islands.
 const TESS_INTERPOLATE: usize = 6;
 
+/// Per-call lazy cache of tessellated boundary points, keyed by object
+/// index in the caller's slice (wv81). `combine_*` modes all walk the
+/// same object set — `combine_auto` reads each object as a boundary AND
+/// as a potential hole of its outer; `combine_difference` /
+/// `_intersection` / `_union` / `_xor` each call `paths_for` repeatedly
+/// across subjects + clips with overlap. Caching here means a single
+/// `segments_to_points` per unique object per `combine_source_regions`
+/// invocation regardless of how many times it's referenced.
+///
+/// Scoped to the call — there's no cross-call invalidation concern.
+/// `VcObject` can stay `Clone + Copy`-shaped (the `OnceCell` alternative
+/// would have required wider API changes; see wv81 audit notes).
+#[derive(Default)]
+struct TessCache {
+    by_idx: std::collections::HashMap<usize, std::rc::Rc<Vec<Point2>>>,
+}
+
+impl TessCache {
+    fn get(&mut self, idx: usize, obj: &VcObject) -> std::rc::Rc<Vec<Point2>> {
+        self.by_idx
+            .entry(idx)
+            .or_insert_with(|| std::rc::Rc::new(segments_to_points(&obj.segments, TESS_INTERPOLATE)))
+            .clone()
+    }
+}
+
 /// Clipper2 internal precision (decimal digits). `4` ≈ 1e-4 mm grid.
 const CLIPPER_PRECISION: i32 = 4;
 
@@ -182,17 +208,22 @@ const CLIPPER_PRECISION: i32 = 4;
         return Vec::new();
     }
 
+    let mut cache = TessCache::default();
     match mode {
-        SourceCombine::Auto => combine_auto(objects, &selected_closed),
-        SourceCombine::None => combine_none(objects, &selected_closed),
-        SourceCombine::Union => combine_union(objects, &selected_closed),
-        SourceCombine::Intersection => combine_intersection(objects, &selected_closed),
-        SourceCombine::Xor => combine_xor(objects, &selected_closed),
-        SourceCombine::Difference => combine_difference(objects, &selected_closed),
+        SourceCombine::Auto => combine_auto(objects, &selected_closed, &mut cache),
+        SourceCombine::None => combine_none(objects, &selected_closed, &mut cache),
+        SourceCombine::Union => combine_union(objects, &selected_closed, &mut cache),
+        SourceCombine::Intersection => combine_intersection(objects, &selected_closed, &mut cache),
+        SourceCombine::Xor => combine_xor(objects, &selected_closed, &mut cache),
+        SourceCombine::Difference => combine_difference(objects, &selected_closed, &mut cache),
     }
 }
 
-fn combine_auto(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> {
+fn combine_auto(
+    objects: &[VcObject],
+    selected: &[usize],
+    cache: &mut TessCache,
+) -> Vec<CombinedRegion> {
     let selected_set: HashSet<usize> = selected.iter().copied().collect();
     let mut out = Vec::new();
     for &idx in selected {
@@ -202,14 +233,14 @@ fn combine_auto(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion>
         if obj.outer_objects.iter().any(|o| selected_set.contains(o)) {
             continue;
         }
-        let boundary = segments_to_points(&obj.segments, TESS_INTERPOLATE);
+        let boundary = (*cache.get(idx, obj)).clone();
         let holes: Vec<Vec<Point2>> = obj
             .inner_objects
             .iter()
+            .copied()
             .filter(|i| selected_set.contains(i))
-            .filter_map(|i| objects.get(*i))
-            .filter(|inner| inner.closed)
-            .map(|inner| segments_to_points(&inner.segments, TESS_INTERPOLATE))
+            .filter_map(|i| objects.get(i).filter(|o| o.closed).map(|o| (i, o)))
+            .map(|(i, inner)| (*cache.get(i, inner)).clone())
             .collect();
         out.push(CombinedRegion {
             boundary,
@@ -222,13 +253,17 @@ fn combine_auto(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion>
     out
 }
 
-fn combine_none(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> {
+fn combine_none(
+    objects: &[VcObject],
+    selected: &[usize],
+    cache: &mut TessCache,
+) -> Vec<CombinedRegion> {
     selected
         .iter()
         .map(|&idx| {
             let obj = &objects[idx];
             CombinedRegion {
-                boundary: segments_to_points(&obj.segments, TESS_INTERPOLATE),
+                boundary: (*cache.get(idx, obj)).clone(),
                 holes: Vec::new(),
                 source_idx: idx,
                 layer: obj.layer.clone(),
@@ -240,12 +275,16 @@ fn combine_none(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion>
 
 /// Subjects = first selected; clips = union of the rest. Maps to the
 /// natural CAM meaning of "carve the first thing minus everything else".
-fn combine_difference(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> {
+fn combine_difference(
+    objects: &[VcObject],
+    selected: &[usize],
+    cache: &mut TessCache,
+) -> Vec<CombinedRegion> {
     let Some((first, rest)) = selected.split_first() else {
         return Vec::new();
     };
-    let subjects = paths_for(&[*first], objects);
-    let clips = paths_for(rest, objects);
+    let subjects = paths_for(&[*first], objects, cache);
+    let clips = paths_for(rest, objects, cache);
     let mut tree = PolyTreeD::new();
     boolean_op_tree_d(
         ClipType::Difference,
@@ -261,8 +300,12 @@ fn combine_difference(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedR
 
 /// Union of N subjects in one shot — clipper's `union_subjects_d` does
 /// exactly this and has the polytree variant we need for hole recovery.
-fn combine_union(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> {
-    let subjects = paths_for(selected, objects);
+fn combine_union(
+    objects: &[VcObject],
+    selected: &[usize],
+    cache: &mut TessCache,
+) -> Vec<CombinedRegion> {
+    let subjects = paths_for(selected, objects, cache);
     // For Union, "intersection between subjects only" doesn't apply, so
     // we use union_subjects via a no-op subjects-only Difference (subj
     // minus empty clips), which clipper folds into a self-union. Simpler
@@ -286,10 +329,14 @@ fn combine_union(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion
 /// Intersection is binary (subjects ∩ clips), so to intersect multiple
 /// polygons we keep a running result and intersect each next one against
 /// it.
-fn combine_intersection(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> {
-    let mut running = paths_for(&[selected[0]], objects);
+fn combine_intersection(
+    objects: &[VcObject],
+    selected: &[usize],
+    cache: &mut TessCache,
+) -> Vec<CombinedRegion> {
+    let mut running = paths_for(&[selected[0]], objects, cache);
     for &idx in &selected[1..] {
-        let next = paths_for(&[idx], objects);
+        let next = paths_for(&[idx], objects, cache);
         running = intersect_d(&running, &next, FillRule::NonZero, CLIPPER_PRECISION);
         if running.is_empty() {
             // Empty intersection — no region survives. Bail early.
@@ -313,10 +360,14 @@ fn combine_intersection(objects: &[VcObject], selected: &[usize]) -> Vec<Combine
 }
 
 /// N-way symmetric difference, folded similarly.
-fn combine_xor(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> {
-    let mut running = paths_for(&[selected[0]], objects);
+fn combine_xor(
+    objects: &[VcObject],
+    selected: &[usize],
+    cache: &mut TessCache,
+) -> Vec<CombinedRegion> {
+    let mut running = paths_for(&[selected[0]], objects, cache);
     for &idx in &selected[1..] {
-        let next = paths_for(&[idx], objects);
+        let next = paths_for(&[idx], objects, cache);
         running = xor_d(&running, &next, FillRule::NonZero, CLIPPER_PRECISION);
         if running.is_empty() {
             return Vec::new();
@@ -336,19 +387,19 @@ fn combine_xor(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> 
     polytree_to_regions(&tree, selected[0], &template.layer, template.color)
 }
 
-fn paths_for(indices: &[usize], objects: &[VcObject]) -> PathsD {
+fn paths_for(indices: &[usize], objects: &[VcObject], cache: &mut TessCache) -> PathsD {
     let mut paths = PathsD::new();
     for &idx in indices {
         let obj = match objects.get(idx) {
             Some(o) if o.closed => o,
             _ => continue,
         };
-        let pts = segments_to_points(&obj.segments, TESS_INTERPOLATE);
+        let pts = cache.get(idx, obj);
         if pts.len() < 3 {
             continue;
         }
         let mut path = PathD::new();
-        for p in &pts {
+        for p in pts.iter() {
             path.push(ClipperPoint::new(p.x, p.y));
         }
         paths.push(path);

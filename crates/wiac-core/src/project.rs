@@ -1,5 +1,5 @@
 //! Project = geometry + machine + tool library + ordered list of
-//! Operations. The Operation is the unit of CAM work — each one carries a
+//! Operations. The Op is the unit of CAM work — each one carries a
 //! tool reference and per-kind parameters and produces a gcode block in
 //! the final program.
 //!
@@ -11,10 +11,10 @@
 // Default-impl test helpers use parallel names (`tool_a`/`tool_b`,
 // `op_with`/`op_without`) that enumerate distinct test cases. Serde
 // `skip_serializing_if = "is_default_…"` helpers take `&T` because that's
-// the signature serde requires. `OperationParams` is the user-facing
+// the signature serde requires. `OpParams` is the user-facing
 // per-op config bag — one bool per UI checkbox, so the JSON contract
 // flattens the bool fields by design (see audit issue kbx5 for the
-// planned move-to-OperationKind-variants refactor).
+// planned move-to-OpKind-variants refactor).
 #![allow(
     clippy::similar_names,
     clippy::trivially_copy_pass_by_ref,
@@ -42,7 +42,7 @@ pub struct Project {
 
     pub machine: MachineConfig,
     pub tools: Vec<ToolEntry>,
-    pub operations: Vec<Operation>,
+    pub operations: Vec<Op>,
 
     /// Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must
     /// avoid throughout the entire program — including rapids. The sim
@@ -122,7 +122,7 @@ pub enum TextAlignment {
 }
 
 /// Reserved layer name pattern for TextLayer-rendered segments. Ops
-/// can target a specific text layer via `OperationSource::Layers(vec!["__text_<id>"])`.
+/// can target a specific text layer via `OpSource::Layers(vec!["__text_<id>"])`.
 #[must_use] pub fn text_layer_synthetic_layer(id: u32) -> String {
     format!("__text_{id}")
 }
@@ -451,11 +451,11 @@ pub enum Coolant {
 // ─── operations ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct Operation {
+pub struct Op {
     pub id: u32,
     pub name: String,
     pub enabled: bool,
-    pub kind: OperationKind,
+    pub kind: OpKind,
     /// id of a `Project.tools` entry. For dual-tool Pocket ops this is
     /// the roughing tool; the finish ring is cut by `finish_tool_id`.
     pub tool_id: u32,
@@ -467,8 +467,8 @@ pub struct Operation {
     /// behavior).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_tool_id: Option<u32>,
-    pub source: OperationSource,
-    pub params: OperationParams,
+    pub source: OpSource,
+    pub params: OpParams,
     /// Optional pattern repetition. When set, the op runs once per
     /// pattern instance with the source geometry translated/rotated.
     /// See [`PatternConfig`] for the concrete pattern shapes.
@@ -476,25 +476,25 @@ pub struct Operation {
     pub pattern: Option<PatternConfig>,
 }
 
-impl Default for Operation {
+impl Default for Op {
     fn default() -> Self {
         Self {
             id: 1,
             name: "Profile".into(),
             enabled: true,
-            kind: OperationKind::Profile {
+            kind: OpKind::Profile {
                 offset: ToolOffset::Outside,
             },
             tool_id: 1,
             finish_tool_id: None,
-            source: OperationSource::All,
-            params: OperationParams::default(),
+            source: OpSource::All,
+            params: OpParams::default(),
             pattern: None,
         }
     }
 }
 
-/// Pattern repetition for an [`Operation`]. When attached, the pipeline
+/// Pattern repetition for an [`Op`]. When attached, the pipeline
 /// expands the op into N instances by translating (or rotating) the
 /// source geometry per instance — useful for "drill the same hole
 /// pattern N times" or "pocket N copies of the same shape on a grid".
@@ -534,7 +534,7 @@ pub enum PatternConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum OperationKind {
+pub enum OpKind {
     /// Contour cut — equivalent to today's "mill" with a parallel-offset
     /// pass at `offset` of the tool radius.
     Profile { offset: ToolOffset },
@@ -619,7 +619,7 @@ fn default_thread_internal() -> bool {
     true
 }
 
-/// Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned
+/// Drill-cycle picker for [`OpKind::Drill`]. Mirrors the canned
 /// cycles G81 / G83 / G73 from the `LinuxCNC` / Fanuc dialect plus the
 /// dwell-at-bottom parameter `PyCAM`'s `Drilling.py` exposes. Posts that
 /// don't support canned cycles fall back to a manual G0/G1 expansion of
@@ -878,7 +878,7 @@ impl<'de> Deserialize<'de> for PocketStrategy {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "kind")]
-pub enum OperationSource {
+pub enum OpSource {
     /// Run on every chain on the listed layer names.
     Layers {
         layers: Vec<String>,
@@ -895,7 +895,7 @@ pub enum OperationSource {
     All,
 }
 
-impl Default for OperationSource {
+impl Default for OpSource {
     fn default() -> Self {
         Self::All
     }
@@ -962,7 +962,7 @@ impl CutDirection {
 }
 
 /// A user-placed tab anchored geometry-relative (rt1.10). The
-/// `object_id` is 1-based to match `OperationSource::Objects::ids`;
+/// `object_id` is 1-based to match `OpSource::Objects::ids`;
 /// `t ∈ [0, 1)` is the arc-length parameter along the chained
 /// object's segments. `cam/tabs.rs::polyline_at_t` resolves the
 /// parameter to a world point at gcode-emission time, so the tab
@@ -972,11 +972,11 @@ pub struct TabPlacement {
     pub object_id: u32,
     pub t: f64,
     /// Optional per-tab width override (mm). None ⇒ use
-    /// `OperationParams.tabs.width`.
+    /// `OpParams.tabs.width`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width_override_mm: Option<f64>,
     /// Optional per-tab height override (mm). None ⇒ use
-    /// `OperationParams.tabs.height`.
+    /// `OpParams.tabs.height`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height_override_mm: Option<f64>,
 }
@@ -1008,7 +1008,7 @@ impl TabPlacementMode {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-pub struct OperationParams {
+pub struct OpParams {
     /// Final cut depth (negative number — a depth, not a height).
     pub depth: f64,
     /// Z at which the first pass starts.
@@ -1131,10 +1131,10 @@ pub struct OperationParams {
     pub finish_xy_allowance_mm: Option<f64>,
     /// Stufenfase (rt1.20 / Estlcam `Prog_KTD_Stufenfase)`: chamfer a
     /// drilled hole's rim immediately after the drill cycle. Honored
-    /// only on `OperationKind::Drill`. The post emits the drill cycle
+    /// only on `OpKind::Drill`. The post emits the drill cycle
     /// for each hole, then walks the cutter on a single revolution at
     /// the hole's edge at z = -width / `tan(tip_angle` / 2). When
-    /// `Operation.finish_tool_id` is set to a distinct tool, a M6 +
+    /// `Op.finish_tool_id` is set to a distinct tool, a M6 +
     /// G92 toolchange happens BEFORE the chamfer revolution so the
     /// user can chamfer with a V-bit / fly-cutter different from the
     /// drill. mm, positive only. None / 0 = no countersink.
@@ -1210,7 +1210,7 @@ where
     Ok(v.filter(|x| x.abs() >= 1e-9))
 }
 
-impl OperationParams {
+impl OpParams {
     /// Defaults that line up with a "first profile cut on a 2 mm sheet".
     #[must_use] pub fn mill_default() -> Self {
         Self {
@@ -1278,48 +1278,48 @@ mod tests {
 
     #[test]
     fn operation_default_is_an_outside_profile_on_all_geometry() {
-        let op = Operation::default();
+        let op = Op::default();
         assert!(matches!(
             op.kind,
-            OperationKind::Profile {
+            OpKind::Profile {
                 offset: ToolOffset::Outside
             }
         ));
-        assert!(matches!(op.source, OperationSource::All));
+        assert!(matches!(op.source, OpSource::All));
         assert!(op.enabled);
     }
 
     #[test]
     fn legacy_step_zero_deserializes_to_none() {
         let json = r#"{"depth":-2.0,"start_depth":0.0,"step":0.0,"fast_move_z":5.0}"#;
-        let p: OperationParams = serde_json::from_str(json).unwrap();
+        let p: OpParams = serde_json::from_str(json).unwrap();
         assert_eq!(p.step, None);
     }
 
     #[test]
     fn legacy_step_negative_deserializes_to_some() {
         let json = r#"{"depth":-2.0,"start_depth":0.0,"step":-1.0,"fast_move_z":5.0}"#;
-        let p: OperationParams = serde_json::from_str(json).unwrap();
+        let p: OpParams = serde_json::from_str(json).unwrap();
         assert_eq!(p.step, Some(-1.0));
     }
 
     #[test]
     fn missing_step_deserializes_to_none() {
         let json = r#"{"depth":-2.0,"start_depth":0.0,"fast_move_z":5.0}"#;
-        let p: OperationParams = serde_json::from_str(json).unwrap();
+        let p: OpParams = serde_json::from_str(json).unwrap();
         assert_eq!(p.step, None);
     }
 
     #[test]
     fn null_step_deserializes_to_none() {
         let json = r#"{"depth":-2.0,"start_depth":0.0,"step":null,"fast_move_z":5.0}"#;
-        let p: OperationParams = serde_json::from_str(json).unwrap();
+        let p: OpParams = serde_json::from_str(json).unwrap();
         assert_eq!(p.step, None);
     }
 
     #[test]
     fn step_none_skips_field_on_serialize() {
-        let mut p = OperationParams::mill_default();
+        let mut p = OpParams::mill_default();
         p.step = None;
         let json = serde_json::to_string(&p).unwrap();
         assert!(
@@ -1330,7 +1330,7 @@ mod tests {
 
     #[test]
     fn step_some_writes_bare_number_on_serialize() {
-        let mut p = OperationParams::mill_default();
+        let mut p = OpParams::mill_default();
         p.step = Some(-0.5);
         let json = serde_json::to_string(&p).unwrap();
         assert!(
@@ -1426,7 +1426,7 @@ mod tests {
     #[test]
     fn fixture_step_values_round_trip_through_shim() {
         // The .vc-project.json files on disk are the frontend's camelCase
-        // shape; the wire `OperationParams` (snake_case, nested under
+        // shape; the wire `OpParams` (snake_case, nested under
         // `params`) is a transformed view. We still want a sanity check
         // that every `step` value those files carry survives our shim,
         // so synthesize a minimal wire payload per op and round-trip it.
@@ -1457,7 +1457,7 @@ mod tests {
                     "step": step_val,
                     "fast_move_z": 5.0,
                 });
-                let _: OperationParams = serde_json::from_value(wire)
+                let _: OpParams = serde_json::from_value(wire)
                     .unwrap_or_else(|e| panic!("op #{i} step in {path:?}: {e}"));
             }
         }

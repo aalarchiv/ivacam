@@ -203,7 +203,7 @@ use crate::project::TabPlacement;
 ) -> HashMap<usize, Vec<TabPoint>> {
     let mut out: HashMap<usize, Vec<TabPoint>> = HashMap::new();
     for tp in placements {
-        // object_id is 1-based (matches OperationSource::Objects.ids).
+        // object_id is 1-based (matches OpSource::Objects.ids).
         if tp.object_id == 0 || (tp.object_id as usize) > objects.len() {
             continue;
         }

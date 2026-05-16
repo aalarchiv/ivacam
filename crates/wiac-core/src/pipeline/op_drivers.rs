@@ -40,7 +40,7 @@ use crate::pipeline::{
 use super::offset_builder::build_op_offsets;
 use super::setup_resolver::resolve_peck_step;
 use super::warnings::push_tool_fit_kind_warnings;
-use crate::project::{Operation, OperationKind, PocketStrategy, Project};
+use crate::project::{Op, OpKind, PocketStrategy, Project};
 
 /// V-Carve op driver. Builds the medial axis of the source region(s)
 /// and emits a per-axis ratchet sweep with depth varying from
@@ -50,7 +50,7 @@ use crate::project::{Operation, OperationKind, PocketStrategy, Project};
 // planned per-stage extraction.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_vcarve_op<P: PostProcessor>(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     objects: &[VcObject],
     setup: &Setup,
@@ -155,7 +155,7 @@ pub(super) fn run_vcarve_op<P: PostProcessor>(
 // densified pocket regions per pass — see 55o4 for the planned split.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) fn run_halfpipe_op<P: PostProcessor>(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     objects: &[VcObject],
     setup: &Setup,
@@ -164,7 +164,7 @@ pub(super) fn run_halfpipe_op<P: PostProcessor>(
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
 ) -> Result<(), PipelineError> {
-    let OperationKind::Pocket {
+    let OpKind::Pocket {
         strategy: PocketStrategy::Halfpipe { profile: strategy },
     } = op.kind
     else {
@@ -294,7 +294,7 @@ pub(super) fn run_halfpipe_op<P: PostProcessor>(
 // 55o4 tracks the broader pipeline split.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) fn run_thread_op<P: PostProcessor>(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     objects: &[VcObject],
     setup: &Setup,
@@ -304,7 +304,7 @@ pub(super) fn run_thread_op<P: PostProcessor>(
     cancel: Option<&CancelToken>,
 ) -> Result<(), PipelineError> {
     use crate::geometry::SegmentKind;
-    let OperationKind::Thread {
+    let OpKind::Thread {
         pitch_mm,
         internal,
         climb,
@@ -422,7 +422,7 @@ pub(super) fn run_thread_op<P: PostProcessor>(
 /// Honors `op.finish_tool_id` for dual-tool drill+chamfer setups.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit_stufenfase<P: PostProcessor>(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     objects: &[VcObject],
     drill_setup: &Setup,
@@ -541,7 +541,7 @@ pub(super) fn emit_stufenfase<P: PostProcessor>(
 // epic tracks the planned per-kind extraction.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) fn run_standard_op<P: PostProcessor>(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     objects: &[VcObject],
     setup: &Setup,
@@ -555,7 +555,7 @@ pub(super) fn run_standard_op<P: PostProcessor>(
     let offset_count = offsets.len();
     post.raw(&format!("; OP {}", op.id));
     if !offsets.is_empty() {
-        if let OperationKind::Drill { cycle } = op.kind {
+        if let OpKind::Drill { cycle } = op.kind {
             // Peck cycles fall back to the tool's `default_peck_step_mm`
             // when the op's own peck_step_mm is unset (== 0).
             let resolved_cycle = resolve_peck_step(cycle, project, op);

@@ -591,37 +591,37 @@ pub fn rotate_offsets_to_approach_point(offsets: &mut [PolylineOffset], ap: (f64
 /// * Engrave / `DragKnife` → Skip
 pub fn apply_cut_direction(
     offsets: &mut [PolylineOffset],
-    op: &crate::project::Operation,
+    op: &crate::project::Op,
     finish_default_for_outside_profile_only: bool,
 ) {
     use crate::cam::setup::ToolOffset;
-    use crate::project::OperationKind;
+    use crate::project::OpKind;
     let _ = finish_default_for_outside_profile_only; // currently unused; kept for future hook
     let main = op.params.cut_direction;
     let finish = op.params.finish_cut_direction;
     let context_for = |offset: &PolylineOffset| -> CutContext {
         match op.kind {
-            OperationKind::Profile {
+            OpKind::Profile {
                 offset: tool_offset,
             } => match tool_offset {
                 ToolOffset::Outside => CutContext::Outer,
                 ToolOffset::Inside => CutContext::Inner,
                 ToolOffset::None | ToolOffset::On => CutContext::Skip,
             },
-            OperationKind::Pocket { .. } => {
+            OpKind::Pocket { .. } => {
                 if offset_signed_area(offset) > 0.0 {
                     CutContext::Inner
                 } else {
                     CutContext::Outer
                 }
             }
-            OperationKind::Engrave
-            | OperationKind::DragKnife
-            | OperationKind::Drill { .. }
-            | OperationKind::Thread { .. }
-            | OperationKind::Chamfer { .. }
-            | OperationKind::Helix
-            | OperationKind::VCarve => CutContext::Skip,
+            OpKind::Engrave
+            | OpKind::DragKnife
+            | OpKind::Drill { .. }
+            | OpKind::Thread { .. }
+            | OpKind::Chamfer { .. }
+            | OpKind::Helix
+            | OpKind::VCarve => CutContext::Skip,
         }
     };
     for offset in offsets.iter_mut() {

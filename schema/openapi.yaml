@@ -203,7 +203,7 @@ components:
         - suggested
         type: object
     AxesConfig:
-      description: Bundle of per-axis output configs. Set on `PostProfile::axes` to take over from the hard-coded axis letters / `%.3f` format in the LinuxCNC / GRBL posts. All seven axes default to their natural letter + sensible format, so `AxesConfig::default()` is the same as the legacy hand-written behavior — the user only changes what they care about.
+      description: Bundle of per-axis output configs. Set on `PostProfile::axes` to take over from the hard-coded axis letters / `%.3f` format in the `LinuxCNC` / GRBL posts. All seven axes default to their natural letter + sensible format, so `AxesConfig::default()` is the same as the legacy hand-written behavior — the user only changes what they care about.
       properties:
         feed:
           $ref: '#/components/schemas/AxisFormat'
@@ -300,7 +300,7 @@ components:
       - climb
       type: string
     DrillCycle:
-      description: Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned cycles G81 / G83 / G73 from the LinuxCNC / Fanuc dialect plus the dwell-at-bottom parameter PyCAM's `Drilling.py` exposes. Posts that don't support canned cycles fall back to a manual G0/G1 expansion of the same cycle (see `PostProcessor::drill_*` defaults).
+      description: Drill-cycle picker for [`OpKind::Drill`]. Mirrors the canned cycles G81 / G83 / G73 from the `LinuxCNC` / Fanuc dialect plus the dwell-at-bottom parameter `PyCAM`'s `Drilling.py` exposes. Posts that don't support canned cycles fall back to a manual G0/G1 expansion of the same cycle (see `PostProcessor::drill_*` defaults).
       oneOf:
       - description: G81 — single plunge to depth, retract.
         properties:
@@ -463,7 +463,7 @@ components:
         - vertices
         type: object
     FrameShape:
-      description: Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox with a quarter-arc bulge at each corner. Oval and TightOutline are deferred follow-ups (not yet implemented).
+      description: Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; `RoundedRectangle` uses the same bbox with a quarter-arc bulge at each corner. Oval and `TightOutline` are deferred follow-ups (not yet implemented).
       enum:
       - rectangle
       - rounded_rectangle
@@ -507,7 +507,7 @@ components:
         gcode_index:
           $ref: '#/components/schemas/GcodeIndex'
         regions:
-          description: 'Filled-area preview for Pocket ops: the actual region the cutter will machine, computed via the per-op SourceCombine mode (Auto by default — outer + inner = annulus). The frontend paints these as translucent fills so the user sees what they''re cutting before reading the toolpath. Empty for non-Pocket ops.'
+          description: 'Filled-area preview for Pocket ops: the actual region the cutter will machine, computed via the per-op `SourceCombine` mode (Auto by default — outer + inner = annulus). The frontend paints these as translucent fills so the user sees what they''re cutting before reading the toolpath. Empty for non-Pocket ops.'
           items:
             $ref: '#/components/schemas/RegionPreview'
           type: array
@@ -563,7 +563,7 @@ components:
       description: Cross-transport request for the helix auto-fit preview. The frontend sends imported segments + the operation's selected object ids + the active tool diameter; the backend walks the same chaining/combine pipeline the gcode generator does and returns the largest inscribed circle that fits inside the resulting pocket boundary.
       properties:
         object_ids:
-          description: Object ids from the import that should participate in the pocket boundary computation. Same shape as `OperationSource::Objects.ids`. Empty = "use all segments as one region".
+          description: Object ids from the import that should participate in the pocket boundary computation. Same shape as `OpSource::Objects.ids`. Empty = "use all segments as one region".
           items:
             format: uint32
             minimum: 0.0
@@ -821,7 +821,7 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AxisLimits'
           - type: 'null'
-          description: Per-axis acceleration in mm/s². When None the kinematic time estimator falls back to 250 mm/s² per axis (LinuxCNC default).
+          description: Per-axis acceleration in mm/s². When None the kinematic time estimator falls back to 250 mm/s² per axis (`LinuxCNC` default).
         arc_fit_tolerance_mm:
           description: Maximum deviation (mm) between the fitted G2/G3 arc and the original chord polyline. None ⇒ 0.01 mm. Only consulted when `arcs == true`.
           format: double
@@ -834,7 +834,7 @@ components:
         comments:
           type: boolean
         decimal_separator:
-          description: Decimal separator for emitted numbers (rt1.36). `'.'` (default) suits LinuxCNC / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'.
+          description: Decimal separator for emitted numbers (rt1.36). `'.'` (default) suits `LinuxCNC` / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'.
           maxLength: 1
           minLength: 1
           type: string
@@ -853,13 +853,13 @@ components:
         mode:
           $ref: '#/components/schemas/MachineMode'
         plot_mode_z:
-          description: 'Plot-mode Z (rt1.35 / Estlcam c_PP.Z_Up_Dn): when true, the pipeline collapses every cut to ONE pass at the op''s cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op''s `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers.'
+          description: 'Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op''s cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op''s `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers.'
           type: boolean
         post_profile:
           anyOf:
           - $ref: '#/components/schemas/PostProfile'
           - type: 'null'
-          description: User-configurable post-processor profile (rt1.15). When `Some`, the built-in posts (linuxcnc / grbl) read its templates instead of emitting their hard-coded program_start / program_end / tool_change / coolant lines. `None` = hard-coded defaults.
+          description: User-configurable post-processor profile (rt1.15). When `Some`, the built-in posts (linuxcnc / grbl) read its templates instead of emitting their hard-coded `program_start` / `program_end` / `tool_change` / coolant lines. `None` = hard-coded defaults.
         rapid_speed:
           description: Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
           format: double
@@ -880,7 +880,7 @@ components:
         work_area:
           allOf:
           - $ref: '#/components/schemas/AxisLimits'
-          description: Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in MachineDialog.
+          description: Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in `MachineDialog`.
       required:
       - arcs
       - comments
@@ -908,7 +908,7 @@ components:
           type: number
         depth_list:
           default: []
-          description: Explicit ordered list of Z depths to cut at. When non-empty, overrides the step / finish_step / through_depth schedule.
+          description: Explicit ordered list of Z depths to cut at. When non-empty, overrides the step / `finish_step` / `through_depth` schedule.
           items:
             format: double
             type: number
@@ -978,7 +978,7 @@ components:
       - per_object
       - unordered
       type: string
-    Operation:
+    Op:
       properties:
         enabled:
           type: boolean
@@ -994,18 +994,18 @@ components:
           minimum: 0.0
           type: integer
         kind:
-          $ref: '#/components/schemas/OperationKind'
+          $ref: '#/components/schemas/OpKind'
         name:
           type: string
         params:
-          $ref: '#/components/schemas/OperationParams'
+          $ref: '#/components/schemas/OpParams'
         pattern:
           anyOf:
           - $ref: '#/components/schemas/PatternConfig'
           - type: 'null'
           description: Optional pattern repetition. When set, the op runs once per pattern instance with the source geometry translated/rotated. See [`PatternConfig`] for the concrete pattern shapes.
         source:
-          $ref: '#/components/schemas/OperationSource'
+          $ref: '#/components/schemas/OpSource'
         tool_id:
           description: id of a `Project.tools` entry. For dual-tool Pocket ops this is the roughing tool; the finish ring is cut by `finish_tool_id`.
           format: uint32
@@ -1020,7 +1020,7 @@ components:
       - source
       - tool_id
       type: object
-    OperationKind:
+    OpKind:
       oneOf:
       - description: Contour cut — equivalent to today's "mill" with a parallel-offset pass at `offset` of the tool radius.
         properties:
@@ -1134,7 +1134,7 @@ components:
         required:
         - type
         type: object
-    OperationParams:
+    OpParams:
       properties:
         approach_point:
           description: 'Anfahrpunkt (rt1.26 / Estlcam): user-picked XY where the cutter enters each pocket / closed-contour ring. Honored on Pocket / Profile ops with closed offsets. When `Some((x, y))`, each closed offset gets its segment list rotated so the start vertex is the segment vertex closest to the approach point — the plunge / lead-in then happens there instead of an arbitrary auto-picked point. `None` = auto.'
@@ -1155,7 +1155,7 @@ components:
           - number
           - 'null'
         chamfer_after_width_mm:
-          description: 'Stufenfase (rt1.20 / Estlcam Prog_KTD_Stufenfase): chamfer a drilled hole''s rim immediately after the drill cycle. Honored only on `OperationKind::Drill`. The post emits the drill cycle for each hole, then walks the cutter on a single revolution at the hole''s edge at z = -width / tan(tip_angle / 2). When `Operation.finish_tool_id` is set to a distinct tool, a M6 + G92 toolchange happens BEFORE the chamfer revolution so the user can chamfer with a V-bit / fly-cutter different from the drill. mm, positive only. None / 0 = no countersink.'
+          description: 'Stufenfase (rt1.20 / Estlcam `Prog_KTD_Stufenfase)`: chamfer a drilled hole''s rim immediately after the drill cycle. Honored only on `OpKind::Drill`. The post emits the drill cycle for each hole, then walks the cutter on a single revolution at the hole''s edge at z = -width / `tan(tip_angle` / 2). When `Op.finish_tool_id` is set to a distinct tool, a M6 + G92 toolchange happens BEFORE the chamfer revolution so the user can chamfer with a V-bit / fly-cutter different from the drill. mm, positive only. None / 0 = no countersink.'
           format: double
           type:
           - number
@@ -1173,7 +1173,7 @@ components:
           format: double
           type: number
         depth_list:
-          description: Explicit list of Z depths for each pass, overriding the step+finish_step schedule. Useful for non-linear schedules (shallower at start for tough material, deeper later, slow finish at the end). Each entry is an absolute Z (negative number); the cutter visits them in order. Empty = use the step-down loop.
+          description: Explicit list of Z depths for each pass, overriding the `step+finish_step` schedule. Useful for non-linear schedules (shallower at start for tough material, deeper later, slow finish at the end). Each entry is an absolute Z (negative number); the cutter visits them in order. Empty = use the step-down loop.
           items:
             format: double
             type: number
@@ -1251,7 +1251,7 @@ components:
         plunge:
           allOf:
           - $ref: '#/components/schemas/PlungeStrategy'
-          description: How the cutter descends into material at the start of each Z pass. Default Direct (straight plunge). Ramp { angle_deg } walks forward along the path while descending Z, taking a chip in both directions simultaneously — required for non-center-cutting bits and for harder materials.
+          description: How the cutter descends into material at the start of each Z pass. Default Direct (straight plunge). Ramp { `angle_deg` } walks forward along the path while descending Z, taking a chip in both directions simultaneously — required for non-center-cutting bits and for harder materials.
         plunge_rate_override:
           description: 'Override the tool''s `plunge_rate` (Z feed) for this op. Useful for slowing the plunge on hard materials without changing the XY feed. Units: mm/min.'
           format: uint32
@@ -1306,7 +1306,7 @@ components:
           type: number
         xy_overlap:
           default: 0.0
-          description: XY overlap between consecutive pocket cuts, as a fraction in (0, 1). Drives the cascade step (= tool_diameter * (1 - overlap)) and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a conservative default that fills tight pockets cleanly. Higher overlap = smaller step = more rings, slower cut, better finish. Lower overlap = bigger step = fewer rings, faster cut, may leave stripes. Honored only for Pocket ops; ignored elsewhere. Stored at 0.0 means "use the default" so old payloads still work.
+          description: XY overlap between consecutive pocket cuts, as a fraction in (0, 1). Drives the cascade step (= `tool_diameter` * (1 - overlap)) and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a conservative default that fills tight pockets cleanly. Higher overlap = smaller step = more rings, slower cut, better finish. Lower overlap = bigger step = fewer rings, faster cut, may leave stripes. Honored only for Pocket ops; ignored elsewhere. Stored at 0.0 means "use the default" so old payloads still work.
           format: double
           type: number
       required:
@@ -1314,7 +1314,7 @@ components:
       - fast_move_z
       - start_depth
       type: object
-    OperationSource:
+    OpSource:
       oneOf:
       - description: Run on every chain on the listed layer names.
         properties:
@@ -1361,7 +1361,7 @@ components:
         type: object
     PatternConfig:
       description: |-
-        Pattern repetition for an [`Operation`]. When attached, the pipeline expands the op into N instances by translating (or rotating) the source geometry per instance — useful for "drill the same hole pattern N times" or "pocket N copies of the same shape on a grid".
+        Pattern repetition for an [`Op`]. When attached, the pipeline expands the op into N instances by translating (or rotating) the source geometry per instance — useful for "drill the same hole pattern N times" or "pocket N copies of the same shape on a grid".
 
         The original geometry stays at the (0, 0) translation / 0° rotation instance so a single-instance pattern is identical to no pattern at all.
       oneOf:
@@ -1695,7 +1695,7 @@ components:
           - string
           - 'null'
         coolant_flood_on:
-          description: COOLANT_FLOOD ON / OFF templates. Replace `M8` / `M9`.
+          description: '`COOLANT_FLOOD` ON / OFF templates. Replace `M8` / `M9`.'
           type:
           - string
           - 'null'
@@ -1704,7 +1704,7 @@ components:
           - string
           - 'null'
         coolant_mist_on:
-          description: COOLANT_MIST ON / OFF templates. Replace `M7` / `M9`.
+          description: '`COOLANT_MIST` ON / OFF templates. Replace `M7` / `M9`.'
           type:
           - string
           - 'null'
@@ -1720,20 +1720,20 @@ components:
           - 'null'
         name:
           default: ''
-          description: User-facing label. Shown in MachineDialog's profile picker; not interpreted by the engine.
+          description: User-facing label. Shown in `MachineDialog`'s profile picker; not interpreted by the engine.
           type: string
         program_end:
-          description: PROGRAM_END template. Replaces the `M30` footer line.
+          description: '`PROGRAM_END` template. Replaces the `M30` footer line.'
           type:
           - string
           - 'null'
         program_start:
-          description: PROGRAM_START template. Replaces the `(generated by …)` header line. Can contain multiple `\n`-separated lines via the `<NL>` token.
+          description: '`PROGRAM_START` template. Replaces the `(generated by …)` header line. Can contain multiple `\n`-separated lines via the `<NL>` token.'
           type:
           - string
           - 'null'
         tool_change:
-          description: TOOL_CHANGE template. Replaces the `T<n> M6` toolchange line. Substitution context exposes the FUTURE tool's metadata.
+          description: '`TOOL_CHANGE` template. Replaces the `T<n> M6` toolchange line. Substitution context exposes the FUTURE tool''s metadata.'
           type:
           - string
           - 'null'
@@ -1749,7 +1749,7 @@ components:
           $ref: '#/components/schemas/MachineConfig'
         operations:
           items:
-            $ref: '#/components/schemas/Operation'
+            $ref: '#/components/schemas/Op'
           type: array
         segments:
           description: Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained.
@@ -1757,7 +1757,7 @@ components:
             $ref: '#/components/schemas/Segment'
           type: array
         text_layers:
-          description: First-class editable text entities — content / font / size / position / rotation / spacing. The pipeline pre-pass renders each TextLayer to segments before any op runs so the existing `Engrave` (and friends) op can target the rendered geometry by layer name `__text_<id>`. Edits to a TextLayer re-run the pipeline; cache keys include text_layers content.
+          description: First-class editable text entities — content / font / size / position / rotation / spacing. The pipeline pre-pass renders each `TextLayer` to segments before any op runs so the existing `Engrave` (and friends) op can target the rendered geometry by layer name `__text_<id>`. Edits to a `TextLayer` re-run the pipeline; cache keys include `text_layers` content.
           items:
             $ref: '#/components/schemas/TextLayer'
           type: array
@@ -1793,7 +1793,7 @@ components:
       - outer
       type: object
     RenderTextLayerResponse:
-      description: Live-preview response — the rendered TextLayer segments plus the cached single-line classification. The pipeline produces the same segments at Generate time; this endpoint lets the frontend show the text on the 2D canvas without round-tripping a full pipeline run.
+      description: Live-preview response — the rendered `TextLayer` segments plus the cached single-line classification. The pipeline produces the same segments at Generate time; this endpoint lets the frontend show the text on the 2D canvas without round-tripping a full pipeline run.
       properties:
         family_name:
           type:
@@ -2055,7 +2055,7 @@ components:
     SourceCombine:
       description: How a multi-object source selection is combined into the region(s) the operation actually consumes. Default is `Auto` — containment-based, which gives the user "outer + inner = annulus" behavior with no extra thought. The other modes are clipper2-driven boolean ops; `None` keeps each selected object as its own boundary (the pre-combine behavior, surfaced for callers who really want it).
       oneOf:
-      - description: 'Containment-aware: nested closed objects in the selection become islands of their outermost selected ancestor. Equivalent to today''s pipeline-level behavior (see pipeline.rs''s selected_set logic).'
+      - description: 'Containment-aware: nested closed objects in the selection become islands of their outermost selected ancestor. Equivalent to today''s pipeline-level behavior (see pipeline.rs''s `selected_set` logic).'
         enum:
         - auto
         type: string
@@ -2097,10 +2097,10 @@ components:
       - line
       type: object
     TabPlacement:
-      description: A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OperationSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms.
+      description: A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OpSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms.
       properties:
         height_override_mm:
-          description: Optional per-tab height override (mm). None ⇒ use `OperationParams.tabs.height`.
+          description: Optional per-tab height override (mm). None ⇒ use `OpParams.tabs.height`.
           format: double
           type:
           - number
@@ -2113,7 +2113,7 @@ components:
           format: double
           type: number
         width_override_mm:
-          description: Optional per-tab width override (mm). None ⇒ use `OperationParams.tabs.width`.
+          description: Optional per-tab width override (mm). None ⇒ use `OpParams.tabs.width`.
           format: double
           type:
           - number
@@ -2233,7 +2233,7 @@ components:
       description: |-
         Persistent editable text entity. Phase 2 of the text-engraving rework: the pipeline renders these to segments at generate time so edits propagate to gcode without re-baking.
 
-        Distinct from DXF TEXT/MTEXT entities currently parsed into `project.segments` as opaque polylines (phase 4 will route those through TextLayer too).
+        Distinct from DXF TEXT/MTEXT entities currently parsed into `project.segments` as opaque polylines (phase 4 will route those through `TextLayer` too).
       properties:
         alignment:
           allOf:
@@ -2482,13 +2482,13 @@ components:
         kind:
           $ref: '#/components/schemas/ToolKind'
         laser_lead_in_mm:
-          description: 'Laser lead-in distance (rt1.29 / Estlcam T_Lead_In): mm of approach travel the head takes along the entry tangent before the cut starts, to reduce edge entry burn. Honored only when `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time — the per-op lead-in field overrides this if set explicitly. None = no tool-level lead-in.'
+          description: 'Laser lead-in distance (rt1.29 / Estlcam `T_Lead_In)`: mm of approach travel the head takes along the entry tangent before the cut starts, to reduce edge entry burn. Honored only when `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time — the per-op lead-in field overrides this if set explicitly. None = no tool-level lead-in.'
           format: double
           type:
           - number
           - 'null'
         laser_pierce_sec:
-          description: 'Laser pierce time (rt1.29 / Estlcam T_Pierce_Time): seconds the beam dwells at the start point BEFORE the cut begins so it burns through thick stock. Honored only when `kind == LaserBeam`. The post emits a `G4 P<seconds>` after the laser-on before each plunge. None = no pierce dwell.'
+          description: 'Laser pierce time (rt1.29 / Estlcam `T_Pierce_Time)`: seconds the beam dwells at the start point BEFORE the cut begins so it burns through thick stock. Honored only when `kind == LaserBeam`. The post emits a `G4 P<seconds>` after the laser-on before each plunge. None = no pierce dwell.'
           format: double
           type:
           - number
@@ -2567,7 +2567,7 @@ components:
           - number
           - 'null'
         wirbeln:
-          description: 'Wirbeln (rt1.25 / Estlcam T_Wirbeln): automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn''t want the cutter to overload at high-engagement points. Default `false`.'
+          description: 'Wirbeln (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn''t want the cutter to overload at high-engagement points. Default `false`.'
           type: boolean
         wirbeln_stepover_mm:
           description: Wirbeln stepover override (rt1.25). When `wirbeln` is `true`, the effective cascade step is `min(op.xy_step, wirbeln_stepover_mm OR tool_radius / 2)`. mm, positive only. None = use the half-radius rule.
@@ -2576,7 +2576,7 @@ components:
           - number
           - 'null'
         z_shift_mm:
-          description: Per-tool Z origin offset (rt1.30 / Estlcam Z_Shift). For machines without automatic tool-length probing — the user pre-measures each tool's tip Z relative to a reference tool and records the delta here (positive = sticks out further; negative = shorter). At toolchange / program-start the post emits a `G92 Z<shift>` that pins the new tool's tip at the same work-Z the reference tool used. mm. None = no shift.
+          description: Per-tool Z origin offset (rt1.30 / Estlcam `Z_Shift`). For machines without automatic tool-length probing — the user pre-measures each tool's tip Z relative to a reference tool and records the delta here (positive = sticks out further; negative = shorter). At toolchange / program-start the post emits a `G92 Z<shift>` that pins the new tool's tip at the same work-Z the reference tool used. mm. None = no shift.
           format: double
           type:
           - number
@@ -2643,7 +2643,7 @@ components:
           $ref: '#/components/schemas/MoveKind'
         op_id:
           default: 0
-          description: Operation id from the per-op emitter. 0 = legacy / unstamped.
+          description: Op id from the per-op emitter. 0 = legacy / unstamped.
           format: uint32
           minimum: 0.0
           type: integer

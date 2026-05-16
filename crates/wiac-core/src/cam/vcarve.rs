@@ -345,7 +345,7 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 ///
 /// `tip_angle_rad` is the FULL apex angle of the V cone. `r_cap` clips
 /// `r` from above (the `carve_max_width_mm` parameter); `z_cap` clips
-/// `|z|` from below (the `OperationParams.depth` parameter — itself a
+/// `|z|` from below (the `OpParams.depth` parameter — itself a
 /// negative number, we treat its absolute value as the limit). Returns
 /// `(polyline, depth_limited)` where `depth_limited` is true when at
 /// least one point hit the |z| cap.

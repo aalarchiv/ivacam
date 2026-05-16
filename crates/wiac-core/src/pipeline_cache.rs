@@ -49,8 +49,8 @@ use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::{
-    Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Operation, OperationKind,
-    OperationParams, OperationSource, PatternConfig, PocketStrategy, SourceCombine, ToolEntry,
+    Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op, OpKind,
+    OpParams, OpSource, PatternConfig, PocketStrategy, SourceCombine, ToolEntry,
     ToolKind,
 };
 
@@ -136,7 +136,7 @@ impl PipelineCache {
 /// segment-keyed tab placements — changing tab positions changes the
 /// per-op output, so they must be part of the key.
 #[must_use] pub fn op_cache_key(
-    op: &Operation,
+    op: &Op,
     tool: &ToolEntry,
     machine: &MachineConfig,
     selected_segments: &[Segment],
@@ -161,7 +161,7 @@ impl PipelineCache {
 /// callers route through [`op_cache_key`]).
 #[allow(clippy::too_many_arguments)]
 #[must_use] pub fn op_cache_key_with_finish(
-    op: &Operation,
+    op: &Op,
     tool: &ToolEntry,
     finish_tool: Option<&ToolEntry>,
     machine: &MachineConfig,
@@ -411,7 +411,7 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
 
 // ─── operation ────────────────────────────────────────────────────────
 
-fn hash_operation<H: Hasher>(op: &Operation, h: &mut H) {
+fn hash_operation<H: Hasher>(op: &Op, h: &mut H) {
     op.id.hash(h);
     op.name.hash(h);
     op.enabled.hash(h);
@@ -429,21 +429,21 @@ fn hash_operation<H: Hasher>(op: &Operation, h: &mut H) {
     }
 }
 
-fn hash_operation_kind<H: Hasher>(k: OperationKind, h: &mut H) {
+fn hash_operation_kind<H: Hasher>(k: OpKind, h: &mut H) {
     match k {
-        OperationKind::Profile { offset } => {
+        OpKind::Profile { offset } => {
             h.write_u8(1);
             h.write_u8(tool_offset_disc(offset));
         }
-        OperationKind::Pocket { strategy } => {
+        OpKind::Pocket { strategy } => {
             h.write_u8(2);
             hash_pocket_strategy(strategy, h);
         }
-        OperationKind::Drill { cycle } => {
+        OpKind::Drill { cycle } => {
             h.write_u8(3);
             hash_drill_cycle(cycle, h);
         }
-        OperationKind::Thread {
+        OpKind::Thread {
             pitch_mm,
             internal,
             climb,
@@ -453,7 +453,7 @@ fn hash_operation_kind<H: Hasher>(k: OperationKind, h: &mut H) {
             internal.hash(h);
             climb.hash(h);
         }
-        OperationKind::Chamfer {
+        OpKind::Chamfer {
             width_mm,
             finish_pass,
         } => {
@@ -461,10 +461,10 @@ fn hash_operation_kind<H: Hasher>(k: OperationKind, h: &mut H) {
             hash_f64(width_mm, h);
             finish_pass.hash(h);
         }
-        OperationKind::Engrave => h.write_u8(6),
-        OperationKind::DragKnife => h.write_u8(7),
-        OperationKind::Helix => h.write_u8(8),
-        OperationKind::VCarve => h.write_u8(9),
+        OpKind::Engrave => h.write_u8(6),
+        OpKind::DragKnife => h.write_u8(7),
+        OpKind::Helix => h.write_u8(8),
+        OpKind::VCarve => h.write_u8(9),
     }
 }
 
@@ -532,10 +532,10 @@ fn hash_drill_cycle<H: Hasher>(c: DrillCycle, h: &mut H) {
     }
 }
 
-fn hash_operation_source<H: Hasher>(s: &OperationSource, h: &mut H) {
+fn hash_operation_source<H: Hasher>(s: &OpSource, h: &mut H) {
     match s {
-        OperationSource::All => h.write_u8(0),
-        OperationSource::Layers { layers, combine } => {
+        OpSource::All => h.write_u8(0),
+        OpSource::Layers { layers, combine } => {
             h.write_u8(1);
             h.write_usize(layers.len());
             for l in layers {
@@ -543,7 +543,7 @@ fn hash_operation_source<H: Hasher>(s: &OperationSource, h: &mut H) {
             }
             h.write_u8(combine_disc(*combine));
         }
-        OperationSource::Objects { ids, combine } => {
+        OpSource::Objects { ids, combine } => {
             h.write_u8(2);
             h.write_usize(ids.len());
             for id in ids {
@@ -602,7 +602,7 @@ fn hash_pattern<H: Hasher>(p: PatternConfig, h: &mut H) {
     }
 }
 
-fn hash_operation_params<H: Hasher>(p: &OperationParams, h: &mut H) {
+fn hash_operation_params<H: Hasher>(p: &OpParams, h: &mut H) {
     hash_f64(p.depth, h);
     hash_f64(p.start_depth, h);
     hash_opt_f64(p.step, h);
@@ -766,7 +766,7 @@ mod tests {
     use super::*;
     use crate::cam::setup::ToolOffset;
     use crate::project::{
-        Operation, OperationKind, OperationParams, OperationSource, ToolEntry, ToolKind,
+        Op, OpKind, OpParams, OpSource, ToolEntry, ToolKind,
     };
 
     fn endmill() -> ToolEntry {
@@ -806,18 +806,18 @@ mod tests {
         }
     }
 
-    fn profile_op() -> Operation {
-        Operation {
+    fn profile_op() -> Op {
+        Op {
             id: 1,
             name: "Profile".into(),
             enabled: true,
-            kind: OperationKind::Profile {
+            kind: OpKind::Profile {
                 offset: ToolOffset::Outside,
             },
             tool_id: 1,
             finish_tool_id: None,
-            source: OperationSource::All,
-            params: OperationParams::mill_default(),
+            source: OpSource::All,
+            params: OpParams::mill_default(),
             pattern: None,
         }
     }

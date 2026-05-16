@@ -9,7 +9,7 @@
 use crate::cam::offsets::PolylineOffset;
 use crate::cam::setup::Setup;
 use crate::cam::VcObject;
-use crate::project::{Operation, OperationKind, PocketStrategy, Project};
+use crate::project::{Op, OpKind, PocketStrategy, Project};
 
 use super::{op_includes_object, PipelineWarning};
 
@@ -19,7 +19,7 @@ use super::{op_includes_object, PipelineWarning};
 /// on an arc-heavy source need to know the cutter dives at the arc
 /// instead of sloping through it (audit 8so).
 pub(super) fn push_ramp_with_arcs_warning(
-    op: &Operation,
+    op: &Op,
     objects: &[VcObject],
     warnings: &mut Vec<PipelineWarning>,
 ) {
@@ -49,10 +49,10 @@ pub(super) fn push_ramp_with_arcs_warning(
     }
 }
 
-pub(super) fn push_trochoidal_warnings(op: &Operation, warnings: &mut Vec<PipelineWarning>) {
+pub(super) fn push_trochoidal_warnings(op: &Op, warnings: &mut Vec<PipelineWarning>) {
     if !matches!(
         op.kind,
-        OperationKind::Pocket {
+        OpKind::Pocket {
             strategy: PocketStrategy::Trochoidal { .. }
         }
     ) {
@@ -86,7 +86,7 @@ pub(super) fn push_trochoidal_warnings(op: &Operation, warnings: &mut Vec<Pipeli
 /// Sanity warnings that don't depend on whether the offset cascade
 /// succeeded. Run before the heavy work.
 pub(super) fn push_tool_fit_kind_warnings(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     setup: &Setup,
     warnings: &mut Vec<PipelineWarning>,
@@ -113,11 +113,11 @@ pub(super) fn push_tool_fit_kind_warnings(
     // cases (a drag knife on a Profile is fine, for instance), but a
     // drill on a Pocket really doesn't make sense.
     let mismatch = match (&op.kind, tool.kind) {
-        (OperationKind::Pocket { .. }, ToolKind::Drill) => Some("pocket op assigned a drill bit"),
-        (OperationKind::Pocket { .. }, ToolKind::DragKnife) => {
+        (OpKind::Pocket { .. }, ToolKind::Drill) => Some("pocket op assigned a drill bit"),
+        (OpKind::Pocket { .. }, ToolKind::DragKnife) => {
             Some("pocket op assigned a drag knife (cut path won't carve area)")
         }
-        (OperationKind::Profile { .. }, ToolKind::Drill) => Some("profile op assigned a drill bit"),
+        (OpKind::Profile { .. }, ToolKind::Drill) => Some("profile op assigned a drill bit"),
         _ => None,
     };
     if let Some(msg) = mismatch {
@@ -137,7 +137,7 @@ pub(super) fn push_tool_fit_kind_warnings(
 /// cascade produced nothing — the tool diameter doesn't fit the
 /// geometry (slot too narrow, pocket smaller than the tool, etc.).
 pub(super) fn push_tool_fit_size_warning(
-    op: &Operation,
+    op: &Op,
     setup: &Setup,
     closed_count: usize,
     offsets: &[PolylineOffset],
@@ -150,8 +150,8 @@ pub(super) fn push_tool_fit_size_warning(
     // when offsets is empty in the cascade sense, so don't flag them.
     let needs_offset = matches!(
         op.kind,
-        OperationKind::Pocket { .. }
-            | OperationKind::Profile {
+        OpKind::Pocket { .. }
+            | OpKind::Profile {
                 offset: crate::cam::setup::ToolOffset::Outside
                     | crate::cam::setup::ToolOffset::Inside,
             }
@@ -177,7 +177,7 @@ pub(super) fn push_tool_fit_size_warning(
     // "pocketing isn't working". Surface this so they can pick a
     // smaller tool. PolylineOffset.is_pocket == 0 is the boundary,
     // is_pocket >= 1 is a cascade ring or zigzag fill.
-    if matches!(op.kind, OperationKind::Pocket { .. })
+    if matches!(op.kind, OpKind::Pocket { .. })
         && offsets.iter().any(|o| o.is_pocket == 0)
         && !offsets.iter().any(|o| o.is_pocket >= 1)
     {

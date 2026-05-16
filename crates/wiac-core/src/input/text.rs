@@ -292,7 +292,7 @@ pub fn render_text(
 /// to flat segments. Handles MTEXT line breaks (`\n`), per-line
 /// alignment, letter spacing, line spacing, and a rotation pivot at the
 /// layer's `origin`. The output segments live on the synthetic layer
-/// `__text_<id>` so ops can target them via `OperationSource::Layers`.
+/// `__text_<id>` so ops can target them via `OpSource::Layers`.
 pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
     let face = Face::parse(&layer.font_bytes, 0).map_err(|e| {
         Error::misconfigured(format!("ttf parse: {e}"))

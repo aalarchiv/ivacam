@@ -336,7 +336,7 @@ pub fn emit_vcarve_block<P: PostProcessor>(
 
 /// Drill-cycle emit. Walks `offsets` whose single segment is a Point and
 /// dispatches to the [`PostProcessor`] drill_* method matching `cycle`.
-/// Used by the pipeline's per-op driver when `OperationKind::Drill`.
+/// Used by the pipeline's per-op driver when `OpKind::Drill`.
 ///
 /// `setup.mill.depth`        → drill bottom Z (typically negative).
 /// `setup.mill.start_depth`  → R (clearance plane just above the workpiece).

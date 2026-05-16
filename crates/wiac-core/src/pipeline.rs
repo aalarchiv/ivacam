@@ -35,7 +35,7 @@
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::similar_names,
-    // OperationKind / PocketStrategy dispatch tables enumerate every
+    // OpKind / PocketStrategy dispatch tables enumerate every
     // variant explicitly so adding a new one forces a deliberate
     // choice — keeping it strict at the type level beats clippy's
     // "merge equal arms" suggestion that hides the dispatch shape.
@@ -73,7 +73,7 @@ use crate::gcode::{
 use crate::geometry::{Point2, Segment};
 use crate::pipeline_cache::{op_cache_key_with_finish, OpCacheValue, PipelineCache};
 use crate::project::{
-    Operation, OperationKind, OperationSource, PocketStrategy, Project, SourceCombine, ToolEntry,
+    Op, OpKind, OpSource, PocketStrategy, Project, SourceCombine, ToolEntry,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -158,7 +158,7 @@ pub enum PipelineError {
     #[error("operation #{0} references unknown tool id {1}")]
     UnknownTool(u32, u32),
     #[error("operation kind {0:?} is not implemented yet")]
-    UnimplementedKind(OperationKind),
+    UnimplementedKind(OpKind),
     #[error("text render failed: {0}")]
     TextRender(String),
     #[error("pipeline cancelled")]
@@ -362,7 +362,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // Pre-pipeline: render every TextLayer to segments and append them
     // to the project's geometry pool. Each layer's segments live under
     // the synthetic name `__text_<id>` so ops can target them via
-    // `OperationSource::Layers`. The render is purely additive — the
+    // `OpSource::Layers`. The render is purely additive — the
     // user-imported `project.segments` are untouched, and a project
     // with no text layers behaves exactly as before.
     if !project.text_layers.is_empty() {
@@ -572,7 +572,7 @@ where
     };
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
-    let enabled_ops: Vec<&Operation> = project.operations.iter().filter(|o| o.enabled).collect();
+    let enabled_ops: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
     let total_ops = enabled_ops.len();
     for (idx, op) in enabled_ops.iter().enumerate() {
         if cancelled(cancel) {
@@ -646,7 +646,7 @@ where
         resolve_auto_helix_radius(op, objects, &mut setup, warnings);
         let mut closed_count_emitted: usize = 0;
         let mut offset_count_emitted: usize = 0;
-        if matches!(op.kind, OperationKind::VCarve) {
+        if matches!(op.kind, OpKind::VCarve) {
             post.raw(&format!("; OP {}", op.id));
             run_vcarve_op(
                 op,
@@ -658,7 +658,7 @@ where
                 warnings,
                 cancel,
             )?;
-        } else if matches!(op.kind, OperationKind::Thread { .. }) {
+        } else if matches!(op.kind, OpKind::Thread { .. }) {
             post.raw(&format!("; OP {}", op.id));
             run_thread_op(
                 op,
@@ -672,7 +672,7 @@ where
             )?;
         } else if matches!(
             op.kind,
-            OperationKind::Pocket {
+            OpKind::Pocket {
                 strategy: PocketStrategy::Halfpipe { .. },
             }
         ) {
@@ -743,21 +743,21 @@ where
 ///
 /// `objects` is the current chained-object set (which the per-op loop
 /// may have expanded with patterns or frame synthesis); for
-/// `OperationSource::Objects { ids }` we walk only the segments owned
+/// `OpSource::Objects { ids }` we walk only the segments owned
 /// by the selected objects in id order so adding an unrelated object
 /// doesn't invalidate this op's cached output. Ids are 1-based; ids
 /// that fall outside the current `objects` set are silently skipped
 /// (e.g. after a prior op's pattern expansion replaced the chained
 /// set — the resulting empty segment list still hashes deterministically).
-fn resolve_op_segments(op: &Operation, all: &[Segment], objects: &[VcObject]) -> Vec<Segment> {
+fn resolve_op_segments(op: &Op, all: &[Segment], objects: &[VcObject]) -> Vec<Segment> {
     match &op.source {
-        OperationSource::All => all.to_vec(),
-        OperationSource::Layers { layers, .. } => all
+        OpSource::All => all.to_vec(),
+        OpSource::Layers { layers, .. } => all
             .iter()
             .filter(|s| layers.iter().any(|l| l == &s.layer))
             .cloned()
             .collect(),
-        OperationSource::Objects { ids, .. } => {
+        OpSource::Objects { ids, .. } => {
             let mut out = Vec::new();
             for &id in ids {
                 let idx = (id as usize).saturating_sub(1);
@@ -779,16 +779,16 @@ fn resolve_op_segments(op: &Operation, all: &[Segment], objects: &[VcObject]) ->
 /// object indices. Used by non-Auto combine modes — Difference in
 /// particular is order-sensitive ("first selected minus the rest"), so
 /// we cannot iterate the unordered `selected_set` there.
-pub(super) fn ordered_selection(op: &Operation, objects: &[VcObject]) -> Vec<usize> {
+pub(super) fn ordered_selection(op: &Op, objects: &[VcObject]) -> Vec<usize> {
     match &op.source {
-        OperationSource::All => (0..objects.len()).collect(),
-        OperationSource::Layers { layers, .. } => objects
+        OpSource::All => (0..objects.len()).collect(),
+        OpSource::Layers { layers, .. } => objects
             .iter()
             .enumerate()
             .filter(|(_, obj)| layers.iter().any(|l| l == &obj.layer))
             .map(|(i, _)| i)
             .collect(),
-        OperationSource::Objects { ids, .. } => ids
+        OpSource::Objects { ids, .. } => ids
             .iter()
             .filter_map(|id| {
                 let idx = (*id as usize).checked_sub(1)?;
@@ -800,7 +800,7 @@ pub(super) fn ordered_selection(op: &Operation, objects: &[VcObject]) -> Vec<usi
 
 /// Pull the `SourceCombine` mode out of an op's source.
 ///
-/// `OperationSource::All` always reports `Auto` — by design. "All
+/// `OpSource::All` always reports `Auto` — by design. "All
 /// objects" has no UI affordance for a combine selector, so the
 /// pipeline treats it as "let each op kind decide". Pocket then falls
 /// through to its containment-aware per-object loop (outer carves +
@@ -808,23 +808,23 @@ pub(super) fn ordered_selection(op: &Operation, objects: &[VcObject]) -> Vec<usi
 /// selected object. Layers / Objects sources carry an explicit
 /// `combine` field and that value is honored verbatim — including
 /// `Auto`, which means the same per-op-kind dispatch path.
-pub(super) fn source_combine_mode(op: &Operation) -> SourceCombine {
+pub(super) fn source_combine_mode(op: &Op) -> SourceCombine {
     match &op.source {
-        OperationSource::All => SourceCombine::Auto,
-        OperationSource::Layers { combine, .. } | OperationSource::Objects { combine, .. } => {
+        OpSource::All => SourceCombine::Auto,
+        OpSource::Layers { combine, .. } | OpSource::Objects { combine, .. } => {
             *combine
         }
     }
 }
 
-pub(super) fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> bool {
+pub(super) fn op_includes_object(op: &Op, obj: &VcObject, idx: usize) -> bool {
     match &op.source {
-        OperationSource::All => true,
-        OperationSource::Layers { layers, .. } => layers.iter().any(|l| l == &obj.layer),
-        // OperationSource::Objects ids are 1-based, matching the
+        OpSource::All => true,
+        OpSource::Layers { layers, .. } => layers.iter().any(|l| l == &obj.layer),
+        // OpSource::Objects ids are 1-based, matching the
         // ImportOutput.objects[i] mapping the frontend uses for
         // selection.
-        OperationSource::Objects { ids, .. } => {
+        OpSource::Objects { ids, .. } => {
             let chain_id = (idx as u32) + 1;
             ids.contains(&chain_id)
         }
@@ -835,7 +835,7 @@ pub(super) fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> 
 /// `default_step`. Both must be negative (a depth, not a height); a
 /// non-negative value or two Nones produces a `step_unspecified`
 /// warning.
-pub(crate) fn effective_step(op: &Operation, tool: &ToolEntry) -> Result<f64, PipelineWarning> {
+pub(crate) fn effective_step(op: &Op, tool: &ToolEntry) -> Result<f64, PipelineWarning> {
     op.params
         .step
         .or(tool.default_step)
@@ -854,7 +854,7 @@ pub(crate) fn effective_step(op: &Operation, tool: &ToolEntry) -> Result<f64, Pi
 /// exists. Falls through `Err(PipelineError::UnknownTool)` if the
 /// referenced finish tool id isn't in the project.
 pub(super) fn synthesize_finish_setup(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<Option<crate::cam::setup::Setup>, PipelineError> {
@@ -868,12 +868,12 @@ pub(super) fn synthesize_finish_setup(
     // funnel through here; other op kinds shouldn't reach this path
     // (no offset would be tagged finish), but be defensive — return
     // None for anything else.
-    let drill_with_chamfer = matches!(op.kind, OperationKind::Drill { .. })
+    let drill_with_chamfer = matches!(op.kind, OpKind::Drill { .. })
         && op
             .params
             .chamfer_after_width_mm
             .is_some_and(|w| w > 0.0);
-    if !matches!(op.kind, OperationKind::Pocket { .. }) && !drill_with_chamfer {
+    if !matches!(op.kind, OpKind::Pocket { .. }) && !drill_with_chamfer {
         return Ok(None);
     }
     // Synthesize a temporary op pointing at the finish tool and use
@@ -903,7 +903,7 @@ mod tests {
     use crate::cam::setup::{MachineConfig, TabType, TabsConfig, ToolOffset};
     use crate::geometry::Segment;
     use crate::project::{
-        Coolant, Operation, OperationKind, OperationParams, OperationSource, PatternConfig,
+        Coolant, Op, OpKind, OpParams, OpSource, PatternConfig,
         SourceCombine, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind,
     };
 
@@ -953,21 +953,21 @@ mod tests {
         }
     }
 
-    fn profile_op(id: u32, tool_id: u32, offset: ToolOffset) -> Operation {
-        Operation {
+    fn profile_op(id: u32, tool_id: u32, offset: ToolOffset) -> Op {
+        Op {
             id,
             name: format!("Profile {id}"),
             enabled: true,
-            kind: OperationKind::Profile { offset },
+            kind: OpKind::Profile { offset },
             tool_id,
             finish_tool_id: None,
-            source: OperationSource::All,
-            params: OperationParams::mill_default(),
+            source: OpSource::All,
+            params: OpParams::mill_default(),
             pattern: None,
         }
     }
 
-    fn project_with(ops: Vec<Operation>, tools: Vec<ToolEntry>) -> Project {
+    fn project_with(ops: Vec<Op>, tools: Vec<ToolEntry>) -> Project {
         Project {
             segments: closed_square(20.0),
             machine: MachineConfig::default(),
@@ -991,18 +991,18 @@ mod tests {
     #[test]
     fn pipeline_renders_text_layers_and_routes_via_synthetic_layer() {
         // Engrave op pointing at the synthetic `__text_1` layer.
-        let engrave = Operation {
+        let engrave = Op {
             id: 1,
             name: "Engrave text".into(),
             enabled: true,
-            kind: OperationKind::Engrave,
+            kind: OpKind::Engrave,
             tool_id: 1,
             finish_tool_id: None,
-            source: OperationSource::Layers {
+            source: OpSource::Layers {
                 layers: vec!["__text_1".into()],
                 combine: SourceCombine::default(),
             },
-            params: OperationParams::mill_default(),
+            params: OpParams::mill_default(),
             pattern: None,
         };
         let text_layer = TextLayer {
@@ -1133,18 +1133,18 @@ mod tests {
         }
     }
 
-    fn pocket_op(id: u32, tool_id: u32, source: OperationSource) -> Operation {
-        Operation {
+    fn pocket_op(id: u32, tool_id: u32, source: OpSource) -> Op {
+        Op {
             id,
             name: format!("Pocket {id}"),
             enabled: true,
-            kind: OperationKind::Pocket {
+            kind: OpKind::Pocket {
                 strategy: crate::project::PocketStrategy::Cascade,
             },
             tool_id,
             finish_tool_id: None,
             source,
-            params: OperationParams::mill_default(),
+            params: OpParams::mill_default(),
             pattern: None,
         }
     }
@@ -1189,7 +1189,7 @@ mod tests {
             operations: vec![pocket_op(
                 1,
                 1,
-                OperationSource::Objects {
+                OpSource::Objects {
                     ids: vec![1],
                     combine: SourceCombine::Auto,
                 },
@@ -1204,7 +1204,7 @@ mod tests {
             operations: vec![pocket_op(
                 1,
                 1,
-                OperationSource::Objects {
+                OpSource::Objects {
                     ids: vec![1, 2],
                     combine: SourceCombine::Auto,
                 },
@@ -1269,20 +1269,20 @@ mod tests {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket-diff".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::Objects {
+                source: OpSource::Objects {
                     ids: vec![1, 2],
                     combine: SourceCombine::Difference,
                 },
-                params: OperationParams::mill_default(),
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -1329,23 +1329,23 @@ mod tests {
     #[test]
     fn pocket_outside_carves_between_frame_and_selection() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
         params.frame_padding_mm = Some(10.0);
         let project = Project {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket-Outside".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::Objects {
+                source: OpSource::Objects {
                     ids: vec![1],
                     combine: SourceCombine::Difference,
                 },
@@ -1411,23 +1411,23 @@ mod tests {
     #[test]
     fn pocket_outside_clamps_padding_below_tool_radius() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
         params.frame_padding_mm = Some(1.0); // < tool radius (3.0)
         let project = Project {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)], // 6 mm Ø ⇒ 3 mm radius
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket-Outside-tight".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::Objects {
+                source: OpSource::Objects {
                     ids: vec![1],
                     combine: SourceCombine::Difference,
                 },
@@ -1493,37 +1493,37 @@ mod tests {
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![
-                Operation {
+                Op {
                     id: 1,
                     name: "Inner pocket".into(),
                     enabled: true,
-                    kind: OperationKind::Pocket {
+                    kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
                     },
                     tool_id: 1,
                     finish_tool_id: None,
-                    source: OperationSource::Objects {
+                    source: OpSource::Objects {
                         ids: vec![1],
                         combine: SourceCombine::Auto,
                     },
-                    params: OperationParams::mill_default(),
+                    params: OpParams::mill_default(),
                     pattern: None,
                 },
-                Operation {
+                Op {
                     id: 2,
                     name: "Pocket Outside".into(),
                     enabled: true,
-                    kind: OperationKind::Pocket {
+                    kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
                     },
                     tool_id: 1,
                     finish_tool_id: None,
-                    source: OperationSource::Objects {
+                    source: OpSource::Objects {
                         ids: vec![1],
                         combine: SourceCombine::Difference,
                     },
                     params: {
-                        let mut p = OperationParams::mill_default();
+                        let mut p = OpParams::mill_default();
                         p.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
                         p.frame_padding_mm = Some(10.0);
                         p
@@ -1589,23 +1589,23 @@ mod tests {
     #[test]
     fn pocket_with_climb_main_and_conventional_finish_winds_correctly() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.cut_direction = crate::project::CutDirection::Climb;
         params.finish_cut_direction = crate::project::CutDirection::Conventional;
         let project = Project {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -1700,17 +1700,17 @@ mod tests {
             segments: closed_square_offset(4.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 7,
                 name: "Tiny pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -1780,17 +1780,17 @@ mod tests {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![drill],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -1813,7 +1813,7 @@ mod tests {
     /// the cutter should be at Z=-1; subsequent cut moves stay at -1.
     #[test]
     fn ramp_plunge_descends_z_during_first_cuts() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         params.start_depth = 0.0;
@@ -1822,16 +1822,16 @@ mod tests {
             segments: closed_square_offset(100.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Ramped profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -1905,7 +1905,7 @@ mod tests {
     /// is at -1).
     #[test]
     fn helix_plunge_emits_arc_arcs_descending_z() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         params.start_depth = 0.0;
@@ -1917,16 +1917,16 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Helical pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -1993,7 +1993,7 @@ mod tests {
     /// path itself).
     #[test]
     fn helix_falls_back_to_ramp_when_radius_smaller_than_tool() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         params.start_depth = 0.0;
@@ -2005,16 +2005,16 @@ mod tests {
             segments: closed_square_offset(100.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Helix-too-small".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2075,7 +2075,7 @@ mod tests {
     /// no helix-entry arcs near the centroid.
     #[test]
     fn auto_helix_falls_back_when_pocket_too_small() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         params.start_depth = 0.0;
@@ -2087,16 +2087,16 @@ mod tests {
             segments: closed_square_offset(8.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Auto-helix-tight".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2141,7 +2141,7 @@ mod tests {
     /// only fits in `plan_helix_entry` when `tool_radius ≤ 0.5`.
     #[test]
     fn auto_helix_emits_arcs_when_pocket_fits() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         params.start_depth = 0.0;
@@ -2153,16 +2153,16 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 0.5)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Auto-helix-roomy".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2246,7 +2246,7 @@ mod tests {
     /// where the path crosses tabs use the straight-plunge tabs walker.
     #[test]
     fn helix_with_tabs_active_falls_back() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -2.0;
         params.step = Some(-2.0);
         params.start_depth = 0.0;
@@ -2276,16 +2276,16 @@ mod tests {
             segments: closed_square_offset(100.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Helix-with-tabs".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2338,7 +2338,7 @@ mod tests {
         // Sanity-check that the new plunge field doesn't affect the
         // default Direct path: the first cut move must already be at
         // the cut depth (the plunge happens before XY travel starts).
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         // params.plunge defaults to Direct.
@@ -2346,16 +2346,16 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Direct profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2393,17 +2393,17 @@ mod tests {
             segments: closed_square_offset(10.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 9,
                 name: "Hollow pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -2448,22 +2448,22 @@ mod tests {
                 .sum()
         }
         let make = |overlap: f64| -> PipelineResponse {
-            let mut params = OperationParams::mill_default();
+            let mut params = OpParams::mill_default();
             params.xy_overlap = overlap;
             let project = Project {
                 segments: closed_square_offset(50.0, 0.0, 0.0),
                 machine: MachineConfig::default(),
                 tools: vec![endmill(1, 3.0)],
-                operations: vec![Operation {
+                operations: vec![Op {
                     id: 1,
                     name: "Pocket".into(),
                     enabled: true,
-                    kind: OperationKind::Pocket {
+                    kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
                     },
                     tool_id: 1,
                     finish_tool_id: None,
-                    source: OperationSource::All,
+                    source: OpSource::All,
                     params,
                     pattern: None,
                 }],
@@ -2493,7 +2493,7 @@ mod tests {
     /// contour at four corners.
     #[test]
     fn zigzag_pocket_emits_interior_strokes() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         // Force the default explicitly so the test pins behavior even
         // if the constant changes later.
         params.xy_overlap = 0.5;
@@ -2501,16 +2501,16 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Zigzag pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Zigzag,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2563,7 +2563,7 @@ mod tests {
     /// `total_depth` that visits the path's start XY at `total_depth`.
     #[test]
     fn ramp_plunge_cleans_up_with_a_final_constant_depth_pass() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         params.start_depth = 0.0;
@@ -2572,16 +2572,16 @@ mod tests {
             segments: closed_square_offset(100.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Ramped profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2624,7 +2624,7 @@ mod tests {
     /// zigzag). The `pocket_fill_incomplete` warning fires so they know.
     #[test]
     fn cascade_with_tool_too_wide_emits_only_boundary_no_zigzag_substitute() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.xy_overlap = 0.05; // 95% step — no inward rings will fit
         let project = Project {
             // 6×6 with a 3mm tool: boundary inset by 1.5mm leaves a
@@ -2632,16 +2632,16 @@ mod tests {
             segments: closed_square_offset(6.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -2688,17 +2688,17 @@ mod tests {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -2759,26 +2759,26 @@ mod tests {
         ]
     }
 
-    fn drill_op(id: u32, tool_id: u32, cycle: crate::project::DrillCycle) -> Operation {
-        let mut params = OperationParams::mill_default();
+    fn drill_op(id: u32, tool_id: u32, cycle: crate::project::DrillCycle) -> Op {
+        let mut params = OpParams::mill_default();
         params.depth = -5.0;
         params.start_depth = 0.0;
         params.fast_move_z = 5.0;
-        Operation {
+        Op {
             id,
             name: format!("Drill {id}"),
             enabled: true,
-            kind: OperationKind::Drill { cycle },
+            kind: OpKind::Drill { cycle },
             tool_id,
             finish_tool_id: None,
-            source: OperationSource::All,
+            source: OpSource::All,
             params,
             pattern: None,
         }
     }
 
     /// A 0.5mm-radius closed circle with a 3mm endmill running an
-    /// `OperationKind::Drill` { Simple } op should emit a recognizable
+    /// `OpKind::Drill` { Simple } op should emit a recognizable
     /// `LinuxCNC` G81 (or G82 for dwell) drill at the circle's center.
     #[test]
     fn drill_op_emits_gcode_for_circle_smaller_than_tool() {
@@ -2989,7 +2989,7 @@ mod tests {
         );
     }
 
-    /// A Drill op with `OperationSource::Objects` selecting only one of
+    /// A Drill op with `OpSource::Objects` selecting only one of
     /// several drill candidates must emit gcode for *just* that one.
     #[test]
     fn drill_op_respects_object_selection() {
@@ -2999,21 +2999,21 @@ mod tests {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Drill".into(),
                 enabled: true,
-                kind: OperationKind::Drill {
+                kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::Objects {
+                source: OpSource::Objects {
                     ids: vec![2],
                     combine: SourceCombine::Auto,
                 },
                 params: {
-                    let mut p = OperationParams::mill_default();
+                    let mut p = OpParams::mill_default();
                     p.depth = -5.0;
                     p.start_depth = 0.0;
                     p.fast_move_z = 5.0;
@@ -3059,7 +3059,7 @@ mod tests {
     /// has cuts at both the pre-finish Z and the bottom Z.
     #[test]
     fn finish_step_emits_extra_thin_final_pass() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -2.0;
         params.step = Some(-1.0);
         params.start_depth = 0.0;
@@ -3068,16 +3068,16 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -3102,7 +3102,7 @@ mod tests {
     /// through-cuts on edge-clamped sheet clear the bottom.
     #[test]
     fn through_depth_extends_final_z() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -2.0;
         params.step = Some(-1.0);
         params.through_depth = 0.5;
@@ -3110,16 +3110,16 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -3144,7 +3144,7 @@ mod tests {
     /// `depth_list` overrides the step schedule. Each listed Z must appear.
     #[test]
     fn depth_list_overrides_step_schedule() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -3.0;
         params.step = Some(-1.0);
         params.depth_list = vec![-0.5, -1.5, -3.0];
@@ -3152,16 +3152,16 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -3187,23 +3187,23 @@ mod tests {
     /// Per-op feedrate overrides win over the tool's defaults.
     #[test]
     fn feed_rate_override_appears_in_gcode() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.feed_rate_override = Some(123);
         params.plunge_rate_override = Some(45);
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -3272,7 +3272,7 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![tool],
-            operations: vec![pocket_op(1, 1, OperationSource::All)],
+            operations: vec![pocket_op(1, 1, OpSource::All)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
         };
@@ -3318,7 +3318,7 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![tool],
-            operations: vec![pocket_op(1, 1, OperationSource::All)],
+            operations: vec![pocket_op(1, 1, OpSource::All)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
         };
@@ -3492,22 +3492,22 @@ mod tests {
         let mut tool = endmill(1, 3.0);
         tool.feed_rate = 1500;
         tool.feed_rate_finish = Some(400);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.finish_xy_allowance_mm = Some(0.5);
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![tool],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -3547,17 +3547,17 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine,
             tools: vec![rough_tool, finish_tool],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -3602,17 +3602,17 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: Some(1),
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -3641,7 +3641,7 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![pocket_op(1, 1, OperationSource::All)],
+            operations: vec![pocket_op(1, 1, OpSource::All)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
         };
@@ -3914,7 +3914,7 @@ mod tests {
         tool_a.wirbeln = false;
         let mut tool_b = endmill(1, 6.0);
         tool_b.wirbeln = true;
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         // overlap 0.05 -> xy_step = 6 * 0.95 = 5.7 mm. Wirbeln clamps
         // to tool_radius/2 = 1.5 mm, so b should have many more rings.
         params.xy_overlap = 0.05;
@@ -3922,16 +3922,16 @@ mod tests {
             segments: closed_square_offset(80.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![tool],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params: params.clone(),
                 pattern: None,
             }],
@@ -4000,7 +4000,7 @@ mod tests {
 
         let mut ball = endmill(1, 10.0);
         ball.kind = ToolKind::BallNose;
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -10.0; // permissive cap so the profile drives Z
         params.start_depth = 0.0;
         params.step = Some(-2.0);
@@ -4008,18 +4008,18 @@ mod tests {
             segments: segments_8w,
             machine: MachineConfig::default(),
             tools: vec![ball],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Halfpipe".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Halfpipe {
                         profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 5.0 },
                     },
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -4117,7 +4117,7 @@ mod tests {
             plot_mode_z: true,
             ..MachineConfig::default()
         };
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -3.0; // would normally cascade through Z=-1, -2, -3
         params.start_depth = 0.0;
         params.fast_move_z = 5.0;
@@ -4126,14 +4126,14 @@ mod tests {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Laser cut".into(),
                 enabled: true,
-                kind: OperationKind::Engrave,
+                kind: OpKind::Engrave,
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -4192,22 +4192,22 @@ mod tests {
         // the top-right corner. Without approach_point, plunge happens
         // at an arbitrary auto-picked vertex.
         let center_ap = (20.0, 20.0);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.approach_point = Some(center_ap);
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 1.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -4259,14 +4259,14 @@ mod tests {
     /// Approach point serde round-trip (rt1.26).
     #[test]
     fn approach_point_serde_round_trip() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.approach_point = Some((3.5, -2.0));
         let json = serde_json::to_string(&params).unwrap();
         assert!(json.contains("approach_point"));
-        let back: OperationParams = serde_json::from_str(&json).unwrap();
+        let back: OpParams = serde_json::from_str(&json).unwrap();
         assert_eq!(back.approach_point, Some((3.5, -2.0)));
         // Unset round-trips as absent.
-        let none_params = OperationParams::mill_default();
+        let none_params = OpParams::mill_default();
         let json_none = serde_json::to_string(&none_params).unwrap();
         assert!(!json_none.contains("approach_point"));
     }
@@ -4287,15 +4287,15 @@ mod tests {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,
             tools: vec![tool],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Laser cut".into(),
                 enabled: true,
-                kind: OperationKind::Engrave,
+                kind: OpKind::Engrave,
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -4356,7 +4356,7 @@ mod tests {
         vbit_drill.diameter = 3.0;
         vbit_drill.tip_angle_deg = 90.0; // makes the math easy: z = -width
         let center = Point2::new(5.0, 7.0);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -3.0;
         params.start_depth = 0.0;
         params.fast_move_z = 5.0;
@@ -4365,16 +4365,16 @@ mod tests {
             segments: closed_circle(center, 0.5),
             machine: MachineConfig::default(),
             tools: vec![vbit_drill],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Drill+chamfer".into(),
                 enabled: true,
-                kind: OperationKind::Drill {
+                kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -4423,7 +4423,7 @@ mod tests {
             ..MachineConfig::default()
         };
         let center = Point2::new(5.0, 7.0);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -3.0;
         params.start_depth = 0.0;
         params.chamfer_after_width_mm = Some(0.5);
@@ -4431,16 +4431,16 @@ mod tests {
             segments: closed_circle(center, 0.5),
             machine,
             tools: vec![drill, vbit_finish],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Drill".into(),
                 enabled: true,
-                kind: OperationKind::Drill {
+                kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -4543,17 +4543,17 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine,
             tools: vec![rough_tool, finish_tool],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -4724,25 +4724,25 @@ mod tests {
         let center = Point2::new(10.0, 20.0);
         let radius = 5.0;
         let segments = closed_circle(center, radius);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -3.0;
         params.start_depth = 0.0;
         let project = Project {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 1.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Thread".into(),
                 enabled: true,
-                kind: OperationKind::Thread {
+                kind: OpKind::Thread {
                     pitch_mm: 1.0,
                     internal: true,
                     climb: true,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -4780,19 +4780,19 @@ mod tests {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 1.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Thread".into(),
                 enabled: true,
-                kind: OperationKind::Thread {
+                kind: OpKind::Thread {
                     pitch_mm: 1.0,
                     internal: true,
                     climb: true,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -4817,25 +4817,25 @@ mod tests {
         let center = Point2::new(0.0, 0.0);
         let radius = 1.0; // 1mm bore
         let segments = closed_circle(center, radius);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.start_depth = 0.0;
         let project = Project {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)], // 3mm tool, bigger than the bore
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Thread".into(),
                 enabled: true,
-                kind: OperationKind::Thread {
+                kind: OpKind::Thread {
                     pitch_mm: 1.0,
                     internal: true,
                     climb: true,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -4866,18 +4866,18 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![vbit],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Chamfer".into(),
                 enabled: true,
-                kind: OperationKind::Chamfer {
+                kind: OpKind::Chamfer {
                     width_mm: 1.0,
                     finish_pass: false,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -4913,18 +4913,18 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![vbit],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Chamfer".into(),
                 enabled: true,
-                kind: OperationKind::Chamfer {
+                kind: OpKind::Chamfer {
                     width_mm: 1.0,
                     finish_pass: true,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -4950,18 +4950,18 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Chamfer".into(),
                 enabled: true,
-                kind: OperationKind::Chamfer {
+                kind: OpKind::Chamfer {
                     width_mm: 1.0,
                     finish_pass: false,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -4978,33 +4978,33 @@ mod tests {
         assert!(resp.warnings.iter().any(|w| w.kind == "chamfer_non_vbit"));
     }
 
-    /// `Operation.finish_tool_id` round-trips through serde and is
+    /// `Op.finish_tool_id` round-trips through serde and is
     /// omitted from the wire payload when None.
     #[test]
     fn operation_finish_tool_id_serde_round_trip() {
-        let mut op = pocket_op(1, 5, OperationSource::All);
+        let mut op = pocket_op(1, 5, OpSource::All);
         op.finish_tool_id = Some(9);
         let json = serde_json::to_string(&op).unwrap();
         assert!(json.contains("finish_tool_id"));
-        let back: Operation = serde_json::from_str(&json).unwrap();
+        let back: Op = serde_json::from_str(&json).unwrap();
         assert_eq!(back.finish_tool_id, Some(9));
 
-        let none_op = pocket_op(1, 5, OperationSource::All);
+        let none_op = pocket_op(1, 5, OpSource::All);
         let json_none = serde_json::to_string(&none_op).unwrap();
         assert!(!json_none.contains("finish_tool_id"));
     }
 
-    /// `OperationParams.finish_xy_allowance_mm` round-trips through
+    /// `OpParams.finish_xy_allowance_mm` round-trips through
     /// serde and omits the field when unset (rt1.24).
     #[test]
     fn finish_xy_allowance_serde_round_trip() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.finish_xy_allowance_mm = Some(0.3);
         let json = serde_json::to_string(&params).unwrap();
         assert!(json.contains("finish_xy_allowance_mm"));
-        let back: OperationParams = serde_json::from_str(&json).unwrap();
+        let back: OpParams = serde_json::from_str(&json).unwrap();
         assert_eq!(back.finish_xy_allowance_mm, Some(0.3));
-        let none_params = OperationParams::mill_default();
+        let none_params = OpParams::mill_default();
         let json_none = serde_json::to_string(&none_params).unwrap();
         assert!(!json_none.contains("finish_xy_allowance_mm"));
     }
@@ -5035,23 +5035,23 @@ mod tests {
     /// by a 180° turn — exactly the worst-case for high-feed motion.
     #[test]
     fn corner_feed_reduction_emits_slower_f_at_sharp_turns() {
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.feed_rate_override = Some(1000);
         params.corner_feed_reduction = 0.5; // halve at corners
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Zigzag,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -5077,7 +5077,7 @@ mod tests {
     /// Build a profile op with a Linear pattern attached. We deliberately
     /// use Profile (not Pocket) so each instance produces a recognizable
     /// outer-offset toolpath whose X / Y range is easy to assert on.
-    fn profile_op_with_pattern(pattern: PatternConfig) -> Operation {
+    fn profile_op_with_pattern(pattern: PatternConfig) -> Op {
         let mut op = profile_op(1, 1, ToolOffset::Outside);
         op.pattern = Some(pattern);
         op
@@ -5355,8 +5355,8 @@ mod tests {
         offset: ToolOffset,
         kind_in: crate::cam::setup::LeadKind,
         len_in: f64,
-    ) -> Operation {
-        let mut params = OperationParams::mill_default();
+    ) -> Op {
+        let mut params = OpParams::mill_default();
         params.depth = -1.0;
         params.step = Some(-1.0);
         params.fast_move_z = 5.0;
@@ -5366,14 +5366,14 @@ mod tests {
             in_lenght: len_in,
             out_lenght: 0.0,
         };
-        Operation {
+        Op {
             id: 1,
             name: "Profile".into(),
             enabled: true,
-            kind: OperationKind::Profile { offset },
+            kind: OpKind::Profile { offset },
             tool_id: 1,
             finish_tool_id: None,
-            source: OperationSource::All,
+            source: OpSource::All,
             params,
             pattern: None,
         }
@@ -5624,24 +5624,24 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
         };
         let mut spiral_project = cascade_project.clone();
-        spiral_project.operations[0].kind = OperationKind::Pocket {
+        spiral_project.operations[0].kind = OpKind::Pocket {
             strategy: crate::project::PocketStrategy::Spiral,
         };
         let cascade_gcode = run_pipeline(
@@ -5703,17 +5703,17 @@ mod tests {
             segments: l_shape,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Spiral,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -5777,20 +5777,20 @@ mod tests {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket { strategy },
+                kind: OpKind::Pocket { strategy },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::Objects {
+                source: OpSource::Objects {
                     ids: vec![1],
                     combine: SourceCombine::Auto,
                 },
-                params: OperationParams {
+                params: OpParams {
                     pocket_islands,
-                    ..OperationParams::mill_default()
+                    ..OpParams::mill_default()
                 },
                 pattern: None,
             }],
@@ -5917,22 +5917,22 @@ mod tests {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Profile".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 // Object 2 is the inner circle (chaining puts segments
                 // in input order; outer was first).
-                source: OperationSource::Objects {
+                source: OpSource::Objects {
                     ids: vec![2],
                     combine: crate::project::SourceCombine::Auto,
                 },
-                params: OperationParams::mill_default(),
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -6049,7 +6049,7 @@ mod tests {
         });
         let req: PipelineRequest = serde_json::from_value(raw).expect("wire JSON deserialization");
         // op.offset deserialized as ToolOffset::Outside?
-        if let OperationKind::Profile { offset } = req.project.operations[0].kind {
+        if let OpKind::Profile { offset } = req.project.operations[0].kind {
             assert_eq!(
                 offset,
                 ToolOffset::Outside,
@@ -6206,20 +6206,20 @@ mod tests {
             segments: rect.clone(),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket { strategy },
+                kind: OpKind::Pocket { strategy },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams {
+                source: OpSource::All,
+                params: OpParams {
                     plunge: crate::cam::setup::PlungeStrategy::Helix {
                         angle_deg: 3.0,
                         radius_mm: Some(4.5),
                     },
-                    ..OperationParams::mill_default()
+                    ..OpParams::mill_default()
                 },
                 pattern: None,
             }],
@@ -6280,7 +6280,7 @@ mod tests {
     #[test]
     fn trochoidal_with_tabs_emits_unsupported_warning() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
-        let mut params = OperationParams::mill_default();
+        let mut params = OpParams::mill_default();
         params.tabs.active = true;
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
@@ -6290,11 +6290,11 @@ mod tests {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 7,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: PocketStrategy::Trochoidal {
                         engagement_angle_deg: 30.0,
                         loop_radius_factor: 0.6,
@@ -6302,7 +6302,7 @@ mod tests {
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
+                source: OpSource::All,
                 params,
                 pattern: None,
             }],
@@ -6335,11 +6335,11 @@ mod tests {
             segments,
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 9,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OperationKind::Pocket {
+                kind: OpKind::Pocket {
                     strategy: PocketStrategy::Trochoidal {
                         engagement_angle_deg: 30.0,
                         loop_radius_factor: 0.6,
@@ -6347,10 +6347,10 @@ mod tests {
                 },
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams {
+                source: OpSource::All,
+                params: OpParams {
                     plunge: crate::cam::setup::PlungeStrategy::Direct,
-                    ..OperationParams::mill_default()
+                    ..OpParams::mill_default()
                 },
                 pattern: None,
             }],
@@ -6430,20 +6430,20 @@ mod tests {
             shank_diameter_mm: None,
             holder: None,
         };
-        let op = Operation {
+        let op = Op {
             id: 7,
             name: "Carve".into(),
             enabled: true,
-            kind: OperationKind::VCarve,
+            kind: OpKind::VCarve,
             tool_id: 1,
             finish_tool_id: None,
-            source: OperationSource::All,
-            params: OperationParams {
+            source: OpSource::All,
+            params: OpParams {
                 depth: -10.0,
                 start_depth: 0.0,
                 step: Some(-1.0),
                 fast_move_z: 5.0,
-                ..OperationParams::default()
+                ..OpParams::default()
             },
             pattern: None,
         };
@@ -6543,28 +6543,28 @@ mod tests {
 
     #[test]
     fn vcarve_op_round_trips_through_serde_json() {
-        let op = Operation {
+        let op = Op {
             id: 11,
             name: "Sign carve".into(),
             enabled: true,
-            kind: OperationKind::VCarve,
+            kind: OpKind::VCarve,
             tool_id: 1,
             finish_tool_id: None,
-            source: OperationSource::All,
-            params: OperationParams {
+            source: OpSource::All,
+            params: OpParams {
                 depth: -8.0,
                 start_depth: 0.0,
                 step: Some(-0.8),
                 fast_move_z: 6.0,
                 carve_max_width_mm: Some(4.0),
                 multi_pass_refine: true,
-                ..OperationParams::default()
+                ..OpParams::default()
             },
             pattern: None,
         };
         let json = serde_json::to_string(&op).expect("serialize");
-        let back: Operation = serde_json::from_str(&json).expect("deserialize");
-        assert!(matches!(back.kind, OperationKind::VCarve));
+        let back: Op = serde_json::from_str(&json).expect("deserialize");
+        assert!(matches!(back.kind, OpKind::VCarve));
         assert_eq!(back.params.carve_max_width_mm, Some(4.0));
         assert!(back.params.multi_pass_refine);
         assert_eq!(back.params.depth, -8.0);
@@ -6747,20 +6747,20 @@ mod tests {
             ],
             machine: MachineConfig::default(),
             tools: vec![vbit()],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 9,
                 name: "Carve".into(),
                 enabled: true,
-                kind: OperationKind::VCarve,
+                kind: OpKind::VCarve,
                 tool_id: 1,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams {
+                source: OpSource::All,
+                params: OpParams {
                     depth: -10.0,
                     start_depth: 0.0,
                     step: Some(-1.0),
                     fast_move_z: 5.0,
-                    ..OperationParams::default()
+                    ..OpParams::default()
                 },
                 pattern: None,
             }],
@@ -6831,17 +6831,17 @@ mod tests {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(91, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 91,
                 name: "Profile cache test".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 91,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -6862,18 +6862,18 @@ mod tests {
         // cache slot regardless of segments (they all share the same
         // square geometry).
         let tools: Vec<ToolEntry> = (1..=5).map(|i| endmill(100 + i, 3.0)).collect();
-        let ops: Vec<Operation> = (1..=5)
-            .map(|i| Operation {
+        let ops: Vec<Op> = (1..=5)
+            .map(|i| Op {
                 id: 100 + i,
                 name: format!("Profile {i}"),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 100 + i,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             })
             .collect();
@@ -6910,17 +6910,17 @@ mod tests {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(77, 3.0)],
-            operations: vec![Operation {
+            operations: vec![Op {
                 id: 77,
                 name: "Profile identity".into(),
                 enabled: true,
-                kind: OperationKind::Profile {
+                kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
                 },
                 tool_id: 77,
                 finish_tool_id: None,
-                source: OperationSource::All,
-                params: OperationParams::mill_default(),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
                 pattern: None,
             }],
             fixtures: Vec::default(),
@@ -6977,7 +6977,7 @@ mod tests {
     #[test]
     fn unsupported_op_kind_returns_structured_error() {
         let mut op = profile_op(1, 1, ToolOffset::Outside);
-        op.kind = OperationKind::Helix;
+        op.kind = OpKind::Helix;
         let project = project_with(vec![op], vec![endmill(1, 3.0)]);
         let err = run_pipeline(
             PipelineRequest {

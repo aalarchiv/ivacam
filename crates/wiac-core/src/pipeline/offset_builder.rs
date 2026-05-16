@@ -1,6 +1,6 @@
 //! Per-op offset cascade — the workhorse of the standard CAM pipeline.
 //!
-//! Takes a single [`Operation`] plus its working [`VcObject`] set and
+//! Takes a single [`Op`] plus its working [`VcObject`] set and
 //! produces the list of [`PolylineOffset`]s the gcode emitter will walk.
 //! Each op kind (Profile / Pocket / Drill / `DualTool` / Engrave /
 //! `DragKnife` / Chamfer) carries its own branch inside
@@ -31,7 +31,7 @@ use crate::cam::source_combine::combine_source_regions;
 use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::{Point2, Segment};
 use crate::project::{
-    Operation, OperationKind, OperationSource, PocketStrategy, Project, SourceCombine,
+    Op, OpKind, OpSource, PocketStrategy, Project, SourceCombine,
 };
 
 use super::frame::synthesize_pocket_outside_objects;
@@ -74,7 +74,7 @@ fn object_bbox_center(obj: &VcObject) -> Option<Point2> {
 // pipeline across multiple files. 55o4 tracks future per-kind splits.
 #[allow(clippy::too_many_lines)]
 pub(super) fn build_op_offsets(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     objects: &mut Vec<VcObject>,
     setup: &Setup,
@@ -99,10 +99,10 @@ pub(super) fn build_op_offsets(
     // Pattern repetition (5fz): when the op carries a PatternConfig, expand
     // the source set into N transformed clones BEFORE the per-object loops
     // run. After expansion, every clone is "selected" (so the inner loops
-    // see them via OperationSource::All on the effective op), and tabs
+    // see them via OpSource::All on the effective op), and tabs
     // attached to the original objects are translated/rotated alongside
     // the geometry so each instance keeps its tab placement.
-    let effective_op_storage: Option<Operation> = if let Some(pattern) = op.pattern {
+    let effective_op_storage: Option<Op> = if let Some(pattern) = op.pattern {
         let instances = pattern_offsets(pattern);
         let mut expanded: Vec<VcObject> = Vec::with_capacity(instances.len() * objects.len());
         let mut expanded_tabs: HashMap<usize, Vec<TabPoint>> = HashMap::new();
@@ -141,7 +141,7 @@ pub(super) fn build_op_offsets(
         *objects = expanded;
         tabs_by_object = expanded_tabs;
         let mut clone = op.clone();
-        clone.source = OperationSource::All;
+        clone.source = OpSource::All;
         Some(clone)
     } else {
         None
@@ -152,8 +152,8 @@ pub(super) fn build_op_offsets(
     // frame's id FIRST, with SourceCombine::Difference. The frame is not
     // persisted on the project (no Frame_<n> layer) so there's nothing
     // stale to clean up — recomputed every generate from the op params.
-    let frame_op_storage: Option<Operation> = {
-        let cur_op: &Operation = effective_op_storage.as_ref().unwrap_or(op);
+    let frame_op_storage: Option<Op> = {
+        let cur_op: &Op = effective_op_storage.as_ref().unwrap_or(op);
         if cur_op.params.frame_shape.is_some() {
             let tool_radius_mm = setup.tool.diameter * 0.5;
             let user_padding_mm = cur_op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
@@ -180,7 +180,7 @@ pub(super) fn build_op_offsets(
                 let ordered_ids: Vec<u32> =
                     ordered_indices.iter().map(|&i| (i as u32) + 1).collect();
                 let mut clone = cur_op.clone();
-                clone.source = OperationSource::Objects {
+                clone.source = OpSource::Objects {
                     ids: ordered_ids,
                     combine: SourceCombine::Difference,
                 };
@@ -192,7 +192,7 @@ pub(super) fn build_op_offsets(
             None
         }
     };
-    let effective_op: &Operation = frame_op_storage
+    let effective_op: &Op = frame_op_storage
         .as_ref()
         .or(effective_op_storage.as_ref())
         .unwrap_or(op);
@@ -221,7 +221,7 @@ pub(super) fn build_op_offsets(
     // classic chip-thinning rule. Pocket ops only; other op kinds
     // already control their own stepover. The user can override via
     // `ToolEntry.wirbeln_stepover_mm`.
-    if matches!(effective_op.kind, OperationKind::Pocket { .. }) {
+    if matches!(effective_op.kind, OpKind::Pocket { .. }) {
         if let Some(tool) = project.tools.iter().find(|t| t.id == effective_op.tool_id) {
             if tool.wirbeln {
                 let half_r = (tool.diameter * 0.5) * 0.5;
@@ -254,7 +254,7 @@ pub(super) fn build_op_offsets(
     // combined regions once via clipper2 and emit a pocket per region.
     // Other op kinds (Profile, Engrave, DragKnife) keep their per-object
     // semantics — they cut paths, not regions.
-    if let OperationKind::Pocket { strategy } = effective_op.kind {
+    if let OpKind::Pocket { strategy } = effective_op.kind {
         let combine = source_combine_mode(effective_op);
         if !matches!(combine, SourceCombine::Auto) {
             // Preserve the user-specified selection order — Difference is
@@ -318,7 +318,7 @@ pub(super) fn build_op_offsets(
         }
 
         match effective_op.kind {
-            OperationKind::Pocket { strategy } => {
+            OpKind::Pocket { strategy } => {
                 // Skip objects that are geometrically inside another
                 // selected object — they belong to that pocket as islands.
                 let contained_by_selected =
@@ -359,7 +359,7 @@ pub(super) fn build_op_offsets(
                 // pocket strategy.
                 if islands.is_empty()
                     && effective_op.params.pocket_islands
-                    && matches!(effective_op.source, OperationSource::All)
+                    && matches!(effective_op.source, OpSource::All)
                 {
                     islands = obj
                         .inner_objects
@@ -387,7 +387,7 @@ pub(super) fn build_op_offsets(
                     }
                 }
             }
-            OperationKind::Profile { .. } => {
+            OpKind::Profile { .. } => {
                 // Sign-correct offsets: parallel_offset_inward / outward
                 // pick the cavalier delta sign based on the polygon's
                 // signed area, so a CW input doesn't put the cutter on
@@ -414,7 +414,7 @@ pub(super) fn build_op_offsets(
                     offsets.push(o);
                 }
             }
-            OperationKind::Engrave | OperationKind::DragKnife => {
+            OpKind::Engrave | OpKind::DragKnife => {
                 // Both follow the source path with no offset; the gcode
                 // emitter handles drag-knife trail compensation per-op.
                 offsets.push(PolylineOffset {
@@ -429,7 +429,7 @@ pub(super) fn build_op_offsets(
                     is_finish: false,
                 });
             }
-            OperationKind::Drill { .. } => {
+            OpKind::Drill { .. } => {
                 // Drill picks a single XY for each selected object:
                 //   - A single POINT segment → the point itself.
                 //   - A closed CIRCLE smaller than tool_radius → center
@@ -477,7 +477,7 @@ pub(super) fn build_op_offsets(
                     }
                 }
             }
-            OperationKind::Chamfer { finish_pass, .. } => {
+            OpKind::Chamfer { finish_pass, .. } => {
                 // Chamfer (rt1.18): the V-bit walks the source path
                 // verbatim — no XY offset — and the depth comes from
                 // the bit's cone math computed at synth time. The
@@ -509,15 +509,15 @@ pub(super) fn build_op_offsets(
                     });
                 }
             }
-            OperationKind::Thread { .. } => {
+            OpKind::Thread { .. } => {
                 // Thread runs through `run_thread_op` from the per-op
                 // driver, not the offset-cascade emitter — skip
                 // silently here so a stray dispatch doesn't crash.
             }
-            OperationKind::Helix => {
+            OpKind::Helix => {
                 return Err(PipelineError::UnimplementedKind(effective_op.kind));
             }
-            OperationKind::VCarve => {
+            OpKind::VCarve => {
                 // V-Carve runs through `run_vcarve_op` from the per-op
                 // driver; it should never reach this offset-cascade
                 // path. Skip silently rather than erroring so a stray
@@ -545,7 +545,7 @@ pub(super) fn build_op_offsets(
 /// Map a frontend pocket strategy choice onto the offsets-layer
 /// emitter, including the trochoidal-specific climb/conventional and
 /// loop parameters.
-fn pocket_emit_for(strategy: PocketStrategy, op: &Operation) -> PocketEmit {
+fn pocket_emit_for(strategy: PocketStrategy, op: &Op) -> PocketEmit {
     match strategy {
         PocketStrategy::Zigzag => PocketEmit::Zigzag,
         PocketStrategy::Spiral => PocketEmit::Spiral,

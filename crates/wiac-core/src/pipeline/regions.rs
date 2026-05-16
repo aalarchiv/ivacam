@@ -6,7 +6,7 @@
 use crate::cam::source_combine::{combine_source_regions, CombinedRegion};
 use crate::cam::VcObject;
 use crate::geometry::Segment;
-use crate::project::{OperationKind, Project, SourceCombine};
+use crate::project::{OpKind, Project, SourceCombine};
 
 use super::frame::synthesize_pocket_outside_objects;
 use super::{ordered_selection, source_combine_mode, RegionPreview};
@@ -18,7 +18,7 @@ use super::{ordered_selection, source_combine_mode, RegionPreview};
 pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionPreview> {
     let mut out = Vec::new();
     for op in project.operations.iter().filter(|o| o.enabled) {
-        if !matches!(op.kind, OperationKind::Pocket { .. }) {
+        if !matches!(op.kind, OpKind::Pocket { .. }) {
             continue;
         }
         // Pocket-Outside (rt1.3) preview: when the op declares a frame,

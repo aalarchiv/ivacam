@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::cam::offsets::TabPoint;
 use crate::cam::VcObject;
-use crate::project::Operation;
+use crate::project::Op;
 
 use super::op_includes_object;
 
@@ -19,7 +19,7 @@ use super::op_includes_object;
 /// placements walk `cam/tabs::polyline_at_t`; auto placements use
 /// evenly spaced parameters over each closed source object's chain.
 pub(super) fn build_op_tabs_by_object(
-    op: &Operation,
+    op: &Op,
     objects: &[VcObject],
 ) -> HashMap<usize, Vec<TabPoint>> {
     use crate::cam::segments_to_points;

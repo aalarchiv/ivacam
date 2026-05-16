@@ -49,7 +49,7 @@ pub struct ToolpathSegment {
     /// 0 means "synthetic / unknown".
     #[serde(default)]
     pub gcode_line: u32,
-    /// Operation id from the per-op emitter. 0 = legacy / unstamped.
+    /// Op id from the per-op emitter. 0 = legacy / unstamped.
     #[serde(default)]
     pub op_id: u32,
 }

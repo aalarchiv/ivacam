@@ -6,21 +6,21 @@
 //! defaults, and auto-fit helix radius live alongside.
 
 // # CAM/sim pedantic-lint exemptions
-// `OperationKind → ToolOffset` map enumerates every variant explicitly so
+// `OpKind → ToolOffset` map enumerates every variant explicitly so
 // adding a new kind forces a deliberate choice.
 #![allow(clippy::match_same_arms)]
 
 use crate::cam::setup::Setup;
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::VcObject;
-use crate::project::{Operation, OperationKind, PocketStrategy, Project};
+use crate::project::{Op, OpKind, PocketStrategy, Project};
 
 use super::{
     effective_step, ordered_selection, source_combine_mode, PipelineError, PipelineWarning,
 };
 
-pub(super) fn dual_tool_finish_radius(op: &Operation, project: &Project) -> Option<f64> {
-    if !matches!(op.kind, OperationKind::Pocket { .. }) {
+pub(super) fn dual_tool_finish_radius(op: &Op, project: &Project) -> Option<f64> {
+    if !matches!(op.kind, OpKind::Pocket { .. }) {
         return None;
     }
     let finish_id = op.finish_tool_id?;
@@ -37,7 +37,7 @@ pub(super) fn dual_tool_finish_radius(op: &Operation, project: &Project) -> Opti
 pub(super) fn resolve_peck_step(
     cycle: crate::project::DrillCycle,
     project: &Project,
-    op: &Operation,
+    op: &Op,
 ) -> crate::project::DrillCycle {
     use crate::project::DrillCycle;
     let tool_default = project
@@ -79,7 +79,7 @@ pub(super) fn resolve_peck_step(
 // would scatter what's really one decision per field.
 #[allow(clippy::too_many_lines)]
 pub(super) fn synthesize_op_setup(
-    op: &Operation,
+    op: &Op,
     project: &Project,
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<Setup, PipelineError> {
@@ -106,7 +106,7 @@ pub(super) fn synthesize_op_setup(
     // _drill set throughout; everything else uses Rough (general) for
     // the main passes and Finish for the level=0 wall-defining ring
     // (selected per-offset at emit time).
-    let main_pass = if matches!(op.kind, OperationKind::Drill { .. }) {
+    let main_pass = if matches!(op.kind, OpKind::Drill { .. }) {
         crate::project::PassKind::Drill
     } else {
         crate::project::PassKind::Rough
@@ -114,7 +114,7 @@ pub(super) fn synthesize_op_setup(
     let (rough_speed, rough_plunge, rough_feed) =
         crate::project::resolve_tool_rates(tool, main_pass);
     let (finish_speed, finish_plunge, finish_feed) =
-        if matches!(op.kind, OperationKind::Drill { .. }) {
+        if matches!(op.kind, OpKind::Drill { .. }) {
             // Drill never emits a finish pass — keep the finish triplet
             // equal to the drill triplet so a caller that reads either side
             // sees consistent values.
@@ -154,9 +154,9 @@ pub(super) fn synthesize_op_setup(
         pierce_sec,
     };
     let offset = match op.kind {
-        OperationKind::Profile { offset } => offset,
-        OperationKind::Pocket { .. } => ToolOffset::None,
-        OperationKind::Engrave | OperationKind::DragKnife => ToolOffset::On,
+        OpKind::Profile { offset } => offset,
+        OpKind::Pocket { .. } => ToolOffset::None,
+        OpKind::Engrave | OpKind::DragKnife => ToolOffset::On,
         _ => ToolOffset::None,
     };
     // Trochoidal pockets demand a helical descent. If the user picked
@@ -164,7 +164,7 @@ pub(super) fn synthesize_op_setup(
     // `plunge_overridden` warning at the build_op_offsets seam.
     let trochoidal = matches!(
         op.kind,
-        OperationKind::Pocket {
+        OpKind::Pocket {
             strategy: PocketStrategy::Trochoidal { .. }
         }
     );
@@ -198,7 +198,7 @@ pub(super) fn synthesize_op_setup(
         depth_list: op.params.depth_list.clone(),
     };
     setup.pockets = match op.kind {
-        OperationKind::Pocket { strategy } => PocketConfig {
+        OpKind::Pocket { strategy } => PocketConfig {
             active: true,
             islands: op.params.pocket_islands,
             zigzag: matches!(strategy, PocketStrategy::Zigzag),
@@ -237,7 +237,7 @@ pub(super) fn synthesize_op_setup(
                 }
             }
         }
-    if matches!(op.kind, OperationKind::DragKnife) {
+    if matches!(op.kind, OpKind::DragKnife) {
         setup.machine.mode = MachineMode::Drag;
     }
     // Chamfer ops (rt1.18) carve at a single depth computed from the
@@ -246,7 +246,7 @@ pub(super) fn synthesize_op_setup(
     // sneaks through. The chamfer is a constant-Z pass; the cone-tip
     // sits at `-width / tan(tip_angle / 2)` while the centerline rides
     // the source path. Tabs / leads / objectorder still honor the op.
-    if let OperationKind::Chamfer { width_mm, .. } = op.kind {
+    if let OpKind::Chamfer { width_mm, .. } = op.kind {
         let z = crate::cam::chamfer::chamfer_depth(width_mm, tool.tip_angle_deg);
         setup.mill.depth = z;
         setup.mill.start_depth = 0.0;
@@ -276,7 +276,7 @@ pub(super) fn synthesize_op_setup(
 /// `helix_radius_unfittable` info warning so the user understands why
 /// the helix didn't apply.
 pub(super) fn resolve_auto_helix_radius(
-    op: &Operation,
+    op: &Op,
     objects: &[VcObject],
     setup: &mut Setup,
     warnings: &mut Vec<PipelineWarning>,
@@ -334,13 +334,13 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
     };
     if let Some(op) = project.operations.iter().find(|o| o.enabled) {
         if let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) {
-            let main_pass = if matches!(op.kind, OperationKind::Drill { .. }) {
+            let main_pass = if matches!(op.kind, OpKind::Drill { .. }) {
                 crate::project::PassKind::Drill
             } else {
                 crate::project::PassKind::Rough
             };
             let (rs, rp, rf) = crate::project::resolve_tool_rates(tool, main_pass);
-            let (fs, fp, ff) = if matches!(op.kind, OperationKind::Drill { .. }) {
+            let (fs, fp, ff) = if matches!(op.kind, OpKind::Drill { .. }) {
                 (rs, rp, rf)
             } else {
                 crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)

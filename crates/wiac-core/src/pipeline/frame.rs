@@ -7,7 +7,7 @@
 
 use crate::cam::source_combine::build_frame;
 use crate::cam::VcObject;
-use crate::project::Operation;
+use crate::project::Op;
 
 use super::op_includes_object;
 
@@ -31,7 +31,7 @@ use super::op_includes_object;
 /// into the very shape it should be carving around. Clamping ensures
 /// the geometry is well-formed regardless of user input.
 pub(super) fn synthesize_pocket_outside_objects(
-    op: &Operation,
+    op: &Op,
     objects: &[VcObject],
     tool_radius_mm: f64,
 ) -> Option<(Vec<VcObject>, Vec<usize>)> {

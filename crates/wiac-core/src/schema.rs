@@ -82,11 +82,11 @@ pub struct ErrorResponse {
     // New project / operations / tools shapes — ship them so the frontend
     // can codegen the matching TS types ahead of UX-4..-7.
     insert::<crate::project::Project>(&mut schemas, "Project");
-    insert::<crate::project::Operation>(&mut schemas, "Operation");
-    insert::<crate::project::OperationKind>(&mut schemas, "OperationKind");
+    insert::<crate::project::Op>(&mut schemas, "Op");
+    insert::<crate::project::OpKind>(&mut schemas, "OpKind");
     insert::<crate::project::DrillCycle>(&mut schemas, "DrillCycle");
-    insert::<crate::project::OperationParams>(&mut schemas, "OperationParams");
-    insert::<crate::project::OperationSource>(&mut schemas, "OperationSource");
+    insert::<crate::project::OpParams>(&mut schemas, "OpParams");
+    insert::<crate::project::OpSource>(&mut schemas, "OpSource");
     insert::<crate::project::SourceCombine>(&mut schemas, "SourceCombine");
     insert::<crate::project::CutDirection>(&mut schemas, "CutDirection");
     insert::<crate::cam::setup::PlungeStrategy>(&mut schemas, "PlungeStrategy");
@@ -188,7 +188,7 @@ fn rewrite_refs(value: &mut Value) {
         "Segment",
         "ImportResponse",
         "Project",
-        "Operation",
+        "Op",
         "ToolEntry",
         "PolylineOffset",
         "ToolpathSegment",

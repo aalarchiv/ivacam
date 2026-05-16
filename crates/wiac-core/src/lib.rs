@@ -36,7 +36,7 @@ pub struct HelixRadiusRequest {
     /// Source segments to derive the closed-pocket boundary from.
     pub segments: Vec<crate::geometry::Segment>,
     /// Object ids from the import that should participate in the
-    /// pocket boundary computation. Same shape as `OperationSource::Objects.ids`.
+    /// pocket boundary computation. Same shape as `OpSource::Objects.ids`.
     /// Empty = "use all segments as one region".
     pub object_ids: Vec<u32>,
     pub tool_diameter_mm: f64,

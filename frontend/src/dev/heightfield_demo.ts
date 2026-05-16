@@ -62,6 +62,9 @@ export function mountHeightfieldDemo(host: HTMLElement): () => void {
     originX: -((COLS * CELL) / 2),
     originY: -((ROWS * CELL) / 2),
     topZ: TOP_Z,
+    // Demo carves down to the stock bottom; matches the production
+    // default where the stock floor is project z=0 - thickness.
+    floorZ: 0,
     solidColor: '#c8b48a',
     solidOpacity: 0.5,
     edgeColor: '#1a1a1a',

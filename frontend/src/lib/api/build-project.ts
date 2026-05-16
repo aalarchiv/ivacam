@@ -11,7 +11,62 @@ import type {
   TextLayer,
   TextLayerKind,
 } from '../state/project.svelte';
+import type {
+  ChamferOp,
+  ContourFields,
+  DrillOp,
+  OpBase,
+  OpKind,
+  PocketOp,
+  ProfileOp,
+  ProfileOffset,
+  ThreadOp,
+  VCarveOp,
+} from '../state/op_types';
 import type { GenerateRequest, ImportResponse } from './types';
+
+/// Permissive view of an `OpEntry` that exposes every variant's optional
+/// fields. The wire format flattens kind-specific params into one
+/// `OperationParams` bag on the backend (`project.rs`, deserialized via
+/// `#[serde(default, skip_serializing_if = ...)]`), so this adapter
+/// reads across variants without per-kind branching. The narrowed
+/// `OpEntry` is fine for app logic but fights this seam; take the cast
+/// once at the function boundary and treat the rest as a flat read.
+///
+/// We can't write `OpEntry & Partial<PocketOp & ProfileOp & …>` because
+/// the variants' `kind` literal types intersect to `never` and collapse
+/// the whole type. Spelling the merged shape explicitly keeps `kind`
+/// usable as the discriminator while every other variant-specific
+/// field reads as optional.
+interface FlatOp extends OpBase, ContourFields {
+  kind: OpKind;
+  // ProfileOp / EngraveOp / DragKnifeOp
+  offset?: ProfileOffset;
+  // PocketOp
+  pocketStrategy?: PocketOp['pocketStrategy'];
+  xyOverlap?: number;
+  engagementAngleDeg?: number;
+  loopRadiusFactor?: number;
+  halfpipeProfile?: PocketOp['halfpipeProfile'];
+  finishToolId?: number;
+  finishXyAllowanceMm?: number;
+  frameShape?: PocketOp['frameShape'];
+  framePaddingMm?: number;
+  frameCornerRadiusMm?: number;
+  // DrillOp
+  drillCycle?: DrillOp['drillCycle'];
+  chamferAfterWidthMm?: number;
+  // ChamferOp
+  chamferWidthMm?: ChamferOp['chamferWidthMm'];
+  chamferFinishPass?: ChamferOp['chamferFinishPass'];
+  // VCarveOp
+  carveMaxWidthMm?: VCarveOp['carveMaxWidthMm'];
+  multiPassRefine?: VCarveOp['multiPassRefine'];
+  // ThreadOp
+  threadPitchMm?: ThreadOp['threadPitchMm'];
+  threadInternal?: ThreadOp['threadInternal'];
+  threadClimb?: ThreadOp['threadClimb'];
+}
 
 type WireToolKind =
   | 'endmill'
@@ -469,7 +524,7 @@ function buildOpKind(op: OpEntry): WireOpKind {
   }
 }
 
-function mapDrillCycle(c: NonNullable<OpEntry['drillCycle']>): WireDrillCycle {
+function mapDrillCycle(c: DrillOp['drillCycle']): WireDrillCycle {
   switch (c.kind) {
     case 'simple':
       return { kind: 'simple', ...(c.dwell_sec ? { dwell_sec: c.dwell_sec } : {}) };
@@ -503,13 +558,17 @@ function buildSource(op: OpEntry): WireSource {
   return { kind: 'layers', layers: op.sourceLayers, ...(combine ? { combine } : {}) };
 }
 
-function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
+function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
+  // `op` reads the flat-permissive view of every variant's optional
+  // fields without per-kind narrowing; `opIn` keeps the narrow union
+  // for helpers that dispatch on `kind`.
+  const op = opIn as FlatOp;
   return {
-    id: op.id,
-    name: op.name,
-    enabled: op.enabled,
-    kind: buildOpKind(op),
-    tool_id: op.toolId,
+    id: opIn.id,
+    name: opIn.name,
+    enabled: opIn.enabled,
+    kind: buildOpKind(opIn),
+    tool_id: opIn.toolId,
     ...(op.finishToolId !== undefined && op.finishToolId !== op.toolId
       ? { finish_tool_id: op.finishToolId }
       : {}),
@@ -518,7 +577,7 @@ function buildOp(op: OpEntry, machine: MachineSettings): WireOp {
     // equivalent to no pattern, so we still emit them for round-trip
     // fidelity — backend handles the degenerate case efficiently.
     ...(op.pattern && (op.pattern as { kind?: string }).kind ? { pattern: op.pattern } : {}),
-    source: buildSource(op),
+    source: buildSource(opIn),
     params: {
       depth: op.depth,
       start_depth: op.startDepth,

@@ -39,6 +39,7 @@ import type {
   TextLayer,
   ToolEntry,
 } from './project.svelte';
+import type { PocketOp, ProfileOp } from './op_types';
 
 function sampleTextLayer(id: number, text = 'Hello'): TextLayer {
   return {
@@ -97,7 +98,6 @@ function sampleOp(id: number, name = 'Op'): OpEntry {
     startDepth: 0,
     step: -1,
     offset: 'outside',
-    pocketStrategy: null,
     sourceCombine: 'auto',
   };
 }
@@ -342,13 +342,19 @@ describe('tabs (rt1.10)', () => {
         offset: 'outside',
         depth: -2,
         startDepth: 0,
-        fastMoveZ: 5,
         step: -1,
         sourceLayers: null,
-        pocketStrategy: null,
         tabPlacements: placements.map((p) => ({ objectId: p.objectId, t: p.t })),
       } as OpEntry,
     ];
+  }
+
+  /// Narrow accessor for the profile op `withOp` just put at index 0.
+  /// Tests in this describe block specifically operate on a ProfileOp
+  /// with tab placements; pull the narrow type out so the test reads
+  /// `.tabPlacements` without per-call casts.
+  function opTabs(t: CommandTarget) {
+    return (t.operations[0] as ProfileOp).tabPlacements;
   }
 
   it('toggleTabPlacementCommand adds a tab on first click', () => {
@@ -356,9 +362,9 @@ describe('tabs (rt1.10)', () => {
     withOp(t, 1, []);
     const cmd = toggleTabPlacementCommand(1, { objectId: 2, t: 0.4 }, 0.01);
     cmd.apply(t);
-    expect(t.operations[0].tabPlacements).toEqual([{ objectId: 2, t: 0.4 }]);
+    expect(opTabs(t)).toEqual([{ objectId: 2, t: 0.4 }]);
     cmd.revert(t);
-    expect(t.operations[0].tabPlacements).toEqual([]);
+    expect(opTabs(t)).toEqual([]);
   });
 
   it('toggleTabPlacementCommand removes a tab on second click within tolerance', () => {
@@ -366,9 +372,9 @@ describe('tabs (rt1.10)', () => {
     withOp(t, 1, [{ objectId: 2, t: 0.405 }]);
     const cmd = toggleTabPlacementCommand(1, { objectId: 2, t: 0.41 }, 0.01);
     cmd.apply(t);
-    expect(t.operations[0].tabPlacements).toEqual([]);
+    expect(opTabs(t)).toEqual([]);
     cmd.revert(t);
-    expect(t.operations[0].tabPlacements).toEqual([{ objectId: 2, t: 0.405 }]);
+    expect(opTabs(t)).toEqual([{ objectId: 2, t: 0.405 }]);
   });
 
   it('toggleTabPlacementCommand respects per-op isolation (different op untouched)', () => {
@@ -376,7 +382,7 @@ describe('tabs (rt1.10)', () => {
     withOp(t, 1, [{ objectId: 2, t: 0.5 }]);
     const cmd = toggleTabPlacementCommand(99, { objectId: 2, t: 0.5 }, 0.01);
     cmd.apply(t);
-    expect(t.operations[0].tabPlacements).toEqual([{ objectId: 2, t: 0.5 }]);
+    expect(opTabs(t)).toEqual([{ objectId: 2, t: 0.5 }]);
   });
 });
 
@@ -457,9 +463,9 @@ describe('changeProfileOffsetCommand', () => {
     t.operations = [sampleOp(1)];
     const cmd = changeProfileOffsetCommand(1, 'inside');
     cmd.apply(t);
-    expect(t.operations[0].offset).toBe('inside');
+    expect((t.operations[0] as ProfileOp).offset).toBe('inside');
     cmd.revert(t);
-    expect(t.operations[0].offset).toBe('outside');
+    expect((t.operations[0] as ProfileOp).offset).toBe('outside');
   });
 });
 
@@ -515,9 +521,9 @@ describe('autoFixToCommand', () => {
       suggested: 'inside',
     });
     cmd.apply(t);
-    expect(t.operations[0].offset).toBe('inside');
+    expect((t.operations[0] as ProfileOp).offset).toBe('inside');
     cmd.revert(t);
-    expect(t.operations[0].offset).toBe('outside');
+    expect((t.operations[0] as ProfileOp).offset).toBe('outside');
   });
 
   it('LowerSimResolution dispatches lowerSimResolutionCommand', () => {

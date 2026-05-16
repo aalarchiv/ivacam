@@ -23,7 +23,6 @@ function blankCommandTarget(): CommandTarget {
         startDepth: 0,
         step: -1,
         offset: 'outside',
-        pocketStrategy: null,
       },
     ],
     tools: [],

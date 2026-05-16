@@ -902,17 +902,24 @@ class ProjectState {
       | Record<string, unknown> & { kind: string },
   ) {
     if (ev.kind === 'op_started') {
+      // The richer Record<string, unknown> fallback variant of the
+      // event union forces us to project explicitly — `op_started`
+      // always carries idx/total/name when emitted by the pipeline,
+      // and the wire-level WiacError shape would never reach this
+      // dispatch.
+      const e = ev as { idx: number; total: number; name: string };
       this.pipelineProgress = {
-        opIdx: ev.idx,
-        opTotal: ev.total,
+        opIdx: e.idx,
+        opTotal: e.total,
         opFraction: 0,
-        opName: ev.name,
+        opName: e.name,
       };
     } else if (ev.kind === 'op_progress') {
       if (this.pipelineProgress) {
+        const e = ev as { fraction: number };
         this.pipelineProgress = {
           ...this.pipelineProgress,
-          opFraction: ev.fraction,
+          opFraction: e.fraction,
         };
       }
     } else if (ev.kind === 'op_completed') {
@@ -1211,7 +1218,12 @@ class ProjectState {
     // undefined + sourceLayers: null).
     const presetSources =
       this.selectedObjects.size > 0 ? { sourceObjects: [...this.selectedObjects] } : {};
-    const op: OpEntry = {
+    // The literal builds a merged shape with conditionally-included
+    // variant-specific fields (`offset` for profile/engrave/drag_knife,
+    // `pocketStrategy` for pocket, `drillCycle` for drill, …) — TS
+    // can't infer the discriminated union from the `kind` binding, so
+    // assert the constructed shape at the boundary.
+    const op = {
       id: nextId,
       name: prettyOpKind(kind),
       enabled: true,
@@ -1231,7 +1243,7 @@ class ProjectState {
       plunge: { kind: 'direct' },
       xyOverlap: 0.5,
       ...(kind === 'vcarve' ? { multiPassRefine: false } : {}),
-    };
+    } as OpEntry;
     this.history.exec(addOperationCommand(op), this.target());
     this.selectedOpId = op.id;
     return op;
@@ -1413,8 +1425,6 @@ function prettyOpKind(kind: OpKind): string {
       return 'Engraving';
     case 'drag_knife':
       return 'Drag-knife';
-    case 'helix':
-      return 'Helix';
     case 'vcarve':
       return 'V-Carve';
   }

@@ -20,7 +20,8 @@ import type {
   ToolEntry,
 } from './project.svelte';
 import type { ImportResponse, WiacAutoFix } from '../api/types';
-import type { ProfileOffset } from './op_types';
+import type { ContourFields, ProfileOffset } from './op_types';
+import { isContourOp } from './op_types';
 
 /// Deep-clone via JSON round-trip. Svelte 5's `$state` proxies carry
 /// reactivity metadata that `structuredClone` chokes on in production
@@ -136,12 +137,20 @@ export function updateOperationCommand(opId: number, patch: Partial<OpEntry>): C
       for (const k of Object.keys(patch) as (keyof OpEntry)[]) {
         (prevPatch as Record<string, unknown>)[k as string] = cur[k];
       }
-      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, ...patch } : o));
+      // Spread-merge widens the type — `{ ...o, ...patch }` loses its
+      // OpEntry variant tag because TS can't prove patch.kind matches
+      // o.kind. Patches are constructed against a specific op id, so the
+      // assertion is sound by callsite construction.
+      t.operations = t.operations.map((o) =>
+        o.id === opId ? ({ ...o, ...patch } as OpEntry) : o,
+      );
       t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
-      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, ...prevPatch } : o));
+      t.operations = t.operations.map((o) =>
+        o.id === opId ? ({ ...o, ...prevPatch } as OpEntry) : o,
+      );
       t.dirty = true;
     },
     coalesce_key: coalesceKeyForPatch(opId, patch),
@@ -435,8 +444,13 @@ export function toggleTabPlacementCommand(
       const opIdx = t.operations.findIndex((o) => o.id === opId);
       if (opIdx < 0) return;
       const op = t.operations[opIdx];
-      saved = op.tabPlacements ? op.tabPlacements.map((p) => ({ ...p })) : [];
-      const current = saved;
+      // Tabs only apply to contour ops (Profile / Pocket). Bail out
+      // silently if the caller targeted a non-contour op — the UI
+      // shouldn't surface tab affordances on those, but guard at the
+      // command boundary so a misrouted call doesn't poison the op.
+      if (!isContourOp(op)) return;
+      const current: ContourFields['tabPlacements'] = op.tabPlacements ?? [];
+      saved = current.map((p) => ({ ...p }));
       const matchIdx = current.findIndex(
         (p) =>
           p.objectId === placement.objectId &&
@@ -458,9 +472,11 @@ export function toggleTabPlacementCommand(
       const t = s as CommandTarget;
       const opIdx = t.operations.findIndex((o) => o.id === opId);
       if (opIdx < 0 || saved === undefined) return;
+      const op = t.operations[opIdx];
+      if (!isContourOp(op)) return;
       const nextOps = [...t.operations];
       nextOps[opIdx] = {
-        ...t.operations[opIdx],
+        ...op,
         tabPlacements: saved.map((p) => ({ ...p })),
       };
       t.operations = nextOps;
@@ -643,9 +659,14 @@ export function changeProfileOffsetCommand(opId: number, offset: ProfileOffset):
     apply: (s) => {
       const t = s as CommandTarget;
       const cur = t.operations.find((o) => o.id === opId);
-      if (!cur) return;
+      // `offset` lives on Profile / Engrave / DragKnife only; the
+      // auto-fix shouldn't have routed a Pocket / Drill / Chamfer
+      // / VCarve / Thread id to this command. Guard at the boundary.
+      if (!cur || !('offset' in cur)) return;
       prev = cur.offset;
-      t.operations = t.operations.map((o) => (o.id === opId ? { ...o, offset } : o));
+      t.operations = t.operations.map((o) =>
+        o.id === opId ? ({ ...o, offset } as OpEntry) : o,
+      );
       t.dirty = true;
     },
     revert: (s) => {

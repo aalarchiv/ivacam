@@ -522,7 +522,7 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     post.set_post_profile(setup.machine.post_profile.as_ref());
     let mut ctx = post_profile::TokenCtx::with_wiac_version();
     ctx.tool_number = setup.tool.number;
-    ctx.tool_name = setup.tool.name.clone();
+    ctx.tool_name.clone_from(&setup.tool.name);
     ctx.tool_diameter = setup.tool.diameter;
     ctx.feed = setup.tool.rate_h;
     ctx.spindle = setup.tool.speed;
@@ -904,7 +904,7 @@ fn multi_pass<P: PostProcessor>(
     // tabs walker already lifts/lowers Z based on its own logic and a
     // bonus pass would double-cut.
     let needs_ramp_cleanup = ramp_angle_deg.is_some()
-        && !(setup.tabs.active && !tabs.is_empty())
+        && (!setup.tabs.active || tabs.is_empty())
         && total_path_len > 1e-6;
     if needs_ramp_cleanup {
         post.feedrate(rate_h);
@@ -1845,7 +1845,7 @@ fn fit_line_runs(segments: &[Segment], setup: &Setup) -> Vec<Segment> {
         if matches!(seg.kind, SegmentKind::Line) {
             if run_pts.is_empty() {
                 run_pts.push(seg.start);
-                run_layer = seg.layer.clone();
+                run_layer.clone_from(&seg.layer);
                 run_color = seg.color;
             }
             run_pts.push(seg.end);
@@ -1929,7 +1929,7 @@ fn emit_path_with_corner_feed<P: PostProcessor>(
                 SegmentKind::Point => {
                     post.linear(Some(seg.start.x), Some(seg.start.y), None);
                 }
-                _ => {}
+                SegmentKind::Line => {}
             }
             prev_dir = None;
             continue;

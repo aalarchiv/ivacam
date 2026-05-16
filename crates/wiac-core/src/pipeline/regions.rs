@@ -86,7 +86,7 @@ pub(super) fn synthesize_region_object(region: &CombinedRegion) -> VcObject {
         }
     }
     let mut obj = VcObject::new(segments, true);
-    obj.layer = region.layer.clone();
+    obj.layer.clone_from(&region.layer);
     obj.color = region.color;
     obj
 }

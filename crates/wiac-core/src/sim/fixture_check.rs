@@ -368,7 +368,7 @@ mod tests {
                 assert!(nearest_x.abs() < 1e-9);
                 assert!(nearest_y.abs() < 1e-9);
             }
-            _ => panic!("expected collision, got {:?}", res[0]),
+            FixtureCheck::Clear => panic!("expected collision, got {:?}", res[0]),
         }
     }
 
@@ -411,7 +411,7 @@ mod tests {
                 assert!((nearest_x - 40.0).abs() < 1e-6);
                 assert!((nearest_y - 50.0).abs() < 1e-6);
             }
-            _ => panic!("expected collision, got {:?}", res[0]),
+            FixtureCheck::Clear => panic!("expected collision, got {:?}", res[0]),
         }
     }
 

@@ -203,6 +203,11 @@ pub async fn generate_streaming_cmd(
 /// pipeline finishes and emits its terminal event before the FE's
 /// listener for that event has finished registering, which used to
 /// leave the Generate UI stuck in "running" / "cancelling".
+// `Result<(), String>` is the Tauri-command shape every other command in
+// this file returns; keeping it uniform lets the frontend reach for the
+// same error-handling helper regardless of which command failed, even
+// though this particular path is currently infallible.
+#[allow(clippy::unnecessary_wraps)]
 #[tauri::command]
 pub fn generate_streaming_ready_cmd(token_id: u32) -> Result<(), String> {
     if let Ok(mut reg) = ready_registry().lock() {

@@ -320,7 +320,7 @@ mod tests {
                     "wall_z expected 0, got {wall_z}"
                 );
             }
-            other => panic!("expected Collision, got {other:?}"),
+            other @ HolderCheck::Clear => panic!("expected Collision, got {other:?}"),
         }
     }
 

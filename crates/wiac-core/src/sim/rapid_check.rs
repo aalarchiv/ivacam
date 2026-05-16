@@ -125,7 +125,7 @@ mod tests {
                 assert!((worst_cell_z - 0.0).abs() < 1e-6);
                 assert!((rapid_pz - -2.0).abs() < 1e-6);
             }
-            other => panic!("expected Collision, got {other:?}"),
+            other @ RapidCheck::Clear => panic!("expected Collision, got {other:?}"),
         }
     }
 
@@ -160,7 +160,7 @@ mod tests {
         let s = rapid(pose(5.0, 5.0, 1.0), pose(5.0, 5.0, -1.0));
         match check_rapid_against_stock(&map, &s, endmill()) {
             RapidCheck::Collision { .. } => {}
-            other => panic!("expected Collision, got {other:?}"),
+            other @ RapidCheck::Clear => panic!("expected Collision, got {other:?}"),
         }
     }
 

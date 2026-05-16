@@ -225,7 +225,7 @@ async fn import(
         .unwrap_or_else(|| "dxf".into());
 
     // Persist to tempfile to use the path-based importer.
-    let tmp = tempfile_path(&suffix)?;
+    let tmp = tempfile_path(&suffix);
     tokio::fs::write(&tmp, &bytes).await?;
     let opts = wiac_core::ImportOptions::default();
     let result = tokio::task::spawn_blocking(move || wiac_core::input::import_path(&tmp, &opts))
@@ -462,10 +462,10 @@ impl From<axum::extract::multipart::MultipartError> for AppError {
     }
 }
 
-fn tempfile_path(suffix: &str) -> Result<PathBuf, AppError> {
+fn tempfile_path(suffix: &str) -> PathBuf {
     let mut name = format!("wiac-{}.{}", uuid_like(), suffix);
     name.retain(|c| !c.is_whitespace());
-    Ok(std::env::temp_dir().join(name))
+    std::env::temp_dir().join(name)
 }
 
 fn uuid_like() -> String {

@@ -71,7 +71,7 @@ fn parse_hatch(
             return i;
         }
         match *code {
-            8 => layer = value.clone(),
+            8 => layer.clone_from(value),
             62 => color = value.parse().unwrap_or(HATCH_COLOR_FALLBACK),
             91 => {
                 let path_count: i32 = value.parse().unwrap_or(0);

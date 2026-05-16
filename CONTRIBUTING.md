@@ -84,6 +84,80 @@ just regen-schema
 The pre-commit hooks `xtask-schema-check` and `frontend-codegen-check`
 catch drift locally; CI runs the same checks.
 
+## Extension recipes
+
+These are the two most common starter tasks. Both touch Rust + the
+frontend + the JSON contract — the checklists exist so you don't ship a
+half-wired change.
+
+### Adding a new operation kind
+
+An "operation kind" is one row in the `OpKindPicker` (Profile / Pocket /
+Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
+(Engrave) to mirror:
+
+1. **Rust enum variant** — `crates/wiac-core/src/project.rs`, the
+   `OperationKind` enum (around `pub enum OperationKind {`). Add a
+   variant. If the kind carries per-kind data, embed it in the variant
+   (see `Thread { pitch_mm, internal, climb }`). If not, a unit variant
+   like `Engrave` is fine.
+2. **Pipeline dispatch** — `crates/wiac-core/src/pipeline.rs`. Either:
+   - Let it route through the standard offset-cascade path (no edit
+     needed) if your kind cuts along an offset of the source path
+     (Profile / Engrave / DragKnife behave this way), **or**
+   - Add a special-case driver to `crates/wiac-core/src/pipeline/op_drivers.rs`
+     and dispatch from `run_per_op` (see `run_vcarve_op`, `run_thread_op`).
+3. **Frontend type** — `frontend/src/lib/state/op_types.ts`. Add the
+   string to the `OpKind` union, add a per-kind interface that extends
+   `OpBase`, add the variant to the `OpEntry` discriminated union, and
+   update `isPathOp` / similar predicates if applicable.
+4. **Picker metadata** — `frontend/src/lib/components/OpKindPicker.svelte`.
+   Add entries to `KIND_LABEL`, `KIND_ICON`, `ALL_PICKER_KINDS`, and
+   `PICKER_HELP`. Each is a `Record<OpKind, …>` so the compiler will
+   flag the missing entry.
+5. **Properties panel routing** — `frontend/src/lib/components/OpPropertiesPanel.svelte`.
+   Add the kind to the appropriate `{#if op.kind === '…' || …}` block
+   so the right sections render. If the kind needs bespoke fields,
+   create `frontend/src/lib/components/op_properties/<Kind>Section.svelte`
+   (mirror `VCarveSection.svelte`) and render it.
+6. **Translations** — `frontend/src/lib/locales/en.json` and `de.json`.
+   At minimum: the picker label / help / icon strings and any new
+   field labels from step 5.
+7. **Schema regen** — `cargo xtask schema && (cd frontend && pnpm run codegen)`.
+   The pre-commit hook will refuse the commit otherwise.
+8. **Tests** — add a unit test in `crates/wiac-core/src/pipeline.rs`
+   (search for `#[test]` near the bottom) that emits a tiny program
+   with one op of the new kind. The corpus smoke test
+   (`crates/wiac-core/tests/golden_corpus.rs`) doesn't exercise new
+   kinds directly but must stay green.
+
+### Adding a new G-code post-processor
+
+A post-processor is a dialect of G-code emission (LinuxCNC / GRBL /
+HPGL today). Mirror the simplest existing one (GRBL):
+
+1. **New post file** — copy `crates/wiac-core/src/gcode/grbl.rs` to
+   `crates/wiac-core/src/gcode/<name>.rs`. Adjust the `Post::new()`
+   defaults and override `PostProcessor` trait methods as needed (see
+   `gcode.rs:24` for the trait). Most posts only differ in headers /
+   spindle / canned-cycle support.
+2. **Register it** — declare the module in `crates/wiac-core/src/gcode.rs`
+   (e.g. `pub mod <name>;`) and re-export `<name>::Post` if appropriate.
+3. **Pipeline enum** — add a variant to `PostProcessorKind` in
+   `crates/wiac-core/src/pipeline.rs`. Add the dispatch arm in
+   `run_pipeline` (search for `PostProcessorKind::Linuxcnc => …`).
+4. **CLI flag** — `crates/wiac-cli/src/main.rs`. Add the option name to
+   the help text and the match arm that picks the impl.
+5. **Frontend dropdown** — `frontend/src/lib/components/GenerateBar.svelte`.
+   Extend the `PostId` union, update `coercePost`, and add an
+   `<option>` element. Update the en/de locales for the dropdown label.
+6. **Schema regen** — `cargo xtask schema && (cd frontend && pnpm run codegen)`.
+7. **Tests** — at minimum, a unit test in your new `<name>.rs` that
+   verifies a one-line program round-trips through `Post::header` +
+   `Post::move_to` + `Post::footer`. The corpus smoke test runs the
+   default (LinuxCNC) post only; if you want the new post in CI, add
+   it to the golden corpus parametrisation.
+
 ## Pull requests
 
 - Branch off `main`. Keep PRs scoped to a single bd issue when practical.

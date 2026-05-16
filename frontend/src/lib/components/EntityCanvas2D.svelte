@@ -9,6 +9,13 @@
     type ObjectPolyline,
   } from '../cam/tabs';
   import type { Segment } from '../api/types';
+  import {
+    bboxOfSegments,
+    clamp,
+    distanceToSegment,
+    pointInPolygon,
+    projectOntoSegment,
+  } from '../canvas/selection-geometry';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import {
     previewSegmentsFor,
@@ -299,9 +306,9 @@
     return { cellW, cellH, minX: min_x, minY: min_y, cols, rows, cells };
   }
 
-  function clamp(v: number, lo: number, hi: number): number {
-    return v < lo ? lo : v > hi ? hi : v;
-  }
+  // Pure geometry primitives (clamp, distanceToSegment, pointInPolygon,
+  // projectOntoSegment) extracted to lib/canvas/selection-geometry.ts
+  // so vitest can exercise them without mounting the canvas (y0ez).
 
   function pixelHit(canvasX: number, canvasY: number): number | null {
     const data = project.imported;
@@ -354,23 +361,6 @@
       }
     }
     return bestIdx;
-  }
-
-  function distanceToSegment(
-    a: { x: number; y: number },
-    b: { x: number; y: number },
-    px: number,
-    py: number,
-  ): number {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq < 1e-12) return Math.hypot(px - a.x, py - a.y);
-    let t = ((px - a.x) * dx + (py - a.y) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-    const ix = a.x + t * dx;
-    const iy = a.y + t * dy;
-    return Math.hypot(px - ix, py - iy);
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -968,28 +958,10 @@
         // Translate point into local frame then even-odd test.
         const lx = dataX - ox;
         const ly = dataY - oy;
-        if (pointInPolygonLocal(f.kind.vertices, lx, ly)) return f.id;
+        if (pointInPolygon(f.kind.vertices, lx, ly)) return f.id;
       }
     }
     return null;
-  }
-
-  function pointInPolygonLocal(verts: [number, number][], px: number, py: number): boolean {
-    if (verts.length < 3) return false;
-    let inside = false;
-    const n = verts.length;
-    let j = n - 1;
-    for (let i = 0; i < n; i++) {
-      const [pix, piy] = verts[i];
-      const [pjx, pjy] = verts[j];
-      const crosses = piy > py !== pjy > py;
-      if (crosses) {
-        const xAt = pix + ((py - piy) * (pjx - pix)) / (pjy - piy);
-        if (px < xAt) inside = !inside;
-      }
-      j = i;
-    }
-    return inside;
   }
 
   function closestPointOnSegment(
@@ -1004,13 +976,7 @@
     const dataY = (offY - canvasY) / scale;
     const s = data.segments[segmentIdx];
     if (!s) return null;
-    const dx = s.end.x - s.start.x;
-    const dy = s.end.y - s.start.y;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq < 1e-12) return { x: s.start.x, y: s.start.y };
-    let t = ((dataX - s.start.x) * dx + (dataY - s.start.y) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-    return { x: s.start.x + t * dx, y: s.start.y + t * dy };
+    return projectOntoSegment(s.start, s.end, dataX, dataY);
   }
 
   function colorFor(c: number): string {

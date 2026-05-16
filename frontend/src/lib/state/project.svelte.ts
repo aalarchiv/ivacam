@@ -118,72 +118,12 @@ export type {
 } from './op_types';
 export { isContourOp, isPathOp } from './op_types';
 
+// Pure 2D geometry primitives extracted to `lib/canvas/selection-geometry.ts`
+// so vitest specs can exercise them without mounting the canvas (audit y0ez).
+import { bboxOfSegments, lineCrossesBBox } from '../canvas/selection-geometry';
+
 function isAbsolutePath(p: string): boolean {
   return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
-}
-
-/// Bounding box of a segment list — used after layer-delete to refresh
-/// the imported.bbox without touching every other field. Returns a
-/// safe zero-extent bbox when the list is empty (matches what the
-/// Rust BBox::from_segments would do).
-/// Liang-Barsky line-vs-AABB clip — returns true when the closed
-/// segment [p0, p1] enters or touches the axis-aligned bbox. Used by
-/// `seriesSelectTo` so a Shift+click sweeps every object the imaginary
-/// anchor→target line crosses.
-function lineCrossesBBox(
-  p0: { x: number; y: number },
-  p1: { x: number; y: number },
-  b: { min_x: number; min_y: number; max_x: number; max_y: number },
-): boolean {
-  const dx = p1.x - p0.x;
-  const dy = p1.y - p0.y;
-  let tMin = 0;
-  let tMax = 1;
-  if (Math.abs(dx) < 1e-12) {
-    if (p0.x < b.min_x || p0.x > b.max_x) return false;
-  } else {
-    let t1 = (b.min_x - p0.x) / dx;
-    let t2 = (b.max_x - p0.x) / dx;
-    if (t1 > t2) [t1, t2] = [t2, t1];
-    tMin = Math.max(tMin, t1);
-    tMax = Math.min(tMax, t2);
-    if (tMin > tMax) return false;
-  }
-  if (Math.abs(dy) < 1e-12) {
-    if (p0.y < b.min_y || p0.y > b.max_y) return false;
-  } else {
-    let t1 = (b.min_y - p0.y) / dy;
-    let t2 = (b.max_y - p0.y) / dy;
-    if (t1 > t2) [t1, t2] = [t2, t1];
-    tMin = Math.max(tMin, t1);
-    tMax = Math.min(tMax, t2);
-    if (tMin > tMax) return false;
-  }
-  return true;
-}
-
-function bboxOfSegments(segs: Segment[]): {
-  min_x: number;
-  min_y: number;
-  max_x: number;
-  max_y: number;
-} {
-  if (segs.length === 0) return { min_x: 0, min_y: 0, max_x: 0, max_y: 0 };
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const s of segs) {
-    if (s.start.x < minX) minX = s.start.x;
-    if (s.start.y < minY) minY = s.start.y;
-    if (s.start.x > maxX) maxX = s.start.x;
-    if (s.start.y > maxY) maxY = s.start.y;
-    if (s.end.x < minX) minX = s.end.x;
-    if (s.end.y < minY) minY = s.end.y;
-    if (s.end.x > maxX) maxX = s.end.x;
-    if (s.end.y > maxY) maxY = s.end.y;
-  }
-  return { min_x: minX, min_y: minY, max_x: maxX, max_y: maxY };
 }
 
 /// Memoised bundled-font fetch — the DejaVu Sans bytes used as the

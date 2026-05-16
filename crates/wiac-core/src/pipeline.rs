@@ -52,10 +52,9 @@ mod setup_resolver;
 mod tabs;
 mod warnings;
 
-use offset_builder::build_op_offsets;
-use op_drivers::{emit_stufenfase, run_halfpipe_op, run_thread_op, run_vcarve_op};
+use op_drivers::{run_halfpipe_op, run_standard_op, run_thread_op, run_vcarve_op};
 use regions::build_region_previews;
-use setup_resolver::{header_setup_for, resolve_auto_helix_radius, resolve_peck_step, synthesize_op_setup};
+use setup_resolver::{header_setup_for, resolve_auto_helix_radius, synthesize_op_setup};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -68,7 +67,7 @@ use crate::cam::chaining::{classify_containment, segments_to_objects};
 use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::gcode::{
-    emit_drill_block, emit_polylines_block, emit_program_begin, emit_program_end, grbl, hpgl,
+    emit_program_begin, emit_program_end, grbl, hpgl,
     linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::{Point2, Segment};
@@ -676,100 +675,21 @@ where
                 cancel,
             )?;
         } else {
-            let (offsets, closed_count) =
-                build_op_offsets(op, project, &mut objects.to_vec(), &setup, warnings, cancel)?;
+            let (closed_count, offset_count) = run_standard_op(
+                op,
+                project,
+                objects,
+                &setup,
+                post,
+                &mut last_pos,
+                warnings,
+                cancel,
+            )?;
             closed_count_emitted = closed_count;
-            offset_count_emitted = offsets.len();
-            {
-                let mut s = stats.borrow_mut();
-                s.0 += closed_count;
-                s.1 += offsets.len();
-            }
-            post.raw(&format!("; OP {}", op.id));
-            if !offsets.is_empty() {
-                if let OperationKind::Drill { cycle } = op.kind {
-                    // Peck cycles fall back to the tool's
-                    // `default_peck_step_mm` when the op's own
-                    // peck_step_mm is unset (== 0).
-                    let resolved_cycle = resolve_peck_step(cycle, project, op);
-                    emit_drill_block(&setup, &offsets, resolved_cycle, post, &mut last_pos);
-                    // rt1.20 (Stufenfase): when the drill op carries a
-                    // chamfer-after width, walk a single revolution at
-                    // each hole's rim at the V-bit chamfer depth.
-                    if let Some(w) = op.params.chamfer_after_width_mm {
-                        if w > 0.0 {
-                            emit_stufenfase(
-                                op,
-                                project,
-                                objects,
-                                &setup,
-                                w,
-                                post,
-                                &mut last_pos,
-                                warnings,
-                            )?;
-                        }
-                    }
-                } else {
-                    // Dual-tool Pocket (rt1.33): split offsets at the
-                    // is_finish boundary, emit the rough block with
-                    // the op's tool setup, insert a M6 toolchange to
-                    // the finish tool, emit the finish block with the
-                    // finish tool's setup. Single-tool ops fall
-                    // through to a single emit_polylines_block call.
-                    let dual = synthesize_finish_setup(op, project, warnings)?;
-                    let has_finish_offsets = offsets.iter().any(|o| o.is_finish);
-                    if let (Some(finish_setup), true) = (&dual, has_finish_offsets) {
-                        let (rough_offsets, finish_offsets): (Vec<_>, Vec<_>) =
-                            offsets.iter().cloned().partition(|o| !o.is_finish);
-                        if !rough_offsets.is_empty() {
-                            emit_polylines_block(&setup, &rough_offsets, post, &mut last_pos);
-                        }
-                        // Toolchange + comment. post.tool() emits T<n>
-                        // M6 for posts that support it; no-op posts
-                        // (GRBL) skip silently, and we emit a
-                        // pipeline warning when the machine isn't
-                        // toolchange-capable so the user can spot it.
-                        if !project.machine.supports_toolchange {
-                            warnings.push(PipelineWarning {
-                                op_id: Some(op.id),
-                                kind: "dual_tool_no_toolchange".into(),
-                                message: format!(
-                                    "op '{}' uses a dual-tool setup (rough + finish) but the machine config has supports_toolchange=false; the gcode will assume a manual tool change.",
-                                    op.name
-                                ),
-                            });
-                        }
-                        post.raw(&format!(
-                            "; toolchange: finish pass with tool {}",
-                            finish_setup.tool.number
-                        ));
-                        post.tool(finish_setup.tool.number);
-                        // rt1.30: re-apply Z shift for the finish
-                        // tool after the M6. Each tool's shift is
-                        // absolute (set such that the work-Z=0 line
-                        // matches the reference tool); we just emit
-                        // the new value.
-                        if let Some(ft_id) = op.finish_tool_id {
-                            if let Some(ft) = project.tools.iter().find(|t| t.id == ft_id) {
-                                if let Some(shift) = ft.z_shift_mm {
-                                    post.tool_z_shift(shift);
-                                }
-                            }
-                        }
-                        if !finish_offsets.is_empty() {
-                            emit_polylines_block(
-                                finish_setup,
-                                &finish_offsets,
-                                post,
-                                &mut last_pos,
-                            );
-                        }
-                    } else {
-                        emit_polylines_block(&setup, &offsets, post, &mut last_pos);
-                    }
-                }
-            }
+            offset_count_emitted = offset_count;
+            let mut s = stats.borrow_mut();
+            s.0 += closed_count;
+            s.1 += offset_count;
         }
         if let (Some(c), Some(key)) = (cache, cache_key) {
             let lines = post.out_lines_clone_from(body_marker);

@@ -1470,7 +1470,7 @@ pub(super) fn synthesize_finish_setup(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::{TabType, TabsConfig, ToolOffset};
+    use crate::cam::setup::{MachineConfig, TabType, TabsConfig, ToolOffset};
     use crate::geometry::Segment;
     use crate::project::{
         Coolant, Operation, OperationKind, OperationParams, OperationSource, PatternConfig,
@@ -1540,11 +1540,11 @@ mod tests {
     fn project_with(ops: Vec<Operation>, tools: Vec<ToolEntry>) -> Project {
         Project {
             segments: closed_square(20.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools,
             operations: ops,
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         }
     }
 
@@ -1590,10 +1590,10 @@ mod tests {
         };
         let project = Project {
             segments: Vec::new(), // pipeline pre-pass appends the rendered text
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 1.0)],
             operations: vec![engrave],
-            fixtures: Default::default(),
+            fixtures: Vec::default(),
             text_layers: vec![text_layer],
         };
         let resp = run_pipeline(
@@ -1754,7 +1754,7 @@ mod tests {
         // pocketing the whole outer because the middle is left intact.
         let baseline_project = Project {
             segments: segments.clone(),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![pocket_op(
                 1,
@@ -1764,12 +1764,12 @@ mod tests {
                     combine: SourceCombine::Auto,
                 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let annulus_project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![pocket_op(
                 1,
@@ -1779,8 +1779,8 @@ mod tests {
                     combine: SourceCombine::Auto,
                 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let baseline = run_pipeline(
             PipelineRequest {
@@ -1837,7 +1837,7 @@ mod tests {
         segments.extend(closed_square_offset(20.0, 15.0, 15.0));
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -1855,8 +1855,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1904,7 +1904,7 @@ mod tests {
         params.frame_padding_mm = Some(10.0);
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -1922,8 +1922,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1986,7 +1986,7 @@ mod tests {
         params.frame_padding_mm = Some(1.0); // < tool radius (3.0)
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)], // 6 mm Ø ⇒ 3 mm radius
             operations: vec![Operation {
                 id: 1,
@@ -2004,8 +2004,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2060,7 +2060,7 @@ mod tests {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![
                 Operation {
@@ -2101,8 +2101,8 @@ mod tests {
                     pattern: None,
                 },
             ],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2164,7 +2164,7 @@ mod tests {
         params.finish_cut_direction = crate::project::CutDirection::Conventional;
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -2179,8 +2179,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2268,7 +2268,7 @@ mod tests {
     fn pocket_with_oversized_tool_emits_tool_too_large_warning() {
         let project = Project {
             segments: closed_square_offset(4.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
             operations: vec![Operation {
                 id: 7,
@@ -2283,8 +2283,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2348,7 +2348,7 @@ mod tests {
         };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![drill],
             operations: vec![Operation {
                 id: 1,
@@ -2363,8 +2363,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2390,7 +2390,7 @@ mod tests {
         params.plunge = crate::cam::setup::PlungeStrategy::Ramp { angle_deg: 10.0 };
         let project = Project {
             segments: closed_square_offset(100.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -2405,8 +2405,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2485,7 +2485,7 @@ mod tests {
         };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -2500,8 +2500,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2573,7 +2573,7 @@ mod tests {
         };
         let project = Project {
             segments: closed_square_offset(100.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
             operations: vec![Operation {
                 id: 1,
@@ -2588,8 +2588,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2655,7 +2655,7 @@ mod tests {
         };
         let project = Project {
             segments: closed_square_offset(8.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
             operations: vec![Operation {
                 id: 1,
@@ -2670,8 +2670,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2721,7 +2721,7 @@ mod tests {
         };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 0.5)],
             operations: vec![Operation {
                 id: 1,
@@ -2736,8 +2736,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2844,7 +2844,7 @@ mod tests {
         }];
         let project = Project {
             segments: closed_square_offset(100.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -2859,8 +2859,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2914,7 +2914,7 @@ mod tests {
         // params.plunge defaults to Direct.
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -2929,8 +2929,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2961,7 +2961,7 @@ mod tests {
     fn pocket_with_just_fitting_tool_warns_about_incomplete_fill() {
         let project = Project {
             segments: closed_square_offset(10.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
             operations: vec![Operation {
                 id: 9,
@@ -2976,8 +2976,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3022,7 +3022,7 @@ mod tests {
             params.xy_overlap = overlap;
             let project = Project {
                 segments: closed_square_offset(50.0, 0.0, 0.0),
-                machine: Default::default(),
+                machine: MachineConfig::default(),
                 tools: vec![endmill(1, 3.0)],
                 operations: vec![Operation {
                     id: 1,
@@ -3037,8 +3037,8 @@ mod tests {
                     params,
                     pattern: None,
                 }],
-                fixtures: Default::default(),
-                text_layers: Default::default(),
+                fixtures: Vec::default(),
+                text_layers: Vec::default(),
             };
             run_pipeline(
                 PipelineRequest {
@@ -3069,7 +3069,7 @@ mod tests {
         params.xy_overlap = 0.5;
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3084,8 +3084,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3140,7 +3140,7 @@ mod tests {
         params.plunge = crate::cam::setup::PlungeStrategy::Ramp { angle_deg: 10.0 };
         let project = Project {
             segments: closed_square_offset(100.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3155,8 +3155,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3200,7 +3200,7 @@ mod tests {
             // 6×6 with a 3mm tool: boundary inset by 1.5mm leaves a
             // 3×3 path; cascade inflate by 2.85mm → empty → 0 rings.
             segments: closed_square_offset(6.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3215,8 +3215,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3256,7 +3256,7 @@ mod tests {
         ];
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3271,8 +3271,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3354,15 +3354,15 @@ mod tests {
     fn drill_op_emits_gcode_for_circle_smaller_than_tool() {
         let project = Project {
             segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![drill_op(
                 1,
                 1,
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3396,15 +3396,15 @@ mod tests {
         let segments = closed_square_offset(20.0, 10.0, 5.0);
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![drill_op(
                 1,
                 1,
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3438,7 +3438,7 @@ mod tests {
     fn drill_peck_emits_g83() {
         let project = Project {
             segments: closed_circle(Point2::new(0.0, 0.0), 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![drill_op(
                 1,
@@ -3448,8 +3448,8 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3476,7 +3476,7 @@ mod tests {
     fn drill_chip_break_emits_g73() {
         let project = Project {
             segments: closed_circle(Point2::new(0.0, 0.0), 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![drill_op(
                 1,
@@ -3486,8 +3486,8 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3511,7 +3511,7 @@ mod tests {
     fn drill_grbl_falls_back_to_g0g1_sequence() {
         let project = Project {
             segments: closed_circle(Point2::new(0.0, 0.0), 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![drill_op(
                 1,
@@ -3521,8 +3521,8 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3567,7 +3567,7 @@ mod tests {
         segments.extend(closed_circle(Point2::new(20.0, 0.0), 0.5));
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3591,8 +3591,8 @@ mod tests {
                 },
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3636,7 +3636,7 @@ mod tests {
         params.finish_step = Some(-0.2);
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3651,8 +3651,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3678,7 +3678,7 @@ mod tests {
         params.through_depth = 0.5;
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3693,8 +3693,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3720,7 +3720,7 @@ mod tests {
         params.depth_list = vec![-0.5, -1.5, -3.0];
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3735,8 +3735,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3762,7 +3762,7 @@ mod tests {
         params.plunge_rate_override = Some(45);
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -3777,8 +3777,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3840,11 +3840,11 @@ mod tests {
 
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3886,11 +3886,11 @@ mod tests {
         // no finish overrides set
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3924,15 +3924,15 @@ mod tests {
 
         let project = Project {
             segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![drill_op(
                 1,
                 1,
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3963,7 +3963,7 @@ mod tests {
         tool.default_peck_step_mm = Some(1.25);
         let project = Project {
             segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![drill_op(
                 1,
@@ -3973,8 +3973,8 @@ mod tests {
                     dwell_sec: 0.0,
                 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4066,7 +4066,7 @@ mod tests {
         params.finish_xy_allowance_mm = Some(0.5);
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![Operation {
                 id: 1,
@@ -4081,8 +4081,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4109,7 +4109,7 @@ mod tests {
         finish_tool.speed = 24_000;
         finish_tool.feed_rate_finish = Some(300);
 
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.supports_toolchange = true;
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
@@ -4128,8 +4128,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4168,7 +4168,7 @@ mod tests {
     fn dual_tool_same_id_skips_toolchange() {
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -4183,8 +4183,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4207,11 +4207,11 @@ mod tests {
     fn dual_tool_none_uses_single_tool() {
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![pocket_op(1, 1, OperationSource::All)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4230,7 +4230,7 @@ mod tests {
     #[test]
     fn post_profile_overrides_program_start_and_end() {
         use crate::gcode::post_profile::PostProfile;
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.post_profile = Some(PostProfile {
             name: "Test".into(),
             program_start: Some("; wiac <version>\n; tool <t> <n>".into()),
@@ -4246,8 +4246,8 @@ mod tests {
                 t
             }],
             operations: vec![profile_op(1, 7, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4300,7 +4300,7 @@ mod tests {
             format: "%.2f".into(),
             scale: 1.0,
         };
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.post_profile = Some(PostProfile {
             name: "Test axes".into(),
             axes: Some(axes),
@@ -4311,8 +4311,8 @@ mod tests {
             machine,
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4374,7 +4374,7 @@ mod tests {
         use crate::gcode::post_profile::{AxesConfig, PostProfile};
         let mut axes = AxesConfig::default();
         axes.z.enabled = false;
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.post_profile = Some(PostProfile {
             name: "No Z".into(),
             axes: Some(axes),
@@ -4385,8 +4385,8 @@ mod tests {
             machine,
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4415,21 +4415,21 @@ mod tests {
     #[test]
     fn post_profile_without_axes_keeps_legacy_output() {
         use crate::gcode::post_profile::PostProfile;
-        let mut machine_with: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine_with = MachineConfig::default();
         machine_with.post_profile = Some(PostProfile {
             name: "Test".into(),
             program_start: Some("; header".into()),
             axes: None,
             ..Default::default()
         });
-        let machine_without: crate::cam::setup::MachineConfig = Default::default();
+        let machine_without = MachineConfig::default();
         let project = |m: crate::cam::setup::MachineConfig| Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: m,
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp_a = run_pipeline(
             PipelineRequest {
@@ -4480,7 +4480,7 @@ mod tests {
         params.xy_overlap = 0.05;
         let project_with_tool = |tool: ToolEntry| Project {
             segments: closed_square_offset(80.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![Operation {
                 id: 1,
@@ -4495,8 +4495,8 @@ mod tests {
                 params: params.clone(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp_a = run_pipeline(
             PipelineRequest {
@@ -4566,7 +4566,7 @@ mod tests {
         params.step = Some(-2.0);
         let project = Project {
             segments: segments_8w,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![ball],
             operations: vec![Operation {
                 id: 1,
@@ -4583,8 +4583,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4673,7 +4673,7 @@ mod tests {
     /// intermediate Z values from a step-down schedule.
     #[test]
     fn plot_mode_emits_only_two_z_values() {
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.plot_mode_z = true;
         let mut params = OperationParams::mill_default();
         params.depth = -3.0; // would normally cascade through Z=-1, -2, -3
@@ -4695,8 +4695,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4754,7 +4754,7 @@ mod tests {
         params.approach_point = Some(center_ap);
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 1.0)],
             operations: vec![Operation {
                 id: 1,
@@ -4769,8 +4769,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4837,7 +4837,7 @@ mod tests {
         let mut tool = endmill(1, 0.1);
         tool.kind = ToolKind::LaserBeam;
         tool.laser_pierce_sec = Some(0.3);
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.mode = crate::cam::setup::MachineMode::Laser;
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
@@ -4854,8 +4854,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4881,11 +4881,11 @@ mod tests {
         tool.laser_pierce_sec = Some(0.5);
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4919,7 +4919,7 @@ mod tests {
         params.chamfer_after_width_mm = Some(1.0);
         let project = Project {
             segments: closed_circle(center, 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![vbit_drill],
             operations: vec![Operation {
                 id: 1,
@@ -4934,8 +4934,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4974,7 +4974,7 @@ mod tests {
         vbit_finish.id = 2;
         vbit_finish.diameter = 6.35;
         vbit_finish.tip_angle_deg = 90.0;
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.supports_toolchange = true;
         let center = Point2::new(5.0, 7.0);
         let mut params = OperationParams::mill_default();
@@ -4998,8 +4998,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5021,15 +5021,15 @@ mod tests {
     fn drill_without_chamfer_after_emits_no_revolution() {
         let project = Project {
             segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![drill_op(
                 1,
                 1,
                 crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5061,11 +5061,11 @@ mod tests {
         tool.z_shift_mm = Some(-0.5);
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![tool],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5089,7 +5089,7 @@ mod tests {
         let rough_tool = endmill(1, 6.0);
         let mut finish_tool = endmill(2, 3.0);
         finish_tool.z_shift_mm = Some(1.25);
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.supports_toolchange = true;
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
@@ -5108,8 +5108,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5134,11 +5134,11 @@ mod tests {
     fn no_z_shift_emits_no_g92() {
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5159,15 +5159,15 @@ mod tests {
     /// `X1,5` instead of `X1.5`. Activated via `MachineConfig`.
     #[test]
     fn comma_decimal_separator_emits_commas_in_numbers() {
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.decimal_separator = ',';
         let project = Project {
             segments: closed_square_offset(20.0, 0.5, 0.5),
             machine,
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5197,15 +5197,15 @@ mod tests {
     /// Some(10), every emitted line gets `N10`, `N20`, … prefix.
     #[test]
     fn line_numbering_prefixes_every_line() {
-        let mut machine: crate::cam::setup::MachineConfig = Default::default();
+        let mut machine = MachineConfig::default();
         machine.line_number_start = Some(10);
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine,
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5240,11 +5240,11 @@ mod tests {
     fn no_line_numbering_by_default() {
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5277,7 +5277,7 @@ mod tests {
         params.start_depth = 0.0;
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 1.0)],
             operations: vec![Operation {
                 id: 1,
@@ -5294,8 +5294,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5326,7 +5326,7 @@ mod tests {
     fn thread_op_without_circle_warns() {
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 1.0)],
             operations: vec![Operation {
                 id: 1,
@@ -5343,8 +5343,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5370,7 +5370,7 @@ mod tests {
         params.start_depth = 0.0;
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)], // 3mm tool, bigger than the bore
             operations: vec![Operation {
                 id: 1,
@@ -5387,8 +5387,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5412,7 +5412,7 @@ mod tests {
         let vbit = vbit();
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![vbit],
             operations: vec![Operation {
                 id: 1,
@@ -5428,8 +5428,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5459,7 +5459,7 @@ mod tests {
         vbit.feed_rate_finish = Some(400);
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![vbit],
             operations: vec![Operation {
                 id: 1,
@@ -5475,8 +5475,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5496,7 +5496,7 @@ mod tests {
     fn chamfer_with_non_vbit_warns() {
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -5512,8 +5512,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -5588,7 +5588,7 @@ mod tests {
         params.corner_feed_reduction = 0.5; // halve at corners
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -5603,8 +5603,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6016,15 +6016,15 @@ mod tests {
     fn lead_in_arc_emits_g2_or_g3_before_first_cut() {
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_leads_op(
                 ToolOffset::Outside,
                 crate::cam::setup::LeadKind::Arc,
                 2.0,
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6054,15 +6054,15 @@ mod tests {
     fn lead_in_off_emits_no_lead() {
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_leads_op(
                 ToolOffset::Outside,
                 crate::cam::setup::LeadKind::Off,
                 0.0,
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6097,15 +6097,15 @@ mod tests {
     fn lead_in_straight_emits_a_straight_segment() {
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_leads_op(
                 ToolOffset::Outside,
                 crate::cam::setup::LeadKind::Straight,
                 2.0,
             )],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6170,7 +6170,7 @@ mod tests {
         }
         let cascade_project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -6185,8 +6185,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let mut spiral_project = cascade_project.clone();
         spiral_project.operations[0].kind = OperationKind::Pocket {
@@ -6249,7 +6249,7 @@ mod tests {
         ];
         let project = Project {
             segments: l_shape,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -6264,8 +6264,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let gcode = run_pipeline(
             PipelineRequest {
@@ -6323,7 +6323,7 @@ mod tests {
         // value in both runs since chaining puts the outer first.
         let mk = |segments: Vec<Segment>, strategy: PocketStrategy, pocket_islands: bool| Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -6342,8 +6342,8 @@ mod tests {
                 },
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let strategies = [
             PocketStrategy::Cascade,
@@ -6408,11 +6408,11 @@ mod tests {
         for (winding_label, segments) in &[("CCW", &ccw_segments), ("CW", &cw_segments)] {
             let mk = |offset: ToolOffset| Project {
                 segments: (*segments).clone(),
-                machine: Default::default(),
+                machine: MachineConfig::default(),
                 tools: vec![endmill(1, 3.0)],
                 operations: vec![profile_op(1, 1, offset)],
-                fixtures: Default::default(),
-                text_layers: Default::default(),
+                fixtures: Vec::default(),
+                text_layers: Vec::default(),
             };
             let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
                 toolpath
@@ -6463,7 +6463,7 @@ mod tests {
         let segments: Vec<Segment> = outer.into_iter().chain(inner).collect();
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 1,
@@ -6483,8 +6483,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6635,11 +6635,11 @@ mod tests {
         ];
         let mk = |offset: ToolOffset| Project {
             segments: segments.clone(),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         for offset in [ToolOffset::Outside, ToolOffset::Inside] {
             let resp = run_pipeline(
@@ -6678,11 +6678,11 @@ mod tests {
         let segments = closed_square_offset(100.0, 0.0, 0.0);
         let mk = |offset: ToolOffset| Project {
             segments: segments.clone(),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, offset)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -6752,7 +6752,7 @@ mod tests {
         ];
         let mk = |strategy: PocketStrategy| Project {
             segments: rect.clone(),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 6.0)],
             operations: vec![Operation {
                 id: 1,
@@ -6771,8 +6771,8 @@ mod tests {
                 },
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let cut_total = |toolpath: &[preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -6836,7 +6836,7 @@ mod tests {
         };
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 7,
@@ -6854,8 +6854,8 @@ mod tests {
                 params,
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -6881,7 +6881,7 @@ mod tests {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
         let project = Project {
             segments,
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![Operation {
                 id: 9,
@@ -6902,8 +6902,8 @@ mod tests {
                 },
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -7006,11 +7006,11 @@ mod tests {
                 ),
                 Segment::line(Point2::new(10.0, 17.320_508), Point2::new(0.0, 0.0), "0", 7),
             ],
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![vbit],
             operations: vec![op],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -7192,15 +7192,15 @@ mod tests {
     fn generate_streaming_emits_op_events_in_order() {
         let project = Project {
             segments: closed_square(20.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![
                 profile_op(1, 1, ToolOffset::Outside),
                 profile_op(2, 1, ToolOffset::Inside),
                 profile_op(3, 1, ToolOffset::On),
             ],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let cancel = CancelToken::new();
         let mut events: Vec<PipelineEvent> = Vec::new();
@@ -7244,11 +7244,11 @@ mod tests {
     fn generate_streaming_done_event_carries_aggregated_stats() {
         let project = Project {
             segments: closed_square(20.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let cancel = CancelToken::new();
         let mut last: Option<PipelineEvent> = None;
@@ -7293,7 +7293,7 @@ mod tests {
                 ),
                 Segment::line(Point2::new(10.0, 17.320_508), Point2::new(0.0, 0.0), "0", 7),
             ],
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![vbit()],
             operations: vec![Operation {
                 id: 9,
@@ -7312,8 +7312,8 @@ mod tests {
                 },
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         let cancel = CancelToken::new();
         let cancel_clone = cancel.clone();
@@ -7377,7 +7377,7 @@ mod tests {
     fn regenerate_with_no_edits_hits_cache() {
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(91, 3.0)],
             operations: vec![Operation {
                 id: 91,
@@ -7392,8 +7392,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         clear_pipeline_cache();
         let first = collect_cached_flags(project.clone());
@@ -7427,11 +7427,11 @@ mod tests {
             .collect();
         let mut project = Project {
             segments: closed_square_offset(30.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools,
             operations: ops,
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         clear_pipeline_cache();
         let first = collect_cached_flags(project.clone());
@@ -7456,7 +7456,7 @@ mod tests {
     fn cache_hit_produces_identical_response() {
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
-            machine: Default::default(),
+            machine: MachineConfig::default(),
             tools: vec![endmill(77, 3.0)],
             operations: vec![Operation {
                 id: 77,
@@ -7471,8 +7471,8 @@ mod tests {
                 params: OperationParams::mill_default(),
                 pattern: None,
             }],
-            fixtures: Default::default(),
-            text_layers: Default::default(),
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
         };
         clear_pipeline_cache();
         let req = || PipelineRequest {

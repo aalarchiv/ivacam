@@ -411,7 +411,8 @@ fn order_offsets(setup: &Setup, offsets: &[PolylineOffset], start: Point2) -> Ve
             // run nearest-neighbor inside each group seeded at the
             // previous group's end.
             let mut groups: Vec<Vec<usize>> = Vec::new();
-            let mut group_of: std::collections::HashMap<usize, usize> = Default::default();
+            let mut group_of: std::collections::HashMap<usize, usize> =
+                std::collections::HashMap::default();
             for (i, o) in offsets.iter().enumerate() {
                 let g = *group_of.entry(o.source_object_idx).or_insert_with(|| {
                     groups.push(Vec::new());

@@ -125,8 +125,7 @@ mod tests {
     #[test]
     fn semicircle_bulge_round_trip() {
         // 180° CCW arc (bulge=1) from (1,0) to (-1,0) about origin.
-        let (center, a0, a1, r) =
-            bulge_to_arc(Point2::new(1.0, 0.0), Point2::new(-1.0, 0.0), 1.0);
+        let (center, a0, a1, r) = bulge_to_arc(Point2::new(1.0, 0.0), Point2::new(-1.0, 0.0), 1.0);
         assert!(approx(center.x, 0.0));
         assert!(approx(center.y, 0.0));
         assert!(approx(r, 1.0));

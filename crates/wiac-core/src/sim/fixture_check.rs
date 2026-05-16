@@ -18,8 +18,8 @@
 //! 3. Report the closest segment point to the fixture center as the
 //!    collision's "nearest" coordinate.
 
-use crate::cam::lines_intersect;
 use crate::cam::is_inside_polygon;
+use crate::cam::lines_intersect;
 use crate::gcode::preview::ToolpathSegment;
 use crate::geometry::Point2;
 use crate::project::{Fixture, FixtureKind};
@@ -54,32 +54,18 @@ pub fn check_segment_against_fixtures(
             continue;
         }
         let collides = match &f.kind {
-            FixtureKind::Box { width, depth } => stadium_hits_box(
-                segment,
-                tool_radius,
-                f.origin,
-                *width,
-                *depth,
-            ),
-            FixtureKind::Cylinder { radius } => stadium_hits_cylinder(
-                segment,
-                tool_radius,
-                f.origin,
-                *radius,
-            ),
-            FixtureKind::Polygon { vertices } => stadium_hits_polygon(
-                segment,
-                tool_radius,
-                f.origin,
-                vertices,
-            ),
+            FixtureKind::Box { width, depth } => {
+                stadium_hits_box(segment, tool_radius, f.origin, *width, *depth)
+            }
+            FixtureKind::Cylinder { radius } => {
+                stadium_hits_cylinder(segment, tool_radius, f.origin, *radius)
+            }
+            FixtureKind::Polygon { vertices } => {
+                stadium_hits_polygon(segment, tool_radius, f.origin, vertices)
+            }
         };
         if collides {
-            let (nx, ny) = nearest_point_on_segment_to(
-                segment,
-                f.origin.0,
-                f.origin.1,
-            );
+            let (nx, ny) = nearest_point_on_segment_to(segment, f.origin.0, f.origin.1);
             out.push(FixtureCheck::Collision {
                 fixture_id: f.id,
                 nearest_x: nx,
@@ -265,12 +251,7 @@ fn stadium_hits_polygon(
 /// Minimum distance between two 2D segments (a→b and c→d). Standard
 /// approach: if they intersect → 0; otherwise the distance is the
 /// minimum of the four endpoint-to-segment distances.
-fn segment_to_segment_distance(
-    a: (f64, f64),
-    b: (f64, f64),
-    c: (f64, f64),
-    d: (f64, f64),
-) -> f64 {
+fn segment_to_segment_distance(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)) -> f64 {
     if let Some(_) = lines_intersect(
         Point2::new(a.0, a.1),
         Point2::new(b.0, b.1),
@@ -312,15 +293,30 @@ mod tests {
 
     fn seg(from: (f64, f64, f64), to: (f64, f64, f64)) -> ToolpathSegment {
         ToolpathSegment {
-            from: Pose3 { x: from.0, y: from.1, z: from.2 },
-            to: Pose3 { x: to.0, y: to.1, z: to.2 },
+            from: Pose3 {
+                x: from.0,
+                y: from.1,
+                z: from.2,
+            },
+            to: Pose3 {
+                x: to.0,
+                y: to.1,
+                z: to.2,
+            },
             kind: MoveKind::Cut,
             gcode_line: 0,
             op_id: 0,
         }
     }
 
-    fn box_fixture(id: u32, origin: (f64, f64), w: f64, d: f64, z_bottom: f64, z_top: f64) -> Fixture {
+    fn box_fixture(
+        id: u32,
+        origin: (f64, f64),
+        w: f64,
+        d: f64,
+        z_bottom: f64,
+        z_top: f64,
+    ) -> Fixture {
         Fixture {
             id,
             name: "box".into(),
@@ -344,7 +340,13 @@ mod tests {
         }
     }
 
-    fn poly_fixture(id: u32, origin: (f64, f64), v: Vec<(f64, f64)>, z_bottom: f64, z_top: f64) -> Fixture {
+    fn poly_fixture(
+        id: u32,
+        origin: (f64, f64),
+        v: Vec<(f64, f64)>,
+        z_bottom: f64,
+        z_top: f64,
+    ) -> Fixture {
         Fixture {
             id,
             name: "poly".into(),
@@ -365,7 +367,11 @@ mod tests {
         let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
         assert_eq!(res.len(), 1);
         match res[0] {
-            FixtureCheck::Collision { fixture_id, nearest_x, nearest_y } => {
+            FixtureCheck::Collision {
+                fixture_id,
+                nearest_x,
+                nearest_y,
+            } => {
                 assert_eq!(fixture_id, 7);
                 // Closest segment point to box center (0,0): right at (0,0).
                 assert!(nearest_x.abs() < 1e-9);
@@ -389,7 +395,10 @@ mod tests {
         let s = seg((-50.0, 100.0, 5.0), (50.0, 100.0, 5.0));
         let fix = box_fixture(7, (0.0, 0.0), 30.0, 50.0, 0.0, 10.0);
         let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
-        assert!(matches!(res[0], FixtureCheck::Clear), "stadium far above box should be clear");
+        assert!(
+            matches!(res[0], FixtureCheck::Clear),
+            "stadium far above box should be clear"
+        );
     }
 
     #[test]
@@ -401,7 +410,11 @@ mod tests {
         let fix = cyl_fixture(2, (50.0, 50.0), 10.0, 0.0, 20.0);
         let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
         match res[0] {
-            FixtureCheck::Collision { fixture_id, nearest_x, nearest_y } => {
+            FixtureCheck::Collision {
+                fixture_id,
+                nearest_x,
+                nearest_y,
+            } => {
                 assert_eq!(fixture_id, 2);
                 // Closest segment point to (50, 50): (40, 50).
                 assert!((nearest_x - 40.0).abs() < 1e-6);
@@ -442,7 +455,10 @@ mod tests {
             10.0,
         );
         let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
-        assert!(matches!(res[0], FixtureCheck::Collision { fixture_id: 9, .. }));
+        assert!(matches!(
+            res[0],
+            FixtureCheck::Collision { fixture_id: 9, .. }
+        ));
     }
 
     #[test]
@@ -478,7 +494,10 @@ mod tests {
         let res = check_segment_against_fixtures(&s, 3.0, &fixes);
         assert_eq!(res.len(), 2);
         assert!(matches!(res[0], FixtureCheck::Clear));
-        assert!(matches!(res[1], FixtureCheck::Collision { fixture_id: 2, .. }));
+        assert!(matches!(
+            res[1],
+            FixtureCheck::Collision { fixture_id: 2, .. }
+        ));
     }
 
     #[test]
@@ -489,6 +508,9 @@ mod tests {
         let s = seg((0.0, 0.0, 5.0), (0.0, 0.0, -3.0));
         let fix = box_fixture(7, (0.0, 0.0), 30.0, 50.0, 0.0, 10.0);
         let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
-        assert!(matches!(res[0], FixtureCheck::Collision { fixture_id: 7, .. }));
+        assert!(matches!(
+            res[0],
+            FixtureCheck::Collision { fixture_id: 7, .. }
+        ));
     }
 }

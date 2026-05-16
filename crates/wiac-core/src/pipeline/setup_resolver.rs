@@ -49,11 +49,17 @@ pub(super) fn resolve_peck_step(
     };
     match cycle {
         DrillCycle::Simple { .. } => cycle,
-        DrillCycle::Peck { peck_step_mm, dwell_sec } => DrillCycle::Peck {
+        DrillCycle::Peck {
+            peck_step_mm,
+            dwell_sec,
+        } => DrillCycle::Peck {
             peck_step_mm: resolved(peck_step_mm),
             dwell_sec,
         },
-        DrillCycle::ChipBreak { peck_step_mm, dwell_sec } => DrillCycle::ChipBreak {
+        DrillCycle::ChipBreak {
+            peck_step_mm,
+            dwell_sec,
+        } => DrillCycle::ChipBreak {
             peck_step_mm: resolved(peck_step_mm),
             dwell_sec,
         },
@@ -98,15 +104,15 @@ pub(super) fn synthesize_op_setup(
     };
     let (rough_speed, rough_plunge, rough_feed) =
         crate::project::resolve_tool_rates(tool, main_pass);
-    let (finish_speed, finish_plunge, finish_feed) = if matches!(op.kind, OperationKind::Drill { .. })
-    {
-        // Drill never emits a finish pass — keep the finish triplet
-        // equal to the drill triplet so a caller that reads either side
-        // sees consistent values.
-        (rough_speed, rough_plunge, rough_feed)
-    } else {
-        crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
-    };
+    let (finish_speed, finish_plunge, finish_feed) =
+        if matches!(op.kind, OperationKind::Drill { .. }) {
+            // Drill never emits a finish pass — keep the finish triplet
+            // equal to the drill triplet so a caller that reads either side
+            // sees consistent values.
+            (rough_speed, rough_plunge, rough_feed)
+        } else {
+            crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
+        };
     // rt1.29: laser tools get their per-tool pierce-time threaded
     // into ToolConfig so emit_offset can emit a G4 P<sec> dwell
     // before each plunge. Non-laser tools collapse to 0.
@@ -154,8 +160,10 @@ pub(super) fn synthesize_op_setup(
         }
     );
     let plunge = if trochoidal
-        && !matches!(op.params.plunge, crate::cam::setup::PlungeStrategy::Helix { .. })
-    {
+        && !matches!(
+            op.params.plunge,
+            crate::cam::setup::PlungeStrategy::Helix { .. }
+        ) {
         crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
             radius_mm: Some(tool.diameter * 0.75),
@@ -199,8 +207,8 @@ pub(super) fn synthesize_op_setup(
     // despite the user seeing markers on the canvas. Honor the
     // legacy flag too (logical OR) so projects saved before this
     // change keep working.
-    setup.tabs.active = setup.tabs.active
-        || !matches!(op.params.tab_mode, crate::project::TabPlacementMode::Off);
+    setup.tabs.active =
+        setup.tabs.active || !matches!(op.params.tab_mode, crate::project::TabPlacementMode::Off);
     if trochoidal {
         // Tabs aren't yet supported on trochoidal pockets; force-off so
         // the gcode emitter doesn't see active tabs.
@@ -357,8 +365,10 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
     } else if let Some(tool) = project.tools.first() {
-        let (rs, rp, rf) = crate::project::resolve_tool_rates(tool, crate::project::PassKind::Rough);
-        let (fs, fp, ff) = crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish);
+        let (rs, rp, rf) =
+            crate::project::resolve_tool_rates(tool, crate::project::PassKind::Rough);
+        let (fs, fp, ff) =
+            crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish);
         let pierce_sec = if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
             tool.laser_pierce_sec.unwrap_or(0.0).max(0.0)
         } else {

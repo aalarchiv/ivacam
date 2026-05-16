@@ -473,7 +473,10 @@ mod tests {
             holes: Vec::new(),
         };
         let polylines = medial_axis(&region);
-        assert!(!polylines.is_empty(), "expected at least one medial axis polyline");
+        assert!(
+            !polylines.is_empty(),
+            "expected at least one medial axis polyline"
+        );
         // The medial axis of an equilateral triangle is three segments
         // meeting at the incenter. The incenter (= centroid) is at
         // (side/2, h/3); the largest inscribed-circle radius along the

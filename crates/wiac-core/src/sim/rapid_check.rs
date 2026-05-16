@@ -106,7 +106,10 @@ mod tests {
     fn clear_above_stock() {
         let map = fresh_map(20, 20, 0.0);
         let s = rapid(pose(0.0, 0.0, 5.0), pose(10.0, 0.0, 5.0));
-        assert_eq!(check_rapid_against_stock(&map, &s, endmill()), RapidCheck::Clear);
+        assert_eq!(
+            check_rapid_against_stock(&map, &s, endmill()),
+            RapidCheck::Clear
+        );
     }
 
     #[test]
@@ -168,7 +171,10 @@ mod tests {
         // top_z), so Clear lands either way.
         let map = fresh_map(20, 20, 0.0);
         let s = rapid(pose(0.0, 0.0, 0.0), pose(10.0, 0.0, 0.0));
-        assert_eq!(check_rapid_against_stock(&map, &s, endmill()), RapidCheck::Clear);
+        assert_eq!(
+            check_rapid_against_stock(&map, &s, endmill()),
+            RapidCheck::Clear
+        );
     }
 
     #[test]
@@ -176,7 +182,10 @@ mod tests {
         // Rapid runs entirely outside the grid — cutter is in air.
         let map = fresh_map(20, 20, 0.0);
         let s = rapid(pose(50.0, 50.0, -5.0), pose(60.0, 50.0, -5.0));
-        assert_eq!(check_rapid_against_stock(&map, &s, endmill()), RapidCheck::Clear);
+        assert_eq!(
+            check_rapid_against_stock(&map, &s, endmill()),
+            RapidCheck::Clear
+        );
     }
 
     #[test]
@@ -210,7 +219,16 @@ mod tests {
                 op_id: 0,
             },
         ];
-        let touched = sweep_range(&mut map, &segments, 0, segments.len(), endmill(), &[], None, &mut d);
+        let touched = sweep_range(
+            &mut map,
+            &segments,
+            0,
+            segments.len(),
+            endmill(),
+            &[],
+            None,
+            &mut d,
+        );
         assert!(touched > 0, "cuts/plunges should still carve");
         assert_eq!(d.count("rapid_through_material"), 1);
         match &d.warnings[0] {

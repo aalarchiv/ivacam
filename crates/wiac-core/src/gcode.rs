@@ -509,7 +509,10 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     // rt1.36: thread the decimal separator + N-numbering knobs into
     // the post state BEFORE any output flows so every emitted line
     // honors the project's MachineConfig.
-    post.configure(setup.machine.decimal_separator, setup.machine.line_number_start);
+    post.configure(
+        setup.machine.decimal_separator,
+        setup.machine.line_number_start,
+    );
     // rt1.15: thread the user-configurable post profile + initial
     // token-substitution context. Profile templates can reference
     // tool / feed / spindle / unit etc. that we know from `setup`
@@ -635,7 +638,13 @@ fn emit_offset<P: PostProcessor>(
         }
     }
 
-    multi_pass(setup, &offset.segments, &offset.tabs, offset.is_finish, post);
+    multi_pass(
+        setup,
+        &offset.segments,
+        &offset.tabs,
+        offset.is_finish,
+        post,
+    );
 
     // Lead-out happens at the FINAL pass depth — it's a real cutting
     // motion that rolls the cutter off the contour into free space.
@@ -677,8 +686,16 @@ fn multi_pass<P: PostProcessor>(
     // Finish-set rates (rt1.27): swap in the tool's _finish overrides
     // when this offset is the wall-defining ring of a Pocket. Falls
     // back to rough rates everywhere else.
-    let rate_v = if is_finish { setup.tool.rate_v_finish } else { setup.tool.rate_v };
-    let rate_h = if is_finish { setup.tool.rate_h_finish } else { setup.tool.rate_h };
+    let rate_v = if is_finish {
+        setup.tool.rate_v_finish
+    } else {
+        setup.tool.rate_v
+    };
+    let rate_h = if is_finish {
+        setup.tool.rate_h_finish
+    } else {
+        setup.tool.rate_h
+    };
 
     // Plot-mode (rt1.35): emit ONE pass at the op's cut depth,
     // skipping the multi-step schedule + helix / ramp / finish_step /
@@ -1167,10 +1184,18 @@ fn polygon_pole_of_inaccessibility(verts: &[Point2], min_clearance: f64) -> Opti
     let mut max_x = f64::NEG_INFINITY;
     let mut max_y = f64::NEG_INFINITY;
     for p in verts {
-        if p.x < min_x { min_x = p.x; }
-        if p.y < min_y { min_y = p.y; }
-        if p.x > max_x { max_x = p.x; }
-        if p.y > max_y { max_y = p.y; }
+        if p.x < min_x {
+            min_x = p.x;
+        }
+        if p.y < min_y {
+            min_y = p.y;
+        }
+        if p.x > max_x {
+            max_x = p.x;
+        }
+        if p.y > max_y {
+            max_y = p.y;
+        }
     }
     let width = max_x - min_x;
     let height = max_y - min_y;
@@ -1446,15 +1471,9 @@ fn emit_path_with_tabs<P: PostProcessor>(
 ) {
     for seg in segments {
         match seg.kind {
-            SegmentKind::Line => emit_line_with_tabs(
-                seg,
-                tabs,
-                tabs_z,
-                cut_z,
-                tab_radius,
-                ramp_angle_deg,
-                post,
-            ),
+            SegmentKind::Line => {
+                emit_line_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, ramp_angle_deg, post)
+            }
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
                 // Per-tab radius for crossing detection. Walks all tabs
@@ -1665,9 +1684,7 @@ fn emit_arc_chord_with_tabs<P: PostProcessor>(
     // ~ r·(1 - cos(π/32)) ≈ r·0.005; on a 10 mm arc that's 0.05 mm —
     // visually identical and well under typical tab tolerances). Scale
     // chords linearly with sweep magnitude, with a 4-chord minimum.
-    let n_chords = (32.0 * sweep.abs() / std::f64::consts::TAU)
-        .ceil()
-        .max(4.0) as usize;
+    let n_chords = (32.0 * sweep.abs() / std::f64::consts::TAU).ceil().max(4.0) as usize;
     let dtheta = sweep / (n_chords as f64);
     let mut prev_theta = theta_start;
     for k in 0..n_chords {
@@ -1794,38 +1811,36 @@ fn fit_line_runs(segments: &[Segment], setup: &Setup) -> Vec<Segment> {
     let mut run_layer = layer.clone();
     let mut run_color = color;
 
-    let flush_run = |run_pts: &mut Vec<Point2>,
-                     run_layer: &str,
-                     run_color: i32,
-                     out: &mut Vec<Segment>| {
-        if run_pts.len() < 2 {
+    let flush_run =
+        |run_pts: &mut Vec<Point2>, run_layer: &str, run_color: i32, out: &mut Vec<Segment>| {
+            if run_pts.len() < 2 {
+                run_pts.clear();
+                return;
+            }
+            match crate::gcode::arc_fit::fit_arc_run(run_pts, tol) {
+                crate::gcode::arc_fit::FitOutput::Lines(pts) => {
+                    for w in pts.windows(2) {
+                        out.push(Segment::line(w[0], w[1], run_layer, run_color));
+                    }
+                }
+                crate::gcode::arc_fit::FitOutput::Arcs(arcs) => {
+                    let mut cursor = run_pts[0];
+                    for a in arcs {
+                        let (_, _, bulge) = arc_bulge_from_center(cursor, a.end, a.center, a.ccw);
+                        out.push(Segment::arc(
+                            cursor,
+                            a.end,
+                            bulge,
+                            Some(a.center),
+                            run_layer,
+                            run_color,
+                        ));
+                        cursor = a.end;
+                    }
+                }
+            }
             run_pts.clear();
-            return;
-        }
-        match crate::gcode::arc_fit::fit_arc_run(run_pts, tol) {
-            crate::gcode::arc_fit::FitOutput::Lines(pts) => {
-                for w in pts.windows(2) {
-                    out.push(Segment::line(w[0], w[1], run_layer, run_color));
-                }
-            }
-            crate::gcode::arc_fit::FitOutput::Arcs(arcs) => {
-                let mut cursor = run_pts[0];
-                for a in arcs {
-                    let (_, _, bulge) = arc_bulge_from_center(cursor, a.end, a.center, a.ccw);
-                    out.push(Segment::arc(
-                        cursor,
-                        a.end,
-                        bulge,
-                        Some(a.center),
-                        run_layer,
-                        run_color,
-                    ));
-                    cursor = a.end;
-                }
-            }
-        }
-        run_pts.clear();
-    };
+        };
 
     for seg in segments {
         if matches!(seg.kind, SegmentKind::Line) {
@@ -1901,9 +1916,9 @@ fn emit_path_with_corner_feed<P: PostProcessor>(
             // would be over-engineered; just inline arc/point here.
             match seg.kind {
                 SegmentKind::Arc | SegmentKind::Circle => {
-                    let center = seg.center.unwrap_or_else(|| {
-                        math::bulge_to_arc(seg.start, seg.end, seg.bulge).0
-                    });
+                    let center = seg
+                        .center
+                        .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
                     let cx = center.x - seg.start.x;
                     let cy = center.y - seg.start.y;
                     if seg.bulge > 0.0 {
@@ -2318,7 +2333,11 @@ pub fn configure_post_state(
 pub fn fmt_num(v: f64, sep: char) -> String {
     let s = format!("{v:.4}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
-    let base = if trimmed.is_empty() { "0".into() } else { trimmed.to_string() };
+    let base = if trimmed.is_empty() {
+        "0".into()
+    } else {
+        trimmed.to_string()
+    };
     if sep == ',' {
         base.replace('.', ",")
     } else {
@@ -2472,7 +2491,12 @@ mod tests {
 
         let mut offset = square_offset();
         // Tab in the middle of the bottom edge.
-        offset.tabs = vec![crate::cam::offsets::TabPoint { x: 5.0, y: 0.0, width_override_mm: None, height_override_mm: None }];
+        offset.tabs = vec![crate::cam::offsets::TabPoint {
+            x: 5.0,
+            y: 0.0,
+            width_override_mm: None,
+            height_override_mm: None,
+        }];
         let mut post = linuxcnc::Post::new();
         let g = emit_polylines(&setup, &[offset], &mut post);
 
@@ -2513,7 +2537,12 @@ mod tests {
             layer: "0".into(),
             color: 7,
             source_object_idx: 0,
-            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0, width_override_mm: None, height_override_mm: None }],
+            tabs: vec![crate::cam::offsets::TabPoint {
+                x: 10.0,
+                y: 0.0,
+                width_override_mm: None,
+                height_override_mm: None,
+            }],
             is_finish: false,
         };
 
@@ -2542,7 +2571,10 @@ mod tests {
         // Expect a walk that starts and ends at cut_z, climbs to
         // tabs_z mid-path on a sloped ramp, holds tabs_z for the flat,
         // then descends on a sloped ramp.
-        assert!(waypoints.len() >= 5, "expected ≥5 waypoints, got {waypoints:?}");
+        assert!(
+            waypoints.len() >= 5,
+            "expected ≥5 waypoints, got {waypoints:?}"
+        );
 
         // Trapezoid signature: a flat-top run at tabs_z (consecutive
         // tabs_z waypoints with ΔX>0).
@@ -2554,7 +2586,10 @@ mod tests {
                     && w[1].0 - w[0].0 > 1e-6
             })
             .count();
-        assert!(flat_pairs >= 1, "expected ≥1 flat-top run at tabs_z; waypoints={waypoints:?}");
+        assert!(
+            flat_pairs >= 1,
+            "expected ≥1 flat-top run at tabs_z; waypoints={waypoints:?}"
+        );
 
         // Sloped ramps in and out (Z changes while X advances).
         let has_ramp_up = waypoints.windows(2).any(|w| {
@@ -2567,15 +2602,24 @@ mod tests {
                 && (w[1].1 - cut_z).abs() < 1e-6
                 && (w[1].0 - w[0].0).abs() > 1e-3
         });
-        assert!(has_ramp_up, "expected a ramp-up (cut_z→tabs_z with ΔX>0); waypoints={waypoints:?}");
-        assert!(has_ramp_down, "expected a ramp-down (tabs_z→cut_z with ΔX>0); waypoints={waypoints:?}");
+        assert!(
+            has_ramp_up,
+            "expected a ramp-up (cut_z→tabs_z with ΔX>0); waypoints={waypoints:?}"
+        );
+        assert!(
+            has_ramp_down,
+            "expected a ramp-down (tabs_z→cut_z with ΔX>0); waypoints={waypoints:?}"
+        );
 
         // No pure vertical Z step inside the cut path (Rectangle would
         // emit ΔX==0 transitions between cut_z and tabs_z).
-        let pure_vertical = waypoints.windows(2).any(|w| {
-            (w[0].1 - w[1].1).abs() > 1e-6 && (w[1].0 - w[0].0).abs() < 1e-9
-        });
-        assert!(!pure_vertical, "ramped tab must not emit pure-Z lifts; waypoints={waypoints:?}");
+        let pure_vertical = waypoints
+            .windows(2)
+            .any(|w| (w[0].1 - w[1].1).abs() > 1e-6 && (w[1].0 - w[0].0).abs() < 1e-9);
+        assert!(
+            !pure_vertical,
+            "ramped tab must not emit pure-Z lifts; waypoints={waypoints:?}"
+        );
     }
 
     #[test]
@@ -2608,7 +2652,12 @@ mod tests {
             layer: "0".into(),
             color: 7,
             source_object_idx: 0,
-            tabs: vec![crate::cam::offsets::TabPoint { x: 10.0, y: 0.0, width_override_mm: None, height_override_mm: None }],
+            tabs: vec![crate::cam::offsets::TabPoint {
+                x: 10.0,
+                y: 0.0,
+                width_override_mm: None,
+                height_override_mm: None,
+            }],
             is_finish: false,
         };
 
@@ -2642,7 +2691,10 @@ mod tests {
                     && w[1].0 - w[0].0 > 1e-6
             })
             .count();
-        assert_eq!(flat_pairs, 0, "triangle must not have a flat top; waypoints={waypoints:?}");
+        assert_eq!(
+            flat_pairs, 0,
+            "triangle must not have a flat top; waypoints={waypoints:?}"
+        );
 
         // Apex at tabs_z exists.
         assert!(
@@ -2745,9 +2797,13 @@ mod tests {
         let mut post2 = linuxcnc::Post::new();
         let g_lines = emit_polylines(&setup, &[offset], &mut post2);
 
-        let has_arc =
-            g_arcs.lines().any(|l| l.starts_with("G2 ") || l.starts_with("G3 "));
-        assert!(has_arc, "fitted program must contain G2 or G3; got:\n{g_arcs}");
+        let has_arc = g_arcs
+            .lines()
+            .any(|l| l.starts_with("G2 ") || l.starts_with("G3 "));
+        assert!(
+            has_arc,
+            "fitted program must contain G2 or G3; got:\n{g_arcs}"
+        );
         assert!(
             g_arcs.len() * 5 <= g_lines.len(),
             "arc-fitted program ({} bytes) should be ≥5x smaller than unfitted ({} bytes)",

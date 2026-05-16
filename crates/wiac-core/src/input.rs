@@ -159,9 +159,7 @@ pub fn import_bytes(filename: &str, bytes: &[u8], opts: &ImportOptions) -> Resul
 /// `(objects, object_meta)` where `objects[i]` is the 1-based id of the
 /// chained object containing `segments[i]` (0 = unchained / point /
 /// degenerate); `object_meta[id - 1]` carries the chain's metadata.
-pub(crate) fn object_index(
-    segments: &[Segment],
-) -> (Vec<u32>, Vec<ImportedObject>) {
+pub(crate) fn object_index(segments: &[Segment]) -> (Vec<u32>, Vec<ImportedObject>) {
     use crate::cam::chaining::{classify_containment, segments_to_objects};
 
     let mut chains = segments_to_objects(segments);
@@ -179,10 +177,10 @@ pub(crate) fn object_index(
                 if objects[seg_idx] != 0 {
                     continue;
                 }
-                let same = approx_pt(src.start, chain_seg.start)
-                    && approx_pt(src.end, chain_seg.end);
-                let reverse = approx_pt(src.start, chain_seg.end)
-                    && approx_pt(src.end, chain_seg.start);
+                let same =
+                    approx_pt(src.start, chain_seg.start) && approx_pt(src.end, chain_seg.end);
+                let reverse =
+                    approx_pt(src.start, chain_seg.end) && approx_pt(src.end, chain_seg.start);
                 if same || reverse {
                     objects[seg_idx] = id;
                     break;

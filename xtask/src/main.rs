@@ -82,11 +82,22 @@ fn wasm_pack() -> ExitCode {
 
 fn ci_all() -> ExitCode {
     let steps: &[(&str, fn() -> ExitCode)] = &[
-        ("cargo fmt --check", || cargo(&["fmt", "--all", "--", "--check"])),
-        ("cargo clippy", || {
-            cargo(&["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])
+        ("cargo fmt --check", || {
+            cargo(&["fmt", "--all", "--", "--check"])
         }),
-        ("cargo test", || cargo(&["test", "--workspace", "--all-features"])),
+        ("cargo clippy", || {
+            cargo(&[
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ])
+        }),
+        ("cargo test", || {
+            cargo(&["test", "--workspace", "--all-features"])
+        }),
         ("frontend lint", || pnpm(&["run", "lint"])),
         ("frontend check", || pnpm(&["run", "check"])),
         ("frontend test", || pnpm(&["run", "test"])),
@@ -128,10 +139,7 @@ fn schema(check_only: bool) -> ExitCode {
         .get_mut("components")
         .and_then(|c| c.as_mapping_mut())
         .expect("components: missing in OpenAPI YAML");
-    components.insert(
-        serde_yaml::Value::String("schemas".into()),
-        derived_yaml,
-    );
+    components.insert(serde_yaml::Value::String("schemas".into()), derived_yaml);
 
     let serialized = serde_yaml::to_string(&doc).unwrap();
     if check_only {

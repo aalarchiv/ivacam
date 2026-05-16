@@ -21,14 +21,16 @@ fn rhss_engraving_produces_fewer_segments_than_outline_font() {
     let rhss = std::fs::read(font_dir().join("RhSS.ttf")).expect("RhSS.ttf");
     let dejavu = std::fs::read(font_dir().join("DejaVuSans.ttf")).expect("DejaVuSans.ttf");
 
-    let rhss_segs =
-        render_text(&rhss, "AB", Point2::new(0.0, 0.0), 10.0, "0", 7).expect("rhss");
+    let rhss_segs = render_text(&rhss, "AB", Point2::new(0.0, 0.0), 10.0, "0", 7).expect("rhss");
     let dejavu_segs =
         render_text(&dejavu, "AB", Point2::new(0.0, 0.0), 10.0, "0", 7).expect("dejavu");
 
-    assert!(rhss_segs.len() < dejavu_segs.len(),
+    assert!(
+        rhss_segs.len() < dejavu_segs.len(),
         "single-line should produce fewer segments: rhss={}, dejavu={}",
-        rhss_segs.len(), dejavu_segs.len());
+        rhss_segs.len(),
+        dejavu_segs.len()
+    );
 }
 
 #[test]

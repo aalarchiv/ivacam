@@ -159,10 +159,7 @@ pub fn polyline_at_t(pts: &[Point2], t: f64, closed: bool) -> (Point2, (f64, f64
     let a = pts[i];
     let b = pts[(i + 1) % pts.len()];
     let seg_len = a.distance(b).max(1e-12);
-    (
-        b,
-        ((b.x - a.x) / seg_len, (b.y - a.y) / seg_len),
-    )
+    (b, ((b.x - a.x) / seg_len, (b.y - a.y) / seg_len))
 }
 
 /// N evenly spaced tab parameters. For closed contours the spacing
@@ -322,8 +319,7 @@ mod tests {
             let (p_post, _) = polyline_at_t(&pts_rot, t, true);
             let p_expected = rot(p_pre);
             assert!(
-                (p_post.x - p_expected.x).abs() < 1e-9
-                    && (p_post.y - p_expected.y).abs() < 1e-9,
+                (p_post.x - p_expected.x).abs() < 1e-9 && (p_post.y - p_expected.y).abs() < 1e-9,
                 "t={t}: got ({}, {}), expected ({}, {})",
                 p_post.x,
                 p_post.y,

@@ -161,11 +161,7 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
         // before the following G81.
         if matches!(active_code, 73 | 81 | 82 | 83) {
             let r_z = r_val.unwrap_or(state.z);
-            let mid_xy = Pose3 {
-                x,
-                y,
-                z: state.z,
-            };
+            let mid_xy = Pose3 { x, y, z: state.z };
             let bottom = Pose3 { x, y, z };
             let retracted = Pose3 { x, y, z: r_z };
             let from = state;
@@ -272,7 +268,11 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                 } else {
                     from.z + dz * (k as f64) / (n as f64)
                 };
-                let chord_to = Pose3 { x: nx, y: ny, z: nz };
+                let chord_to = Pose3 {
+                    x: nx,
+                    y: ny,
+                    z: nz,
+                };
                 out.push(ToolpathSegment {
                     from: prev,
                     to: chord_to,
@@ -398,28 +398,105 @@ mod tests {
         // First G81: horizontal rapid at z=10, plunge to z=-3, retract to z=2.
         let g81_a = &segs[1..4];
         assert!(matches!(g81_a[0].kind, MoveKind::Rapid));
-        assert_eq!(g81_a[0].from, Pose3 { x: 0.0, y: 0.0, z: 10.0 });
-        assert_eq!(g81_a[0].to, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
+        assert_eq!(
+            g81_a[0].from,
+            Pose3 {
+                x: 0.0,
+                y: 0.0,
+                z: 10.0
+            }
+        );
+        assert_eq!(
+            g81_a[0].to,
+            Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: 10.0
+            }
+        );
         assert!(matches!(g81_a[1].kind, MoveKind::Plunge));
-        assert_eq!(g81_a[1].from, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
-        assert_eq!(g81_a[1].to, Pose3 { x: 1.0, y: 1.0, z: -3.0 });
+        assert_eq!(
+            g81_a[1].from,
+            Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: 10.0
+            }
+        );
+        assert_eq!(
+            g81_a[1].to,
+            Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: -3.0
+            }
+        );
         assert!(matches!(g81_a[2].kind, MoveKind::Retract));
-        assert_eq!(g81_a[2].to, Pose3 { x: 1.0, y: 1.0, z: 2.0 });
+        assert_eq!(
+            g81_a[2].to,
+            Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: 2.0
+            }
+        );
 
         // Second G0 lift: vertical rapid from (1, 1, 2) to (1, 1, 10).
         assert!(matches!(segs[4].kind, MoveKind::Rapid));
-        assert_eq!(segs[4].from, Pose3 { x: 1.0, y: 1.0, z: 2.0 });
-        assert_eq!(segs[4].to, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
+        assert_eq!(
+            segs[4].from,
+            Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: 2.0
+            }
+        );
+        assert_eq!(
+            segs[4].to,
+            Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: 10.0
+            }
+        );
 
         // Second G81: horizontal rapid at z=10, NOT a diagonal into the
         // workpiece (the bug we're guarding against).
         let g81_b = &segs[5..8];
         assert!(matches!(g81_b[0].kind, MoveKind::Rapid));
-        assert_eq!(g81_b[0].from, Pose3 { x: 1.0, y: 1.0, z: 10.0 });
-        assert_eq!(g81_b[0].to, Pose3 { x: 5.0, y: 5.0, z: 10.0 });
+        assert_eq!(
+            g81_b[0].from,
+            Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: 10.0
+            }
+        );
+        assert_eq!(
+            g81_b[0].to,
+            Pose3 {
+                x: 5.0,
+                y: 5.0,
+                z: 10.0
+            }
+        );
         assert!(matches!(g81_b[1].kind, MoveKind::Plunge));
-        assert_eq!(g81_b[1].from, Pose3 { x: 5.0, y: 5.0, z: 10.0 });
-        assert_eq!(g81_b[1].to, Pose3 { x: 5.0, y: 5.0, z: -3.0 });
+        assert_eq!(
+            g81_b[1].from,
+            Pose3 {
+                x: 5.0,
+                y: 5.0,
+                z: 10.0
+            }
+        );
+        assert_eq!(
+            g81_b[1].to,
+            Pose3 {
+                x: 5.0,
+                y: 5.0,
+                z: -3.0
+            }
+        );
     }
 
     #[test]

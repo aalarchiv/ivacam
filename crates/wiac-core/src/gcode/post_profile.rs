@@ -249,9 +249,7 @@ pub fn format_axis_value(format: &str, value: f64) -> String {
             // libc, but our typical inputs stay in fixed range).
             let raw = format!("{value:.prec$}");
             if let Some(stripped) = raw.find('.') {
-                let trimmed = raw[stripped..]
-                    .trim_end_matches('0')
-                    .trim_end_matches('.');
+                let trimmed = raw[stripped..].trim_end_matches('0').trim_end_matches('.');
                 if trimmed.is_empty() {
                     raw[..stripped].to_string()
                 } else {
@@ -404,8 +402,7 @@ pub fn substitute(template: &str, ctx: &TokenCtx) -> String {
                 .char_indices()
                 .find(|(i, _)| {
                     let end = i + token.len();
-                    end <= rest.len()
-                        && rest[*i..end].to_ascii_lowercase() == token_lower
+                    end <= rest.len() && rest[*i..end].to_ascii_lowercase() == token_lower
                 })
                 .map(|(i, _)| i);
             match pos {

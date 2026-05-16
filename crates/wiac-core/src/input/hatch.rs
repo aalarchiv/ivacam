@@ -86,14 +86,7 @@ fn parse_hatch(
                         let consumed = if path_flag & 2 != 0 {
                             parse_polyline_path(&pairs[i..], unit_scale, &layer, color, out)
                         } else {
-                            parse_edge_path(
-                                &pairs[i..],
-                                unit_scale,
-                                &layer,
-                                color,
-                                out,
-                                warnings,
-                            )
+                            parse_edge_path(&pairs[i..], unit_scale, &layer, color, out, warnings)
                         };
                         i += consumed;
                         paths_seen += 1;
@@ -226,20 +219,8 @@ fn parse_edge_path(
             72 => {
                 // Flush previous edge before reading the next type.
                 emit_edge(
-                    edge_kind,
-                    sx,
-                    sy,
-                    ex,
-                    ey,
-                    radius,
-                    start_ang,
-                    end_ang,
-                    is_ccw,
-                    unit_scale,
-                    layer,
-                    color,
-                    out,
-                    warnings,
+                    edge_kind, sx, sy, ex, ey, radius, start_ang, end_ang, is_ccw, unit_scale,
+                    layer, color, out, warnings,
                 );
                 if edge_kind != 0 {
                     edges_done += 1;
@@ -267,20 +248,8 @@ fn parse_edge_path(
     // Flush the trailing edge.
     if edge_kind != 0 {
         emit_edge(
-            edge_kind,
-            sx,
-            sy,
-            ex,
-            ey,
-            radius,
-            start_ang,
-            end_ang,
-            is_ccw,
-            unit_scale,
-            layer,
-            color,
-            out,
-            warnings,
+            edge_kind, sx, sy, ex, ey, radius, start_ang, end_ang, is_ccw, unit_scale, layer,
+            color, out, warnings,
         );
         edges_done += 1;
     }
@@ -397,11 +366,11 @@ mod tests {
             (0, "HATCH"),
             (8, "INSULATION"),
             (62, "5"),
-            (91, "1"),  // 1 path
-            (92, "7"),  // path flag = polyline | external | outermost
-            (72, "0"),  // no bulge
-            (73, "1"),  // closed
-            (93, "4"),  // 4 vertices
+            (91, "1"), // 1 path
+            (92, "7"), // path flag = polyline | external | outermost
+            (72, "0"), // no bulge
+            (73, "1"), // closed
+            (93, "4"), // 4 vertices
             (10, "0"),
             (20, "0"),
             (10, "10"),
@@ -428,14 +397,14 @@ mod tests {
             (0, "HATCH"),
             (8, "0"),
             (91, "1"),
-            (92, "1"),  // path flag = external (no polyline bit)
-            (93, "2"),  // 2 edges
-            (72, "1"),  // line edge
+            (92, "1"), // path flag = external (no polyline bit)
+            (93, "2"), // 2 edges
+            (72, "1"), // line edge
             (10, "0"),
             (20, "0"),
             (11, "10"),
             (21, "0"),
-            (72, "1"),  // another line edge
+            (72, "1"), // another line edge
             (10, "10"),
             (20, "0"),
             (11, "10"),
@@ -456,7 +425,7 @@ mod tests {
         let text = pair_lines(&[
             (0, "HATCH"),
             (91, "1"),
-            (92, "2"),  // polyline
+            (92, "2"), // polyline
             (72, "0"),
             (73, "1"),
             (93, "3"),

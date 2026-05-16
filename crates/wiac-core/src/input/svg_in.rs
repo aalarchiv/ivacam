@@ -176,14 +176,7 @@ fn flatten_cubic(ctx: &mut SvgCtx, p0: Point2, p1: Point2, p2: Point2, p3: Point
     flatten_cubic_rec(ctx, p0, p1, p2, p3, 0);
 }
 
-fn flatten_cubic_rec(
-    ctx: &mut SvgCtx,
-    p0: Point2,
-    p1: Point2,
-    p2: Point2,
-    p3: Point2,
-    depth: u8,
-) {
+fn flatten_cubic_rec(ctx: &mut SvgCtx, p0: Point2, p1: Point2, p2: Point2, p3: Point2, depth: u8) {
     let chord = p0.distance(p3);
     let max_dev = perp_distance(p1, p0, p3).max(perp_distance(p2, p0, p3));
     if depth >= 16 || (chord <= ctx.chord_step && max_dev < ctx.chord_step * 0.25) {

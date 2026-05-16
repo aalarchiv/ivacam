@@ -57,7 +57,12 @@ pub fn sweep_segment(
 ) -> u32 {
     let r_tool = profile.radius() as f64;
     for fc in check_segment_against_fixtures(segment, r_tool, fixtures) {
-        if let FixtureCheck::Collision { fixture_id, nearest_x, nearest_y } = fc {
+        if let FixtureCheck::Collision {
+            fixture_id,
+            nearest_x,
+            nearest_y,
+        } = fc
+        {
             diagnostics.push(SimWarning::FixtureCollision {
                 segment_idx,
                 fixture_id,
@@ -372,8 +377,20 @@ mod tests {
     fn rapid_move_does_not_carve() {
         let mut map = fresh_map(20, 20);
         let mut d = diag();
-        let s = seg(MoveKind::Rapid, pose(0.0, 0.0, -10.0), pose(10.0, 10.0, -10.0));
-        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, 0, &[], None, &mut d);
+        let s = seg(
+            MoveKind::Rapid,
+            pose(0.0, 0.0, -10.0),
+            pose(10.0, 10.0, -10.0),
+        );
+        let touched = sweep_segment(
+            &mut map,
+            &s,
+            ToolProfile::Endmill { r: 2.0 },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
         assert_eq!(touched, 0);
         assert!(map.data.iter().all(|z| (*z - 0.0).abs() < 1e-6));
         assert!(map.dirty_aabb().is_none());
@@ -387,7 +404,15 @@ mod tests {
         let mut d = diag();
         // Both endpoints above the stock surface (z = 0). Cutter is in air.
         let s = seg(MoveKind::Cut, pose(5.0, 5.0, 0.5), pose(8.0, 8.0, 0.5));
-        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, 0, &[], None, &mut d);
+        let touched = sweep_segment(
+            &mut map,
+            &s,
+            ToolProfile::Endmill { r: 2.0 },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
         assert_eq!(touched, 0);
     }
 
@@ -396,8 +421,20 @@ mod tests {
         let mut map = fresh_map(40, 40);
         let mut d = diag();
         // Plunge at (10, 10) from z=0 to z=-1 with R=2.
-        let s = seg(MoveKind::Plunge, pose(10.0, 10.0, 0.0), pose(10.0, 10.0, -1.0));
-        sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, 0, &[], None, &mut d);
+        let s = seg(
+            MoveKind::Plunge,
+            pose(10.0, 10.0, 0.0),
+            pose(10.0, 10.0, -1.0),
+        );
+        sweep_segment(
+            &mut map,
+            &s,
+            ToolProfile::Endmill { r: 2.0 },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
         // Cell directly under the tool tip should be at -1.
         assert!((cell(&map, 10, 10) - -1.0).abs() < 1e-5);
         // Cell ~2 cells away (≈2 mm) is on the boundary of the cutter; let it pass either way.
@@ -416,7 +453,15 @@ mod tests {
         let r = 2.0_f32;
         // Cut from (5, 25) to (55, 25) at z=-1 with R=2.
         let s = seg(MoveKind::Cut, pose(5.0, 25.0, -1.0), pose(55.0, 25.0, -1.0));
-        sweep_segment(&mut map, &s, ToolProfile::Endmill { r }, 0, &[], None, &mut d);
+        sweep_segment(
+            &mut map,
+            &s,
+            ToolProfile::Endmill { r },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
         // Center of the stripe should be at -1 along the path.
         for ix in 6..=54 {
             assert!(
@@ -446,7 +491,11 @@ mod tests {
         };
         // Plunge AT a cell center so r=0 at cell (10, 10) and r=1 at
         // cell (11, 10) — keeps the analytic check simple.
-        let s = seg(MoveKind::Plunge, pose(10.5, 10.5, 0.0), pose(10.5, 10.5, -2.0));
+        let s = seg(
+            MoveKind::Plunge,
+            pose(10.5, 10.5, 0.0),
+            pose(10.5, 10.5, -2.0),
+        );
         sweep_segment(&mut map, &s, profile, 0, &[], None, &mut d);
         let apex = cell(&map, 10, 10);
         let mid = cell(&map, 11, 10);
@@ -465,11 +514,31 @@ mod tests {
     fn lower_at_only_writes_on_descent_not_re_pass() {
         let mut map = fresh_map(20, 20);
         let mut d = diag();
-        let plunge = seg(MoveKind::Plunge, pose(10.0, 10.0, 0.0), pose(10.0, 10.0, -2.0));
-        sweep_segment(&mut map, &plunge, ToolProfile::Endmill { r: 2.0 }, 0, &[], None, &mut d);
+        let plunge = seg(
+            MoveKind::Plunge,
+            pose(10.0, 10.0, 0.0),
+            pose(10.0, 10.0, -2.0),
+        );
+        sweep_segment(
+            &mut map,
+            &plunge,
+            ToolProfile::Endmill { r: 2.0 },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
         // Now sweep a SHALLOWER cut over the same cell — should NOT raise.
         let shallow = seg(MoveKind::Cut, pose(8.0, 10.0, -0.5), pose(12.0, 10.0, -0.5));
-        sweep_segment(&mut map, &shallow, ToolProfile::Endmill { r: 2.0 }, 1, &[], None, &mut d);
+        sweep_segment(
+            &mut map,
+            &shallow,
+            ToolProfile::Endmill { r: 2.0 },
+            1,
+            &[],
+            None,
+            &mut d,
+        );
         assert!(
             (cell(&map, 10, 10) - -2.0).abs() < 1e-5,
             "later shallower pass must not raise the cell",
@@ -483,8 +552,16 @@ mod tests {
         let segments = vec![
             seg(MoveKind::Cut, pose(5.0, 10.0, -1.0), pose(15.0, 10.0, -1.0)),
             // Rapid stays at z=5 above top_z=0 — no collision.
-            seg(MoveKind::Rapid, pose(15.0, 10.0, 5.0), pose(20.0, 20.0, 5.0)),
-            seg(MoveKind::Plunge, pose(20.0, 20.0, 0.0), pose(20.0, 20.0, -1.0)),
+            seg(
+                MoveKind::Rapid,
+                pose(15.0, 10.0, 5.0),
+                pose(20.0, 20.0, 5.0),
+            ),
+            seg(
+                MoveKind::Plunge,
+                pose(20.0, 20.0, 0.0),
+                pose(20.0, 20.0, -1.0),
+            ),
         ];
         let touched = sweep_range(
             &mut map,
@@ -513,8 +590,20 @@ mod tests {
         let mut map = fresh_map(20, 20);
         let mut d = diag();
         // Segment fully to the right of the heightmap (origin 0..20).
-        let s = seg(MoveKind::Cut, pose(50.0, 10.0, -1.0), pose(60.0, 10.0, -1.0));
-        let touched = sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, 0, &[], None, &mut d);
+        let s = seg(
+            MoveKind::Cut,
+            pose(50.0, 10.0, -1.0),
+            pose(60.0, 10.0, -1.0),
+        );
+        let touched = sweep_segment(
+            &mut map,
+            &s,
+            ToolProfile::Endmill { r: 2.0 },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
         assert_eq!(touched, 0);
         // Heightmap untouched.
         assert!(map.dirty_aabb().is_none());
@@ -525,8 +614,20 @@ mod tests {
         let mut map = fresh_map(20, 20);
         let mut d = diag();
         // Segment crosses the right edge — half inside, half outside.
-        let s = seg(MoveKind::Cut, pose(15.0, 10.0, -1.0), pose(25.0, 10.0, -1.0));
-        sweep_segment(&mut map, &s, ToolProfile::Endmill { r: 2.0 }, 0, &[], None, &mut d);
+        let s = seg(
+            MoveKind::Cut,
+            pose(15.0, 10.0, -1.0),
+            pose(25.0, 10.0, -1.0),
+        );
+        sweep_segment(
+            &mut map,
+            &s,
+            ToolProfile::Endmill { r: 2.0 },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
         // Cells inside the grid along the path should be lowered.
         for ix in 16..=19 {
             assert!(
@@ -553,7 +654,10 @@ mod tests {
         let fixtures = vec![Fixture {
             id: 11,
             name: "clamp".into(),
-            kind: FixtureKind::Box { width: 10.0, depth: 10.0 },
+            kind: FixtureKind::Box {
+                width: 10.0,
+                depth: 10.0,
+            },
             origin: (20.0, 20.0),
             z_bottom: -2.0,
             z_top: 5.0,
@@ -596,7 +700,10 @@ mod tests {
         let fixtures = vec![Fixture {
             id: 1,
             name: "off-side clamp".into(),
-            kind: FixtureKind::Box { width: 5.0, depth: 5.0 },
+            kind: FixtureKind::Box {
+                width: 5.0,
+                depth: 5.0,
+            },
             origin: (20.0, 30.0),
             z_bottom: -2.0,
             z_top: 5.0,

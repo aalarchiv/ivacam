@@ -109,7 +109,10 @@ mod tests {
         // At r >= R, the slot is at-or-wider than the pipe; depth
         // caps at -R and we mark depth_limited so the warning fires.
         assert!((z_full - (-5.0)).abs() < 1e-9, "got {z_full}");
-        assert!(lim, "r>=R must report depth_limited (slot is at/beyond the pipe envelope)");
+        assert!(
+            lim,
+            "r>=R must report depth_limited (slot is at/beyond the pipe envelope)"
+        );
         // r > R clamps to -R + depth_limited
         let (z_over, lim) = depth_at(&vp(0.0, 0.0, 7.0), p, None);
         assert!((z_over - (-5.0)).abs() < 1e-9, "got {z_over}");
@@ -124,7 +127,9 @@ mod tests {
     /// z = -r / 0.5774 ≈ -r * 1.7321.
     #[test]
     fn v_bottom_profile_depth_curve() {
-        let p = HalfpipeProfile::VBottom { included_angle_deg: 60.0 };
+        let p = HalfpipeProfile::VBottom {
+            included_angle_deg: 60.0,
+        };
         let (z, lim) = depth_at(&vp(0.0, 0.0, 1.0), p, None);
         assert!((z - (-1.7320508)).abs() < 1e-6, "got {z}");
         assert!(!lim);

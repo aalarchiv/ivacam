@@ -41,8 +41,8 @@ use lru::LruCache;
 use seahash::SeaHasher;
 
 use crate::cam::setup::{
-    LeadKind, LeadsConfig, MachineConfig, MachineMode, ObjectOrder, PlungeStrategy,
-    TabType, TabsConfig, ToolOffset, UnitSystem,
+    LeadKind, LeadsConfig, MachineConfig, MachineMode, ObjectOrder, PlungeStrategy, TabType,
+    TabsConfig, ToolOffset, UnitSystem,
 };
 use crate::cam::source_combine::FrameShape;
 use crate::gcode::preview::ToolpathSegment;
@@ -235,7 +235,6 @@ fn hash_point<H: Hasher>(p: Point2, h: &mut H) {
     hash_f64(p.x, h);
     hash_f64(p.y, h);
 }
-
 
 // ─── geometry ─────────────────────────────────────────────────────────
 
@@ -444,13 +443,20 @@ fn hash_operation_kind<H: Hasher>(k: OperationKind, h: &mut H) {
             h.write_u8(3);
             hash_drill_cycle(cycle, h);
         }
-        OperationKind::Thread { pitch_mm, internal, climb } => {
+        OperationKind::Thread {
+            pitch_mm,
+            internal,
+            climb,
+        } => {
             h.write_u8(4);
             hash_f64(pitch_mm, h);
             internal.hash(h);
             climb.hash(h);
         }
-        OperationKind::Chamfer { width_mm, finish_pass } => {
+        OperationKind::Chamfer {
+            width_mm,
+            finish_pass,
+        } => {
             h.write_u8(5);
             hash_f64(width_mm, h);
             finish_pass.hash(h);
@@ -849,8 +855,22 @@ mod tests {
     #[test]
     fn same_op_same_key() {
         let segs = square(20.0);
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k1 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            0,
+        );
+        let k2 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            0,
+        );
         assert_eq!(k1, k2);
     }
 
@@ -859,7 +879,14 @@ mod tests {
         let segs = square(20.0);
         let mut op2 = profile_op();
         op2.params.depth -= 0.1;
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k1 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            0,
+        );
         let k2 = op_cache_key(&op2, &endmill(), &MachineConfig::default(), &segs, &[], 0);
         assert_ne!(k1, k2);
     }
@@ -869,7 +896,14 @@ mod tests {
         let segs = square(20.0);
         let mut t2 = endmill();
         t2.diameter = 6.0;
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k1 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            0,
+        );
         let k2 = op_cache_key(&profile_op(), &t2, &MachineConfig::default(), &segs, &[], 0);
         assert_ne!(k1, k2);
     }
@@ -878,8 +912,22 @@ mod tests {
     fn segments_change_changes_key() {
         let s1 = square(20.0);
         let s2 = square(25.0);
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &s1, &[], 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &s2, &[], 0);
+        let k1 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &s1,
+            &[],
+            0,
+        );
+        let k2 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &s2,
+            &[],
+            0,
+        );
         assert_ne!(k1, k2);
     }
 
@@ -894,22 +942,53 @@ mod tests {
         let fx = vec![Fixture {
             id: 1,
             name: "clamp".into(),
-            kind: FixtureKind::Box { width: 30.0, depth: 50.0 },
+            kind: FixtureKind::Box {
+                width: 30.0,
+                depth: 50.0,
+            },
             origin: (15.0, -25.0),
             z_bottom: 0.0,
             z_top: 12.0,
             color: 0xFFA0_50C0,
         }];
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &fx, 0);
+        let k1 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            0,
+        );
+        let k2 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &fx,
+            0,
+        );
         assert_ne!(k1, k2);
     }
 
     #[test]
     fn post_processor_tag_changes_key() {
         let segs = square(20.0);
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
-        let k2 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 1);
+        let k1 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            0,
+        );
+        let k2 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            1,
+        );
         assert_ne!(k1, k2);
     }
 
@@ -929,9 +1008,17 @@ mod tests {
 
         // Each clone tweaks one estimator-only field.
         let mut m_accel = base.clone();
-        m_accel.accel = Some(crate::cam::setup::AxisLimits { x: 5000.0, y: 5000.0, z: 1000.0 });
+        m_accel.accel = Some(crate::cam::setup::AxisLimits {
+            x: 5000.0,
+            y: 5000.0,
+            z: 1000.0,
+        });
         let mut m_jerk = base.clone();
-        m_jerk.jerk = Some(crate::cam::setup::AxisLimits { x: 1500.0, y: 1500.0, z: 500.0 });
+        m_jerk.jerk = Some(crate::cam::setup::AxisLimits {
+            x: 1500.0,
+            y: 1500.0,
+            z: 500.0,
+        });
         let mut m_tc = base.clone();
         m_tc.toolchange_s = 12.5;
         let mut m_rapid = base.clone();
@@ -947,7 +1034,10 @@ mod tests {
             ("use_kinematic", &m_kin),
         ] {
             let key = op_cache_key(&op, &tool, m, &segs, &[], 0);
-            assert_eq!(key, key_base, "estimator-only field {name} changed the cache key");
+            assert_eq!(
+                key, key_base,
+                "estimator-only field {name} changed the cache key"
+            );
         }
     }
 
@@ -997,7 +1087,10 @@ mod tests {
         assert_eq!(cache.len(), 200);
         // The first 50 inserts (keys 0..50) should have been evicted.
         for i in 0..50u64 {
-            assert!(cache.get(OpCacheKey(i)).is_none(), "key {i} was not evicted");
+            assert!(
+                cache.get(OpCacheKey(i)).is_none(),
+                "key {i} was not evicted"
+            );
         }
         // The latest 200 (keys 50..250) should still be present.
         for i in 50..250u64 {
@@ -1030,7 +1123,14 @@ mod tests {
         let segs = square(20.0);
         let mut op_b = profile_op();
         op_b.params.tab_mode = crate::project::TabPlacementMode::Auto { count: 4 };
-        let k1 = op_cache_key(&profile_op(), &endmill(), &MachineConfig::default(), &segs, &[], 0);
+        let k1 = op_cache_key(
+            &profile_op(),
+            &endmill(),
+            &MachineConfig::default(),
+            &segs,
+            &[],
+            0,
+        );
         let k2 = op_cache_key(&op_b, &endmill(), &MachineConfig::default(), &segs, &[], 0);
         assert_ne!(k1, k2);
     }

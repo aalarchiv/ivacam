@@ -49,9 +49,19 @@ impl Heightmap {
     }
 
     #[must_use]
-    pub fn from_bbox(min_x: f64, min_y: f64, max_x: f64, max_y: f64, cell: f64, top_z: f32) -> Self {
+    pub fn from_bbox(
+        min_x: f64,
+        min_y: f64,
+        max_x: f64,
+        max_y: f64,
+        cell: f64,
+        top_z: f32,
+    ) -> Self {
         assert!(cell > 0.0, "Heightmap cell size must be > 0");
-        assert!(max_x > min_x && max_y > min_y, "Heightmap bbox must be non-empty");
+        assert!(
+            max_x > min_x && max_y > min_y,
+            "Heightmap bbox must be non-empty"
+        );
         let cols = ((max_x - min_x) / cell).ceil().max(1.0) as u32;
         let rows = ((max_y - min_y) / cell).ceil().max(1.0) as u32;
         Self::new(Point2::new(min_x, min_y), cell, cols, rows, top_z)
@@ -75,12 +85,7 @@ impl Heightmap {
             self.data[idx] = z;
             self.dirty = Some(match self.dirty {
                 None => (ix, iy, ix + 1, iy + 1),
-                Some((x0, y0, x1, y1)) => (
-                    x0.min(ix),
-                    y0.min(iy),
-                    x1.max(ix + 1),
-                    y1.max(iy + 1),
-                ),
+                Some((x0, y0, x1, y1)) => (x0.min(ix), y0.min(iy), x1.max(ix + 1), y1.max(iy + 1)),
             });
         }
     }
@@ -149,12 +154,27 @@ impl Heightmap {
 /// outside the cutting radius.
 #[derive(Debug, Clone, Copy)]
 pub enum ToolProfile {
-    Endmill { r: f32 },
-    BallNose { r: f32 },
-    VBit { r: f32, tip_r: f32, half_angle_rad: f32 },
-    DragKnife { r: f32, dragoff: f32 },
-    Drill { r: f32 },
-    LaserBeam { r: f32 },
+    Endmill {
+        r: f32,
+    },
+    BallNose {
+        r: f32,
+    },
+    VBit {
+        r: f32,
+        tip_r: f32,
+        half_angle_rad: f32,
+    },
+    DragKnife {
+        r: f32,
+        dragoff: f32,
+    },
+    Drill {
+        r: f32,
+    },
+    LaserBeam {
+        r: f32,
+    },
 }
 
 impl ToolProfile {
@@ -200,7 +220,11 @@ impl ToolProfile {
                     Some(rr - inside.max(0.0).sqrt())
                 }
             }
-            ToolProfile::VBit { r: rr, tip_r, half_angle_rad } => {
+            ToolProfile::VBit {
+                r: rr,
+                tip_r,
+                half_angle_rad,
+            } => {
                 if r <= tip_r {
                     Some(0.0)
                 } else if r <= rr {
@@ -409,7 +433,11 @@ mod tests {
     #[test]
     fn vbit_profile_with_tip_flat() {
         let half_angle = 0.4_f32;
-        let p = ToolProfile::VBit { r: 3.0, tip_r: 0.5, half_angle_rad: half_angle };
+        let p = ToolProfile::VBit {
+            r: 3.0,
+            tip_r: 0.5,
+            half_angle_rad: half_angle,
+        };
         assert_eq!(p.eval(0.25), Some(0.0));
         let at_outer = p.eval(3.0).unwrap();
         let expected = (3.0_f32 - 0.5) * half_angle.tan();
@@ -428,9 +456,15 @@ mod tests {
     #[test]
     fn from_tool_ballnose_and_drill() {
         let t = make_tool(ToolKind::BallNose, 4.0);
-        assert!(matches!(ToolProfile::from_tool(&t), ToolProfile::BallNose { .. }));
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::BallNose { .. }
+        ));
         let t = make_tool(ToolKind::Drill, 5.0);
-        assert!(matches!(ToolProfile::from_tool(&t), ToolProfile::Drill { .. }));
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::Drill { .. }
+        ));
     }
 
     /// Regression: V-bit half-angle was hard-coded to 30° (60°

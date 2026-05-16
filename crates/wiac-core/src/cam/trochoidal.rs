@@ -203,12 +203,7 @@ fn subdivide_chords(pts: &[Point2], max_chord: f64) -> Vec<Point2> {
 /// island. Sampled at 8 boundary points + the center; not exact but
 /// catches the failure mode that matters here (loop center too close
 /// to a re-entrant corner).
-fn disc_inside_polygon(
-    center: Point2,
-    r: f64,
-    outer: &[Point2],
-    islands: &[Vec<Point2>],
-) -> bool {
+fn disc_inside_polygon(center: Point2, r: f64, outer: &[Point2], islands: &[Vec<Point2>]) -> bool {
     if !point_in_polygon_pts(outer, center.x, center.y) {
         return false;
     }
@@ -255,7 +250,11 @@ mod tests {
             .iter()
             .filter(|s| s.kind == crate::geometry::SegmentKind::Arc)
             .collect();
-        assert!(arcs.len() > 5, "expected many loop arcs, got {}", arcs.len());
+        assert!(
+            arcs.len() > 5,
+            "expected many loop arcs, got {}",
+            arcs.len()
+        );
         // Each arc center should sit at distance ≈ 1.8 (= 3 * 0.6)
         // from both endpoints.
         let r_loop = 3.0 * 0.6;
@@ -305,7 +304,8 @@ mod tests {
 
     #[test]
     fn climb_emits_ccw_arcs() {
-        let segs = pocket_trochoidal(&rect(100.0, 60.0), &[], 3.0, 30.0, 0.6, true, "0", 7).unwrap();
+        let segs =
+            pocket_trochoidal(&rect(100.0, 60.0), &[], 3.0, 30.0, 0.6, true, "0", 7).unwrap();
         let arcs: Vec<_> = segs
             .iter()
             .filter(|s| s.kind == crate::geometry::SegmentKind::Arc)
@@ -387,7 +387,8 @@ mod tests {
 
     #[test]
     fn conventional_emits_cw_arcs() {
-        let segs = pocket_trochoidal(&rect(100.0, 60.0), &[], 3.0, 30.0, 0.6, false, "0", 7).unwrap();
+        let segs =
+            pocket_trochoidal(&rect(100.0, 60.0), &[], 3.0, 30.0, 0.6, false, "0", 7).unwrap();
         let arcs: Vec<_> = segs
             .iter()
             .filter(|s| s.kind == crate::geometry::SegmentKind::Arc)

@@ -15,10 +15,7 @@ use super::{ordered_selection, source_combine_mode, RegionPreview};
 /// mode runs through the same containment-aware logic as the per-op
 /// driver; explicit modes route through the clipper2 boolean ops in
 /// cam::source_combine. Non-Pocket ops contribute nothing.
-pub(super) fn build_region_previews(
-    project: &Project,
-    objects: &[VcObject],
-) -> Vec<RegionPreview> {
+pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionPreview> {
     let mut out = Vec::new();
     for op in project.operations.iter().filter(|o| o.enabled) {
         if !matches!(op.kind, OperationKind::Pocket { .. }) {
@@ -38,11 +35,8 @@ pub(super) fn build_region_previews(
             if let Some((local_objects, ordered)) =
                 synthesize_pocket_outside_objects(op, objects, tool_radius)
             {
-                let regions = combine_source_regions(
-                    &local_objects,
-                    &ordered,
-                    SourceCombine::Difference,
-                );
+                let regions =
+                    combine_source_regions(&local_objects, &ordered, SourceCombine::Difference);
                 for r in regions {
                     out.push(RegionPreview {
                         op_id: op.id,

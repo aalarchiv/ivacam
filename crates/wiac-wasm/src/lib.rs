@@ -21,8 +21,8 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use wiac_core::input::text::{render_text_api, render_text_layer_api, RenderTextRequest};
-use wiac_core::project::TextLayer;
 use wiac_core::pipeline::{generate_streaming, run_pipeline, CancelToken, PipelineRequest};
+use wiac_core::project::TextLayer;
 use wiac_core::{
     compute_helix_radius as core_compute_helix_radius, HelixRadiusRequest, ImportOptions,
 };

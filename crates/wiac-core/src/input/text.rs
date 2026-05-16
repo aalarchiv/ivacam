@@ -23,9 +23,7 @@ use ttf_parser::{Face, OutlineBuilder};
 use crate::errors::Error;
 use crate::geometry::{Point2, Segment};
 use crate::math;
-use crate::project::{
-    text_layer_synthetic_layer, TextAlignment, TextLayer, TextLayerKind,
-};
+use crate::project::{text_layer_synthetic_layer, TextAlignment, TextLayer, TextLayerKind};
 
 /// Request payload for the cross-transport `/text` endpoint. The frontend
 /// hands us TTF bytes (uploaded by the user or pulled from
@@ -313,7 +311,8 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
 
     let mut out: Vec<Segment> = Vec::new();
     for (line_idx, line) in lines.iter().enumerate() {
-        let line_width = measure_line_width(&face, line, scale, layer.size_mm, layer.letter_spacing_mm);
+        let line_width =
+            measure_line_width(&face, line, scale, layer.size_mm, layer.letter_spacing_mm);
         let x_shift = match layer.alignment {
             TextAlignment::Left => 0.0,
             TextAlignment::Center => -line_width / 2.0,
@@ -440,9 +439,7 @@ pub fn is_single_line_font(face: &Face) -> bool {
         return true;
     }
     // Sample more chars + look for any retraced (zero-area) contour.
-    const SAMPLE_CHARS: [char; 12] = [
-        'A', 'V', 'X', 'Y', 'Z', 'M', 'N', 'K', 'i', 'l', 'j', '7',
-    ];
+    const SAMPLE_CHARS: [char; 12] = ['A', 'V', 'X', 'Y', 'Z', 'M', 'N', 'K', 'i', 'l', 'j', '7'];
     let units = face.units_per_em().max(1) as f64;
     let scale = 1.0 / units;
     let mut samples = 0usize;
@@ -647,7 +644,10 @@ mod tests {
             max_x = max_x.max(s.start.x).max(s.end.x);
         }
         let width = max_x - min_x;
-        assert!(width > 5.0 && width < 30.0, "AB at h=10mm: got width {width}");
+        assert!(
+            width > 5.0 && width < 30.0,
+            "AB at h=10mm: got width {width}"
+        );
     }
 
     fn dejavu_layer(text: &str) -> TextLayer {
@@ -729,6 +729,9 @@ mod tests {
             .iter()
             .flat_map(|s| [s.start.y, s.end.y])
             .fold(f64::NEG_INFINITY, f64::max);
-        assert!(max_y > 4.0, "rotated glyph should extend upward (got {max_y})");
+        assert!(
+            max_y > 4.0,
+            "rotated glyph should extend upward (got {max_y})"
+        );
     }
 }

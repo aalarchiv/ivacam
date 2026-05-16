@@ -92,10 +92,7 @@ impl SimDiagnostics {
 
     #[must_use]
     pub fn count(&self, kind: &str) -> usize {
-        self.warnings
-            .iter()
-            .filter(|w| kind_str(w) == kind)
-            .count()
+        self.warnings.iter().filter(|w| kind_str(w) == kind).count()
     }
 
     #[must_use]

@@ -89,7 +89,10 @@ mod tests {
         };
         let tool_radius = 2.0;
         let (cx, cy, _r) = inscribed_circle(&region, tool_radius).expect("should fit");
-        assert!(cy < 16.0, "auto pick should land in the wide arm: cy = {cy}");
+        assert!(
+            cy < 16.0,
+            "auto pick should land in the wide arm: cy = {cy}"
+        );
         assert!(cx >= 0.0 && cx <= 40.0);
     }
 

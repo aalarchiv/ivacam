@@ -9,9 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use dxf::entities::{
-    Arc, Circle, Ellipse, Entity, EntityType, Line, LwPolyline, MLine, MText, ModelPoint,
-    Polyline, Spline,
-    Text, Vertex,
+    Arc, Circle, Ellipse, Entity, EntityType, Line, LwPolyline, MLine, MText, ModelPoint, Polyline,
+    Spline, Text, Vertex,
 };
 use dxf::enums::Units;
 use dxf::Drawing;
@@ -133,10 +132,8 @@ pub fn import_drawing(
 
     // Build a block index for INSERT expansion. Block lookup is by the
     // block's `name` field.
-    let blocks: HashMap<String, &dxf::Block> = drawing
-        .blocks()
-        .map(|b| (b.name.clone(), b))
-        .collect();
+    let blocks: HashMap<String, &dxf::Block> =
+        drawing.blocks().map(|b| (b.name.clone(), b)).collect();
 
     for entity in drawing.entities() {
         // Drop entities living on the CAM-config layer; their MTEXT carries
@@ -290,9 +287,7 @@ impl ImportCtx<'_> {
             }
             EntityType::MLine(m) => self.emit_mline(m, &layer, color, xform),
             EntityType::Text(t) if !self.opts.no_text => self.emit_text(t, &layer, color, xform),
-            EntityType::MText(t) if !self.opts.no_text => {
-                self.emit_mtext(t, &layer, color, xform)
-            }
+            EntityType::MText(t) if !self.opts.no_text => self.emit_mtext(t, &layer, color, xform),
             EntityType::AttributeDefinition(_) => {
                 // Attribute definitions are template-only; ignored.
             }
@@ -472,13 +467,7 @@ impl ImportCtx<'_> {
         }
     }
 
-    fn emit_lwpolyline(
-        &mut self,
-        poly: &LwPolyline,
-        layer: &str,
-        color: i32,
-        xform: &Transform2D,
-    ) {
+    fn emit_lwpolyline(&mut self, poly: &LwPolyline, layer: &str, color: i32, xform: &Transform2D) {
         let n = poly.vertices.len();
         if n < 2 {
             return;
@@ -510,12 +499,7 @@ impl ImportCtx<'_> {
         let closed = poly.is_closed();
         let pts: Vec<(Point2, f64)> = vertices
             .iter()
-            .map(|v| {
-                (
-                    self.scale(xform.apply(v.location.x, v.location.y)),
-                    v.bulge,
-                )
-            })
+            .map(|v| (self.scale(xform.apply(v.location.x, v.location.y)), v.bulge))
             .collect();
         let last = if closed { n } else { n - 1 };
         for i in 0..last {
@@ -572,14 +556,10 @@ impl ImportCtx<'_> {
                 let v1 = &m.vertices[(i + 1) % n];
                 let m0 = &m.miter_directions[i];
                 let m1 = &m.miter_directions[(i + 1) % n];
-                let a = self.scale(xform.apply(
-                    v0.x + sign * half * m0.x,
-                    v0.y + sign * half * m0.y,
-                ));
-                let b = self.scale(xform.apply(
-                    v1.x + sign * half * m1.x,
-                    v1.y + sign * half * m1.y,
-                ));
+                let a =
+                    self.scale(xform.apply(v0.x + sign * half * m0.x, v0.y + sign * half * m0.y));
+                let b =
+                    self.scale(xform.apply(v1.x + sign * half * m1.x, v1.y + sign * half * m1.y));
                 self.push_line(a, b, layer, color);
             }
         }
@@ -665,7 +645,10 @@ fn ellipse_point(center: Point2, major: f64, minor: f64, phi: f64, t: f64) -> Po
     let y = minor * sin_t;
     let cos_p = phi.cos();
     let sin_p = phi.sin();
-    Point2::new(center.x + x * cos_p - y * sin_p, center.y + x * sin_p + y * cos_p)
+    Point2::new(
+        center.x + x * cos_p - y * sin_p,
+        center.y + x * sin_p + y * cos_p,
+    )
 }
 
 fn entity_type_name(t: &EntityType) -> &'static str {

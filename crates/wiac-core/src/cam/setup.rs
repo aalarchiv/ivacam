@@ -245,7 +245,10 @@ pub struct TabsConfig {
     /// horizontal length of each ramp into / out of a tab is
     /// `tabs.height / tan(ramp_angle_deg)`. 30° gives a 1:√3 slope.
     /// Ignored for Rectangle tabs.
-    #[serde(default = "default_ramp_angle", skip_serializing_if = "is_default_ramp_angle")]
+    #[serde(
+        default = "default_ramp_angle",
+        skip_serializing_if = "is_default_ramp_angle"
+    )]
     pub ramp_angle_deg: f64,
 }
 
@@ -343,21 +346,30 @@ pub struct MachineConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jerk: Option<AxisLimits>,
     /// Tool-change time in seconds.
-    #[serde(default = "default_toolchange_s", skip_serializing_if = "is_default_toolchange_s")]
+    #[serde(
+        default = "default_toolchange_s",
+        skip_serializing_if = "is_default_toolchange_s"
+    )]
     pub toolchange_s: f64,
     /// Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rapid_speed: Option<f64>,
     /// When true (the default), use the accel/jerk-aware integrator.
     /// Set to false for the legacy length/feed-only estimator.
-    #[serde(default = "default_use_kinematic", skip_serializing_if = "is_default_use_kinematic")]
+    #[serde(
+        default = "default_use_kinematic",
+        skip_serializing_if = "is_default_use_kinematic"
+    )]
     pub use_kinematic_time_estimate: bool,
     /// Machine work area envelope in mm. Drives the stock's auto-mode
     /// fallback when no geometry is imported (the stock then sizes to
     /// the work-area XY footprint), and surfaces as the soft-limit
     /// reference in future sim warnings. Default 200×300×50 — a typical
     /// hobby gantry; users override in MachineDialog.
-    #[serde(default = "default_work_area", skip_serializing_if = "is_default_work_area")]
+    #[serde(
+        default = "default_work_area",
+        skip_serializing_if = "is_default_work_area"
+    )]
     pub work_area: AxisLimits,
     /// Maximum deviation (mm) between the fitted G2/G3 arc and the
     /// original chord polyline. None ⇒ 0.01 mm. Only consulted when
@@ -369,7 +381,10 @@ pub struct MachineConfig {
     /// US locale. `','` covers European-locale Siemens / Heidenhain
     /// controllers that require `X1,5` instead of `X1.5`. Anything
     /// other than '.' / ',' silently falls back to '.'.
-    #[serde(default = "default_decimal_separator_char", skip_serializing_if = "is_default_decimal_separator")]
+    #[serde(
+        default = "default_decimal_separator_char",
+        skip_serializing_if = "is_default_decimal_separator"
+    )]
     pub decimal_separator: char,
     /// Starting line number for `N<n>` prefixes (rt1.36). `None` (the
     /// default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`,

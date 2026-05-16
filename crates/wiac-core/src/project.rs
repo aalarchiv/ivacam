@@ -271,7 +271,10 @@ pub struct ToolEntry {
     pub wirbeln_stepover_mm: Option<f64>,
     /// Spindle warm-up pause in seconds applied once per used tool by
     /// the time estimator. Mirrors `ToolConfig.pause`.
-    #[serde(default = "default_tool_pause", skip_serializing_if = "is_default_tool_pause")]
+    #[serde(
+        default = "default_tool_pause",
+        skip_serializing_if = "is_default_tool_pause"
+    )]
     pub pause: u32,
     /// Length of cutting flutes (mm). None = treat entire tool as cutting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -657,7 +660,9 @@ pub enum PocketStrategy {
     /// depth via `profile`. Right strategy for drainage channels,
     /// decorative grooves, water-stop seals, mortise-prep for
     /// round-bottomed inlays.
-    Halfpipe { profile: HalfpipeProfile },
+    Halfpipe {
+        profile: HalfpipeProfile,
+    },
 }
 
 /// Half-pipe slot cross-section (rt1.19).
@@ -829,9 +834,8 @@ impl<'de> Deserialize<'de> for PocketStrategy {
                     loop_radius_factor: loop_radius_factor.unwrap_or(0.6),
                 }),
                 "halfpipe" => {
-                    let p = profile.ok_or_else(|| {
-                        serde::de::Error::missing_field("profile (for halfpipe)")
-                    })?;
+                    let p = profile
+                        .ok_or_else(|| serde::de::Error::missing_field("profile (for halfpipe)"))?;
                     let profile = match p.kind.as_str() {
                         "circular_arc" => HalfpipeProfile::CircularArc {
                             radius_mm: p.radius_mm.unwrap_or(5.0),
@@ -1262,7 +1266,9 @@ mod tests {
         let op = Operation::default();
         assert!(matches!(
             op.kind,
-            OperationKind::Profile { offset: ToolOffset::Outside }
+            OperationKind::Profile {
+                offset: ToolOffset::Outside
+            }
         ));
         assert!(matches!(op.source, OperationSource::All));
         assert!(op.enabled);
@@ -1301,7 +1307,10 @@ mod tests {
         let mut p = OperationParams::mill_default();
         p.step = None;
         let json = serde_json::to_string(&p).unwrap();
-        assert!(!json.contains("\"step\""), "step=None should be skipped: {json}");
+        assert!(
+            !json.contains("\"step\""),
+            "step=None should be skipped: {json}"
+        );
     }
 
     #[test]
@@ -1309,7 +1318,10 @@ mod tests {
         let mut p = OperationParams::mill_default();
         p.step = Some(-0.5);
         let json = serde_json::to_string(&p).unwrap();
-        assert!(json.contains("\"step\":-0.5"), "step=Some(-0.5) should write bare number: {json}");
+        assert!(
+            json.contains("\"step\":-0.5"),
+            "step=Some(-0.5) should write bare number: {json}"
+        );
     }
 
     #[test]
@@ -1319,7 +1331,10 @@ mod tests {
                 Fixture {
                     id: 1,
                     name: "front clamp".into(),
-                    kind: FixtureKind::Box { width: 30.0, depth: 50.0 },
+                    kind: FixtureKind::Box {
+                        width: 30.0,
+                        depth: 50.0,
+                    },
                     origin: (15.0, -25.0),
                     z_bottom: 0.0,
                     z_top: 12.0,
@@ -1387,7 +1402,10 @@ mod tests {
     fn project_with_no_fixtures_skips_field_on_serialize() {
         let p = Project::default();
         let json = serde_json::to_string(&p).unwrap();
-        assert!(!json.contains("\"fixtures\""), "empty fixtures should be skipped: {json}");
+        assert!(
+            !json.contains("\"fixtures\""),
+            "empty fixtures should be skipped: {json}"
+        );
     }
 
     #[test]
@@ -1399,14 +1417,23 @@ mod tests {
         // so synthesize a minimal wire payload per op and round-trip it.
         let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root = manifest.parent().unwrap().parent().unwrap();
-        for name in ["test.vc-project.json", "Epropulsion_SpiritEvo_Batteriestecker_01.vc-project.json"] {
+        for name in [
+            "test.vc-project.json",
+            "Epropulsion_SpiritEvo_Batteriestecker_01.vc-project.json",
+        ] {
             let path = root.join(name);
             if !path.exists() {
                 continue;
             }
-            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
-            let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
-            let ops = v.get("operations").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+            let text =
+                std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+            let v: serde_json::Value =
+                serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
+            let ops = v
+                .get("operations")
+                .and_then(|x| x.as_array())
+                .cloned()
+                .unwrap_or_default();
             for (i, op) in ops.iter().enumerate() {
                 let step_val = op.get("step").cloned().unwrap_or(serde_json::Value::Null);
                 let wire = serde_json::json!({
@@ -1425,7 +1452,10 @@ mod tests {
     fn holder_round_trip() {
         // Each HolderShape variant survives JSON serialize/deserialize.
         let shapes = vec![
-            HolderShape::Cylinder { diameter_mm: 20.0, length_mm: 30.0 },
+            HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            },
             HolderShape::Cone {
                 bottom_diameter_mm: 25.0,
                 top_diameter_mm: 40.0,
@@ -1447,23 +1477,31 @@ mod tests {
             let back: ToolEntry = serde_json::from_str(&json).expect("deserialize");
             match (s, back.holder.expect("holder survives")) {
                 (
-                    HolderShape::Cylinder { diameter_mm: d0, length_mm: l0 },
-                    HolderShape::Cylinder { diameter_mm: d1, length_mm: l1 },
+                    HolderShape::Cylinder {
+                        diameter_mm: d0,
+                        length_mm: l0,
+                    },
+                    HolderShape::Cylinder {
+                        diameter_mm: d1,
+                        length_mm: l1,
+                    },
                 ) => {
                     assert!((d0 - d1).abs() < 1e-9 && (l0 - l1).abs() < 1e-9);
                 }
                 (
                     HolderShape::Cone {
-                        bottom_diameter_mm: b0, top_diameter_mm: t0, length_mm: l0,
+                        bottom_diameter_mm: b0,
+                        top_diameter_mm: t0,
+                        length_mm: l0,
                     },
                     HolderShape::Cone {
-                        bottom_diameter_mm: b1, top_diameter_mm: t1, length_mm: l1,
+                        bottom_diameter_mm: b1,
+                        top_diameter_mm: t1,
+                        length_mm: l1,
                     },
                 ) => {
                     assert!(
-                        (b0 - b1).abs() < 1e-9
-                            && (t0 - t1).abs() < 1e-9
-                            && (l0 - l1).abs() < 1e-9
+                        (b0 - b1).abs() < 1e-9 && (t0 - t1).abs() < 1e-9 && (l0 - l1).abs() < 1e-9
                     );
                 }
                 (

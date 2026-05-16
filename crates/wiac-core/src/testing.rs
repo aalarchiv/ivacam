@@ -22,7 +22,12 @@ impl Default for DiffOptions {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiffOutcome {
     Equal,
-    Different { line: usize, expected: String, actual: String, reason: String },
+    Different {
+        line: usize,
+        expected: String,
+        actual: String,
+        reason: String,
+    },
 }
 
 /// Compare two gcode programs up to `opts.epsilon` numeric tolerance.

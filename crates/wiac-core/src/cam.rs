@@ -133,7 +133,10 @@ pub fn polygon_centroid(points: &[Point2]) -> Option<Point2> {
         sx += p.x;
         sy += p.y;
     }
-    Some(Point2::new(sx / points.len() as f64, sy / points.len() as f64))
+    Some(Point2::new(
+        sx / points.len() as f64,
+        sy / points.len() as f64,
+    ))
 }
 
 /// Even-odd point-in-polygon test on a closed polyline of `points`.

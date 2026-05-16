@@ -235,9 +235,7 @@ mod tests {
         touch(&path, "0\nSECTION\n");
 
         let (mut watcher, rx) = channel_watcher();
-        watcher
-            .set_paths(vec![path.clone()])
-            .expect("set_paths ok");
+        watcher.set_paths(vec![path.clone()]).expect("set_paths ok");
 
         std::thread::sleep(Duration::from_millis(100));
 
@@ -261,9 +259,7 @@ mod tests {
         touch(&path, "<svg/>");
 
         let (mut watcher, rx) = channel_watcher();
-        watcher
-            .set_paths(vec![path.clone()])
-            .expect("set_paths ok");
+        watcher.set_paths(vec![path.clone()]).expect("set_paths ok");
 
         std::thread::sleep(Duration::from_millis(100));
 

@@ -25,9 +25,8 @@ use crate::cam::VcObject;
 use crate::gcode::PostProcessor;
 use crate::geometry::Point2;
 use crate::pipeline::{
-    cancelled, effective_step, op_includes_object, ordered_selection,
-    push_tool_fit_kind_warnings, source_combine_mode, synthesize_finish_setup, CancelToken,
-    PipelineError, PipelineWarning,
+    cancelled, effective_step, op_includes_object, ordered_selection, push_tool_fit_kind_warnings,
+    source_combine_mode, synthesize_finish_setup, CancelToken, PipelineError, PipelineWarning,
 };
 use crate::project::{Operation, OperationKind, PocketStrategy, Project};
 
@@ -489,4 +488,3 @@ pub(super) fn emit_stufenfase<P: PostProcessor>(
     crate::gcode::emit_vcarve_block(&chamfer_setup, &polylines, post, last_pos);
     Ok(())
 }
-

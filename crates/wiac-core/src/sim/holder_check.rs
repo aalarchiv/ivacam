@@ -24,7 +24,7 @@ use crate::sim::holder::HolderProfile;
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
+    clippy::cast_sign_loss
 )]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HolderCheck {
@@ -254,8 +254,16 @@ mod tests {
 
     fn seg(from: (f64, f64, f64), to: (f64, f64, f64)) -> ToolpathSegment {
         ToolpathSegment {
-            from: Pose3 { x: from.0, y: from.1, z: from.2 },
-            to: Pose3 { x: to.0, y: to.1, z: to.2 },
+            from: Pose3 {
+                x: from.0,
+                y: from.1,
+                z: from.2,
+            },
+            to: Pose3 {
+                x: to.0,
+                y: to.1,
+                z: to.2,
+            },
             kind: MoveKind::Cut,
             gcode_line: 0,
             op_id: 0,
@@ -313,7 +321,10 @@ mod tests {
                     "required clearance must be positive, got {required_clearance_mm}",
                 );
                 // The wall sits at top_z = 0 (uncut), so wall_z is 0.
-                assert!((wall_z - 0.0).abs() < 1e-5, "wall_z expected 0, got {wall_z}");
+                assert!(
+                    (wall_z - 0.0).abs() < 1e-5,
+                    "wall_z expected 0, got {wall_z}"
+                );
             }
             other => panic!("expected Collision, got {other:?}"),
         }

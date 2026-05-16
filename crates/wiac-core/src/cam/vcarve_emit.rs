@@ -149,10 +149,7 @@ mod tests {
     fn single_pass_at_or_above_dpp() {
         // Polyline whose deepest point is shallower than DPP — should
         // cut to the target on the first level and stop.
-        let axis = vec![
-            (0.0, 0.0, -0.5, 0.25),
-            (5.0, 0.0, -0.5, 0.25),
-        ];
+        let axis = vec![(0.0, 0.0, -0.5, 0.25), (5.0, 0.0, -0.5, 0.25)];
         let path = ratchet_emit(&axis, 1.0);
         assert!(!path.is_empty());
         let z_min = path.iter().map(|t| t.2).fold(0.0_f64, f64::min);

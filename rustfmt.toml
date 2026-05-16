@@ -1,0 +1,5 @@
+# Pin the edition so rustfmt's wrap/indent decisions are stable across
+# toolchain bumps. Without this, every minor rustfmt release silently
+# drifts the codebase formatting (qfsz). Mirrors the edition declared
+# in the workspace Cargo.toml.
+edition = "2021"

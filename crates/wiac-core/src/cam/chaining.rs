@@ -60,7 +60,12 @@ pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
             }
             chain.insert(0, s);
         }
-        let closed = chain.first().unwrap().start.distance(chain.last().unwrap().end) < FUZZY;
+        let closed = chain
+            .first()
+            .unwrap()
+            .start
+            .distance(chain.last().unwrap().end)
+            < FUZZY;
         out.push(VcObject::new(chain, closed));
     }
 
@@ -73,7 +78,10 @@ pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
 type EndpointGrid = HashMap<(i64, i64), Vec<usize>>;
 
 fn cell_of(p: Point2) -> (i64, i64) {
-    ((p.x / CELL_SIZE).floor() as i64, (p.y / CELL_SIZE).floor() as i64)
+    (
+        (p.x / CELL_SIZE).floor() as i64,
+        (p.y / CELL_SIZE).floor() as i64,
+    )
 }
 
 fn build_endpoint_index(segments: &[Segment]) -> EndpointGrid {
@@ -125,9 +133,19 @@ pub fn classify_containment(objects: &mut [VcObject]) -> usize {
                 None
             } else {
                 Some(pts.iter().fold(
-                    (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+                    (
+                        f64::INFINITY,
+                        f64::INFINITY,
+                        f64::NEG_INFINITY,
+                        f64::NEG_INFINITY,
+                    ),
                     |(min_x, min_y, max_x, max_y), p| {
-                        (min_x.min(p.x), min_y.min(p.y), max_x.max(p.x), max_y.max(p.y))
+                        (
+                            min_x.min(p.x),
+                            min_y.min(p.y),
+                            max_x.max(p.x),
+                            max_y.max(p.y),
+                        )
                     },
                 ))
             }
@@ -197,8 +215,7 @@ fn find_neighbor(
                 }
                 let seg = &segments[i];
                 let candidate_distance = seg.start.distance(point).min(seg.end.distance(point));
-                if candidate_distance < FUZZY
-                    && best.map_or(true, |(_, d)| candidate_distance < d)
+                if candidate_distance < FUZZY && best.map_or(true, |(_, d)| candidate_distance < d)
                 {
                     best = Some((i, candidate_distance));
                 }
@@ -256,7 +273,10 @@ mod tests {
         assert_eq!(objs.len(), 2);
         assert_eq!(depth, 1, "inner object should have outer_objects = [outer]");
         // Find which is which by closed area.
-        let i_inner = objs.iter().position(|o| !o.outer_objects.is_empty()).unwrap();
+        let i_inner = objs
+            .iter()
+            .position(|o| !o.outer_objects.is_empty())
+            .unwrap();
         assert_eq!(objs[i_inner].outer_objects.len(), 1);
         let i_outer = (i_inner + 1) % 2;
         assert_eq!(objs[i_outer].inner_objects.len(), 1);

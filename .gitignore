@@ -15,6 +15,11 @@ frontend/dist
 frontend/.svelte-kit
 frontend/.vite
 
+# Defensive: catch node_modules / .vite folders that occasionally end
+# up outside frontend/ when pnpm is run from the repo root by mistake.
+/node_modules/
+**/.vite/
+
 # Tauri
 crates/wiac-tauri/target
 crates/wiac-tauri/gen

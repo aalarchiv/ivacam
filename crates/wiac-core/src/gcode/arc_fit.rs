@@ -251,8 +251,16 @@ mod tests {
                 assert_eq!(arcs.len(), 1, "expected a single arc for a quadrant");
                 let a = arcs[0];
                 assert!(a.ccw, "quadrant from +X to +Y is CCW");
-                assert!((a.center.x).abs() < 1e-3, "center.x ≈ 0, got {}", a.center.x);
-                assert!((a.center.y).abs() < 1e-3, "center.y ≈ 0, got {}", a.center.y);
+                assert!(
+                    (a.center.x).abs() < 1e-3,
+                    "center.x ≈ 0, got {}",
+                    a.center.x
+                );
+                assert!(
+                    (a.center.y).abs() < 1e-3,
+                    "center.y ≈ 0, got {}",
+                    a.center.y
+                );
                 assert!((a.end.x).abs() < 1e-3 && (a.end.y - 1.0).abs() < 1e-3);
             }
             FitOutput::Lines(_) => panic!("quadrant should fit, got Lines"),
@@ -271,7 +279,11 @@ mod tests {
         let out = fit_arc_run(&pts, 0.001);
         match out {
             FitOutput::Arcs(arcs) => {
-                assert!(arcs.len() <= 2, "≤ 2 arcs for a semicircle, got {}", arcs.len());
+                assert!(
+                    arcs.len() <= 2,
+                    "≤ 2 arcs for a semicircle, got {}",
+                    arcs.len()
+                );
             }
             FitOutput::Lines(_) => panic!("semicircle should fit"),
         }

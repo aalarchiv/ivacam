@@ -19,10 +19,10 @@ use wiac_core::input::text::{
     render_text_api, render_text_layer_api, RenderTextLayerResponse, RenderTextRequest,
     RenderTextResponse,
 };
-use wiac_core::project::TextLayer;
 use wiac_core::pipeline::{
     generate_streaming, run_pipeline, CancelToken, PipelineEvent, PipelineRequest, PipelineResponse,
 };
+use wiac_core::project::TextLayer;
 use wiac_core::{
     compute_helix_radius, Error as WiacError, HelixRadiusRequest, HelixRadiusResponse,
     ImportOptions, ImportOutput,

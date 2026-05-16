@@ -71,8 +71,7 @@ use crate::gcode::{
 use crate::geometry::{Point2, Segment};
 use crate::pipeline_cache::{op_cache_key_with_finish, OpCacheValue, PipelineCache};
 use crate::project::{
-    Operation, OperationKind, OperationSource, PocketStrategy, Project,
-    SourceCombine, ToolEntry,
+    Operation, OperationKind, OperationSource, PocketStrategy, Project, SourceCombine, ToolEntry,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -765,7 +764,8 @@ where
         if let (Some(c), Some(key)) = (cache, cache_key) {
             let lines = post.out_lines_clone_from(body_marker);
             let body = lines.join("\n");
-            let (toolpath, _idx) = preview::interpret_with_index(&format!("; OP {}\n{body}", op.id));
+            let (toolpath, _idx) =
+                preview::interpret_with_index(&format!("; OP {}\n{body}", op.id));
             c.put(
                 key,
                 OpCacheValue {
@@ -874,8 +874,7 @@ fn build_op_offsets(
     // `tab_placements` drive Manual / Auto / Mixed; Off ⇒ no tabs.
     // Resolves to a (object_idx → Vec<TabPoint>) map the existing
     // attach_tabs_to_offsets consumes verbatim.
-    let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> =
-        build_op_tabs_by_object(op, objects);
+    let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> = build_op_tabs_by_object(op, objects);
 
     // Pattern repetition (5fz): when the op carries a PatternConfig, expand
     // the source set into N transformed clones BEFORE the per-object loops
@@ -906,7 +905,12 @@ fn build_op_offsets(
                         .iter()
                         .map(|t| {
                             let p = apply_pattern_to_point(Point2::new(t.x, t.y), *inst);
-                            TabPoint { x: p.x, y: p.y, width_override_mm: None, height_override_mm: None }
+                            TabPoint {
+                                x: p.x,
+                                y: p.y,
+                                width_override_mm: None,
+                                height_override_mm: None,
+                            }
                         })
                         .collect();
                     expanded_tabs.insert(new_idx, xformed);
@@ -1001,7 +1005,10 @@ fn build_op_offsets(
         if let Some(tool) = project.tools.iter().find(|t| t.id == effective_op.tool_id) {
             if tool.wirbeln {
                 let half_r = (tool.diameter * 0.5) * 0.5;
-                let cap = tool.wirbeln_stepover_mm.filter(|v| *v > 0.0).unwrap_or(half_r);
+                let cap = tool
+                    .wirbeln_stepover_mm
+                    .filter(|v| *v > 0.0)
+                    .unwrap_or(half_r);
                 if cap > 0.0 && cap < xy_step {
                     xy_step = cap;
                 }
@@ -1217,9 +1224,7 @@ fn build_op_offsets(
                 // has no sensible interpretation; the
                 // tool_kind_mismatch warning surfaces the misuse.
                 use crate::geometry::SegmentKind;
-                if obj.segments.len() == 1
-                    && matches!(obj.segments[0].kind, SegmentKind::Point)
-                {
+                if obj.segments.len() == 1 && matches!(obj.segments[0].kind, SegmentKind::Point) {
                     let seg = obj.segments[0].clone();
                     offsets.push(PolylineOffset {
                         segments: vec![seg],
@@ -1316,7 +1321,6 @@ fn build_op_offsets(
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
     Ok((offsets, closed))
 }
-
 
 /// Map a frontend pocket strategy choice onto the offsets-layer
 /// emitter, including the trochoidal-specific climb/conventional and
@@ -1463,7 +1467,6 @@ pub(super) fn synthesize_finish_setup(
     setup.tool.speed = setup.tool.speed_finish;
     Ok(Some(setup))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -2013,9 +2016,10 @@ mod tests {
             |_, _, _| {},
         )
         .unwrap();
-        let warned = resp.warnings.iter().any(|w| {
-            w.kind == "frame_padding_below_tool_radius" && w.op_id == Some(1)
-        });
+        let warned = resp
+            .warnings
+            .iter()
+            .any(|w| w.kind == "frame_padding_below_tool_radius" && w.op_id == Some(1));
         assert!(
             warned,
             "expected frame_padding_below_tool_radius warning, got {:?}",
@@ -2091,8 +2095,7 @@ mod tests {
                     },
                     params: {
                         let mut p = OperationParams::mill_default();
-                        p.frame_shape =
-                            Some(crate::cam::source_combine::FrameShape::Rectangle);
+                        p.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
                         p.frame_padding_mm = Some(10.0);
                         p
                     },
@@ -2123,14 +2126,12 @@ mod tests {
         // Cuts should cover BOTH the inside (pocket op) and the
         // padding ring (pocket-outside).
         let inside_cuts = cuts.iter().any(|s| {
-            let deep_inside =
-                |x: f64, y: f64| (5.0..45.0).contains(&x) && (5.0..45.0).contains(&y);
+            let deep_inside = |x: f64, y: f64| (5.0..45.0).contains(&x) && (5.0..45.0).contains(&y);
             deep_inside(s.from.x, s.from.y) && deep_inside(s.to.x, s.to.y)
         });
         let outside_cuts = cuts.iter().any(|s| {
-            let in_padding = |x: f64, y: f64| {
-                !((0.0..=50.0).contains(&x) && (0.0..=50.0).contains(&y))
-            };
+            let in_padding =
+                |x: f64, y: f64| !((0.0..=50.0).contains(&x) && (0.0..=50.0).contains(&y));
             in_padding(s.from.x, s.from.y) || in_padding(s.to.x, s.to.y)
         });
         assert!(inside_cuts, "first pocket should cut inside the square");
@@ -2140,16 +2141,8 @@ mod tests {
         );
         // The regions preview must also distinguish them: one region
         // per op_id, with op 1 inside and op 2 in the ring.
-        let op1_regions = resp
-            .regions
-            .iter()
-            .filter(|r| r.op_id == 1)
-            .count();
-        let op2_regions = resp
-            .regions
-            .iter()
-            .filter(|r| r.op_id == 2)
-            .count();
+        let op1_regions = resp.regions.iter().filter(|r| r.op_id == 1).count();
+        let op2_regions = resp.regions.iter().filter(|r| r.op_id == 2).count();
         assert!(
             op1_regions >= 1,
             "op 1 should have a fill region in the preview (got {op1_regions})",
@@ -2759,7 +2752,8 @@ mod tests {
             .toolpath
             .iter()
             .filter(|s| {
-                s.op_id == 1 && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                s.op_id == 1
+                    && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
                     && s.to.z <= s.from.z
                     && s.from.z > -0.999
             })
@@ -2769,7 +2763,10 @@ mod tests {
             "auto-fit roomy pocket should emit helix arcs; got {arc_count}",
         );
         assert!(
-            !resp.warnings.iter().any(|w| w.kind == "helix_radius_unfittable"),
+            !resp
+                .warnings
+                .iter()
+                .any(|w| w.kind == "helix_radius_unfittable"),
             "no unfit warning expected: {:?}",
             resp.warnings,
         );
@@ -4013,10 +4010,28 @@ mod tests {
         ];
         let obj = VcObject::new(segs, true);
         let tool_radius = 1.5;
-        let no_allow =
-            pocket_for_object(&obj, tool_radius, false, 6, PocketEmit::Cascade, &[], 1.5, 0.0, None);
-        let with_allow =
-            pocket_for_object(&obj, tool_radius, false, 6, PocketEmit::Cascade, &[], 1.5, 0.5, None);
+        let no_allow = pocket_for_object(
+            &obj,
+            tool_radius,
+            false,
+            6,
+            PocketEmit::Cascade,
+            &[],
+            1.5,
+            0.0,
+            None,
+        );
+        let with_allow = pocket_for_object(
+            &obj,
+            tool_radius,
+            false,
+            6,
+            PocketEmit::Cascade,
+            &[],
+            1.5,
+            0.5,
+            None,
+        );
         // With allowance we expect exactly one MORE level-0 ring:
         // the rough boundary (is_finish=false) + the finish boundary
         // (is_finish=true). Without allowance there's a single
@@ -4027,8 +4042,14 @@ mod tests {
         assert_eq!(finish_count_with, 1);
         // The extra rough boundary in `with_allow` is a non-finish
         // level-0 ring that doesn't exist in `no_allow`.
-        let rough_level0_no = no_allow.iter().filter(|o| o.level == 0 && !o.is_finish).count();
-        let rough_level0_with = with_allow.iter().filter(|o| o.level == 0 && !o.is_finish).count();
+        let rough_level0_no = no_allow
+            .iter()
+            .filter(|o| o.level == 0 && !o.is_finish)
+            .count();
+        let rough_level0_with = with_allow
+            .iter()
+            .filter(|o| o.level == 0 && !o.is_finish)
+            .count();
         assert_eq!(rough_level0_no, 0);
         assert_eq!(rough_level0_with, 1);
         assert_eq!(with_allow.len(), no_allow.len() + 1);
@@ -4315,7 +4336,9 @@ mod tests {
             resp.gcode
         );
         assert!(
-            z_lines.iter().any(|l| l.contains("Z2.") || l.contains("Z3.") || l.contains("Z5.")),
+            z_lines
+                .iter()
+                .any(|l| l.contains("Z2.") || l.contains("Z3.") || l.contains("Z5.")),
             "expected at least one positive Z move after scale=-1 flip:\n{}",
             z_lines.join("\n")
         );
@@ -4326,16 +4349,19 @@ mod tests {
             resp.gcode
         );
         assert!(
-            !resp.gcode.lines().any(|l| {
-                (l.starts_with("G0") || l.starts_with("G1")) && l.contains(" Y")
-            }),
+            !resp
+                .gcode
+                .lines()
+                .any(|l| { (l.starts_with("G0") || l.starts_with("G1")) && l.contains(" Y") }),
             "Y should no longer be emitted on G0/G1:\n{}",
             resp.gcode
         );
         // Profile op walks a closed square — no arcs => no I/J in the
         // baseline. But the F line should use two decimals now.
         assert!(
-            resp.gcode.lines().any(|l| l.starts_with('F') && l.contains('.')),
+            resp.gcode
+                .lines()
+                .any(|l| l.starts_with('F') && l.contains('.')),
             "feed line should now carry decimals from %.2f:\n{}",
             resp.gcode
         );
@@ -4375,9 +4401,7 @@ mod tests {
         let bad: Vec<&str> = resp
             .gcode
             .lines()
-            .filter(|l| {
-                (l.starts_with("G0 ") || l.starts_with("G1 ")) && l.contains('Z')
-            })
+            .filter(|l| (l.starts_with("G0 ") || l.starts_with("G1 ")) && l.contains('Z'))
             .collect();
         assert!(
             bad.is_empty(),
@@ -4551,9 +4575,7 @@ mod tests {
                 enabled: true,
                 kind: OperationKind::Pocket {
                     strategy: crate::project::PocketStrategy::Halfpipe {
-                        profile: crate::project::HalfpipeProfile::CircularArc {
-                            radius_mm: 5.0,
-                        },
+                        profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 5.0 },
                     },
                 },
                 tool_id: 1,
@@ -4608,7 +4630,9 @@ mod tests {
                 profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 5.0 },
             },
             crate::project::PocketStrategy::Halfpipe {
-                profile: crate::project::HalfpipeProfile::VBottom { included_angle_deg: 60.0 },
+                profile: crate::project::HalfpipeProfile::VBottom {
+                    included_angle_deg: 60.0,
+                },
             },
         ];
         for case in cases {
@@ -4705,8 +4729,16 @@ mod tests {
             );
         }
         // And the intermediate descent values must NOT appear.
-        assert!(!z_values.contains("-1"), "Z=-1 leaked through plot mode:\n{}", resp.gcode);
-        assert!(!z_values.contains("-2"), "Z=-2 leaked through plot mode:\n{}", resp.gcode);
+        assert!(
+            !z_values.contains("-1"),
+            "Z=-1 leaked through plot mode:\n{}",
+            resp.gcode
+        );
+        assert!(
+            !z_values.contains("-2"),
+            "Z=-2 leaked through plot mode:\n{}",
+            resp.gcode
+        );
     }
 
     /// Approach point (rt1.26): when set on a Pocket op, each closed
@@ -4917,7 +4949,9 @@ mod tests {
         // Drill cycle present (G81 / G82) AND a chamfer revolution
         // shows up at Z-1 (width / tan(45°) = 1.0).
         assert!(
-            resp.gcode.lines().any(|l| l.starts_with("G81") || l.starts_with("G82")),
+            resp.gcode
+                .lines()
+                .any(|l| l.starts_with("G81") || l.starts_with("G82")),
             "expected drill cycle (G81/G82):\n{}",
             resp.gcode
         );
@@ -5147,7 +5181,9 @@ mod tests {
         // At least one coordinate with a fractional part survives in
         // the gcode (e.g. `X-1,5` from offsetting the 20-mm box).
         assert!(
-            resp.gcode.lines().any(|l| l.contains(',') && (l.starts_with("G0") || l.starts_with("G1"))),
+            resp.gcode
+                .lines()
+                .any(|l| l.contains(',') && (l.starts_with("G0") || l.starts_with("G1"))),
             "expected at least one comma-decimal in a coordinate line:\n{}",
             resp.gcode
         );
@@ -5365,7 +5401,10 @@ mod tests {
             |_, _, _| {},
         )
         .unwrap();
-        assert!(resp.warnings.iter().any(|w| w.kind == "thread_tool_too_large"));
+        assert!(resp
+            .warnings
+            .iter()
+            .any(|w| w.kind == "thread_tool_too_large"));
     }
 
     /// Chamfer op (rt1.18): walks the source contour at constant Z,
@@ -5918,13 +5957,21 @@ mod tests {
                     }
                 }
                 1 => {
-                    if l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y') {
+                    if l.starts_with("G1 ")
+                        && l.contains('Z')
+                        && !l.contains('X')
+                        && !l.contains('Y')
+                    {
                         // G1 Z0 (or G1 Z<surface>) — plunge to z=0.
                         state = 2;
                     }
                 }
                 2 => {
-                    if l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y') {
+                    if l.starts_with("G1 ")
+                        && l.contains('Z')
+                        && !l.contains('X')
+                        && !l.contains('Y')
+                    {
                         // Pure-Z plunge to cut depth. State→3.
                         state = 3;
                         continue;
@@ -6105,9 +6152,12 @@ mod tests {
             resp.gcode,
         );
         // And there must be a first cut motion after the cut plunge.
-        assert!(first_cut.is_some(), "expected a first cut motion\n{}", resp.gcode);
+        assert!(
+            first_cut.is_some(),
+            "expected a first cut motion\n{}",
+            resp.gcode
+        );
     }
-
 
     /// PocketStrategy::Spiral now emits ONE continuous open polyline
     /// instead of N concentric closed rings. Verified by counting
@@ -6165,8 +6215,14 @@ mod tests {
         .gcode;
         let cascade_blocks = count_pocket_blocks(&cascade_gcode);
         let spiral_blocks = count_pocket_blocks(&spiral_gcode);
-        assert!(cascade_blocks > 1, "cascade should emit many ring blocks, got {cascade_blocks}");
-        assert_eq!(spiral_blocks, 1, "spiral should emit exactly one continuous block, got {spiral_blocks}");
+        assert!(
+            cascade_blocks > 1,
+            "cascade should emit many ring blocks, got {cascade_blocks}"
+        );
+        assert_eq!(
+            spiral_blocks, 1,
+            "spiral should emit exactly one continuous block, got {spiral_blocks}"
+        );
     }
 
     /// w91: in a non-convex pocket the straight bridge between cascade
@@ -6352,9 +6408,7 @@ mod tests {
             .rev()
             .map(|s| Segment::line(s.end, s.start, &s.layer, s.color))
             .collect();
-        for (winding_label, segments) in
-            [("CCW", &ccw_segments), ("CW", &cw_segments)].iter()
-        {
+        for (winding_label, segments) in [("CCW", &ccw_segments), ("CW", &cw_segments)].iter() {
             let mk = |offset: ToolOffset| Project {
                 segments: (*segments).clone(),
                 machine: Default::default(),
@@ -6549,7 +6603,11 @@ mod tests {
         let req: PipelineRequest = serde_json::from_value(raw).expect("wire JSON deserialization");
         // op.offset deserialized as ToolOffset::Outside?
         if let OperationKind::Profile { offset } = req.project.operations[0].kind {
-            assert_eq!(offset, ToolOffset::Outside, "wire 'outside' string didn't deserialize to ToolOffset::Outside");
+            assert_eq!(
+                offset,
+                ToolOffset::Outside,
+                "wire 'outside' string didn't deserialize to ToolOffset::Outside"
+            );
         } else {
             panic!("not a profile op");
         }
@@ -6817,8 +6875,7 @@ mod tests {
         assert!(
             resp.warnings
                 .iter()
-                .any(|w| w.kind == "tabs_with_trochoidal_unsupported"
-                    && w.op_id == Some(7)),
+                .any(|w| w.kind == "tabs_with_trochoidal_unsupported" && w.op_id == Some(7)),
             "expected tabs_with_trochoidal_unsupported, got {:?}",
             resp.warnings
         );
@@ -7176,8 +7233,16 @@ mod tests {
                 PipelineEvent::OpProgress { .. } => {}
             }
         }
-        assert_eq!(started, vec![1, 2, 3], "OpStarted fires once per op in order");
-        assert_eq!(completed, vec![1, 2, 3], "OpCompleted fires once per op in order");
+        assert_eq!(
+            started,
+            vec![1, 2, 3],
+            "OpStarted fires once per op in order"
+        );
+        assert_eq!(
+            completed,
+            vec![1, 2, 3],
+            "OpCompleted fires once per op in order"
+        );
         assert_eq!(done_count, 1, "exactly one Done event at the end");
         assert!(!resp.gcode.is_empty());
     }
@@ -7204,7 +7269,10 @@ mod tests {
         )
         .expect("streaming pipeline ran");
         match last {
-            Some(PipelineEvent::Done { total_time_s, op_count }) => {
+            Some(PipelineEvent::Done {
+                total_time_s,
+                op_count,
+            }) => {
                 assert!((total_time_s - resp.time_estimate.total_s).abs() < 1e-9);
                 assert_eq!(op_count, resp.stats.offset_count);
             }
@@ -7230,12 +7298,7 @@ mod tests {
                     "0",
                     7,
                 ),
-                Segment::line(
-                    Point2::new(10.0, 17.320_508),
-                    Point2::new(0.0, 0.0),
-                    "0",
-                    7,
-                ),
+                Segment::line(Point2::new(10.0, 17.320_508), Point2::new(0.0, 0.0), "0", 7),
             ],
             machine: Default::default(),
             tools: vec![vbit()],
@@ -7287,8 +7350,7 @@ mod tests {
         );
         let evs = events.lock().unwrap();
         assert!(
-            evs.iter()
-                .any(|e| matches!(e, PipelineEvent::Cancelled)),
+            evs.iter().any(|e| matches!(e, PipelineEvent::Cancelled)),
             "expected a Cancelled event in stream, got {evs:?}"
         );
         assert!(

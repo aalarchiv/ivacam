@@ -144,10 +144,7 @@ impl HolderProfile {
     /// bound for the per-cell collision sweep.
     #[must_use]
     pub fn max_radius(&self) -> f64 {
-        self.points
-            .iter()
-            .map(|p| p.1)
-            .fold(0.0_f64, f64::max)
+        self.points.iter().map(|p| p.1).fold(0.0_f64, f64::max)
     }
 
     /// Total length of the envelope (tip → top of holder).

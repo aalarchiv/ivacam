@@ -112,12 +112,7 @@ fn cmd_generate(args: impl Iterator<Item = String>) -> Result<()> {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--post" => post_kind = iter.next().context("--post needs a value")?,
-            "--diameter" => {
-                diameter = iter
-                    .next()
-                    .context("--diameter needs a value")?
-                    .parse()?
-            }
+            "--diameter" => diameter = iter.next().context("--diameter needs a value")?.parse()?,
             "--depth" => depth = iter.next().context("--depth needs a value")?.parse()?,
             "--step" => step = iter.next().context("--step needs a value")?.parse()?,
             "--inside" => tool_offset = ToolOffset::Inside,
@@ -194,7 +189,17 @@ fn build_offsets(
         }
         let pocket = obj.setup.pockets.active && obj.closed;
         if pocket {
-            for mut o in pocket_for_object(obj, radius, false, 6, PocketEmit::Cascade, &[], radius, 0.0, None) {
+            for mut o in pocket_for_object(
+                obj,
+                radius,
+                false,
+                6,
+                PocketEmit::Cascade,
+                &[],
+                radius,
+                0.0,
+                None,
+            ) {
                 o.source_object_idx = idx;
                 offsets.push(o);
             }

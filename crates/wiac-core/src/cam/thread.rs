@@ -151,7 +151,10 @@ mod tests {
     fn climb_false_winds_clockwise() {
         let wps = helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, false, 64);
         let (_, y1, _) = wps[1];
-        assert!(y1 < 0.0, "CW direction must put second point in -Y; got y={y1}");
+        assert!(
+            y1 < 0.0,
+            "CW direction must put second point in -Y; got y={y1}"
+        );
     }
 
     /// climb=true walks CCW (positive Δθ); the second waypoint sits
@@ -160,7 +163,10 @@ mod tests {
     fn climb_true_winds_counterclockwise() {
         let wps = helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, 64);
         let (_, y1, _) = wps[1];
-        assert!(y1 > 0.0, "CCW direction must put second point in +Y; got y={y1}");
+        assert!(
+            y1 > 0.0,
+            "CCW direction must put second point in +Y; got y={y1}"
+        );
     }
 
     /// Multi-revolution descent (Z range = 4 mm, pitch = 1 mm) covers

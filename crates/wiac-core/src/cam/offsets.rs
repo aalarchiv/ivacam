@@ -78,7 +78,9 @@ impl TabPoint {
     /// Effective lift over this tab (mm). Per-tab override wins.
     #[must_use]
     pub fn lift(&self, fallback_mm: f64) -> f64 {
-        self.height_override_mm.filter(|v| *v > 0.0).unwrap_or(fallback_mm)
+        self.height_override_mm
+            .filter(|v| *v > 0.0)
+            .unwrap_or(fallback_mm)
     }
 }
 
@@ -104,11 +106,7 @@ pub fn attach_tabs_to_offsets(
     }
 }
 
-fn snap_to_offset(
-    offset: &PolylineOffset,
-    tab: TabPoint,
-    max_distance: f64,
-) -> Option<TabPoint> {
+fn snap_to_offset(offset: &PolylineOffset, tab: TabPoint, max_distance: f64) -> Option<TabPoint> {
     let mut best: Option<(TabPoint, f64)> = None;
     for seg in &offset.segments {
         let p = closest_point_on_segment(seg, tab);
@@ -191,7 +189,11 @@ pub fn object_signed_area(obj: &VcObject) -> f64 {
 /// winding so a CW input doesn't flip the meaning.
 pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
     let mag = distance.abs();
-    let delta = if object_signed_area(obj) >= 0.0 { mag } else { -mag };
+    let delta = if object_signed_area(obj) >= 0.0 {
+        mag
+    } else {
+        -mag
+    };
     parallel_offset_object(obj, delta)
 }
 
@@ -199,7 +201,11 @@ pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffs
 /// parallel_offset_inward.
 pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
     let mag = distance.abs();
-    let delta = if object_signed_area(obj) >= 0.0 { -mag } else { mag };
+    let delta = if object_signed_area(obj) >= 0.0 {
+        -mag
+    } else {
+        mag
+    };
     parallel_offset_object(obj, delta)
 }
 
@@ -376,7 +382,15 @@ pub fn pocket_cascade_with_islands(
         // clipper2-rust args: (paths, delta, jt, et, miter_limit, precision, arc_tol).
         // precision = 4 → 1e-4 mm internal grid (sub-micrometer). arc_tol is
         // the chord error for round joins, in input units.
-        let next = inflate_paths_d(&current, -delta, JoinType::Round, EndType::Polygon, 2.0, 4, 0.25);
+        let next = inflate_paths_d(
+            &current,
+            -delta,
+            JoinType::Round,
+            EndType::Polygon,
+            2.0,
+            4,
+            0.25,
+        );
         if next.is_empty() || next.iter().all(|r| r.len() < 3) {
             break;
         }
@@ -405,10 +419,7 @@ fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> PathsD {
         r.reverse();
         r
     };
-    let outer_path: PathD = outer
-        .iter()
-        .map(|p| ClipperPoint::new(p.x, p.y))
-        .collect();
+    let outer_path: PathD = outer.iter().map(|p| ClipperPoint::new(p.x, p.y)).collect();
     all.push(outer_path);
     for island in islands {
         if island.len() < 3 {
@@ -421,10 +432,7 @@ fn build_paths(boundary: &[Point2], islands: &[Vec<Point2>]) -> PathsD {
             r.reverse();
             r
         };
-        let hole_path: PathD = hole
-            .iter()
-            .map(|p| ClipperPoint::new(p.x, p.y))
-            .collect();
+        let hole_path: PathD = hole.iter().map(|p| ClipperPoint::new(p.x, p.y)).collect();
         all.push(hole_path);
     }
     all
@@ -575,7 +583,9 @@ pub fn apply_cut_direction(
     let finish = op.params.finish_cut_direction;
     let context_for = |offset: &PolylineOffset| -> CutContext {
         match op.kind {
-            OperationKind::Profile { offset: tool_offset } => match tool_offset {
+            OperationKind::Profile {
+                offset: tool_offset,
+            } => match tool_offset {
                 ToolOffset::Outside => CutContext::Outer,
                 ToolOffset::Inside => CutContext::Inner,
                 ToolOffset::None | ToolOffset::On => CutContext::Skip,
@@ -859,11 +869,7 @@ pub fn pocket_for_object(
 /// boundary — happens on non-convex shapes (L / U / +) where a
 /// straight bridge can leave the safe interior. The caller should fall
 /// back to cascade emission (separate closed rings, no bridges).
-fn stitch_rings_to_spiral(
-    rings: &[Vec<Point2>],
-    layer: &str,
-    color: i32,
-) -> Option<Vec<Segment>> {
+fn stitch_rings_to_spiral(rings: &[Vec<Point2>], layer: &str, color: i32) -> Option<Vec<Segment>> {
     let pts = stitch_rings_to_polyline(rings)?;
     let mut out: Vec<Segment> = Vec::with_capacity(pts.len().saturating_sub(1));
     for w in pts.windows(2) {
@@ -1048,10 +1054,7 @@ pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOf
     if !obj.closed || obj.segments.is_empty() {
         return None;
     }
-    let kinds_circle_only = obj
-        .segments
-        .iter()
-        .all(|s| s.kind == SegmentKind::Circle);
+    let kinds_circle_only = obj.segments.iter().all(|s| s.kind == SegmentKind::Circle);
     if !kinds_circle_only {
         return None;
     }
@@ -1108,22 +1111,14 @@ pub fn apply_overcut_to_offsets(
 /// outward bisector and stop at the first boundary endpoint that lies on the
 /// ray. The dip length is `dist_to_boundary - tool_radius`; the inserted
 /// vertex pattern is `corner, dip, corner` so the cutter swings out and back.
-pub fn apply_overcut(
-    offset: &mut PolylineOffset,
-    boundary_segments: &[Segment],
-    tool_radius: f64,
-) {
+pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment], tool_radius: f64) {
     use std::f64::consts::FRAC_PI_4;
     if !offset.closed || offset.segments.len() < 3 {
         return;
     }
     let r_abs = tool_radius.abs();
     let n = offset.segments.len();
-    let pts: Vec<(Point2, f64)> = offset
-        .segments
-        .iter()
-        .map(|s| (s.start, s.bulge))
-        .collect();
+    let pts: Vec<(Point2, f64)> = offset.segments.iter().map(|s| (s.start, s.bulge)).collect();
 
     let mut emitted: Vec<(f64, f64, f64)> = Vec::with_capacity(n * 2);
 
@@ -1270,8 +1265,12 @@ mod tests {
         let obj = closed_square(20.0);
         let offsets = parallel_offset_object(&obj, 2.0);
         assert!(!offsets.is_empty());
-        let (mut minx, mut maxx, mut miny, mut maxy) =
-            (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+        let (mut minx, mut maxx, mut miny, mut maxy) = (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        );
         for s in &offsets[0].segments {
             minx = minx.min(s.start.x).min(s.end.x);
             maxx = maxx.max(s.start.x).max(s.end.x);
@@ -1312,13 +1311,20 @@ mod tests {
             color: 7,
         };
         let obj = VcObject::new(vec![half1, half2], true);
-        let offsets = pocket_for_object(&obj, 1.5, false, 6, PocketEmit::Cascade, &[], 1.5, 0.0, None);
+        let offsets = pocket_for_object(
+            &obj,
+            1.5,
+            false,
+            6,
+            PocketEmit::Cascade,
+            &[],
+            1.5,
+            0.0,
+            None,
+        );
         assert_eq!(offsets.len(), 1);
         assert_eq!(offsets[0].segments.len(), 1);
-        assert!(matches!(
-            offsets[0].segments[0].kind,
-            SegmentKind::Point
-        ));
+        assert!(matches!(offsets[0].segments[0].kind, SegmentKind::Point));
         assert!(offsets[0].segments[0].start.distance(center) < 1e-9);
     }
 
@@ -1416,8 +1422,14 @@ mod tests {
         // All inserted vertices stay in the data-space bbox of the original.
         for s in &offset.segments {
             for pt in [s.start, s.end] {
-                assert!(pt.x >= -0.01 && pt.x <= 20.01, "overcut vertex out of bbox: {pt:?}");
-                assert!(pt.y >= -0.01 && pt.y <= 20.01, "overcut vertex out of bbox: {pt:?}");
+                assert!(
+                    pt.x >= -0.01 && pt.x <= 20.01,
+                    "overcut vertex out of bbox: {pt:?}"
+                );
+                assert!(
+                    pt.y >= -0.01 && pt.y <= 20.01,
+                    "overcut vertex out of bbox: {pt:?}"
+                );
             }
         }
     }
@@ -1426,7 +1438,11 @@ mod tests {
     fn pocket_cascade_produces_inward_rings() {
         let boundary = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];
         let rings = pocket_cascade(&boundary, 2.0);
-        assert!(rings.len() >= 4, "expect at least 4 rings, got {}", rings.len());
+        assert!(
+            rings.len() >= 4,
+            "expect at least 4 rings, got {}",
+            rings.len()
+        );
         // Each ring is contained in the previous (smaller bbox).
         let mut prev_area = f64::INFINITY;
         for ring in &rings {
@@ -1465,7 +1481,11 @@ mod tests {
         let mut o = sample_offset_ccw();
         let before_area = offset_signed_area(&o);
         assert!(before_area > 0.0);
-        enforce_winding(&mut o, CutContext::Inner, crate::project::CutDirection::Conventional);
+        enforce_winding(
+            &mut o,
+            CutContext::Inner,
+            crate::project::CutDirection::Conventional,
+        );
         // Inner + Conventional → CCW. CCW-input stays CCW.
         assert!(offset_signed_area(&o) > 0.0);
     }
@@ -1473,21 +1493,33 @@ mod tests {
     #[test]
     fn enforce_winding_inner_climb_flips_to_cw() {
         let mut o = sample_offset_ccw();
-        enforce_winding(&mut o, CutContext::Inner, crate::project::CutDirection::Climb);
+        enforce_winding(
+            &mut o,
+            CutContext::Inner,
+            crate::project::CutDirection::Climb,
+        );
         assert!(offset_signed_area(&o) < 0.0);
     }
 
     #[test]
     fn enforce_winding_outer_conventional_flips_to_cw() {
         let mut o = sample_offset_ccw();
-        enforce_winding(&mut o, CutContext::Outer, crate::project::CutDirection::Conventional);
+        enforce_winding(
+            &mut o,
+            CutContext::Outer,
+            crate::project::CutDirection::Conventional,
+        );
         assert!(offset_signed_area(&o) < 0.0);
     }
 
     #[test]
     fn enforce_winding_outer_climb_keeps_ccw() {
         let mut o = sample_offset_ccw();
-        enforce_winding(&mut o, CutContext::Outer, crate::project::CutDirection::Climb);
+        enforce_winding(
+            &mut o,
+            CutContext::Outer,
+            crate::project::CutDirection::Climb,
+        );
         assert!(offset_signed_area(&o) > 0.0);
     }
 
@@ -1495,7 +1527,11 @@ mod tests {
     fn enforce_winding_skip_leaves_offset_alone() {
         let mut o = sample_offset_ccw();
         let before: Vec<_> = o.segments.iter().map(|s| (s.start, s.end)).collect();
-        enforce_winding(&mut o, CutContext::Skip, crate::project::CutDirection::Conventional);
+        enforce_winding(
+            &mut o,
+            CutContext::Skip,
+            crate::project::CutDirection::Conventional,
+        );
         let after: Vec<_> = o.segments.iter().map(|s| (s.start, s.end)).collect();
         assert_eq!(before, after);
     }

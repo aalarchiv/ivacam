@@ -436,7 +436,10 @@ mod tests {
 
     #[test]
     fn auto_emits_outer_with_inner_as_hole() {
-        let objs = build_objects(vec![closed_box(50.0, 0.0, 0.0), closed_box(20.0, 15.0, 15.0)]);
+        let objs = build_objects(vec![
+            closed_box(50.0, 0.0, 0.0),
+            closed_box(20.0, 15.0, 15.0),
+        ]);
         let selected: Vec<usize> = (0..objs.len()).collect();
         let regions = combine_source_regions(&objs, &selected, SourceCombine::Auto);
         assert_eq!(regions.len(), 1, "expected one annulus region");
@@ -445,7 +448,10 @@ mod tests {
 
     #[test]
     fn none_emits_one_region_per_selected_object() {
-        let objs = build_objects(vec![closed_box(50.0, 0.0, 0.0), closed_box(20.0, 15.0, 15.0)]);
+        let objs = build_objects(vec![
+            closed_box(50.0, 0.0, 0.0),
+            closed_box(20.0, 15.0, 15.0),
+        ]);
         let selected: Vec<usize> = (0..objs.len()).collect();
         let regions = combine_source_regions(&objs, &selected, SourceCombine::None);
         assert_eq!(regions.len(), 2);
@@ -455,7 +461,10 @@ mod tests {
     #[test]
     fn union_of_overlapping_squares_yields_one_region() {
         // Two 30x30 squares overlapping by 10x10 in the middle.
-        let objs = build_objects(vec![closed_box(30.0, 0.0, 0.0), closed_box(30.0, 20.0, 0.0)]);
+        let objs = build_objects(vec![
+            closed_box(30.0, 0.0, 0.0),
+            closed_box(30.0, 20.0, 0.0),
+        ]);
         let selected: Vec<usize> = (0..objs.len()).collect();
         let regions = combine_source_regions(&objs, &selected, SourceCombine::Union);
         assert_eq!(regions.len(), 1);
@@ -469,7 +478,10 @@ mod tests {
 
     #[test]
     fn difference_carves_inner_out_of_outer() {
-        let objs = build_objects(vec![closed_box(50.0, 0.0, 0.0), closed_box(20.0, 15.0, 15.0)]);
+        let objs = build_objects(vec![
+            closed_box(50.0, 0.0, 0.0),
+            closed_box(20.0, 15.0, 15.0),
+        ]);
         // Difference: first - rest. inner_box index is 1, outer is 0
         // (chaining order). Pick outer as first.
         let regions = combine_source_regions(&objs, &[0, 1], SourceCombine::Difference);
@@ -551,7 +563,10 @@ mod tests {
 
     #[test]
     fn intersection_of_overlapping_squares_yields_overlap_region() {
-        let objs = build_objects(vec![closed_box(30.0, 0.0, 0.0), closed_box(30.0, 20.0, 0.0)]);
+        let objs = build_objects(vec![
+            closed_box(30.0, 0.0, 0.0),
+            closed_box(30.0, 20.0, 0.0),
+        ]);
         let selected: Vec<usize> = (0..objs.len()).collect();
         let regions = combine_source_regions(&objs, &selected, SourceCombine::Intersection);
         assert_eq!(regions.len(), 1);

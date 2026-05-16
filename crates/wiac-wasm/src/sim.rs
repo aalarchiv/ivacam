@@ -60,14 +60,7 @@ impl Simulator {
     /// cell starts at `top_z` (i.e. the un-cut stock surface).
     #[wasm_bindgen(constructor)]
     #[must_use]
-    pub fn new(
-        min_x: f64,
-        min_y: f64,
-        max_x: f64,
-        max_y: f64,
-        cell_size: f64,
-        top_z: f32,
-    ) -> Self {
+    pub fn new(min_x: f64, min_y: f64, max_x: f64, max_y: f64, cell_size: f64, top_z: f32) -> Self {
         Self {
             heightmap: Heightmap::from_bbox(min_x, min_y, max_x, max_y, cell_size, top_z),
             last_diagnostics: SimDiagnostics::new(),
@@ -342,7 +335,10 @@ mod tests {
         // Cell directly under the plunge sits at the plunge depth.
         let hm = sim.heightmap();
         let center = hm.data[(20 * hm.cols + 20) as usize];
-        assert!((center - -1.0).abs() < 1e-5, "plunge center expected -1, got {center}");
+        assert!(
+            (center - -1.0).abs() < 1e-5,
+            "plunge center expected -1, got {center}"
+        );
         // At least one cell is below top_z.
         assert!(hm.data.iter().any(|&z| z < hm.top_z));
     }
@@ -366,21 +362,35 @@ mod tests {
         let _ = sim.advance_inner(&first, &tool, 0, 1);
         let aabb = sim.advance_inner(&second, &tool, 0, 1);
         // Should report only the second plunge's region, not the union.
-        assert!(aabb[0] >= 28 && aabb[2] <= 32, "second-plunge AABB drifted: {aabb:?}");
+        assert!(
+            aabb[0] >= 28 && aabb[2] <= 32,
+            "second-plunge AABB drifted: {aabb:?}"
+        );
     }
 
     #[test]
     fn advance_with_no_cuts_returns_empty_aabb() {
         let mut sim = Simulator::new(0.0, 0.0, 20.0, 20.0, 1.0, 0.0);
         let rapid = vec![ToolpathSegment {
-            from: Pose3 { x: 0.0, y: 0.0, z: 5.0 },
-            to: Pose3 { x: 10.0, y: 10.0, z: 5.0 },
+            from: Pose3 {
+                x: 0.0,
+                y: 0.0,
+                z: 5.0,
+            },
+            to: Pose3 {
+                x: 10.0,
+                y: 10.0,
+                z: 5.0,
+            },
             kind: MoveKind::Rapid,
             gcode_line: 0,
             op_id: 0,
         }];
         let aabb = sim.advance_inner(&rapid, &endmill(2.0), 0, 1);
-        assert!(aabb.is_empty(), "rapid-only advance should report no dirty cells");
+        assert!(
+            aabb.is_empty(),
+            "rapid-only advance should report no dirty cells"
+        );
     }
 
     #[test]

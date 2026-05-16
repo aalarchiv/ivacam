@@ -518,7 +518,10 @@ mod tests {
 
     #[test]
     fn status_for_kind_matches_legacy_mapping() {
-        assert_eq!(status_for_kind(ErrorKind::BadInput), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            status_for_kind(ErrorKind::BadInput),
+            StatusCode::BAD_REQUEST
+        );
         assert_eq!(
             status_for_kind(ErrorKind::Misconfigured),
             StatusCode::BAD_REQUEST
@@ -531,7 +534,10 @@ mod tests {
             status_for_kind(ErrorKind::Limit),
             StatusCode::PAYLOAD_TOO_LARGE
         );
-        assert_eq!(status_for_kind(ErrorKind::Io), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            status_for_kind(ErrorKind::Io),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
         assert_eq!(
             status_for_kind(ErrorKind::Internal),
             StatusCode::INTERNAL_SERVER_ERROR

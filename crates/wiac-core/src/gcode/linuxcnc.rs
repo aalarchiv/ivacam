@@ -78,7 +78,9 @@ impl Post {
             .and_then(|p| p.axes.as_ref())
             .map(|a| a.speed.clone());
         match af {
-            Some(af) => af.render(f64::from(speed)).map_or(String::new(), |s| format!(" {s}")),
+            Some(af) => af
+                .render(f64::from(speed))
+                .map_or(String::new(), |s| format!(" {s}")),
             None => format!(" S{speed}"),
         }
     }
@@ -109,7 +111,6 @@ impl Post {
         parts.join(" ")
     }
 }
-
 
 /// Pick the matching `AxisFormat` from a profile's `AxesConfig` given
 /// the default axis letter the post wants to emit. Returns a clone
@@ -171,7 +172,12 @@ impl PostProcessor for Post {
         }
     }
     fn program_start(&mut self) {
-        if let Some(template) = self.state.profile.as_ref().and_then(|p| p.program_start.clone()) {
+        if let Some(template) = self
+            .state
+            .profile
+            .as_ref()
+            .and_then(|p| p.program_start.clone())
+        {
             for line in template_lines(&template, &self.state.token_ctx) {
                 self.write(line);
             }
@@ -180,7 +186,12 @@ impl PostProcessor for Post {
         }
     }
     fn program_end(&mut self) {
-        if let Some(template) = self.state.profile.as_ref().and_then(|p| p.program_end.clone()) {
+        if let Some(template) = self
+            .state
+            .profile
+            .as_ref()
+            .and_then(|p| p.program_end.clone())
+        {
             for line in template_lines(&template, &self.state.token_ctx) {
                 self.write(line);
             }
@@ -192,7 +203,12 @@ impl PostProcessor for Post {
         // Refresh tool-number token before rendering so the template
         // sees the FUTURE tool's number even mid-program.
         self.state.token_ctx.tool_number = n;
-        if let Some(template) = self.state.profile.as_ref().and_then(|p| p.tool_change.clone()) {
+        if let Some(template) = self
+            .state
+            .profile
+            .as_ref()
+            .and_then(|p| p.tool_change.clone())
+        {
             for line in template_lines(&template, &self.state.token_ctx) {
                 self.write(line);
             }

@@ -69,9 +69,21 @@ pub fn estimate(
     spindle_warmup_s: f64,
 ) -> TimeEstimate {
     if !machine.use_kinematic_time_estimate {
-        return estimate_naive(segments, feeds_mm_min, machine, tool_changes, spindle_warmup_s);
+        return estimate_naive(
+            segments,
+            feeds_mm_min,
+            machine,
+            tool_changes,
+            spindle_warmup_s,
+        );
     }
-    estimate_trapezoidal(segments, feeds_mm_min, machine, tool_changes, spindle_warmup_s)
+    estimate_trapezoidal(
+        segments,
+        feeds_mm_min,
+        machine,
+        tool_changes,
+        spindle_warmup_s,
+    )
 }
 
 fn estimate_trapezoidal(
@@ -81,7 +93,9 @@ fn estimate_trapezoidal(
     tool_changes: u32,
     spindle_warmup_s: f64,
 ) -> TimeEstimate {
-    let accel = machine.accel.unwrap_or(AxisLimits::uniform(DEFAULT_ACCEL_MM_S2));
+    let accel = machine
+        .accel
+        .unwrap_or(AxisLimits::uniform(DEFAULT_ACCEL_MM_S2));
     let rapid_mm_min = machine.rapid_speed.unwrap_or(DEFAULT_RAPID_MM_MIN);
 
     let n = segments.len();
@@ -252,7 +266,11 @@ fn effective_accel(dir: [f64; 3], a: AxisLimits) -> f64 {
             }
         }
     }
-    if best.is_finite() { best } else { DEFAULT_ACCEL_MM_S2 }
+    if best.is_finite() {
+        best
+    } else {
+        DEFAULT_ACCEL_MM_S2
+    }
 }
 
 /// Time for a single segment under a trapezoidal profile.
@@ -305,7 +323,11 @@ fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
         .iter()
         .map(|s| {
             let i = s.gcode_line as usize;
-            if i < feed_by_line.len() { feed_by_line[i] } else { 0.0 }
+            if i < feed_by_line.len() {
+                feed_by_line[i]
+            } else {
+                0.0
+            }
         })
         .collect()
 }
@@ -338,8 +360,16 @@ mod tests {
 
     fn cut_seg(from: (f64, f64, f64), to: (f64, f64, f64)) -> ToolpathSegment {
         ToolpathSegment {
-            from: Pose3 { x: from.0, y: from.1, z: from.2 },
-            to: Pose3 { x: to.0, y: to.1, z: to.2 },
+            from: Pose3 {
+                x: from.0,
+                y: from.1,
+                z: from.2,
+            },
+            to: Pose3 {
+                x: to.0,
+                y: to.1,
+                z: to.2,
+            },
             kind: MoveKind::Cut,
             gcode_line: 0,
             op_id: 0,
@@ -456,8 +486,16 @@ mod tests {
     #[test]
     fn machine_config_round_trips_kinematic_fields() {
         let mut m = MachineConfig::default();
-        m.accel = Some(AxisLimits { x: 300.0, y: 280.0, z: 120.0 });
-        m.jerk = Some(AxisLimits { x: 5000.0, y: 5000.0, z: 1500.0 });
+        m.accel = Some(AxisLimits {
+            x: 300.0,
+            y: 280.0,
+            z: 120.0,
+        });
+        m.jerk = Some(AxisLimits {
+            x: 5000.0,
+            y: 5000.0,
+            z: 1500.0,
+        });
         m.toolchange_s = 7.5;
         m.rapid_speed = Some(8000.0);
         let json = serde_json::to_string(&m).unwrap();
@@ -498,14 +536,26 @@ mod tests {
         // 100 mm/s². s_acc = 100/200 = 0.5; cruise 9 mm; t = 2*0.1 +
         // 9/10 = 1.1 s.
         let segs = vec![ToolpathSegment {
-            from: Pose3 { x: 0.0, y: 0.0, z: 0.0 },
-            to: Pose3 { x: 0.0, y: 0.0, z: -10.0 },
+            from: Pose3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Pose3 {
+                x: 0.0,
+                y: 0.0,
+                z: -10.0,
+            },
             kind: MoveKind::Plunge,
             gcode_line: 0,
             op_id: 0,
         }];
         let m = MachineConfig {
-            accel: Some(AxisLimits { x: 500.0, y: 500.0, z: 100.0 }),
+            accel: Some(AxisLimits {
+                x: 500.0,
+                y: 500.0,
+                z: 100.0,
+            }),
             ..MachineConfig::default()
         };
         let est = estimate(&segs, &[600.0], &m, 0, 0.0);

@@ -28,9 +28,7 @@ pub(super) fn build_op_tabs_by_object(
 
     let mut out: HashMap<usize, Vec<TabPoint>> = match op.params.tab_mode {
         TabPlacementMode::Off => return HashMap::new(),
-        TabPlacementMode::Manual => {
-            resolve_tab_placements(&op.params.tab_placements, objects, 6)
-        }
+        TabPlacementMode::Manual => resolve_tab_placements(&op.params.tab_placements, objects, 6),
         TabPlacementMode::Auto { .. } | TabPlacementMode::Mixed { .. } => HashMap::new(),
     };
     // Auto + Mixed: add evenly-spaced tabs on every selected closed

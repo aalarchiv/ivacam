@@ -249,6 +249,10 @@ pub(super) fn for_each_swept_cell<F>(
 /// Returns the total cell-write count; useful as a perf signal in tests.
 /// `fixtures` is forwarded to every per-segment check; pass `&[]` for a
 /// project without declared obstacles.
+// 8 args = heightmap + cutter geometry + start/end + fixtures + checks;
+// bundling into a config struct would just move the same arg list one
+// hop deeper without simplifying anything.
+#[allow(clippy::too_many_arguments)]
 pub fn sweep_range(
     heightmap: &mut Heightmap,
     segments: &[ToolpathSegment],

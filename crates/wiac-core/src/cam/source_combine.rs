@@ -256,7 +256,7 @@ fn combine_difference(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedR
         CLIPPER_PRECISION,
     );
     let template = &objects[*first];
-    polytree_to_regions(&tree, *first, template.layer.clone(), template.color)
+    polytree_to_regions(&tree, *first, &template.layer, template.color)
 }
 
 /// Union of N subjects in one shot — clipper's `union_subjects_d` does
@@ -279,7 +279,7 @@ fn combine_union(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion
     );
     let template = &objects[selected[0]];
     let _ = union_subjects_d; // silence unused-import lint when only the tree variant is used
-    polytree_to_regions(&tree, selected[0], template.layer.clone(), template.color)
+    polytree_to_regions(&tree, selected[0], &template.layer, template.color)
 }
 
 /// N-way intersection by folding 2-way intersections. Clipper's
@@ -309,7 +309,7 @@ fn combine_intersection(objects: &[VcObject], selected: &[usize]) -> Vec<Combine
         CLIPPER_PRECISION,
     );
     let template = &objects[selected[0]];
-    polytree_to_regions(&tree, selected[0], template.layer.clone(), template.color)
+    polytree_to_regions(&tree, selected[0], &template.layer, template.color)
 }
 
 /// N-way symmetric difference, folded similarly.
@@ -333,7 +333,7 @@ fn combine_xor(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> 
         CLIPPER_PRECISION,
     );
     let template = &objects[selected[0]];
-    polytree_to_regions(&tree, selected[0], template.layer.clone(), template.color)
+    polytree_to_regions(&tree, selected[0], &template.layer, template.color)
 }
 
 fn paths_for(indices: &[usize], objects: &[VcObject]) -> PathsD {
@@ -362,7 +362,7 @@ fn paths_for(indices: &[usize], objects: &[VcObject]) -> PathsD {
 fn polytree_to_regions(
     tree: &PolyTreeD,
     source_idx: usize,
-    layer: String,
+    layer: &str,
     color: i32,
 ) -> Vec<CombinedRegion> {
     let mut out = Vec::new();
@@ -388,7 +388,7 @@ fn polytree_to_regions(
             boundary,
             holes,
             source_idx,
-            layer: layer.clone(),
+            layer: layer.to_string(),
             color,
         });
     }

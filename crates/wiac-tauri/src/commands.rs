@@ -261,6 +261,10 @@ pub async fn compute_helix_radius_cmd(
 /// detect and parse via `tryParseStructuredError`. The string remains
 /// the Tauri error type (per existing API), but its content is now JSON
 /// for the frontend to introspect.
+// Callers drop `err` after the JSON encoding; borrowing would force them
+// to keep the structured error alive past the conversion just to satisfy
+// clippy.
+#[allow(clippy::needless_pass_by_value)]
 fn serialize_error(err: WiacError) -> String {
     serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())
 }

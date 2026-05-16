@@ -85,6 +85,10 @@ const CELL_SIZE: f64 = FUZZY * 4.0;
 type EndpointGrid = HashMap<(i64, i64), Vec<usize>>;
 
 fn cell_of(p: Point2) -> (i64, i64) {
+    // Project a CAM-scale coordinate (mm, bounded by stock dimensions
+    // ≪ i64 range) into a grid cell. `.floor() as i64` is the standard
+    // pattern and the value cannot truncate within the supported scale.
+    #[allow(clippy::cast_possible_truncation)]
     (
         (p.x / CELL_SIZE).floor() as i64,
         (p.y / CELL_SIZE).floor() as i64,

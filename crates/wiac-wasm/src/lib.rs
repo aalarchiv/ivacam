@@ -101,6 +101,10 @@ pub fn generate(request: JsValue) -> Result<JsValue, JsValue> {
 /// streaming shape exists so the frontend's progress UI updates per
 /// op without an extra synthetic-events shim. Cancel support arrives
 /// with web-worker threading in v2.
+// `js_sys::Function` is exchange-by-value at the wasm-bindgen ABI; taking
+// `&Function` would force callers (and wasm-bindgen's generated JS glue)
+// to keep a stable reference, which the SSE-callback pattern doesn't.
+#[allow(clippy::needless_pass_by_value)]
 #[wasm_bindgen(js_name = generateStreaming)]
 pub fn generate_streaming_wasm(
     request: JsValue,
@@ -160,6 +164,11 @@ pub(crate) fn into_js_error<E: std::fmt::Display>(err: E) -> JsValue {
 /// can detect (object with a `kind` field) and render through
 /// `ErrorToast.svelte`. Falls back to the message string if serialization
 /// somehow fails — the frontend's plain-string path catches that.
+// Takes `err` by value because every caller produces it from a fallible
+// step (`map_err(structured_error_to_js)`) and drops it after the JsValue
+// is built — borrowing would force the call sites to keep the Error
+// alive past the conversion.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn structured_error_to_js(err: wiac_core::Error) -> JsValue {
     serde_wasm_bindgen::to_value(&err).unwrap_or_else(|_| JsValue::from_str(&err.to_string()))
 }

@@ -79,6 +79,10 @@ const NO_SEGMENT: u32 = u32::MAX;
 
 /// Same as [`interpret`] but also returns the line ↔ segment lookup.
 /// Frontend uses this to wire the gcode text panel to the 3D playhead.
+// gcode interpretation is a single linear state machine: parse a line →
+// update modal state → emit segments. The state shares between every
+// branch so splitting reintroduces it everywhere.
+#[allow(clippy::too_many_lines)]
 #[must_use] pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
     let mut state = Pose3 {
         x: 0.0,
@@ -229,6 +233,7 @@ const NO_SEGMENT: u32 = u32::MAX;
             _ => MoveKind::Cut,
         };
         if matches!(kind, MoveKind::Arc) && (i_off.is_some() || j_off.is_some()) {
+            const TAU: f64 = std::f64::consts::TAU;
             // Tessellate G2/G3 into chord segments along the actual
             // arc. Otherwise the previewer emits a single chord from
             // start to end — a half-circle becomes a horizontal line
@@ -238,7 +243,6 @@ const NO_SEGMENT: u32 = u32::MAX;
             // the source line").
             let cx = from.x + i_off.unwrap_or(0.0);
             let cy = from.y + j_off.unwrap_or(0.0);
-            const TAU: f64 = std::f64::consts::TAU;
             let r = ((from.x - cx).powi(2) + (from.y - cy).powi(2)).sqrt();
             let theta_start = (from.y - cy).atan2(from.x - cx);
             let theta_end = (to.y - cy).atan2(to.x - cx);
@@ -396,6 +400,7 @@ mod tests {
     /// rapid, a vertical plunge, and a vertical retract — what the
     /// real machine executes.
     #[test]
+    #[allow(clippy::too_many_lines)] // sequential program: each line is a self-contained assertion.
     fn drill_canned_cycle_expands_into_rapid_plunge_retract() {
         // Two-hole drill program. Each cycle starts with a G0 lift to
         // fast_z (10 mm), then G81 X Y Z=−3 R=2.

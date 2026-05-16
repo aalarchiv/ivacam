@@ -12,9 +12,12 @@
 //! `ImportOptions::arc_max_step_or_default()`.
 
 // # CAM/sim pedantic-lint exemptions
-// usvg traversal walks bounded path-segment indices.
+// usvg traversal walks bounded path-segment indices. Bézier de Casteljau
+// subdivision uses (p1, p2, p3) control-point names + (p12, p23) midpoint
+// names that follow the algorithm's textbook indices.
 #![allow(
     clippy::cast_precision_loss,
+    clippy::similar_names,
 )]
 
 

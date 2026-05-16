@@ -39,6 +39,10 @@ use crate::cam::offsets::{
 use crate::geometry::{Point2, Segment};
 use crate::pipeline::CancelToken;
 
+// Trochoidal pocket emitter takes the full set of geometry + tool +
+// engagement-angle + step parameters because the loop generation derives
+// every other quantity from them.
+#[allow(clippy::too_many_arguments)]
 #[must_use] pub fn pocket_trochoidal(
     boundary_pts: &[Point2],
     islands: &[Vec<Point2>],

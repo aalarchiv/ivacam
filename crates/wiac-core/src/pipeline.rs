@@ -35,6 +35,11 @@
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::similar_names,
+    // OperationKind / PocketStrategy dispatch tables enumerate every
+    // variant explicitly so adding a new one forces a deliberate
+    // choice — keeping it strict at the type level beats clippy's
+    // "merge equal arms" suggestion that hides the dispatch shape.
+    clippy::match_same_arms,
 )]
 
 
@@ -352,6 +357,10 @@ pub fn generate_streaming(
     }
 }
 
+// The orchestrator threads through import → chaining → per-op → sim → time
+// estimate; splitting it loses the linear top-down read. The 55o4 bd issue
+// tracks the per-op-driver extraction that will reduce this naturally.
+#[allow(clippy::too_many_lines)]
 fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     req: PipelineRequest,
     progress: &F,
@@ -531,10 +540,13 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
 /// Per-post-processor monomorphisation of the per-op driver. Pulled out
 /// so we don't need to type-erase `PostProcessor` (its methods take Sized
 /// `&mut self` so the trait object dance was painful).
-#[allow(clippy::too_many_arguments)]
+// Per-op dispatch + dual-tool finish coordination is a long state machine
+// that doesn't usefully split — see 55o4 for the planned per-op-driver
+// extraction.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn run_per_op<P, F>(
     project: &Project,
-    objects: &mut Vec<VcObject>,
+    objects: &mut [VcObject],
     header_setup: &Setup,
     post: &mut P,
     stats: &std::cell::RefCell<(usize, usize, usize)>,
@@ -679,7 +691,7 @@ where
             )?;
         } else {
             let (offsets, closed_count) =
-                build_op_offsets(op, project, &mut objects.clone(), &setup, warnings, cancel)?;
+                build_op_offsets(op, project, &mut objects.to_vec(), &setup, warnings, cancel)?;
             closed_count_emitted = closed_count;
             offset_count_emitted = offsets.len();
             {
@@ -865,6 +877,11 @@ fn object_bbox_center(obj: &VcObject) -> Option<Point2> {
     Some(Point2::new((min_x + max_x) * 0.5, (min_y + max_y) * 0.5))
 }
 
+// The offset-cascade pass per op covers Profile / Pocket / Drill /
+// DualTool / Engrave / DragKnife — splitting it would scatter the
+// "compute pocket regions → apply offsets → attach tabs → cut order"
+// pipeline across multiple files. 55o4 tracks the planned extraction.
+#[allow(clippy::too_many_lines)]
 fn build_op_offsets(
     op: &Operation,
     project: &Project,

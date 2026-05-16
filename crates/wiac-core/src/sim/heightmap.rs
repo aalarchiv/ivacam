@@ -242,6 +242,12 @@ impl ToolProfile {
     /// so a 90° V-bit carved at half the correct depth in preview. A
     /// missing / unreasonable angle falls back to 60° (the default
     /// the backend assigns to a new tool).
+    // BullNose / Compression / TSlot / FormProfile each collapse to an
+    // Endmill profile here, but the explicit per-variant arm is the
+    // documentation that they're known kinds (just deferred work, not
+    // forgotten kinds). Adding a new ToolKind forces a deliberate
+    // dispatch decision.
+    #[allow(clippy::match_same_arms)]
     #[must_use]
     pub fn from_tool(tool: &ToolEntry) -> Self {
         let r = (tool.diameter * 0.5) as f32;

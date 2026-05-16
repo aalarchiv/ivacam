@@ -148,13 +148,14 @@ pub(super) fn push_tool_fit_size_warning(
     }
     // Profile-on / Engrave / DragKnife emit straight contour walks even
     // when offsets is empty in the cascade sense, so don't flag them.
-    let needs_offset = match op.kind {
-        OperationKind::Pocket { .. } => true,
-        OperationKind::Profile {
-offset: crate::cam::setup::ToolOffset::Outside |
-    crate::cam::setup::ToolOffset::Inside } => true,
-        _ => false,
-    };
+    let needs_offset = matches!(
+        op.kind,
+        OperationKind::Pocket { .. }
+            | OperationKind::Profile {
+                offset: crate::cam::setup::ToolOffset::Outside
+                    | crate::cam::setup::ToolOffset::Inside,
+            }
+    );
     if !needs_offset {
         return;
     }

@@ -7,9 +7,13 @@
 // Setup helpers walk over `min`/`max` axis-limit pairs whose names mirror the
 // field they project from. Serde `skip_serializing_if = "is_default_…"`
 // helpers take `&T` because that's the signature serde requires.
+// `MillConfig`, `PocketConfig`, `MachineConfig` are user-facing config
+// structs (one bool per UI checkbox); folding bools into enums would
+// require flattening the JSON shape and break the schema contract.
 #![allow(
     clippy::similar_names,
     clippy::trivially_copy_pass_by_ref,
+    clippy::struct_excessive_bools,
 )]
 
 

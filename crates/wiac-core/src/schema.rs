@@ -135,11 +135,9 @@ fn insert<T: schemars::JsonSchema>(map: &mut serde_json::Map<String, Value>, nam
     if let Some(obj) = v.as_object_mut() {
         obj.remove("$schema");
         obj.remove("title");
-        if let Some(defs) = obj.remove("definitions") {
-            if let Value::Object(inner) = defs {
-                for (k, vv) in inner {
-                    map.entry(k).or_insert(vv);
-                }
+        if let Some(Value::Object(inner)) = obj.remove("definitions") {
+            for (k, vv) in inner {
+                map.entry(k).or_insert(vv);
             }
         }
     }

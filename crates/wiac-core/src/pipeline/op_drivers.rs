@@ -41,6 +41,10 @@ use crate::project::{Operation, OperationKind, PocketStrategy, Project};
 /// V-Carve op driver. Builds the medial axis of the source region(s)
 /// and emits a per-axis ratchet sweep with depth varying from
 /// `start_depth` to the geometric V-bit depth at each point.
+// V-Carve driver couples medial-axis sampling, multi-pass cascade, and
+// optional finish-pass into a single state machine — see 55o4 for the
+// planned per-stage extraction.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn run_vcarve_op<P: PostProcessor>(
     op: &Operation,
     project: &Project,
@@ -143,6 +147,9 @@ pub(super) fn run_vcarve_op<P: PostProcessor>(
 /// (`CircularArc { R }` ⇒ `z = -(R - sqrt(R² - r²))` capped at `-R`;
 /// `VBottom { θ }` ⇒ `z = -r / tan(θ/2)`). Both clip to the op's
 /// nominal `depth`.
+// Halfpipe driver (Pocket strategy with cross-section profile) walks
+// densified pocket regions per pass — see 55o4 for the planned split.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) fn run_halfpipe_op<P: PostProcessor>(
     op: &Operation,
     project: &Project,
@@ -278,6 +285,10 @@ pub(super) fn run_halfpipe_op<P: PostProcessor>(
 /// waypoints between `start_depth` and `depth` at `pitch_mm` per
 /// revolution. Reuses V-Carve's `emit_vcarve_block` since both walk a
 /// pre-computed XYZ polyline at constant feed.
+// Thread driver runs the per-circle helix walker; rather than threading
+// state through five helpers, the per-revolution Z table lives inline.
+// 55o4 tracks the broader pipeline split.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) fn run_thread_op<P: PostProcessor>(
     op: &Operation,
     project: &Project,

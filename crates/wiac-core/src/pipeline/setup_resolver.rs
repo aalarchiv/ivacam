@@ -5,6 +5,11 @@
 //! than struct defaults. Helpers for dual-tool finish radius, peck
 //! defaults, and auto-fit helix radius live alongside.
 
+// # CAM/sim pedantic-lint exemptions
+// `OperationKind → ToolOffset` map enumerates every variant explicitly so
+// adding a new kind forces a deliberate choice.
+#![allow(clippy::match_same_arms)]
+
 use crate::cam::setup::Setup;
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::VcObject;
@@ -69,6 +74,10 @@ pub(super) fn resolve_peck_step(
 /// Build a [`Setup`] that represents this single op — copy in its
 /// tool from `project.tools` and its params.kind-driven mill /
 /// pockets / tabs / leads.
+// synthesize_op_setup merges machine + tool + op into a per-op Setup —
+// the merge is essentially N field-wise picks; splitting into helpers
+// would scatter what's really one decision per field.
+#[allow(clippy::too_many_lines)]
 pub(super) fn synthesize_op_setup(
     op: &Operation,
     project: &Project,

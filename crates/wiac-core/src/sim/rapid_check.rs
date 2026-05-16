@@ -9,9 +9,11 @@
 //! machinist intent of "rapid to surface, then plunge".
 
 // # CAM/sim pedantic-lint exemptions
-// Rapid-collision sweep casts bounded cell indices to f64.
+// Rapid-collision sweep casts bounded cell indices to f64; cutter Z is
+// converted f64→f32 because the heightmap stores f32 to halve memory.
 #![allow(
     clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
 )]
 
 

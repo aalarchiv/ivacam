@@ -78,7 +78,7 @@ impl Error {
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::Internal, msg)
     }
-    pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
+    #[must_use] pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.recovery_hint = Some(hint.into());
         self
     }

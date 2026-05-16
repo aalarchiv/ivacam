@@ -11,10 +11,14 @@
 // Default-impl test helpers use parallel names (`tool_a`/`tool_b`,
 // `op_with`/`op_without`) that enumerate distinct test cases. Serde
 // `skip_serializing_if = "is_default_…"` helpers take `&T` because that's
-// the signature serde requires.
+// the signature serde requires. `OperationParams` is the user-facing
+// per-op config bag — one bool per UI checkbox, so the JSON contract
+// flattens the bool fields by design (see audit issue kbx5 for the
+// planned move-to-OperationKind-variants refactor).
 #![allow(
     clippy::similar_names,
     clippy::trivially_copy_pass_by_ref,
+    clippy::struct_excessive_bools,
 )]
 
 

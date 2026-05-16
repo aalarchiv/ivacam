@@ -112,6 +112,10 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 /// every Voronoi-vertex traversal; on cancellation returns whatever
 /// chains have been emitted so far (often empty). Callers should also
 /// inspect the cancel flag after this call to bail out cleanly.
+// Medial-axis derivation interleaves Voronoi extraction, edge filtering,
+// and inscribed-circle radius sampling — the algorithm reads linearly
+// top-to-bottom; splitting would scatter the geometric reasoning.
+#[allow(clippy::too_many_lines)]
 #[must_use] pub fn medial_axis_cancellable(
     region: &VcRegion,
     cancel: Option<&CancelToken>,

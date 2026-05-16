@@ -49,10 +49,13 @@ pub struct ProjectWatcher {
 
 impl std::fmt::Debug for ProjectWatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `last_emit` (Mutex<HashMap>) and `sink` (`dyn EventSink`) are
+        // intentionally omitted — they're noisy / non-Debug. Use
+        // `finish_non_exhaustive()` to keep clippy quiet about it.
         f.debug_struct("ProjectWatcher")
             .field("watched", &self.watched)
             .field("active", &self.watcher.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -103,7 +106,7 @@ impl ProjectWatcher {
         let watch_targets: Vec<PathBuf> = deduped.clone();
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             let Ok(event) = res else { return };
-            if !is_relevant(&event.kind) {
+            if !is_relevant(event.kind) {
                 return;
             }
             for evt_path in &event.paths {
@@ -150,11 +153,12 @@ impl ProjectWatcher {
     }
 }
 
-fn is_relevant(kind: &EventKind) -> bool {
+fn is_relevant(kind: EventKind) -> bool {
     matches!(
         kind,
-        EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Name(_) | ModifyKind::Any
-| ModifyKind::Other) | EventKind::Create(_)
+        EventKind::Modify(
+            ModifyKind::Data(_) | ModifyKind::Name(_) | ModifyKind::Any | ModifyKind::Other
+        ) | EventKind::Create(_)
     )
 }
 

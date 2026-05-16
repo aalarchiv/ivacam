@@ -558,6 +558,10 @@ fn program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
 }
 
 /// Emit a single polyline offset (one cut pass per multi-pass step).
+// emit_offset is the per-offset emission: rapid-to-start → ramp/helix
+// plunge → cut → retract. Each phase reads top-to-bottom and shares
+// state with the next.
+#[allow(clippy::too_many_lines)]
 fn emit_offset<P: PostProcessor>(
     setup: &Setup,
     offset: &PolylineOffset,
@@ -690,6 +694,10 @@ fn emit_offset<P: PostProcessor>(
     *last_pos = offset.segments.last().map_or(start, |s| s.end);
 }
 
+// multi_pass walks the Z schedule with per-pass tab handling, helix
+// state, and ramp planning. Splitting would scatter the per-pass state
+// (helix-entry plan, ramp-length tracking) across multiple helpers.
+#[allow(clippy::too_many_lines)]
 fn multi_pass<P: PostProcessor>(
     setup: &Setup,
     segments: &[Segment],

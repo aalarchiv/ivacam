@@ -56,6 +56,12 @@ pub struct HelixRadiusResponse {
 /// `pipeline::resolve_auto_helix_radius` performs at generation time,
 /// exposed for the `OpPropertiesPanel` to display "Auto (detected: 4.2 mm)"
 /// before the user clicks Generate.
+// `HelixRadiusRequest` carries an owned `Vec<Segment>` that gets borrowed
+// in `segments_to_objects`; passing by value is the cleanest signature
+// because callers always construct one and discard it, so the borrow
+// vs. move is irrelevant — clippy's pass-by-ref suggestion would force
+// callers to keep the request alive.
+#[allow(clippy::needless_pass_by_value)]
 #[must_use] pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
     use crate::cam::chaining::{classify_containment, segments_to_objects};
     use crate::cam::source_combine::combine_source_regions;

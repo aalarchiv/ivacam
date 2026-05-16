@@ -2,9 +2,11 @@
 
 // # CAM/sim pedantic-lint exemptions
 // LinuxCNC post emits `X`, `Y`, `Z`, `I`, `J`, `F`, `S` — the machine-control
-// short names map 1:1 to gcode-word letters.
+// short names map 1:1 to gcode-word letters. The ToolOffset match enumerates
+// every variant (G40/G41/G42) explicitly to mirror the gcode spec.
 #![allow(
     clippy::many_single_char_names,
+    clippy::match_same_arms,
 )]
 
 

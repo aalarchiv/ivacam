@@ -15,6 +15,14 @@
     clippy::many_single_char_names,
     clippy::similar_names,
     clippy::trivially_copy_pass_by_ref,
+    // Cut-direction × context table enumerates every combination
+    // explicitly even when two arms agree, so the truth table reads
+    // straight off the page.
+    clippy::match_same_arms,
+    // `&HashMap<…, …>` (default RandomState) is what every caller
+    // builds; generalising over BuildHasher would force them all to
+    // spell out the hasher just to satisfy clippy.
+    clippy::implicit_hasher,
 )]
 
 
@@ -659,6 +667,10 @@ pub enum PocketEmit {
     },
 }
 
+// Pocket-for-object computes the full inward cascade for a single source
+// VcObject: parametrisation passes through depth / step / tabs / overcut /
+// finish-radius / dual-tool. The geometric pipeline reads linearly.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn pocket_for_object(
     obj: &VcObject,
     tool_radius: f64,

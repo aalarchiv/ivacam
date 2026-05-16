@@ -175,6 +175,9 @@ pub(crate) fn object_index(segments: &[Segment]) -> (Vec<u32>, Vec<ImportedObjec
     let mut objects = vec![0u32; segments.len()];
     let mut meta = Vec::with_capacity(chains.len());
     for (chain_idx, chain) in chains.iter().enumerate() {
+        // chain_idx is bounded by chains.len() (file-segment count), well
+        // under u32::MAX; the truncation can't fire in practice.
+        #[allow(clippy::cast_possible_truncation)]
         let id = chain_idx as u32 + 1;
         // Map back from chain-segment to imported-segment by endpoint
         // coincidence; the chaining pass may flip/reorder edges so

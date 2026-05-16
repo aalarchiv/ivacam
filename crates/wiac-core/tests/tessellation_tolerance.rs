@@ -24,6 +24,10 @@ const EPS_DEFAULT: f64 = 0.05; // mm
 
 /// Distance from `p` to the analytic ellipse at the same polar parameter.
 /// We sample the ellipse at fine intervals and take the minimum.
+// Test helper takes the full ellipse parametrization (cx, cy, a, b, phi, t0, t1)
+// — bundling into a struct just for clippy's arg-count threshold would lose the
+// formula-mapping the test exercises.
+#[allow(clippy::too_many_arguments)]
 fn ellipse_min_distance(
     p: (f64, f64),
     cx: f64,

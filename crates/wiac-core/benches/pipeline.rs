@@ -7,7 +7,7 @@
 //! For numbers worth comparing across runs use a fixed self-hosted runner
 //! (cloud CI varies too much). Record results in tests/bench-baseline.md.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use wiac_core::cam::chaining::{classify_containment, segments_to_objects};
@@ -30,10 +30,9 @@ fn workspace_root() -> PathBuf {
     std::env::current_dir().unwrap()
 }
 
-fn run_pipeline(dxf: &PathBuf) -> usize {
-    let import = match wiac_core::input::import_path(dxf, &ImportOptions::default()) {
-        Ok(out) => out,
-        Err(_) => return 0,
+fn run_pipeline(dxf: &Path) -> usize {
+    let Ok(import) = wiac_core::input::import_path(dxf, &ImportOptions::default()) else {
+        return 0;
     };
     if import.segments.is_empty() {
         return 0;

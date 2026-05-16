@@ -89,8 +89,10 @@ fn wasm_pack() -> ExitCode {
     ]))
 }
 
+type CiStep = (&'static str, fn() -> ExitCode);
+
 fn ci_all() -> ExitCode {
-    let steps: &[(&str, fn() -> ExitCode)] = &[
+    let steps: &[CiStep] = &[
         ("cargo fmt --check", || {
             cargo(&["fmt", "--all", "--", "--check"])
         }),

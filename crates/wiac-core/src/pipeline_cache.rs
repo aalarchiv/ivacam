@@ -58,9 +58,9 @@ use crate::project::{
 /// shape, gcode formatting, anything. Invalidates the whole cache.
 pub const PIPELINE_VERSION: u32 = 21;
 
-/// Stable hash of (op + tool + machine + selected segments + fixtures
-/// + [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass
-/// an unrelated `u64` to [`PipelineCache::get`] / [`PipelineCache::put`].
+/// Stable hash of (op, tool, machine, selected segments, fixtures, and
+/// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
+/// unrelated `u64` to [`PipelineCache::get`] / [`PipelineCache::put`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OpCacheKey(pub u64);
 

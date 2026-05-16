@@ -107,6 +107,10 @@ fn parse_hatch(
 /// vertex count, then sequences of `10/20` (xy) optionally followed by
 /// `42` (bulge). Stops at the next field that doesn't belong (typically
 /// `97` for the source-boundary handle list).
+// The `93 => { /* vertex count */ }` arm intentionally matches the `_`
+// wildcard body — the explicit code 93 documents that this DXF group
+// is known and is intentionally ignored, not just one of "the rest".
+#[allow(clippy::match_same_arms)]
 fn parse_polyline_path(
     pairs: &[(i32, String)],
     unit_scale: f64,

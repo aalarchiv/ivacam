@@ -5,9 +5,11 @@
 
 // # CAM/sim pedantic-lint exemptions
 // Setup helpers walk over `min`/`max` axis-limit pairs whose names mirror the
-// field they project from.
+// field they project from. Serde `skip_serializing_if = "is_default_…"`
+// helpers take `&T` because that's the signature serde requires.
 #![allow(
     clippy::similar_names,
+    clippy::trivially_copy_pass_by_ref,
 )]
 
 

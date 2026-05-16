@@ -119,16 +119,12 @@ fn de_boor(
 fn uniform_clamped_knots(n: usize, degree: usize) -> Vec<f64> {
     let total = n + degree + 1;
     let mut out = Vec::with_capacity(total);
-    for _ in 0..=degree {
-        out.push(0.0);
-    }
+    out.resize(degree + 1, 0.0);
     let interior = total - 2 * (degree + 1);
     for i in 1..=interior {
         out.push(i as f64 / (interior + 1) as f64);
     }
-    for _ in 0..=degree {
-        out.push(1.0);
-    }
+    out.resize(out.len() + degree + 1, 1.0);
     out
 }
 

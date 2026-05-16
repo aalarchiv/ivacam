@@ -8,11 +8,13 @@
 // # CAM/sim pedantic-lint exemptions
 // Offset machinery names (`p_a`/`p_b`, `min_x`/`max_x`, `ix0`/`ix1`) mirror
 // the cavalier_contours / clipper2-rust conventions; cell-bbox truncations
-// are bounded by the grid layout.
+// are bounded by the grid layout. Serde `skip_serializing_if = "is_false"`
+// helpers take `&bool` because that's the signature serde requires.
 #![allow(
     clippy::cast_possible_truncation,
     clippy::many_single_char_names,
     clippy::similar_names,
+    clippy::trivially_copy_pass_by_ref,
 )]
 
 

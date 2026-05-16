@@ -9,9 +9,12 @@
 
 // # CAM/sim pedantic-lint exemptions
 // Default-impl test helpers use parallel names (`tool_a`/`tool_b`,
-// `op_with`/`op_without`) that enumerate distinct test cases.
+// `op_with`/`op_without`) that enumerate distinct test cases. Serde
+// `skip_serializing_if = "is_default_…"` helpers take `&T` because that's
+// the signature serde requires.
 #![allow(
     clippy::similar_names,
+    clippy::trivially_copy_pass_by_ref,
 )]
 
 

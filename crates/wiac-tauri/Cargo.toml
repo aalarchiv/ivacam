@@ -36,6 +36,12 @@ tauri-plugin-process = "2"
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time"] }
 notify = "8"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Used to SIGKILL WebKitWebProcess children on app exit (2re4: Mesa
+# libgallium's atexit destructor double-frees on Arch's libgallium-26;
+# signal-kill skips the broken exit path entirely).
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
 

@@ -23,6 +23,80 @@ fn main() {
     }
 }
 
+/// Linux only: find every `WebKit` helper process spawned by this
+/// `wiac-desktop` instance — the renderer (`WebKitWebProcess`), the
+/// network process, and the GPU process — and SIGKILL them.
+///
+/// Mesa's `libgallium` registers an atexit destructor that, when run
+/// from inside the `WebKit` renderer's normal `exit()` path on Arch /
+/// recent Mesa, double-frees an internal allocation; glibc's malloc
+/// heap-corruption detector catches it and SIGABRTs (bd issue 2re4).
+///
+/// Killing the children with SIGKILL while we're still alive means the
+/// renderer dies via signal before its `main()` can return, so
+/// `exit()` and the broken atexit chain never run. The kernel reclaims
+/// the renderer's memory cleanly; on the main-process side `WebKit`
+/// has already handed the `GtkWindow` back by the time `ExitRequested`
+/// fires, so there's nothing live left to coordinate with the
+/// renderer.
+///
+/// We filter by `PPid == our_pid` so a SIGKILL never escapes this
+/// instance — even if another wiac-desktop happens to be running, its
+/// renderer children stay untouched.
+#[cfg(target_os = "linux")]
+fn kill_webkit_children() {
+    use std::fs;
+    let our_pid = std::process::id();
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Ok(pid) = name.parse::<i32>() else {
+            continue;
+        };
+        if pid <= 1 {
+            continue;
+        }
+
+        let status_path = entry.path().join("status");
+        let Ok(status) = fs::read_to_string(&status_path) else {
+            continue;
+        };
+        let is_our_child = status.lines().any(|line| {
+            line.strip_prefix("PPid:")
+                .and_then(|rest| rest.trim().parse::<u32>().ok())
+                == Some(our_pid)
+        });
+        if !is_our_child {
+            continue;
+        }
+
+        let cmdline_path = entry.path().join("cmdline");
+        let Ok(cmdline) = fs::read_to_string(&cmdline_path) else {
+            continue;
+        };
+        let is_webkit_helper = cmdline.contains("WebKitWebProcess")
+            || cmdline.contains("WebKitNetworkProcess")
+            || cmdline.contains("WebKitGPUProcess");
+        if !is_webkit_helper {
+            continue;
+        }
+
+        // SAFETY: signalling a pid we just read from /proc; if the
+        // process has already been reaped between the readdir and here,
+        // `kill` returns ESRCH which is benign. PIDs are not reused
+        // until we wait() on them (or they're reaped by init after we
+        // exit), so there's no PID-recycle window.
+        #[allow(unsafe_code)]
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+}
+
 fn run() -> tauri::Result<()> {
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
@@ -96,5 +170,19 @@ fn run() -> tauri::Result<()> {
             commands::watch_source_paths,
             commands::unwatch_all,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())?
+        .run(|_app, event| {
+            // 2re4: SIGKILL WebKit's helper processes the moment we
+            // know the app is about to exit, so the renderer dies via
+            // signal instead of returning from `main()` and tripping
+            // Mesa's broken atexit destructor. ExitRequested fires
+            // after the last window has confirmed close (any
+            // save-prompt or close-prevention has already resolved),
+            // before WebKit's main-side teardown begins.
+            #[cfg(target_os = "linux")]
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                kill_webkit_children();
+            }
+        });
+    Ok(())
 }

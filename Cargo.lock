@@ -5766,6 +5766,7 @@ name = "wiac-tauri"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "libc",
  "log",
  "notify",
  "serde",

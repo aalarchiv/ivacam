@@ -1,6 +1,8 @@
 // Recent-files list. Persisted via tauri-plugin-store on the desktop and
 // localStorage on the web. Capped at MAX entries; most-recent first.
 
+import { isTauri } from './api/env';
+
 const MAX = 10;
 const STORAGE_KEY = 'wiac.recent';
 
@@ -14,11 +16,6 @@ export interface RecentEntry {
 async function tauriStore() {
   const { Store } = await import('@tauri-apps/plugin-store');
   return await Store.load('settings.json');
-}
-
-function isTauri(): boolean {
-  if (typeof window === 'undefined') return false;
-  return typeof (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ !== 'undefined';
 }
 
 export async function readRecent(): Promise<RecentEntry[]> {

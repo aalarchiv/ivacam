@@ -4,7 +4,6 @@
 
   import { defaultClient } from '../api/http';
   import { CancelledError, tryParseStructuredError } from '../api/client';
-  import { isTauri } from '../api/env';
   import {
     project,
     simWarningSeverity,

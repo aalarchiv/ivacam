@@ -13,7 +13,7 @@
   ///     launches.
 
   import { onMount } from 'svelte';
-  import { isTauri } from '../api/env';
+  import { wireFileAssociationOpen } from '../state/desktop';
   import { project } from '../state/project.svelte';
   import {
     importDroppedFile,
@@ -74,15 +74,12 @@
     window.addEventListener('dragover', onWindowDragOver);
     window.addEventListener('dragleave', onWindowDragLeave);
     window.addEventListener('drop', onWindowDrop);
-    if (isTauri()) {
-      void (async () => {
-        const { listen } = await import('@tauri-apps/api/event');
-        // OS file-association launches: main.rs forwards the path here.
-        void listen<string>('app:open_path', (event) => {
-          if (typeof event.payload === 'string') void loadFromPath(event.payload);
-        });
-      })();
-    }
+    // OS file-association launches forward the path here. Self-guards on
+    // web; the returned unlisten is a no-op there.
+    let unlistenFileAssoc: (() => void) | null = null;
+    void wireFileAssociationOpen((path) => void loadFromPath(path)).then((u) => {
+      unlistenFileAssoc = u;
+    });
     const params = new URLSearchParams(window.location.search);
     const sample = params.get('sample');
     const gen = params.get('gen');
@@ -95,6 +92,7 @@
       window.removeEventListener('dragover', onWindowDragOver);
       window.removeEventListener('dragleave', onWindowDragLeave);
       window.removeEventListener('drop', onWindowDrop);
+      unlistenFileAssoc?.();
       delete (window as unknown as Record<string, unknown>).__wiacFileInput;
       delete (window as unknown as Record<string, unknown>).__wiacProjectInput;
     };

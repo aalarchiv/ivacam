@@ -62,7 +62,11 @@
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { locale } from './lib/i18n';
-  import { isTauri } from './lib/api/env';
+  import {
+    isDesktop,
+    wireSourceWatch as wireDesktopSourceWatch,
+    runUpdateCheck,
+  } from './lib/state/desktop';
   import { computeFootprint } from './lib/sim/driver';
 
   /// Live label for the Stock panel summary — shows the current
@@ -114,9 +118,7 @@
       console.error('unhandled promise rejection:', ev.reason);
     });
 
-    if (isTauri()) {
-      void wireSourceWatch();
-    }
+    void wireSourceWatch();
     void loadWorkspaceAndMaybeReopen();
     return () => {
       unlistenSourceWatch?.();
@@ -126,17 +128,17 @@
 
   /// Pull persisted workspace state at startup. After load completes,
   /// prune any per-project / recent entries pointing at files that have
-  /// disappeared (Tauri only — browser localStorage has no fs probe).
-  /// On Tauri, optionally prompt the user to reopen the last project so
-  /// they don't have to navigate the file picker every launch.
+  /// disappeared (desktop only — both `pruneMissingProjects` and the
+  /// reopen prompt self-guard via the workspace API, which returns null
+  /// for `last_project` on web because there's no filesystem path).
   async function loadWorkspaceAndMaybeReopen() {
     try {
       await workspace.load();
     } catch {
       // ignore — defaults are fine.
     }
-    if (isTauri()) {
-      void workspace.pruneMissingProjects();
+    void workspace.pruneMissingProjects();
+    if (isDesktop()) {
       const last = workspace.get().last_project;
       if (last) {
         const filename = last.split(/[\\/]/).pop() ?? last;
@@ -207,35 +209,14 @@
   }
 
   /// Subscribe to backend `source-file-changed` events emitted by the
-  /// project watcher.
-  /// Stored so onMount's cleanup can disable the watch on HMR /
-  /// component-tree teardown. Without this the listener leaks every
-  /// time App.svelte is reloaded during dev, which compounds into
-  /// "why does the same file fire ten reload events" mysteries.
+  /// project watcher. Stored so onMount's cleanup can disable the watch
+  /// on HMR / component-tree teardown — without it the listener leaks
+  /// every time App.svelte is reloaded during dev. Implementation lives
+  /// in `lib/state/desktop.ts`; this local trampoline preserves the
+  /// HMR-safe cleanup binding.
   let unlistenSourceWatch: (() => void) | null = null;
   async function wireSourceWatch() {
-    const { onSourceFileChanged } = await import('./lib/api/tauri');
-    unlistenSourceWatch = await onSourceFileChanged(async ({ path }) => {
-      if (path !== project.lastImportPath) return;
-      if (project.settings.autoReloadSources) {
-        await project.reimportFromPath(path);
-      } else {
-        project.sourceFileStaleNotice = { path, auto_reload: false };
-      }
-    });
-  }
-
-  async function runUpdateCheck() {
-    try {
-      const { check } = await import('@tauri-apps/plugin-updater');
-      const update = await check();
-      if (!update) return;
-      await update.downloadAndInstall();
-      const { relaunch } = await import('@tauri-apps/plugin-process');
-      await relaunch();
-    } catch (e) {
-      project.setError(`update: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    unlistenSourceWatch = await wireDesktopSourceWatch();
   }
 
   $effect(() => {
@@ -648,7 +629,7 @@
           >
             <span class="label">Keyboard shortcuts…</span><span class="kbd">?</span>
           </button>
-          {#if isTauri()}
+          {#if isDesktop()}
             <button role="menuitem" class="item" onclick={() => pickMenu(runUpdateCheck)}>
               <span class="label">Check for updates…</span>
             </button>

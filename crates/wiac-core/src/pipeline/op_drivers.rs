@@ -409,6 +409,9 @@ pub(super) fn emit_stufenfase<P: PostProcessor>(
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<(), PipelineError> {
     use crate::geometry::SegmentKind;
+    // Single full revolution at constant Z. 64 waypoints + closing
+    // point so arc-fit produces clean one-or-two arcs.
+    const STEPS: usize = 64;
     let cutter_id = op.finish_tool_id.unwrap_or(op.tool_id);
     let cutter = project
         .tools
@@ -441,9 +444,6 @@ pub(super) fn emit_stufenfase<P: PostProcessor>(
         if r < 0.05 {
             continue;
         }
-        // Single full revolution at constant Z. 64 waypoints + closing
-        // point so arc-fit produces clean one-or-two arcs.
-        const STEPS: usize = 64;
         let mut flat: Vec<(f64, f64, f64)> = (0..=STEPS)
             .map(|i| {
                 let a = (i as f64) * std::f64::consts::TAU / (STEPS as f64);

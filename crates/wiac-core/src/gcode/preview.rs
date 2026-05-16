@@ -227,6 +227,7 @@ const NO_SEGMENT: u32 = u32::MAX;
             // the source line").
             let cx = from.x + i_off.unwrap_or(0.0);
             let cy = from.y + j_off.unwrap_or(0.0);
+            const TAU: f64 = std::f64::consts::TAU;
             let r = ((from.x - cx).powi(2) + (from.y - cy).powi(2)).sqrt();
             let theta_start = (from.y - cy).atan2(from.x - cx);
             let theta_end = (to.y - cy).atan2(to.x - cx);
@@ -235,7 +236,6 @@ const NO_SEGMENT: u32 = u32::MAX;
             // for the requested direction; +0/-0 sweep with X/Y
             // co-incident becomes a full revolution (G2/G3 X<same>
             // Y<same> I... is a full circle in many dialects).
-            const TAU: f64 = std::f64::consts::TAU;
             let coincident = (from.x - to.x).abs() < 1e-9 && (from.y - to.y).abs() < 1e-9;
             if active_code == 3 {
                 // CCW

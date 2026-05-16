@@ -435,11 +435,11 @@ fn push_polyline_unclosed(pts: &[Point2], layer: &str, color: i32, out: &mut Vec
 ///    their `family_name` / `full_name` / `postscript_name`: "single-line",
 ///    "single line", "stick", "engrave", "hershey", "`OSIFont`", etc.
 #[must_use] pub fn is_single_line_font(face: &Face) -> bool {
+    const SAMPLE_CHARS: [char; 12] = ['A', 'V', 'X', 'Y', 'Z', 'M', 'N', 'K', 'i', 'l', 'j', '7'];
     if family_name_says_single_line(face) {
         return true;
     }
     // Sample more chars + look for any retraced (zero-area) contour.
-    const SAMPLE_CHARS: [char; 12] = ['A', 'V', 'X', 'Y', 'Z', 'M', 'N', 'K', 'i', 'l', 'j', '7'];
     let units = f64::from(face.units_per_em().max(1));
     let scale = 1.0 / units;
     let mut samples = 0usize;

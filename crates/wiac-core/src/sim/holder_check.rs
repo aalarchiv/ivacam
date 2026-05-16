@@ -113,12 +113,7 @@ pub fn check_segment_holder_against_walls(
                 let ey = cy - from.y;
                 (ex * ex + ey * ey, plunge_z)
             } else {
-                let mut t = ((cx - from.x) * dx + (cy - from.y) * dy) / len_sq;
-                if t < 0.0 {
-                    t = 0.0;
-                } else if t > 1.0 {
-                    t = 1.0;
-                }
+                let t = (((cx - from.x) * dx + (cy - from.y) * dy) / len_sq).clamp(0.0, 1.0);
                 let px = from.x + t * dx;
                 let py = from.y + t * dy;
                 let ex = cx - px;

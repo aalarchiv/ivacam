@@ -113,12 +113,12 @@ pub trait PostProcessor {
     /// G73 chip-break: as G83 but only retracts a small amount between pecks.
     /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
     fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+        const CHIP_BREAK_RETRACT: f64 = 0.5;
         let q = q.abs();
         if q < 1e-9 {
             self.drill_simple(x, y, z, r, dwell_sec);
             return;
         }
-        const CHIP_BREAK_RETRACT: f64 = 0.5;
         self.move_to(Some(x), Some(y), Some(r));
         let mut current_z = r;
         loop {
@@ -685,6 +685,7 @@ fn multi_pass<P: PostProcessor>(
     is_finish: bool,
     post: &mut P,
 ) {
+    use crate::cam::setup::{PlungeStrategy, TabType};
     // Finish-set rates (rt1.27): swap in the tool's _finish overrides
     // when this offset is the wall-defining ring of a Pocket. Falls
     // back to rough rates everywhere else.
@@ -745,7 +746,6 @@ fn multi_pass<P: PostProcessor>(
     // Ramp profile only applies when tab_type=Ramp. ramp_length is the
     // horizontal distance over which Z transitions between cut_z and
     // tabs_z at the configured angle. Computed once per pass below.
-    use crate::cam::setup::TabType;
     let tab_ramp_angle_deg = match setup.tabs.tab_type {
         TabType::Ramp => Some(setup.tabs.ramp_angle_deg.clamp(0.5, 89.0)),
         TabType::Rectangle => None,
@@ -761,7 +761,7 @@ fn multi_pass<P: PostProcessor>(
     // the path, then continue at depth. Computed once per pass from
     // `step / tan(angle)`. Disabled when helix is active (the helix
     // already provides a ramped descent over the full path).
-    use crate::cam::setup::PlungeStrategy;
+    //
     // Helix-entry plunge: a start-of-cut spiral descent on a small
     // circle inside the closed pocket boundary, distinct from the
     // path-wide `helix_mode` above. Only meaningful for closed paths

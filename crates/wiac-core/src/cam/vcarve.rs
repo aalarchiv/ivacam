@@ -402,12 +402,7 @@ fn nearest_boundary_distance(p: Point2, segments: &[(Point2, Point2)]) -> f64 {
         let (qx, qy) = if len_sq < 1e-18 {
             (a.x, a.y)
         } else {
-            let mut t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
-            if t < 0.0 {
-                t = 0.0;
-            } else if t > 1.0 {
-                t = 1.0;
-            }
+            let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq).clamp(0.0, 1.0);
             (a.x + t * dx, a.y + t * dy)
         };
         let ex = p.x - qx;

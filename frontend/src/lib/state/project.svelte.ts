@@ -886,13 +886,20 @@ class ProjectState {
 
   /// Apply a streaming pipeline event from the backend. `cached` and
   /// the per-op-progress arithmetic live here so the UI component
-  /// stays render-only.
+  /// stays render-only. Accepts the full PipelineEvent union from
+  /// the API client (including `cancelled` / `done` terminators);
+  /// those collapse to no-ops on the project state since
+  /// finishGenerate / failGenerate handle the lifecycle explicitly.
   notePipelineEvent(
     ev:
       | { kind: 'op_started'; idx: number; total: number; name: string }
       | { kind: 'op_progress'; fraction: number; message: string }
       | { kind: 'op_completed'; cached: boolean }
-      | { kind: 'done' },
+      | { kind: 'cancelled' }
+      | { kind: 'done' }
+      // Allow the API client's richer PipelineEvent (with extra
+      // op_id / total_time_s fields) to flow through unchanged.
+      | Record<string, unknown> & { kind: string },
   ) {
     if (ev.kind === 'op_started') {
       this.pipelineProgress = {
@@ -1464,8 +1471,32 @@ export interface StockConfig {
   offsetZ?: number;
 }
 
-export type { ToolKind, OpKind, ProfileOffset, SourceCombine, FrameShape } from './op_types';
-import type { FrameShape, OpKind, ProfileOffset, SourceCombine, ToolKind } from './op_types';
+export type {
+  ChamferOp,
+  ContourFields,
+  DragKnifeOp,
+  DrillOp,
+  EngraveOp,
+  FrameShape,
+  LeadKind,
+  OpBase,
+  OpEntry,
+  OpField,
+  OpFieldValue,
+  OpKind,
+  OpOfKind,
+  OpPatch,
+  PocketOp,
+  ProfileOffset,
+  ProfileOp,
+  SourceCombine,
+  TabType,
+  ThreadOp,
+  ToolKind,
+  VCarveOp,
+} from './op_types';
+export { isContourOp, isPathOp } from './op_types';
+import type { OpEntry, OpKind, OpOfKind, OpPatch, ToolKind } from './op_types';
 
 export type CoolantMode = 'off' | 'mist' | 'flood';
 
@@ -1772,188 +1803,6 @@ export type DrillCycle =
 /// Thin frontend mirror of wiac_core::project::Operation. Tracks just
 /// what the UI needs to show + edit; the wire format expands to the
 /// full Operation when Generate ships.
-export interface OpEntry {
-  id: number;
-  name: string;
-  enabled: boolean;
-  kind: OpKind;
-  toolId: number;
-  /// Dual-tool Pocket (rt1.33): optional finish tool id. When set to a
-  /// tool distinct from `toolId`, the pipeline emits a toolchange after
-  /// the rough cascade and cuts the wall ring with the finish tool's
-  /// finish-set feed/speed. Undefined = single-tool (current behavior).
-  finishToolId?: number;
-  /// Source kind:
-  ///   null              → all imported geometry (the default)
-  ///   string[]          → run only on chains whose layer name is listed
-  ///   { objects: [...]} → run only on the listed object ids (1-based)
-  sourceLayers: string[] | null;
-  sourceObjects?: number[];
-  /// Combine mode for multi-object selections. Default 'auto' is the
-  /// containment-aware behavior (outer + inner = annulus pocket); other
-  /// modes drive clipper2 boolean ops on the selected closed polygons.
-  /// Persisted in .vc-project so the user's choice survives reloads.
-  sourceCombine?: SourceCombine;
-  depth: number;
-  startDepth: number;
-  /// Per-pass Z step in mm (negative). null = inherit from the assigned
-  /// tool's `defaultStep`; if that's also unset the backend warns
-  /// `step_unspecified`.
-  step: number | null;
-  offset: ProfileOffset;
-  pocketStrategy: PocketStrategy | null;
-  /// Drill cycle for OperationKind::Drill. Honored only when `kind === 'drill'`.
-  /// Default { kind: 'simple', dwell_sec: 0 } via addOperation.
-  drillCycle?: DrillCycle;
-  /// Main / roughing cut direction. Default 'conventional'.
-  cutDirection?: CutDirection;
-  /// Direction for the wall-defining finishing pass. Default
-  /// 'conventional' regardless of cutDirection — surface quality on
-  /// hobby machines is almost always best with conventional milling
-  /// even when the roughing passes use climb.
-  finishCutDirection?: CutDirection;
-  /// How the cutter descends into material at the start of each Z
-  /// pass. Default { kind: 'direct' }.
-  plunge?: PlungeStrategy;
-  /// XY overlap fraction in (0.05, 0.95) — drives the cascade step
-  /// (= tool_diameter * (1 - overlap)) and zigzag stride. Default 0.5
-  /// = 50% overlap. Higher = tighter cascade = better fill on small
-  /// pockets. Honored only by Pocket ops.
-  xyOverlap?: number;
-  /// Trochoidal engagement angle in degrees. Drives the centerline
-  /// pitch (step_main = tool_d * sin(eng/2)). Default 30°.
-  engagementAngleDeg?: number;
-  /// Trochoidal loop radius as a fraction of tool radius. Default 0.6.
-  loopRadiusFactor?: number;
-  /// Halfpipe cross-section profile (rt1.19). Honored when
-  /// pocketStrategy === 'halfpipe'. Default
-  /// `{ kind: 'circular_arc', radius_mm: 5 }`.
-  halfpipeProfile?: HalfpipeProfile;
-  /// Tab geometry. `tabType=rectangle` (default) is a straight Z lift
-  /// over each tab; `tabType=ramp` runs a sloped ramp up to the tab top
-  /// at `tabRampAngleDeg` (default 30°), holds the flat top, then ramps
-  /// back down. Per-op so a user can mix Rectangle pockets with Ramp
-  /// profiles in one project. Per-tab POSITIONS come from
-  /// `tabMode` + `tabPlacements` (rt1.10).
-  tabType?: 'rectangle' | 'ramp';
-  tabRampAngleDeg?: number;
-  /// Tab width (mm) — visible length of each bridge along the cut.
-  /// Defaults to 10mm at the backend.
-  tabWidth?: number;
-  /// Tab height (mm) — Z-clearance the cutter lifts to over each tab.
-  tabHeight?: number;
-  /// Tab activity flag (rt1.10). When `true`, the per-tab positions
-  /// from `tabMode` + `tabPlacements` are honored. Distinct from
-  /// `tabMode === 'off'`: `tabsActive=false` disables ALL tabs for
-  /// this op regardless of mode.
-  tabsActive?: boolean;
-  /// Tab placement mode (rt1.10): how the op sources tab positions.
-  /// - `off`: no tabs (the legacy default; equivalent to
-  ///   `tabsActive=false`).
-  /// - `auto`: N evenly spaced tabs per closed source contour.
-  /// - `manual`: only the user's `tabPlacements` (click-to-toggle on
-  ///   the 2D canvas).
-  /// - `mixed`: union of auto + manual.
-  tabMode?: TabPlacementMode;
-  /// User-placed tabs anchored geometry-relative as
-  /// `(objectId, t)`. Honored when `tabMode` is `manual` or `mixed`.
-  /// Each placement may carry per-tab width / height overrides.
-  tabPlacements?: TabPlacement[];
-  /// Per-op feedrate override in mm/min. When set, replaces the tool's
-  /// `feedRate` for this op (cutting feed). Useful for finishing passes
-  /// or hard materials where you don't want to edit the tool entry.
-  /// Undefined = use the tool's default.
-  feedRateOverride?: number;
-  /// Per-op plunge-rate override in mm/min. Replaces the tool's
-  /// `plungeRate` for Z descents in this op only. Undefined = use the
-  /// tool's default.
-  plungeRateOverride?: number;
-  /// When > 0, slow the feed at sharp Line→Line corners by this
-  /// fraction. 0.0 (default) = no reduction. 0.5 = half feed at
-  /// corners. Most useful for zigzag pocket fills.
-  cornerFeedReduction?: number;
-  /// Lead-in / lead-out shape for Profile (and other contour) ops.
-  /// Default Off — straight rapid + plunge to the contour start.
-  /// `straight` adds a perpendicular hop into the contour by `leadIn`
-  /// mm; `arc` rolls onto the contour with a tangent quarter-arc of
-  /// `leadIn` mm RADIUS so the cutter eases into the cut without
-  /// dwelling at the start point. `leadOut` is the symmetric size for
-  /// the roll-off motion at the end of the path.
-  leadInKind?: 'off' | 'straight' | 'arc';
-  leadOutKind?: 'off' | 'straight' | 'arc';
-  /// Lead-in size in mm. Length when `leadInKind=straight`, arc radius
-  /// when `leadInKind=arc`. Ignored when `leadInKind=off`.
-  leadIn?: number;
-  /// Lead-out size in mm. Same per-kind interpretation as `leadIn`.
-  leadOut?: number;
-  /// Optional smaller step for the FINAL Z pass (cleaner bottom). Same
-  /// sign convention as `step` (negative). Undefined = use `step` for
-  /// every pass.
-  finishStep?: number;
-  /// XY stock allowance (positive, mm) left UNCUT at the wall by the
-  /// roughing pass, removed by a dedicated finish ring (rt1.24 /
-  /// Estlcam Schlichtzugabe). Honored on Pocket ops only. Undefined or
-  /// 0 = no allowance.
-  finishXyAllowanceMm?: number;
-  /// Stufenfase (rt1.20 / Estlcam): drilled-hole rim chamfer width.
-  /// After the drill cycle, the cutter walks a constant-Z revolution
-  /// at each hole's edge at z = -width / tan(tipAngle / 2). Honored
-  /// only on Drill ops. Set finishToolId to swap to a dedicated
-  /// chamfer cutter; otherwise the drill tool itself is used.
-  chamferAfterWidthMm?: number;
-  /// Anfahrpunkt (rt1.26 / Estlcam): user-picked XY where the cutter
-  /// enters each pocket / closed-contour ring. When set, each closed
-  /// offset's start vertex is rotated to the segment closest to the
-  /// point — the plunge / lead-in then happens there. Honored on
-  /// Pocket / Profile ops with closed offsets. Undefined = auto.
-  approachPoint?: [number, number];
-  /// Cut past `depth` by this many mm (positive). Useful for
-  /// through-cuts on edge-clamped sheet.
-  throughDepth?: number;
-  /// Explicit ordered list of Z depths (negative numbers). When
-  /// non-empty, overrides `step`/`finishStep`/`throughDepth`.
-  depthList?: number[];
-  /// V-Carve cap on the inscribed-circle radius (mm). Undefined =
-  /// no cap; the V-bit reaches the geometric medial axis. Useful for
-  /// keeping the carve narrower than the bit's usable shoulder.
-  carveMaxWidthMm?: number;
-  /// V-Carve refinement pass toggle. Default false.
-  multiPassRefine?: boolean;
-  /// Chamfer width on the workpiece, mm (rt1.18). Drives the Z depth
-  /// via the V-bit cone math `z = -width / tan(tipAngle / 2)`. Honored
-  /// only when op.kind === 'chamfer'.
-  chamferWidthMm?: number;
-  /// Chamfer second pass at finish-set feed/speed for surface
-  /// quality (rt1.18 × rt1.27). Default false. Honored only when
-  /// op.kind === 'chamfer'.
-  chamferFinishPass?: boolean;
-  /// Thread pitch in mm (rt1.17): Z descent per full helix
-  /// revolution. Honored only when op.kind === 'thread'.
-  threadPitchMm?: number;
-  /// Thread direction: `true` = internal (tap-style, inside the
-  /// bore); `false` = external (around a stud). Default true.
-  threadInternal?: boolean;
-  /// Thread climb (CCW) vs conventional (CW). Default false
-  /// (conventional). Honored only when op.kind === 'thread'.
-  threadClimb?: boolean;
-  /// Pocket-Outside (rt1.3): when set, the op carves the area between a
-  /// synthetic frame and the source selection. The frame is computed in
-  /// the pipeline from these params — not persisted as project geometry.
-  /// Set by the "Pocket Outside" entry in OperationsList.
-  frameShape?: FrameShape;
-  /// Padding (mm) added on every side of the selection bbox to size the
-  /// frame. Auto-defaulted to 3 × tool diameter when the wrapper creates
-  /// the op; once the user types a value it stays manual.
-  framePaddingMm?: number;
-  /// Corner radius (mm) for `frameShape === 'rounded_rectangle'`. Ignored
-  /// otherwise. Undefined ⇒ backend defaults to `framePaddingMm`.
-  frameCornerRadiusMm?: number;
-  /// Pattern repetition (rt1.5 backend). When set, the pipeline runs
-  /// this op once per pattern instance with the source geometry
-  /// translated / rotated. The (0, 0) / 0° instance is the original,
-  /// so single-count patterns are equivalent to no pattern.
-  pattern?: PatternConfig;
-}
 
 export interface ProjectFile {
   kind: 'wiac-project';

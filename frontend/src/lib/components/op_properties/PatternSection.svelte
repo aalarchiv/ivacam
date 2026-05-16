@@ -2,11 +2,18 @@
   /// Pattern (repeat-this-op) fieldset. Universal — applies to every
   /// op kind. Styles inherited from OpPropertiesPanel's :global(.props ...)
   /// rules.
-  import { project, type OpEntry, type PatternConfig } from '../../state/project.svelte';
+  import {
+    project,
+    type OpEntry,
+    type OpField,
+    type OpFieldValue,
+    type PatternConfig,
+  } from '../../state/project.svelte';
 
   interface Props {
     op: OpEntry;
-    patch: <K extends keyof OpEntry>(field: K, value: OpEntry[K]) => void;
+    /// Kind-aware patch — see ChamferSection for rationale.
+    patch: <K extends OpField>(field: K, value: OpFieldValue<K>) => void;
   }
   let { op, patch }: Props = $props();
 

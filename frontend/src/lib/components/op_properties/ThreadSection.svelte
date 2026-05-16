@@ -1,11 +1,14 @@
 <script lang="ts">
-  /// Thread op-properties fieldset. Shown only when op.kind === 'thread'.
+  /// Thread op-properties fieldset. Shown only when op.kind === 'thread';
+  /// the parent narrows so the section receives a strongly-typed
+  /// `ThreadOp` rather than the full OpEntry union.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
-  import type { OpEntry } from '../../state/project.svelte';
+  import type { OpField, OpFieldValue, ThreadOp } from '../../state/project.svelte';
 
   interface Props {
-    op: OpEntry;
-    patch: <K extends keyof OpEntry>(field: K, value: OpEntry[K]) => void;
+    op: ThreadOp;
+    /// Kind-aware patch — see ChamferSection for rationale.
+    patch: <K extends OpField>(field: K, value: OpFieldValue<K>) => void;
   }
   let { op, patch }: Props = $props();
 </script>

@@ -2,12 +2,18 @@
   /// V-Carve op-properties fieldset. Shown only when op.kind === 'vcarve'.
   /// Styling is inherited from OpPropertiesPanel's :global(.props ...)
   /// rules, so no <style> block is needed here.
-  import { project, type OpEntry } from '../../state/project.svelte';
+  import {
+    project,
+    type OpField,
+    type OpFieldValue,
+    type VCarveOp,
+  } from '../../state/project.svelte';
   import { _ } from 'svelte-i18n';
 
   interface Props {
-    op: OpEntry;
-    patch: <K extends keyof OpEntry>(field: K, value: OpEntry[K]) => void;
+    op: VCarveOp;
+    /// Kind-aware patch — see ChamferSection for rationale.
+    patch: <K extends OpField>(field: K, value: OpFieldValue<K>) => void;
   }
   let { op, patch }: Props = $props();
 

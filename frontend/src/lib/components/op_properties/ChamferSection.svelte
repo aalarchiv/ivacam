@@ -1,11 +1,20 @@
 <script lang="ts">
   /// Chamfer op-properties fieldset. Shown only when op.kind === 'chamfer'.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
-  import { project, type OpEntry } from '../../state/project.svelte';
+  import {
+    project,
+    type ChamferOp,
+    type OpField,
+    type OpFieldValue,
+  } from '../../state/project.svelte';
 
   interface Props {
-    op: OpEntry;
-    patch: <K extends keyof OpEntry>(field: K, value: OpEntry[K]) => void;
+    op: ChamferOp;
+    /// Kind-aware patch (OpField + OpFieldValue) so calls like
+    /// `patch('chamferWidthMm', 1.5)` type-check across every
+    /// section without each section redeclaring a per-variant
+    /// signature.
+    patch: <K extends OpField>(field: K, value: OpFieldValue<K>) => void;
   }
   let { op, patch }: Props = $props();
 

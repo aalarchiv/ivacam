@@ -13,7 +13,6 @@
     chamfer: 'Chamfer',
     engrave: 'Engrave',
     drag_knife: 'Drag-knife',
-    helix: 'Helix',
     vcarve: 'V-Carve',
   };
   export const KIND_ICON: Record<OpKind, string> = {
@@ -24,7 +23,6 @@
     chamfer: '◇',
     engrave: '✎',
     drag_knife: '✁',
-    helix: '◎',
     vcarve: '⌃',
   };
   // Helix is omitted intentionally: it's an OperationKind in the
@@ -69,7 +67,6 @@
       'Drills holes at point geometry or small closed circles. Choose simple / peck / chip-break cycle.',
     engrave: 'Tool-on engraving along the source path. No offset.',
     drag_knife: 'Drag-knife cuts with trail-compensation arcs at corners.',
-    helix: 'Helical descent into a closed contour.',
     vcarve:
       'Variable-depth medial-axis carving with a V-bit. Tip dips deepest where the region is widest.',
     chamfer:

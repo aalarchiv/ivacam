@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { project } from '../state/project.svelte';
+  import { project, isContourOp } from '../state/project.svelte';
   import {
     buildObjectPolylines,
     polylineAtT,
@@ -560,7 +560,7 @@
     snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
   } | null {
     const op = selectedOp;
-    if (!op || !lastTransform) return null;
+    if (!op || !isContourOp(op) || !lastTransform) return null;
     const { scale, offX, offY } = lastTransform;
     // Canvas → data XY (mirror of the draw transform).
     const dataX = (cx - offX) / scale;
@@ -725,6 +725,7 @@
     const objects = getObjectPolylines();
     let best: { opId: number; placementIdx: number; d2: number } | null = null;
     for (const op of project.operations) {
+      if (!isContourOp(op)) continue;
       const mode = op.tabMode?.kind ?? 'off';
       if (mode !== 'manual' && mode !== 'mixed') continue;
       const placements = op.tabPlacements ?? [];
@@ -752,7 +753,7 @@
     patch: { widthOverrideMm?: number | undefined; heightOverrideMm?: number | undefined },
   ) {
     const op = project.operations.find((o) => o.id === opId);
-    if (!op) return;
+    if (!op || !isContourOp(op)) return;
     const cur = op.tabPlacements ?? [];
     if (placementIdx < 0 || placementIdx >= cur.length) return;
     const next = cur.map((p, i) => (i === placementIdx ? { ...p, ...patch } : p));
@@ -763,7 +764,7 @@
   /// branch fires when the target is within tolerance).
   function deleteTabPlacement(opId: number, placementIdx: number) {
     const op = project.operations.find((o) => o.id === opId);
-    if (!op) return;
+    if (!op || !isContourOp(op)) return;
     const cur = op.tabPlacements ?? [];
     if (placementIdx < 0 || placementIdx >= cur.length) return;
     const next = cur.filter((_, i) => i !== placementIdx);
@@ -1346,8 +1347,11 @@
     const tabStroke = themeVar('--bg-app', '#0d0d0d');
     const objects = getObjectPolylines();
     // Walk every op with tabs ON: render auto-spaced (per kind),
-    // manual placements, and the ghost (if the selected op).
+    // manual placements, and the ghost (if the selected op). Tabs
+    // are only meaningful for closed-contour ops (profile + pocket),
+    // so narrow first.
     for (const op of project.operations) {
+      if (!isContourOp(op)) continue;
       const mode = op.tabMode?.kind ?? 'off';
       const tabsActive = op.tabsActive ?? false;
       // Skip ops with no tabs to draw.
@@ -1408,7 +1412,7 @@
       }
     }
     // Ghost (selected op + manual/mixed mode + cursor over contour).
-    if (ghostTab && tabPlacementActive && selectedOp) {
+    if (ghostTab && tabPlacementActive && selectedOp && isContourOp(selectedOp)) {
       const obj = objects.find((o) => o.objectId === ghostTab!.objectId);
       if (obj) {
         const { tangent } = polylineAtT(obj.pts, ghostTab.t, obj.closed);
@@ -1668,8 +1672,8 @@
   {/if}
   {#if tabPopover}
     {@const op = project.operations.find((o) => o.id === tabPopover!.opId)}
-    {@const placement = op?.tabPlacements?.[tabPopover!.placementIdx]}
-    {#if op && placement}
+    {@const placement = op && isContourOp(op) ? op.tabPlacements?.[tabPopover!.placementIdx] : null}
+    {#if op && isContourOp(op) && placement}
       <div
         class="tab-popover"
         style:left={`${tabPopover.x}px`}

@@ -6,7 +6,12 @@
 
   import {
     project,
+    isContourOp,
     type OpEntry,
+    type OpField,
+    type OpFieldValue,
+    type ProfileOp,
+    type PocketOp,
     type ProfileOffset,
     type PocketStrategy,
     type SourceCombine,
@@ -42,7 +47,7 @@
   /// reachable from this op's source. "Reachable" means the import
   /// still carries an object with that id AND the op's source filter
   /// would include it.
-  function disconnectedTabCount(op: OpEntry): number {
+  function disconnectedTabCount(op: ProfileOp | PocketOp): number {
     const placements = op.tabPlacements ?? [];
     if (placements.length === 0) return 0;
     const imp = project.imported;
@@ -55,7 +60,7 @@
 
   /// One-click strip of disconnected placements. Single
   /// updateOperation call so it lands as one undoable history entry.
-  function clearDisconnectedTabs(op: OpEntry) {
+  function clearDisconnectedTabs(op: ProfileOp | PocketOp) {
     const imp = project.imported;
     if (!imp) return;
     const liveIds = new Set<number>(imp.objects ?? []);
@@ -83,7 +88,13 @@
     stepInheriting && (toolDefaultStep === null || toolDefaultStep >= 0),
   );
 
-  function patch<K extends keyof OpEntry>(key: K, value: OpEntry[K]) {
+  /// Kind-aware patch helper. `OpField` is the union of every field
+  /// name across every OpEntry variant (so `'xyOverlap'` /
+  /// `'chamferWidthMm'` etc. type-check), and `OpFieldValue<K>`
+  /// picks the right value type for whichever variant carries that
+  /// field. Runtime safety (rejecting wrong-kind writes) lives in
+  /// `project.updateOperation`.
+  function patch<K extends OpField>(key: K, value: OpFieldValue<K>) {
     if (op) project.updateOperation(op.id, { [key]: value } as Partial<OpEntry>);
   }
 
@@ -387,25 +398,27 @@
       {#if stepMissing}
         <p class="step-error">Step required (set per-op or in the tool library).</p>
       {/if}
-      <label
-        class="row"
-        title="Optional smaller step for the FINAL Z pass — gives a thin finishing pass at the bottom for cleaner surface. Same sign as Step (negative). Empty = same as Step."
-      >
-        <span>Finish step</span>
-        <div class="num-cell">
-          <input
-            type="number"
-            step="0.05"
-            placeholder="same as step"
-            value={op.finishStep ?? ''}
-            onchange={(e) => {
-              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-              patch('finishStep', isNaN(v) ? undefined : v);
-            }}
-          />
-          <span class="unit">mm</span>
-        </div>
-      </label>
+      {#if isContourOp(op)}
+        <label
+          class="row"
+          title="Optional smaller step for the FINAL Z pass — gives a thin finishing pass at the bottom for cleaner surface. Same sign as Step (negative). Empty = same as Step."
+        >
+          <span>Finish step</span>
+          <div class="num-cell">
+            <input
+              type="number"
+              step="0.05"
+              placeholder="same as step"
+              value={op.finishStep ?? ''}
+              onchange={(e) => {
+                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                patch('finishStep', isNaN(v) ? undefined : v);
+              }}
+            />
+            <span class="unit">mm</span>
+          </div>
+        </label>
+      {/if}
       {#if op.kind === 'pocket'}
         <label
           class="row"
@@ -1487,13 +1500,12 @@
       <ThreadSection {op} {patch} />
     {/if}
 
-    {#if op.kind === 'helix'}
-      <p class="empty">
-        Helical entry isn't supported as a standalone operation yet. For helical plunge into a
-        pocket, use a Pocket op and set
-        <strong>Plunge → Helix</strong> in the Cut section.
-      </p>
-    {/if}
+    <!-- Standalone helix op was removed (audit-sue): users get helical
+         plunge by adding a Pocket and setting Plunge → Helix in the
+         Cut section. The OpKind 'helix' value is no longer in the
+         union so this branch is unreachable; kept as a comment for
+         the eventual standalone-helix-emitter feature reintroduction. -->
+
 
     <PatternSection {op} {patch} />
   {/if}

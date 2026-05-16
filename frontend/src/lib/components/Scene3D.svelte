@@ -7,6 +7,7 @@
     playheadToSegment,
     simWarningSeverity,
     simWarningSegmentIdx,
+    isContourOp,
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { HeightfieldDriver, computeFootprint } from '../sim/driver';
@@ -1123,6 +1124,7 @@
     const objects = buildObjectPolylines(imp);
     const objectById = new Map(objects.map((o) => [o.objectId, o]));
     for (const op of project.operations) {
+      if (!isContourOp(op)) continue;
       const mode = op.tabMode;
       if (!mode || mode.kind === 'off') continue;
       // Manual placements (Manual + Mixed).

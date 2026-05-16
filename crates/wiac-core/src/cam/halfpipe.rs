@@ -1,4 +1,4 @@
-//! Halfpipe slot machining (rt1.19 — Estlcam Prog_Halfpipe).
+//! Halfpipe slot machining (rt1.19 — Estlcam `Prog_Halfpipe`).
 //!
 //! Walk the closed region's medial axis at varying Z so the cut floor
 //! matches the configured cross-section profile. The slot's width at
@@ -23,7 +23,7 @@
 //! Both depths are then clipped to the user-set op `depth` (passed in
 //! as `z_cap`). The returned polyline is the medial-axis walked
 //! point-by-point with the computed Z; the pipeline driver feeds it
-//! into the existing ratchet emitter (vcarve_emit::ratchet_emit) and
+//! into the existing ratchet emitter (`vcarve_emit::ratchet_emit`) and
 //! V-Carve gcode block.
 
 use crate::cam::vcarve::VPoint;
@@ -34,9 +34,9 @@ use crate::project::HalfpipeProfile;
 /// `Some(d)` ⇒ result ≥ `-|d|`).
 ///
 /// Returns `(z, depth_limited)` — `depth_limited` is true iff either
-/// the profile cap (CircularArc with `r > R`) OR `z_cap` clipped the
+/// the profile cap (`CircularArc` with `r > R`) OR `z_cap` clipped the
 /// result.
-pub fn depth_at(v: &VPoint, profile: HalfpipeProfile, z_cap: Option<f64>) -> (f64, bool) {
+#[must_use] pub fn depth_at(v: &VPoint, profile: HalfpipeProfile, z_cap: Option<f64>) -> (f64, bool) {
     let r = v.r.max(0.0);
     let (mut z, mut limited) = match profile {
         HalfpipeProfile::CircularArc { radius_mm } => {
@@ -73,7 +73,7 @@ pub fn depth_at(v: &VPoint, profile: HalfpipeProfile, z_cap: Option<f64>) -> (f6
 /// downstream emitters that want the radius for sim / tabbing get it
 /// (mirrors `cam/vcarve.rs::polyline_to_z`'s shape). Returns
 /// `(points, depth_limited_anywhere)`.
-pub fn polyline_to_z(
+#[must_use] pub fn polyline_to_z(
     axis: &[VPoint],
     profile: HalfpipeProfile,
     z_cap: Option<f64>,
@@ -98,7 +98,7 @@ mod tests {
         VPoint { x, y, r }
     }
 
-    /// CircularArc profile with R = 5: at r = 0, z = 0; at r = R, z = -R;
+    /// `CircularArc` profile with R = 5: at r = 0, z = 0; at r = R, z = -R;
     /// at r = R/sqrt(2), z = -R + R/sqrt(2).
     #[test]
     fn circular_arc_profile_depth_curve() {
@@ -123,7 +123,7 @@ mod tests {
         assert!(!lim);
     }
 
-    /// VBottom profile with 60° apex (half=30°): tan(30°) ≈ 0.5774;
+    /// `VBottom` profile with 60° apex (half=30°): tan(30°) ≈ 0.5774;
     /// z = -r / 0.5774 ≈ -r * 1.7321.
     #[test]
     fn v_bottom_profile_depth_curve() {
@@ -135,8 +135,8 @@ mod tests {
         assert!(!lim);
     }
 
-    /// z_cap clips both profiles. CircularArc with R=5 and z_cap=2:
-    /// at r=R, natural z=-5 → clipped to -2 (depth_limited=true).
+    /// `z_cap` clips both profiles. `CircularArc` with R=5 and `z_cap=2`:
+    /// at r=R, natural z=-5 → clipped to -2 (`depth_limited=true`).
     #[test]
     fn z_cap_clips_both_profiles() {
         let p = HalfpipeProfile::CircularArc { radius_mm: 5.0 };
@@ -145,7 +145,7 @@ mod tests {
         assert!(lim);
     }
 
-    /// polyline_to_z propagates the depth_limited flag.
+    /// `polyline_to_z` propagates the `depth_limited` flag.
     #[test]
     fn polyline_propagates_depth_limited_flag() {
         let axis = vec![vp(0.0, 0.0, 1.0), vp(1.0, 0.0, 8.0), vp(2.0, 0.0, 0.5)];

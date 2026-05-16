@@ -4,7 +4,7 @@
 //! crosshatch / solid fill) is intentionally skipped: for CAM the only
 //! useful part of a HATCH is its outline.
 //!
-//! Format reference: AutoCAD DXF — HATCH entity (groups 91/92/93/72/73/
+//! Format reference: `AutoCAD` DXF — HATCH entity (groups 91/92/93/72/73/
 //! 10/20/11/21/40/50/51 et al.). We support:
 //!
 //! * Polyline boundary paths (path-type bit 2) with straight + bulge

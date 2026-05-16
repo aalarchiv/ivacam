@@ -14,7 +14,7 @@ use super::{ordered_selection, source_combine_mode, RegionPreview};
 /// Compute the filled-region preview for every enabled Pocket op. Auto
 /// mode runs through the same containment-aware logic as the per-op
 /// driver; explicit modes route through the clipper2 boolean ops in
-/// cam::source_combine. Non-Pocket ops contribute nothing.
+/// `cam::source_combine`. Non-Pocket ops contribute nothing.
 pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> Vec<RegionPreview> {
     let mut out = Vec::new();
     for op in project.operations.iter().filter(|o| o.enabled) {
@@ -62,7 +62,7 @@ pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> 
 
 /// Build a synthetic [`VcObject`] from a [`CombinedRegion`]'s boundary
 /// so it can be fed into `pocket_for_object` (which is shaped around
-/// VcObjects). The region's holes are passed alongside as islands;
+/// `VcObjects`). The region's holes are passed alongside as islands;
 /// only the outer boundary lives in this object.
 pub(super) fn synthesize_region_object(region: &CombinedRegion) -> VcObject {
     let pts = &region.boundary;

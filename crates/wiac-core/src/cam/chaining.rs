@@ -19,7 +19,7 @@ const CELL_SIZE: f64 = FUZZY * 4.0;
 
 /// Group `segments` into [`VcObject`]s (chains) by walking neighbor endpoints.
 /// Closed chains (last endpoint matches first) get `closed = true`.
-pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
+#[must_use] pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
     let mut taken = vec![false; segments.len()];
     let mut out = Vec::new();
     // Spatial hash over endpoints — each segment contributes both its
@@ -72,7 +72,7 @@ pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
     out
 }
 
-/// (cell_x, cell_y) -> list of segment indices whose start OR end falls
+/// (`cell_x`, `cell_y`) -> list of segment indices whose start OR end falls
 /// in that cell. Segments appear in both their start cell and their end
 /// cell so an endpoint probe can find them from either side.
 type EndpointGrid = HashMap<(i64, i64), Vec<usize>>;

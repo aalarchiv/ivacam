@@ -1,4 +1,4 @@
-//! GRBL post-processor. Mostly identical to LinuxCNC; differences:
+//! GRBL post-processor. Mostly identical to `LinuxCNC`; differences:
 //! - No G64 path-blending pragma
 //! - Tool change is omitted (GRBL is single-tool)
 //! - Coolant mist (M7) often unsupported; we still emit it for symmetry.
@@ -12,7 +12,7 @@ pub struct Post {
 }
 
 impl Post {
-    pub fn new() -> Self {
+    #[must_use] pub fn new() -> Self {
         Self::default()
     }
 }

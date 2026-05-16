@@ -1,5 +1,5 @@
 //! Gcode generation — port of viaConstructor's `machine_cmd.py` and the
-//! three output plugins (gcode_grbl, gcode_linuxcnc, hpgl).
+//! three output plugins (`gcode_grbl`, `gcode_linuxcnc`, hpgl).
 //!
 //! `PostProcessor` is the trait every dialect implements; `emit_polylines`
 //! is the dialect-agnostic orchestrator that walks offsets and writes
@@ -165,7 +165,7 @@ pub trait PostProcessor {
     /// captured output is self-contained and reusable across runs.
     fn reset_state(&mut self) {}
 
-    /// Capture the current delta-encoding state (last_x/y/z + rates).
+    /// Capture the current delta-encoding state (`last_x/y/z` + rates).
     /// Paired with [`PostProcessor::restore_state`] so a cache hit can
     /// resume from the same state a fresh run would have left the post
     /// in. Default returns zeroed/None fields — posts that delta-encode
@@ -181,32 +181,32 @@ pub trait PostProcessor {
 
     /// Configure the program-wide number formatter (rt1.36): decimal
     /// separator and optional N-line-numbering start. Called once at
-    /// program_begin from `MachineConfig`. Default impl is a no-op —
+    /// `program_begin` from `MachineConfig`. Default impl is a no-op —
     /// posts that emit numeric coordinates (linuxcnc, grbl) override
     /// it; HPGL / pen plotters ignore it.
     fn configure(&mut self, _decimal_separator: char, _line_number_start: Option<u32>) {}
 
     /// rt1.15: attach a user-configurable post-processor profile.
-    /// Called once at program_begin from `MachineConfig`. Default
+    /// Called once at `program_begin` from `MachineConfig`. Default
     /// impl is a no-op; linuxcnc / grbl posts override to store the
-    /// profile in their PostState and consult it for
-    /// program_start / _end / tool / coolant.
+    /// profile in their `PostState` and consult it for
+    /// `program_start` / _end / tool / coolant.
     fn set_post_profile(&mut self, _profile: Option<&post_profile::PostProfile>) {}
 
     /// rt1.15: refresh the token-substitution context. Called at
-    /// program_begin and at every op boundary so per-op tokens
+    /// `program_begin` and at every op boundary so per-op tokens
     /// (`<op>`, `<t>`, `<n>`, `<f>`, `<s>`) reflect the active
     /// state. Default impl is a no-op.
     fn set_token_ctx(&mut self, _ctx: &post_profile::TokenCtx) {}
 
     /// Apply a per-tool Z work-coordinate offset (rt1.30). Called
-    /// at program_begin for the first op's tool and right after each
-    /// emitted toolchange. LinuxCNC / GRBL emit `G92 Z<shift>`;
+    /// at `program_begin` for the first op's tool and right after each
+    /// emitted toolchange. `LinuxCNC` / GRBL emit `G92 Z<shift>`;
     /// HPGL ignores. Skip when `shift_mm == 0`.
     fn tool_z_shift(&mut self, _shift_mm: f64) {}
 
     /// Emit a dwell of `seconds` (rt1.29 — used for laser pierce
-    /// time). LinuxCNC / GRBL emit `G4 P<seconds>`; HPGL ignores.
+    /// time). `LinuxCNC` / GRBL emit `G4 P<seconds>`; HPGL ignores.
     /// Skip when `seconds <= 0`.
     fn dwell(&mut self, _seconds: f64) {}
 }
@@ -224,7 +224,7 @@ pub struct CapturedPostState {
 }
 
 /// Format a dwell value for `G4 P` — strip trailing zeros so the line
-/// stays readable. Mirrors the LinuxCNC post's number formatting.
+/// stays readable. Mirrors the `LinuxCNC` post's number formatting.
 fn fmt_dwell(v: f64) -> String {
     let s = format!("{v:.4}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
@@ -236,7 +236,7 @@ fn fmt_dwell(v: f64) -> String {
 }
 
 /// Top-level orchestrator. Walks `offsets` and emits gcode through `post`.
-/// Replaces `polylines2machine_cmd` from machine_cmd.py.
+/// Replaces `polylines2machine_cmd` from `machine_cmd.py`.
 pub fn emit_polylines<P: PostProcessor>(
     setup: &Setup,
     offsets: &[PolylineOffset],
@@ -394,7 +394,7 @@ pub fn emit_drill_block<P: PostProcessor>(
 /// - `Nearest`    — greedy nearest-neighbor from current pen position;
 ///                  ties broken by deepest level (innermost) first so
 ///                  pocket cascades unwind from the inside out.
-/// - `PerObject`  — group all offsets sharing source_object_idx, finish
+/// - `PerObject`  — group all offsets sharing `source_object_idx`, finish
 ///                  one object before starting the next; within a group
 ///                  use Nearest.
 fn order_offsets(setup: &Setup, offsets: &[PolylineOffset], start: Point2) -> Vec<usize> {
@@ -920,11 +920,11 @@ fn multi_pass<P: PostProcessor>(
 /// over the first `ramp_length` of arc length, then continue at `to_z`
 /// for the remainder.
 ///
-/// Line segments are *split* when they cross the ramp_length boundary
+/// Line segments are *split* when they cross the `ramp_length` boundary
 /// so the ramp angle is honored even if the first segment is longer
-/// than ramp_length. Arc segments aren't split mid-arc (the math gets
+/// than `ramp_length`. Arc segments aren't split mid-arc (the math gets
 /// fiddly); the ramp simply finishes at the first arc boundary that
-/// crosses ramp_length and the rest of the path proceeds at to_z.
+/// crosses `ramp_length` and the rest of the path proceeds at `to_z`.
 fn emit_ramp_pass<P: PostProcessor>(
     segments: &[Segment],
     from_z: f64,
@@ -1052,14 +1052,14 @@ struct HelixEntry {
     /// material in the same direction the path will run.
     ccw: bool,
     /// Starting angle of the helix on the circle (radians, atan2 of
-    /// (path_start - center)). Helix returns to this angle at landing
-    /// so the post-helix walk to path_start is the shortest.
+    /// (`path_start` - center)). Helix returns to this angle at landing
+    /// so the post-helix walk to `path_start` is the shortest.
     start_angle: f64,
 }
 
 /// Build a helix entry plan for `segments` if the geometry supports it.
 /// Returns None when:
-///   - radius < tool_radius (helix would carve nothing the cutter
+///   - radius < `tool_radius` (helix would carve nothing the cutter
 ///     doesn't already cover from the path)
 ///   - the helix circle doesn't fit inside the polygon (any of 8
 ///     sample points lies outside the boundary)
@@ -1135,7 +1135,7 @@ fn plan_helix_entry(
     // graze the helix circle at the clearance limit).
     let samples = 16;
     for i in 0..samples {
-        let theta = (i as f64) * std::f64::consts::TAU / (samples as f64);
+        let theta = f64::from(i) * std::f64::consts::TAU / f64::from(samples);
         let px = center.x + radius * theta.cos();
         let py = center.y + radius * theta.sin();
         if !point_in_polygon(&verts, px, py) {
@@ -1895,7 +1895,7 @@ fn emit_path_with_corner_feed<P: PostProcessor>(
         emit_path_with_dragoff(segments, dragoff, post);
         return;
     }
-    let reduced_rate = ((base_rate as f64) * (1.0 - corner_reduction)).max(1.0) as u32;
+    let reduced_rate = (f64::from(base_rate) * (1.0 - corner_reduction)).max(1.0) as u32;
     let cos_threshold = 0.5_f64; // 60° turn → cos(angle) <= 0.5
     let mut feed_currently_reduced = false;
     let mut prev_dir: Option<(f64, f64)> = None;
@@ -2272,14 +2272,14 @@ pub struct PostState {
     #[serde(default)]
     pub line_counter: Option<u32>,
     /// rt1.15: user-configurable post-processor profile attached to
-    /// MachineConfig. When `Some`, the built-in posts consult its
+    /// `MachineConfig`. When `Some`, the built-in posts consult its
     /// template strings instead of their hard-coded headers /
     /// footers / toolchange / coolant lines. `None` = use the
     /// post's built-in defaults.
     #[serde(default, skip)]
     pub profile: Option<crate::gcode::post_profile::PostProfile>,
     /// Current token substitution context for `profile` templates.
-    /// Refreshed at program_begin and at each op boundary.
+    /// Refreshed at `program_begin` and at each op boundary.
     #[serde(default, skip)]
     pub token_ctx: crate::gcode::post_profile::TokenCtx,
 }
@@ -2306,7 +2306,7 @@ impl Default for PostState {
 }
 
 /// Apply the post-processor numbering / separator settings derived
-/// from MachineConfig (rt1.36). Drains down into `PostState` so the
+/// from `MachineConfig` (rt1.36). Drains down into `PostState` so the
 /// per-post `write` / `fmt` helpers consult them on every line.
 pub fn configure_post_state(
     state: &mut PostState,
@@ -2325,7 +2325,7 @@ pub fn configure_post_state(
 /// Format a floating-point number using the post-state's decimal
 /// separator. Matches the upstream's formatting otherwise: 4 decimal
 /// places, strip trailing zeros, never end with `.`.
-pub fn fmt_num(v: f64, sep: char) -> String {
+#[must_use] pub fn fmt_num(v: f64, sep: char) -> String {
     let s = format!("{v:.4}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
     let base = if trimmed.is_empty() {
@@ -2382,10 +2382,10 @@ mod tests {
         }
     }
 
-    /// Regression for `hsb` (audit): build_z_schedule used to drop the
+    /// Regression for `hsb` (audit): `build_z_schedule` used to drop the
     /// pre-finish pass on single-pass ops because of an `!out.is_empty()`
-    /// guard. With step >= depth (one pass at total_depth), the user's
-    /// finish_step was silently lost.
+    /// guard. With step >= depth (one pass at `total_depth`), the user's
+    /// `finish_step` was silently lost.
     #[test]
     fn build_z_schedule_inserts_pre_finish_on_single_pass() {
         // Depth = -3, step = -3 (= depth, so one main pass), finish_step = 0.2.
@@ -2398,7 +2398,7 @@ mod tests {
         );
     }
 
-    /// Same finish_step but multi-pass: the schedule should still
+    /// Same `finish_step` but multi-pass: the schedule should still
     /// include the pre-finish where it makes sense, AND not duplicate
     /// it when a regular step lands at the same Z.
     #[test]

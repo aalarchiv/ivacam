@@ -142,7 +142,7 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
     }
 }
 
-/// Polygon-signed-area of a closed VcObject. Sums the chord-shoelace
+/// Polygon-signed-area of a closed `VcObject`. Sums the chord-shoelace
 /// contribution from each segment plus, for arcs/circles, the lens
 /// area between chord and arc carrying `sign(bulge)`. Positive = CCW,
 /// negative = CW.
@@ -153,7 +153,7 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
 /// the correction every closed-arc-only object reads as area=0 ⇒ CCW,
 /// which silently flips the inward/outward sign for CW-encoded
 /// circles and gives wrong-side profile offsets.
-pub fn object_signed_area(obj: &VcObject) -> f64 {
+#[must_use] pub fn object_signed_area(obj: &VcObject) -> f64 {
     let mut sum = 0.0;
     for seg in &obj.segments {
         // Chord shoelace contribution.
@@ -185,9 +185,9 @@ pub fn object_signed_area(obj: &VcObject) -> f64 {
 }
 
 /// Inward parallel offset by `distance` (positive). Picks the right
-/// sign for the underlying parallel_offset_object based on the polygon
+/// sign for the underlying `parallel_offset_object` based on the polygon
 /// winding so a CW input doesn't flip the meaning.
-pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
+#[must_use] pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
     let mag = distance.abs();
     let delta = if object_signed_area(obj) >= 0.0 {
         mag
@@ -198,8 +198,8 @@ pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffs
 }
 
 /// Outward parallel offset by `distance` (positive). Mirror of
-/// parallel_offset_inward.
-pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
+/// `parallel_offset_inward`.
+#[must_use] pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
     let mag = distance.abs();
     let delta = if object_signed_area(obj) >= 0.0 {
         -mag
@@ -261,7 +261,7 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
 /// `tool_diameter` is needed separately to inset the rasters by half a
 /// tool diameter from the polygon edges so the cutter doesn't carve
 /// past the boundary.
-pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Vec<Segment> {
+#[must_use] pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Vec<Segment> {
     if boundary.len() < 3 || stride <= 0.0 {
         return Vec::new();
     }
@@ -356,7 +356,7 @@ fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<
 ///
 /// Convenience wrapper for the common single-boundary case; calls
 /// [`pocket_cascade_with_islands`] with no holes.
-pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
+#[must_use] pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
     pocket_cascade_with_islands(boundary, &[], delta)
 }
 
@@ -365,7 +365,7 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
 /// closed polyline already inflated by `tool_radius` outward — the
 /// caller is responsible for that pre-inflation, matching the upstream
 /// Python `do_pockets` islands branch.
-pub fn pocket_cascade_with_islands(
+#[must_use] pub fn pocket_cascade_with_islands(
     boundary: &[Point2],
     islands: &[Vec<Point2>],
     delta: f64,
@@ -476,7 +476,7 @@ fn reverse_offset(offset: &mut PolylineOffset) {
 ///   around a pocket island).
 /// * `Inner` — cutter is inside the part / pocket (pocket boundary,
 ///   pocket cascade ring, internal profile).
-/// * `Skip` — winding doesn't matter (Engrave / DragKnife / Profile-On).
+/// * `Skip` — winding doesn't matter (Engrave / `DragKnife` / Profile-On).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CutContext {
     Outer,
@@ -561,13 +561,13 @@ pub fn rotate_offsets_to_approach_point(offsets: &mut [PolylineOffset], ap: (f64
 /// finishing pass (level = 0 — the offset that defines the wall
 /// surface).
 ///
-/// Context is derived from the op kind and per-offset signed_area:
-/// * Profile + ToolOffset::Outside → all offsets are Outer
-/// * Profile + ToolOffset::Inside  → all offsets are Inner
-/// * Profile + ToolOffset::On/None → Skip (no winding choice)
+/// Context is derived from the op kind and per-offset `signed_area`:
+/// * Profile + `ToolOffset::Outside` → all offsets are Outer
+/// * Profile + `ToolOffset::Inside`  → all offsets are Inner
+/// * Profile + `ToolOffset::On/None` → Skip (no winding choice)
 /// * Pocket → CCW offsets are Inner (cutter inside the pocket), CW
 ///   offsets are Outer (cutter going around an island)
-/// * Engrave / DragKnife → Skip
+/// * Engrave / `DragKnife` → Skip
 pub fn apply_cut_direction(
     offsets: &mut [PolylineOffset],
     op: &crate::project::Operation,
@@ -858,7 +858,7 @@ pub fn pocket_for_object(
 /// ring after the first: rotate the ring's start so it's nearest to
 /// the previous ring's end point, walk the ring forward, repeat. The
 /// bridge between rings is a straight Line segment (the cutter steps
-/// inward by ~one xy_step).
+/// inward by ~one `xy_step`).
 ///
 /// Returns None when a bridge between rings would cross the pocket
 /// boundary — happens on non-convex shapes (L / U / +) where a
@@ -947,7 +947,7 @@ pub(crate) fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point
     }
     let samples = 8;
     for i in 1..samples {
-        let t = (i as f64) / (samples as f64);
+        let t = f64::from(i) / f64::from(samples);
         let px = a.x + (b.x - a.x) * t;
         let py = a.y + (b.y - a.y) * t;
         if !point_in_polygon_pts(polygon, px, py) {
@@ -1044,7 +1044,7 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
 /// If `obj` is a single closed CIRCLE smaller than the tool, return a
 /// drill-only offset whose single segment is a zero-length POINT at the
 /// circle's center. The gcode emitter handles this as plunge + retract.
-pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
+#[must_use] pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
     use crate::geometry::SegmentKind;
     if !obj.closed || obj.segments.is_empty() {
         return None;
@@ -1534,7 +1534,7 @@ mod tests {
     /// Regression for C1 (audit): the zigzag inset used to double-apply
     /// the inset to one end, leaving a stripe of uncut stock at every
     /// stroke's right end. Each stroke now spans `[lo + r, hi - r]`
-    /// exactly, where r = tool_diameter / 2.
+    /// exactly, where r = `tool_diameter` / 2.
     #[test]
     fn pocket_zigzag_insets_both_ends_by_tool_radius() {
         // Square 0..20 in X and Y; stride small enough to get several
@@ -1567,9 +1567,9 @@ mod tests {
     }
 
     /// Regression for C5 (audit): a CW-encoded full circle (two
-    /// semicircles, bulge = -1) used to read signed_area == 0 because
+    /// semicircles, bulge = -1) used to read `signed_area` == 0 because
     /// the chord shoelace cancelled out. With the bulge bow correction
-    /// the sign is now negative, so parallel_offset_inward picks the
+    /// the sign is now negative, so `parallel_offset_inward` picks the
     /// correct delta sign for CW circles.
     #[test]
     fn object_signed_area_includes_arc_bow() {

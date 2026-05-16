@@ -35,7 +35,7 @@ pub fn check_rapid_against_stock(
     // the cutter never approaches material along the way. A rising or
     // falling rapid that stays >= top_z is in air.
     let pz_min = segment.from.z.min(segment.to.z);
-    if pz_min >= heightmap.top_z as f64 {
+    if pz_min >= f64::from(heightmap.top_z) {
         return RapidCheck::Clear;
     }
 
@@ -59,8 +59,8 @@ pub fn check_rapid_against_stock(
         None => RapidCheck::Clear,
         Some((_excess, ix, iy, rapid_pz)) => {
             let cell = heightmap.cell;
-            let worst_x = heightmap.origin.x + (ix as f64 + 0.5) * cell;
-            let worst_y = heightmap.origin.y + (iy as f64 + 0.5) * cell;
+            let worst_x = heightmap.origin.x + (f64::from(ix) + 0.5) * cell;
+            let worst_y = heightmap.origin.y + (f64::from(iy) + 0.5) * cell;
             let worst_cell_z = heightmap.data[(iy as usize) * cols + ix as usize];
             RapidCheck::Collision {
                 worst_x,

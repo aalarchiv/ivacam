@@ -1,4 +1,4 @@
-//! Helical thread emitter (rt1.17 — Estlcam Prog_Thread / IG / AG).
+//! Helical thread emitter (rt1.17 — Estlcam `Prog_Thread` / IG / AG).
 //!
 //! Given a circular bore (or stud) and a single-point thread cutter,
 //! walk the cutter on a helix that descends Z by one `pitch` per
@@ -46,7 +46,7 @@ const DEFAULT_STEPS_PER_REV: usize = 64;
 /// `top_z`; the last waypoint sits on the same angle (or near it,
 /// depending on the revolution count) at `bottom_z`. Empty when the
 /// inputs collapse to a no-op (radius <= 0, pitch <= 0, no Z range).
-pub fn helix_waypoints(
+#[must_use] pub fn helix_waypoints(
     center: Point2,
     radius: f64,
     top_z: f64,
@@ -68,7 +68,7 @@ pub fn helix_waypoints(
 /// Variant of [`helix_waypoints`] that takes an explicit chord
 /// density (segments per revolution). Lower numbers produce coarser
 /// polylines; higher numbers produce smoother but bigger gcode.
-pub fn helix_waypoints_with_density(
+#[must_use] pub fn helix_waypoints_with_density(
     center: Point2,
     radius: f64,
     top_z: f64,

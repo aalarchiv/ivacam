@@ -5,12 +5,12 @@
 //!
 //! The algorithm:
 //!   1. Build a centerline by chaining the cascade rings at a tight
-//!      step_main = tool_diameter * (1 - main_overlap), with
-//!      main_overlap = 1 - sin(engagement_angle_deg / 2).
-//!   2. Subdivide chord segments longer than 2 × step_main so concave
+//!      `step_main` = `tool_diameter` * (1 - `main_overlap`), with
+//!      `main_overlap` = 1 - `sin(engagement_angle_deg` / 2).
+//!   2. Subdivide chord segments longer than 2 × `step_main` so concave
 //!      boundary jumps don't degenerate loop placement.
 //!   3. At every centerline vertex, place a loop circle of radius
-//!      tool_radius * loop_radius_factor offset from the vertex on the
+//!      `tool_radius` * `loop_radius_factor` offset from the vertex on the
 //!      side opposite engagement. Each loop sweeps ≈300° (climb = CCW,
 //!      conventional = CW), leaving a small gap that overlaps with the
 //!      next loop's entry.
@@ -27,7 +27,7 @@ use crate::cam::offsets::{
 use crate::geometry::{Point2, Segment};
 use crate::pipeline::CancelToken;
 
-pub fn pocket_trochoidal(
+#[must_use] pub fn pocket_trochoidal(
     boundary_pts: &[Point2],
     islands: &[Vec<Point2>],
     tool_radius: f64,
@@ -51,7 +51,7 @@ pub fn pocket_trochoidal(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn pocket_trochoidal_cancellable(
+#[must_use] pub fn pocket_trochoidal_cancellable(
     boundary_pts: &[Point2],
     islands: &[Vec<Point2>],
     tool_radius: f64,
@@ -209,7 +209,7 @@ fn disc_inside_polygon(center: Point2, r: f64, outer: &[Point2], islands: &[Vec<
     }
     let samples = 12;
     for i in 0..samples {
-        let theta = (i as f64) * std::f64::consts::TAU / (samples as f64);
+        let theta = f64::from(i) * std::f64::consts::TAU / f64::from(samples);
         let px = center.x + r * theta.cos();
         let py = center.y + r * theta.sin();
         if !point_in_polygon_pts(outer, px, py) {
@@ -317,9 +317,9 @@ mod tests {
     /// disc swept along every emitted segment) should cover most of
     /// the pocket interior. We rasterize a coarse grid over the
     /// 100×60 rectangle, mark a cell as "cut" if it's within
-    /// tool_radius of any emitted point, and require ≥95% coverage of
+    /// `tool_radius` of any emitted point, and require ≥95% coverage of
     /// cells that lie within the safe-pocket inset (boundary inflated
-    /// inward by tool_radius). 95% is the brief's threshold.
+    /// inward by `tool_radius`). 95% is the brief's threshold.
     #[test]
     fn rectangular_pocket_covers_95pct_of_safe_interior() {
         let tool_r = 3.0_f64;
@@ -346,7 +346,7 @@ mod tests {
                     }
                     let n = 16;
                     for k in 1..n {
-                        let a = a0 + sweep * (k as f64) / (n as f64);
+                        let a = a0 + sweep * f64::from(k) / f64::from(n);
                         path_pts.push(Point2::new(c.x + r * a.cos(), c.y + r * a.sin()));
                     }
                 }

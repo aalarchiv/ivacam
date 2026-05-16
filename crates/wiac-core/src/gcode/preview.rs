@@ -1,5 +1,5 @@
 //! Gcode interpreter that produces 3D toolpath polylines for the preview
-//! renderer. Port of preview_plugins/gcode.py.
+//! renderer. Port of `preview_plugins/gcode.py`.
 //!
 //! Reads emitted gcode line-by-line, tracks XYZ + active modal G-code, and
 //! emits typed [`ToolpathSegment`]s the frontend feeds straight to Three.js.
@@ -61,14 +61,14 @@ const NO_SEGMENT: u32 = u32::MAX;
 /// arc-center, plus G20/G21 unit switching). Anything else is ignored
 /// gracefully. `; OP <n>` comments switch the active op id for later
 /// segments (used by the per-op emitter).
-pub fn interpret(gcode: &str) -> Vec<ToolpathSegment> {
+#[must_use] pub fn interpret(gcode: &str) -> Vec<ToolpathSegment> {
     let (segments, _) = interpret_with_index(gcode);
     segments
 }
 
 /// Same as [`interpret`] but also returns the line ↔ segment lookup.
 /// Frontend uses this to wire the gcode text panel to the 3D playhead.
-pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
+#[must_use] pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
     let mut state = Pose3 {
         x: 0.0,
         y: 0.0,

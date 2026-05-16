@@ -1,4 +1,4 @@
-//! Chamfer / edge break (rt1.18 — Estlcam Prog_Fasen).
+//! Chamfer / edge break (rt1.18 — Estlcam `Prog_Fasen`).
 //!
 //! A chamfer op walks a V-bit along the source contour at a single
 //! constant Z below the workpiece surface. The cone of the V-bit
@@ -31,7 +31,7 @@
 //!
 //! ## Pause / dwell concerns
 //!
-//! Constant-Z toolpaths don't need finish_step or step-down; this
+//! Constant-Z toolpaths don't need `finish_step` or step-down; this
 //! emitter pins the depth and emits a single pass plus an optional
 //! second pass tagged `is_finish` so the tool's finish-set rates
 //! (rt1.27) drive the surface-quality cleanup.
@@ -41,7 +41,7 @@
 /// `tip_angle_deg`. Result is clamped to ≤ 0 so a misconfigured
 /// pair (e.g. width 0) collapses to a no-op cut rather than an
 /// upward Z move.
-pub fn chamfer_depth(width_mm: f64, tip_angle_deg: f64) -> f64 {
+#[must_use] pub fn chamfer_depth(width_mm: f64, tip_angle_deg: f64) -> f64 {
     if width_mm <= 0.0 {
         return 0.0;
     }

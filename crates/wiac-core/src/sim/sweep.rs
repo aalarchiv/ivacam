@@ -12,7 +12,7 @@
 //! Arcs come through the gcode preview already tessellated into chord
 //! `ToolpathSegment`s; v1 treats them like lines (chord-only). The
 //! resulting visual error is bounded by the tessellation step in
-//! preview::interpret.
+//! `preview::interpret`.
 
 // Same f64 ↔ u32 grid plumbing as heightmap.rs, same intentional casts.
 #![allow(
@@ -42,7 +42,7 @@ use crate::sim::rapid_check::{check_rapid_against_stock, RapidCheck};
 /// through `fixture_check` against any declared fixtures.
 ///
 /// `segment_idx` is the segment's position in the toolpath stream so
-/// emitted SimWarnings link back to the offending segment; pass `&[]`
+/// emitted `SimWarnings` link back to the offending segment; pass `&[]`
 /// for `fixtures` when the project has none. `holder` is the optional
 /// shank+holder envelope; when set, every segment is also tested against
 /// the heightmap walls for `HolderCollision` warnings.

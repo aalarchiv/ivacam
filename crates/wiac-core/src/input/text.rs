@@ -4,7 +4,7 @@
 //! 1. **Outline mode** (the default for normal display fonts) — walks each
 //!    glyph's outline and emits filled-shape boundary segments. Good for
 //!    profile cuts.
-//! 2. **Single-line mode** (auto-detected for engraving fonts like RhSS,
+//! 2. **Single-line mode** (auto-detected for engraving fonts like `RhSS`,
 //!    Hershey ports, OneLine.ttf, etc.) — these fonts have *no* enclosed
 //!    area; their glyphs are stroked centerlines. Walking the outline of
 //!    them produces a thin pair of forward+backward strokes that, after
@@ -67,7 +67,7 @@ pub struct RenderTextResponse {
     pub family_name: Option<String>,
 }
 
-/// Live-preview response — the rendered TextLayer segments plus the
+/// Live-preview response — the rendered `TextLayer` segments plus the
 /// cached single-line classification. The pipeline produces the same
 /// segments at Generate time; this endpoint lets the frontend show the
 /// text on the 2D canvas without round-tripping a full pipeline run.
@@ -140,7 +140,7 @@ fn face_family_name(face: &Face) -> Option<String> {
 /// segments via fixed-step subdivision.
 struct Walker<'a> {
     /// All accumulated polylines for this glyph. Each contour is its own
-    /// inner Vec (move_to opens a new one).
+    /// inner Vec (`move_to` opens a new one).
     contours: &'a mut Vec<Vec<Point2>>,
     current: Vec<Point2>,
     last: Point2,
@@ -163,8 +163,8 @@ impl<'a> Walker<'a> {
 
     fn point(&self, x: f32, y: f32) -> Point2 {
         Point2::new(
-            self.origin.x + (x as f64) * self.scale,
-            self.origin.y + (y as f64) * self.scale,
+            self.origin.x + f64::from(x) * self.scale,
+            self.origin.y + f64::from(y) * self.scale,
         )
     }
 
@@ -196,7 +196,7 @@ impl OutlineBuilder for Walker<'_> {
         let p0 = self.last;
         let n = 16;
         for i in 1..=n {
-            let t = (i as f64) / (n as f64);
+            let t = f64::from(i) / f64::from(n);
             let mt = 1.0 - t;
             let x = mt * mt * p0.x + 2.0 * mt * t * p1.x + t * t * p2.x;
             let y = mt * mt * p0.y + 2.0 * mt * t * p1.y + t * t * p2.y;
@@ -211,7 +211,7 @@ impl OutlineBuilder for Walker<'_> {
         let p0 = self.last;
         let n = 24;
         for i in 1..=n {
-            let t = (i as f64) / (n as f64);
+            let t = f64::from(i) / f64::from(n);
             let mt = 1.0 - t;
             let mt2 = mt * mt;
             let t2 = t * t;
@@ -248,7 +248,7 @@ pub fn render_text(
         Error::misconfigured(format!("ttf parse: {e}"))
             .with_hint("Pick a different font or install one.")
     })?;
-    let units = face.units_per_em().max(1) as f64;
+    let units = f64::from(face.units_per_em().max(1));
     let scale = height / units;
     let single_line = is_single_line_font(&face);
     let mut pen = origin;
@@ -274,13 +274,13 @@ pub fn render_text(
                 push_polyline_closed(c, layer, color, &mut out);
             }
         }
-        let advance = face.glyph_hor_advance(glyph_id).unwrap_or(0) as f64 * scale;
+        let advance = f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)) * scale;
         pen.x += advance;
     }
     Ok(out)
 }
 
-/// Render a full TextLayer (text + font + size + alignment + transform)
+/// Render a full `TextLayer` (text + font + size + alignment + transform)
 /// to flat segments. Handles MTEXT line breaks (`\n`), per-line
 /// alignment, letter spacing, line spacing, and a rotation pivot at the
 /// layer's `origin`. The output segments live on the synthetic layer
@@ -291,7 +291,7 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
             .with_hint("Pick a different font for this text layer.")
     })?;
     let single_line = is_single_line_font(&face);
-    let units = face.units_per_em().max(1) as f64;
+    let units = f64::from(face.units_per_em().max(1));
     let scale = layer.size_mm / units;
     let layer_name = text_layer_synthetic_layer(layer.id);
     // BYLAYER — the canvas uses the assigned-op tint anyway, so the
@@ -342,7 +342,7 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
                     push_polyline_closed(c, &layer_name, color, &mut out);
                 }
             }
-            let advance = face.glyph_hor_advance(glyph_id).unwrap_or(0) as f64 * scale;
+            let advance = f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)) * scale;
             pen.x += advance + layer.letter_spacing_mm;
         }
     }
@@ -374,7 +374,7 @@ fn measure_line_width(
     let mut count = 0usize;
     for ch in line.chars() {
         let advance = if let Some(gid) = face.glyph_index(ch) {
-            face.glyph_hor_advance(gid).unwrap_or(0) as f64 * scale
+            f64::from(face.glyph_hor_advance(gid).unwrap_or(0)) * scale
         } else {
             size_mm * 0.4
         };
@@ -433,14 +433,14 @@ fn push_polyline_unclosed(pts: &[Point2], layer: &str, color: i32, out: &mut Vec
 ///
 /// 2. **Family-name marker.** Common engraving fonts mark themselves in
 ///    their `family_name` / `full_name` / `postscript_name`: "single-line",
-///    "single line", "stick", "engrave", "hershey", "OSIFont", etc.
-pub fn is_single_line_font(face: &Face) -> bool {
+///    "single line", "stick", "engrave", "hershey", "`OSIFont`", etc.
+#[must_use] pub fn is_single_line_font(face: &Face) -> bool {
     if family_name_says_single_line(face) {
         return true;
     }
     // Sample more chars + look for any retraced (zero-area) contour.
     const SAMPLE_CHARS: [char; 12] = ['A', 'V', 'X', 'Y', 'Z', 'M', 'N', 'K', 'i', 'l', 'j', '7'];
-    let units = face.units_per_em().max(1) as f64;
+    let units = f64::from(face.units_per_em().max(1));
     let scale = 1.0 / units;
     let mut samples = 0usize;
     let mut zero_area_glyphs = 0usize;

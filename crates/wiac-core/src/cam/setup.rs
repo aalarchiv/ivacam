@@ -113,7 +113,7 @@ pub struct MillConfig {
     #[serde(default)]
     pub through_depth: f64,
     /// Explicit ordered list of Z depths to cut at. When non-empty,
-    /// overrides the step / finish_step / through_depth schedule.
+    /// overrides the step / `finish_step` / `through_depth` schedule.
     #[serde(default)]
     pub depth_list: Vec<f64>,
 }
@@ -324,7 +324,7 @@ pub struct AxisLimits {
 }
 
 impl AxisLimits {
-    pub const fn uniform(v: f64) -> Self {
+    #[must_use] pub const fn uniform(v: f64) -> Self {
         Self { x: v, y: v, z: v }
     }
 }
@@ -338,7 +338,7 @@ pub struct MachineConfig {
     pub arcs: bool,
     pub supports_toolchange: bool,
     /// Per-axis acceleration in mm/s². When None the kinematic time
-    /// estimator falls back to 250 mm/s² per axis (LinuxCNC default).
+    /// estimator falls back to 250 mm/s² per axis (`LinuxCNC` default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accel: Option<AxisLimits>,
     /// Per-axis jerk in mm/s³. None ⇒ trapezoidal-only profiling
@@ -365,7 +365,7 @@ pub struct MachineConfig {
     /// fallback when no geometry is imported (the stock then sizes to
     /// the work-area XY footprint), and surfaces as the soft-limit
     /// reference in future sim warnings. Default 200×300×50 — a typical
-    /// hobby gantry; users override in MachineDialog.
+    /// hobby gantry; users override in `MachineDialog`.
     #[serde(
         default = "default_work_area",
         skip_serializing_if = "is_default_work_area"
@@ -377,7 +377,7 @@ pub struct MachineConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arc_fit_tolerance_mm: Option<f64>,
     /// Decimal separator for emitted numbers (rt1.36). `'.'` (default)
-    /// suits LinuxCNC / GRBL / Mach3 and any controller configured in
+    /// suits `LinuxCNC` / GRBL / Mach3 and any controller configured in
     /// US locale. `','` covers European-locale Siemens / Heidenhain
     /// controllers that require `X1,5` instead of `X1.5`. Anything
     /// other than '.' / ',' silently falls back to '.'.
@@ -392,7 +392,7 @@ pub struct MachineConfig {
     /// controllers; useful operator reference even on modern ones.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_number_start: Option<u32>,
-    /// Plot-mode Z (rt1.35 / Estlcam c_PP.Z_Up_Dn): when true, the
+    /// Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the
     /// pipeline collapses every cut to ONE pass at the op's cut depth
     /// and skips the multi-step descent / ramp / helix machinery.
     /// Z values written into gcode are restricted to `fast_move_z`
@@ -404,7 +404,7 @@ pub struct MachineConfig {
     /// User-configurable post-processor profile (rt1.15). When
     /// `Some`, the built-in posts (linuxcnc / grbl) read its
     /// templates instead of emitting their hard-coded
-    /// program_start / program_end / tool_change / coolant lines.
+    /// `program_start` / `program_end` / `tool_change` / coolant lines.
     /// `None` = hard-coded defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_profile: Option<crate::gcode::post_profile::PostProfile>,
@@ -412,7 +412,7 @@ pub struct MachineConfig {
 
 impl MachineConfig {
     /// Effective polyline→arc fit tolerance. Falls back to 0.01 mm.
-    pub fn effective_arc_tolerance(&self) -> f64 {
+    #[must_use] pub fn effective_arc_tolerance(&self) -> f64 {
         self.arc_fit_tolerance_mm.unwrap_or(0.01).max(0.0)
     }
 }

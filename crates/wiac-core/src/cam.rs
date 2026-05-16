@@ -2,8 +2,8 @@
 //!
 //! Three logical groups:
 //! * `geometry` helpers (lines, angles, distances, polygon-inside) — pure math
-//! * `chaining` (segments → closed/open VcObjects) — port of `segments2objects`
-//! * `offsets` (cavalier_contours + clipper2-rust driven contour offsetting and pockets)
+//! * `chaining` (segments → closed/open `VcObjects`) — port of `segments2objects`
+//! * `offsets` (`cavalier_contours` + clipper2-rust driven contour offsetting and pockets)
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,7 @@ pub struct VcObject {
 }
 
 impl VcObject {
-    pub fn new(segments: Vec<Segment>, closed: bool) -> Self {
+    #[must_use] pub fn new(segments: Vec<Segment>, closed: bool) -> Self {
         let layer = segments
             .first().map_or_else(|| "0".into(), |s| s.layer.clone());
         let color = segments.first().map_or(7, |s| s.color);
@@ -68,19 +68,19 @@ impl VcObject {
 // ─── Pure geometry helpers (port of calc.py:60–340) ────────────────────────
 
 /// Distance between two 2D points.
-pub fn calc_distance(a: Point2, b: Point2) -> f64 {
+#[must_use] pub fn calc_distance(a: Point2, b: Point2) -> f64 {
     a.distance(b)
 }
 
 /// Angle of the line a→b in radians, in (-π, π].
-pub fn angle_of_line(a: Point2, b: Point2) -> f64 {
+#[must_use] pub fn angle_of_line(a: Point2, b: Point2) -> f64 {
     (b.y - a.y).atan2(b.x - a.x)
 }
 
 /// Square distance from point `p` to the *infinite* line through a→b.
 /// Negative on the right of a→b, positive on the left (matches calc.py
 /// sign-by-cross convention).
-pub fn distance_to_line_signed(a: Point2, b: Point2, p: Point2) -> f64 {
+#[must_use] pub fn distance_to_line_signed(a: Point2, b: Point2, p: Point2) -> f64 {
     let len = a.distance(b);
     if len < 1e-12 {
         return a.distance(p);
@@ -91,7 +91,7 @@ pub fn distance_to_line_signed(a: Point2, b: Point2, p: Point2) -> f64 {
 
 /// Returns the (x, y) of the line-segment intersection of (s1→e1) and (s2→e2)
 /// if they cross within both segments' parameter ranges, else None.
-pub fn lines_intersect(s1: Point2, e1: Point2, s2: Point2, e2: Point2) -> Option<Point2> {
+#[must_use] pub fn lines_intersect(s1: Point2, e1: Point2, s2: Point2, e2: Point2) -> Option<Point2> {
     let dx1 = e1.x - s1.x;
     let dy1 = e1.y - s1.y;
     let dx2 = e2.x - s2.x;
@@ -110,7 +110,7 @@ pub fn lines_intersect(s1: Point2, e1: Point2, s2: Point2, e2: Point2) -> Option
 }
 
 /// Bounding box of a list of points.
-pub fn points_bbox(points: &[Point2]) -> Option<crate::BBox> {
+#[must_use] pub fn points_bbox(points: &[Point2]) -> Option<crate::BBox> {
     if points.is_empty() {
         return None;
     }
@@ -122,7 +122,7 @@ pub fn points_bbox(points: &[Point2]) -> Option<crate::BBox> {
 }
 
 /// Center of mass of a polygon (treats `points` as polygon vertices in order).
-pub fn polygon_centroid(points: &[Point2]) -> Option<Point2> {
+#[must_use] pub fn polygon_centroid(points: &[Point2]) -> Option<Point2> {
     if points.is_empty() {
         return None;
     }
@@ -138,7 +138,7 @@ pub fn polygon_centroid(points: &[Point2]) -> Option<Point2> {
 }
 
 /// Even-odd point-in-polygon test on a closed polyline of `points`.
-pub fn is_inside_polygon(points: &[Point2], p: Point2) -> bool {
+#[must_use] pub fn is_inside_polygon(points: &[Point2], p: Point2) -> bool {
     if points.len() < 3 {
         return false;
     }
@@ -163,7 +163,7 @@ pub fn is_inside_polygon(points: &[Point2], p: Point2) -> bool {
 /// Convert a [`Segment`] (LINE or ARC-with-bulge) into a flat polyline of
 /// `points` for clipper-side polygon ops. `interpolate` controls per-arc
 /// subdivision (≥1 step, default 6 to match `calc.py:vertex2points` default).
-pub fn segment_to_points(seg: &Segment, interpolate: usize) -> Vec<Point2> {
+#[must_use] pub fn segment_to_points(seg: &Segment, interpolate: usize) -> Vec<Point2> {
     if seg.bulge.abs() < 1e-12 || seg.kind == SegmentKind::Line {
         return vec![seg.start, seg.end];
     }
@@ -286,7 +286,7 @@ fn scale_point(p: Point2, pivot: Point2, factor: f64) -> Point2 {
 }
 
 /// Combined bbox over many objects (calc.py:objects2minmax).
-pub fn objects_bbox(objects: &[VcObject]) -> Option<crate::BBox> {
+#[must_use] pub fn objects_bbox(objects: &[VcObject]) -> Option<crate::BBox> {
     let mut bbox = crate::BBox::EMPTY;
     let mut any = false;
     for obj in objects {
@@ -305,7 +305,7 @@ pub fn objects_bbox(objects: &[VcObject]) -> Option<crate::BBox> {
 
 /// Flatten a sequence of segments to a polyline. Connecting endpoints are
 /// shared (no duplicate consecutive points).
-pub fn segments_to_points(segments: &[Segment], interpolate: usize) -> Vec<Point2> {
+#[must_use] pub fn segments_to_points(segments: &[Segment], interpolate: usize) -> Vec<Point2> {
     let mut out: Vec<Point2> = Vec::new();
     for s in segments {
         let pts = segment_to_points(s, interpolate);

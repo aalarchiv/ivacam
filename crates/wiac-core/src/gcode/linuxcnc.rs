@@ -1,4 +1,4 @@
-//! LinuxCNC post-processor. Mirrors output_plugins/gcode_linuxcnc.py.
+//! `LinuxCNC` post-processor. Mirrors `output_plugins/gcode_linuxcnc.py`.
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::post_profile::{template_lines, AxisFormat, PostProfile, TokenCtx};
@@ -10,13 +10,13 @@ use crate::gcode::{
 pub struct Post {
     /// Internal state — exposed `pub(crate)` so the GRBL post can
     /// check `state.profile` to decide whether to delegate to
-    /// LinuxCNC's template-driven program_start / _end / tool path.
+    /// `LinuxCNC`'s template-driven `program_start` / _end / tool path.
     pub(crate) state: PostState,
     out: Vec<String>,
 }
 
 impl Post {
-    pub fn new() -> Self {
+    #[must_use] pub fn new() -> Self {
         Self::default()
     }
 

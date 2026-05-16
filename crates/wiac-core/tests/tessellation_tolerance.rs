@@ -24,7 +24,7 @@ fn ellipse_min_distance(
     let mut best = f64::INFINITY;
     let steps = 4096;
     for i in 0..=steps {
-        let t = t0 + (t1 - t0) * (i as f64) / (steps as f64);
+        let t = t0 + (t1 - t0) * f64::from(i) / f64::from(steps);
         let x = a * t.cos();
         let y = b * t.sin();
         let cos_p = phi.cos();

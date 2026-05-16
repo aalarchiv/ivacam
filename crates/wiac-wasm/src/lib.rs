@@ -3,7 +3,7 @@
 //! pipeline in-browser without any server.
 //!
 //! Built with `wasm-pack build crates/wiac-wasm --target web --release`.
-//! The resulting `pkg/` ships JS glue + a wiac_wasm_bg.wasm blob that the
+//! The resulting `pkg/` ships JS glue + a `wiac_wasm_bg.wasm` blob that the
 //! Vite frontend can import directly.
 //!
 //! ## Streaming + cancellation

@@ -1,5 +1,5 @@
 //! HPGL post-processor — pen-up/pen-down style for plotters and drag knives.
-//! Mirrors output_plugins/hpgl.py.
+//! Mirrors `output_plugins/hpgl.py`.
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::{CapturedPostState, PostProcessor};
@@ -13,7 +13,7 @@ pub struct Post {
 }
 
 impl Post {
-    pub fn new() -> Self {
+    #[must_use] pub fn new() -> Self {
         Self::default()
     }
 

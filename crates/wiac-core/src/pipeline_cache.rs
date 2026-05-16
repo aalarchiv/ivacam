@@ -13,7 +13,7 @@
 //! hits = wrong gcode. The compiler will not catch this — the
 //! `#[derive(Hash)]` macro can't be used because the project types
 //! contain `f64` (which deliberately doesn't implement `Hash` to keep
-//! NaN out of HashMap keys), so every Hash impl is hand-written.
+//! NaN out of `HashMap` keys), so every Hash impl is hand-written.
 //!
 //! Conventions:
 //! - `f64` → `state.write_u64(v.to_bits())`. Two NaNs hash differently
@@ -59,7 +59,7 @@ use crate::project::{
 pub const PIPELINE_VERSION: u32 = 21;
 
 /// Stable hash of (op + tool + machine + selected segments + fixtures
-/// + PIPELINE_VERSION). Wrapper so callers can't accidentally pass an
+/// + `PIPELINE_VERSION`). Wrapper so callers can't accidentally pass an
 /// unrelated `u64` to [`PipelineCache::get`] / [`PipelineCache::put`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OpCacheKey(pub u64);
@@ -68,7 +68,7 @@ pub struct OpCacheKey(pub u64);
 /// are NOT cached — only this op's body.
 #[derive(Debug, Clone)]
 pub struct OpCacheValue {
-    /// Per-op slice of toolpath segments produced by this op (op_id
+    /// Per-op slice of toolpath segments produced by this op (`op_id`
     /// stamped). Used when the caller wants per-op toolpath without a
     /// full re-interpret pass.
     pub toolpath: Vec<ToolpathSegment>,
@@ -94,7 +94,7 @@ pub struct PipelineCache {
 }
 
 impl PipelineCache {
-    pub fn new(capacity: usize) -> Self {
+    #[must_use] pub fn new(capacity: usize) -> Self {
         let cap = NonZeroUsize::new(capacity.max(1)).expect("non-zero capacity");
         Self {
             inner: Mutex::new(LruCache::new(cap)),
@@ -128,14 +128,14 @@ impl PipelineCache {
 }
 
 /// Compute a stable cache key for (op + tool + machine + selected
-/// segments + fixtures + tabs + post_processor_tag + PIPELINE_VERSION).
+/// segments + fixtures + tabs + `post_processor_tag` + `PIPELINE_VERSION`).
 /// Stable across runs and across builds (modulo `PIPELINE_VERSION`
 /// bumps). `post_processor_tag` is the caller's post-processor
 /// discriminant — different posts produce different gcode for the same
 /// inputs, so they must key separately. `tabs` carries the project's
 /// segment-keyed tab placements — changing tab positions changes the
 /// per-op output, so they must be part of the key.
-pub fn op_cache_key(
+#[must_use] pub fn op_cache_key(
     op: &Operation,
     tool: &ToolEntry,
     machine: &MachineConfig,
@@ -156,11 +156,11 @@ pub fn op_cache_key(
 
 /// Cache-key constructor that folds a SECOND tool's entry into the
 /// hash — used for dual-tool Pocket ops (rt1.33) so changes to the
-/// finish tool's diameter / feed_rate_finish / etc. invalidate the
+/// finish tool's diameter / `feed_rate_finish` / etc. invalidate the
 /// cache. Pass `finish_tool = None` for single-tool ops (legacy
 /// callers route through [`op_cache_key`]).
 #[allow(clippy::too_many_arguments)]
-pub fn op_cache_key_with_finish(
+#[must_use] pub fn op_cache_key_with_finish(
     op: &Operation,
     tool: &ToolEntry,
     finish_tool: Option<&ToolEntry>,
@@ -835,7 +835,7 @@ mod tests {
     /// fails after a refactor, you either:
     /// (a) re-ordered fields in a Hash impl (BUG — fix the impl), or
     /// (b) intentionally added a field to a Hash impl AND bumped
-    ///     PIPELINE_VERSION (LEGITIMATE — update the snapshot below).
+    ///     `PIPELINE_VERSION` (LEGITIMATE — update the snapshot below).
     /// Never silently update the snapshot without auditing why it
     /// changed.
     #[test]
@@ -933,7 +933,7 @@ mod tests {
 
     /// rt1.10 — tabs now live on the OP (`op.params.tab_placements`),
     /// so the cache-invalidation test exercises that path: bumping
-    /// a tab in op.params changes hash_operation, which changes the
+    /// a tab in op.params changes `hash_operation`, which changes the
     /// key. Verified separately by `tab_mode_change_changes_key`
     /// below.
     #[test]
@@ -992,9 +992,9 @@ mod tests {
         assert_ne!(k1, k2);
     }
 
-    /// Regression for audit-4zf: estimator-only MachineConfig fields
-    /// (accel, jerk, toolchange_s, rapid_speed,
-    /// use_kinematic_time_estimate) do not affect the emitted G-code
+    /// Regression for audit-4zf: estimator-only `MachineConfig` fields
+    /// (accel, jerk, `toolchange_s`, `rapid_speed`,
+    /// `use_kinematic_time_estimate`) do not affect the emitted G-code
     /// and must NOT be folded into the per-op cache key. Tweaking the
     /// estimator should hit the cache for every op and only re-run the
     /// (cheap) post-toolpath time estimator.
@@ -1041,7 +1041,7 @@ mod tests {
         }
     }
 
-    /// Sanity: bumping PIPELINE_VERSION must change every cache key for
+    /// Sanity: bumping `PIPELINE_VERSION` must change every cache key for
     /// the same logical input. Asserted by computing the key with the
     /// real constant and a manual hasher with `PIPELINE_VERSION + 1`.
     #[test]
@@ -1116,8 +1116,8 @@ mod tests {
         assert_eq!(got.offset_count, v.offset_count);
     }
 
-    /// rt1.10: changing op.tab_mode invalidates the cache (tab_mode
-    /// is hashed via hash_operation_params).
+    /// rt1.10: changing `op.tab_mode` invalidates the cache (`tab_mode`
+    /// is hashed via `hash_operation_params`).
     #[test]
     fn tab_mode_change_changes_key() {
         let segs = square(20.0);

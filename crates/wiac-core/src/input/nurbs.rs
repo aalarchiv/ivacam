@@ -14,7 +14,7 @@
 ///   placeholder; ignore for 2D).
 /// * `weights` — per-control-point weight; pass all-1 for non-rational.
 /// * `samples` — number of evenly spaced parameter samples (>=2).
-pub fn flatten(
+#[must_use] pub fn flatten(
     degree: usize,
     knots: &[f64],
     cps: &[(f64, f64, f64)],

@@ -18,8 +18,8 @@ pub(super) struct PatternInstance {
     pub(super) dy: f64,
     pub(super) cx: f64,
     pub(super) cy: f64,
-    /// Precomputed cos(angle_rad). Cached on the instance so
-    /// apply_pattern_to_segments doesn't redo trig per (instance × object)
+    /// Precomputed `cos(angle_rad)`. Cached on the instance so
+    /// `apply_pattern_to_segments` doesn't redo trig per (instance × object)
     /// pair — for a Polar pattern with N instances and K selected objects,
     /// that previously meant 2·N·K trig calls.
     pub(super) cos_a: f64,
@@ -70,7 +70,7 @@ pub(super) fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
             // count is an inclusive total. count == 0 → no instances at
             // all (degenerate, but well-defined: the op emits nothing).
             for i in 0..count {
-                out.push(PatternInstance::translate((i as f64) * dx, (i as f64) * dy));
+                out.push(PatternInstance::translate(f64::from(i) * dx, f64::from(i) * dy));
             }
         }
         PatternConfig::Grid {
@@ -81,7 +81,7 @@ pub(super) fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
         } => {
             for j in 0..count_y {
                 for i in 0..count_x {
-                    out.push(PatternInstance::translate((i as f64) * dx, (j as f64) * dy));
+                    out.push(PatternInstance::translate(f64::from(i) * dx, f64::from(j) * dy));
                 }
             }
         }
@@ -98,7 +98,7 @@ pub(super) fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
                 out.push(PatternInstance::polar(
                     center_x,
                     center_y,
-                    start_rad + (i as f64) * step_rad,
+                    start_rad + f64::from(i) * step_rad,
                 ));
             }
         }

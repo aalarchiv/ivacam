@@ -1,6 +1,6 @@
 //! Per-op-kind drivers that don't fit the standard offset-cascade path.
 //!
-//! Profile / Pocket / Drill / Chamfer / DragKnife all flow through
+//! Profile / Pocket / Drill / Chamfer / `DragKnife` all flow through
 //! `build_op_offsets` + the offsets-layer emitter. The four kinds in
 //! this module need bespoke pipelines:
 //!
@@ -265,10 +265,10 @@ pub(super) fn run_halfpipe_op<P: PostProcessor>(
 }
 
 /// Helical thread emitter. For each selected closed circle in the
-/// source set, compute the helix radius (bore − tool_radius for
-/// internal, stud + tool_radius for external) and emit helix
+/// source set, compute the helix radius (bore − `tool_radius` for
+/// internal, stud + `tool_radius` for external) and emit helix
 /// waypoints between `start_depth` and `depth` at `pitch_mm` per
-/// revolution. Reuses V-Carve's emit_vcarve_block since both walk a
+/// revolution. Reuses V-Carve's `emit_vcarve_block` since both walk a
 /// pre-computed XYZ polyline at constant feed.
 pub(super) fn run_thread_op<P: PostProcessor>(
     op: &Operation,

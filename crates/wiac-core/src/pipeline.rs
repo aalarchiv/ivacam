@@ -98,7 +98,7 @@ pub struct PipelineResponse {
     pub gcode_index: preview::GcodeIndex,
     pub stats: PipelineStats,
     /// Filled-area preview for Pocket ops: the actual region the cutter
-    /// will machine, computed via the per-op SourceCombine mode (Auto by
+    /// will machine, computed via the per-op `SourceCombine` mode (Auto by
     /// default — outer + inner = annulus). The frontend paints these as
     /// translucent fills so the user sees what they're cutting before
     /// reading the toolpath. Empty for non-Pocket ops.
@@ -168,7 +168,7 @@ impl PipelineError {
     /// fills in actionable auto-fix targets (e.g. the first tool id for an
     /// `UnknownTool`); pass `None` when no project is available and the
     /// auto-fix is dropped.
-    pub fn to_structured(&self, project: Option<&Project>) -> Option<crate::Error> {
+    #[must_use] pub fn to_structured(&self, project: Option<&Project>) -> Option<crate::Error> {
         use crate::errors::{AutoFix, Error as Structured};
         match self {
             PipelineError::Cancelled => None,
@@ -243,7 +243,7 @@ fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
 pub struct CancelToken(Arc<AtomicBool>);
 
 impl CancelToken {
-    pub fn new() -> Self {
+    #[must_use] pub fn new() -> Self {
         Self(Arc::new(AtomicBool::new(false)))
     }
 
@@ -251,7 +251,7 @@ impl CancelToken {
         self.0.store(true, Ordering::Relaxed);
     }
 
-    pub fn is_cancelled(&self) -> bool {
+    #[must_use] pub fn is_cancelled(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }
 }
@@ -512,12 +512,12 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
         .tools
         .iter()
         .filter(|t| used.contains(&t.id))
-        .map(|t| t.pause as f64)
+        .map(|t| f64::from(t.pause))
         .sum()
 }
 
 /// Per-post-processor monomorphisation of the per-op driver. Pulled out
-/// so we don't need to type-erase PostProcessor (its methods take Sized
+/// so we don't need to type-erase `PostProcessor` (its methods take Sized
 /// `&mut self` so the trait object dance was painful).
 #[allow(clippy::too_many_arguments)]
 fn run_per_op<P, F>(
@@ -830,8 +830,8 @@ fn resolve_op_segments(op: &Operation, all: &[Segment], objects: &[VcObject]) ->
 // ─── per-op offset building ───────────────────────────────────────────────
 
 /// Build the offset list a single op consumes. Currently supports
-/// Profile / Pocket / Engrave / DragKnife — others raise UnimplementedKind.
-/// Geometric bbox center of a closed VcObject, computed from segment
+/// Profile / Pocket / Engrave / `DragKnife` — others raise `UnimplementedKind`.
+/// Geometric bbox center of a closed `VcObject`, computed from segment
 /// endpoints (ignores arc bow — the chord polygon's bbox is a good
 /// proxy for the user's "midpoint" intuition on the shapes drill ops
 /// typically target). Used by the Drill driver to pick a drill point
@@ -1347,12 +1347,12 @@ fn pocket_emit_for(strategy: PocketStrategy, op: &Operation) -> PocketEmit {
 
 /// Trochoidal-specific guards: tabs are not yet supported and the
 /// plunge must be Helix. We emit warnings for unsupported tabs and
-/// override Direct/Ramp plunges to Helix at the synthesize_op_setup
+/// override Direct/Ramp plunges to Helix at the `synthesize_op_setup`
 /// site (see `effective_plunge_for`).
 /// Walk the op's source in user-specified order and return the matching
 /// object indices. Used by non-Auto combine modes — Difference in
 /// particular is order-sensitive ("first selected minus the rest"), so
-/// we cannot iterate the unordered selected_set there.
+/// we cannot iterate the unordered `selected_set` there.
 pub(super) fn ordered_selection(op: &Operation, objects: &[VcObject]) -> Vec<usize> {
     match &op.source {
         OperationSource::All => (0..objects.len()).collect(),
@@ -1372,13 +1372,13 @@ pub(super) fn ordered_selection(op: &Operation, objects: &[VcObject]) -> Vec<usi
     }
 }
 
-/// Pull the SourceCombine mode out of an op's source.
+/// Pull the `SourceCombine` mode out of an op's source.
 ///
 /// `OperationSource::All` always reports `Auto` — by design. "All
 /// objects" has no UI affordance for a combine selector, so the
 /// pipeline treats it as "let each op kind decide". Pocket then falls
 /// through to its containment-aware per-object loop (outer carves +
-/// inner holes); Profile / Engrave / DragKnife emit one path per
+/// inner holes); Profile / Engrave / `DragKnife` emit one path per
 /// selected object. Layers / Objects sources carry an explicit
 /// `combine` field and that value is honored verbatim — including
 /// `Auto`, which means the same per-op-kind dispatch path.
@@ -1421,10 +1421,10 @@ pub(crate) fn effective_step(op: &Operation, tool: &ToolEntry) -> Result<f64, Pi
         })
 }
 
-/// Build a Setup whose ToolConfig comes from `op.finish_tool_id` —
+/// Build a Setup whose `ToolConfig` comes from `op.finish_tool_id` —
 /// used for the dual-tool finish block (rt1.33). Returns `Ok(None)`
-/// when the op is single-tool or its finish_tool_id is missing /
-/// equal to tool_id; `Ok(Some(setup))` when a distinct finish tool
+/// when the op is single-tool or its `finish_tool_id` is missing /
+/// equal to `tool_id`; `Ok(Some(setup))` when a distinct finish tool
 /// exists. Falls through `Err(PipelineError::UnknownTool)` if the
 /// referenced finish tool id isn't in the project.
 pub(super) fn synthesize_finish_setup(
@@ -1826,10 +1826,10 @@ mod tests {
         );
     }
 
-    /// SourceCombine::Difference applied at the pipeline level should
+    /// `SourceCombine::Difference` applied at the pipeline level should
     /// produce one annulus pocket from "outer minus inner", matching
     /// what the user means when they pick Difference explicitly. This
-    /// guards the synthesize_region_object path that fakes a VcObject
+    /// guards the `synthesize_region_object` path that fakes a `VcObject`
     /// from clipper2 polytree output.
     #[test]
     fn pocket_with_difference_combine_emits_an_annulus() {
@@ -2053,7 +2053,7 @@ mod tests {
     /// on the same source must produce two distinct toolpath blocks
     /// (one inside, one in the padding ring outside) without one
     /// op's mutations bleeding into the other. Catches the case where
-    /// frame_op_storage mutating `objects` would leak into a prior or
+    /// `frame_op_storage` mutating `objects` would leak into a prior or
     /// subsequent op.
     #[test]
     fn pocket_then_pocket_outside_produces_disjoint_cuts() {
@@ -2379,7 +2379,7 @@ mod tests {
 
     /// Ramp plunge: the FIRST cut moves descend Z linearly while
     /// walking forward along the path. With angle=10° and step=-1,
-    /// ramp_length = 1/tan(10°) ≈ 5.67mm. After ~5.67mm of XY travel
+    /// `ramp_length` = 1/tan(10°) ≈ 5.67mm. After ~5.67mm of XY travel
     /// the cutter should be at Z=-1; subsequent cut moves stay at -1.
     #[test]
     fn ramp_plunge_descends_z_during_first_cuts() {
@@ -2553,7 +2553,7 @@ mod tests {
         );
     }
 
-    /// Helix radius < tool_radius → falls back to Ramp (and from there
+    /// Helix radius < `tool_radius` → falls back to Ramp (and from there
     /// to Direct if path too short). With a 6mm tool and helix
     /// radius=1mm the helix would carve nothing the cutter doesn't
     /// already cover, so we fall back. The first cutting move's Z
@@ -2639,7 +2639,7 @@ mod tests {
         );
     }
 
-    /// Auto-fit helix radius (radius_mm = None) on a pocket too small
+    /// Auto-fit helix radius (`radius_mm` = None) on a pocket too small
     /// for the tool: the resolver finds no fit, emits the
     /// `helix_radius_unfittable` warning, and falls through to Ramp —
     /// no helix-entry arcs near the centroid.
@@ -2955,7 +2955,7 @@ mod tests {
     /// A 10x10 pocket with a 6mm endmill: tool fits the boundary
     /// offset (4x4 left after a 3mm offset) but no cascade ring fits
     /// inside it → the cutter walks the wall and leaves a hollow
-    /// rectangle. We surface this as a pocket_fill_incomplete warning
+    /// rectangle. We surface this as a `pocket_fill_incomplete` warning
     /// so the user understands why the gcode is just the contour.
     #[test]
     fn pocket_with_just_fitting_tool_warns_about_incomplete_fill() {
@@ -3000,7 +3000,7 @@ mod tests {
         );
     }
 
-    /// Higher xy_overlap → smaller step → more cascade rings on the
+    /// Higher `xy_overlap` → smaller step → more cascade rings on the
     /// same geometry. Verifies the new knob actually drives the cascade
     /// step. With 0.7 overlap the cut path on a 50x50 pocket should be
     /// strictly longer than at 0.3 overlap.
@@ -3058,7 +3058,7 @@ mod tests {
     }
 
     /// Direct end-to-end check that zigzag emission is alive: at default
-    /// xy_overlap the gcode for a 50x50 pocket must contain cuts at
+    /// `xy_overlap` the gcode for a 50x50 pocket must contain cuts at
     /// distinct Y values inside the pocket — not just the boundary
     /// contour at four corners.
     #[test]
@@ -3125,12 +3125,12 @@ mod tests {
     }
 
     /// Ramp plunge used to leave a sloped section at the start of the
-    /// last Z pass — the cutter ramps from prev_z to total_depth over
+    /// last Z pass — the cutter ramps from `prev_z` to `total_depth` over
     /// `ramp_length`, but the cells in the ramp region sit at
-    /// progressively descending Z, not at total_depth. The fix is a
+    /// progressively descending Z, not at `total_depth`. The fix is a
     /// constant-depth cleanup walk after all the ramped passes.
     /// This test verifies the gcode now contains a final pass at
-    /// total_depth that visits the path's start XY at total_depth.
+    /// `total_depth` that visits the path's start XY at `total_depth`.
     #[test]
     fn ramp_plunge_cleans_up_with_a_final_constant_depth_pass() {
         let mut params = OperationParams::mill_default();
@@ -3191,7 +3191,7 @@ mod tests {
     /// Cascade with a tool too wide for any inward ring emits ONLY the
     /// boundary contour (no silent fallback to zigzag — that was
     /// confusing for users who picked cascade explicitly and saw
-    /// zigzag). The pocket_fill_incomplete warning fires so they know.
+    /// zigzag). The `pocket_fill_incomplete` warning fires so they know.
     #[test]
     fn cascade_with_tool_too_wide_emits_only_boundary_no_zigzag_substitute() {
         let mut params = OperationParams::mill_default();
@@ -3241,7 +3241,7 @@ mod tests {
     /// interior for CCW but the EXTERIOR for CW. The user reported
     /// (test.vc-project.json) a CW DXF where the pocket was being cut
     /// outside the boundary, enlarging the shape by the tool diameter.
-    /// parallel_offset_inward now picks the right sign per winding.
+    /// `parallel_offset_inward` now picks the right sign per winding.
     #[test]
     fn pocket_on_cw_polygon_cuts_inside_not_outside() {
         // Build a 50×50 square wound CW (clockwise from above): walk
@@ -3348,8 +3348,8 @@ mod tests {
     }
 
     /// A 0.5mm-radius closed circle with a 3mm endmill running an
-    /// OperationKind::Drill { Simple } op should emit a recognizable
-    /// LinuxCNC G81 (or G82 for dwell) drill at the circle's center.
+    /// `OperationKind::Drill` { Simple } op should emit a recognizable
+    /// `LinuxCNC` G81 (or G82 for dwell) drill at the circle's center.
     #[test]
     fn drill_op_emits_gcode_for_circle_smaller_than_tool() {
         let project = Project {
@@ -3433,7 +3433,7 @@ mod tests {
     }
 
     /// Drill cycle Peck with a non-zero step should map to G83 in
-    /// LinuxCNC, with the per-peck Q operand carrying the step.
+    /// `LinuxCNC`, with the per-peck Q operand carrying the step.
     #[test]
     fn drill_peck_emits_g83() {
         let project = Project {
@@ -3471,7 +3471,7 @@ mod tests {
         );
     }
 
-    /// Drill cycle ChipBreak should map to G73 in LinuxCNC.
+    /// Drill cycle `ChipBreak` should map to G73 in `LinuxCNC`.
     #[test]
     fn drill_chip_break_emits_g73() {
         let project = Project {
@@ -3624,7 +3624,7 @@ mod tests {
         );
     }
 
-    /// finish_step (smaller than step) emits an extra Z pass at the
+    /// `finish_step` (smaller than step) emits an extra Z pass at the
     /// nominal depth from a shallower pre-finish z. Verifies the gcode
     /// has cuts at both the pre-finish Z and the bottom Z.
     #[test]
@@ -3668,7 +3668,7 @@ mod tests {
         assert!(resp.gcode.contains("Z-2\n") || resp.gcode.contains("Z-2 "));
     }
 
-    /// through_depth extends the cut past the nominal depth so
+    /// `through_depth` extends the cut past the nominal depth so
     /// through-cuts on edge-clamped sheet clear the bottom.
     #[test]
     fn through_depth_extends_final_z() {
@@ -3711,7 +3711,7 @@ mod tests {
         );
     }
 
-    /// depth_list overrides the step schedule. Each listed Z must appear.
+    /// `depth_list` overrides the step schedule. Each listed Z must appear.
     #[test]
     fn depth_list_overrides_step_schedule() {
         let mut params = OperationParams::mill_default();
@@ -3801,7 +3801,7 @@ mod tests {
         assert!(!resp.gcode.lines().any(|l| l.trim() == "F800"));
     }
 
-    /// resolve_tool_rates: unset finish/drill variants fall back to the
+    /// `resolve_tool_rates`: unset finish/drill variants fall back to the
     /// general triplet (rt1.27).
     #[test]
     fn resolve_tool_rates_falls_back_when_unset() {
@@ -3812,7 +3812,7 @@ mod tests {
         assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (18_000, 100, 800));
     }
 
-    /// resolve_tool_rates: each variant honors its own override when set.
+    /// `resolve_tool_rates`: each variant honors its own override when set.
     #[test]
     fn resolve_tool_rates_honors_per_pass_overrides() {
         use crate::project::{resolve_tool_rates, PassKind};
@@ -3954,7 +3954,7 @@ mod tests {
         );
     }
 
-    /// Drill op with peck cycle and peck_step_mm=0 falls back to the
+    /// Drill op with peck cycle and `peck_step_mm=0` falls back to the
     /// tool's `default_peck_step_mm` (rt1.27).
     #[test]
     fn drill_peck_uses_tool_default_when_op_step_zero() {
@@ -3992,9 +3992,9 @@ mod tests {
         );
     }
 
-    /// Pocket with xy_finish_allowance emits an extra wall ring at
-    /// the actual contour (tool_radius offset) AND the rough rings
-    /// step inward from (tool_radius + allowance) — leaving stock at
+    /// Pocket with `xy_finish_allowance` emits an extra wall ring at
+    /// the actual contour (`tool_radius` offset) AND the rough rings
+    /// step inward from (`tool_radius` + allowance) — leaving stock at
     /// the wall that the finish ring removes (rt1.24).
     #[test]
     fn pocket_finish_xy_allowance_emits_extra_boundary_pass() {
@@ -4054,7 +4054,7 @@ mod tests {
         assert_eq!(with_allow.len(), no_allow.len() + 1);
     }
 
-    /// Pocket with xy_finish_allowance produces gcode that visits the
+    /// Pocket with `xy_finish_allowance` produces gcode that visits the
     /// rough rings at the tool's general feed and the finish ring at
     /// the finish-set feed (rt1.24 × rt1.27).
     #[test]
@@ -4096,7 +4096,7 @@ mod tests {
         assert!(resp.gcode.contains("F400"), "finish feed missing");
     }
 
-    /// Dual-tool Pocket op (rt1.33): when finish_tool_id is set to a
+    /// Dual-tool Pocket op (rt1.33): when `finish_tool_id` is set to a
     /// different tool, the gcode contains a `T<n> M6` toolchange and
     /// uses the finish tool's feed for the wall ring.
     #[test]
@@ -4162,7 +4162,7 @@ mod tests {
     }
 
     /// Dual-tool Pocket op without a distinct finish tool
-    /// (finish_tool_id == tool_id) — no toolchange emitted, single
+    /// (`finish_tool_id` == `tool_id`) — no toolchange emitted, single
     /// tool throughout.
     #[test]
     fn dual_tool_same_id_skips_toolchange() {
@@ -4201,7 +4201,7 @@ mod tests {
         );
     }
 
-    /// Dual-tool Pocket op without finish_tool_id (None) — legacy
+    /// Dual-tool Pocket op without `finish_tool_id` (None) — legacy
     /// single-tool behavior: no toolchange.
     #[test]
     fn dual_tool_none_uses_single_tool() {
@@ -4224,8 +4224,8 @@ mod tests {
         assert!(!resp.gcode.contains(" M6"));
     }
 
-    /// Post profile (rt1.15): a custom program_start template
-    /// replaces the LinuxCNC `(generated by …)` header, with token
+    /// Post profile (rt1.15): a custom `program_start` template
+    /// replaces the `LinuxCNC` `(generated by …)` header, with token
     /// substitution honoring the active tool and unit.
     #[test]
     fn post_profile_overrides_program_start_and_end() {
@@ -4410,8 +4410,8 @@ mod tests {
     }
 
     /// Post profile (hev): unset `axes` means baseline behavior — the
-    /// LinuxCNC `(generated by …)` header is gone (we set a custom
-    /// program_start) but coordinate emission stays exactly the same.
+    /// `LinuxCNC` `(generated by …)` header is gone (we set a custom
+    /// `program_start`) but coordinate emission stays exactly the same.
     #[test]
     fn post_profile_without_axes_keeps_legacy_output() {
         use crate::gcode::post_profile::PostProfile;
@@ -4467,7 +4467,7 @@ mod tests {
 
     /// Wirbeln (rt1.25): a Pocket op with a Wirbeln-flagged tool
     /// emits MORE cascade rings than the same op without Wirbeln,
-    /// because the effective xy_step gets clamped to tool_radius/2.
+    /// because the effective `xy_step` gets clamped to `tool_radius/2`.
     #[test]
     fn wirbeln_tool_increases_cascade_ring_count() {
         let mut tool_a = endmill(1, 6.0);
@@ -4522,7 +4522,7 @@ mod tests {
         );
     }
 
-    /// Wirbeln serde round-trip on ToolEntry (rt1.25). Default = false
+    /// Wirbeln serde round-trip on `ToolEntry` (rt1.25). Default = false
     /// (skipped on serialize); when on with an override, both round-trip.
     #[test]
     fn wirbeln_serde_round_trip() {
@@ -4539,7 +4539,7 @@ mod tests {
         assert_eq!(back.wirbeln_stepover_mm, Some(0.75));
     }
 
-    /// Halfpipe op (rt1.19): a closed region + Halfpipe CircularArc
+    /// Halfpipe op (rt1.19): a closed region + Halfpipe `CircularArc`
     /// emits cutting moves whose Z dips to within tolerance of the
     /// configured profile radius along the centerline.
     #[test]
@@ -4620,8 +4620,8 @@ mod tests {
         );
     }
 
-    /// PocketStrategy::Halfpipe serde round-trip (rt1.19) covers both
-    /// CircularArc and VBottom profiles.
+    /// `PocketStrategy::Halfpipe` serde round-trip (rt1.19) covers both
+    /// `CircularArc` and `VBottom` profiles.
     #[test]
     fn halfpipe_serde_round_trip() {
         let cases = [
@@ -4642,8 +4642,8 @@ mod tests {
         }
     }
 
-    /// New ToolKind variants (rt1.28): BullNose / Compression /
-    /// TSlot / FormProfile all serialize + deserialize cleanly and
+    /// New `ToolKind` variants (rt1.28): `BullNose` / Compression /
+    /// `TSlot` / `FormProfile` all serialize + deserialize cleanly and
     /// carry their geometry fields through round-trip.
     #[test]
     fn extended_tool_kinds_serde_round_trip() {
@@ -4668,8 +4668,8 @@ mod tests {
         }
     }
 
-    /// Plot-mode Z (rt1.35): with plot_mode_z enabled, every Z value
-    /// in the gcode is one of {fast_move_z, cut_depth}. No
+    /// Plot-mode Z (rt1.35): with `plot_mode_z` enabled, every Z value
+    /// in the gcode is one of {`fast_move_z`, `cut_depth`}. No
     /// intermediate Z values from a step-down schedule.
     #[test]
     fn plot_mode_emits_only_two_z_values() {
@@ -4830,7 +4830,7 @@ mod tests {
     }
 
     /// Laser pierce time (rt1.29): a laser tool with
-    /// laser_pierce_sec set emits a `G4 P<sec>` dwell between
+    /// `laser_pierce_sec` set emits a `G4 P<sec>` dwell between
     /// rapid-to-entry and plunge.
     #[test]
     fn laser_op_emits_pierce_dwell_before_cut() {
@@ -4873,7 +4873,7 @@ mod tests {
     }
 
     /// Non-laser tools never get the pierce dwell even if
-    /// laser_pierce_sec is somehow set (e.g. legacy projects).
+    /// `laser_pierce_sec` is somehow set (e.g. legacy projects).
     #[test]
     fn non_laser_tool_ignores_pierce_field() {
         let mut tool = endmill(1, 3.0);
@@ -4902,7 +4902,7 @@ mod tests {
         );
     }
 
-    /// Stufenfase (rt1.20): a drill op with chamfer_after_width_mm
+    /// Stufenfase (rt1.20): a drill op with `chamfer_after_width_mm`
     /// follows the drill cycle with a constant-Z revolution at each
     /// hole's rim, computed from the cutter's tip angle.
     #[test]
@@ -4961,7 +4961,7 @@ mod tests {
         );
     }
 
-    /// Drill with chamfer_after AND a distinct finish_tool_id emits
+    /// Drill with `chamfer_after` AND a distinct `finish_tool_id` emits
     /// the toolchange between the drill cycle and the chamfer
     /// revolution (rt1.20 × rt1.33).
     #[test]
@@ -5016,7 +5016,7 @@ mod tests {
         );
     }
 
-    /// Drill without chamfer_after_width_mm emits no rim revolution.
+    /// Drill without `chamfer_after_width_mm` emits no rim revolution.
     #[test]
     fn drill_without_chamfer_after_emits_no_revolution() {
         let project = Project {
@@ -5053,7 +5053,7 @@ mod tests {
     }
 
     /// Per-tool Z shift (rt1.30): when set on the first op's tool, a
-    /// `G92 Z<shift>` line follows program_begin to pin work-Z=0 to
+    /// `G92 Z<shift>` line follows `program_begin` to pin work-Z=0 to
     /// the new tool's tip.
     #[test]
     fn first_tool_z_shift_emits_g92_after_program_begin() {
@@ -5082,7 +5082,7 @@ mod tests {
         );
     }
 
-    /// Dual-tool Pocket (rt1.33) with z_shift on the finish tool:
+    /// Dual-tool Pocket (rt1.33) with `z_shift` on the finish tool:
     /// after the M6 we emit the finish tool's G92 Z shift.
     #[test]
     fn dual_tool_finish_tool_z_shift_emits_g92_after_m6() {
@@ -5129,7 +5129,7 @@ mod tests {
         );
     }
 
-    /// Zero / unset z_shift emits no G92 (rt1.30 fallback).
+    /// Zero / unset `z_shift` emits no G92 (rt1.30 fallback).
     #[test]
     fn no_z_shift_emits_no_g92() {
         let project = Project {
@@ -5155,8 +5155,8 @@ mod tests {
         );
     }
 
-    /// Comma decimal separator (rt1.36) makes the LinuxCNC post emit
-    /// `X1,5` instead of `X1.5`. Activated via MachineConfig.
+    /// Comma decimal separator (rt1.36) makes the `LinuxCNC` post emit
+    /// `X1,5` instead of `X1.5`. Activated via `MachineConfig`.
     #[test]
     fn comma_decimal_separator_emits_commas_in_numbers() {
         let mut machine: crate::cam::setup::MachineConfig = Default::default();
@@ -5193,7 +5193,7 @@ mod tests {
         }
     }
 
-    /// Line numbering (rt1.36): when MachineConfig.line_number_start is
+    /// Line numbering (rt1.36): when `MachineConfig.line_number_start` is
     /// Some(10), every emitted line gets `N10`, `N20`, … prefix.
     #[test]
     fn line_numbering_prefixes_every_line() {
@@ -5235,7 +5235,7 @@ mod tests {
     }
 
     /// No numbering by default (rt1.36 fallback): lines do not get an
-    /// N-prefix when MachineConfig.line_number_start is None.
+    /// N-prefix when `MachineConfig.line_number_start` is None.
     #[test]
     fn no_line_numbering_by_default() {
         let project = Project {
@@ -5321,7 +5321,7 @@ mod tests {
     }
 
     /// Thread op without a closed circle in the source emits a
-    /// thread_no_circles warning and produces no toolpath.
+    /// `thread_no_circles` warning and produces no toolpath.
     #[test]
     fn thread_op_without_circle_warns() {
         let project = Project {
@@ -5358,7 +5358,7 @@ mod tests {
     }
 
     /// Thread op with internal + a tool larger than the bore emits a
-    /// thread_tool_too_large warning rather than producing a
+    /// `thread_tool_too_large` warning rather than producing a
     /// nonsensical helix.
     #[test]
     fn thread_op_internal_with_oversized_tool_warns() {
@@ -5448,8 +5448,8 @@ mod tests {
         );
     }
 
-    /// Chamfer with finish_pass=true emits the source path twice —
-    /// once at rough feed, once tagged is_finish so the finish-set
+    /// Chamfer with `finish_pass=true` emits the source path twice —
+    /// once at rough feed, once tagged `is_finish` so the finish-set
     /// feed wins. Verified by counting how many times the contour's
     /// starting move appears (= number of passes through the path).
     #[test]
@@ -5526,7 +5526,7 @@ mod tests {
         assert!(resp.warnings.iter().any(|w| w.kind == "chamfer_non_vbit"));
     }
 
-    /// Operation.finish_tool_id round-trips through serde and is
+    /// `Operation.finish_tool_id` round-trips through serde and is
     /// omitted from the wire payload when None.
     #[test]
     fn operation_finish_tool_id_serde_round_trip() {
@@ -5542,7 +5542,7 @@ mod tests {
         assert!(!json_none.contains("finish_tool_id"));
     }
 
-    /// OperationParams.finish_xy_allowance_mm round-trips through
+    /// `OperationParams.finish_xy_allowance_mm` round-trips through
     /// serde and omits the field when unset (rt1.24).
     #[test]
     fn finish_xy_allowance_serde_round_trip() {
@@ -5929,8 +5929,8 @@ mod tests {
 
     /// Walk the emitted gcode and split it into (rapid-target,
     /// lead-moves-at-z0, plunge-target-z, first-cut-move). Returns
-    /// (rapid_xy, lead_motions_between_plunge_to_z0_and_plunge_to_cut,
-    /// first_post_cut_plunge_motion).
+    /// (`rapid_xy`, `lead_motions_between_plunge_to_z0_and_plunge_to_cut`,
+    /// `first_post_cut_plunge_motion`).
     fn first_lead_phase(gcode: &str) -> (Option<(f64, f64)>, Vec<String>, Option<String>) {
         // State machine: scan until first G0 X/Y (rapid target), then
         // until G1 Z0 (plunge to surface), then collect motions until
@@ -6047,7 +6047,7 @@ mod tests {
         );
     }
 
-    /// Profile + Outside + LeadKind::Off must NOT emit any motion
+    /// Profile + Outside + `LeadKind::Off` must NOT emit any motion
     /// between the surface plunge (G1 Z0) and the cut plunge (G1 Z-1)
     /// — the cutter just goes straight down at the contour start.
     #[test]
@@ -6088,7 +6088,7 @@ mod tests {
         );
     }
 
-    /// Profile + Outside + LeadKind::Straight (length=2 mm) rapids the
+    /// Profile + Outside + `LeadKind::Straight` (length=2 mm) rapids the
     /// cutter to a perpendicular-offset hop point and then plunges
     /// straight down before cutting from there to the contour. The
     /// rapid target must NOT coincide with a contour-start XY (it's
@@ -6156,10 +6156,10 @@ mod tests {
         );
     }
 
-    /// PocketStrategy::Spiral now emits ONE continuous open polyline
+    /// `PocketStrategy::Spiral` now emits ONE continuous open polyline
     /// instead of N concentric closed rings. Verified by counting
     /// distinct `; OP / level / pocket` blocks in the gcode — Spiral
-    /// gives one is_pocket=2 emit per object, Cascade gives N.
+    /// gives one `is_pocket=2` emit per object, Cascade gives N.
     #[test]
     fn spiral_emits_one_continuous_polyline_not_concentric_rings() {
         fn count_pocket_blocks(gcode: &str) -> usize {
@@ -6390,11 +6390,11 @@ mod tests {
 
     /// Profile op tool offset must actually offset the cut for both
     /// CCW and CW input winding. For a 100×100 square + 3 mm tool:
-    /// Outside should put the cut at max_x ≈ 101.5, Inside at max_x
+    /// Outside should put the cut at `max_x` ≈ 101.5, Inside at `max_x`
     /// ≈ 98.5, On at exactly 100.0. Repeats with the source segments
     /// reversed (CW winding) since DXF / SVG imports can produce
-    /// either winding and parallel_offset_inward / outward picks the
-    /// sign from object_signed_area.
+    /// either winding and `parallel_offset_inward` / outward picks the
+    /// sign from `object_signed_area`.
     #[test]
     fn profile_offset_works_for_cw_and_ccw_input() {
         use crate::gcode::preview::MoveKind;
@@ -6450,8 +6450,8 @@ mod tests {
     }
 
     /// Profile + Outside selecting an INNER circle that lives inside
-    /// an outer ring. classify_containment marks the circle as
-    /// inner_objects[outer]; it's still a valid Profile target on its
+    /// an outer ring. `classify_containment` marks the circle as
+    /// `inner_objects`[outer]; it's still a valid Profile target on its
     /// own. The user reported "always cuts on line" — could the
     /// containment-detected status flip the offset direction?
     #[test]
@@ -6514,7 +6514,7 @@ mod tests {
 
     /// User-reported repro shape: Profile + Outside + source=Objects
     /// with one outer ring selected. Mirrors the exact wire payload
-    /// build-project.ts emits (pocket_islands=true default, leads off,
+    /// build-project.ts emits (`pocket_islands=true` default, leads off,
     /// etc.). User said the cut comes out "on the line" instead of
     /// offset.
     #[test]
@@ -6564,7 +6564,7 @@ mod tests {
 
     /// End-to-end deserialization test: build a JSON Profile op the
     /// way the frontend's build-project.ts does, deserialize through
-    /// PipelineRequest, run it, and confirm the offset is honored.
+    /// `PipelineRequest`, run it, and confirm the offset is honored.
     #[test]
     fn profile_offset_via_wire_json_outside_actually_offsets() {
         use crate::gcode::preview::MoveKind;
@@ -6938,7 +6938,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    /// VCarve op produces a non-empty toolpath whose deepest cutting
+    /// `VCarve` op produces a non-empty toolpath whose deepest cutting
     /// move sits well below `start_depth - 0.1` — proves the medial
     /// axis ratchet actually plunges into the slot rather than just
     /// tracing the boundary at z=0.

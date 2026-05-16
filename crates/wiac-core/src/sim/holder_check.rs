@@ -275,9 +275,9 @@ mod tests {
     /// untouched (i.e. at `top_z`). The path runs along Y=mid.
     fn build_pocket(cols: u32, rows: u32, floor_z: f32, channel_half_w: f64) -> Heightmap {
         let mut hm = Heightmap::new(Point2::new(0.0, 0.0), 1.0, cols, rows, 0.0);
-        let mid = (rows as f64) * 0.5;
+        let mid = f64::from(rows) * 0.5;
         for iy in 0..rows {
-            let cy = (iy as f64) + 0.5;
+            let cy = f64::from(iy) + 0.5;
             if (cy - mid).abs() <= channel_half_w {
                 for ix in 0..cols {
                     hm.lower_at(ix, iy, floor_z);

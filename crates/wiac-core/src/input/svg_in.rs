@@ -95,7 +95,7 @@ fn emit_path(path: &usvg::Path, ctx: &mut SvgCtx) {
     let map = |x: f32, y: f32| -> Point2 {
         let mut p = SkPoint::from_xy(x, y);
         xform.map_point(&mut p);
-        Point2::new((p.x as f64) * unit, ((flip - p.y) as f64) * unit)
+        Point2::new(f64::from(p.x) * unit, f64::from(flip - p.y) * unit)
     };
 
     let mut current: Option<Point2> = None;

@@ -40,7 +40,7 @@ pub enum FitOutput {
 /// - included direction would flip (would imply a CW↔CCW switch)
 ///
 /// Runs with fewer than 3 points fall through to `Lines` unchanged.
-pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
+#[must_use] pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     if points.len() < 3 {
         return FitOutput::Lines(points.to_vec());
     }
@@ -241,7 +241,7 @@ mod tests {
         // 25 points sampled on a unit circle from angle 0 to π/2.
         let pts: Vec<Point2> = (0..25)
             .map(|i| {
-                let t = (i as f64) * FRAC_PI_2 / 24.0;
+                let t = f64::from(i) * FRAC_PI_2 / 24.0;
                 Point2::new(t.cos(), t.sin())
             })
             .collect();
@@ -272,7 +272,7 @@ mod tests {
         // 50 points spanning exactly π (semicircle).
         let pts: Vec<Point2> = (0..50)
             .map(|i| {
-                let t = (i as f64) * PI / 49.0;
+                let t = f64::from(i) * PI / 49.0;
                 Point2::new(t.cos(), t.sin())
             })
             .collect();
@@ -294,7 +294,7 @@ mod tests {
         // Noisy arc samples — same points, two tolerances.
         let mut pts: Vec<Point2> = Vec::new();
         for i in 0..40 {
-            let t = (i as f64) * FRAC_PI_2 / 39.0;
+            let t = f64::from(i) * FRAC_PI_2 / 39.0;
             // Small radial perturbation alternating sign.
             let r = 1.0 + if i % 2 == 0 { 0.02 } else { -0.02 };
             pts.push(Point2::new(r * t.cos(), r * t.sin()));
@@ -321,7 +321,7 @@ mod tests {
         // lie on any circle (alternating zigzag with varying step).
         let pts: Vec<Point2> = (0..20)
             .map(|i| {
-                let x = i as f64;
+                let x = f64::from(i);
                 let y = if i % 2 == 0 { 0.0 } else { 5.0 };
                 p(x, y)
             })
@@ -343,12 +343,12 @@ mod tests {
         // one arc) on the SAME input by checking each segment type.
         let mut runs: Vec<Vec<Point2>> = Vec::new();
         // Edge 1: bottom (10 mm straight chord-chain, 11 points).
-        let edge1: Vec<Point2> = (0..=10).map(|i| p(1.0 + i as f64 * 0.8, 0.0)).collect();
+        let edge1: Vec<Point2> = (0..=10).map(|i| p(1.0 + f64::from(i) * 0.8, 0.0)).collect();
         runs.push(edge1);
         // Corner 1: bottom-right (quarter arc 1mm radius around (9,1)).
         let corner1: Vec<Point2> = (0..=10)
             .map(|i| {
-                let t = -FRAC_PI_2 + (i as f64) * FRAC_PI_2 / 10.0;
+                let t = -FRAC_PI_2 + f64::from(i) * FRAC_PI_2 / 10.0;
                 p(9.0 + t.cos(), 1.0 + t.sin())
             })
             .collect();

@@ -19,7 +19,7 @@ use crate::pipeline::CancelToken;
 use crate::cam::{is_inside_polygon, segments_to_points, VcObject};
 use crate::geometry::Point2;
 
-/// One medial-axis vertex: (x, y, R_inscribed). The inscribed-circle
+/// One medial-axis vertex: (x, y, `R_inscribed`). The inscribed-circle
 /// radius is the distance from the vertex to the nearest boundary
 /// sample.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -92,7 +92,7 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 /// connected polyline of medial-axis vertices, ordered along the chain.
 /// Vertices outside the region are excluded; edges with at least one
 /// outside endpoint are dropped.
-pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
+#[must_use] pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
     medial_axis_cancellable(region, None)
 }
 
@@ -100,7 +100,7 @@ pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
 /// every Voronoi-vertex traversal; on cancellation returns whatever
 /// chains have been emitted so far (often empty). Callers should also
 /// inspect the cancel flag after this call to bail out cleanly.
-pub fn medial_axis_cancellable(
+#[must_use] pub fn medial_axis_cancellable(
     region: &VcRegion,
     cancel: Option<&CancelToken>,
 ) -> Vec<Vec<VPoint>> {
@@ -303,7 +303,7 @@ pub fn medial_axis_cancellable(
 /// `VcRegion`. Open objects aren't supported for V-Carve — they have no
 /// interior — so they're rejected at the call site (pipeline emits a
 /// warning).
-pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegion> {
+#[must_use] pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegion> {
     if !outer.closed {
         return None;
     }
@@ -333,7 +333,7 @@ pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegi
 /// negative number, we treat its absolute value as the limit). Returns
 /// `(polyline, depth_limited)` where `depth_limited` is true when at
 /// least one point hit the |z| cap.
-pub fn polyline_to_z(
+#[must_use] pub fn polyline_to_z(
     axis: &[VPoint],
     tip_angle_rad: f64,
     r_cap: Option<f64>,
@@ -516,7 +516,7 @@ mod tests {
     }
 
     /// Regression for the circumradius-vs-inscribed-radius fix (gjk):
-    /// nearest_boundary_distance must measure the perpendicular drop
+    /// `nearest_boundary_distance` must measure the perpendicular drop
     /// onto each segment, not the distance to the endpoint sample. For
     /// a vertex sitting directly above the middle of a horizontal
     /// segment, the answer is the perpendicular distance even if the

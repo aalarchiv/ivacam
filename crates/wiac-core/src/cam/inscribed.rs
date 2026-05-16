@@ -18,7 +18,7 @@ const MIN_HELIX_RADIUS_FACTOR: f64 = 1.2;
 ///
 /// Tie-break for multiple equal-radius vertices (long pill shapes etc.):
 /// first hit wins by medial-axis traversal order.
-pub fn inscribed_circle(region: &VcRegion, tool_radius: f64) -> Option<(f64, f64, f64)> {
+#[must_use] pub fn inscribed_circle(region: &VcRegion, tool_radius: f64) -> Option<(f64, f64, f64)> {
     // First-hit tie-break (matters for long-pill shapes where the spine
     // has many vertices at equal max r): walk explicitly and only update
     // on strict improvement.

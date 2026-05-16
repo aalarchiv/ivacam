@@ -254,7 +254,7 @@ async fn generate(
 }
 
 /// Render a TTF font + string → segments. Cross-transport entry point used
-/// by the AddTextDialog; the WASM and Tauri transports expose the same
+/// by the `AddTextDialog`; the WASM and Tauri transports expose the same
 /// shape so the frontend's `WiacClient.renderText` is transport-agnostic.
 async fn render_text_handler(
     State(_state): State<Arc<AppState>>,
@@ -268,7 +268,7 @@ async fn render_text_handler(
 }
 
 /// Helix auto-fit preview — runs the same inscribed-circle search the
-/// generator does at run time, so the OpPropertiesPanel can show the
+/// generator does at run time, so the `OpPropertiesPanel` can show the
 /// detected radius before the user clicks Generate.
 async fn helix_radius_handler(
     State(_state): State<Arc<AppState>>,
@@ -284,7 +284,7 @@ async fn helix_radius_handler(
 /// client posts to `/generate/cancel/<token>`, followed by per-op
 /// `PipelineEvent`s, and finally a `result` (or `cancelled` / `error`)
 /// frame. Frontend reads via `fetch` + a hand-rolled SSE parser
-/// because EventSource is GET-only.
+/// because `EventSource` is GET-only.
 async fn generate_stream(
     State(state): State<Arc<AppState>>,
     Json(req): Json<GenerateRequest>,

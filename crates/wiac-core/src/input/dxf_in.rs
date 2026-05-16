@@ -514,7 +514,7 @@ impl ImportCtx<'_> {
     }
 
     /// Flatten an MLINE into the spine (centerline) plus two parallel
-    /// offsets at ±scale_factor/2 along each vertex's miter direction. Style
+    /// offsets at ±`scale_factor/2` along each vertex's miter direction. Style
     /// table support (per-element offsets, caps, joints) is intentionally
     /// out of scope; the typical 2-element default style emerges naturally.
     fn emit_mline(&mut self, m: &MLine, layer: &str, color: i32, xform: &Transform2D) {
@@ -677,11 +677,11 @@ fn entity_type_name(t: &EntityType) -> &'static str {
     }
 }
 
-/// Convert a `dxf::Color` to an AutoCAD ACI integer (1..=255). For special
+/// Convert a `dxf::Color` to an `AutoCAD` ACI integer (1..=255). For special
 /// values (BYLAYER, BYBLOCK, off, BYENTITY) returns the supplied default.
 fn color_to_aci(color: &dxf::Color, default: i32) -> i32 {
     if let Some(idx) = color.index() {
-        idx as i32
+        i32::from(idx)
     } else {
         default
     }

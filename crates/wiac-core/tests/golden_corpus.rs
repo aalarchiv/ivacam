@@ -2,7 +2,7 @@
 //! exercises the full Rust pipeline (import → chain → parallel offset →
 //! gcode emit). Asserts the program is non-empty and carries the expected
 //! mm/absolute-mode prologue. The Python-oracle parity harness was retired
-//! along with the FastAPI bridge — coverage now sits at "doesn't panic on
+//! along with the `FastAPI` bridge — coverage now sits at "doesn't panic on
 //! the corpus, emits sane gcode for an outside cut".
 
 use std::fs;

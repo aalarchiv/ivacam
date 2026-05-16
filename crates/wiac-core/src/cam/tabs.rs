@@ -35,7 +35,7 @@ use crate::project::TabPlacement;
 /// the total length of the polyline (NOT closing the loop — a closed
 /// polyline's first/last points may coincide or not depending on the
 /// caller).
-pub fn polyline_arc_lengths(pts: &[Point2]) -> (Vec<f64>, f64) {
+#[must_use] pub fn polyline_arc_lengths(pts: &[Point2]) -> (Vec<f64>, f64) {
     if pts.is_empty() {
         return (Vec::new(), 0.0);
     }
@@ -57,7 +57,7 @@ pub fn polyline_arc_lengths(pts: &[Point2]) -> (Vec<f64>, f64) {
 /// `t = 0.0` corresponds to `pts[0]`; `t = 1.0` would be one full
 /// traversal back to `pts[0]` (for closed loops) or to `pts.last()`
 /// for open polylines.
-pub fn polyline_project(pts: &[Point2], q: Point2, closed: bool) -> (f64, Point2) {
+#[must_use] pub fn polyline_project(pts: &[Point2], q: Point2, closed: bool) -> (f64, Point2) {
     if pts.len() < 2 {
         return (0.0, pts.first().copied().unwrap_or(Point2::new(0.0, 0.0)));
     }
@@ -111,7 +111,7 @@ pub fn polyline_project(pts: &[Point2], q: Point2, closed: bool) -> (f64, Point2
 /// point + the unit tangent direction at that point (forward along
 /// the polyline). Tangent stays well-defined at vertices by picking
 /// the OUTGOING segment.
-pub fn polyline_at_t(pts: &[Point2], t: f64, closed: bool) -> (Point2, (f64, f64)) {
+#[must_use] pub fn polyline_at_t(pts: &[Point2], t: f64, closed: bool) -> (Point2, (f64, f64)) {
     if pts.len() < 2 {
         let p = pts.first().copied().unwrap_or(Point2::new(0.0, 0.0));
         return (p, (1.0, 0.0));
@@ -166,17 +166,17 @@ pub fn polyline_at_t(pts: &[Point2], t: f64, closed: bool) -> (Point2, (f64, f64
 /// is `1/count` and the first parameter is 0. For open contours we
 /// inset the first/last by `0.5/count` so tabs don't land on the
 /// endpoints (cutter never reaches the very edge at full depth).
-pub fn auto_tab_ts(count: u32, closed: bool) -> Vec<f64> {
+#[must_use] pub fn auto_tab_ts(count: u32, closed: bool) -> Vec<f64> {
     if count == 0 {
         return Vec::new();
     }
-    let n = count as f64;
+    let n = f64::from(count);
     if closed {
-        (0..count).map(|i| (i as f64) / n).collect()
+        (0..count).map(|i| f64::from(i) / n).collect()
     } else {
         // First at 0.5/n, then evenly spaced; ensures the first tab
         // doesn't sit on the endpoint.
-        (0..count).map(|i| (i as f64 + 0.5) / n).collect()
+        (0..count).map(|i| (f64::from(i) + 0.5) / n).collect()
     }
 }
 
@@ -188,7 +188,7 @@ pub fn auto_tab_ts(count: u32, closed: bool) -> Vec<f64> {
 ///
 /// `interpolate` matches the value `pocket_for_object` etc. use to
 /// densify curved segments (typically 6).
-pub fn resolve_tab_placements(
+#[must_use] pub fn resolve_tab_placements(
     placements: &[TabPlacement],
     objects: &[VcObject],
     interpolate: usize,

@@ -34,13 +34,13 @@ pub struct ImportOptions {
     /// Path to a TTF for rendering TEXT/MTEXT entities. If `None`, the
     /// importer falls back to scanning a few well-known system locations
     /// (`/usr/share/fonts/...`, `/Library/Fonts/...`, `C:\Windows\Fonts\...`).
-    /// Single-line / engraving fonts (RhSS, OSIFont, Hershey ports) are
+    /// Single-line / engraving fonts (`RhSS`, `OSIFont`, Hershey ports) are
     /// auto-detected — see [`crate::input::text::is_single_line_font`].
     pub font_path: Option<std::path::PathBuf>,
 }
 
 impl ImportOptions {
-    pub fn arc_max_step_or_default(&self) -> f64 {
+    #[must_use] pub fn arc_max_step_or_default(&self) -> f64 {
         if self.arc_max_step_rad > 0.0 {
             self.arc_max_step_rad
         } else {

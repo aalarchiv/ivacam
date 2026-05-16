@@ -4,7 +4,7 @@
 //! the final program.
 //!
 //! Modeled after mainstream CAM tools (Carbide Create, Fusion 360 CAM,
-//! Estlcum, FreeCAD Path Workbench) so the user's mental model translates
+//! Estlcum, `FreeCAD` Path Workbench) so the user's mental model translates
 //! without surprises.
 
 use schemars::JsonSchema;
@@ -39,10 +39,10 @@ pub struct Project {
 
     /// First-class editable text entities — content / font / size /
     /// position / rotation / spacing. The pipeline pre-pass renders each
-    /// TextLayer to segments before any op runs so the existing
+    /// `TextLayer` to segments before any op runs so the existing
     /// `Engrave` (and friends) op can target the rendered geometry by
-    /// layer name `__text_<id>`. Edits to a TextLayer re-run the
-    /// pipeline; cache keys include text_layers content.
+    /// layer name `__text_<id>`. Edits to a `TextLayer` re-run the
+    /// pipeline; cache keys include `text_layers` content.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_layers: Vec<TextLayer>,
 }
@@ -55,7 +55,7 @@ pub struct Project {
 ///
 /// Distinct from DXF TEXT/MTEXT entities currently parsed into
 /// `project.segments` as opaque polylines (phase 4 will route those
-/// through TextLayer too).
+/// through `TextLayer` too).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TextLayer {
     pub id: u32,
@@ -108,7 +108,7 @@ pub enum TextAlignment {
 
 /// Reserved layer name pattern for TextLayer-rendered segments. Ops
 /// can target a specific text layer via `OperationSource::Layers(vec!["__text_<id>"])`.
-pub fn text_layer_synthetic_layer(id: u32) -> String {
+#[must_use] pub fn text_layer_synthetic_layer(id: u32) -> String {
     format!("__text_{id}")
 }
 
@@ -212,7 +212,7 @@ pub struct ToolEntry {
     /// inherit this when their own `step` is unset. None = no default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_step: Option<f64>,
-    /// Per-tool Z origin offset (rt1.30 / Estlcam Z_Shift). For
+    /// Per-tool Z origin offset (rt1.30 / Estlcam `Z_Shift`). For
     /// machines without automatic tool-length probing — the user
     /// pre-measures each tool's tip Z relative to a reference tool and
     /// records the delta here (positive = sticks out further; negative
@@ -221,14 +221,14 @@ pub struct ToolEntry {
     /// the reference tool used. mm. None = no shift.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z_shift_mm: Option<f64>,
-    /// Laser pierce time (rt1.29 / Estlcam T_Pierce_Time): seconds the
+    /// Laser pierce time (rt1.29 / Estlcam `T_Pierce_Time)`: seconds the
     /// beam dwells at the start point BEFORE the cut begins so it
     /// burns through thick stock. Honored only when `kind ==
     /// LaserBeam`. The post emits a `G4 P<seconds>` after the
     /// laser-on before each plunge. None = no pierce dwell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub laser_pierce_sec: Option<f64>,
-    /// Laser lead-in distance (rt1.29 / Estlcam T_Lead_In): mm of
+    /// Laser lead-in distance (rt1.29 / Estlcam `T_Lead_In)`: mm of
     /// approach travel the head takes along the entry tangent before
     /// the cut starts, to reduce edge entry burn. Honored only when
     /// `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time
@@ -254,7 +254,7 @@ pub struct ToolEntry {
     /// above the disk. mm, positive only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tslot_neck_length_mm: Option<f64>,
-    /// Wirbeln (rt1.25 / Estlcam T_Wirbeln): automatic chip-thinning.
+    /// Wirbeln (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning.
     /// When `true`, Pocket ops using this tool clamp their effective
     /// `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)`
     /// — the classic chip-thinning rule that bounds radial engagement
@@ -370,10 +370,10 @@ pub enum PassKind {
     Drill,
 }
 
-/// Resolve the (speed, plunge_rate, feed_rate) triplet for `tool` under
+/// Resolve the (speed, `plunge_rate`, `feed_rate`) triplet for `tool` under
 /// `pass`. Finish / Drill variants fall back to the general values when
 /// their override is `None`.
-pub fn resolve_tool_rates(tool: &ToolEntry, pass: PassKind) -> (u32, u32, u32) {
+#[must_use] pub fn resolve_tool_rates(tool: &ToolEntry, pass: PassKind) -> (u32, u32, u32) {
     match pass {
         PassKind::Rough => (tool.speed, tool.plunge_rate, tool.feed_rate),
         PassKind::Finish => (
@@ -605,8 +605,8 @@ fn default_thread_internal() -> bool {
 }
 
 /// Drill-cycle picker for [`OperationKind::Drill`]. Mirrors the canned
-/// cycles G81 / G83 / G73 from the LinuxCNC / Fanuc dialect plus the
-/// dwell-at-bottom parameter PyCAM's `Drilling.py` exposes. Posts that
+/// cycles G81 / G83 / G73 from the `LinuxCNC` / Fanuc dialect plus the
+/// dwell-at-bottom parameter `PyCAM`'s `Drilling.py` exposes. Posts that
 /// don't support canned cycles fall back to a manual G0/G1 expansion of
 /// the same cycle (see `PostProcessor::drill_*` defaults).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -653,7 +653,7 @@ pub enum PocketStrategy {
         engagement_angle_deg: f64,
         loop_radius_factor: f64,
     },
-    /// Halfpipe (rt1.19 / Estlcam _PK::Halfpipe): slot machining where
+    /// Halfpipe (rt1.19 / Estlcam _`PK::Halfpipe)`: slot machining where
     /// the toolpath walks the region's MEDIAL AXIS at varying Z so the
     /// cut floor matches the configured profile. The slot's width at
     /// each medial-axis point (= 2*inscribed-circle radius) drives the
@@ -897,7 +897,7 @@ impl Default for OperationSource {
 pub enum SourceCombine {
     /// Containment-aware: nested closed objects in the selection become
     /// islands of their outermost selected ancestor. Equivalent to today's
-    /// pipeline-level behavior (see pipeline.rs's selected_set logic).
+    /// pipeline-level behavior (see pipeline.rs's `selected_set` logic).
     #[default]
     Auto,
     /// Boolean union of all selected closed polygons.
@@ -1010,7 +1010,7 @@ pub struct OperationParams {
     /// Z for rapid moves between cuts.
     pub fast_move_z: f64,
     /// XY overlap between consecutive pocket cuts, as a fraction in
-    /// (0, 1). Drives the cascade step (= tool_diameter * (1 - overlap))
+    /// (0, 1). Drives the cascade step (= `tool_diameter` * (1 - overlap))
     /// and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a
     /// conservative default that fills tight pockets cleanly. Higher
     /// overlap = smaller step = more rings, slower cut, better finish.
@@ -1073,7 +1073,7 @@ pub struct OperationParams {
     pub finish_cut_direction: CutDirection,
 
     /// How the cutter descends into material at the start of each Z
-    /// pass. Default Direct (straight plunge). Ramp { angle_deg } walks
+    /// pass. Default Direct (straight plunge). Ramp { `angle_deg` } walks
     /// forward along the path while descending Z, taking a chip in both
     /// directions simultaneously — required for non-center-cutting bits
     /// and for harder materials.
@@ -1114,11 +1114,11 @@ pub struct OperationParams {
     /// positive only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_xy_allowance_mm: Option<f64>,
-    /// Stufenfase (rt1.20 / Estlcam Prog_KTD_Stufenfase): chamfer a
+    /// Stufenfase (rt1.20 / Estlcam `Prog_KTD_Stufenfase)`: chamfer a
     /// drilled hole's rim immediately after the drill cycle. Honored
     /// only on `OperationKind::Drill`. The post emits the drill cycle
     /// for each hole, then walks the cutter on a single revolution at
-    /// the hole's edge at z = -width / tan(tip_angle / 2). When
+    /// the hole's edge at z = -width / `tan(tip_angle` / 2). When
     /// `Operation.finish_tool_id` is set to a distinct tool, a M6 +
     /// G92 toolchange happens BEFORE the chamfer revolution so the
     /// user can chamfer with a V-bit / fly-cutter different from the
@@ -1141,7 +1141,7 @@ pub struct OperationParams {
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub through_depth: f64,
     /// Explicit list of Z depths for each pass, overriding the
-    /// step+finish_step schedule. Useful for non-linear schedules
+    /// `step+finish_step` schedule. Useful for non-linear schedules
     /// (shallower at start for tough material, deeper later, slow
     /// finish at the end). Each entry is an absolute Z (negative
     /// number); the cutter visits them in order. Empty = use the
@@ -1197,7 +1197,7 @@ where
 
 impl OperationParams {
     /// Defaults that line up with a "first profile cut on a 2 mm sheet".
-    pub fn mill_default() -> Self {
+    #[must_use] pub fn mill_default() -> Self {
         Self {
             depth: -2.0,
             start_depth: 0.0,

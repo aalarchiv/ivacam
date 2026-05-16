@@ -1,5 +1,5 @@
 //! Multi-object source combination — turns a list of selected closed
-//! VcObjects into the actual region(s) the operation will machine.
+//! `VcObjects` into the actual region(s) the operation will machine.
 //!
 //! The user picks objects in the UI; what they *mean* is "the area
 //! enclosed by these contours under some boolean rule". This module
@@ -12,7 +12,7 @@
 //!   the per-op driver already implements when the field is unset.
 //! * `Union / Difference / Intersection / Xor` — clipper2-driven boolean
 //!   ops on the tessellated polygons; outers/holes are recovered from the
-//!   resulting PolyTreeD.
+//!   resulting `PolyTreeD`.
 //! * `None` — no combination; one region per selected closed object with
 //!   no holes (the pre-j7y behavior, surfaced for callers who really
 //!   want it).
@@ -32,8 +32,8 @@ use crate::geometry::{Point2, Segment};
 use crate::project::SourceCombine;
 
 /// Shape of the synthetic frame built around a Pocket-Outside selection.
-/// Rectangle is a plain padded bbox; RoundedRectangle uses the same bbox
-/// with a quarter-arc bulge at each corner. Oval and TightOutline are
+/// Rectangle is a plain padded bbox; `RoundedRectangle` uses the same bbox
+/// with a quarter-arc bulge at each corner. Oval and `TightOutline` are
 /// deferred follow-ups (not yet implemented).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -44,15 +44,15 @@ pub enum FrameShape {
 }
 
 /// 90° quarter-arc bulge for a CCW rectangle corner: tan(π/8) =
-/// √2 − 1. Used by RoundedRectangle to round the four corners.
+/// √2 − 1. Used by `RoundedRectangle` to round the four corners.
 const QUARTER_ARC_BULGE: f64 = std::f64::consts::SQRT_2 - 1.0;
 
-/// Build a synthetic frame VcObject around `selection`, padded by
-/// `padding_mm` on every side. The result is a closed VcObject with
+/// Build a synthetic frame `VcObject` around `selection`, padded by
+/// `padding_mm` on every side. The result is a closed `VcObject` with
 /// `tool_offset = Inside` (the cutter sits inside this outer boundary)
-/// on layer "Frame", color 6 (cyan). For RoundedRectangle, `corner_radius_mm`
+/// on layer "Frame", color 6 (cyan). For `RoundedRectangle`, `corner_radius_mm`
 /// defaults to `padding_mm` when None.
-pub fn build_frame(
+#[must_use] pub fn build_frame(
     selection: &[&VcObject],
     shape: FrameShape,
     padding_mm: f64,
@@ -160,7 +160,7 @@ const CLIPPER_PRECISION: i32 = 4;
 /// are considered (open selections are silently ignored — they're not
 /// pocketable boundaries). When the selection is empty, returns an empty
 /// vec.
-pub fn combine_source_regions(
+#[must_use] pub fn combine_source_regions(
     objects: &[VcObject],
     selected: &[usize],
     mode: SourceCombine,
@@ -349,9 +349,9 @@ fn paths_for(indices: &[usize], objects: &[VcObject]) -> PathsD {
     paths
 }
 
-/// Walk the PolyTreeD root and emit one CombinedRegion per top-level
+/// Walk the `PolyTreeD` root and emit one `CombinedRegion` per top-level
 /// outer path. Holes are the direct children of each top-level node
-/// (PolyTree alternates outer/hole/outer/... per nesting level).
+/// (`PolyTree` alternates outer/hole/outer/... per nesting level).
 fn polytree_to_regions(
     tree: &PolyTreeD,
     source_idx: usize,

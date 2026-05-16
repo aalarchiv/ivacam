@@ -54,9 +54,9 @@ pub struct HelixRadiusResponse {
 
 /// Stand-alone helix auto-fit preview — the same computation
 /// `pipeline::resolve_auto_helix_radius` performs at generation time,
-/// exposed for the OpPropertiesPanel to display "Auto (detected: 4.2 mm)"
+/// exposed for the `OpPropertiesPanel` to display "Auto (detected: 4.2 mm)"
 /// before the user clicks Generate.
-pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
+#[must_use] pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
     use crate::cam::chaining::{classify_containment, segments_to_objects};
     use crate::cam::source_combine::combine_source_regions;
     use crate::cam::vcarve::VcRegion;

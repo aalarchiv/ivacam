@@ -5,12 +5,12 @@
 //! accel/decel cycle that never reaches the commanded feed. This module
 //! integrates a trapezoidal motion profile per segment with a
 //! look-ahead pass that lowers the junction speed at corners, mirroring
-//! what LinuxCNC / GRBL do at runtime.
+//! what `LinuxCNC` / GRBL do at runtime.
 //!
 //! Algorithm (v1, trapezoidal — S-curve refinement is Phase 2):
 //!   1. Resolve length, unit direction, max feed for each segment.
 //!   2. Look-ahead: junction speed `v_j = sqrt(a · min(len_i, len_{i+1}) ·
-//!      (1 + cos θ) / 2)`, clamped to min(feed_i, feed_{i+1}). cos = +1
+//!      (1 + cos θ) / 2)`, clamped to `min(feed_i`, feed_{i+1}). cos = +1
 //!      (collinear) saturates at feed; cos = -1 (180° reversal) → 0.
 //!   3. Trapezoidal profile per segment with the resolved entry/exit
 //!      speeds (collapses to a triangle when `s_acc + s_dec > s`).
@@ -47,7 +47,7 @@ const DIR_EPS: f64 = 1e-6;
 /// `tool_changes` is the count of tool-changes M6 events (produces
 /// `n * machine.toolchange_s`); `spindle_warmup_s` is summed across all
 /// `tool.pause` per used tool.
-pub fn estimate_from_gcode(
+#[must_use] pub fn estimate_from_gcode(
     gcode: &str,
     segments: &[ToolpathSegment],
     machine: &MachineConfig,
@@ -59,9 +59,9 @@ pub fn estimate_from_gcode(
 }
 
 /// Core entry point: takes pre-resolved per-segment feedrates (mm/min)
-/// and produces a TimeEstimate. `tool_changes` and `spindle_warmup_s`
+/// and produces a `TimeEstimate`. `tool_changes` and `spindle_warmup_s`
 /// are added on top of motion time.
-pub fn estimate(
+#[must_use] pub fn estimate(
     segments: &[ToolpathSegment],
     feeds_mm_min: &[f64],
     machine: &MachineConfig,
@@ -179,7 +179,7 @@ fn estimate_trapezoidal(
         }
     }
 
-    let toolchange_s = (tool_changes as f64) * machine.toolchange_s;
+    let toolchange_s = f64::from(tool_changes) * machine.toolchange_s;
     let total_s = cut_s + rapid_s + plunge_s + retract_s + arc_s + toolchange_s + spindle_warmup_s;
     TimeEstimate {
         total_s,
@@ -222,7 +222,7 @@ fn estimate_naive(
             MoveKind::Arc => arc_s += dt,
         }
     }
-    let toolchange_s = (tool_changes as f64) * machine.toolchange_s;
+    let toolchange_s = f64::from(tool_changes) * machine.toolchange_s;
     let total_s = cut_s + rapid_s + plunge_s + retract_s + arc_s + toolchange_s + spindle_warmup_s;
     TimeEstimate {
         total_s,
@@ -253,7 +253,7 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 /// Per-axis accel reduction for a diagonal move. The bound for axis k is
 /// `a_k / |dir_k|`; the move's effective accel is the smallest such
-/// bound across active axes (those with |dir_k| > DIR_EPS).
+/// bound across active axes (those with |`dir_k`| > `DIR_EPS`).
 fn effective_accel(dir: [f64; 3], a: AxisLimits) -> f64 {
     let limits = [a.x, a.y, a.z];
     let mut best = f64::INFINITY;

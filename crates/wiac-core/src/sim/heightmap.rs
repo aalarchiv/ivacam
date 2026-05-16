@@ -191,9 +191,9 @@ impl ToolProfile {
     }
 
     /// True for flat-bottomed profiles (Endmill / Drill / Laser /
-    /// DragKnife) — every cell within the cutter radius carves to
+    /// `DragKnife`) — every cell within the cutter radius carves to
     /// the same `cutter_pz`, no per-r profile offset. The sweep can
-    /// then skip both the sqrt and the eval() branch (audit-xnmp).
+    /// then skip both the sqrt and the `eval()` branch (audit-xnmp).
     #[must_use]
     pub fn is_flat_bottom(&self) -> bool {
         matches!(
@@ -492,7 +492,7 @@ mod tests {
         }
     }
 
-    /// Defense-in-depth: an out-of-range tip_angle_deg (e.g. an old
+    /// Defense-in-depth: an out-of-range `tip_angle_deg` (e.g. an old
     /// project before the field was required) falls back to 60°
     /// instead of producing a NaN or zero-angle cone.
     #[test]

@@ -177,7 +177,7 @@ impl<'a> Walker<'a> {
     }
 }
 
-impl<'a> OutlineBuilder for Walker<'a> {
+impl OutlineBuilder for Walker<'_> {
     fn move_to(&mut self, x: f32, y: f32) {
         self.finish_contour();
         let p = self.point(x, y);

@@ -69,7 +69,7 @@ pub(super) fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
         PatternConfig::Linear { count, dx, dy } => {
             // count is an inclusive total. count == 0 → no instances at
             // all (degenerate, but well-defined: the op emits nothing).
-            for i in 0..count.max(0) {
+            for i in 0..count {
                 out.push(PatternInstance::translate((i as f64) * dx, (i as f64) * dy));
             }
         }
@@ -79,8 +79,8 @@ pub(super) fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
             dx,
             dy,
         } => {
-            for j in 0..count_y.max(0) {
-                for i in 0..count_x.max(0) {
+            for j in 0..count_y {
+                for i in 0..count_x {
                     out.push(PatternInstance::translate((i as f64) * dx, (j as f64) * dy));
                 }
             }
@@ -94,7 +94,7 @@ pub(super) fn pattern_offsets(pattern: PatternConfig) -> Vec<PatternInstance> {
         } => {
             let step_rad = angle_step_deg.to_radians();
             let start_rad = start_angle_deg.to_radians();
-            for i in 0..count.max(0) {
+            for i in 0..count {
                 out.push(PatternInstance::polar(
                     center_x,
                     center_y,

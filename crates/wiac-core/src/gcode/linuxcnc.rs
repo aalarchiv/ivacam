@@ -50,10 +50,10 @@ impl Post {
             Some(af) => af.render(v)?,
             None => format!("{default}{}", self.fmt(v)),
         };
-        if self.state.decimal_separator != '.' {
-            Some(rendered.replace('.', &self.state.decimal_separator.to_string()))
-        } else {
+        if self.state.decimal_separator == '.' {
             Some(rendered)
+        } else {
+            Some(rendered.replace('.', &self.state.decimal_separator.to_string()))
         }
     }
 

@@ -214,9 +214,9 @@ mod tests {
 
     #[test]
     fn rect_imports_into_four_segments() {
-        let svg = br#"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 50'>
+        let svg = br"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 50'>
             <rect x='10' y='10' width='80' height='30'/>
-        </svg>"#;
+        </svg>";
         let out = import_svg_bytes("rect.svg".into(), svg, &ImportOptions::default()).unwrap();
         assert_eq!(out.format, "svg");
         // <rect> closes back to start, so we get 4 line segments around the box.
@@ -234,9 +234,9 @@ mod tests {
     #[test]
     fn path_with_curves_flattens_within_tolerance() {
         // Quarter-circle approximated by a single cubic Bézier.
-        let svg = br#"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'>
+        let svg = br"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'>
             <path d='M 100 100 C 100 44.77 144.77 0 200 0' fill='none' stroke='black'/>
-        </svg>"#;
+        </svg>";
         let out = import_svg_bytes("curve.svg".into(), svg, &ImportOptions::default()).unwrap();
         assert!(
             out.segments.len() > 4,
@@ -252,11 +252,11 @@ mod tests {
 
     #[test]
     fn nested_group_transform_is_applied() {
-        let svg = br#"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        let svg = br"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
             <g transform='translate(50 0)'>
                 <line x1='0' y1='10' x2='0' y2='90'/>
             </g>
-        </svg>"#;
+        </svg>";
         let out = import_svg_bytes("g.svg".into(), svg, &ImportOptions::default()).unwrap();
         assert_eq!(out.segments.len(), 1);
         let s = &out.segments[0];

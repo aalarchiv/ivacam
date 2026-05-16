@@ -62,7 +62,7 @@ pub fn pocket_trochoidal_cancellable(
     color: i32,
     cancel: Option<&CancelToken>,
 ) -> Option<Vec<Segment>> {
-    let is_cancelled = || cancel.map(|c| c.is_cancelled()).unwrap_or(false);
+    let is_cancelled = || cancel.is_some_and(super::super::pipeline::CancelToken::is_cancelled);
     if boundary_pts.len() < 3 || tool_radius <= 0.0 {
         return Some(Vec::new());
     }

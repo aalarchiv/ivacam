@@ -313,7 +313,7 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         post.feedrate(setup.tool.rate_v);
         post.linear(None, None, Some(setup.mill.start_depth));
         post.feedrate(setup.tool.rate_h);
-        for &(x, y, z) in poly.iter() {
+        for &(x, y, z) in poly {
             post.linear(Some(x), Some(y), Some(z));
         }
         let (lx, ly, _) = *poly.last().unwrap();
@@ -493,16 +493,14 @@ fn start_pos_of(offset: &PolylineOffset) -> Point2 {
     offset
         .segments
         .first()
-        .map(|s| s.start)
-        .unwrap_or(Point2::new(0.0, 0.0))
+        .map_or(Point2::new(0.0, 0.0), |s| s.start)
 }
 
 fn end_pos(offset: &PolylineOffset) -> Point2 {
     offset
         .segments
         .last()
-        .map(|s| s.end)
-        .unwrap_or(Point2::new(0.0, 0.0))
+        .map_or(Point2::new(0.0, 0.0), |s| s.end)
 }
 
 fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
@@ -673,7 +671,7 @@ fn emit_offset<P: PostProcessor>(
     }
     post.linear(None, None, Some(setup.mill.fast_move_z));
 
-    *last_pos = offset.segments.last().map(|s| s.end).unwrap_or(start);
+    *last_pos = offset.segments.last().map_or(start, |s| s.end);
 }
 
 fn multi_pass<P: PostProcessor>(
@@ -819,7 +817,7 @@ fn multi_pass<P: PostProcessor>(
             post.feedrate(rate_h);
             emit_helix_entry(plan, pz, z, post);
             // Cut from helix landing point to the path's actual start.
-            let start = segments.first().map(|s| s.start).unwrap_or(plan.center);
+            let start = segments.first().map_or(plan.center, |s| s.start);
             post.linear(Some(start.x), Some(start.y), Some(z));
             let dragoff = setup.tool.dragoff.unwrap_or(0.0);
             let fitted = fit_line_runs(segments, setup);
@@ -1122,15 +1120,12 @@ fn plan_helix_entry(
     // tool_radius` so the helix circle clears the pocket walls by at
     // least a tool radius. If no interior point meets that bar the
     // helix can't fit and we fall back to Ramp.
-    let center = match polygon_pole_of_inaccessibility(&verts, radius + tool_radius) {
-        Some(p) => p,
-        None => {
-            tracing::debug!(
-                "helix entry: no interior point with clearance > {:.3}, falling back to Ramp",
-                radius + tool_radius
-            );
-            return None;
-        }
+    let center = if let Some(p) = polygon_pole_of_inaccessibility(&verts, radius + tool_radius) { p } else {
+        tracing::debug!(
+            "helix entry: no interior point with clearance > {:.3}, falling back to Ramp",
+            radius + tool_radius
+        );
+        return None;
     };
     // Sample 16 points on the helix circle as a final safety check;
     // all must be inside the polygon. The pole-of-inaccessibility
@@ -1472,7 +1467,7 @@ fn emit_path_with_tabs<P: PostProcessor>(
     for seg in segments {
         match seg.kind {
             SegmentKind::Line => {
-                emit_line_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, ramp_angle_deg, post)
+                emit_line_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, ramp_angle_deg, post);
             }
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
@@ -1775,7 +1770,7 @@ fn build_z_schedule(
                 // quality on thin cuts.
                 let dup_of_last = out
                     .last()
-                    .map_or(false, |&l| (l - pre_finish).abs() <= 1e-9);
+                    .is_some_and(|&l| (l - pre_finish).abs() <= 1e-9);
                 if !dup_of_last
                     && pre_finish < start_depth - 1e-9
                     && pre_finish > total_depth + 1e-9

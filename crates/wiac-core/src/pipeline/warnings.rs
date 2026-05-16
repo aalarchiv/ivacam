@@ -151,11 +151,8 @@ pub(super) fn push_tool_fit_size_warning(
     let needs_offset = match op.kind {
         OperationKind::Pocket { .. } => true,
         OperationKind::Profile {
-            offset: crate::cam::setup::ToolOffset::Outside,
-        }
-        | OperationKind::Profile {
-            offset: crate::cam::setup::ToolOffset::Inside,
-        } => true,
+offset: crate::cam::setup::ToolOffset::Outside |
+    crate::cam::setup::ToolOffset::Inside } => true,
         _ => false,
     };
     if !needs_offset {

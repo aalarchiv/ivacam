@@ -252,12 +252,12 @@ fn stadium_hits_polygon(
 /// approach: if they intersect → 0; otherwise the distance is the
 /// minimum of the four endpoint-to-segment distances.
 fn segment_to_segment_distance(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)) -> f64 {
-    if let Some(_) = lines_intersect(
+    if lines_intersect(
         Point2::new(a.0, a.1),
         Point2::new(b.0, b.1),
         Point2::new(c.0, c.1),
         Point2::new(d.0, d.1),
-    ) {
+    ).is_some() {
         return 0.0;
     }
     let d1 = point_to_segment_2d(c, a, b);

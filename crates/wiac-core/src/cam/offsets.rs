@@ -227,17 +227,14 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
     // taking down the whole pipeline — the user gets a partial result
     // plus a warning instead of a 500.
     let layer = obj.layer.clone();
-    let offsets = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let offsets = if let Ok(v) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         pline.parallel_offset(delta)
-    })) {
-        Ok(v) => v,
-        Err(_) => {
-            tracing::warn!(
-                "parallel_offset on layer '{}' panicked in cavalier_contours; skipping",
-                layer
-            );
-            return Vec::new();
-        }
+    })) { v } else {
+        tracing::warn!(
+            "parallel_offset on layer '{}' panicked in cavalier_contours; skipping",
+            layer
+        );
+        return Vec::new();
     };
     offsets
         .into_iter()
@@ -846,9 +843,7 @@ pub fn pocket_for_object(
     // branch uses `tool_radius`.
     let needs_finish_ring = allowance > 1e-9 || has_dual_tool_finish;
     if !nocontour && needs_finish_ring {
-        let finish_r = finish_ring_radius
-            .map(|r| r.abs())
-            .unwrap_or_else(|| tool_radius.abs());
+        let finish_r = finish_ring_radius.map_or_else(|| tool_radius.abs(), f64::abs);
         let finish_boundary = parallel_offset_inward(obj, finish_r);
         for o in &finish_boundary {
             let mut wall = o.clone();
@@ -1362,7 +1357,7 @@ mod tests {
         for ring in &rings {
             for pt in ring {
                 let inside = pt.x > 10.5 && pt.x < 19.5 && pt.y > 10.5 && pt.y < 19.5;
-                assert!(!inside, "pocket ring crossed the island at {:?}", pt);
+                assert!(!inside, "pocket ring crossed the island at {pt:?}");
             }
         }
     }
@@ -1409,7 +1404,7 @@ mod tests {
         // an OUTSIDE cut around an L-shaped island where the offset poly is
         // CW. Reverse the offset segments to get the right winding.
         offset.segments.reverse();
-        for s in offset.segments.iter_mut() {
+        for s in &mut offset.segments {
             std::mem::swap(&mut s.start, &mut s.end);
         }
         apply_overcut(&mut offset, &boundary, 1.0);

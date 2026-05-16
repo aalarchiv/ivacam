@@ -289,7 +289,7 @@ pub fn sweep_range_cancellable(
     let hi = to_idx.min(segments.len());
     let mut total = 0u32;
     for (offset, seg) in segments[lo..hi].iter().enumerate() {
-        if offset % 100 == 0 && cancel.map(|c| c.is_cancelled()).unwrap_or(false) {
+        if offset % 100 == 0 && cancel.is_some_and(super::super::pipeline::CancelToken::is_cancelled) {
             return total;
         }
         total += sweep_segment(

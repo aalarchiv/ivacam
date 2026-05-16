@@ -154,11 +154,8 @@ impl ProjectWatcher {
 fn is_relevant(kind: &EventKind) -> bool {
     matches!(
         kind,
-        EventKind::Modify(ModifyKind::Data(_))
-            | EventKind::Modify(ModifyKind::Name(_))
-            | EventKind::Modify(ModifyKind::Any)
-            | EventKind::Modify(ModifyKind::Other)
-            | EventKind::Create(_)
+        EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Name(_) | ModifyKind::Any
+| ModifyKind::Other) | EventKind::Create(_)
     )
 }
 
@@ -271,7 +268,7 @@ mod tests {
         let events = drain_for(&rx, Duration::from_millis(600));
         let matching = events.iter().filter(|p| paths_equal(p, &path)).count();
         assert!(
-            matching >= 1 && matching <= 2,
+            (1..=2).contains(&matching),
             "debounced 5 rapid writes; got {matching} events for path",
         );
     }

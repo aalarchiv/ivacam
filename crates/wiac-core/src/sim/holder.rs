@@ -33,8 +33,7 @@ impl HolderProfile {
         let flute_len = tool.flute_length_mm.unwrap_or(0.0).max(0.0);
         let shank_r = tool
             .shank_diameter_mm
-            .map(|d| d * 0.5)
-            .unwrap_or(cutting_r)
+            .map_or(cutting_r, |d| d * 0.5)
             .max(0.0);
 
         // Sample list anchored at the tip: bottom of flutes, top of
@@ -150,7 +149,7 @@ impl HolderProfile {
     /// Total length of the envelope (tip → top of holder).
     #[must_use]
     pub fn total_length(&self) -> f64 {
-        self.points.last().map(|p| p.0).unwrap_or(0.0)
+        self.points.last().map_or(0.0, |p| p.0)
     }
 
     /// Read-only access to the underlying samples — used by

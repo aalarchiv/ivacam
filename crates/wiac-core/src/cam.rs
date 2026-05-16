@@ -48,10 +48,8 @@ pub struct VcObject {
 impl VcObject {
     pub fn new(segments: Vec<Segment>, closed: bool) -> Self {
         let layer = segments
-            .first()
-            .map(|s| s.layer.clone())
-            .unwrap_or_else(|| "0".into());
-        let color = segments.first().map(|s| s.color).unwrap_or(7);
+            .first().map_or_else(|| "0".into(), |s| s.layer.clone());
+        let color = segments.first().map_or(7, |s| s.color);
         Self {
             segments,
             closed,

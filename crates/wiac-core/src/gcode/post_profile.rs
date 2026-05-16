@@ -405,16 +405,13 @@ pub fn substitute(template: &str, ctx: &TokenCtx) -> String {
                     end <= rest.len() && rest[*i..end].to_ascii_lowercase() == token_lower
                 })
                 .map(|(i, _)| i);
-            match pos {
-                Some(i) => {
-                    buf.push_str(&rest[..i]);
-                    buf.push_str(&value);
-                    rest = &rest[i + token.len()..];
-                }
-                None => {
-                    buf.push_str(rest);
-                    break;
-                }
+            if let Some(i) = pos {
+                buf.push_str(&rest[..i]);
+                buf.push_str(&value);
+                rest = &rest[i + token.len()..];
+            } else {
+                buf.push_str(rest);
+                break;
             }
         }
         out = buf;
@@ -429,7 +426,7 @@ pub fn substitute(template: &str, ctx: &TokenCtx) -> String {
 pub fn template_lines(template: &str, ctx: &TokenCtx) -> Vec<String> {
     substitute(template, ctx)
         .split('\n')
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 

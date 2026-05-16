@@ -76,7 +76,7 @@ pub(super) fn run_vcarve_op<P: PostProcessor>(
         None
     };
     let dpp = effective_step(op, tool)
-        .map(|s| s.abs())
+        .map(f64::abs)
         .unwrap_or(1.0)
         .max(0.05);
 
@@ -210,7 +210,7 @@ pub(super) fn run_halfpipe_op<P: PostProcessor>(
         None
     };
     let dpp = effective_step(op, tool)
-        .map(|s| s.abs())
+        .map(f64::abs)
         .unwrap_or(1.0)
         .max(0.05);
 

@@ -64,7 +64,7 @@ mod tests {
         let (cx, cy, r) = inscribed_circle(&region, tool_radius).expect("should fit");
         // Spine of a 50x30 rect runs (15,15)-(35,15); tie-break is
         // first hit in traversal order so cx lands somewhere on it.
-        assert!(cx >= 15.0 - 0.1 && cx <= 35.0 + 0.1, "cx = {cx}");
+        assert!((15.0 - 0.1..=35.0 + 0.1).contains(&cx), "cx = {cx}");
         assert!((cy - 15.0).abs() < 0.5, "cy = {cy}");
         assert!((r - 11.5).abs() < 0.1, "r = {r}");
     }
@@ -93,7 +93,7 @@ mod tests {
             cy < 16.0,
             "auto pick should land in the wide arm: cy = {cy}"
         );
-        assert!(cx >= 0.0 && cx <= 40.0);
+        assert!((0.0..=40.0).contains(&cx));
     }
 
     #[test]

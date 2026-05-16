@@ -393,7 +393,7 @@ mod tests {
         let segs = interpret(g);
         // Each G0 Z10 = 1 segment. Each G81 = 3 segments.
         // Total = 1 + 3 + 1 + 3 = 8.
-        assert_eq!(segs.len(), 8, "got {:#?}", segs);
+        assert_eq!(segs.len(), 8, "got {segs:#?}");
 
         // First G81: horizontal rapid at z=10, plunge to z=-3, retract to z=2.
         let g81_a = &segs[1..4];

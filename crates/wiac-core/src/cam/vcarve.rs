@@ -104,7 +104,7 @@ pub fn medial_axis_cancellable(
     region: &VcRegion,
     cancel: Option<&CancelToken>,
 ) -> Vec<Vec<VPoint>> {
-    let is_cancelled = || cancel.map(|c| c.is_cancelled()).unwrap_or(false);
+    let is_cancelled = || cancel.is_some_and(super::super::pipeline::CancelToken::is_cancelled);
     // Densify all boundaries (outer + holes) into a single sample list.
     // Voronoi-of-points needs >= 3 samples to triangulate at all.
     let mut samples: Vec<Point2> = Vec::new();
@@ -263,7 +263,7 @@ pub fn medial_axis_cancellable(
         if inside[start].is_none() {
             continue;
         }
-        for &nb in adj[start].clone().iter() {
+        for &nb in &adj[start].clone() {
             if visited_edge.contains(&edge_key(start, nb)) {
                 continue;
             }

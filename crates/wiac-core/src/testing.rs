@@ -42,8 +42,8 @@ pub fn diff_gcode(expected: &str, actual: &str, opts: &DiffOptions) -> DiffOutco
         .collect();
     let max = exp_lines.len().max(act_lines.len());
     for i in 0..max {
-        let exp = exp_lines.get(i).map(String::as_str).unwrap_or("");
-        let act = act_lines.get(i).map(String::as_str).unwrap_or("");
+        let exp = exp_lines.get(i).map_or("", String::as_str);
+        let act = act_lines.get(i).map_or("", String::as_str);
         if !lines_equivalent(exp, act, opts.epsilon) {
             return DiffOutcome::Different {
                 line: i + 1,

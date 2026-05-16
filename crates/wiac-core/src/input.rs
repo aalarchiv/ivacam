@@ -119,7 +119,7 @@ pub fn import_path(path: &Path, opts: &ImportOptions) -> Result<ImportOutput> {
     let suffix = path
         .extension()
         .and_then(|e| e.to_str())
-        .map(|s| s.to_ascii_lowercase())
+        .map(str::to_ascii_lowercase)
         .unwrap_or_default();
 
     match suffix.as_str() {
@@ -144,7 +144,7 @@ pub fn import_bytes(filename: &str, bytes: &[u8], opts: &ImportOptions) -> Resul
     let suffix = std::path::Path::new(filename)
         .extension()
         .and_then(|e| e.to_str())
-        .map(|s| s.to_ascii_lowercase())
+        .map(str::to_ascii_lowercase)
         .unwrap_or_default();
     match suffix.as_str() {
         "dxf" => dxf_in::import_dxf_bytes(filename.to_string(), bytes, opts),

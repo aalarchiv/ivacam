@@ -487,7 +487,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
 
 #[inline]
 pub(super) fn cancelled(cancel: Option<&CancelToken>) -> bool {
-    cancel.map(|c| c.is_cancelled()).unwrap_or(false)
+    cancel.is_some_and(CancelToken::is_cancelled)
 }
 
 fn count_tool_changes(gcode: &str) -> u32 {
@@ -597,7 +597,7 @@ where
 
         if let (Some(c), Some(key)) = (cache, cache_key) {
             if let Some(cached) = c.get(key) {
-                let lines: Vec<String> = cached.gcode_body.lines().map(|s| s.to_string()).collect();
+                let lines: Vec<String> = cached.gcode_body.lines().map(std::string::ToString::to_string).collect();
                 post.out_extend_lines(&lines);
                 post.restore_state(&cached.exit_state);
                 last_pos = Point2::new(cached.exit_xy.0, cached.exit_xy.1);
@@ -1400,7 +1400,7 @@ pub(super) fn op_includes_object(op: &Operation, obj: &VcObject, idx: usize) -> 
         // selection.
         OperationSource::Objects { ids, .. } => {
             let chain_id = (idx as u32) + 1;
-            ids.iter().any(|id| *id == chain_id)
+            ids.contains(&chain_id)
         }
     }
 }
@@ -1446,8 +1446,7 @@ pub(super) fn synthesize_finish_setup(
         && op
             .params
             .chamfer_after_width_mm
-            .map(|w| w > 0.0)
-            .unwrap_or(false);
+            .is_some_and(|w| w > 0.0);
     if !matches!(op.kind, OperationKind::Pocket { .. }) && !drill_with_chamfer {
         return Ok(None);
     }
@@ -1948,7 +1947,7 @@ mod tests {
             .collect();
         // Cuts in the padding region: x or y outside [0, 50].
         let visited_padding = cuts.iter().any(|s| {
-            let in_inner = |x: f64, y: f64| x >= 0.0 && x <= 50.0 && y >= 0.0 && y <= 50.0;
+            let in_inner = |x: f64, y: f64| (0.0..=50.0).contains(&x) && (0.0..=50.0).contains(&y);
             !in_inner(s.from.x, s.from.y) || !in_inner(s.to.x, s.to.y)
         });
         assert!(
@@ -2236,7 +2235,7 @@ mod tests {
         // Group loops by Z so we look at one cut-pass plane only —
         // multiple Z passes would each repeat the same XY rings.
         let z_of = |loop_segs: &[&preview::ToolpathSegment]| -> f64 {
-            loop_segs.first().map(|s| s.from.z).unwrap_or(0.0)
+            loop_segs.first().map_or(0.0, |s| s.from.z)
         };
         let first_z = z_of(&loops[0]);
         let same_z: Vec<_> = loops
@@ -4713,7 +4712,7 @@ mod tests {
             .flat_map(|l| {
                 l.split_whitespace()
                     .filter_map(|t| t.strip_prefix('Z'))
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>()
             })
             .collect();
@@ -5190,9 +5189,7 @@ mod tests {
         // No '.' inside coordinate words (allowing '.' in '; OP' lines
         // is fine since post.raw bypasses the formatter).
         for l in resp.gcode.lines() {
-            if (l.starts_with("G0 ") || l.starts_with("G1 ")) && l.contains('.') {
-                panic!("decimal '.' leaked into a coordinate line under comma-mode: {l}");
-            }
+            assert!(!((l.starts_with("G0 ") || l.starts_with("G1 ")) && l.contains('.')), "decimal '.' leaked into a coordinate line under comma-mode: {l}");
         }
     }
 
@@ -5260,7 +5257,7 @@ mod tests {
         // No line should start with N\d+\s.
         for l in resp.gcode.lines() {
             assert!(
-                !(l.starts_with("N") && l.chars().nth(1).map_or(false, |c| c.is_ascii_digit())),
+                !(l.starts_with('N') && l.chars().nth(1).is_some_and(|c| c.is_ascii_digit())),
                 "unexpected N-prefix: {l}"
             );
         }
@@ -5686,8 +5683,8 @@ mod tests {
         // the original. Two more instances at dx=20 and dx=40 give
         // cuts roughly in 18.5..41.5 and 38.5..61.5 — distinct
         // X-translated regions.
-        let max_x = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let min_x = xs.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_x = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min_x = xs.iter().copied().fold(f64::INFINITY, f64::min);
         assert!(
             max_x > 38.0,
             "expected X to reach the third instance (>~38), got max {} in:\n{}",
@@ -6408,7 +6405,7 @@ mod tests {
             .rev()
             .map(|s| Segment::line(s.end, s.start, &s.layer, s.color))
             .collect();
-        for (winding_label, segments) in [("CCW", &ccw_segments), ("CW", &cw_segments)].iter() {
+        for (winding_label, segments) in &[("CCW", &ccw_segments), ("CW", &cw_segments)] {
             let mk = |offset: ToolOffset| Project {
                 segments: (*segments).clone(),
                 machine: Default::default(),
@@ -6446,8 +6443,7 @@ mod tests {
                 };
                 assert!(
                     ok,
-                    "{} input + {} offset: cut max_x = {} fails the expected position check",
-                    winding_label, offset_label, max_x
+                    "{winding_label} input + {offset_label} offset: cut max_x = {max_x} fails the expected position check"
                 );
             }
         }
@@ -6512,8 +6508,7 @@ mod tests {
             .fold(f64::NEG_INFINITY, f64::max);
         assert!(
             max_x > 61.0 && max_x < 62.0,
-            "Profile + Outside on inner circle: cut max_x={}, expected ~61.5",
-            max_x
+            "Profile + Outside on inner circle: cut max_x={max_x}, expected ~61.5"
         );
     }
 
@@ -6620,8 +6615,7 @@ mod tests {
             .fold(f64::NEG_INFINITY, f64::max);
         assert!(
             max_x > 100.5,
-            "wire JSON Profile + outside: cut max_x={}, expected > 100.5 — offset isn't being applied via the wire",
-            max_x
+            "wire JSON Profile + outside: cut max_x={max_x}, expected > 100.5 — offset isn't being applied via the wire"
         );
     }
 
@@ -6672,9 +6666,8 @@ mod tests {
             });
             assert!(
                 !on_apex || cut.is_empty(),
-                "{:?} on open polyline: cut crosses the source apex (50, 30) \
-                 — offset isn't being applied (on-line cut bug)",
-                offset
+                "{offset:?} on open polyline: cut crosses the source apex (50, 30) \
+                 — offset isn't being applied (on-line cut bug)"
             );
         }
     }

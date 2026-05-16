@@ -28,6 +28,26 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      # Catch schema drift locally. If a contributor adds a JsonSchema-deriving
+      # type / enum variant but forgets to regenerate the OpenAPI contract, the
+      # HTTP transport silently breaks at runtime.
+      - id: xtask-schema-check
+        name: cargo xtask schema-check
+        entry: cargo xtask schema-check
+        language: system
+        files: ^crates/wiac-core/src/.*\.rs$|^schema/openapi\.yaml$|^xtask/src/.*\.rs$
+        pass_filenames: false
+
+      # Schema-derived frontend types must also be regenerated. We regenerate
+      # then `git diff --exit-code` — if the regen produces a change, the
+      # checked-in generated.ts is stale.
+      - id: frontend-codegen-check
+        name: frontend openapi-typescript codegen up to date
+        entry: bash -c 'cd frontend && pnpm run codegen >/dev/null && git diff --exit-code -- src/lib/api/generated.ts'
+        language: system
+        files: ^schema/openapi\.yaml$|^frontend/src/lib/api/generated\.ts$
+        pass_filenames: false
+
       - id: prettier-frontend
         name: prettier (frontend)
         entry: bash -c 'cd frontend && pnpm exec prettier --check .'

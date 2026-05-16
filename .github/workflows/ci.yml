@@ -64,6 +64,14 @@ jobs:
           version: 10
       - name: pnpm install
         run: pnpm install --frozen-lockfile
+      - name: codegen drift guard
+        # Re-run openapi-typescript against schema/openapi.yaml; the
+        # checked-in generated.ts must not diff. Pairs with the
+        # `cargo run -p xtask -- schema-check` step in the rust job —
+        # together they enforce Rust → YAML → TypeScript stay in sync.
+        run: |
+          pnpm run codegen
+          git diff --exit-code -- src/lib/api/generated.ts
       - name: prettier
         run: pnpm run lint
       - name: type-check

@@ -30,3 +30,18 @@ fmt:
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
     cd frontend && pnpm run lint
+
+# Regenerate the JSON contract: schema/openapi.yaml from Rust JsonSchema-deriving
+# types + the frontend TypeScript types from the YAML. Run this after touching
+# any pub type that derives JsonSchema in wiac-core (project.rs, pipeline.rs,
+# errors.rs, gcode.rs, …). Both files are checked into git.
+regen-schema:
+    cargo xtask schema
+    cd frontend && pnpm run codegen
+
+# Verify the JSON contract is in sync with the Rust types. Returns non-zero
+# if regenerating would change schema/openapi.yaml or frontend/src/lib/api/generated.ts.
+# Wired into the pre-commit hook so drift is caught locally, not on CI.
+check-schema:
+    cargo xtask schema-check
+    cd frontend && pnpm run codegen && git diff --exit-code -- src/lib/api/generated.ts

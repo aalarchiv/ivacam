@@ -61,8 +61,28 @@ cd frontend && pnpm install && pnpm test && pnpm build
 cargo xtask test-all            # end-to-end (runs both)
 ```
 
-Pre-commit hooks (rustfmt, clippy, eslint, prettier) are wired via
-`.pre-commit-config.yaml`. Install with `pre-commit install`.
+Pre-commit hooks (rustfmt, clippy, eslint, prettier, schema-check) are
+wired via `.pre-commit-config.yaml`. Install with `pre-commit install`.
+
+### JSON contract sync
+
+`schema/openapi.yaml` and `frontend/src/lib/api/generated.ts` are
+derived: the YAML's `components.schemas` block comes from the Rust
+`#[derive(JsonSchema)]` types in `wiac-core` (regenerated via
+`cargo xtask schema`), and `generated.ts` is the TypeScript output of
+`pnpm run codegen` against the YAML. Both files are checked in so
+downstream builds don't depend on the toolchain.
+
+After touching any pub JsonSchema-deriving type in `wiac-core`:
+
+```bash
+cargo xtask schema && (cd frontend && pnpm run codegen)
+# or, with `just`:
+just regen-schema
+```
+
+The pre-commit hooks `xtask-schema-check` and `frontend-codegen-check`
+catch drift locally; CI runs the same checks.
 
 ## Pull requests
 

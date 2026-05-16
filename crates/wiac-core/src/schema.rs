@@ -141,6 +141,18 @@ fn insert<T: schemars::JsonSchema>(map: &mut serde_json::Map<String, Value>, nam
             }
         }
     }
+    // izup: catch silent registry overwrites. A previous entry under
+    // this name with a DIFFERENT schema shape means two distinct Rust
+    // types both want to publish as `<name>` — only the second would
+    // appear in the output, and the frontend codegen would silently
+    // model one of them as the other.
+    if let Some(prev) = map.get(name) {
+        assert_eq!(
+            prev, &v,
+            "schema registry conflict: `{name}` is being registered twice with \
+             different shapes — rename one of them or split insert::<…> calls."
+        );
+    }
     map.insert(name.into(), v);
 }
 
@@ -220,6 +232,75 @@ mod tests {
         let obj = v.as_object().unwrap();
         for t in frontend_types() {
             assert!(obj.contains_key(*t), "{t} missing from components/schemas");
+        }
+    }
+
+    /// izup: every `$ref` in the generated schema tree must resolve to a
+    /// registered type name in `components/schemas`. The common silent
+    /// failure mode is "added a new pub `JsonSchema`-deriving type,
+    /// inlined it in some other type's field, forgot to call `insert::<T>`
+    /// in `components_schemas()`" — schemars then emits a `$ref` to a
+    /// definition that isn't in the `OpenAPI` output, and the frontend
+    /// codegen produces an `unknown` typed field that no compile-time
+    /// check catches.
+    ///
+    /// This test walks every `$ref` and asserts the referenced name is a
+    /// key in the schemas map. New types whose `$ref` lands in someone
+    /// else's schema will fail this test until they're registered.
+    #[test]
+    fn every_ref_resolves_to_a_registered_type() {
+        let v = components_schemas();
+        let obj = v
+            .as_object()
+            .expect("components_schemas() must be an object");
+        let names: std::collections::HashSet<String> = obj.keys().cloned().collect();
+        let mut missing: Vec<(String, String)> = Vec::new();
+        for (parent, child) in obj {
+            collect_unresolved_refs(parent, child, &names, &mut missing);
+        }
+        if !missing.is_empty() {
+            let summary: Vec<String> = missing
+                .iter()
+                .map(|(parent, name)| format!("    {parent}.* → {name}"))
+                .collect();
+            panic!(
+                "{} dangling $ref{} in components/schemas — register the missing \
+                 types in `components_schemas()` so the frontend codegen sees \
+                 them:\n{}",
+                missing.len(),
+                if missing.len() == 1 { "" } else { "s" },
+                summary.join("\n"),
+            );
+        }
+    }
+
+    /// Walk `value`, append every `#/components/schemas/X` whose `X` is
+    /// not in `known` to `out` as `(parent_type, missing_name)`.
+    fn collect_unresolved_refs(
+        parent: &str,
+        value: &Value,
+        known: &std::collections::HashSet<String>,
+        out: &mut Vec<(String, String)>,
+    ) {
+        match value {
+            Value::Object(map) => {
+                if let Some(Value::String(s)) = map.get("$ref") {
+                    if let Some(name) = s.strip_prefix("#/components/schemas/") {
+                        if !known.contains(name) {
+                            out.push((parent.to_string(), name.to_string()));
+                        }
+                    }
+                }
+                for child in map.values() {
+                    collect_unresolved_refs(parent, child, known, out);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    collect_unresolved_refs(parent, item, known, out);
+                }
+            }
+            _ => {}
         }
     }
 }

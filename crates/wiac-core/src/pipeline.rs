@@ -547,6 +547,15 @@ where
     P: PostProcessor,
     F: Fn(&str, f64, &str),
 {
+    // Pipeline progress budget for the gcode-emission phase. The full
+    // curve is import (0 → 0.20) → gcode (0.30 → 0.85) → preview (0.92)
+    // → done (1.0). Each emitted op advances the fraction by
+    // `GCODE_PROGRESS_SPAN / n_ops` so a long op count still hits every
+    // progress tick monotonically without stepping past the post-gcode
+    // preview phase.
+    const GCODE_PROGRESS_START: f64 = 0.30;
+    const GCODE_PROGRESS_SPAN: f64 = 0.55;
+
     emit_program_begin(header_setup, post);
     // rt1.30: apply the first enabled op's tool's Z shift right after
     // program_begin so even single-tool programs honor the offset.
@@ -557,6 +566,10 @@ where
             }
         }
     }
+    let gcode_progress = |emitted: usize, total: usize| -> f64 {
+        let denom = total.max(1) as f64;
+        GCODE_PROGRESS_START + GCODE_PROGRESS_SPAN * (emitted as f64 / denom)
+    };
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
     let enabled_ops: Vec<&Operation> = project.operations.iter().filter(|o| o.enabled).collect();
@@ -618,7 +631,7 @@ where
                 emitted_ops += 1;
                 progress(
                     "gcode",
-                    0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
+                    gcode_progress(emitted_ops, n_ops),
                     &format!("emitted op {} (cached)", op.id),
                 );
                 sink(PipelineEvent::OpCompleted {
@@ -711,7 +724,7 @@ where
         emitted_ops += 1;
         progress(
             "gcode",
-            0.30 + 0.55 * (emitted_ops as f64 / n_ops as f64),
+            gcode_progress(emitted_ops, n_ops),
             &format!("emitted op {}", op.id),
         );
         sink(PipelineEvent::OpCompleted {

@@ -390,13 +390,12 @@ pub fn emit_drill_block<P: PostProcessor>(
 }
 
 /// Decide the cut order for the offsets. Honors `setup.mill.objectorder`:
-/// - `Unordered`  — input order, matches the upstream Python tool.
-/// - `Nearest`    — greedy nearest-neighbor from current pen position;
-///                  ties broken by deepest level (innermost) first so
-///                  pocket cascades unwind from the inside out.
-/// - `PerObject`  — group all offsets sharing `source_object_idx`, finish
-///                  one object before starting the next; within a group
-///                  use Nearest.
+/// - `Unordered` — input order, matches the upstream Python tool.
+/// - `Nearest` — greedy nearest-neighbor from current pen position; ties
+///   broken by deepest level (innermost) first so pocket cascades unwind
+///   from the inside out.
+/// - `PerObject` — group all offsets sharing `source_object_idx`, finish
+///   one object before starting the next; within a group use Nearest.
 fn order_offsets(setup: &Setup, offsets: &[PolylineOffset], start: Point2) -> Vec<usize> {
     use crate::cam::setup::ObjectOrder;
     let n = offsets.len();
@@ -1121,7 +1120,7 @@ fn plan_helix_entry(
     // tool_radius` so the helix circle clears the pocket walls by at
     // least a tool radius. If no interior point meets that bar the
     // helix can't fit and we fall back to Ramp.
-    let center = if let Some(p) = polygon_pole_of_inaccessibility(&verts, radius + tool_radius) { p } else {
+    let Some(center) = polygon_pole_of_inaccessibility(&verts, radius + tool_radius) else {
         tracing::debug!(
             "helix entry: no interior point with clearance > {:.3}, falling back to Ramp",
             radius + tool_radius
@@ -2157,6 +2156,7 @@ fn polyline_signed_area(segments: &[Segment]) -> f64 {
 ///     the side opposite the interior.
 ///   * Inner profile (pocket boundary, offset contracted) — free
 ///     space IS the interior (pocket center).
+///
 /// Winding tells us where the interior is: CCW (positive signed area)
 /// ⇒ interior on the LEFT of tangent; CW ⇒ on the RIGHT.
 ///

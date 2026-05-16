@@ -132,9 +132,8 @@ pub fn check_segment_holder_against_walls(
             // Lowest height above the tip at which the envelope grows
             // past `r`. None when `r > max_radius`, but we already
             // filtered that case via `max_r_sq`.
-            let holder_lower_z = match lowest_z_for_radius(holder, r) {
-                Some(z) => z,
-                None => continue,
+            let Some(holder_lower_z) = lowest_z_for_radius(holder, r) else {
+                continue;
             };
             let cell_z = heightmap.data[(iy as usize) * cols + ix as usize];
             let wall_height = cell_z as f64 - cutter_pz;

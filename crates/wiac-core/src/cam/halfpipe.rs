@@ -119,7 +119,7 @@ mod tests {
         assert!(lim, "r > R must report depth_limited");
         // r = R/√2 ≈ 3.5355: z = -(R - √(R² - r²)) = -(5 - √(25 - 12.5)) ≈ -1.464.
         let (z_mid, lim) = depth_at(&vp(0.0, 0.0, 5.0_f64 / std::f64::consts::SQRT_2), p, None);
-        assert!((z_mid - (-1.4644660940672619)).abs() < 1e-9, "got {z_mid}");
+        assert!((z_mid - (-1.464_466_094_067_261_9)).abs() < 1e-9, "got {z_mid}");
         assert!(!lim);
     }
 
@@ -131,7 +131,7 @@ mod tests {
             included_angle_deg: 60.0,
         };
         let (z, lim) = depth_at(&vp(0.0, 0.0, 1.0), p, None);
-        assert!((z - (-1.7320508)).abs() < 1e-6, "got {z}");
+        assert!((z - (-1.732_050_8)).abs() < 1e-6, "got {z}");
         assert!(!lim);
     }
 

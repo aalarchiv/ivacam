@@ -180,9 +180,9 @@ pub(super) fn for_each_swept_cell<F>(
     let min_y = from.y.min(to.y) - r_tool;
     let max_y = from.y.max(to.y) + r_tool;
 
-    let (ix0, iy0, ix1, iy1) = match world_aabb_to_cells(layout, min_x, min_y, max_x, max_y) {
-        Some(t) => t,
-        None => return,
+    let Some((ix0, iy0, ix1, iy1)) = world_aabb_to_cells(layout, min_x, min_y, max_x, max_y)
+    else {
+        return;
     };
 
     let dx = to.x - from.x;
@@ -232,9 +232,8 @@ pub(super) fn for_each_swept_cell<F>(
                 body(ix, iy, 0.0, cutter_pz, 0.0);
             } else {
                 let r = r_sq.sqrt() as f32;
-                let dz = match profile.eval(r) {
-                    Some(v) => v,
-                    None => continue,
+                let Some(dz) = profile.eval(r) else {
+                    continue;
                 };
                 body(ix, iy, r, cutter_pz, dz);
             }

@@ -324,7 +324,7 @@ mod tests {
             origin,
             z_bottom,
             z_top,
-            color: 0xFFA050C0,
+            color: 0xFFA0_50C0,
         }
     }
 
@@ -336,7 +336,7 @@ mod tests {
             origin,
             z_bottom,
             z_top,
-            color: 0xFFA050C0,
+            color: 0xFFA0_50C0,
         }
     }
 
@@ -354,7 +354,7 @@ mod tests {
             origin,
             z_bottom,
             z_top,
-            color: 0xFFA050C0,
+            color: 0xFFA0_50C0,
         }
     }
 

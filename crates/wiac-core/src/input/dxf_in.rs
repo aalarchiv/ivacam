@@ -199,10 +199,10 @@ fn unit_scale_from_drawing(drawing: &Drawing) -> Option<f64> {
         Units::AstronomicalUnits => 1.496e14,
         Units::LightYears => 9.461e18,
         Units::Parsecs => 3.086e19,
-        Units::USSurveyFeet => 304.8006096,
-        Units::USSurveyInch => 25.40005080,
-        Units::USSurveyYard => 914.4018288,
-        Units::USSurveyMile => 1_609_347.218694,
+        Units::USSurveyFeet => 304.800_609_6,
+        Units::USSurveyInch => 25.400_050_80,
+        Units::USSurveyYard => 914.401_828_8,
+        Units::USSurveyMile => 1_609_347.218_694,
     };
     Some(factor)
 }

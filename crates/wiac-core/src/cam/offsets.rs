@@ -227,9 +227,9 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
     // taking down the whole pipeline — the user gets a partial result
     // plus a warning instead of a 500.
     let layer = obj.layer.clone();
-    let offsets = if let Ok(v) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let Ok(offsets) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         pline.parallel_offset(delta)
-    })) { v } else {
+    })) else {
         tracing::warn!(
             "parallel_offset on layer '{}' panicked in cavalier_contours; skipping",
             layer

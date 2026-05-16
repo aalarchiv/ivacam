@@ -273,12 +273,12 @@ pub(super) fn resolve_auto_helix_radius(
     warnings: &mut Vec<PipelineWarning>,
 ) {
     use crate::cam::setup::PlungeStrategy;
-    let angle_deg = match setup.mill.plunge {
-        PlungeStrategy::Helix {
-            angle_deg,
-            radius_mm: None,
-        } => angle_deg,
-        _ => return,
+    let PlungeStrategy::Helix {
+        angle_deg,
+        radius_mm: None,
+    } = setup.mill.plunge
+    else {
+        return;
     };
     let tool_radius = setup.tool.diameter * 0.5;
     let selected = ordered_selection(op, objects);

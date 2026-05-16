@@ -113,9 +113,8 @@ impl ProjectWatcher {
                     .find(|t| paths_equal(t, &canonical) || paths_equal(t, evt_path));
                 let Some(target) = matched else { continue };
                 let now = Instant::now();
-                let mut guard = match last_emit.lock() {
-                    Ok(g) => g,
-                    Err(_) => continue,
+                let Ok(mut guard) = last_emit.lock() else {
+                    continue;
                 };
                 let recent = guard
                     .get(target)

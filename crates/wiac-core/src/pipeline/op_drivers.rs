@@ -145,11 +145,11 @@ pub(super) fn run_halfpipe_op<P: PostProcessor>(
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
 ) -> Result<(), PipelineError> {
-    let strategy = match op.kind {
-        OperationKind::Pocket {
-            strategy: PocketStrategy::Halfpipe { profile },
-        } => profile,
-        _ => return Ok(()),
+    let OperationKind::Pocket {
+        strategy: PocketStrategy::Halfpipe { profile: strategy },
+    } = op.kind
+    else {
+        return Ok(());
     };
     push_tool_fit_kind_warnings(op, project, setup, warnings);
     let tool = project

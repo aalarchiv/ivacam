@@ -18,6 +18,7 @@ use super::op_includes_object;
 ///   * `ordered_indices` lists `[frame_idx, ...selection_idxs]` so
 ///     downstream `SourceCombine::Difference` carves between the
 ///     frame and the original selection.
+///
 /// Returns `None` when the op has no `frame_shape` or the selection is
 /// empty. Single source of truth used by both the preview pass
 /// (`build_region_previews`) and the toolpath driver (`build_op_offsets`)

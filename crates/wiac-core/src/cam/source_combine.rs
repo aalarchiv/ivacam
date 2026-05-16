@@ -233,9 +233,8 @@ fn combine_none(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion>
 /// Subjects = first selected; clips = union of the rest. Maps to the
 /// natural CAM meaning of "carve the first thing minus everything else".
 fn combine_difference(objects: &[VcObject], selected: &[usize]) -> Vec<CombinedRegion> {
-    let (first, rest) = match selected.split_first() {
-        Some(pair) => pair,
-        None => return Vec::new(),
+    let Some((first, rest)) = selected.split_first() else {
+        return Vec::new();
     };
     let subjects = paths_for(&[*first], objects);
     let clips = paths_for(rest, objects);

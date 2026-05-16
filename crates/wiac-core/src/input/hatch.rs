@@ -332,9 +332,8 @@ fn pairs_from_text(text: &str) -> Vec<(i32, String)> {
     let mut out = Vec::new();
     let mut iter = text.lines();
     while let Some(code_line) = iter.next() {
-        let code = match code_line.trim().parse::<i32>() {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(code) = code_line.trim().parse::<i32>() else {
+            continue;
         };
         let Some(val_line) = iter.next() else {
             break;

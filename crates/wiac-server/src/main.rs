@@ -80,9 +80,9 @@ async fn shutdown_signal() {
 /// Build a CORS layer from `WIAC_CORS_ORIGINS` (comma-separated).
 ///
 /// - unset or empty: localhost-only allow-list (dev default)
-/// - `*` or `any`:   permissive (origin: any). Methods/headers stay restricted to
-///                   what the JSON API actually uses.
-/// - otherwise:      exact origin match against the supplied list.
+/// - `*` or `any`: permissive (origin: any). Methods/headers stay restricted
+///   to what the JSON API actually uses.
+/// - otherwise: exact origin match against the supplied list.
 fn build_cors_layer() -> CorsLayer {
     let methods = [Method::GET, Method::POST, Method::OPTIONS];
     let headers = [

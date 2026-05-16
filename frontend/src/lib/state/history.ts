@@ -48,7 +48,11 @@ export class History {
   private transaction: Transaction | null = null;
   /// Monotonically incrementing token bumped on every state change. Used
   /// by the Svelte UI layer to trigger reactivity (mirrored into a
-  /// `$state` counter on the project).
+  /// `$state` counter on the project). Cannot live in this file as a
+  /// `$state` rune directly because vitest's node-only test config
+  /// (frontend/vitest.config.ts) skips the Svelte plugin — every
+  /// History test would fail with "$state is not defined". jbz1 tracks
+  /// the broader test-config upgrade that would let us drop the mirror.
   private _version = 0;
   private listener: (() => void) | null = null;
 

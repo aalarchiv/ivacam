@@ -223,18 +223,19 @@ describe('History clear / version', () => {
     expect(h.redoSize).toBe(0);
   });
 
-  it('subscribe fires on every state change', () => {
+  it('version monotonically increases on every state change', () => {
+    // History exposes `version` as a `$state` counter (jbz1) so
+    // $derived expressions re-run on push / undo / redo / clear. The
+    // contract checked here is the monotonic bump, not the subscribe
+    // callback (which the .svelte.ts conversion removed).
     const h = new History();
     const s = freshState();
-    let bumps = 0;
-    h.subscribe(() => {
-      bumps++;
-    });
+    const v0 = h.version;
     h.exec(setCmd(1), s);
     h.exec(setCmd(2), s);
     h.undo(s);
     h.redo(s);
     h.clear();
-    expect(bumps).toBeGreaterThanOrEqual(5);
+    expect(h.version).toBeGreaterThanOrEqual(v0 + 5);
   });
 });

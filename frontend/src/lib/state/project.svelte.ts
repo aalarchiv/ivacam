@@ -437,9 +437,14 @@ class ProjectState {
   /// excluded — see history.ts for the full list.
   history = new History();
 
-  /// Reactive mirror of `history.version` so $derived expressions in the
-  /// UI re-run when the stacks change (the History class is plain TS so
-  /// it can't be a $state itself).
+  /// Reactive mirror of `history.version` so `$derived` expressions in
+  /// the UI re-run when the stacks change. We can't make `History` a
+  /// `.svelte.ts` module today: vitest's test config
+  /// (frontend/vitest.config.ts) skips the Svelte plugin to avoid the
+  /// vite 5 / vite 8 plugin mismatch, and every History test would
+  /// fail with "$state is not defined". jbz1 tracks dropping this
+  /// mirror once the test runner can handle the runes (it's a vitest
+  /// + plugin-svelte upgrade, not a code-level change).
   historyVersion = $state(0);
 
   /// Absolute path of the source file backing the current `imported`
@@ -546,6 +551,10 @@ class ProjectState {
   cancelTransaction(): void {
     this.history.cancelTransaction(this.target());
   }
+  // The four accessors below touch `this.historyVersion` to subscribe
+  // the rune scheduler. The mirror lives on this class (which is
+  // already rune-aware) so `History.subscribe` can bump it from plain
+  // TS — see the class doc on `historyVersion`.
   canUndo(): boolean {
     void this.historyVersion;
     return this.history.undoSize > 0;

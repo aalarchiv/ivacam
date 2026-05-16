@@ -14,6 +14,15 @@
 //! resulting visual error is bounded by the tessellation step in
 //! `preview::interpret`.
 
+// # CAM/sim pedantic-lint exemptions
+// Cell-grid sweep operates on tightly-grouped index pairs
+// (`ix0`/`iy0`/`ix1`/`iy1`, `from`/`to`) — renaming loses the
+// from/to/start/end mapping that mirrors the math.
+#![allow(
+    clippy::similar_names,
+)]
+
+
 // Same f64 ↔ u32 grid plumbing as heightmap.rs, same intentional casts.
 #![allow(
     clippy::cast_possible_truncation,

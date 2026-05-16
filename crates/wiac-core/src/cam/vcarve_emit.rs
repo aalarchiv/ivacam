@@ -13,6 +13,16 @@
 //! emitter; it does NOT call into the post-processor itself, which
 //! keeps the module decoupled from the gcode crate.
 
+// # CAM/sim pedantic-lint exemptions
+// V-carve emitter casts medial-axis sample indices (bounded by polyline
+// length) to f64 for arc-fit input.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+)]
+
+
 /// One waypoint along the emitted toolpath: absolute XYZ. Multiple
 /// returned polylines are connected by G0 lifts to safe Z by the
 /// caller.

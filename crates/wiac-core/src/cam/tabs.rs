@@ -24,6 +24,14 @@
 //!   segment-idx-keyed `TabPoint` map the existing
 //!   `attach_tabs_to_offsets` consumes.
 
+// # CAM/sim pedantic-lint exemptions
+// Tab placement uses `t` (arc-length parameter) and per-pair (`a`, `b`)
+// endpoint names from the projection-onto-segment idiom.
+#![allow(
+    clippy::many_single_char_names,
+)]
+
+
 use std::collections::HashMap;
 
 use crate::cam::offsets::TabPoint;

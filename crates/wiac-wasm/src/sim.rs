@@ -17,6 +17,16 @@
 //! full segment array (audit-9l52). Tool stays as an `advance()` arg
 //! because it's tiny and may change between ops.
 
+// # CAM/sim pedantic-lint exemptions
+// WASM-JS bridge passes cell counts as u32 (clamped at JS Number safe range);
+// similar names (`row0`/`row1`, `col0`/`col1`) come from AABB-to-cell
+// conversion.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::similar_names,
+)]
+
+
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 

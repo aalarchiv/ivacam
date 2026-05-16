@@ -19,6 +19,14 @@
 //! emission since each produces an XYZ polyline the emitter walks with
 //! G1 cuts and safe-Z rapids.
 
+// # CAM/sim pedantic-lint exemptions
+// Per-op drivers cast sample counts (`STEPS`) and centroid indices to f64 for
+// trig; values are tiny constants.
+#![allow(
+    clippy::cast_precision_loss,
+)]
+
+
 use crate::cam::setup::Setup;
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::VcObject;

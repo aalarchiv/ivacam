@@ -20,6 +20,18 @@
 //! the pocket boundary (re-entrant shape with a non-fitting bridge),
 //! same containment guard as the spiral strategy.
 
+// # CAM/sim pedantic-lint exemptions
+// Trochoidal milling formulas use `dx`/`dy`/`r`/`a` from the epicycloid
+// parametrization in Estlcam's trochoidal-loop literature; step-count casts
+// are bounded by tool/stepover geometry.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+)]
+
+
 use crate::cam::offsets::{
     bridge_stays_inside_polygon, pocket_cascade_with_islands, point_in_polygon_pts,
     stitch_rings_to_polyline,

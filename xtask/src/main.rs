@@ -3,6 +3,15 @@
 //! Run with `cargo xtask <task>`. Mirrors what CI runs so you can verify
 //! locally before pushing.
 
+// # CAM/sim pedantic-lint exemptions
+// xtask shells out via `Command::status()`; the integer cast is the
+// POSIX-standard `status.code()` mapping into `u8` for ExitCode.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+)]
+
+
 use std::env;
 use std::process::{Command, ExitCode};
 

@@ -1,6 +1,15 @@
 //! HPGL post-processor — pen-up/pen-down style for plotters and drag knives.
 //! Mirrors `output_plugins/hpgl.py`.
 
+// # CAM/sim pedantic-lint exemptions
+// HPGL plotter post emits 2D coordinates in plu (plotter units): `f64 → i64`
+// conversions are domain-bounded by the plotter's addressable plane.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+)]
+
+
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::{CapturedPostState, PostProcessor};
 

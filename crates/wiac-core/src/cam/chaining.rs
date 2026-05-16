@@ -5,6 +5,13 @@
 //! Walks a flat segment list, glues endpoints into chains, classifies each
 //! chain as open/closed, and discovers parent/child containment.
 
+// # CAM/sim pedantic-lint exemptions
+// Chain endpoint matching uses `p_a`/`p_b` segment-endpoint names.
+#![allow(
+    clippy::similar_names,
+)]
+
+
 use std::collections::HashMap;
 
 use crate::cam::{is_inside_polygon, segment_to_points, segments_to_points, VcObject};

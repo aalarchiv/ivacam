@@ -5,6 +5,18 @@
 //! Closely parallels `viaconstructor/input_plugins/dxfread.py` so the JSON
 //! output is byte-for-byte identical for shapes both importers handle.
 
+// # CAM/sim pedantic-lint exemptions
+// DXF parsing converts group-code indices and chunk counters between
+// usize/i32/f64; values are bounded by file size (≪ 2^31). `p_a`/`p_b`/`p_c`
+// follow the textbook polygon-vertex convention.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::similar_names,
+)]
+
+
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 

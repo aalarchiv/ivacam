@@ -1,5 +1,13 @@
 //! `LinuxCNC` post-processor. Mirrors `output_plugins/gcode_linuxcnc.py`.
 
+// # CAM/sim pedantic-lint exemptions
+// LinuxCNC post emits `X`, `Y`, `Z`, `I`, `J`, `F`, `S` — the machine-control
+// short names map 1:1 to gcode-word letters.
+#![allow(
+    clippy::many_single_char_names,
+)]
+
+
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::post_profile::{template_lines, AxisFormat, PostProfile, TokenCtx};
 use crate::gcode::{

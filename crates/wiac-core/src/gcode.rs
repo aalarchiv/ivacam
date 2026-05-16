@@ -5,6 +5,18 @@
 //! is the dialect-agnostic orchestrator that walks offsets and writes
 //! gcode through the trait.
 
+// # CAM/sim pedantic-lint exemptions
+// CAM emission walks index arithmetic over offset/segment lists where indices
+// are bounded by chain length (≪ 2^52). Short names (`x`, `y`, `z`, `cx`,
+// `cy`, `bd`) follow the gcode-coordinate convention.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+)]
+
+
 use serde::{Deserialize, Serialize};
 
 use crate::cam::offsets::PolylineOffset;

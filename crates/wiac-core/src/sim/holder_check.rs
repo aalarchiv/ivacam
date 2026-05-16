@@ -17,6 +17,14 @@
 //!   wall height above the tip, the holder hits — and the required
 //!   clearance is `wall_height - holder_lower_z`.
 
+// # CAM/sim pedantic-lint exemptions
+// Holder collision math uses `from`/`to`/`cx`/`cy` segment-projection names;
+// renaming loses the projection-onto-segment intent.
+#![allow(
+    clippy::similar_names,
+)]
+
+
 use crate::gcode::preview::ToolpathSegment;
 use crate::sim::heightmap::Heightmap;
 use crate::sim::holder::HolderProfile;

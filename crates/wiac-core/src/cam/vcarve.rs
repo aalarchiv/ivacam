@@ -12,6 +12,18 @@
 //! region; we keep only edges whose both endpoints lie inside the
 //! region (even-odd test on the densified outer ring with holes).
 
+// # CAM/sim pedantic-lint exemptions
+// V-carve medial-axis sampling uses `t`, `dx`, `dy`, `r` from the
+// inscribed-circle parametrization; sample counts are bounded by voronator's
+// triangulation size.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+)]
+
+
 use voronator::delaunator::{triangulate, Point as VPointXy, INVALID_INDEX};
 
 use crate::pipeline::CancelToken;

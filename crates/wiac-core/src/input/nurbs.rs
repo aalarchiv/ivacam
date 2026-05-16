@@ -6,6 +6,15 @@
 //! uniform sampler is good enough for typical CAM SPLINE entities at the
 //! tessellation tolerances viaConstructor uses.
 
+// # CAM/sim pedantic-lint exemptions
+// NURBS evaluator uses `u`, `t`, `p`, `n`, `k` from the De Boor / Cox-de Boor
+// recurrence textbook formulas; sample counts are bounded.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+)]
+
+
 /// Flatten a NURBS curve into a polyline.
 ///
 /// * `degree` — curve degree (DXF `degree_of_curve`).

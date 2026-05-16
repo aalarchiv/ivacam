@@ -26,6 +26,18 @@
 //! orchestrator (`run_pipeline_impl` / `run_per_op`) and the offset /
 //! pocket logic remain in this file.
 
+// # CAM/sim pedantic-lint exemptions
+// Test helpers and op-progress arithmetic walk bounded index ranges; similar
+// names (`machine_with`/`machine_without`, `endmill_a`/`_b`) enumerate
+// variants in test setup where renaming would lose meaning.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::similar_names,
+)]
+
+
 mod frame;
 mod op_drivers;
 mod patterns;

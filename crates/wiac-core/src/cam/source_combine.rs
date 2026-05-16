@@ -17,6 +17,14 @@
 //!   no holes (the pre-j7y behavior, surfaced for callers who really
 //!   want it).
 
+// # CAM/sim pedantic-lint exemptions
+// Region-corner naming (`p_bl`/`p_br`/`p_tl`/`p_tr`, `min_x`/`max_x`) is the
+// canonical clipper2-rust subject/clip vocabulary.
+#![allow(
+    clippy::similar_names,
+)]
+
+
 use std::collections::HashSet;
 
 use clipper2_rust::{

@@ -5,6 +5,19 @@
 //! a small Hausdorff-style tolerance of the analytic curve. Catches subtle
 //! deviations earlier than gcode diff would.
 
+// # CAM/sim pedantic-lint exemptions
+// Computational-geometry tests use `a`, `b`, `p`, `phi`, `t` from the
+// textbook ellipse/NURBS parametrizations. Sample-index casts are bounded by
+// `SAMPLES` (small constants).
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+    clippy::similar_names,
+)]
+
+
 use wiac_core::input::nurbs;
 
 const EPS_DEFAULT: f64 = 0.05; // mm

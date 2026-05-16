@@ -3,6 +3,14 @@
 //! - Tool change is omitted (GRBL is single-tool)
 //! - Coolant mist (M7) often unsupported; we still emit it for symmetry.
 
+// # CAM/sim pedantic-lint exemptions
+// GRBL post emits the same gcode-letter short names as the LinuxCNC post
+// (X/Y/Z/I/J/F/S).
+#![allow(
+    clippy::many_single_char_names,
+)]
+
+
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::{linuxcnc, CapturedPostState, PostProcessor};
 

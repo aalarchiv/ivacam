@@ -7,6 +7,14 @@
 //! Estlcum, `FreeCAD` Path Workbench) so the user's mental model translates
 //! without surprises.
 
+// # CAM/sim pedantic-lint exemptions
+// Default-impl test helpers use parallel names (`tool_a`/`tool_b`,
+// `op_with`/`op_without`) that enumerate distinct test cases.
+#![allow(
+    clippy::similar_names,
+)]
+
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

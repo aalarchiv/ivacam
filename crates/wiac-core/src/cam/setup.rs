@@ -3,6 +3,14 @@
 //! Initial scope is the subset of fields that `do_pockets` and the gcode
 //! emitter actually read. Missing fields land as the gcode pass needs them.
 
+// # CAM/sim pedantic-lint exemptions
+// Setup helpers walk over `min`/`max` axis-limit pairs whose names mirror the
+// field they project from.
+#![allow(
+    clippy::similar_names,
+)]
+
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

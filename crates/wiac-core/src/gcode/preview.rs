@@ -9,6 +9,17 @@
 //! reading `; OP <n>` comment markers the per-op emitter writes; segments
 //! before the first marker get `op_id = 0`.
 
+// # CAM/sim pedantic-lint exemptions
+// Gcode interpreter walks per-line indices and parses bounded
+// feedrates/coordinates; `x`/`y`/`z`/`r` follow the gcode convention.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+)]
+
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

@@ -20,6 +20,14 @@
 //! a_z/|dz|)` over the unit-direction components > epsilon. Tie-break is
 //! "smallest wins". Look-ahead is unbounded — full toolpath in memory.
 
+// # CAM/sim pedantic-lint exemptions
+// Test helpers use parallel `axes_x`/`axes_y`/`axes_z` names that enumerate
+// the three axes of an `AxisLimits` triple.
+#![allow(
+    clippy::similar_names,
+)]
+
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

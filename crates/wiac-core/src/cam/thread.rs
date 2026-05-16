@@ -34,6 +34,17 @@
 //! * Internal (cutter walks inside the bore): `helix_radius = bore_radius - tool_radius`
 //! * External (cutter walks around a stud): `helix_radius = stud_radius + tool_radius`
 
+// # CAM/sim pedantic-lint exemptions
+// Thread milling derives helix radius / Z-pitch from the bore/tool geometry;
+// `r`, `n` follow the helix-parametrization convention. Step-count casts are
+// bounded by the pitch/depth ratio.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+)]
+
+
 use crate::geometry::Point2;
 
 /// Default chord-tessellation density per full revolution. 64 segments

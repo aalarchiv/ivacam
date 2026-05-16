@@ -11,6 +11,13 @@
 //! de Casteljau subdivision until the chordal error is below
 //! `ImportOptions::arc_max_step_or_default()`.
 
+// # CAM/sim pedantic-lint exemptions
+// usvg traversal walks bounded path-segment indices.
+#![allow(
+    clippy::cast_precision_loss,
+)]
+
+
 use std::collections::BTreeMap;
 
 use usvg::{

@@ -2,6 +2,13 @@
 //! layer metadata + bounding box. The shape mirrors the bridge's
 //! `/import` JSON response.
 
+// # CAM/sim pedantic-lint exemptions
+// Importer dispatch casts unit-system enum tags (small constants).
+#![allow(
+    clippy::cast_precision_loss,
+)]
+
+
 use crate::geometry::{BBox, Layer, Segment};
 use crate::Result;
 use schemars::JsonSchema;

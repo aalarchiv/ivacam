@@ -5,6 +5,17 @@
 //! Mirrors `calc.py:do_pockets` and `objects2polyline_offsets` at the
 //! algorithm level — see the unit tests for the contracts.
 
+// # CAM/sim pedantic-lint exemptions
+// Offset machinery names (`p_a`/`p_b`, `min_x`/`max_x`, `ix0`/`ix1`) mirror
+// the cavalier_contours / clipper2-rust conventions; cell-bbox truncations
+// are bounded by the grid layout.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names,
+    clippy::similar_names,
+)]
+
+
 use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Polyline};
 use clipper2_rust::{inflate_paths_d, EndType, JoinType, PathD, PathsD, Point as ClipperPoint};
 use schemars::JsonSchema;

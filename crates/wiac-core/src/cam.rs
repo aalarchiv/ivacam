@@ -5,6 +5,16 @@
 //! * `chaining` (segments → closed/open `VcObjects`) — port of `segments2objects`
 //! * `offsets` (`cavalier_contours` + clipper2-rust driven contour offsetting and pockets)
 
+// # CAM/sim pedantic-lint exemptions
+// Core CAM helpers (`segments_to_objects`, polygon area, point-in-polygon)
+// use textbook short names (`a`, `b`, `n`, `area`) and walk over bounded
+// vertex-index ranges (≪ 2^52).
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::similar_names,
+)]
+
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

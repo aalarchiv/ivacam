@@ -8,6 +8,13 @@
 //! makes "rapid Z exactly equals stock Z" Clear — matches the typical
 //! machinist intent of "rapid to surface, then plunge".
 
+// # CAM/sim pedantic-lint exemptions
+// Rapid-collision sweep casts bounded cell indices to f64.
+#![allow(
+    clippy::cast_precision_loss,
+)]
+
+
 use crate::gcode::preview::{MoveKind, ToolpathSegment};
 use crate::sim::heightmap::{Heightmap, ToolProfile};
 use crate::sim::sweep::{for_each_swept_cell, HeightmapLayout};

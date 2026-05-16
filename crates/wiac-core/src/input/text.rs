@@ -16,6 +16,14 @@
 //! glyph is a network of thin curves, not a filled shape). See
 //! `is_single_line_font` for the threshold + tests.
 
+// # CAM/sim pedantic-lint exemptions
+// Font sample counts and glyph-index casts are bounded by the font's
+// `units_per_em` (16-bit), so the f64 path is safe.
+#![allow(
+    clippy::cast_precision_loss,
+)]
+
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ttf_parser::{Face, OutlineBuilder};

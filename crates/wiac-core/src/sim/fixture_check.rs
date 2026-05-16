@@ -18,6 +18,16 @@
 //! 3. Report the closest segment point to the fixture center as the
 //!    collision's "nearest" coordinate.
 
+// # CAM/sim pedantic-lint exemptions
+// Fixture intersection math uses `min_x`/`max_x`/`min_y`/`max_y` bbox-corner
+// names that are the textbook convention; cell-index casts are bounded by
+// heightmap dimensions.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::similar_names,
+)]
+
+
 use crate::cam::is_inside_polygon;
 use crate::cam::lines_intersect;
 use crate::gcode::preview::ToolpathSegment;

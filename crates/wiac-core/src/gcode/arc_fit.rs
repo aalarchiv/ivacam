@@ -7,6 +7,13 @@
 //! either as their original straight segments or as fitted arcs through
 //! the post processor's `arc_cw` / `arc_ccw` paths.
 
+// # CAM/sim pedantic-lint exemptions
+// Arc-fit walks the polyline at bounded sample counts.
+#![allow(
+    clippy::cast_precision_loss,
+)]
+
+
 use crate::geometry::Point2;
 use crate::math;
 

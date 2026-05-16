@@ -3,6 +3,16 @@
 //! Ports `ezdxf.math.bulge_to_arc` / `arc_to_bulge` plus the small
 //! distance/angle helpers from viaConstructor's `calc.py`.
 
+// # CAM/sim pedantic-lint exemptions
+// Math primitives (bulge/arc/chord/sagitta) use textbook names; the few casts
+// go through small integer ranges (`< 2^32`).
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+)]
+
+
 use crate::geometry::Point2;
 
 pub const TWO_PI: f64 = std::f64::consts::TAU;

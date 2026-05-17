@@ -51,6 +51,9 @@ mod setup_resolver;
 mod tabs;
 mod warnings;
 
+#[cfg(test)]
+mod test_helpers;
+
 use op_drivers::{run_halfpipe_op, run_standard_op, run_thread_op, run_vcarve_op};
 use regions::build_region_previews;
 use setup_resolver::{header_setup_for, resolve_auto_helix_radius, synthesize_op_setup};
@@ -897,93 +900,13 @@ pub(super) fn synthesize_finish_setup(
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
+    use super::test_helpers::*;
     use crate::cam::setup::{MachineConfig, TabType, TabsConfig, ToolOffset};
     use crate::geometry::Segment;
     use crate::project::{
         Coolant, Op, OpKind, OpParams, OpSource, PatternConfig, SourceCombine, TextAlignment,
         TextLayer, TextLayerKind, ToolEntry, ToolKind,
     };
-
-    fn closed_square(side: f64) -> Vec<Segment> {
-        vec![
-            Segment::line(Point2::new(0.0, 0.0), Point2::new(side, 0.0), "0", 7),
-            Segment::line(Point2::new(side, 0.0), Point2::new(side, side), "0", 7),
-            Segment::line(Point2::new(side, side), Point2::new(0.0, side), "0", 7),
-            Segment::line(Point2::new(0.0, side), Point2::new(0.0, 0.0), "0", 7),
-        ]
-    }
-
-    fn endmill(id: u32, diameter: f64) -> ToolEntry {
-        ToolEntry {
-            id,
-            name: format!("{diameter:.1}mm endmill"),
-            kind: ToolKind::Endmill,
-            diameter,
-            tip_diameter: None,
-            tip_angle_deg: 60.0,
-            dragoff: None,
-            flutes: 2,
-            speed: 18_000,
-            plunge_rate: 100,
-            feed_rate: 800,
-            coolant: Coolant::Off,
-            speed_finish: None,
-            plunge_rate_finish: None,
-            feed_rate_finish: None,
-            speed_drill: None,
-            plunge_rate_drill: None,
-            feed_rate_drill: None,
-            default_peck_step_mm: None,
-            default_step: None,
-            z_shift_mm: None,
-            laser_pierce_sec: None,
-            laser_lead_in_mm: None,
-            corner_radius_mm: None,
-            tslot_neck_diameter_mm: None,
-            tslot_neck_length_mm: None,
-            wirbeln: false,
-            wirbeln_stepover_mm: None,
-            pause: 1,
-            flute_length_mm: None,
-            shank_diameter_mm: None,
-            holder: None,
-        }
-    }
-
-    fn profile_op(id: u32, tool_id: u32, offset: ToolOffset) -> Op {
-        Op {
-            id,
-            name: format!("Profile {id}"),
-            enabled: true,
-            kind: OpKind::Profile { offset },
-            tool_id,
-            finish_tool_id: None,
-            source: OpSource::All,
-            params: OpParams::mill_default(),
-            pattern: None,
-        }
-    }
-
-    fn project_with(ops: Vec<Op>, tools: Vec<ToolEntry>) -> Project {
-        Project {
-            segments: closed_square(20.0),
-            machine: MachineConfig::default(),
-            tools,
-            operations: ops,
-            fixtures: Vec::default(),
-            text_layers: Vec::default(),
-        }
-    }
-
-    fn dejavu_font_bytes() -> Vec<u8> {
-        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("tests/fonts/DejaVuSans.ttf");
-        std::fs::read(p).expect("DejaVuSans.ttf fixture")
-    }
 
     #[test]
     fn pipeline_renders_text_layers_and_routes_via_synthetic_layer() {
@@ -1130,40 +1053,6 @@ mod tests {
         }
     }
 
-    fn pocket_op(id: u32, tool_id: u32, source: OpSource) -> Op {
-        Op {
-            id,
-            name: format!("Pocket {id}"),
-            enabled: true,
-            kind: OpKind::Pocket {
-                strategy: crate::project::PocketStrategy::Cascade,
-            },
-            tool_id,
-            finish_tool_id: None,
-            source,
-            params: OpParams::mill_default(),
-            pattern: None,
-        }
-    }
-
-    fn closed_square_offset(side: f64, ox: f64, oy: f64) -> Vec<Segment> {
-        vec![
-            Segment::line(Point2::new(ox, oy), Point2::new(ox + side, oy), "0", 7),
-            Segment::line(
-                Point2::new(ox + side, oy),
-                Point2::new(ox + side, oy + side),
-                "0",
-                7,
-            ),
-            Segment::line(
-                Point2::new(ox + side, oy + side),
-                Point2::new(ox, oy + side),
-                "0",
-                7,
-            ),
-            Segment::line(Point2::new(ox, oy + side), Point2::new(ox, oy), "0", 7),
-        ]
-    }
 
     /// Selecting an outer ring + inner ring as the source for a pocket op
     /// produces ONE annulus pocket (outer minus inner), not one pocket per
@@ -2728,51 +2617,6 @@ mod tests {
 
     // ─── Drill ops ─────────────────────────────────────────────────────
 
-    /// Build the segments for a closed circle of `radius` at `center`,
-    /// matching what the DXF importer emits (two semicircle arcs).
-    fn closed_circle(center: Point2, radius: f64) -> Vec<Segment> {
-        use crate::geometry::SegmentKind;
-        let p_right = Point2::new(center.x + radius, center.y);
-        let p_left = Point2::new(center.x - radius, center.y);
-        vec![
-            Segment {
-                kind: SegmentKind::Circle,
-                start: p_right,
-                end: p_left,
-                bulge: 1.0,
-                center: Some(center),
-                layer: "0".into(),
-                color: 7,
-            },
-            Segment {
-                kind: SegmentKind::Circle,
-                start: p_left,
-                end: p_right,
-                bulge: 1.0,
-                center: Some(center),
-                layer: "0".into(),
-                color: 7,
-            },
-        ]
-    }
-
-    fn drill_op(id: u32, tool_id: u32, cycle: crate::project::DrillCycle) -> Op {
-        let mut params = OpParams::mill_default();
-        params.depth = -5.0;
-        params.start_depth = 0.0;
-        params.fast_move_z = 5.0;
-        Op {
-            id,
-            name: format!("Drill {id}"),
-            enabled: true,
-            kind: OpKind::Drill { cycle },
-            tool_id,
-            finish_tool_id: None,
-            source: OpSource::All,
-            params,
-            pattern: None,
-        }
-    }
 
     /// A 0.5mm-radius closed circle with a 3mm endmill running an
     /// `OpKind::Drill` { Simple } op should emit a recognizable
@@ -5075,37 +4919,6 @@ mod tests {
     // ─── Pattern repetition (5fz) ──────────────────────────────────────
 
     /// Build a profile op with a Linear pattern attached. We deliberately
-    /// use Profile (not Pocket) so each instance produces a recognizable
-    /// outer-offset toolpath whose X / Y range is easy to assert on.
-    fn profile_op_with_pattern(pattern: PatternConfig) -> Op {
-        let mut op = profile_op(1, 1, ToolOffset::Outside);
-        op.pattern = Some(pattern);
-        op
-    }
-
-    /// Scan `gcode` for the X coordinate of the first cut move in each
-    /// `; OP` block — useful for verifying that pattern instances landed
-    /// at the expected offsets.
-    fn cut_x_values(gcode: &str) -> Vec<f64> {
-        let mut xs = Vec::new();
-        for line in gcode.lines() {
-            // Cut moves start with G1 and contain X<float>.
-            if !(line.starts_with("G1") || line.starts_with("G0")) {
-                continue;
-            }
-            if let Some(idx) = line.find('X') {
-                let rest = &line[idx + 1..];
-                let end = rest
-                    .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
-                    .unwrap_or(rest.len());
-                if let Ok(x) = rest[..end].parse::<f64>() {
-                    xs.push(x);
-                }
-            }
-        }
-        xs
-    }
-
     #[test]
     fn linear_pattern_emits_translated_copies() {
         let project = project_with(
@@ -5350,115 +5163,6 @@ mod tests {
     // the addition from p31 — its job is to land the cutter on the
     // contour with the cutter direction already aligned to the first
     // segment's tangent so there's no dwell at the start point.
-
-    fn profile_leads_op(
-        offset: ToolOffset,
-        kind_in: crate::cam::setup::LeadKind,
-        len_in: f64,
-    ) -> Op {
-        let mut params = OpParams::mill_default();
-        params.depth = -1.0;
-        params.step = Some(-1.0);
-        params.fast_move_z = 5.0;
-        params.leads = crate::cam::setup::LeadsConfig {
-            r#in: kind_in,
-            out: crate::cam::setup::LeadKind::Off,
-            in_lenght: len_in,
-            out_lenght: 0.0,
-        };
-        Op {
-            id: 1,
-            name: "Profile".into(),
-            enabled: true,
-            kind: OpKind::Profile { offset },
-            tool_id: 1,
-            finish_tool_id: None,
-            source: OpSource::All,
-            params,
-            pattern: None,
-        }
-    }
-
-    /// Walk the emitted gcode and split it into (rapid-target,
-    /// lead-moves-at-z0, plunge-target-z, first-cut-move). Returns
-    /// (`rapid_xy`, `lead_motions_between_plunge_to_z0_and_plunge_to_cut`,
-    /// `first_post_cut_plunge_motion`).
-    fn first_lead_phase(gcode: &str) -> (Option<(f64, f64)>, Vec<String>, Option<String>) {
-        // State machine: scan until first G0 X/Y (rapid target), then
-        // until G1 Z0 (plunge to surface), then collect motions until
-        // G1 Z<negative> (plunge to cut), then capture the next motion.
-        let mut state = 0u8; // 0=expect_rapid, 1=at_rapid_seen, 2=after_z0, 3=after_cut_plunge
-        let mut rapid_xy: Option<(f64, f64)> = None;
-        let mut between: Vec<String> = Vec::new();
-        let mut first_cut: Option<String> = None;
-        for raw in gcode.lines() {
-            let l = raw.trim_start();
-            // Skip headers / comments / spindle / feeds.
-            if l.is_empty() || l.starts_with(';') || l.starts_with('(') {
-                continue;
-            }
-            match state {
-                0 => {
-                    // First G0 with X or Y is the rapid-to-lead-target.
-                    if l.starts_with("G0 ") && (l.contains('X') || l.contains('Y')) {
-                        rapid_xy = parse_xy(l);
-                        state = 1;
-                    }
-                }
-                1 => {
-                    if l.starts_with("G1 ")
-                        && l.contains('Z')
-                        && !l.contains('X')
-                        && !l.contains('Y')
-                    {
-                        // G1 Z0 (or G1 Z<surface>) — plunge to z=0.
-                        state = 2;
-                    }
-                }
-                2 => {
-                    if l.starts_with("G1 ")
-                        && l.contains('Z')
-                        && !l.contains('X')
-                        && !l.contains('Y')
-                    {
-                        // Pure-Z plunge to cut depth. State→3.
-                        state = 3;
-                        continue;
-                    }
-                    // Anything else at z=0 is a lead motion.
-                    between.push(l.to_string());
-                }
-                3 => {
-                    if l.starts_with("G0 ")
-                        || l.starts_with("G1 ")
-                        || l.starts_with("G2 ")
-                        || l.starts_with("G3 ")
-                    {
-                        first_cut = Some(l.to_string());
-                        break;
-                    }
-                }
-                _ => break,
-            }
-        }
-        (rapid_xy, between, first_cut)
-    }
-
-    fn parse_xy(line: &str) -> Option<(f64, f64)> {
-        let mut x: Option<f64> = None;
-        let mut y: Option<f64> = None;
-        for tok in line.split_whitespace() {
-            if let Some(rest) = tok.strip_prefix('X') {
-                x = rest.parse().ok();
-            } else if let Some(rest) = tok.strip_prefix('Y') {
-                y = rest.parse().ok();
-            }
-        }
-        match (x, y) {
-            (Some(xv), Some(yv)) => Some((xv, yv)),
-            _ => None,
-        }
-    }
 
     /// Profile + Outside + Arc lead-in (radius=2 mm) on a 50x50 square
     /// must emit a G2 / G3 arc move BETWEEN the surface plunge and the
@@ -6603,42 +6307,6 @@ mod tests {
         assert!(resp_b.warnings.iter().all(|w| w.kind != "step_unspecified"));
     }
 
-    fn vbit() -> ToolEntry {
-        ToolEntry {
-            id: 1,
-            name: "60° V".into(),
-            kind: ToolKind::VBit,
-            diameter: 6.35,
-            tip_diameter: Some(0.1),
-            tip_angle_deg: 60.0,
-            dragoff: None,
-            flutes: 2,
-            speed: 18_000,
-            plunge_rate: 200,
-            feed_rate: 1200,
-            coolant: Coolant::Off,
-            speed_finish: None,
-            plunge_rate_finish: None,
-            feed_rate_finish: None,
-            speed_drill: None,
-            plunge_rate_drill: None,
-            feed_rate_drill: None,
-            default_peck_step_mm: None,
-            default_step: None,
-            z_shift_mm: None,
-            laser_pierce_sec: None,
-            laser_lead_in_mm: None,
-            corner_radius_mm: None,
-            tslot_neck_diameter_mm: None,
-            tslot_neck_length_mm: None,
-            wirbeln: false,
-            wirbeln_stepover_mm: None,
-            pause: 1,
-            flute_length_mm: None,
-            shank_diameter_mm: None,
-            holder: None,
-        }
-    }
 
     #[test]
     fn generate_streaming_emits_op_events_in_order() {

@@ -77,3 +77,189 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::cam::setup::MachineConfig;
+    use crate::pipeline::test_helpers::{closed_square_offset, endmill, pocket_op};
+    use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{Op, OpKind, OpParams, OpSource, Project};
+
+    /// Dual-tool Pocket op (rt1.33): when `finish_tool_id` is set to a
+    /// different tool, the gcode contains a `T<n> M6` toolchange and
+    /// uses the finish tool's feed for the wall ring.
+    #[test]
+    fn dual_tool_pocket_emits_toolchange_and_uses_finish_tool_feed() {
+        let mut rough_tool = endmill(1, 6.0);
+        rough_tool.feed_rate = 1500;
+        rough_tool.speed = 20_000;
+        let mut finish_tool = endmill(2, 3.0);
+        finish_tool.feed_rate = 600;
+        finish_tool.speed = 24_000;
+        finish_tool.feed_rate_finish = Some(300);
+
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine,
+            tools: vec![rough_tool, finish_tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: Some(2),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("T2 M6"),
+            "expected toolchange T2 M6 for finish pass:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("F1500"),
+            "expected rough feed 1500:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("F300"),
+            "expected finish feed 300 (finish tool's feed_rate_finish):\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("S24000"),
+            "expected finish tool spindle 24000:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Dual-tool Pocket op without a distinct finish tool
+    /// (`finish_tool_id` == `tool_id`) — no toolchange emitted.
+    #[test]
+    fn dual_tool_same_id_skips_toolchange() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: Some(1),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.contains(" M6"),
+            "expected no toolchange when finish_tool_id == tool_id:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Dual-tool Pocket op without `finish_tool_id` (None) — legacy
+    /// single-tool behavior: no toolchange.
+    #[test]
+    fn dual_tool_none_uses_single_tool() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![pocket_op(1, 1, OpSource::All)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(!resp.gcode.contains(" M6"));
+    }
+
+    /// Dual-tool Pocket (rt1.33) with `z_shift` on the finish tool:
+    /// after the M6 we emit the finish tool's G92 Z shift.
+    #[test]
+    fn dual_tool_finish_tool_z_shift_emits_g92_after_m6() {
+        let rough_tool = endmill(1, 6.0);
+        let mut finish_tool = endmill(2, 3.0);
+        finish_tool.z_shift_mm = Some(1.25);
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine,
+            tools: vec![rough_tool, finish_tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: Some(2),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("T2 M6"), "toolchange missing");
+        let m6_idx = resp.gcode.find("T2 M6").unwrap();
+        let after = &resp.gcode[m6_idx..];
+        assert!(
+            after.contains("G92 Z1.25"),
+            "expected G92 Z1.25 AFTER T2 M6:\n{}",
+            resp.gcode
+        );
+    }
+}

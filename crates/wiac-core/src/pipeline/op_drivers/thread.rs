@@ -139,3 +139,153 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
     emit_vcarve_block(setup, &polylines, post, last_pos);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::cam::setup::MachineConfig;
+    use crate::geometry::Point2;
+    use crate::pipeline::test_helpers::{closed_circle, closed_square_offset, endmill};
+    use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{Op, OpKind, OpParams, OpSource, Project};
+
+    /// Thread op (rt1.17): a closed circle source + Thread op emits
+    /// a helical descent. The gcode must contain the helix's bottom
+    /// Z (rounded to 4 decimals) and a sweep of XY coordinates
+    /// around the bore's center.
+    #[test]
+    fn thread_op_emits_helical_descent_on_a_closed_circle() {
+        let center = Point2::new(10.0, 20.0);
+        let radius = 5.0;
+        let segments = closed_circle(center, radius);
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        let project = Project {
+            segments,
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 1.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Thread".into(),
+                enabled: true,
+                kind: OpKind::Thread {
+                    pitch_mm: 1.0,
+                    internal: true,
+                    climb: true,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Bottom Z = -3 → gcode contains Z-3 somewhere.
+        assert!(
+            resp.gcode.contains("Z-3"),
+            "expected helix bottom Z-3 in gcode:\n{}",
+            resp.gcode
+        );
+        // Internal: helix walks at (bore_radius - tool_radius) = 5 - 0.5 = 4.5 mm
+        // around center (10, 20). One waypoint sits at (10 + 4.5, 20) = (14.5, 20).
+        assert!(
+            resp.gcode.contains("X14.5") || resp.gcode.contains("X14.5000"),
+            "expected helix waypoint at X=14.5 (bore - tool_radius):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Thread op without a closed circle in the source emits a
+    /// `thread_no_circles` warning and produces no toolpath.
+    #[test]
+    fn thread_op_without_circle_warns() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 1.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Thread".into(),
+                enabled: true,
+                kind: OpKind::Thread {
+                    pitch_mm: 1.0,
+                    internal: true,
+                    climb: true,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.warnings.iter().any(|w| w.kind == "thread_no_circles"));
+    }
+
+    /// Thread op with internal + a tool larger than the bore emits a
+    /// `thread_tool_too_large` warning rather than producing a
+    /// nonsensical helix.
+    #[test]
+    fn thread_op_internal_with_oversized_tool_warns() {
+        let center = Point2::new(0.0, 0.0);
+        let radius = 1.0; // 1mm bore
+        let segments = closed_circle(center, radius);
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.start_depth = 0.0;
+        let project = Project {
+            segments,
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)], // 3mm tool, bigger than the bore
+            operations: vec![Op {
+                id: 1,
+                name: "Thread".into(),
+                enabled: true,
+                kind: OpKind::Thread {
+                    pitch_mm: 1.0,
+                    internal: true,
+                    climb: true,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp
+            .warnings
+            .iter()
+            .any(|w| w.kind == "thread_tool_too_large"));
+    }
+}

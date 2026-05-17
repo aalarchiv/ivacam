@@ -149,3 +149,183 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
     emit_vcarve_block(setup, &polylines, post, last_pos);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::cam::setup::MachineConfig;
+    use crate::geometry::{Point2, Segment};
+    use crate::pipeline::test_helpers::{closed_square_offset, endmill};
+    use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{
+        Op, OpKind, OpParams, OpSource, Project, ToolEntry, ToolKind,
+    };
+
+    /// Wirbeln (rt1.25): a Pocket op with a Wirbeln-flagged tool
+    /// emits MORE cascade rings than the same op without Wirbeln,
+    /// because the effective `xy_step` gets clamped to `tool_radius/2`.
+    #[test]
+    fn wirbeln_tool_increases_cascade_ring_count() {
+        let mut tool_a = endmill(1, 6.0);
+        tool_a.wirbeln = false;
+        let mut tool_b = endmill(1, 6.0);
+        tool_b.wirbeln = true;
+        let mut params = OpParams::mill_default();
+        // overlap 0.05 -> xy_step = 6 * 0.95 = 5.7 mm. Wirbeln clamps
+        // to tool_radius/2 = 1.5 mm, so b should have many more rings.
+        params.xy_overlap = 0.05;
+        let project_with_tool = |tool: ToolEntry| Project {
+            segments: closed_square_offset(80.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: params.clone(),
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp_a = run_pipeline(
+            PipelineRequest {
+                project: project_with_tool(tool_a),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let resp_b = run_pipeline(
+            PipelineRequest {
+                project: project_with_tool(tool_b),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp_b.stats.offset_count > resp_a.stats.offset_count,
+            "Wirbeln should produce more cascade rings: wirbeln=on offsets={} vs off offsets={}",
+            resp_b.stats.offset_count,
+            resp_a.stats.offset_count
+        );
+    }
+
+    /// Wirbeln serde round-trip on `ToolEntry` (rt1.25). Default = false
+    /// (skipped on serialize); when on with an override, both round-trip.
+    #[test]
+    fn wirbeln_serde_round_trip() {
+        let mut tool = endmill(1, 6.0);
+        let json_default = serde_json::to_string(&tool).unwrap();
+        assert!(!json_default.contains("wirbeln"));
+        tool.wirbeln = true;
+        tool.wirbeln_stepover_mm = Some(0.75);
+        let json = serde_json::to_string(&tool).unwrap();
+        assert!(json.contains("\"wirbeln\":true"));
+        assert!(json.contains("wirbeln_stepover_mm"));
+        let back: ToolEntry = serde_json::from_str(&json).unwrap();
+        assert!(back.wirbeln);
+        assert_eq!(back.wirbeln_stepover_mm, Some(0.75));
+    }
+
+    /// Halfpipe op (rt1.19): a closed region + Halfpipe `CircularArc`
+    /// emits cutting moves whose Z dips to within tolerance of the
+    /// configured profile radius along the centerline.
+    #[test]
+    fn halfpipe_circular_arc_emits_curved_floor() {
+        // 40×8 mm narrow slot. Inscribed circle along the centerline
+        // is ~4 mm radius (half-width). With profile R=5: at the
+        // widest medial-axis point z = -(5 - sqrt(25 - 16)) = -2.
+        let mut segments_8w: Vec<Segment> = Vec::new();
+        let p = |x: f64, y: f64| Point2::new(x, y);
+        segments_8w.push(Segment::line(p(0.0, 0.0), p(40.0, 0.0), "0", 7));
+        segments_8w.push(Segment::line(p(40.0, 0.0), p(40.0, 8.0), "0", 7));
+        segments_8w.push(Segment::line(p(40.0, 8.0), p(0.0, 8.0), "0", 7));
+        segments_8w.push(Segment::line(p(0.0, 8.0), p(0.0, 0.0), "0", 7));
+
+        let mut ball = endmill(1, 10.0);
+        ball.kind = ToolKind::BallNose;
+        let mut params = OpParams::mill_default();
+        params.depth = -10.0; // permissive cap so the profile drives Z
+        params.start_depth = 0.0;
+        params.step = Some(-2.0);
+        let project = Project {
+            segments: segments_8w,
+            machine: MachineConfig::default(),
+            tools: vec![ball],
+            operations: vec![Op {
+                id: 1,
+                name: "Halfpipe".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Halfpipe {
+                        profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 5.0 },
+                    },
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let any_deep_cut = resp.gcode.lines().any(|l| {
+            if !l.starts_with("G1 ") {
+                return false;
+            }
+            for tok in l.split_whitespace() {
+                if let Some(rest) = tok.strip_prefix('Z') {
+                    if let Ok(z) = rest.parse::<f64>() {
+                        if z < -1.0 {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        });
+        assert!(
+            any_deep_cut,
+            "expected at least one G1 line with Z below -1 mm:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// `PocketStrategy::Halfpipe` serde round-trip (rt1.19) covers both
+    /// `CircularArc` and `VBottom` profiles.
+    #[test]
+    fn halfpipe_serde_round_trip() {
+        let cases = [
+            crate::project::PocketStrategy::Halfpipe {
+                profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 5.0 },
+            },
+            crate::project::PocketStrategy::Halfpipe {
+                profile: crate::project::HalfpipeProfile::VBottom {
+                    included_angle_deg: 60.0,
+                },
+            },
+        ];
+        for case in cases {
+            let json = serde_json::to_string(&case).unwrap();
+            assert!(json.contains("halfpipe"));
+            let back: crate::project::PocketStrategy = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, case);
+        }
+    }
+}

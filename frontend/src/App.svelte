@@ -73,6 +73,8 @@
     wireSourceWatch as wireDesktopSourceWatch,
     wireCloseRequested,
     confirmClose,
+    logErrorToStderr,
+    isDebugSession,
     runUpdateCheck,
   } from './lib/state/desktop';
   import { computeFootprint } from './lib/sim/driver';
@@ -116,22 +118,23 @@
 
     // Global error capture. Silent throws inside Svelte 5 $effect bodies
     // can abort the reactivity scheduler — every button still fires its
-    // onclick, but visible state stops updating. Surfacing these to the
-    // console (and to project.error for severity) makes the failure mode
-    // visible instead of "the whole UI just stopped working".
-    // The comment above warns about silent throws killing the reactivity
-    // scheduler. Surface them via the error toast as well as the console
-    // so users without devtools still see something went wrong instead
-    // of "the dialog stopped responding". Previously the console-only
-    // logging hid scheduler-killing bugs from non-developer users.
-    // Direct-DOM error banner: bypasses Svelte's reactivity entirely so
-    // it stays visible even when the scheduler is dead (which is exactly
-    // the situation we need diagnostics for). `project.setError` calls
-    // are kept for live-app errors, but the banner is the
-    // last-line-of-defense when reactivity itself broke. Banner is
-    // append-only — every uncaught error stacks underneath the previous
-    // so you can see the full failure history.
-    const errorBanner = (() => {
+    // onclick, but visible state stops updating. Surface every uncaught
+    // error two ways:
+    //
+    //   1. ALWAYS route through `logErrorToStderr` so terminal users
+    //      running the AppImage see the failure on stderr and
+    //      journald / log aggregators can capture it.
+    //   2. WHEN `WIAC_DEBUG=1` was set on launch, also render a
+    //      direct-DOM banner that bypasses Svelte's reactivity (it
+    //      stays visible even when the scheduler is dead). Production
+    //      users get clean UI; debugging sessions get loud, visible
+    //      diagnostics on top of everything.
+    //
+    // The banner is created lazily — if the user isn't in a debug
+    // session we never insert the DOM nodes at all.
+    let errorBanner: { push: (msg: string) => void } | null = null;
+    void isDebugSession().then((dbg) => {
+      if (!dbg) return;
       const host = document.createElement('div');
       host.id = 'wiac-error-banner';
       host.style.cssText =
@@ -146,7 +149,7 @@
       };
       host.appendChild(dismiss);
       document.body.appendChild(host);
-      return {
+      errorBanner = {
         push(msg: string) {
           host.style.display = 'block';
           const line = document.createElement('div');
@@ -154,16 +157,18 @@
           host.appendChild(line);
         },
       };
-    })();
+    });
+
     window.addEventListener('error', (ev) => {
       const msg = ev.error?.stack ?? ev.error?.message ?? ev.message ?? 'unknown error';
-      console.error('uncaught error:', ev.error ?? ev.message);
-      errorBanner.push(`UI error: ${String(msg)}`);
+      const line = `UI error: ${String(msg)}`;
+      void logErrorToStderr(line);
+      errorBanner?.push(line);
       try {
         project.setError(`UI error: ${String(msg).slice(0, 240)}`);
       } catch {
         // setError might itself fail if the scheduler is dead; the
-        // banner above is the fallback so swallow this throw.
+        // stderr log and (in debug) the banner are the fallback.
       }
     });
     window.addEventListener('unhandledrejection', (ev) => {
@@ -174,8 +179,9 @@
           : typeof reason === 'string'
             ? reason
             : JSON.stringify(reason);
-      console.error('unhandled promise rejection:', reason);
-      errorBanner.push(`async error: ${String(msg)}`);
+      const line = `async error: ${String(msg)}`;
+      void logErrorToStderr(line);
+      errorBanner?.push(line);
       try {
         project.setError(`async error: ${String(msg).slice(0, 240)}`);
       } catch {

@@ -25,14 +25,15 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = "0.4"
-# `devtools` is enabled in release builds while we hunt the
-# reactivity-scheduler crash that prevents the Machine dialog (and
-# the app window) from closing. Tauri normally limits inspector
-# access to debug builds; keeping it on lets users right-click →
-# "Inspect Element" inside the packaged AppImage and capture the
-# real exception. Safe to ship — it does not auto-open the inspector,
-# the user still has to invoke it manually.
-tauri = { version = "2", features = ["devtools"] }
+# Tauri's `devtools` feature would enable right-click → Inspect
+# Element in release builds, but it adds ~1.5 MB (~10%) to the
+# wiac-desktop binary. Production users get the leaner build;
+# developers debugging a frontend issue can either run a debug build
+# (where the inspector is always on) or relaunch with `WIAC_DEBUG=1`
+# to see the in-DOM error banner. Uncaught JS errors are also
+# forwarded to stderr via the `log_error` command, so terminal /
+# journalctl users see them regardless.
+tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-window-state = "2"

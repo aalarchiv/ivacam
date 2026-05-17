@@ -67,6 +67,35 @@ pub fn confirm_close(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Frontend calls this from its global error handlers so uncaught JS
+/// errors land on the desktop binary's stderr. Preferred over an
+/// in-DOM banner for production diagnostics — a terminal user running
+/// the AppImage gets the error directly, and stderr is what log
+/// aggregators / journalctl already capture. The banner is reserved
+/// for `WIAC_DEBUG=1` sessions.
+//
+// Tauri's command macro hands an owned `String` over the IPC bridge;
+// taking `&str` here would force a re-borrow on every call. Per-call
+// allow rather than relaxing the workspace lint.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn log_error(msg: String) {
+    eprintln!("[wiac-frontend] {msg}");
+}
+
+/// Returns true when the user launched with `WIAC_DEBUG=1` (or any
+/// truthy value). Gates the in-DOM error banner — production users
+/// get clean UI, developers running with the flag see the banner on
+/// top of everything for live diagnostics.
+#[must_use]
+#[tauri::command]
+pub fn is_debug() -> bool {
+    matches!(
+        std::env::var("WIAC_DEBUG").as_deref(),
+        Ok("1" | "true" | "TRUE" | "yes" | "YES")
+    )
+}
+
 #[derive(Serialize)]
 pub struct HealthResponse {
     pub ok: bool,

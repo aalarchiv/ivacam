@@ -94,6 +94,36 @@ export async function confirmClose(): Promise<void> {
   }
 }
 
+/// Forward a frontend error string to the desktop binary's stderr.
+/// On web this falls back to `console.error` (browser devtools
+/// console). Used by App.svelte's global error handlers so uncaught
+/// JS errors land where terminal users / journald can see them.
+export async function logErrorToStderr(msg: string): Promise<void> {
+  if (!isTauri()) {
+    console.error(msg);
+    return;
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('log_error', { msg });
+  } catch {
+    console.error(msg);
+  }
+}
+
+/// Resolves to true when the desktop binary was launched with
+/// `WIAC_DEBUG=1`. Gates dev-only UI like the in-DOM error banner.
+/// Always false on web.
+export async function isDebugSession(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<boolean>('is_debug');
+  } catch {
+    return false;
+  }
+}
+
 /// Trigger the auto-updater flow: check for a new release, download,
 /// install, relaunch. No-op on web (no installer to update). Errors
 /// surface via `project.setError`.

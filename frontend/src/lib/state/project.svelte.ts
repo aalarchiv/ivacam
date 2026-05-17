@@ -16,6 +16,12 @@ import { History } from './history';
 import { workspace } from './workspace.svelte';
 import { invalidatePreview, resetPreviewCache } from './text_preview.svelte';
 import { isTauri as isTauriEnv } from '../api/env';
+import {
+  GeneratedState,
+  type PipelineNoteEvent,
+  type PipelinePhase,
+  type PipelineProgress,
+} from './generated.svelte';
 // Bring the union types into scope locally; project-types and op_types
 // re-export them through this module for back-compat callers.
 import type { OpEntry, OpKind, OpPatch } from './op_types';
@@ -263,41 +269,65 @@ function loadSettings(): AppSettings {
 
 class ProjectState {
   imported = $state<ImportResponse | null>(null);
-  generated = $state<GenerateResponse | null>(null);
-  /// Monotonic counter bumped on every `setGenerated` call. Scene3D's
-  /// sim-rebuild key uses this instead of `generated.gcode.length` —
-  /// two runs with identical gcode length but different content used
-  /// to silently dedupe and skip the sim rebuild.
-  generatedVersion = $state(0);
   loading = $state(false);
   loadingMessage = $state<string | null>(null);
-  generating = $state(false);
   /// Last error surfaced to the user. `string` for legacy paths (file
   /// upload, save dialogs, etc.); `WiacError` for backend pipeline /
   /// import errors so the toast can render recovery hints + auto-fix.
   error = $state<string | WiacError | null>(null);
   visibleLayers = $state<Set<string>>(new Set());
 
-  /// Streaming pipeline state. `idle` between runs; `running` while the
-  /// pipeline is actively emitting per-op events; `cancelling` after
-  /// the user clicked Cancel and we're waiting for the worker to bail;
-  /// `completed` for a brief beat after success so the UI can flash
-  /// the success state before reverting to idle.
-  pipelineState = $state<'idle' | 'running' | 'cancelling' | 'completed'>('idle');
-  /// Last per-op progress event for the GenerateProgress UI. Reset to
-  /// null when `pipelineState` returns to idle.
-  pipelineProgress = $state<{
-    opIdx: number;
-    opTotal: number;
-    opFraction: number;
-    opName: string;
-  } | null>(null);
-  /// Stats from the most recent generate run: how many ops were served
-  /// from the per-op result cache vs recomputed. Surfaced in the
-  /// GenerateBar as "N of M cached" so the user can see when re-Generate
-  /// hit cache instead of recomputing. Reset on each new generate.
-  lastGenerateCachedCount = $state<number>(0);
-  lastGenerateOpCount = $state<number>(0);
+  /// Generate-pipeline slice (audit 6cpl step 2). Holds `generated`,
+  /// `generating`, `pipelineState`/`pipelineProgress`,
+  /// `lastGenerateOpCount` / `lastGenerateCachedCount`,
+  /// `toolpathCumLen` / `toolpathTotalLen`, `simDiagnostics`, plus
+  /// the lifecycle methods. The `get …` accessors below forward every
+  /// `project.generated` / `project.pipelineState` etc. call site to
+  /// `this.gen.…` so the existing API surface is unchanged.
+  gen = new GeneratedState();
+
+  get generated(): GenerateResponse | null {
+    return this.gen.generated;
+  }
+  set generated(v: GenerateResponse | null) {
+    this.gen.generated = v;
+  }
+  get generatedVersion(): number {
+    return this.gen.generatedVersion;
+  }
+  set generatedVersion(v: number) {
+    this.gen.generatedVersion = v;
+  }
+  get generating(): boolean {
+    return this.gen.generating;
+  }
+  set generating(v: boolean) {
+    this.gen.generating = v;
+  }
+  get pipelineState(): PipelinePhase {
+    return this.gen.pipelineState;
+  }
+  set pipelineState(v: PipelinePhase) {
+    this.gen.pipelineState = v;
+  }
+  get pipelineProgress(): PipelineProgress | null {
+    return this.gen.pipelineProgress;
+  }
+  set pipelineProgress(v: PipelineProgress | null) {
+    this.gen.pipelineProgress = v;
+  }
+  get lastGenerateCachedCount(): number {
+    return this.gen.lastGenerateCachedCount;
+  }
+  set lastGenerateCachedCount(v: number) {
+    this.gen.lastGenerateCachedCount = v;
+  }
+  get lastGenerateOpCount(): number {
+    return this.gen.lastGenerateOpCount;
+  }
+  set lastGenerateOpCount(v: number) {
+    this.gen.lastGenerateOpCount = v;
+  }
 
   /// Per-segment hover indicator (single segment, not the chain).
   hoverSegment = $state<number | null>(null);
@@ -332,8 +362,18 @@ class ProjectState {
   /// Arcs (MoveKind::Arc) are approximated as their straight-line
   /// chord here — slight underestimate but fine for visual playback
   /// since we don't have I/J center data on the frontend.
-  toolpathCumLen = $state<Float64Array | null>(null);
-  toolpathTotalLen = $state(0.0);
+  get toolpathCumLen(): Float64Array | null {
+    return this.gen.toolpathCumLen;
+  }
+  set toolpathCumLen(v: Float64Array | null) {
+    this.gen.toolpathCumLen = v;
+  }
+  get toolpathTotalLen(): number {
+    return this.gen.toolpathTotalLen;
+  }
+  set toolpathTotalLen(v: number) {
+    this.gen.toolpathTotalLen = v;
+  }
 
   /// Project fixtures (clamps, dogs, vise jaws). Threaded into the
   /// sim's collision check so the cutter can't run them over.
@@ -430,7 +470,12 @@ class ProjectState {
   /// Most recent sim diagnostics, written through by the sim driver
   /// after each forward advance(). Null = no sim run yet (or the
   /// preview is in pure wireframe mode and no driver is built).
-  simDiagnostics = $state<SimDiagnostics | null>(null);
+  get simDiagnostics(): SimDiagnostics | null {
+    return this.gen.simDiagnostics;
+  }
+  set simDiagnostics(v: SimDiagnostics | null) {
+    this.gen.simDiagnostics = v;
+  }
 
   /// Undo / redo. Per-session only; not serialized to .vc-project.json.
   /// View-state (selection, playhead, layer visibility, settings) is
@@ -921,101 +966,36 @@ class ProjectState {
     this.error = null;
   }
 
-  /// Pipeline-state lifecycle helpers — wrap the direct field writes
-  /// GenerateBar used to do inline. Single source of truth for the
-  /// state transitions so future callers (e.g. an alt-Generate path
-  /// from a menu / shortcut) can't drift (audit-pgxb).
+  /// Pipeline-state lifecycle helpers (audit-pgxb). Most delegate to
+  /// the generated-state slice; `failGenerate` lives here because it
+  /// crosses slices (error + pipelineState reset).
   beginGenerate() {
-    this.generating = true;
-    this.pipelineState = 'running';
-    this.pipelineProgress = null;
     this.error = null;
-    this.lastGenerateCachedCount = 0;
-    this.lastGenerateOpCount = 0;
+    this.gen.beginGenerate();
   }
 
-  /// Apply a streaming pipeline event from the backend. `cached` and
-  /// the per-op-progress arithmetic live here so the UI component
-  /// stays render-only. Accepts the full PipelineEvent union from
-  /// the API client (including `cancelled` / `done` terminators);
-  /// those collapse to no-ops on the project state since
-  /// finishGenerate / failGenerate handle the lifecycle explicitly.
-  notePipelineEvent(
-    ev:
-      | { kind: 'op_started'; idx: number; total: number; name: string }
-      | { kind: 'op_progress'; fraction: number; message: string }
-      | { kind: 'op_completed'; cached: boolean }
-      | { kind: 'cancelled' }
-      | { kind: 'done' }
-      // Allow the API client's richer PipelineEvent (with extra
-      // op_id / total_time_s fields) to flow through unchanged.
-      | Record<string, unknown> & { kind: string },
-  ) {
-    if (ev.kind === 'op_started') {
-      // The richer Record<string, unknown> fallback variant of the
-      // event union forces us to project explicitly — `op_started`
-      // always carries idx/total/name when emitted by the pipeline,
-      // and the wire-level WiacError shape would never reach this
-      // dispatch.
-      const e = ev as { idx: number; total: number; name: string };
-      this.pipelineProgress = {
-        opIdx: e.idx,
-        opTotal: e.total,
-        opFraction: 0,
-        opName: e.name,
-      };
-    } else if (ev.kind === 'op_progress') {
-      if (this.pipelineProgress) {
-        const e = ev as { fraction: number };
-        this.pipelineProgress = {
-          ...this.pipelineProgress,
-          opFraction: e.fraction,
-        };
-      }
-    } else if (ev.kind === 'op_completed') {
-      this.lastGenerateOpCount += 1;
-      if (ev.cached) this.lastGenerateCachedCount += 1;
-      if (this.pipelineProgress) {
-        this.pipelineProgress = {
-          ...this.pipelineProgress,
-          opFraction: 1,
-          opIdx: this.pipelineProgress.opIdx + 1,
-        };
-      }
-    }
+  notePipelineEvent(ev: PipelineNoteEvent) {
+    this.gen.notePipelineEvent(ev);
   }
 
-  /// Successful pipeline completion. Briefly shows the `completed`
-  /// state so the UI can flash the success indicator before reverting
-  /// to idle.
   finishGenerate() {
-    this.pipelineState = 'completed';
-    setTimeout(() => {
-      if (this.pipelineState === 'completed') this.pipelineState = 'idle';
-    }, 1000);
+    this.gen.finishGenerate();
   }
 
-  /// Pipeline aborted by the user (Cancel button or AbortSignal). Drop
-  /// straight to idle without the success flash.
   cancelGenerate() {
-    if (this.pipelineState === 'running') {
-      this.pipelineState = 'cancelling';
-    }
+    this.gen.cancelGenerate();
   }
 
-  /// Pipeline failure path. Caller passes the surfacable error; we
-  /// route it through setError and snap back to idle.
+  /// Pipeline failure path. Routes the error through setError and
+  /// snaps the generate slice back to idle. Spans two slices, so
+  /// stays on the parent rather than living on either.
   failGenerate(err: string | WiacError) {
     this.setError(err);
-    this.pipelineState = 'idle';
+    this.gen.pipelineState = 'idle';
   }
 
-  /// Reset transient generate state regardless of how the run ended.
-  /// Always pairs with `beginGenerate` so the UI doesn't leak a stale
-  /// progress card after the awaited generate promise settles.
   endGenerate() {
-    this.generating = false;
-    this.pipelineProgress = null;
+    this.gen.endGenerate();
   }
 
   toggleLayer(name: string) {

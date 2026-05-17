@@ -1,0 +1,395 @@
+//! Tool library entries — bit geometry, feed/speed defaults, holder
+//! geometry, and the per-pass rate-resolution helper.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ToolEntry {
+    pub id: u32,
+    pub name: String,
+    pub kind: ToolKind,
+    pub diameter: f64,
+    /// V-bit tip diameter (None for endmill / ball nose / drag knife).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tip_diameter: Option<f64>,
+    /// V-bit full included tip angle in degrees (apex angle of the cone).
+    /// Drives the V-Carve depth-from-width relationship
+    /// `z = -R / tan(tip_angle / 2)`. Validated to (0, 180); defaults to
+    /// 60° for the most common engraving V-bit.
+    #[serde(default = "default_tip_angle_deg")]
+    pub tip_angle_deg: f64,
+    /// Drag-knife trailing offset (None for everything else).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dragoff: Option<f64>,
+    pub flutes: u8,
+    pub speed: u32,
+    /// Plunge feedrate (mm/min).
+    pub plunge_rate: u32,
+    /// Cutting feedrate (mm/min).
+    pub feed_rate: u32,
+    pub coolant: Coolant,
+    /// Spindle RPM override for the finishing pass (the wall-defining
+    /// level=0 ring of a Pocket). None = inherit `speed`. Hard-material
+    /// finish quality usually wants a slower RPM than roughing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_finish: Option<u32>,
+    /// Plunge feedrate override for the finishing pass. None = inherit
+    /// `plunge_rate`. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plunge_rate_finish: Option<u32>,
+    /// Cutting feedrate override for the finishing pass. None = inherit
+    /// `feed_rate`. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_rate_finish: Option<u32>,
+    /// Spindle RPM override when this tool is used in a Drill op. None =
+    /// inherit `speed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_drill: Option<u32>,
+    /// Plunge feedrate override when this tool is used in a Drill op.
+    /// None = inherit `plunge_rate`. Units: mm/min.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plunge_rate_drill: Option<u32>,
+    /// Cutting feedrate override when this tool is used in a Drill op.
+    /// None = inherit `feed_rate`. Units: mm/min. Only meaningful for
+    /// posts that emit XY-traverse feed lines between drill points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_rate_drill: Option<u32>,
+    /// Default peck step (positive, mm) for `DrillCycle::Peck` /
+    /// `ChipBreak` ops that don't set their own `peck_step_mm`. None =
+    /// the op must specify its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_peck_step_mm: Option<f64>,
+    /// Default depth-per-pass (negative, mm). Operations using this tool
+    /// inherit this when their own `step` is unset. None = no default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_step: Option<f64>,
+    /// Per-tool Z origin offset (rt1.30 / Estlcam `Z_Shift`). For
+    /// machines without automatic tool-length probing — the user
+    /// pre-measures each tool's tip Z relative to a reference tool and
+    /// records the delta here (positive = sticks out further; negative
+    /// = shorter). At toolchange / program-start the post emits a
+    /// `G92 Z<shift>` that pins the new tool's tip at the same work-Z
+    /// the reference tool used. mm. None = no shift.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z_shift_mm: Option<f64>,
+    /// Laser pierce time (rt1.29 / Estlcam `T_Pierce_Time)`: seconds the
+    /// beam dwells at the start point BEFORE the cut begins so it
+    /// burns through thick stock. Honored only when `kind ==
+    /// LaserBeam`. The post emits a `G4 P<seconds>` after the
+    /// laser-on before each plunge. None = no pierce dwell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub laser_pierce_sec: Option<f64>,
+    /// Laser lead-in distance (rt1.29 / Estlcam `T_Lead_In)`: mm of
+    /// approach travel the head takes along the entry tangent before
+    /// the cut starts, to reduce edge entry burn. Honored only when
+    /// `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time
+    /// — the per-op lead-in field overrides this if set explicitly.
+    /// None = no tool-level lead-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub laser_lead_in_mm: Option<f64>,
+    /// Bull-nose / radius-endmill corner radius (rt1.28). Honored
+    /// only when `kind == BullNose`. The corner radius produces a
+    /// fillet on the cut floor edge — relevant for sim cross-section
+    /// (the sim envelope falls below `corner_radius_mm` of the
+    /// nominal flat floor). mm, positive only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corner_radius_mm: Option<f64>,
+    /// T-slot / keyway cutter neck diameter (rt1.28). Honored only
+    /// when `kind == TSlot`. The undercut cutter has a wide disk
+    /// (`diameter`) at the tip and a narrow neck of this diameter
+    /// above. mm, positive only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tslot_neck_diameter_mm: Option<f64>,
+    /// T-slot / keyway cutter neck length (rt1.28). Honored only
+    /// when `kind == TSlot`. The vertical extent of the narrow neck
+    /// above the disk. mm, positive only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tslot_neck_length_mm: Option<f64>,
+    /// Wirbeln (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning.
+    /// When `true`, Pocket ops using this tool clamp their effective
+    /// `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)`
+    /// — the classic chip-thinning rule that bounds radial engagement
+    /// at half-radius. Use for hard materials where the user wants
+    /// fast cascade / spiral pockets but doesn't want the cutter to
+    /// overload at high-engagement points. Default `false`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub wirbeln: bool,
+    /// Wirbeln stepover override (rt1.25). When `wirbeln` is `true`,
+    /// the effective cascade step is `min(op.xy_step,
+    /// wirbeln_stepover_mm OR tool_radius / 2)`. mm, positive only.
+    /// None = use the half-radius rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wirbeln_stepover_mm: Option<f64>,
+    /// Spindle warm-up pause in seconds applied once per used tool by
+    /// the time estimator. Mirrors `ToolConfig.pause`.
+    #[serde(
+        default = "default_tool_pause",
+        skip_serializing_if = "is_default_tool_pause"
+    )]
+    pub pause: u32,
+    /// Length of cutting flutes (mm). None = treat entire tool as cutting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flute_length_mm: Option<f64>,
+    /// Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shank_diameter_mm: Option<f64>,
+    /// Holder geometry above the shank. None = no holder check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<HolderShape>,
+}
+
+/// Geometry of the tool holder above the shank. The holder is treated as
+/// cylindrically symmetric around the tool axis (Z), so set-screw flats /
+/// asymmetric ER nuts get approximated by their bounding cylinder/cone —
+/// good enough to flag clear collisions, conservative on tight cases.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HolderShape {
+    Cylinder {
+        diameter_mm: f64,
+        length_mm: f64,
+    },
+    Cone {
+        bottom_diameter_mm: f64,
+        top_diameter_mm: f64,
+        length_mm: f64,
+    },
+    Stepped {
+        cylinder_diameter_mm: f64,
+        cylinder_length_mm: f64,
+        cone_top_diameter_mm: f64,
+        cone_length_mm: f64,
+    },
+}
+
+fn default_tool_pause() -> u32 {
+    1
+}
+
+fn is_default_tool_pause(v: &u32) -> bool {
+    *v == 1
+}
+
+impl Default for ToolEntry {
+    fn default() -> Self {
+        Self {
+            id: 1,
+            name: "3 mm endmill".into(),
+            kind: ToolKind::Endmill,
+            diameter: 3.0,
+            tip_diameter: None,
+            tip_angle_deg: default_tip_angle_deg(),
+            dragoff: None,
+            flutes: 2,
+            speed: 18_000,
+            plunge_rate: 100,
+            feed_rate: 800,
+            coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
+            default_step: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
+            pause: default_tool_pause(),
+            flute_length_mm: None,
+            shank_diameter_mm: None,
+            holder: None,
+        }
+    }
+}
+
+/// Which set of per-tool feed/speed/plunge values to use for a given
+/// emission context. `Rough` is the default and matches every legacy
+/// caller. `Finish` is consulted at the wall-defining level=0 ring of a
+/// Pocket / per-op finish pass. `Drill` is consulted for Drill ops so
+/// the user can dial drilling RPM independently from milling RPM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassKind {
+    Rough,
+    Finish,
+    Drill,
+}
+
+/// Resolve the (speed, `plunge_rate`, `feed_rate`) triplet for `tool` under
+/// `pass`. Finish / Drill variants fall back to the general values when
+/// their override is `None`.
+#[must_use]
+pub fn resolve_tool_rates(tool: &ToolEntry, pass: PassKind) -> (u32, u32, u32) {
+    match pass {
+        PassKind::Rough => (tool.speed, tool.plunge_rate, tool.feed_rate),
+        PassKind::Finish => (
+            tool.speed_finish.unwrap_or(tool.speed),
+            tool.plunge_rate_finish.unwrap_or(tool.plunge_rate),
+            tool.feed_rate_finish.unwrap_or(tool.feed_rate),
+        ),
+        PassKind::Drill => (
+            tool.speed_drill.unwrap_or(tool.speed),
+            tool.plunge_rate_drill.unwrap_or(tool.plunge_rate),
+            tool.feed_rate_drill.unwrap_or(tool.feed_rate),
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    #[default]
+    Endmill,
+    BallNose,
+    VBit,
+    Engraver,
+    DragKnife,
+    Drill,
+    /// Used for laser cutting / etching — no physical tool radius.
+    LaserBeam,
+    /// Bull-nose / radius-corner endmill (rt1.28): flat endmill with
+    /// a rounded transition between the cylindrical wall and the flat
+    /// floor. Cuts a fillet on the floor edge.
+    /// `ToolEntry.corner_radius_mm` carries the radius.
+    BullNose,
+    /// Compression / up-down spiral endmill (rt1.28 / Estlcam
+    /// Obenunten). Cuts down on top half, up on bottom half — clean
+    /// edges on both faces of sheet material. v1 treats it like an
+    /// Endmill at the cutting algorithm; the variant is here so the
+    /// tool library can label it accurately for the user.
+    Compression,
+    /// T-slot / keyway / undercut cutter (rt1.28): plunges vertically
+    /// down a narrow neck, then a wider disk at the tip cuts the
+    /// undercut slot. `ToolEntry.tslot_neck_diameter_mm` /
+    /// `tslot_neck_length_mm` carry the neck geometry.
+    TSlot,
+    /// Form / profile cutter (rt1.28 / Estlcam Profil): bull-nose /
+    /// cove / ogee / dovetail / custom — a profile bit with a fixed
+    /// cross-section. v1 treats as an Endmill at the algorithm; the
+    /// variant labels it.
+    FormProfile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Coolant {
+    #[default]
+    Off,
+    Mist,
+    Flood,
+}
+
+pub(crate) fn default_tip_angle_deg() -> f64 {
+    60.0
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn holder_round_trip() {
+        // Each HolderShape variant survives JSON serialize/deserialize.
+        let shapes = vec![
+            HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            },
+            HolderShape::Cone {
+                bottom_diameter_mm: 25.0,
+                top_diameter_mm: 40.0,
+                length_mm: 35.0,
+            },
+            HolderShape::Stepped {
+                cylinder_diameter_mm: 18.0,
+                cylinder_length_mm: 12.0,
+                cone_top_diameter_mm: 30.0,
+                cone_length_mm: 22.0,
+            },
+        ];
+        for s in shapes {
+            let tool = ToolEntry {
+                flute_length_mm: Some(15.0),
+                shank_diameter_mm: Some(6.0),
+                holder: Some(s),
+                ..ToolEntry::default()
+            };
+            let json = serde_json::to_string(&tool).expect("serialize");
+            let back: ToolEntry = serde_json::from_str(&json).expect("deserialize");
+            match (s, back.holder.expect("holder survives")) {
+                (
+                    HolderShape::Cylinder {
+                        diameter_mm: d0,
+                        length_mm: l0,
+                    },
+                    HolderShape::Cylinder {
+                        diameter_mm: d1,
+                        length_mm: l1,
+                    },
+                ) => {
+                    assert!((d0 - d1).abs() < 1e-9 && (l0 - l1).abs() < 1e-9);
+                }
+                (
+                    HolderShape::Cone {
+                        bottom_diameter_mm: b0,
+                        top_diameter_mm: t0,
+                        length_mm: l0,
+                    },
+                    HolderShape::Cone {
+                        bottom_diameter_mm: b1,
+                        top_diameter_mm: t1,
+                        length_mm: l1,
+                    },
+                ) => {
+                    assert!(
+                        (b0 - b1).abs() < 1e-9 && (t0 - t1).abs() < 1e-9 && (l0 - l1).abs() < 1e-9
+                    );
+                }
+                (
+                    HolderShape::Stepped {
+                        cylinder_diameter_mm: cd0,
+                        cylinder_length_mm: cl0,
+                        cone_top_diameter_mm: ct0,
+                        cone_length_mm: cn0,
+                    },
+                    HolderShape::Stepped {
+                        cylinder_diameter_mm: cd1,
+                        cylinder_length_mm: cl1,
+                        cone_top_diameter_mm: ct1,
+                        cone_length_mm: cn1,
+                    },
+                ) => {
+                    assert!(
+                        (cd0 - cd1).abs() < 1e-9
+                            && (cl0 - cl1).abs() < 1e-9
+                            && (ct0 - ct1).abs() < 1e-9
+                            && (cn0 - cn1).abs() < 1e-9
+                    );
+                }
+                _ => panic!("variant mismatch after round trip"),
+            }
+            assert_eq!(back.flute_length_mm, Some(15.0));
+            assert_eq!(back.shank_diameter_mm, Some(6.0));
+        }
+    }
+
+    #[test]
+    fn tool_holder_fields_skip_when_none() {
+        let tool = ToolEntry::default();
+        let json = serde_json::to_string(&tool).expect("serialize");
+        assert!(!json.contains("flute_length_mm"));
+        assert!(!json.contains("shank_diameter_mm"));
+        assert!(!json.contains("\"holder\""));
+    }
+}

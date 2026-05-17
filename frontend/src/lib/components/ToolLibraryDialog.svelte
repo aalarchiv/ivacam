@@ -34,9 +34,17 @@
 
   $effect(() => {
     if (open) {
-      draft = project.tools.map((t) => ({ ...t }));
+      // Build the pristine snapshot from a local before assigning the
+      // $state proxies. Reading `draft` after we've just written it
+      // makes the effect depend on draft, and the write reschedules
+      // the effect — Svelte throws `effect_update_depth_exceeded`
+      // after ~1000 self-runs, killing the reactivity scheduler for
+      // the whole app (same root cause we just fixed in
+      // MachineDialog).
+      const newDraft = project.tools.map((t) => ({ ...t }));
+      draft = newDraft;
       expanded = new Set();
-      pristine = JSON.stringify(draft);
+      pristine = JSON.stringify(newDraft);
     }
   });
 

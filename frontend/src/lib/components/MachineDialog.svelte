@@ -61,12 +61,27 @@
   $effect(() => {
     if (open) {
       try {
-        draft = cloneSettings(project.machine);
-        jerkEnabled = !!project.machine.jerk;
-        jerkDraft = project.machine.jerk
-          ? { ...project.machine.jerk }
-          : { x: 100, y: 100, z: 50 };
-        pristine = snapshotKey();
+        // Build snapshots from local vars BEFORE assigning the
+        // $state. Calling snapshotKey() here would re-read the
+        // proxies we just wrote — Svelte tracks those reads as
+        // dependencies of this very effect, and the writes then
+        // re-schedule it. After ~1000 self-runs Svelte throws
+        // `effect_update_depth_exceeded`, which kills the reactivity
+        // scheduler for the whole app — every button still fires
+        // onclick but the UI never repaints. That's the bug the
+        // Machine dialog manifested as "X / Cancel / OK don't close".
+        const m = project.machine;
+        const newDraft = cloneSettings(m);
+        const newJerkEnabled = !!m.jerk;
+        const newJerkDraft = m.jerk ? { ...m.jerk } : { x: 100, y: 100, z: 50 };
+        const newPristine = JSON.stringify({
+          draft: newDraft,
+          jerk: newJerkEnabled ? newJerkDraft : null,
+        });
+        draft = newDraft;
+        jerkEnabled = newJerkEnabled;
+        jerkDraft = newJerkDraft;
+        pristine = newPristine;
       } catch (e) {
         console.error('MachineDialog.open: init failed', e);
       }

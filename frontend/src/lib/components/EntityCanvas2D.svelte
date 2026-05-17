@@ -16,6 +16,11 @@
     pointInPolygon,
     projectOntoSegment,
   } from '../canvas/selection-geometry';
+  import {
+    buildHitIndex as buildHitIndexPure,
+    queryHit,
+    type HitIndex,
+  } from '../canvas/spatial-index';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import {
     previewSegmentsFor,
@@ -239,76 +244,15 @@
   /// on a 10k-segment file. The grid is rebuilt when project.imported
   /// changes (rare); each query inspects only the cells overlapping the
   /// cursor + tolerance and bails early past that.
-  type HitIndex = {
-    cellW: number;
-    cellH: number;
-    minX: number;
-    minY: number;
-    cols: number;
-    rows: number;
-    /// One Uint32Array per cell with segment indices that touch it.
-    /// Cells with zero hits stay undefined to keep memory bounded.
-    cells: (Uint32Array | undefined)[];
-  };
+  // Spatial index (HitIndex type + buildHitIndex + the cell-walk
+  // query loop) extracted to lib/canvas/spatial-index.ts so vitest
+  // can exercise them without mounting the canvas (y0ez).
   let hitIndex: HitIndex | null = null;
 
   $effect(() => {
     void project.imported;
-    hitIndex = buildHitIndex(project.imported);
+    hitIndex = buildHitIndexPure(project.imported);
   });
-
-  function buildHitIndex(data: typeof project.imported): HitIndex | null {
-    if (!data || data.segments.length === 0) return null;
-    const { min_x, min_y, max_x, max_y } = data.bbox;
-    const dx = Math.max(max_x - min_x, 1e-6);
-    const dy = Math.max(max_y - min_y, 1e-6);
-    // Aim for ~sqrt(N) cells per side, capped so tiny imports don't get
-    // a sparse grid and huge ones don't blow the memory budget.
-    const target = Math.min(128, Math.max(8, Math.floor(Math.sqrt(data.segments.length))));
-    const cols = target;
-    const rows = target;
-    const cellW = dx / cols;
-    const cellH = dy / rows;
-    // Bucket counts then bucket arrays — two-pass build avoids growing
-    // arrays per-insert.
-    const counts = new Uint32Array(cols * rows);
-    const segs = data.segments;
-    const visit = (cb: (cellIdx: number, segIdx: number) => void) => {
-      for (let i = 0; i < segs.length; i++) {
-        const s = segs[i];
-        const sxMin = Math.min(s.start.x, s.end.x);
-        const syMin = Math.min(s.start.y, s.end.y);
-        const sxMax = Math.max(s.start.x, s.end.x);
-        const syMax = Math.max(s.start.y, s.end.y);
-        const c0 = clamp(Math.floor((sxMin - min_x) / cellW), 0, cols - 1);
-        const c1 = clamp(Math.floor((sxMax - min_x) / cellW), 0, cols - 1);
-        const r0 = clamp(Math.floor((syMin - min_y) / cellH), 0, rows - 1);
-        const r1 = clamp(Math.floor((syMax - min_y) / cellH), 0, rows - 1);
-        for (let r = r0; r <= r1; r++) {
-          for (let c = c0; c <= c1; c++) {
-            cb(r * cols + c, i);
-          }
-        }
-      }
-    };
-    visit((cellIdx) => {
-      counts[cellIdx]++;
-    });
-    const cells: (Uint32Array | undefined)[] = new Array(cols * rows);
-    const writeIdx = new Uint32Array(cols * rows);
-    for (let i = 0; i < counts.length; i++) {
-      if (counts[i] > 0) cells[i] = new Uint32Array(counts[i]);
-    }
-    visit((cellIdx, segIdx) => {
-      const buf = cells[cellIdx]!;
-      buf[writeIdx[cellIdx]++] = segIdx;
-    });
-    return { cellW, cellH, minX: min_x, minY: min_y, cols, rows, cells };
-  }
-
-  // Pure geometry primitives (clamp, distanceToSegment, pointInPolygon,
-  // projectOntoSegment) extracted to lib/canvas/selection-geometry.ts
-  // so vitest can exercise them without mounting the canvas (y0ez).
 
   function pixelHit(canvasX: number, canvasY: number): number | null {
     const data = project.imported;
@@ -317,50 +261,9 @@
     const dataX = (canvasX - offX) / scale;
     const dataY = (offY - canvasY) / scale;
     const tolData = HIT_PIXEL_TOL / scale;
-    let bestIdx: number | null = null;
-    let bestDist = Infinity;
-    const segs = data.segments;
-    if (hitIndex) {
-      const { cellW, cellH, minX, minY, cols, rows, cells } = hitIndex;
-      const c0 = clamp(Math.floor((dataX - tolData - minX) / cellW), 0, cols - 1);
-      const c1 = clamp(Math.floor((dataX + tolData - minX) / cellW), 0, cols - 1);
-      const r0 = clamp(Math.floor((dataY - tolData - minY) / cellH), 0, rows - 1);
-      const r1 = clamp(Math.floor((dataY + tolData - minY) / cellH), 0, rows - 1);
-      // Dedup across cells — a single segment can land in multiple cells
-      // when its bbox crosses cell boundaries.
-      const seen = new Set<number>();
-      for (let r = r0; r <= r1; r++) {
-        for (let c = c0; c <= c1; c++) {
-          const buf = cells[r * cols + c];
-          if (!buf) continue;
-          for (let k = 0; k < buf.length; k++) {
-            const i = buf[k];
-            if (seen.has(i)) continue;
-            seen.add(i);
-            const s = segs[i];
-            if (!project.visibleLayers.has(s.layer)) continue;
-            const d = distanceToSegment(s.start, s.end, dataX, dataY);
-            if (d < tolData && d < bestDist) {
-              bestIdx = i;
-              bestDist = d;
-            }
-          }
-        }
-      }
-      return bestIdx;
-    }
-    // Fallback for the rare case the index hasn't been built yet (first
-    // mousemove during the initial mount before the $effect fires).
-    for (let i = 0; i < segs.length; i++) {
-      const s = segs[i];
-      if (!project.visibleLayers.has(s.layer)) continue;
-      const d = distanceToSegment(s.start, s.end, dataX, dataY);
-      if (d < tolData && d < bestDist) {
-        bestIdx = i;
-        bestDist = d;
-      }
-    }
-    return bestIdx;
+    return queryHit(data, hitIndex, dataX, dataY, tolData, (l) =>
+      project.visibleLayers.has(l),
+    );
   }
 
   function onPointerMove(e: PointerEvent) {

@@ -167,15 +167,14 @@
   }
 
   function commit() {
-    // Deep-snapshot the draft so the command system receives a plain
-    // object — Svelte 5 `$state` proxies can trip up `structuredClone`
-    // inside setMachineCommand on some browser builds, which would
-    // silently abort commit and leave the dialog open.
+    // JSON round-trip the $state proxy so `setMachineCommand` receives
+    // a plain object — Svelte 5 proxies can trip `structuredClone` on
+    // some WebKit builds, silently aborting the commit.
     //
-    // Wrap the whole body in try/catch so any thrown error (JSON
-    // serialise failure on a circular reference, setMachine validation,
-    // etc.) still reaches `onClose()` — otherwise the OK button looks
-    // broken to the user.
+    // Whole body in try/catch so any throw from JSON serialise or
+    // setMachine still reaches `onClose()` — otherwise OK appears
+    // broken. The error is logged and surfaces via the global error
+    // banner so the underlying bug stays visible.
     try {
       const snap = JSON.parse(JSON.stringify(draft)) as MachineSettings;
       snap.jerk = jerkEnabled ? { ...jerkDraft } : undefined;

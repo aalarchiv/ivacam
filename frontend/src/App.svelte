@@ -124,10 +124,47 @@
     // so users without devtools still see something went wrong instead
     // of "the dialog stopped responding". Previously the console-only
     // logging hid scheduler-killing bugs from non-developer users.
+    // Direct-DOM error banner: bypasses Svelte's reactivity entirely so
+    // it stays visible even when the scheduler is dead (which is exactly
+    // the situation we need diagnostics for). `project.setError` calls
+    // are kept for live-app errors, but the banner is the
+    // last-line-of-defense when reactivity itself broke. Banner is
+    // append-only — every uncaught error stacks underneath the previous
+    // so you can see the full failure history.
+    const errorBanner = (() => {
+      const host = document.createElement('div');
+      host.id = 'wiac-error-banner';
+      host.style.cssText =
+        'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#7a0000;color:#fff;font:11px monospace;padding:6px 10px;max-height:40vh;overflow:auto;pointer-events:auto;display:none;white-space:pre-wrap;';
+      const dismiss = document.createElement('button');
+      dismiss.textContent = '×';
+      dismiss.style.cssText =
+        'position:absolute;top:2px;right:6px;background:transparent;border:0;color:#fff;cursor:pointer;font-size:16px;';
+      dismiss.onclick = () => {
+        host.style.display = 'none';
+        host.replaceChildren(dismiss);
+      };
+      host.appendChild(dismiss);
+      document.body.appendChild(host);
+      return {
+        push(msg: string) {
+          host.style.display = 'block';
+          const line = document.createElement('div');
+          line.textContent = msg;
+          host.appendChild(line);
+        },
+      };
+    })();
     window.addEventListener('error', (ev) => {
       const msg = ev.error?.stack ?? ev.error?.message ?? ev.message ?? 'unknown error';
       console.error('uncaught error:', ev.error ?? ev.message);
-      project.setError(`UI error: ${String(msg).slice(0, 240)}`);
+      errorBanner.push(`UI error: ${String(msg)}`);
+      try {
+        project.setError(`UI error: ${String(msg).slice(0, 240)}`);
+      } catch {
+        // setError might itself fail if the scheduler is dead; the
+        // banner above is the fallback so swallow this throw.
+      }
     });
     window.addEventListener('unhandledrejection', (ev) => {
       const reason = ev.reason;
@@ -138,7 +175,12 @@
             ? reason
             : JSON.stringify(reason);
       console.error('unhandled promise rejection:', reason);
-      project.setError(`async error: ${String(msg).slice(0, 240)}`);
+      errorBanner.push(`async error: ${String(msg)}`);
+      try {
+        project.setError(`async error: ${String(msg).slice(0, 240)}`);
+      } catch {
+        // see comment above.
+      }
     });
 
     void wireSourceWatch();

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -39,6 +40,13 @@ pub struct AppState {
     /// whether to prevent the close and bounce a prompt back to the
     /// UI, or let the window destroy normally (qjec).
     pub close_confirmed: AtomicBool,
+    /// Timestamp of the previous `CloseRequested` we intercepted.
+    /// Lets a second OS-window close attempt within 3 seconds
+    /// force-quit even if the frontend never responded to the first
+    /// prompt — without this escape hatch a broken Svelte
+    /// reactivity scheduler would trap the user with no way to quit
+    /// short of `SIGKILL`.
+    pub last_close_attempt: Mutex<Option<Instant>>,
 }
 
 /// Frontend calls this after the user clicks "Quit" on the in-app

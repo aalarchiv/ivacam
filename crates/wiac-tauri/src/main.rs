@@ -11,6 +11,7 @@ mod watcher;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::{Emitter, Manager};
 
@@ -132,6 +133,7 @@ fn run() -> tauri::Result<()> {
             app.manage(AppState {
                 watcher: Mutex::new(ProjectWatcher::new(handle.clone())),
                 close_confirmed: AtomicBool::new(false),
+                last_close_attempt: Mutex::new(None),
             });
             // No native window menu — the Svelte UI owns the menubar so the
             // user sees one consistent set of File / Edit / View / Tools /
@@ -178,13 +180,34 @@ fn run() -> tauri::Result<()> {
         // event to the frontend and prevents close; the frontend
         // responds by either invoking `confirm_close` (which flips the
         // flag and re-issues close) or doing nothing (keep editing).
+        //
+        // Escape hatch: a second OS-close attempt within 3 seconds
+        // force-closes even without `confirm_close`. This catches the
+        // case where the Svelte reactivity scheduler is dead (a thrown
+        // effect can silently abort it) — the close event listener
+        // fires but the prompt UI never paints, so the user has no way
+        // to confirm. Force-closing on double-attempt keeps the user
+        // from being trapped.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.app_handle().state::<AppState>();
-                if !state.close_confirmed.load(Ordering::SeqCst) {
-                    api.prevent_close();
-                    let _ = window.emit("app:close_requested", ());
+                if state.close_confirmed.load(Ordering::SeqCst) {
+                    return;
                 }
+                let now = Instant::now();
+                let force = {
+                    let mut last = state.last_close_attempt.lock().unwrap();
+                    let force =
+                        last.is_some_and(|t| now.duration_since(t) <= Duration::from_secs(3));
+                    *last = Some(now);
+                    force
+                };
+                if force {
+                    state.close_confirmed.store(true, Ordering::SeqCst);
+                    return;
+                }
+                api.prevent_close();
+                let _ = window.emit("app:close_requested", ());
             }
         })
         .build(tauri::generate_context!())?

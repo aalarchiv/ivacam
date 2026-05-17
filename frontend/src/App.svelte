@@ -119,11 +119,26 @@
     // onclick, but visible state stops updating. Surfacing these to the
     // console (and to project.error for severity) makes the failure mode
     // visible instead of "the whole UI just stopped working".
+    // The comment above warns about silent throws killing the reactivity
+    // scheduler. Surface them via the error toast as well as the console
+    // so users without devtools still see something went wrong instead
+    // of "the dialog stopped responding". Previously the console-only
+    // logging hid scheduler-killing bugs from non-developer users.
     window.addEventListener('error', (ev) => {
+      const msg = ev.error?.stack ?? ev.error?.message ?? ev.message ?? 'unknown error';
       console.error('uncaught error:', ev.error ?? ev.message);
+      project.setError(`UI error: ${String(msg).slice(0, 240)}`);
     });
     window.addEventListener('unhandledrejection', (ev) => {
-      console.error('unhandled promise rejection:', ev.reason);
+      const reason = ev.reason;
+      const msg =
+        reason instanceof Error
+          ? (reason.stack ?? reason.message)
+          : typeof reason === 'string'
+            ? reason
+            : JSON.stringify(reason);
+      console.error('unhandled promise rejection:', reason);
+      project.setError(`async error: ${String(msg).slice(0, 240)}`);
     });
 
     void wireSourceWatch();

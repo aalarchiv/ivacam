@@ -37,23 +37,50 @@
   // before silently discarding edits (audit-dh1n).
   let pristine = $state<string>('');
 
+  /// Build the dirty-check fingerprint. Wrapped in try/catch because a
+  /// throw inside `$derived.by` (which calls this) would propagate into
+  /// the Svelte 5 reactivity scheduler and abort it — and a dead
+  /// scheduler manifests exactly as "every button still fires its
+  /// onclick, but visible state stops updating" (see App.svelte:117).
+  /// On error, return an empty string — the comparison against
+  /// `pristine` then degrades to "assume clean", which is the safer
+  /// default than "assume dirty" (the dialog would refuse to close on
+  /// every attempt).
   function snapshotKey(): string {
-    return JSON.stringify({
-      draft,
-      jerk: jerkEnabled ? jerkDraft : null,
-    });
+    try {
+      return JSON.stringify({
+        draft,
+        jerk: jerkEnabled ? jerkDraft : null,
+      });
+    } catch (e) {
+      console.error('MachineDialog.snapshotKey: serialize failed', e);
+      return '';
+    }
   }
 
   $effect(() => {
     if (open) {
-      draft = cloneSettings(project.machine);
-      jerkEnabled = !!project.machine.jerk;
-      jerkDraft = project.machine.jerk ? { ...project.machine.jerk } : { x: 100, y: 100, z: 50 };
-      pristine = snapshotKey();
+      try {
+        draft = cloneSettings(project.machine);
+        jerkEnabled = !!project.machine.jerk;
+        jerkDraft = project.machine.jerk
+          ? { ...project.machine.jerk }
+          : { x: 100, y: 100, z: 50 };
+        pristine = snapshotKey();
+      } catch (e) {
+        console.error('MachineDialog.open: init failed', e);
+      }
     }
   });
 
-  let isDirty = $derived.by(() => open && snapshotKey() !== pristine);
+  let isDirty = $derived.by(() => {
+    try {
+      return open && snapshotKey() !== pristine;
+    } catch (e) {
+      console.error('MachineDialog.isDirty: derive failed', e);
+      return false;
+    }
+  });
 
   function cloneSettings(m: MachineSettings): MachineSettings {
     return {
@@ -183,12 +210,6 @@
   function cancelDiscard() {
     confirmingDiscard = false;
   }
-
-  // Clear the discard-prompt state on (re)open so a previous-session
-  // pending prompt doesn't survive a close/reopen.
-  $effect(() => {
-    if (open) confirmingDiscard = false;
-  });
 </script>
 
 {#if open}

@@ -9,9 +9,13 @@
 mod commands;
 mod watcher;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+
+/// Force-close window: a second `CloseRequested` within this many
+/// milliseconds bypasses the in-app confirmation. Lets the user
+/// escape a frontend whose reactivity scheduler is stuck.
+const FORCE_CLOSE_WINDOW_MS: u64 = 3_000;
 
 use tauri::{Emitter, Manager};
 
@@ -133,7 +137,7 @@ fn run() -> tauri::Result<()> {
             app.manage(AppState {
                 watcher: Mutex::new(ProjectWatcher::new(handle.clone())),
                 close_confirmed: AtomicBool::new(false),
-                last_close_attempt: Mutex::new(None),
+                last_close_attempt_ms: AtomicU64::new(0),
             });
             // No native window menu — the Svelte UI owns the menubar so the
             // user sees one consistent set of File / Edit / View / Tools /
@@ -196,15 +200,19 @@ fn run() -> tauri::Result<()> {
                 if state.close_confirmed.load(Ordering::SeqCst) {
                     return;
                 }
-                let now = Instant::now();
-                let force = {
-                    let mut last = state.last_close_attempt.lock().unwrap();
-                    let force =
-                        last.is_some_and(|t| now.duration_since(t) <= Duration::from_secs(3));
-                    *last = Some(now);
-                    force
-                };
-                if force {
+                // `now_ms` is non-zero after the first close attempt
+                // because process_start() is captured at app launch.
+                // `0` is the sentinel for "no previous attempt".
+                let now_ms = u64::try_from(
+                    commands::process_start().elapsed().as_millis(),
+                )
+                .unwrap_or(u64::MAX);
+                let prev_ms = state
+                    .last_close_attempt_ms
+                    .swap(now_ms, Ordering::SeqCst);
+                let within_window =
+                    prev_ms != 0 && now_ms.saturating_sub(prev_ms) <= FORCE_CLOSE_WINDOW_MS;
+                if within_window {
                     state.close_confirmed.store(true, Ordering::SeqCst);
                     return;
                 }

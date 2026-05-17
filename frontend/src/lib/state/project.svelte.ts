@@ -22,6 +22,7 @@ import {
   type PipelinePhase,
   type PipelineProgress,
 } from './generated.svelte';
+import { SelectionState, type SelectionMode } from './selection.svelte';
 // Bring the union types into scope locally; project-types and op_types
 // re-export them through this module for back-compat callers.
 import type { OpEntry, OpKind, OpPatch } from './op_types';
@@ -329,19 +330,38 @@ class ProjectState {
     this.gen.lastGenerateOpCount = v;
   }
 
-  /// Per-segment hover indicator (single segment, not the chain).
-  hoverSegment = $state<number | null>(null);
-  /// Object-level selection. Each id is a 1-based chain id from
-  /// imported.objects (0 = unchained segment). Used by the operations
-  /// list when the user clicks "Set source from selection".
-  selectedObjects = $state<Set<number>>(new Set());
-  /// Anchor for Shift+click series-select — the last object the user
-  /// clicked on directly (plain click or Ctrl+click that added it).
-  /// Cleared when the selection is fully cleared.
-  selectionAnchorObjectId = $state<number | null>(null);
-  /// Legacy entity-level selection (per-segment); kept for the project
-  /// file but no longer drives the UI.
-  selectedEntities = $state<Set<number>>(new Set());
+  /// UI-selection slice (audit 6cpl). Holds hoverSegment, the
+  /// selectedObjects / anchor / entities sets, plus the selectedOpId /
+  /// selectedFixtureId / selectedTextLayerId / toolsDialogFocusId
+  /// pointers. The proxy accessors below forward
+  /// `project.selectedObjects` / `project.selectedOpId` etc. to
+  /// `this.sel.…` so existing call sites stay unchanged.
+  sel = new SelectionState();
+
+  get hoverSegment(): number | null {
+    return this.sel.hoverSegment;
+  }
+  set hoverSegment(v: number | null) {
+    this.sel.hoverSegment = v;
+  }
+  get selectedObjects(): Set<number> {
+    return this.sel.selectedObjects;
+  }
+  set selectedObjects(v: Set<number>) {
+    this.sel.selectedObjects = v;
+  }
+  get selectionAnchorObjectId(): number | null {
+    return this.sel.selectionAnchorObjectId;
+  }
+  set selectionAnchorObjectId(v: number | null) {
+    this.sel.selectionAnchorObjectId = v;
+  }
+  get selectedEntities(): Set<number> {
+    return this.sel.selectedEntities;
+  }
+  set selectedEntities(v: Set<number>) {
+    this.sel.selectedEntities = v;
+  }
 
   /// Toolpath scrub position in [0, 1]. Read by Scene3D for the tool-tip
   /// indicator and by PlaybackBar for the slider. Interpreted as a
@@ -378,9 +398,12 @@ class ProjectState {
   /// Project fixtures (clamps, dogs, vise jaws). Threaded into the
   /// sim's collision check so the cutter can't run them over.
   fixtures = $state<Fixture[]>([]);
-  /// 2D / 3D selection of the currently-edited fixture (id). Drives
-  /// the highlight + the sidebar's edit form.
-  selectedFixtureId = $state<number | null>(null);
+  get selectedFixtureId(): number | null {
+    return this.sel.selectedFixtureId;
+  }
+  set selectedFixtureId(v: number | null) {
+    this.sel.selectedFixtureId = v;
+  }
 
   /// Stock visualization in the 3D view. `auto` (default) derives the
   /// rectangular extent from the imported bbox plus a small margin and
@@ -436,8 +459,12 @@ class ProjectState {
   /// order. Disabling = excluding from the final program without
   /// losing config.
   operations = $state<OpEntry[]>([]);
-  /// id of the currently-selected op (drives OpPropertiesPanel).
-  selectedOpId = $state<number | null>(null);
+  get selectedOpId(): number | null {
+    return this.sel.selectedOpId;
+  }
+  set selectedOpId(v: number | null) {
+    this.sel.selectedOpId = v;
+  }
 
   /// Persistent text entities — phase 1 of the text-engraving rework.
   /// Each entry holds the editable inputs (text content, font, size,
@@ -446,10 +473,12 @@ class ProjectState {
   /// editing a TextLayer field re-runs the renderer, and a future
   /// `text_engrave` op references one by id.
   textLayers = $state<TextLayer[]>([]);
-  /// id of the currently-selected text layer (drives the sidebar Text
-  /// panel's expanded edit form). Mutually exclusive with selectedOpId
-  /// at the UX level — selecting one collapses the other's form.
-  selectedTextLayerId = $state<number | null>(null);
+  get selectedTextLayerId(): number | null {
+    return this.sel.selectedTextLayerId;
+  }
+  set selectedTextLayerId(v: number | null) {
+    this.sel.selectedTextLayerId = v;
+  }
   /// True when the in-memory project differs from the gcode currently
   /// shown in `generated`. Set by op edits/reorders/enable toggles;
   /// cleared by setGenerated. The status badge in the ops list reads
@@ -510,11 +539,12 @@ class ProjectState {
   /// from this and clears it on Reload / Ignore. Auto-reloads bypass it.
   sourceFileStaleNotice = $state<{ path: string; auto_reload: boolean } | null>(null);
 
-  /// Drives the Tool library dialog. When non-null, App.svelte opens the
-  /// dialog and the dialog scrolls/highlights the row whose id matches.
-  /// Set via the "edit this tool" link in OpPropertiesPanel; cleared by
-  /// the dialog on close. Per-session view state, not undoable.
-  toolsDialogFocusId = $state<number | null>(null);
+  get toolsDialogFocusId(): number | null {
+    return this.sel.toolsDialogFocusId;
+  }
+  set toolsDialogFocusId(v: number | null) {
+    this.sel.toolsDialogFocusId = v;
+  }
 
   constructor() {
     this.history.subscribe(() => {
@@ -683,7 +713,7 @@ class ProjectState {
   }
 
   selectFixture(id: number | null) {
-    this.selectedFixtureId = id;
+    this.sel.selectFixture(id);
   }
 
   /// Merge an additional imported file into the current project. Unlike
@@ -847,47 +877,14 @@ class ProjectState {
   }
 
   toggleObject(id: number, additive = false) {
-    if (id <= 0) return;
-    const next = additive ? new Set(this.selectedObjects) : new Set<number>();
-    if (additive && next.has(id)) next.delete(id);
-    else next.add(id);
-    this.selectedObjects = next;
+    this.sel.toggleObject(id, additive);
   }
+
   /// Bulk selection update — used by box-select and any other path
   /// that needs to commit a set of object ids with FreeCAD-style
-  /// modifier semantics in one go.
-  ///   * 'replace' — drop the current selection and use `ids`
-  ///   * 'add'     — union into the current selection (Shift+...)
-  ///   * 'toggle'  — flip each id (Ctrl+... / Cmd+...)
-  selectObjects(ids: Iterable<number>, mode: 'replace' | 'add' | 'toggle') {
-    const incoming = [...ids].filter((id) => id > 0);
-    if (mode === 'replace') {
-      this.selectedObjects = new Set(incoming);
-      // Anchor for series-select tracks the canonical last clicked id —
-      // a single-id replace counts as a fresh anchor; a bulk replace
-      // (box-select) leaves the anchor undefined so a follow-up Shift+
-      // click doesn't draw a line from a hard-to-predict centroid.
-      this.selectionAnchorObjectId = incoming.length === 1 ? incoming[0] : null;
-      return;
-    }
-    const next = new Set(this.selectedObjects);
-    if (mode === 'add') {
-      for (const id of incoming) next.add(id);
-      if (incoming.length === 1) this.selectionAnchorObjectId = incoming[0];
-    } else {
-      // toggle
-      for (const id of incoming) {
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-      }
-      // Only update the anchor when the toggle ADDED the id (so a
-      // re-click that deselects doesn't move the series-select anchor
-      // to the now-removed object).
-      if (incoming.length === 1 && next.has(incoming[0])) {
-        this.selectionAnchorObjectId = incoming[0];
-      }
-    }
-    this.selectedObjects = next;
+  /// modifier semantics in one go. Delegates to `sel.selectObjects`.
+  selectObjects(ids: Iterable<number>, mode: SelectionMode) {
+    this.sel.selectObjects(ids, mode);
   }
   /// Series-select: extend the selection from the current anchor object
   /// to `targetId`, picking every visible object whose bbox is crossed
@@ -925,8 +922,7 @@ class ProjectState {
     this.selectionAnchorObjectId = targetId;
   }
   clearSelection() {
-    this.selectedObjects = new Set();
-    this.selectionAnchorObjectId = null;
+    this.sel.clearSelection();
   }
 
   setGenerated(r: GenerateResponse) {

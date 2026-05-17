@@ -156,9 +156,7 @@ mod tests {
     use crate::geometry::{Point2, Segment};
     use crate::pipeline::test_helpers::{closed_square_offset, endmill};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
-    use crate::project::{
-        Op, OpKind, OpParams, OpSource, Project, ToolEntry, ToolKind,
-    };
+    use crate::project::{Op, OpKind, OpParams, OpSource, Project, ToolEntry, ToolKind};
 
     /// Wirbeln (rt1.25): a Pocket op with a Wirbeln-flagged tool
     /// emits MORE cascade rings than the same op without Wirbeln,

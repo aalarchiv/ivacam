@@ -203,13 +203,9 @@ fn run() -> tauri::Result<()> {
                 // `now_ms` is non-zero after the first close attempt
                 // because process_start() is captured at app launch.
                 // `0` is the sentinel for "no previous attempt".
-                let now_ms = u64::try_from(
-                    commands::process_start().elapsed().as_millis(),
-                )
-                .unwrap_or(u64::MAX);
-                let prev_ms = state
-                    .last_close_attempt_ms
-                    .swap(now_ms, Ordering::SeqCst);
+                let now_ms = u64::try_from(commands::process_start().elapsed().as_millis())
+                    .unwrap_or(u64::MAX);
+                let prev_ms = state.last_close_attempt_ms.swap(now_ms, Ordering::SeqCst);
                 let within_window =
                     prev_ms != 0 && now_ms.saturating_sub(prev_ms) <= FORCE_CLOSE_WINDOW_MS;
                 if within_window {

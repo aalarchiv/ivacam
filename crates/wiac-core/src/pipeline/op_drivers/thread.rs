@@ -9,9 +9,7 @@ use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::gcode::{emit_vcarve_block, PostProcessor};
 use crate::geometry::{Point2, SegmentKind};
-use crate::pipeline::{
-    cancelled, op_includes_object, CancelToken, PipelineError, PipelineWarning,
-};
+use crate::pipeline::{cancelled, op_includes_object, CancelToken, PipelineError, PipelineWarning};
 use crate::project::{Op, OpKind, Project};
 
 // Thread driver runs the per-circle helix walker; rather than threading

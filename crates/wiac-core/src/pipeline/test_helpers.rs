@@ -166,7 +166,11 @@ pub(in crate::pipeline) fn profile_op_with_pattern(pattern: PatternConfig) -> Op
     op
 }
 
-pub(in crate::pipeline) fn profile_leads_op(offset: ToolOffset, kind_in: LeadKind, len_in: f64) -> Op {
+pub(in crate::pipeline) fn profile_leads_op(
+    offset: ToolOffset,
+    kind_in: LeadKind,
+    len_in: f64,
+) -> Op {
     let mut params = OpParams::mill_default();
     params.depth = -1.0;
     params.step = Some(-1.0);
@@ -289,20 +293,12 @@ pub(in crate::pipeline) fn first_lead_phase(
                 }
             }
             1 => {
-                if l.starts_with("G1 ")
-                    && l.contains('Z')
-                    && !l.contains('X')
-                    && !l.contains('Y')
-                {
+                if l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y') {
                     state = 2;
                 }
             }
             2 => {
-                if l.starts_with("G1 ")
-                    && l.contains('Z')
-                    && !l.contains('X')
-                    && !l.contains('Y')
-                {
+                if l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y') {
                     state = 3;
                     continue;
                 }

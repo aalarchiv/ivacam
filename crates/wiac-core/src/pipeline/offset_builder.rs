@@ -1197,7 +1197,11 @@ mod tests {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
             tools: vec![endmill(1, 3.0)],
-            operations: vec![profile_leads_op(ToolOffset::Outside, LeadKind::Straight, 2.0)],
+            operations: vec![profile_leads_op(
+                ToolOffset::Outside,
+                LeadKind::Straight,
+                2.0,
+            )],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
         };
@@ -1370,9 +1374,9 @@ mod tests {
     /// should both produce the same outward / inward offset.
     #[test]
     fn profile_offset_works_for_cw_and_ccw_input() {
+        use crate::gcode::preview::MoveKind;
         use crate::geometry::Segment;
         use crate::pipeline::test_helpers::{closed_square_offset, endmill, profile_op};
-        use crate::gcode::preview::MoveKind;
         let ccw_segments = closed_square_offset(100.0, 0.0, 0.0);
         let cw_segments: Vec<Segment> = ccw_segments
             .iter()
@@ -1427,9 +1431,9 @@ mod tests {
     /// radius `circle_r + tool_r` around the centre.
     #[test]
     fn profile_outside_selecting_inner_circle_offsets_outward() {
+        use crate::gcode::preview::MoveKind;
         use crate::geometry::Point2;
         use crate::pipeline::test_helpers::{closed_circle, closed_square_offset, endmill};
-        use crate::gcode::preview::MoveKind;
         let outer = closed_square_offset(100.0, 0.0, 0.0);
         let inner = closed_circle(Point2::new(50.0, 50.0), 10.0);
         let segments: Vec<_> = outer.into_iter().chain(inner).collect();
@@ -1582,9 +1586,9 @@ mod tests {
     /// nothing — but never silently cut on the source line.
     #[test]
     fn profile_offset_open_polyline_either_offsets_or_emits_nothing_never_on_line() {
+        use crate::gcode::preview::MoveKind;
         use crate::geometry::{Point2, Segment};
         use crate::pipeline::test_helpers::{endmill, profile_op};
-        use crate::gcode::preview::MoveKind;
         let segments = vec![
             Segment::line(Point2::new(0.0, 0.0), Point2::new(50.0, 30.0), "0", 7),
             Segment::line(Point2::new(50.0, 30.0), Point2::new(100.0, 0.0), "0", 7),
@@ -1627,8 +1631,8 @@ mod tests {
     /// extents — sanity check that the offset is applied at all.
     #[test]
     fn profile_offset_actually_offsets_outside_inside_on() {
-        use crate::pipeline::test_helpers::{closed_square_offset, endmill, profile_op};
         use crate::gcode::preview::MoveKind;
+        use crate::pipeline::test_helpers::{closed_square_offset, endmill, profile_op};
         let segments = closed_square_offset(100.0, 0.0, 0.0);
         let mk = |offset: ToolOffset| Project {
             segments: segments.clone(),
@@ -1694,7 +1698,6 @@ mod tests {
     use crate::pipeline::test_helpers::pocket_op;
     use crate::pipeline::PipelineResponse;
     use crate::project::{Coolant, SourceCombine, ToolEntry, ToolKind};
-
 
     /// Selecting an outer ring + inner ring as the source for a pocket op
     /// produces ONE annulus pocket (outer minus inner), not one pocket per
@@ -2622,7 +2625,6 @@ mod tests {
 
     // ─── Drill ops ─────────────────────────────────────────────────────
     // Moved to pipeline/op_drivers/drill.rs (vk77 phase 2).
-
 
     /// Per-op feedrate overrides win over the tool's defaults.
     #[test]

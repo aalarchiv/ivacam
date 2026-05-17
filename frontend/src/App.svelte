@@ -287,18 +287,15 @@
     unlistenSourceWatch = await wireDesktopSourceWatch();
   }
 
-  /// qjec: desktop close interception. On every CloseRequested the
-  /// shell pings us. If nothing's dirty we accept immediately so the
-  /// quit feels instant; if there's unsaved work we arm `closePrompt`
-  /// and wait for the user to pick Discard or Cancel.
+  /// qjec: desktop close interception. Always confirm — accidental
+  /// closes lose work even on a "clean" project (camera, panel sizes,
+  /// in-progress text not yet committed via Add). The double-click
+  /// escape hatch in the Tauri backend covers the case where the user
+  /// really wants out fast.
   let unlistenCloseRequested: (() => void) | null = null;
   async function wireCloseConfirm() {
     unlistenCloseRequested = await wireCloseRequested(() => {
-      if (project.dirty) {
-        closePrompt = true;
-      } else {
-        void confirmClose();
-      }
+      closePrompt = true;
     });
   }
 
@@ -929,10 +926,14 @@
     >
       <div class="close-prompt-card">
         <h2 id="close-prompt-title">Quit wiaConstructor?</h2>
-        <p>You have unsaved changes. They will be lost if you quit now.</p>
+        {#if project.dirty}
+          <p>You have unsaved changes. They will be lost if you quit now.</p>
+        {:else}
+          <p>Are you sure you want to quit?</p>
+        {/if}
         <div class="close-prompt-actions">
           <button class="secondary" onclick={() => (closePrompt = false)}>
-            Keep editing
+            {project.dirty ? 'Keep editing' : 'Cancel'}
           </button>
           <button
             class="danger"
@@ -941,7 +942,7 @@
               void confirmClose();
             }}
           >
-            Discard &amp; quit
+            {project.dirty ? 'Discard & quit' : 'Quit'}
           </button>
         </div>
       </div>

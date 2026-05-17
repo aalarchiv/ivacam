@@ -1363,4 +1363,326 @@ mod tests {
         assert!(!resp.gcode.contains("Z-1\n") && !resp.gcode.contains("Z-1 "));
         assert!(!resp.gcode.contains("Z-2\n") && !resp.gcode.contains("Z-2 "));
     }
+
+    // ─── Profile offsets ───────────────────────────────────────────────
+
+    /// Profile offset honors the polygon's winding: CCW and CW input
+    /// should both produce the same outward / inward offset.
+    #[test]
+    fn profile_offset_works_for_cw_and_ccw_input() {
+        use crate::geometry::Segment;
+        use crate::pipeline::test_helpers::{closed_square_offset, endmill, profile_op};
+        use crate::gcode::preview::MoveKind;
+        let ccw_segments = closed_square_offset(100.0, 0.0, 0.0);
+        let cw_segments: Vec<Segment> = ccw_segments
+            .iter()
+            .rev()
+            .map(|s| Segment::line(s.end, s.start, &s.layer, s.color))
+            .collect();
+        for (winding_label, segments) in &[("CCW", &ccw_segments), ("CW", &cw_segments)] {
+            let mk = |offset: ToolOffset| Project {
+                segments: (*segments).clone(),
+                machine: MachineConfig::default(),
+                tools: vec![endmill(1, 3.0)],
+                operations: vec![profile_op(1, 1, offset)],
+                fixtures: Vec::default(),
+                text_layers: Vec::default(),
+            };
+            let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
+                toolpath
+                    .iter()
+                    .filter(|s| matches!(s.kind, MoveKind::Cut))
+                    .flat_map(|s| [s.from.x, s.to.x])
+                    .fold(f64::NEG_INFINITY, f64::max)
+            };
+            let cases: [(&str, ToolOffset); 3] = [
+                ("On", ToolOffset::On),
+                ("Outside", ToolOffset::Outside),
+                ("Inside", ToolOffset::Inside),
+            ];
+            for (offset_label, offset) in cases {
+                let resp = run_pipeline(
+                    PipelineRequest {
+                        project: mk(offset),
+                        post_processor: None,
+                    },
+                    |_, _, _| {},
+                )
+                .unwrap();
+                let max_x = cut_max_x(&resp.toolpath);
+                let ok = match offset {
+                    ToolOffset::On | ToolOffset::None => (max_x - 100.0).abs() < 0.1,
+                    ToolOffset::Outside => max_x > 100.5,
+                    ToolOffset::Inside => max_x < 99.5,
+                };
+                assert!(
+                    ok,
+                    "{winding_label} input + {offset_label} offset: cut max_x = {max_x} fails the expected position check"
+                );
+            }
+        }
+    }
+
+    /// Profile + Outside selecting an INNER circle: the cutter walks at
+    /// radius `circle_r + tool_r` around the centre.
+    #[test]
+    fn profile_outside_selecting_inner_circle_offsets_outward() {
+        use crate::geometry::Point2;
+        use crate::pipeline::test_helpers::{closed_circle, closed_square_offset, endmill};
+        use crate::gcode::preview::MoveKind;
+        let outer = closed_square_offset(100.0, 0.0, 0.0);
+        let inner = closed_circle(Point2::new(50.0, 50.0), 10.0);
+        let segments: Vec<_> = outer.into_iter().chain(inner).collect();
+        let project = Project {
+            segments,
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::Objects {
+                    ids: vec![2],
+                    combine: crate::project::SourceCombine::Auto,
+                },
+                params: OpParams::mill_default(),
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let max_x = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, MoveKind::Cut | MoveKind::Arc))
+            .flat_map(|s| [s.from.x, s.to.x])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            max_x > 61.0 && max_x < 62.0,
+            "Profile + Outside on inner circle: cut max_x={max_x}, expected ~61.5"
+        );
+    }
+
+    /// Wire-shape Profile op (matches build-project.ts's payload): the
+    /// outside offset must actually be applied end-to-end through
+    /// `serde_json::from_value`.
+    #[test]
+    fn profile_outside_with_source_objects_actually_offsets() {
+        use crate::gcode::preview::MoveKind;
+        let raw = serde_json::json!({
+            "project": {
+                "segments": [
+                    { "type": "LINE", "start": { "x": 0.0, "y": 0.0 }, "end": { "x": 100.0, "y": 0.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                    { "type": "LINE", "start": { "x": 100.0, "y": 0.0 }, "end": { "x": 100.0, "y": 100.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                    { "type": "LINE", "start": { "x": 100.0, "y": 100.0 }, "end": { "x": 0.0, "y": 100.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                    { "type": "LINE", "start": { "x": 0.0, "y": 100.0 }, "end": { "x": 0.0, "y": 0.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                ],
+                "machine": { "unit": "mm", "mode": "mill", "comments": true, "arcs": true, "supports_toolchange": false },
+                "tools": [{ "id": 1, "name": "3mm", "kind": "endmill", "diameter": 3.0, "flutes": 2, "speed": 18000, "plunge_rate": 100, "feed_rate": 800, "coolant": "off" }],
+                "operations": [{
+                    "id": 1, "name": "Profile", "enabled": true,
+                    "kind": { "type": "profile", "offset": "outside" },
+                    "tool_id": 1,
+                    "source": { "kind": "objects", "ids": [1] },
+                    "params": {
+                        "depth": -2.0, "start_depth": 0.0, "step": -1.0, "fast_move_z": 5.0,
+                        "helix": false, "reverse": false, "objectorder": "nearest", "overcut": false,
+                        "pocket_islands": true, "pocket_nocontour": false, "pocket_insideout": false,
+                        "tabs": { "active": false, "width": 10.0, "height": 1.0, "tab_type": "rectangle" },
+                        "leads": { "in": "off", "out": "off", "in_lenght": 5.0, "out_lenght": 5.0 }
+                    }
+                }],
+                "tabs": {}
+            }
+        });
+        let req: PipelineRequest = serde_json::from_value(raw).expect("wire JSON");
+        let resp = run_pipeline(req, |_, _, _| {}).unwrap();
+        let max_x = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, MoveKind::Cut))
+            .flat_map(|s| [s.from.x, s.to.x])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            max_x > 100.5,
+            "user-shape Profile + outside + source=objects: cut max_x={}, expected > 100.5\n\nFull gcode:\n{}",
+            max_x,
+            resp.gcode
+        );
+    }
+
+    /// End-to-end deserialization of a Profile op from the frontend's
+    /// `build-project.ts` JSON, then verify the offset is honored.
+    #[test]
+    fn profile_offset_via_wire_json_outside_actually_offsets() {
+        use crate::gcode::preview::MoveKind;
+        let raw = serde_json::json!({
+            "project": {
+                "segments": [
+                    { "type": "LINE", "start": { "x": 0.0, "y": 0.0 }, "end": { "x": 100.0, "y": 0.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                    { "type": "LINE", "start": { "x": 100.0, "y": 0.0 }, "end": { "x": 100.0, "y": 100.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                    { "type": "LINE", "start": { "x": 100.0, "y": 100.0 }, "end": { "x": 0.0, "y": 100.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                    { "type": "LINE", "start": { "x": 0.0, "y": 100.0 }, "end": { "x": 0.0, "y": 0.0 }, "bulge": 0.0, "layer": "0", "color": 7 },
+                ],
+                "machine": { "unit": "mm", "mode": "mill", "comments": true, "arcs": true, "supports_toolchange": false },
+                "tools": [{ "id": 1, "name": "3mm", "kind": "endmill", "diameter": 3.0, "flutes": 2, "speed": 18000, "plunge_rate": 100, "feed_rate": 800, "coolant": "off" }],
+                "operations": [{
+                    "id": 1, "name": "Profile", "enabled": true,
+                    "kind": { "type": "profile", "offset": "outside" },
+                    "tool_id": 1,
+                    "source": { "kind": "all" },
+                    "params": {
+                        "depth": -2.0, "start_depth": 0.0, "step": -1.0, "fast_move_z": 5.0,
+                        "helix": false, "reverse": false, "objectorder": "nearest", "overcut": false,
+                        "pocket_islands": false, "pocket_nocontour": false, "pocket_insideout": false,
+                        "tabs": { "active": false, "width": 10.0, "height": 1.0, "tab_type": "rectangle" },
+                        "leads": { "in": "off", "out": "off", "in_lenght": 5.0, "out_lenght": 5.0 }
+                    }
+                }],
+                "tabs": {}
+            }
+        });
+        let req: PipelineRequest = serde_json::from_value(raw).expect("wire JSON deserialization");
+        if let OpKind::Profile { offset } = req.project.operations[0].kind {
+            assert_eq!(
+                offset,
+                ToolOffset::Outside,
+                "wire 'outside' string didn't deserialize to ToolOffset::Outside"
+            );
+        } else {
+            panic!("not a profile op");
+        }
+        let resp = run_pipeline(req, |_, _, _| {}).unwrap();
+        let max_x = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, MoveKind::Cut))
+            .flat_map(|s| [s.from.x, s.to.x])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            max_x > 100.5,
+            "wire JSON Profile + outside: cut max_x={max_x}, expected > 100.5"
+        );
+    }
+
+    /// Open polyline: Profile offset should either offset OR emit
+    /// nothing — but never silently cut on the source line.
+    #[test]
+    fn profile_offset_open_polyline_either_offsets_or_emits_nothing_never_on_line() {
+        use crate::geometry::{Point2, Segment};
+        use crate::pipeline::test_helpers::{endmill, profile_op};
+        use crate::gcode::preview::MoveKind;
+        let segments = vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(50.0, 30.0), "0", 7),
+            Segment::line(Point2::new(50.0, 30.0), Point2::new(100.0, 0.0), "0", 7),
+        ];
+        let mk = |offset: ToolOffset| Project {
+            segments: segments.clone(),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, offset)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        for offset in [ToolOffset::Outside, ToolOffset::Inside] {
+            let resp = run_pipeline(
+                PipelineRequest {
+                    project: mk(offset),
+                    post_processor: None,
+                },
+                |_, _, _| {},
+            )
+            .unwrap();
+            let cut: Vec<_> = resp
+                .toolpath
+                .iter()
+                .filter(|s| matches!(s.kind, MoveKind::Cut))
+                .collect();
+            let on_apex = cut.iter().any(|s| {
+                let mid_x = (s.from.x + s.to.x) * 0.5;
+                let mid_y = (s.from.y + s.to.y) * 0.5;
+                (mid_x - 50.0).abs() < 5.0 && (mid_y - 30.0).abs() < 0.2
+            });
+            assert!(
+                !on_apex || cut.is_empty(),
+                "{offset:?} on open polyline: cut crosses the source apex (50, 30) — offset isn't being applied (on-line cut bug)"
+            );
+        }
+    }
+
+    /// Three offsets (On / Outside / Inside) produce distinct cut
+    /// extents — sanity check that the offset is applied at all.
+    #[test]
+    fn profile_offset_actually_offsets_outside_inside_on() {
+        use crate::pipeline::test_helpers::{closed_square_offset, endmill, profile_op};
+        use crate::gcode::preview::MoveKind;
+        let segments = closed_square_offset(100.0, 0.0, 0.0);
+        let mk = |offset: ToolOffset| Project {
+            segments: segments.clone(),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, offset)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
+            toolpath
+                .iter()
+                .filter(|s| matches!(s.kind, MoveKind::Cut))
+                .flat_map(|s| [s.from.x, s.to.x])
+                .fold(f64::NEG_INFINITY, f64::max)
+        };
+        let on = run_pipeline(
+            PipelineRequest {
+                project: mk(ToolOffset::On),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let outside = run_pipeline(
+            PipelineRequest {
+                project: mk(ToolOffset::Outside),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let inside = run_pipeline(
+            PipelineRequest {
+                project: mk(ToolOffset::Inside),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let on_x = cut_max_x(&on.toolpath);
+        let outside_x = cut_max_x(&outside.toolpath);
+        let inside_x = cut_max_x(&inside.toolpath);
+        assert!(
+            (on_x - 100.0).abs() < 0.1,
+            "On offset should cut at exactly the boundary (max_x≈100), got {on_x}"
+        );
+        assert!(
+            outside_x > 100.5,
+            "Outside offset should push cut past the boundary (max_x>100.5), got {outside_x}"
+        );
+        assert!(
+            inside_x < 99.5,
+            "Inside offset should pull cut inside the boundary (max_x<99.5), got {inside_x}"
+        );
+    }
 }

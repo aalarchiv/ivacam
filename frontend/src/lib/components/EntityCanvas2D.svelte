@@ -21,6 +21,7 @@
     queryHit,
     type HitIndex,
   } from '../canvas/spatial-index';
+  import { fixtureAt } from '../canvas/fixture-hit';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import {
     previewSegmentsFor,
@@ -841,30 +842,16 @@
   /// Returns the id of the fixture under the cursor, or null. Hit-test
   /// runs in data coordinates: a click is "inside" a Box / Cylinder if
   /// the point is inside their AABB / disc, and inside a Polygon by
-  /// even-odd ray-cast.
+  /// Hit-test fixtures in canvas pixel space. Pure shape-inclusion
+  /// logic delegated to `lib/canvas/fixture-hit.ts` (audit y0ez);
+  /// the component just converts canvas-pixel to data-space and
+  /// passes the current fixture list.
   function fixtureHit(canvasX: number, canvasY: number): number | null {
     if (!lastTransform) return null;
     const { scale, offX, offY } = lastTransform;
     const dataX = (canvasX - offX) / scale;
     const dataY = (offY - canvasY) / scale;
-    for (const f of project.fixtures) {
-      const [ox, oy] = f.origin;
-      if (f.kind.shape === 'box') {
-        const hw = f.kind.width / 2;
-        const hd = f.kind.depth / 2;
-        if (Math.abs(dataX - ox) <= hw && Math.abs(dataY - oy) <= hd) return f.id;
-      } else if (f.kind.shape === 'cylinder') {
-        const dx = dataX - ox;
-        const dy = dataY - oy;
-        if (dx * dx + dy * dy <= f.kind.radius * f.kind.radius) return f.id;
-      } else if (f.kind.shape === 'polygon') {
-        // Translate point into local frame then even-odd test.
-        const lx = dataX - ox;
-        const ly = dataY - oy;
-        if (pointInPolygon(f.kind.vertices, lx, ly)) return f.id;
-      }
-    }
-    return null;
+    return fixtureAt(project.fixtures, dataX, dataY);
   }
 
   function closestPointOnSegment(

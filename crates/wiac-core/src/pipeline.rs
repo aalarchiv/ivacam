@@ -2795,32 +2795,6 @@ mod tests {
         assert!(!resp.gcode.lines().any(|l| l.trim() == "F800"));
     }
 
-    /// `resolve_tool_rates`: unset finish/drill variants fall back to the
-    /// general triplet (rt1.27).
-    #[test]
-    fn resolve_tool_rates_falls_back_when_unset() {
-        use crate::project::{resolve_tool_rates, PassKind};
-        let t = endmill(1, 3.0);
-        assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
-        assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (18_000, 100, 800));
-        assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (18_000, 100, 800));
-    }
-
-    /// `resolve_tool_rates`: each variant honors its own override when set.
-    #[test]
-    fn resolve_tool_rates_honors_per_pass_overrides() {
-        use crate::project::{resolve_tool_rates, PassKind};
-        let mut t = endmill(1, 3.0);
-        t.speed_finish = Some(12_000);
-        t.feed_rate_finish = Some(400);
-        t.speed_drill = Some(8_000);
-        t.feed_rate_drill = Some(200);
-        t.plunge_rate_drill = Some(50);
-        assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
-        assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (12_000, 100, 400));
-        assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (8_000, 50, 200));
-    }
-
     /// Pocket op with a slower finish feed: the gcode must contain the
     /// finish feedrate before the wall-defining (level=0) ring is cut
     /// (rt1.27).
@@ -4845,63 +4819,6 @@ mod tests {
     }
 
     #[test]
-    fn effective_step_op_override_wins() {
-        let mut tool = endmill(1, 3.0);
-        tool.default_step = Some(-0.5);
-        let mut op = profile_op(1, 1, ToolOffset::Outside);
-        op.params.step = Some(-0.3);
-        assert_eq!(effective_step(&op, &tool).unwrap(), -0.3);
-    }
-
-    #[test]
-    fn effective_step_falls_back_to_tool_default() {
-        let mut tool = endmill(1, 3.0);
-        tool.default_step = Some(-0.5);
-        let mut op = profile_op(1, 1, ToolOffset::Outside);
-        op.params.step = None;
-        assert_eq!(effective_step(&op, &tool).unwrap(), -0.5);
-    }
-
-    #[test]
-    fn effective_step_warns_when_both_unset() {
-        let tool = endmill(1, 3.0);
-        let mut op = profile_op(7, 1, ToolOffset::Outside);
-        op.params.step = None;
-        let w = effective_step(&op, &tool).unwrap_err();
-        assert_eq!(w.kind, "step_unspecified");
-        assert_eq!(w.op_id, Some(7));
-    }
-
-    #[test]
-    fn effective_step_rejects_non_negative() {
-        let mut tool = endmill(1, 3.0);
-        tool.default_step = Some(0.5);
-        let mut op = profile_op(1, 1, ToolOffset::Outside);
-        op.params.step = Some(0.0);
-        assert!(effective_step(&op, &tool).is_err());
-    }
-
-    #[test]
-    fn run_pipeline_emits_step_unspecified_warning() {
-        let tool = endmill(1, 3.0);
-        let mut op = profile_op(1, 1, ToolOffset::Outside);
-        op.params.step = None;
-        let resp = run_pipeline(
-            PipelineRequest {
-                project: project_with(vec![op], vec![tool]),
-                post_processor: Some(PostProcessorKind::Linuxcnc),
-            },
-            |_, _, _| {},
-        )
-        .unwrap();
-        assert!(
-            resp.warnings.iter().any(|w| w.kind == "step_unspecified"),
-            "expected step_unspecified warning, got {:?}",
-            resp.warnings
-        );
-    }
-
-    #[test]
     fn op_step_and_tool_default_step_emit_identical_gcode() {
         let mut tool_a = endmill(1, 3.0);
         tool_a.default_step = None;
@@ -5294,59 +5211,4 @@ mod tests {
         assert!(err.to_structured(None).is_none());
     }
 
-    #[test]
-    fn compute_helix_radius_for_50x30_rect() {
-        let segments = vec![
-            Segment::line(Point2::new(0.0, 0.0), Point2::new(50.0, 0.0), "0", 7),
-            Segment::line(Point2::new(50.0, 0.0), Point2::new(50.0, 30.0), "0", 7),
-            Segment::line(Point2::new(50.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
-            Segment::line(Point2::new(0.0, 30.0), Point2::new(0.0, 0.0), "0", 7),
-        ];
-        let resp = crate::compute_helix_radius(crate::HelixRadiusRequest {
-            segments,
-            object_ids: Vec::new(),
-            tool_diameter_mm: 6.0,
-        });
-        let r = resp.radius_mm.expect("expected an inscribed-circle fit");
-        assert!(
-            (r - 11.5).abs() < 0.1,
-            "expected ~11.5 mm helix radius, got {r}",
-        );
-        assert!(resp.fallback_reason.is_none());
-    }
-
-    #[test]
-    fn compute_helix_radius_for_tiny_pocket() {
-        let segments = vec![
-            Segment::line(Point2::new(0.0, 0.0), Point2::new(5.0, 0.0), "0", 7),
-            Segment::line(Point2::new(5.0, 0.0), Point2::new(5.0, 5.0), "0", 7),
-            Segment::line(Point2::new(5.0, 5.0), Point2::new(0.0, 5.0), "0", 7),
-            Segment::line(Point2::new(0.0, 5.0), Point2::new(0.0, 0.0), "0", 7),
-        ];
-        let resp = crate::compute_helix_radius(crate::HelixRadiusRequest {
-            segments,
-            object_ids: Vec::new(),
-            tool_diameter_mm: 6.0,
-        });
-        assert!(resp.radius_mm.is_none());
-        let reason = resp.fallback_reason.expect("expected a fallback reason");
-        assert!(!reason.is_empty(), "fallback_reason should be non-empty");
-    }
-
-    #[test]
-    fn compute_helix_radius_open_polyline_returns_none() {
-        let segments = vec![
-            Segment::line(Point2::new(0.0, 0.0), Point2::new(50.0, 0.0), "0", 7),
-            Segment::line(Point2::new(50.0, 0.0), Point2::new(50.0, 30.0), "0", 7),
-            Segment::line(Point2::new(50.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
-        ];
-        let resp = crate::compute_helix_radius(crate::HelixRadiusRequest {
-            segments,
-            object_ids: Vec::new(),
-            tool_diameter_mm: 6.0,
-        });
-        assert!(resp.radius_mm.is_none());
-        let reason = resp.fallback_reason.expect("expected a fallback reason");
-        assert!(!reason.is_empty(), "fallback_reason should be non-empty");
-    }
 }

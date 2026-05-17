@@ -118,3 +118,65 @@ pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{compute_helix_radius, HelixRadiusRequest};
+    use crate::geometry::{Point2, Segment};
+
+    #[test]
+    fn compute_helix_radius_for_50x30_rect() {
+        let segments = vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(50.0, 0.0), "0", 7),
+            Segment::line(Point2::new(50.0, 0.0), Point2::new(50.0, 30.0), "0", 7),
+            Segment::line(Point2::new(50.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
+            Segment::line(Point2::new(0.0, 30.0), Point2::new(0.0, 0.0), "0", 7),
+        ];
+        let resp = compute_helix_radius(HelixRadiusRequest {
+            segments,
+            object_ids: Vec::new(),
+            tool_diameter_mm: 6.0,
+        });
+        let r = resp.radius_mm.expect("expected an inscribed-circle fit");
+        assert!(
+            (r - 11.5).abs() < 0.1,
+            "expected ~11.5 mm helix radius, got {r}",
+        );
+        assert!(resp.fallback_reason.is_none());
+    }
+
+    #[test]
+    fn compute_helix_radius_for_tiny_pocket() {
+        let segments = vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(5.0, 0.0), "0", 7),
+            Segment::line(Point2::new(5.0, 0.0), Point2::new(5.0, 5.0), "0", 7),
+            Segment::line(Point2::new(5.0, 5.0), Point2::new(0.0, 5.0), "0", 7),
+            Segment::line(Point2::new(0.0, 5.0), Point2::new(0.0, 0.0), "0", 7),
+        ];
+        let resp = compute_helix_radius(HelixRadiusRequest {
+            segments,
+            object_ids: Vec::new(),
+            tool_diameter_mm: 6.0,
+        });
+        assert!(resp.radius_mm.is_none());
+        let reason = resp.fallback_reason.expect("expected a fallback reason");
+        assert!(!reason.is_empty(), "fallback_reason should be non-empty");
+    }
+
+    #[test]
+    fn compute_helix_radius_open_polyline_returns_none() {
+        let segments = vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(50.0, 0.0), "0", 7),
+            Segment::line(Point2::new(50.0, 0.0), Point2::new(50.0, 30.0), "0", 7),
+            Segment::line(Point2::new(50.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
+        ];
+        let resp = compute_helix_radius(HelixRadiusRequest {
+            segments,
+            object_ids: Vec::new(),
+            tool_diameter_mm: 6.0,
+        });
+        assert!(resp.radius_mm.is_none());
+        let reason = resp.fallback_reason.expect("expected a fallback reason");
+        assert!(!reason.is_empty(), "fallback_reason should be non-empty");
+    }
+}

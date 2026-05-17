@@ -399,3 +399,94 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
     }
     setup
 }
+
+#[cfg(test)]
+#[allow(clippy::float_cmp)]
+mod tests {
+    use super::*;
+    use crate::cam::setup::ToolOffset;
+    use crate::pipeline::test_helpers::{endmill, profile_op, project_with};
+    use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{resolve_tool_rates, PassKind};
+
+    #[test]
+    fn effective_step_op_override_wins() {
+        let mut tool = endmill(1, 3.0);
+        tool.default_step = Some(-0.5);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-0.3);
+        assert_eq!(effective_step(&op, &tool).unwrap(), -0.3);
+    }
+
+    #[test]
+    fn effective_step_falls_back_to_tool_default() {
+        let mut tool = endmill(1, 3.0);
+        tool.default_step = Some(-0.5);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = None;
+        assert_eq!(effective_step(&op, &tool).unwrap(), -0.5);
+    }
+
+    #[test]
+    fn effective_step_warns_when_both_unset() {
+        let tool = endmill(1, 3.0);
+        let mut op = profile_op(7, 1, ToolOffset::Outside);
+        op.params.step = None;
+        let w = effective_step(&op, &tool).unwrap_err();
+        assert_eq!(w.kind, "step_unspecified");
+        assert_eq!(w.op_id, Some(7));
+    }
+
+    #[test]
+    fn effective_step_rejects_non_negative() {
+        let mut tool = endmill(1, 3.0);
+        tool.default_step = Some(0.5);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(0.0);
+        assert!(effective_step(&op, &tool).is_err());
+    }
+
+    #[test]
+    fn run_pipeline_emits_step_unspecified_warning() {
+        let tool = endmill(1, 3.0);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = None;
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: project_with(vec![op], vec![tool]),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "step_unspecified"),
+            "expected step_unspecified warning, got {:?}",
+            resp.warnings
+        );
+    }
+
+    /// `resolve_tool_rates`: unset finish/drill variants fall back to the
+    /// general triplet (rt1.27).
+    #[test]
+    fn resolve_tool_rates_falls_back_when_unset() {
+        let t = endmill(1, 3.0);
+        assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (18_000, 100, 800));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (18_000, 100, 800));
+    }
+
+    /// `resolve_tool_rates`: each variant honors its own override when set.
+    #[test]
+    fn resolve_tool_rates_honors_per_pass_overrides() {
+        let mut t = endmill(1, 3.0);
+        t.speed_finish = Some(12_000);
+        t.feed_rate_finish = Some(400);
+        t.speed_drill = Some(8_000);
+        t.feed_rate_drill = Some(200);
+        t.plunge_rate_drill = Some(50);
+        assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (12_000, 100, 400));
+        assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (8_000, 50, 200));
+    }
+}

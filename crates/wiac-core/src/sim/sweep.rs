@@ -18,11 +18,7 @@
 // Cell-grid sweep operates on tightly-grouped index pairs
 // (`ix0`/`iy0`/`ix1`/`iy1`, `from`/`to`) — renaming loses the
 // from/to/start/end mapping that mirrors the math.
-#![allow(
-    clippy::similar_names,
-)]
-
-
+#![allow(clippy::similar_names)]
 // Same f64 ↔ u32 grid plumbing as heightmap.rs, same intentional casts.
 #![allow(
     clippy::cast_possible_truncation,
@@ -189,8 +185,7 @@ pub(super) fn for_each_swept_cell<F>(
     let min_y = from.y.min(to.y) - r_tool;
     let max_y = from.y.max(to.y) + r_tool;
 
-    let Some((ix0, iy0, ix1, iy1)) = world_aabb_to_cells(layout, min_x, min_y, max_x, max_y)
-    else {
+    let Some((ix0, iy0, ix1, iy1)) = world_aabb_to_cells(layout, min_x, min_y, max_x, max_y) else {
         return;
     };
 
@@ -296,7 +291,9 @@ pub fn sweep_range_cancellable(
     let hi = to_idx.min(segments.len());
     let mut total = 0u32;
     for (offset, seg) in segments[lo..hi].iter().enumerate() {
-        if offset % 100 == 0 && cancel.is_some_and(super::super::pipeline::CancelToken::is_cancelled) {
+        if offset % 100 == 0
+            && cancel.is_some_and(super::super::pipeline::CancelToken::is_cancelled)
+        {
             return total;
         }
         total += sweep_segment(

@@ -13,9 +13,8 @@
 #![allow(
     clippy::similar_names,
     clippy::trivially_copy_pass_by_ref,
-    clippy::struct_excessive_bools,
+    clippy::struct_excessive_bools
 )]
-
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -338,7 +337,8 @@ pub struct AxisLimits {
 }
 
 impl AxisLimits {
-    #[must_use] pub const fn uniform(v: f64) -> Self {
+    #[must_use]
+    pub const fn uniform(v: f64) -> Self {
         Self { x: v, y: v, z: v }
     }
 }
@@ -426,7 +426,8 @@ pub struct MachineConfig {
 
 impl MachineConfig {
     /// Effective polyline→arc fit tolerance. Falls back to 0.01 mm.
-    #[must_use] pub fn effective_arc_tolerance(&self) -> f64 {
+    #[must_use]
+    pub fn effective_arc_tolerance(&self) -> f64 {
         self.arc_fit_tolerance_mm.unwrap_or(0.01).max(0.0)
     }
 }

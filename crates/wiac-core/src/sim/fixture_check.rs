@@ -22,11 +22,7 @@
 // Fixture intersection math uses `min_x`/`max_x`/`min_y`/`max_y` bbox-corner
 // names that are the textbook convention; cell-index casts are bounded by
 // heightmap dimensions.
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::similar_names,
-)]
-
+#![allow(clippy::cast_precision_loss, clippy::similar_names)]
 
 use crate::cam::is_inside_polygon;
 use crate::cam::lines_intersect;
@@ -97,8 +93,7 @@ fn nearest_point_on_segment_to(segment: &ToolpathSegment, px: f64, py: f64) -> (
     if len_sq < 1e-18 {
         return (segment.from.x, segment.from.y);
     }
-    let t =
-        (((px - segment.from.x) * dx + (py - segment.from.y) * dy) / len_sq).clamp(0.0, 1.0);
+    let t = (((px - segment.from.x) * dx + (py - segment.from.y) * dy) / len_sq).clamp(0.0, 1.0);
     (segment.from.x + t * dx, segment.from.y + t * dy)
 }
 
@@ -263,7 +258,9 @@ fn segment_to_segment_distance(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (
         Point2::new(b.0, b.1),
         Point2::new(c.0, c.1),
         Point2::new(d.0, d.1),
-    ).is_some() {
+    )
+    .is_some()
+    {
         return 0.0;
     }
     let d1 = point_to_segment_2d(c, a, b);

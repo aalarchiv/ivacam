@@ -49,9 +49,8 @@ use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::{
-    Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op, OpKind,
-    OpParams, OpSource, PatternConfig, PocketStrategy, SourceCombine, ToolEntry,
-    ToolKind,
+    Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op, OpKind, OpParams,
+    OpSource, PatternConfig, PocketStrategy, SourceCombine, ToolEntry, ToolKind,
 };
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
@@ -94,7 +93,8 @@ pub struct PipelineCache {
 }
 
 impl PipelineCache {
-    #[must_use] pub fn new(capacity: usize) -> Self {
+    #[must_use]
+    pub fn new(capacity: usize) -> Self {
         let cap = NonZeroUsize::new(capacity.max(1)).expect("non-zero capacity");
         Self {
             inner: Mutex::new(LruCache::new(cap)),
@@ -135,7 +135,8 @@ impl PipelineCache {
 /// inputs, so they must key separately. `tabs` carries the project's
 /// segment-keyed tab placements — changing tab positions changes the
 /// per-op output, so they must be part of the key.
-#[must_use] pub fn op_cache_key(
+#[must_use]
+pub fn op_cache_key(
     op: &Op,
     tool: &ToolEntry,
     machine: &MachineConfig,
@@ -160,7 +161,8 @@ impl PipelineCache {
 /// cache. Pass `finish_tool = None` for single-tool ops (legacy
 /// callers route through [`op_cache_key`]).
 #[allow(clippy::too_many_arguments)]
-#[must_use] pub fn op_cache_key_with_finish(
+#[must_use]
+pub fn op_cache_key_with_finish(
     op: &Op,
     tool: &ToolEntry,
     finish_tool: Option<&ToolEntry>,
@@ -765,9 +767,7 @@ fn hash_fixture<H: Hasher>(f: &Fixture, h: &mut H) {
 mod tests {
     use super::*;
     use crate::cam::setup::ToolOffset;
-    use crate::project::{
-        Op, OpKind, OpParams, OpSource, ToolEntry, ToolKind,
-    };
+    use crate::project::{Op, OpKind, OpParams, OpSource, ToolEntry, ToolKind};
 
     fn endmill() -> ToolEntry {
         ToolEntry {

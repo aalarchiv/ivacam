@@ -78,15 +78,18 @@ impl Error {
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::Internal, msg)
     }
-    #[must_use] pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
+    #[must_use]
+    pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.recovery_hint = Some(hint.into());
         self
     }
-    #[must_use] pub fn with_auto_fix(mut self, fix: AutoFix) -> Self {
+    #[must_use]
+    pub fn with_auto_fix(mut self, fix: AutoFix) -> Self {
         self.auto_fix = Some(fix);
         self
     }
-    #[must_use] pub fn with_span(mut self, span: SourceSpan) -> Self {
+    #[must_use]
+    pub fn with_span(mut self, span: SourceSpan) -> Self {
         self.span = Some(span);
         self
     }

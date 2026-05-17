@@ -4,11 +4,7 @@
 // LinuxCNC post emits `X`, `Y`, `Z`, `I`, `J`, `F`, `S` — the machine-control
 // short names map 1:1 to gcode-word letters. The ToolOffset match enumerates
 // every variant (G40/G41/G42) explicitly to mirror the gcode spec.
-#![allow(
-    clippy::many_single_char_names,
-    clippy::match_same_arms,
-)]
-
+#![allow(clippy::many_single_char_names, clippy::match_same_arms)]
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::post_profile::{template_lines, AxisFormat, PostProfile, TokenCtx};
@@ -26,7 +22,8 @@ pub struct Post {
 }
 
 impl Post {
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self::default()
     }
 

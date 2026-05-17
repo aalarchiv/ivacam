@@ -13,9 +13,8 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::similar_names,
+    clippy::similar_names
 )]
-
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;

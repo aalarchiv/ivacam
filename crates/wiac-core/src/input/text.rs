@@ -19,10 +19,7 @@
 // # CAM/sim pedantic-lint exemptions
 // Font sample counts and glyph-index casts are bounded by the font's
 // `units_per_em` (16-bit), so the f64 path is safe.
-#![allow(
-    clippy::cast_precision_loss,
-)]
-
+#![allow(clippy::cast_precision_loss)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -442,7 +439,8 @@ fn push_polyline_unclosed(pts: &[Point2], layer: &str, color: i32, out: &mut Vec
 /// 2. **Family-name marker.** Common engraving fonts mark themselves in
 ///    their `family_name` / `full_name` / `postscript_name`: "single-line",
 ///    "single line", "stick", "engrave", "hershey", "`OSIFont`", etc.
-#[must_use] pub fn is_single_line_font(face: &Face) -> bool {
+#[must_use]
+pub fn is_single_line_font(face: &Face) -> bool {
     const SAMPLE_CHARS: [char; 12] = ['A', 'V', 'X', 'Y', 'Z', 'M', 'N', 'K', 'i', 'l', 'j', '7'];
     if family_name_says_single_line(face) {
         return true;

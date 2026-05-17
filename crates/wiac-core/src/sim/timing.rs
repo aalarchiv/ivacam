@@ -23,10 +23,7 @@
 // # CAM/sim pedantic-lint exemptions
 // Test helpers use parallel `axes_x`/`axes_y`/`axes_z` names that enumerate
 // the three axes of an `AxisLimits` triple.
-#![allow(
-    clippy::similar_names,
-)]
-
+#![allow(clippy::similar_names)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -55,7 +52,8 @@ const DIR_EPS: f64 = 1e-6;
 /// `tool_changes` is the count of tool-changes M6 events (produces
 /// `n * machine.toolchange_s`); `spindle_warmup_s` is summed across all
 /// `tool.pause` per used tool.
-#[must_use] pub fn estimate_from_gcode(
+#[must_use]
+pub fn estimate_from_gcode(
     gcode: &str,
     segments: &[ToolpathSegment],
     machine: &MachineConfig,
@@ -69,7 +67,8 @@ const DIR_EPS: f64 = 1e-6;
 /// Core entry point: takes pre-resolved per-segment feedrates (mm/min)
 /// and produces a `TimeEstimate`. `tool_changes` and `spindle_warmup_s`
 /// are added on top of motion time.
-#[must_use] pub fn estimate(
+#[must_use]
+pub fn estimate(
     segments: &[ToolpathSegment],
     feeds_mm_min: &[f64],
     machine: &MachineConfig,

@@ -30,9 +30,7 @@ use crate::cam::setup::{Setup, ToolOffset};
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::{Point2, Segment};
-use crate::project::{
-    Op, OpKind, OpSource, PocketStrategy, Project, SourceCombine,
-};
+use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project, SourceCombine};
 
 use super::frame::synthesize_pocket_outside_objects;
 use super::patterns::{apply_pattern_to_point, apply_pattern_to_segments, pattern_offsets};

@@ -9,9 +9,8 @@
 #![allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
+    clippy::cast_sign_loss
 )]
-
 
 use crate::geometry::Point2;
 
@@ -22,7 +21,8 @@ pub const TWO_PI: f64 = std::f64::consts::TAU;
 ///
 /// Bulge convention (matches `AutoCAD` / ezdxf): `bulge = tan(included_angle/4)`.
 /// Positive bulge means counter-clockwise.
-#[must_use] pub fn bulge_to_arc(start: Point2, end: Point2, bulge: f64) -> (Point2, f64, f64, f64) {
+#[must_use]
+pub fn bulge_to_arc(start: Point2, end: Point2, bulge: f64) -> (Point2, f64, f64, f64) {
     if bulge.abs() < 1e-12 {
         // Degenerate: callers shouldn't pass a zero bulge, but be safe.
         let cx = (start.x + end.x) * 0.5;
@@ -55,7 +55,8 @@ pub const TWO_PI: f64 = std::f64::consts::TAU;
 
 /// Inverse of `bulge_to_arc`: from a center, two angles and radius, derive the
 /// arc's start/end points and the bulge between them.
-#[must_use] pub fn arc_to_bulge(
+#[must_use]
+pub fn arc_to_bulge(
     center: Point2,
     start_angle: f64,
     end_angle: f64,
@@ -81,14 +82,16 @@ pub const TWO_PI: f64 = std::f64::consts::TAU;
 }
 
 /// 2D cross product of vectors AB and AC. Positive => C is left of AB.
-#[must_use] pub fn cross_2d(a: Point2, b: Point2, c: Point2) -> f64 {
+#[must_use]
+pub fn cross_2d(a: Point2, b: Point2, c: Point2) -> f64 {
     (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
 }
 
 /// Tessellate an arc described by start/end/bulge into polyline points
 /// (inclusive of both endpoints), with each step at most `max_angle_rad`
 /// of sweep. Returns at least two points.
-#[must_use] pub fn tessellate_arc(start: Point2, end: Point2, bulge: f64, max_angle_rad: f64) -> Vec<Point2> {
+#[must_use]
+pub fn tessellate_arc(start: Point2, end: Point2, bulge: f64, max_angle_rad: f64) -> Vec<Point2> {
     if bulge.abs() < 1e-12 {
         return vec![start, end];
     }

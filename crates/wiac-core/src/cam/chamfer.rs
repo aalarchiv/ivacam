@@ -41,7 +41,8 @@
 /// `tip_angle_deg`. Result is clamped to ≤ 0 so a misconfigured
 /// pair (e.g. width 0) collapses to a no-op cut rather than an
 /// upward Z move.
-#[must_use] pub fn chamfer_depth(width_mm: f64, tip_angle_deg: f64) -> f64 {
+#[must_use]
+pub fn chamfer_depth(width_mm: f64, tip_angle_deg: f64) -> f64 {
     if width_mm <= 0.0 {
         return 0.0;
     }

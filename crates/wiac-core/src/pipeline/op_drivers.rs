@@ -22,24 +22,21 @@
 // # CAM/sim pedantic-lint exemptions
 // Per-op drivers cast sample counts (`STEPS`) and centroid indices to f64 for
 // trig; values are tiny constants.
-#![allow(
-    clippy::cast_precision_loss,
-)]
+#![allow(clippy::cast_precision_loss)]
 
-
+use super::offset_builder::build_op_offsets;
+use super::setup_resolver::resolve_peck_step;
+use super::warnings::push_tool_fit_kind_warnings;
 use crate::cam::setup::Setup;
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::VcObject;
 use crate::gcode::PostProcessor;
-use crate::geometry::Point2;
 use crate::gcode::{emit_drill_block, emit_polylines_block};
+use crate::geometry::Point2;
 use crate::pipeline::{
     cancelled, effective_step, op_includes_object, ordered_selection, source_combine_mode,
     synthesize_finish_setup, CancelToken, PipelineError, PipelineWarning,
 };
-use super::offset_builder::build_op_offsets;
-use super::setup_resolver::resolve_peck_step;
-use super::warnings::push_tool_fit_kind_warnings;
 use crate::project::{Op, OpKind, PocketStrategy, Project};
 
 /// V-Carve op driver. Builds the medial axis of the source region(s)

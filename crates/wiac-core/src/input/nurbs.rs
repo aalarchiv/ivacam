@@ -9,11 +9,7 @@
 // # CAM/sim pedantic-lint exemptions
 // NURBS evaluator uses `u`, `t`, `p`, `n`, `k` from the De Boor / Cox-de Boor
 // recurrence textbook formulas; sample counts are bounded.
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::many_single_char_names,
-)]
-
+#![allow(clippy::cast_precision_loss, clippy::many_single_char_names)]
 
 /// Flatten a NURBS curve into a polyline.
 ///
@@ -23,7 +19,8 @@
 ///   placeholder; ignore for 2D).
 /// * `weights` — per-control-point weight; pass all-1 for non-rational.
 /// * `samples` — number of evenly spaced parameter samples (>=2).
-#[must_use] pub fn flatten(
+#[must_use]
+pub fn flatten(
     degree: usize,
     knots: &[f64],
     cps: &[(f64, f64, f64)],

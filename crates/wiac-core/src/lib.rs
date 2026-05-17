@@ -62,7 +62,8 @@ pub struct HelixRadiusResponse {
 // vs. move is irrelevant — clippy's pass-by-ref suggestion would force
 // callers to keep the request alive.
 #[allow(clippy::needless_pass_by_value)]
-#[must_use] pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
+#[must_use]
+pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
     use crate::cam::chaining::{classify_containment, segments_to_objects};
     use crate::cam::source_combine::combine_source_regions;
     use crate::cam::vcarve::VcRegion;

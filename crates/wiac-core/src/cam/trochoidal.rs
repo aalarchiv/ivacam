@@ -28,9 +28,8 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::many_single_char_names,
+    clippy::many_single_char_names
 )]
-
 
 use crate::cam::offsets::{
     bridge_stays_inside_polygon, pocket_cascade_with_islands, point_in_polygon_pts,
@@ -43,7 +42,8 @@ use crate::pipeline::CancelToken;
 // engagement-angle + step parameters because the loop generation derives
 // every other quantity from them.
 #[allow(clippy::too_many_arguments)]
-#[must_use] pub fn pocket_trochoidal(
+#[must_use]
+pub fn pocket_trochoidal(
     boundary_pts: &[Point2],
     islands: &[Vec<Point2>],
     tool_radius: f64,
@@ -67,7 +67,8 @@ use crate::pipeline::CancelToken;
 }
 
 #[allow(clippy::too_many_arguments)]
-#[must_use] pub fn pocket_trochoidal_cancellable(
+#[must_use]
+pub fn pocket_trochoidal_cancellable(
     boundary_pts: &[Point2],
     islands: &[Vec<Point2>],
     tool_radius: f64,

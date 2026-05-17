@@ -20,10 +20,7 @@
 // # CAM/sim pedantic-lint exemptions
 // Region-corner naming (`p_bl`/`p_br`/`p_tl`/`p_tr`, `min_x`/`max_x`) is the
 // canonical clipper2-rust subject/clip vocabulary.
-#![allow(
-    clippy::similar_names,
-)]
-
+#![allow(clippy::similar_names)]
 
 use std::collections::HashSet;
 
@@ -60,7 +57,8 @@ const QUARTER_ARC_BULGE: f64 = std::f64::consts::SQRT_2 - 1.0;
 /// `tool_offset = Inside` (the cutter sits inside this outer boundary)
 /// on layer "Frame", color 6 (cyan). For `RoundedRectangle`, `corner_radius_mm`
 /// defaults to `padding_mm` when None.
-#[must_use] pub fn build_frame(
+#[must_use]
+pub fn build_frame(
     selection: &[&VcObject],
     shape: FrameShape,
     padding_mm: f64,
@@ -180,7 +178,9 @@ impl TessCache {
     fn get(&mut self, idx: usize, obj: &VcObject) -> std::rc::Rc<Vec<Point2>> {
         self.by_idx
             .entry(idx)
-            .or_insert_with(|| std::rc::Rc::new(segments_to_points(&obj.segments, TESS_INTERPOLATE)))
+            .or_insert_with(|| {
+                std::rc::Rc::new(segments_to_points(&obj.segments, TESS_INTERPOLATE))
+            })
             .clone()
     }
 }
@@ -194,7 +194,8 @@ const CLIPPER_PRECISION: i32 = 4;
 /// are considered (open selections are silently ignored — they're not
 /// pocketable boundaries). When the selection is empty, returns an empty
 /// vec.
-#[must_use] pub fn combine_source_regions(
+#[must_use]
+pub fn combine_source_regions(
     objects: &[VcObject],
     selected: &[usize],
     mode: SourceCombine,

@@ -16,9 +16,8 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::many_single_char_names,
+    clippy::many_single_char_names
 )]
-
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -72,7 +71,8 @@ const NO_SEGMENT: u32 = u32::MAX;
 /// arc-center, plus G20/G21 unit switching). Anything else is ignored
 /// gracefully. `; OP <n>` comments switch the active op id for later
 /// segments (used by the per-op emitter).
-#[must_use] pub fn interpret(gcode: &str) -> Vec<ToolpathSegment> {
+#[must_use]
+pub fn interpret(gcode: &str) -> Vec<ToolpathSegment> {
     let (segments, _) = interpret_with_index(gcode);
     segments
 }
@@ -83,7 +83,8 @@ const NO_SEGMENT: u32 = u32::MAX;
 // update modal state → emit segments. The state shares between every
 // branch so splitting reintroduces it everywhere.
 #[allow(clippy::too_many_lines)]
-#[must_use] pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
+#[must_use]
+pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
     let mut state = Pose3 {
         x: 0.0,
         y: 0.0,
@@ -217,7 +218,8 @@ const NO_SEGMENT: u32 = u32::MAX;
         let kind = match active_code {
             0 => MoveKind::Rapid,
             1 => {
-                #[allow(clippy::float_cmp)] // x/y/z copied verbatim through gcode parse — exact equality is the right test.
+                #[allow(clippy::float_cmp)]
+                // x/y/z copied verbatim through gcode parse — exact equality is the right test.
                 let xy_match = had_z && from.x == to.x && from.y == to.y;
                 if xy_match {
                     if to.z > from.z {

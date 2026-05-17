@@ -113,15 +113,14 @@ pub(super) fn synthesize_op_setup(
     };
     let (rough_speed, rough_plunge, rough_feed) =
         crate::project::resolve_tool_rates(tool, main_pass);
-    let (finish_speed, finish_plunge, finish_feed) =
-        if matches!(op.kind, OpKind::Drill { .. }) {
-            // Drill never emits a finish pass — keep the finish triplet
-            // equal to the drill triplet so a caller that reads either side
-            // sees consistent values.
-            (rough_speed, rough_plunge, rough_feed)
-        } else {
-            crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
-        };
+    let (finish_speed, finish_plunge, finish_feed) = if matches!(op.kind, OpKind::Drill { .. }) {
+        // Drill never emits a finish pass — keep the finish triplet
+        // equal to the drill triplet so a caller that reads either side
+        // sees consistent values.
+        (rough_speed, rough_plunge, rough_feed)
+    } else {
+        crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
+    };
     // rt1.29: laser tools get their per-tool pierce-time threaded
     // into ToolConfig so emit_offset can emit a G4 P<sec> dwell
     // before each plunge. Non-laser tools collapse to 0.
@@ -228,15 +227,14 @@ pub(super) fn synthesize_op_setup(
     // laser and the op didn't set its own lead-in, fall back to the
     // per-tool `laser_lead_in_mm`. Reduces edge burn at the entry
     // point. Off / `LeadKind::Off` keeps the op's explicit decision.
-    if matches!(tool.kind, crate::project::ToolKind::LaserBeam)
-        && setup.leads.in_lenght <= 0.0 {
-            if let Some(lead_mm) = tool.laser_lead_in_mm.filter(|v| *v > 0.0) {
-                setup.leads.in_lenght = lead_mm;
-                if matches!(setup.leads.r#in, crate::cam::setup::LeadKind::Off) {
-                    setup.leads.r#in = crate::cam::setup::LeadKind::Straight;
-                }
+    if matches!(tool.kind, crate::project::ToolKind::LaserBeam) && setup.leads.in_lenght <= 0.0 {
+        if let Some(lead_mm) = tool.laser_lead_in_mm.filter(|v| *v > 0.0) {
+            setup.leads.in_lenght = lead_mm;
+            if matches!(setup.leads.r#in, crate::cam::setup::LeadKind::Off) {
+                setup.leads.r#in = crate::cam::setup::LeadKind::Straight;
             }
         }
+    }
     if matches!(op.kind, OpKind::DragKnife) {
         setup.machine.mode = MachineMode::Drag;
     }

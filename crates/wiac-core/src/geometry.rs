@@ -13,11 +13,13 @@ pub struct Point2 {
 }
 
 impl Point2 {
-    #[must_use] pub const fn new(x: f64, y: f64) -> Self {
+    #[must_use]
+    pub const fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
 
-    #[must_use] pub fn distance(self, other: Self) -> f64 {
+    #[must_use]
+    pub fn distance(self, other: Self) -> f64 {
         let dx = self.x - other.x;
         let dy = self.y - other.y;
         dx.hypot(dy)
@@ -133,7 +135,8 @@ impl BBox {
         self.max_y = self.max_y.max(p.y);
     }
 
-    #[must_use] pub fn from_segments(segments: &[Segment]) -> Self {
+    #[must_use]
+    pub fn from_segments(segments: &[Segment]) -> Self {
         let mut bbox = Self::EMPTY;
         for s in segments {
             bbox.extend_point(s.start);
@@ -151,17 +154,20 @@ impl BBox {
         bbox
     }
 
-    #[must_use] pub fn is_finite(&self) -> bool {
+    #[must_use]
+    pub fn is_finite(&self) -> bool {
         self.min_x.is_finite()
             && self.min_y.is_finite()
             && self.max_x.is_finite()
             && self.max_y.is_finite()
     }
 
-    #[must_use] pub fn width(&self) -> f64 {
+    #[must_use]
+    pub fn width(&self) -> f64 {
         self.max_x - self.min_x
     }
-    #[must_use] pub fn height(&self) -> f64 {
+    #[must_use]
+    pub fn height(&self) -> f64 {
         self.max_y - self.min_y
     }
 }

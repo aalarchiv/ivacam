@@ -42,7 +42,6 @@
     clippy::match_same_arms,
 )]
 
-
 mod frame;
 mod offset_builder;
 mod op_drivers;
@@ -67,14 +66,11 @@ use crate::cam::chaining::{classify_containment, segments_to_objects};
 use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::gcode::{
-    emit_program_begin, emit_program_end, grbl, hpgl,
-    linuxcnc, preview, PostProcessor,
+    emit_program_begin, emit_program_end, grbl, hpgl, linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::{Point2, Segment};
 use crate::pipeline_cache::{op_cache_key_with_finish, OpCacheValue, PipelineCache};
-use crate::project::{
-    Op, OpKind, OpSource, PocketStrategy, Project, SourceCombine, ToolEntry,
-};
+use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project, SourceCombine, ToolEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineRequest {
@@ -170,7 +166,8 @@ impl PipelineError {
     /// fills in actionable auto-fix targets (e.g. the first tool id for an
     /// `UnknownTool`); pass `None` when no project is available and the
     /// auto-fix is dropped.
-    #[must_use] pub fn to_structured(&self, project: Option<&Project>) -> Option<crate::Error> {
+    #[must_use]
+    pub fn to_structured(&self, project: Option<&Project>) -> Option<crate::Error> {
         use crate::errors::{AutoFix, Error as Structured};
         match self {
             PipelineError::Cancelled => None,
@@ -245,7 +242,8 @@ fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
 pub struct CancelToken(Arc<AtomicBool>);
 
 impl CancelToken {
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self(Arc::new(AtomicBool::new(false)))
     }
 
@@ -253,7 +251,8 @@ impl CancelToken {
         self.0.store(true, Ordering::Relaxed);
     }
 
-    #[must_use] pub fn is_cancelled(&self) -> bool {
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }
 }
@@ -619,7 +618,11 @@ where
 
         if let (Some(c), Some(key)) = (cache, cache_key) {
             if let Some(cached) = c.get(key) {
-                let lines: Vec<String> = cached.gcode_body.lines().map(std::string::ToString::to_string).collect();
+                let lines: Vec<String> = cached
+                    .gcode_body
+                    .lines()
+                    .map(std::string::ToString::to_string)
+                    .collect();
                 post.out_extend_lines(&lines);
                 post.restore_state(&cached.exit_state);
                 last_pos = Point2::new(cached.exit_xy.0, cached.exit_xy.1);
@@ -770,7 +773,6 @@ fn resolve_op_segments(op: &Op, all: &[Segment], objects: &[VcObject]) -> Vec<Se
     }
 }
 
-
 /// Trochoidal-specific guards: tabs are not yet supported and the
 /// plunge must be Helix. We emit warnings for unsupported tabs and
 /// override Direct/Ramp plunges to Helix at the `synthesize_op_setup`
@@ -811,9 +813,7 @@ pub(super) fn ordered_selection(op: &Op, objects: &[VcObject]) -> Vec<usize> {
 pub(super) fn source_combine_mode(op: &Op) -> SourceCombine {
     match &op.source {
         OpSource::All => SourceCombine::Auto,
-        OpSource::Layers { combine, .. } | OpSource::Objects { combine, .. } => {
-            *combine
-        }
+        OpSource::Layers { combine, .. } | OpSource::Objects { combine, .. } => *combine,
     }
 }
 
@@ -869,10 +869,7 @@ pub(super) fn synthesize_finish_setup(
     // (no offset would be tagged finish), but be defensive — return
     // None for anything else.
     let drill_with_chamfer = matches!(op.kind, OpKind::Drill { .. })
-        && op
-            .params
-            .chamfer_after_width_mm
-            .is_some_and(|w| w > 0.0);
+        && op.params.chamfer_after_width_mm.is_some_and(|w| w > 0.0);
     if !matches!(op.kind, OpKind::Pocket { .. }) && !drill_with_chamfer {
         return Ok(None);
     }
@@ -903,8 +900,8 @@ mod tests {
     use crate::cam::setup::{MachineConfig, TabType, TabsConfig, ToolOffset};
     use crate::geometry::Segment;
     use crate::project::{
-        Coolant, Op, OpKind, OpParams, OpSource, PatternConfig,
-        SourceCombine, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind,
+        Coolant, Op, OpKind, OpParams, OpSource, PatternConfig, SourceCombine, TextAlignment,
+        TextLayer, TextLayerKind, ToolEntry, ToolKind,
     };
 
     fn closed_square(side: f64) -> Vec<Segment> {
@@ -4639,7 +4636,10 @@ mod tests {
         // No '.' inside coordinate words (allowing '.' in '; OP' lines
         // is fine since post.raw bypasses the formatter).
         for l in resp.gcode.lines() {
-            assert!(!((l.starts_with("G0 ") || l.starts_with("G1 ")) && l.contains('.')), "decimal '.' leaked into a coordinate line under comma-mode: {l}");
+            assert!(
+                !((l.starts_with("G0 ") || l.starts_with("G1 ")) && l.contains('.')),
+                "decimal '.' leaked into a coordinate line under comma-mode: {l}"
+            );
         }
     }
 

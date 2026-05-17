@@ -13,9 +13,8 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::many_single_char_names,
+    clippy::many_single_char_names
 )]
-
 
 use serde::{Deserialize, Serialize};
 
@@ -1792,9 +1791,7 @@ fn build_z_schedule(
                 // (step >= total_depth ⇒ loop terminates with
                 // `out` still empty), silently losing the finish
                 // quality on thin cuts.
-                let dup_of_last = out
-                    .last()
-                    .is_some_and(|&l| (l - pre_finish).abs() <= 1e-9);
+                let dup_of_last = out.last().is_some_and(|&l| (l - pre_finish).abs() <= 1e-9);
                 if !dup_of_last
                     && pre_finish < start_depth - 1e-9
                     && pre_finish > total_depth + 1e-9
@@ -2350,7 +2347,8 @@ pub fn configure_post_state(
 /// Format a floating-point number using the post-state's decimal
 /// separator. Matches the upstream's formatting otherwise: 4 decimal
 /// places, strip trailing zeros, never end with `.`.
-#[must_use] pub fn fmt_num(v: f64, sep: char) -> String {
+#[must_use]
+pub fn fmt_num(v: f64, sep: char) -> String {
     let s = format!("{v:.4}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
     let base = if trimmed.is_empty() {

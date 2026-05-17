@@ -18,9 +18,8 @@
 #![allow(
     clippy::similar_names,
     clippy::trivially_copy_pass_by_ref,
-    clippy::struct_excessive_bools,
+    clippy::struct_excessive_bools
 )]
-
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -123,7 +122,8 @@ pub enum TextAlignment {
 
 /// Reserved layer name pattern for TextLayer-rendered segments. Ops
 /// can target a specific text layer via `OpSource::Layers(vec!["__text_<id>"])`.
-#[must_use] pub fn text_layer_synthetic_layer(id: u32) -> String {
+#[must_use]
+pub fn text_layer_synthetic_layer(id: u32) -> String {
     format!("__text_{id}")
 }
 
@@ -388,7 +388,8 @@ pub enum PassKind {
 /// Resolve the (speed, `plunge_rate`, `feed_rate`) triplet for `tool` under
 /// `pass`. Finish / Drill variants fall back to the general values when
 /// their override is `None`.
-#[must_use] pub fn resolve_tool_rates(tool: &ToolEntry, pass: PassKind) -> (u32, u32, u32) {
+#[must_use]
+pub fn resolve_tool_rates(tool: &ToolEntry, pass: PassKind) -> (u32, u32, u32) {
     match pass {
         PassKind::Rough => (tool.speed, tool.plunge_rate, tool.feed_rate),
         PassKind::Finish => (
@@ -1212,7 +1213,8 @@ where
 
 impl OpParams {
     /// Defaults that line up with a "first profile cut on a 2 mm sheet".
-    #[must_use] pub fn mill_default() -> Self {
+    #[must_use]
+    pub fn mill_default() -> Self {
         Self {
             depth: -2.0,
             start_depth: 0.0,

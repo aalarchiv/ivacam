@@ -20,9 +20,8 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::many_single_char_names,
+    clippy::many_single_char_names
 )]
-
 
 use voronator::delaunator::{triangulate, Point as VPointXy, INVALID_INDEX};
 
@@ -104,7 +103,8 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 /// connected polyline of medial-axis vertices, ordered along the chain.
 /// Vertices outside the region are excluded; edges with at least one
 /// outside endpoint are dropped.
-#[must_use] pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
+#[must_use]
+pub fn medial_axis(region: &VcRegion) -> Vec<Vec<VPoint>> {
     medial_axis_cancellable(region, None)
 }
 
@@ -116,7 +116,8 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 // and inscribed-circle radius sampling — the algorithm reads linearly
 // top-to-bottom; splitting would scatter the geometric reasoning.
 #[allow(clippy::too_many_lines)]
-#[must_use] pub fn medial_axis_cancellable(
+#[must_use]
+pub fn medial_axis_cancellable(
     region: &VcRegion,
     cancel: Option<&CancelToken>,
 ) -> Vec<Vec<VPoint>> {
@@ -319,7 +320,8 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 /// `VcRegion`. Open objects aren't supported for V-Carve — they have no
 /// interior — so they're rejected at the call site (pipeline emits a
 /// warning).
-#[must_use] pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegion> {
+#[must_use]
+pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegion> {
     if !outer.closed {
         return None;
     }
@@ -349,7 +351,8 @@ fn point_in_region(region: &VcRegion, p: Point2) -> bool {
 /// negative number, we treat its absolute value as the limit). Returns
 /// `(polyline, depth_limited)` where `depth_limited` is true when at
 /// least one point hit the |z| cap.
-#[must_use] pub fn polyline_to_z(
+#[must_use]
+pub fn polyline_to_z(
     axis: &[VPoint],
     tip_angle_rad: f64,
     r_cap: Option<f64>,

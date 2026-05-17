@@ -9,10 +9,7 @@
 
 // # CAM/sim pedantic-lint exemptions
 // Arc-fit walks the polyline at bounded sample counts.
-#![allow(
-    clippy::cast_precision_loss,
-)]
-
+#![allow(clippy::cast_precision_loss)]
 
 use crate::geometry::Point2;
 use crate::math;
@@ -47,7 +44,8 @@ pub enum FitOutput {
 /// - included direction would flip (would imply a CW↔CCW switch)
 ///
 /// Runs with fewer than 3 points fall through to `Lines` unchanged.
-#[must_use] pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
+#[must_use]
+pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     if points.len() < 3 {
         return FitOutput::Lines(points.to_vec());
     }

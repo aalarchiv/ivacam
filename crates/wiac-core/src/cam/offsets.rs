@@ -25,7 +25,6 @@
     clippy::implicit_hasher,
 )]
 
-
 use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Polyline};
 use clipper2_rust::{inflate_paths_d, EndType, JoinType, PathD, PathsD, Point as ClipperPoint};
 use schemars::JsonSchema;
@@ -174,7 +173,8 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
 /// the correction every closed-arc-only object reads as area=0 ⇒ CCW,
 /// which silently flips the inward/outward sign for CW-encoded
 /// circles and gives wrong-side profile offsets.
-#[must_use] pub fn object_signed_area(obj: &VcObject) -> f64 {
+#[must_use]
+pub fn object_signed_area(obj: &VcObject) -> f64 {
     let mut sum = 0.0;
     for seg in &obj.segments {
         // Chord shoelace contribution.
@@ -208,7 +208,8 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
 /// Inward parallel offset by `distance` (positive). Picks the right
 /// sign for the underlying `parallel_offset_object` based on the polygon
 /// winding so a CW input doesn't flip the meaning.
-#[must_use] pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
+#[must_use]
+pub fn parallel_offset_inward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
     let mag = distance.abs();
     let delta = if object_signed_area(obj) >= 0.0 {
         mag
@@ -220,7 +221,8 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
 
 /// Outward parallel offset by `distance` (positive). Mirror of
 /// `parallel_offset_inward`.
-#[must_use] pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
+#[must_use]
+pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOffset> {
     let mag = distance.abs();
     let delta = if object_signed_area(obj) >= 0.0 {
         -mag
@@ -282,7 +284,8 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
 /// `tool_diameter` is needed separately to inset the rasters by half a
 /// tool diameter from the polygon edges so the cutter doesn't carve
 /// past the boundary.
-#[must_use] pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Vec<Segment> {
+#[must_use]
+pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Vec<Segment> {
     if boundary.len() < 3 || stride <= 0.0 {
         return Vec::new();
     }
@@ -377,7 +380,8 @@ fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<
 ///
 /// Convenience wrapper for the common single-boundary case; calls
 /// [`pocket_cascade_with_islands`] with no holes.
-#[must_use] pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
+#[must_use]
+pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
     pocket_cascade_with_islands(boundary, &[], delta)
 }
 
@@ -386,7 +390,8 @@ fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<
 /// closed polyline already inflated by `tool_radius` outward — the
 /// caller is responsible for that pre-inflation, matching the upstream
 /// Python `do_pockets` islands branch.
-#[must_use] pub fn pocket_cascade_with_islands(
+#[must_use]
+pub fn pocket_cascade_with_islands(
     boundary: &[Point2],
     islands: &[Vec<Point2>],
     delta: f64,
@@ -1069,7 +1074,8 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
 /// If `obj` is a single closed CIRCLE smaller than the tool, return a
 /// drill-only offset whose single segment is a zero-length POINT at the
 /// circle's center. The gcode emitter handles this as plunge + retract.
-#[must_use] pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
+#[must_use]
+pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
     use crate::geometry::SegmentKind;
     if !obj.closed || obj.segments.is_empty() {
         return None;

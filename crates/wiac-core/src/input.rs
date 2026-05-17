@@ -4,10 +4,7 @@
 
 // # CAM/sim pedantic-lint exemptions
 // Importer dispatch casts unit-system enum tags (small constants).
-#![allow(
-    clippy::cast_precision_loss,
-)]
-
+#![allow(clippy::cast_precision_loss)]
 
 use crate::geometry::{BBox, Layer, Segment};
 use crate::Result;
@@ -47,7 +44,8 @@ pub struct ImportOptions {
 }
 
 impl ImportOptions {
-    #[must_use] pub fn arc_max_step_or_default(&self) -> f64 {
+    #[must_use]
+    pub fn arc_max_step_or_default(&self) -> f64 {
         if self.arc_max_step_rad > 0.0 {
             self.arc_max_step_rad
         } else {

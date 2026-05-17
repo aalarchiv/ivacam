@@ -4,11 +4,7 @@
 // # CAM/sim pedantic-lint exemptions
 // HPGL plotter post emits 2D coordinates in plu (plotter units): `f64 → i64`
 // conversions are domain-bounded by the plotter's addressable plane.
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-)]
-
+#![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::{CapturedPostState, PostProcessor};
@@ -22,7 +18,8 @@ pub struct Post {
 }
 
 impl Post {
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self::default()
     }
 

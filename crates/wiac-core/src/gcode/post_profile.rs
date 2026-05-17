@@ -373,7 +373,8 @@ impl TokenCtx {
 ///
 /// Unknown tokens pass through unchanged so a typo doesn't silently
 /// blank the line; CAM-review surfaces them.
-#[must_use] pub fn substitute(template: &str, ctx: &TokenCtx) -> String {
+#[must_use]
+pub fn substitute(template: &str, ctx: &TokenCtx) -> String {
     let mut out = template.to_string();
     let unit = match ctx.unit {
         UnitSystem::Mm => "mm",

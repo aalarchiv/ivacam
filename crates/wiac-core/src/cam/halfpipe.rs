@@ -36,7 +36,8 @@ use crate::project::HalfpipeProfile;
 /// Returns `(z, depth_limited)` — `depth_limited` is true iff either
 /// the profile cap (`CircularArc` with `r > R`) OR `z_cap` clipped the
 /// result.
-#[must_use] pub fn depth_at(v: &VPoint, profile: HalfpipeProfile, z_cap: Option<f64>) -> (f64, bool) {
+#[must_use]
+pub fn depth_at(v: &VPoint, profile: HalfpipeProfile, z_cap: Option<f64>) -> (f64, bool) {
     let r = v.r.max(0.0);
     let (mut z, mut limited) = match profile {
         HalfpipeProfile::CircularArc { radius_mm } => {
@@ -73,7 +74,8 @@ use crate::project::HalfpipeProfile;
 /// downstream emitters that want the radius for sim / tabbing get it
 /// (mirrors `cam/vcarve.rs::polyline_to_z`'s shape). Returns
 /// `(points, depth_limited_anywhere)`.
-#[must_use] pub fn polyline_to_z(
+#[must_use]
+pub fn polyline_to_z(
     axis: &[VPoint],
     profile: HalfpipeProfile,
     z_cap: Option<f64>,
@@ -119,7 +121,10 @@ mod tests {
         assert!(lim, "r > R must report depth_limited");
         // r = R/√2 ≈ 3.5355: z = -(R - √(R² - r²)) = -(5 - √(25 - 12.5)) ≈ -1.464.
         let (z_mid, lim) = depth_at(&vp(0.0, 0.0, 5.0_f64 / std::f64::consts::SQRT_2), p, None);
-        assert!((z_mid - (-1.464_466_094_067_261_9)).abs() < 1e-9, "got {z_mid}");
+        assert!(
+            (z_mid - (-1.464_466_094_067_261_9)).abs() < 1e-9,
+            "got {z_mid}"
+        );
         assert!(!lim);
     }
 

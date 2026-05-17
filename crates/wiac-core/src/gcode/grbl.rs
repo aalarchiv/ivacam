@@ -6,10 +6,7 @@
 // # CAM/sim pedantic-lint exemptions
 // GRBL post emits the same gcode-letter short names as the LinuxCNC post
 // (X/Y/Z/I/J/F/S).
-#![allow(
-    clippy::many_single_char_names,
-)]
-
+#![allow(clippy::many_single_char_names)]
 
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::{linuxcnc, CapturedPostState, PostProcessor};
@@ -20,7 +17,8 @@ pub struct Post {
 }
 
 impl Post {
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self::default()
     }
 }

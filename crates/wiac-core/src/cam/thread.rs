@@ -41,9 +41,8 @@
 #![allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
+    clippy::cast_sign_loss
 )]
-
 
 use crate::geometry::Point2;
 
@@ -57,7 +56,8 @@ const DEFAULT_STEPS_PER_REV: usize = 64;
 /// `top_z`; the last waypoint sits on the same angle (or near it,
 /// depending on the revolution count) at `bottom_z`. Empty when the
 /// inputs collapse to a no-op (radius <= 0, pitch <= 0, no Z range).
-#[must_use] pub fn helix_waypoints(
+#[must_use]
+pub fn helix_waypoints(
     center: Point2,
     radius: f64,
     top_z: f64,
@@ -79,7 +79,8 @@ const DEFAULT_STEPS_PER_REV: usize = 64;
 /// Variant of [`helix_waypoints`] that takes an explicit chord
 /// density (segments per revolution). Lower numbers produce coarser
 /// polylines; higher numbers produce smoother but bigger gcode.
-#[must_use] pub fn helix_waypoints_with_density(
+#[must_use]
+pub fn helix_waypoints_with_density(
     center: Point2,
     radius: f64,
     top_z: f64,

@@ -66,7 +66,8 @@ pub struct ErrorResponse {
 /// `serde_yaml`-compatible JSON value so callers can splice it into the
 /// hand-authored `OpenAPI` envelope. All `$ref`s are rewritten to `OpenAPI`'s
 /// `#/components/schemas/X` form (schemars defaults to `#/definitions/X`).
-#[must_use] pub fn components_schemas() -> Value {
+#[must_use]
+pub fn components_schemas() -> Value {
     let mut schemas = serde_json::Map::new();
     insert::<Point2>(&mut schemas, "Point2");
     insert::<BBox>(&mut schemas, "BBox");
@@ -180,7 +181,8 @@ fn rewrite_refs(value: &mut Value) {
 /// Returns a list of TS type names that the frontend currently consumes.
 /// `pnpm run codegen` reads `schema/openapi.yaml` directly — this is just
 /// a sanity check that we're exporting what we need.
-#[must_use] pub fn frontend_types() -> &'static [&'static str] {
+#[must_use]
+pub fn frontend_types() -> &'static [&'static str] {
     &[
         "Point2",
         "BBox",
@@ -197,7 +199,8 @@ fn rewrite_refs(value: &mut Value) {
 
 /// Build a flat `OpenAPI` 3.0 document with hand-written paths + the
 /// auto-generated component schemas merged in.
-#[must_use] pub fn openapi_document() -> Value {
+#[must_use]
+pub fn openapi_document() -> Value {
     json!({
         "openapi": "3.0.3",
         "info": {

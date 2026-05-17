@@ -7,10 +7,7 @@
 
 // # CAM/sim pedantic-lint exemptions
 // Chain endpoint matching uses `p_a`/`p_b` segment-endpoint names.
-#![allow(
-    clippy::similar_names,
-)]
-
+#![allow(clippy::similar_names)]
 
 use std::collections::HashMap;
 
@@ -26,7 +23,8 @@ const CELL_SIZE: f64 = FUZZY * 4.0;
 
 /// Group `segments` into [`VcObject`]s (chains) by walking neighbor endpoints.
 /// Closed chains (last endpoint matches first) get `closed = true`.
-#[must_use] pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
+#[must_use]
+pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
     let mut taken = vec![false; segments.len()];
     let mut out = Vec::new();
     // Spatial hash over endpoints — each segment contributes both its

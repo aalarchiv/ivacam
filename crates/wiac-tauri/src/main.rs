@@ -9,6 +9,7 @@
 mod commands;
 mod watcher;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::{Emitter, Manager};
@@ -130,6 +131,7 @@ fn run() -> tauri::Result<()> {
             let handle = app.handle().clone();
             app.manage(AppState {
                 watcher: Mutex::new(ProjectWatcher::new(handle.clone())),
+                close_confirmed: AtomicBool::new(false),
             });
             // No native window menu — the Svelte UI owns the menubar so the
             // user sees one consistent set of File / Edit / View / Tools /
@@ -169,7 +171,22 @@ fn run() -> tauri::Result<()> {
             commands::write_workspace_file,
             commands::watch_source_paths,
             commands::unwatch_all,
+            commands::confirm_close,
         ])
+        // qjec: intercept window close so the user can confirm
+        // discarding unsaved work. First CloseRequested call emits an
+        // event to the frontend and prevents close; the frontend
+        // responds by either invoking `confirm_close` (which flips the
+        // flag and re-issues close) or doing nothing (keep editing).
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.app_handle().state::<AppState>();
+                if !state.close_confirmed.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = window.emit("app:close_requested", ());
+                }
+            }
+        })
         .build(tauri::generate_context!())?
         .run(|_app, event| {
             // 2re4: SIGKILL WebKit's helper processes the moment we

@@ -144,9 +144,14 @@
     // object — Svelte 5 `$state` proxies can trip up `structuredClone`
     // inside setMachineCommand on some browser builds, which would
     // silently abort commit and leave the dialog open.
-    const snap = JSON.parse(JSON.stringify(draft)) as MachineSettings;
-    snap.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
+    //
+    // Wrap the whole body in try/catch so any thrown error (JSON
+    // serialise failure on a circular reference, setMachine validation,
+    // etc.) still reaches `onClose()` — otherwise the OK button looks
+    // broken to the user.
     try {
+      const snap = JSON.parse(JSON.stringify(draft)) as MachineSettings;
+      snap.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
       project.setMachine(snap);
     } catch (e) {
       console.error('MachineDialog.commit: setMachine failed', e);
@@ -154,10 +159,36 @@
     onClose();
   }
 
+  /// Two-step close-on-dirty: first attempt arms `confirmingDiscard`
+  /// so the footer swaps to a "Discard / Keep editing" pair; second
+  /// click on Discard actually fires `onClose`. Replaces the prior
+  /// `window.confirm` prompt, which silently returns false in some
+  /// Tauri / WebKitGTK builds — the project's audit-C10 note already
+  /// flagged `window.confirm` as unreliable for this reason.
+  let confirmingDiscard = $state(false);
+
   function close() {
-    if (isDirty && !window.confirm('Discard unsaved Machine changes?')) return;
+    if (isDirty) {
+      confirmingDiscard = true;
+      return;
+    }
     onClose();
   }
+
+  function discardAndClose() {
+    confirmingDiscard = false;
+    onClose();
+  }
+
+  function cancelDiscard() {
+    confirmingDiscard = false;
+  }
+
+  // Clear the discard-prompt state on (re)open so a previous-session
+  // pending prompt doesn't survive a close/reopen.
+  $effect(() => {
+    if (open) confirmingDiscard = false;
+  });
 </script>
 
 {#if open}
@@ -494,8 +525,14 @@
     </div>
 
     <footer>
-      <button class="secondary" onclick={close}>Cancel</button>
-      <button class="primary" onclick={commit}>OK</button>
+      {#if confirmingDiscard}
+        <span class="discard-prompt">Discard unsaved changes?</span>
+        <button class="secondary" onclick={cancelDiscard}>Keep editing</button>
+        <button class="danger" onclick={discardAndClose}>Discard</button>
+      {:else}
+        <button class="secondary" onclick={close}>Cancel</button>
+        <button class="primary" onclick={commit}>OK</button>
+      {/if}
     </footer>
   </Modal>
   <PostProcessorEditor
@@ -629,6 +666,20 @@
     padding: 0.3rem 0.8rem;
     border-radius: 3px;
     cursor: pointer;
+  }
+  .danger {
+    background: var(--danger, #c0392b);
+    color: white;
+    border: 0;
+    padding: 0.3rem 0.8rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .discard-prompt {
+    margin-right: auto;
+    color: var(--danger, #c0392b);
+    font-size: 0.85rem;
+    align-self: center;
   }
   .pp-summary {
     grid-column: 1 / -1;

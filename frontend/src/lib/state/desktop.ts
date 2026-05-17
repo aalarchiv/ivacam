@@ -60,6 +60,40 @@ export async function wireFileAssociationOpen(
   }
 }
 
+/// Install the desktop close-requested listener (qjec). The Tauri
+/// main process intercepts window close, prevents it, and fires
+/// `app:close_requested`. The callback decides whether to confirm or
+/// keep the window open; calling `confirmClose()` quits, calling
+/// nothing keeps the window open. Returns the unlisten callback
+/// (no-op on web — the browser tab close cannot be intercepted).
+export async function wireCloseRequested(
+  onRequested: () => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen('app:close_requested', () => onRequested());
+    return unlisten;
+  } catch (e) {
+    console.warn('close-requested listener wiring failed:', e);
+    return () => {};
+  }
+}
+
+/// Tell the desktop shell the user accepted the close prompt. Flips
+/// the backend's `close_confirmed` flag and re-issues the window
+/// close so the second `CloseRequested` event passes through
+/// untouched. No-op on web.
+export async function confirmClose(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('confirm_close');
+  } catch (e) {
+    console.warn('confirm_close failed:', e);
+  }
+}
+
 /// Trigger the auto-updater flow: check for a new release, download,
 /// install, relaunch. No-op on web (no installer to update). Errors
 /// surface via `project.setError`.

@@ -33,6 +33,12 @@
   /// an unstyled OS dialog (audit C10).
   let reopenPrompt = $state<{ path: string; filename: string } | null>(null);
 
+  /// qjec: in-app confirmation shown when the user tries to close the
+  /// window with unsaved work. The desktop shell intercepts close,
+  /// emits `app:close_requested`, and we either confirm immediately
+  /// (no unsaved work) or arm this prompt and wait for the user.
+  let closePrompt = $state(false);
+
   // Open the Tool library dialog when OpPropertiesPanel's "edit this
   // tool" icon requests focus on a specific tool row. The dialog reads
   // project.toolsDialogFocusId and handles scroll/highlight.
@@ -65,6 +71,8 @@
   import {
     isDesktop,
     wireSourceWatch as wireDesktopSourceWatch,
+    wireCloseRequested,
+    confirmClose,
     runUpdateCheck,
   } from './lib/state/desktop';
   import { computeFootprint } from './lib/sim/driver';
@@ -119,10 +127,13 @@
     });
 
     void wireSourceWatch();
+    void wireCloseConfirm();
     void loadWorkspaceAndMaybeReopen();
     return () => {
       unlistenSourceWatch?.();
       unlistenSourceWatch = null;
+      unlistenCloseRequested?.();
+      unlistenCloseRequested = null;
     };
   });
 
@@ -217,6 +228,21 @@
   let unlistenSourceWatch: (() => void) | null = null;
   async function wireSourceWatch() {
     unlistenSourceWatch = await wireDesktopSourceWatch();
+  }
+
+  /// qjec: desktop close interception. On every CloseRequested the
+  /// shell pings us. If nothing's dirty we accept immediately so the
+  /// quit feels instant; if there's unsaved work we arm `closePrompt`
+  /// and wait for the user to pick Discard or Cancel.
+  let unlistenCloseRequested: (() => void) | null = null;
+  async function wireCloseConfirm() {
+    unlistenCloseRequested = await wireCloseRequested(() => {
+      if (project.dirty) {
+        closePrompt = true;
+      } else {
+        void confirmClose();
+      }
+    });
   }
 
   $effect(() => {
@@ -837,6 +863,34 @@
     }}
   />
 
+  {#if closePrompt}
+    <div
+      class="close-prompt-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="close-prompt-title"
+    >
+      <div class="close-prompt-card">
+        <h2 id="close-prompt-title">Quit wiaConstructor?</h2>
+        <p>You have unsaved changes. They will be lost if you quit now.</p>
+        <div class="close-prompt-actions">
+          <button class="secondary" onclick={() => (closePrompt = false)}>
+            Keep editing
+          </button>
+          <button
+            class="danger"
+            onclick={() => {
+              closePrompt = false;
+              void confirmClose();
+            }}
+          >
+            Discard &amp; quit
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   <footer
     title={project.imported
       ? $_('footer.bbox', {
@@ -1284,5 +1338,52 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .close-prompt-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  .close-prompt-card {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    max-width: 28rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  }
+  .close-prompt-card h2 {
+    margin: 0 0 0.4rem 0;
+    font-size: 1.05rem;
+  }
+  .close-prompt-card p {
+    margin: 0 0 0.9rem 0;
+    color: var(--text-muted);
+  }
+  .close-prompt-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  .close-prompt-actions .secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.35rem 0.9rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .close-prompt-actions .danger {
+    background: var(--danger, #c0392b);
+    color: white;
+    border: 0;
+    padding: 0.35rem 0.9rem;
+    border-radius: 3px;
+    cursor: pointer;
   }
 </style>

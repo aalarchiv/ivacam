@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
@@ -33,6 +33,30 @@ use crate::watcher::ProjectWatcher;
 #[derive(Debug)]
 pub struct AppState {
     pub watcher: Mutex<ProjectWatcher>,
+    /// Set true by `confirm_close` once the frontend has either
+    /// confirmed a dirty-discard or determined there is nothing to
+    /// lose. The `CloseRequested` handler reads this flag to decide
+    /// whether to prevent the close and bounce a prompt back to the
+    /// UI, or let the window destroy normally (qjec).
+    pub close_confirmed: AtomicBool,
+}
+
+/// Frontend calls this after the user clicks "Quit" on the in-app
+/// close confirmation (or immediately if nothing is dirty). Flips
+/// `close_confirmed` so the next `CloseRequested` event passes
+/// through, then asks the window to close again.
+// Tauri's command macro dispatches with an owned `AppHandle` — we use
+// it only by reference here, but the signature is dictated by the
+// `#[tauri::command]` calling contract.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn confirm_close(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.close_confirmed.store(true, Ordering::SeqCst);
+    if let Some(window) = app.get_webview_window("main") {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]

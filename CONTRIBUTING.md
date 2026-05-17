@@ -10,6 +10,14 @@ If you port code from the original Python viaConstructor or another
 GPL-compatible source, preserve the original copyright notice in the file
 header.
 
+## Read this first
+
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) is the 2-page map: layer diagram,
+data flow (one user click traced end-to-end), the named patterns this
+codebase reaches for, and the anti-patterns to avoid. Skim it before
+touching multiple layers — most "where do I even start" friction is
+answered there.
+
 ## Repository layout
 
 ```

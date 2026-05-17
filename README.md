@@ -44,6 +44,9 @@ A single OpenAPI contract describes the operations (`/import`, `/generate`,
 HTTP for server mode, Tauri commands for desktop, in-process WASM for
 browser-only.
 
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the layer map, data flow,
+and the patterns to follow (and anti-patterns to avoid) when contributing.
+
 ## Building from source
 
 See [`BUILDING.md`](./BUILDING.md) for prerequisites per platform and the

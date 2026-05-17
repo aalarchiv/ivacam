@@ -50,9 +50,28 @@
 
   let isDirty = $derived.by(() => open && JSON.stringify(draft) !== pristine);
 
+  /// Two-step close-on-dirty: first attempt arms `confirmingDiscard`
+  /// so the footer swaps to a "Discard / Keep editing" pair; second
+  /// click on Discard actually fires `onClose`. Replaces the prior
+  /// `window.confirm` prompt, which silently returns false in some
+  /// Tauri / WebKitGTK builds (audit-C10).
+  let confirmingDiscard = $state(false);
+
   function close() {
-    if (isDirty && !window.confirm('Discard unsaved Tool Library changes?')) return;
+    if (isDirty) {
+      confirmingDiscard = true;
+      return;
+    }
     onClose();
+  }
+
+  function discardAndClose() {
+    confirmingDiscard = false;
+    onClose();
+  }
+
+  function cancelDiscard() {
+    confirmingDiscard = false;
   }
 
   $effect(() => {
@@ -1068,8 +1087,14 @@
       <button class="add" onclick={addTool}>+ Add tool</button>
     </div>
     <footer>
-      <button class="secondary" onclick={close}>Cancel</button>
-      <button class="primary" onclick={commit}>OK</button>
+      {#if confirmingDiscard}
+        <span class="discard-prompt">Discard unsaved changes?</span>
+        <button class="secondary" onclick={cancelDiscard}>Keep editing</button>
+        <button class="danger" onclick={discardAndClose}>Discard</button>
+      {:else}
+        <button class="secondary" onclick={close}>Cancel</button>
+        <button class="primary" onclick={commit}>OK</button>
+      {/if}
     </footer>
   </Modal>
 {/if}
@@ -1279,5 +1304,19 @@
     padding: 0.3rem 0.8rem;
     border-radius: 3px;
     cursor: pointer;
+  }
+  .danger {
+    background: var(--danger, #c0392b);
+    color: white;
+    border: 0;
+    padding: 0.3rem 0.8rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .discard-prompt {
+    margin-right: auto;
+    color: var(--danger, #c0392b);
+    font-size: 0.85rem;
+    align-self: center;
   }
 </style>

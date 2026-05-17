@@ -562,3 +562,805 @@ fn pocket_emit_for(strategy: PocketStrategy, op: &Op) -> PocketEmit {
         PocketStrategy::Halfpipe { .. } => PocketEmit::Cascade,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::cam::setup::{
+        LeadKind, MachineConfig, PlungeStrategy, TabType, TabsConfig, ToolOffset,
+    };
+    use crate::pipeline::test_helpers::{
+        closed_square_offset, endmill, first_lead_phase, profile_leads_op,
+    };
+    use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{Op, OpKind, OpParams, OpSource, Project};
+
+    // ─── Plunge strategies ─────────────────────────────────────────────
+
+    /// Ramp plunge: the FIRST cut moves descend Z linearly while
+    /// walking forward. With angle=10° and step=-1, `ramp_length` =
+    /// 1/tan(10°) ≈ 5.67mm.
+    #[test]
+    fn ramp_plunge_descends_z_during_first_cuts() {
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = PlungeStrategy::Ramp { angle_deg: 10.0 };
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Ramped profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let path: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| {
+                s.op_id == 1
+                    && matches!(
+                        s.kind,
+                        crate::gcode::preview::MoveKind::Cut | crate::gcode::preview::MoveKind::Arc
+                    )
+            })
+            .collect();
+        assert!(!path.is_empty(), "expected cut/arc moves");
+        let first = path[0];
+        assert!(
+            first.from.z > -0.001,
+            "ramp should start at Z≈0, got {} → {}",
+            first.from.z,
+            first.to.z
+        );
+        let mut horizontal_during_ramp = 0.0;
+        let mut reached_depth = false;
+        for s in &path {
+            if !reached_depth {
+                horizontal_during_ramp += (s.to.x - s.from.x).hypot(s.to.y - s.from.y);
+            }
+            if s.to.z <= -0.999 {
+                reached_depth = true;
+                break;
+            }
+        }
+        assert!(reached_depth, "Z never reached cut depth during ramp");
+        let expected = 1.0 / 10f64.to_radians().tan();
+        assert!(
+            (horizontal_during_ramp - expected).abs() / expected < 0.25,
+            "horizontal ramp length should be ~{expected:.2}mm, got {horizontal_during_ramp:.2}",
+        );
+    }
+
+    /// Ramp plunge cleanup: after the ramped pass, a constant-depth
+    /// lap cuts the ramp region down to `total_depth`.
+    #[test]
+    fn ramp_plunge_cleans_up_with_a_final_constant_depth_pass() {
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = PlungeStrategy::Ramp { angle_deg: 10.0 };
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Ramped profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let cuts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut) && s.op_id == 1)
+            .collect();
+        let cleanup_distance: f64 = cuts
+            .iter()
+            .filter(|s| (s.from.z - -1.0).abs() < 1e-3 && (s.to.z - -1.0).abs() < 1e-3)
+            .map(|s| (s.to.x - s.from.x).hypot(s.to.y - s.from.y))
+            .sum();
+        assert!(
+            cleanup_distance > 700.0,
+            "expected ≥700mm of constant-depth cuts (post-ramp + cleanup); got {cleanup_distance:.1}",
+        );
+    }
+
+    /// Helix entry: arcs with monotonically descending Z.
+    #[test]
+    fn helix_plunge_emits_arc_arcs_descending_z() {
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: Some(3.0),
+        };
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Helical pocket".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let path: Vec<_> = resp.toolpath.iter().filter(|s| s.op_id == 1).collect();
+        assert!(!path.is_empty(), "expected toolpath segments");
+        let mut arc_count = 0;
+        let mut last_z = f64::INFINITY;
+        let mut reached_depth = false;
+        for s in &path {
+            if matches!(
+                s.kind,
+                crate::gcode::preview::MoveKind::Rapid | crate::gcode::preview::MoveKind::Plunge
+            ) {
+                continue;
+            }
+            if matches!(s.kind, crate::gcode::preview::MoveKind::Arc) {
+                arc_count += 1;
+                assert!(
+                    s.to.z <= last_z + 1e-6,
+                    "helix Z should descend monotonically, but {} → {}",
+                    last_z,
+                    s.to.z,
+                );
+                last_z = s.to.z;
+            }
+            if s.to.z <= -0.999 {
+                reached_depth = true;
+                break;
+            }
+        }
+        assert!(reached_depth, "Z never reached cut depth via helix");
+        assert!(
+            arc_count >= 2,
+            "helix should emit ≥2 arc moves before reaching depth; got {arc_count}",
+        );
+    }
+
+    /// Helix radius < `tool_radius` → falls back to Ramp.
+    #[test]
+    fn helix_falls_back_to_ramp_when_radius_smaller_than_tool() {
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = PlungeStrategy::Helix {
+            angle_deg: 10.0,
+            radius_mm: Some(1.0),
+        };
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 6.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Helix-too-small".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let first_cutting = resp
+            .toolpath
+            .iter()
+            .find(|s| {
+                s.op_id == 1
+                    && matches!(
+                        s.kind,
+                        crate::gcode::preview::MoveKind::Cut | crate::gcode::preview::MoveKind::Arc
+                    )
+            })
+            .expect("expected at least one cut/arc move");
+        assert!(
+            first_cutting.from.z > -0.001,
+            "ramp fallback should start at Z≈0, got {}",
+            first_cutting.from.z,
+        );
+        let helix_arc_present = resp.toolpath.iter().any(|s| {
+            s.op_id == 1
+                && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                && s.from.z > -0.001
+                && (s.from.x - 50.0).hypot(s.from.y - 50.0) < 5.0
+        });
+        assert!(
+            !helix_arc_present,
+            "fallback should not emit a helix-entry arc near the polygon centroid",
+        );
+    }
+
+    /// Auto-fit helix on a pocket too small for the tool: emits
+    /// `helix_radius_unfittable` and falls through to Ramp.
+    #[test]
+    fn auto_helix_falls_back_when_pocket_too_small() {
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: None,
+        };
+        let project = Project {
+            segments: closed_square_offset(8.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 6.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Auto-helix-tight".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let warned = resp
+            .warnings
+            .iter()
+            .any(|w| w.kind == "helix_radius_unfittable" && w.op_id == Some(1));
+        assert!(
+            warned,
+            "expected helix_radius_unfittable warning; got: {:?}",
+            resp.warnings,
+        );
+        let helix_arc_present = resp.toolpath.iter().any(|s| {
+            s.op_id == 1
+                && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                && s.from.z > -0.001
+                && (s.from.x - 4.0).hypot(s.from.y - 4.0) < 3.0
+        });
+        assert!(
+            !helix_arc_present,
+            "auto-fit should not emit a helix arc when pocket is too small",
+        );
+    }
+
+    /// Auto-fit helix on a roomy pocket: picks a radius and emits
+    /// descending helix arcs.
+    #[test]
+    fn auto_helix_emits_arcs_when_pocket_fits() {
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: None,
+        };
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 0.5)],
+            operations: vec![Op {
+                id: 1,
+                name: "Auto-helix-roomy".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let arc_count = resp
+            .toolpath
+            .iter()
+            .filter(|s| {
+                s.op_id == 1
+                    && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                    && s.to.z <= s.from.z
+                    && s.from.z > -0.999
+            })
+            .count();
+        assert!(
+            arc_count >= 2,
+            "auto-fit roomy pocket should emit helix arcs; got {arc_count}",
+        );
+        assert!(
+            !resp
+                .warnings
+                .iter()
+                .any(|w| w.kind == "helix_radius_unfittable"),
+            "no unfit warning expected: {:?}",
+            resp.warnings,
+        );
+    }
+
+    /// Helix `radius_mm: null` round-trips through JSON and the
+    /// legacy bare-number form still loads.
+    #[test]
+    fn helix_radius_null_round_trip_and_legacy_compat() {
+        let plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: None,
+        };
+        let json = serde_json::to_string(&plunge).unwrap();
+        assert!(
+            json.contains("\"radius_mm\":null"),
+            "expected radius_mm:null in serialized form: {json}",
+        );
+        let parsed: PlungeStrategy = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, plunge);
+
+        let legacy = r#"{"kind":"helix","angle_deg":3.0,"radius_mm":5.0}"#;
+        let parsed: PlungeStrategy = serde_json::from_str(legacy).unwrap();
+        assert_eq!(
+            parsed,
+            PlungeStrategy::Helix {
+                angle_deg: 3.0,
+                radius_mm: Some(5.0),
+            },
+        );
+
+        let new_form = r#"{"kind":"helix","angle_deg":3.0,"radius_mm":null}"#;
+        let parsed: PlungeStrategy = serde_json::from_str(new_form).unwrap();
+        assert_eq!(
+            parsed,
+            PlungeStrategy::Helix {
+                angle_deg: 3.0,
+                radius_mm: None,
+            },
+        );
+    }
+
+    /// Tabs active → helix entry suppressed; falls back to the tabs
+    /// straight-plunge walker.
+    #[test]
+    fn helix_with_tabs_active_falls_back() {
+        let mut params = OpParams::mill_default();
+        params.depth = -2.0;
+        params.step = Some(-2.0);
+        params.start_depth = 0.0;
+        params.tabs = TabsConfig {
+            active: true,
+            width: 10.0,
+            height: 1.0,
+            tab_type: TabType::Rectangle,
+            ramp_angle_deg: 30.0,
+        };
+        params.plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: Some(3.0),
+        };
+        params.tab_mode = crate::project::TabPlacementMode::Manual;
+        params.tab_placements = vec![crate::project::TabPlacement {
+            object_id: 1,
+            t: 0.125,
+            width_override_mm: None,
+            height_override_mm: None,
+        }];
+        let project = Project {
+            segments: closed_square_offset(100.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Helix-with-tabs".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let helix_arc_present = resp.toolpath.iter().any(|s| {
+            s.op_id == 1
+                && matches!(s.kind, crate::gcode::preview::MoveKind::Arc)
+                && (s.from.x - 50.0).hypot(s.from.y - 50.0) < 10.0
+        });
+        assert!(
+            !helix_arc_present,
+            "tabs-active path should not emit a helical entry arc near the polygon centroid",
+        );
+        assert!(
+            resp.gcode.contains("Z-1"),
+            "expected tab Z-lift in gcode: {}",
+            resp.gcode,
+        );
+    }
+
+    /// Direct plunge (default): first cut starts at cut depth.
+    #[test]
+    fn direct_plunge_keeps_default_behavior() {
+        let mut params = OpParams::mill_default();
+        params.depth = -1.0;
+        params.step = Some(-1.0);
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Direct profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let first_cut = resp
+            .toolpath
+            .iter()
+            .find(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut) && s.op_id == 1)
+            .expect("expected at least one cut");
+        assert!(
+            first_cut.from.z <= -0.999,
+            "direct plunge should reach cut depth before XY travel; first cut from.z = {}",
+            first_cut.from.z
+        );
+    }
+
+    // ─── Lead-in (p31) ─────────────────────────────────────────────────
+
+    /// Profile + Outside + Arc lead-in emits a G2/G3 arc between the
+    /// surface plunge and the cut plunge.
+    #[test]
+    fn lead_in_arc_emits_g2_or_g3_before_first_cut() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_leads_op(ToolOffset::Outside, LeadKind::Arc, 2.0)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (_rapid, between, _first_cut) = first_lead_phase(&resp.gcode);
+        let saw_arc = between
+            .iter()
+            .any(|l| l.starts_with("G2 ") || l.starts_with("G3 "));
+        assert!(
+            saw_arc,
+            "expected a G2 / G3 arc lead-in at z=0, got intermediate moves={between:?}\n{}",
+            resp.gcode,
+        );
+    }
+
+    /// `LeadKind::Off`: no motion between surface plunge and cut plunge.
+    #[test]
+    fn lead_in_off_emits_no_lead() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_leads_op(ToolOffset::Outside, LeadKind::Off, 0.0)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (_rapid, between, _first_cut) = first_lead_phase(&resp.gcode);
+        let saw_motion = between.iter().any(|l| {
+            l.starts_with("G0 ")
+                || l.starts_with("G1 ")
+                || l.starts_with("G2 ")
+                || l.starts_with("G3 ")
+        });
+        assert!(
+            !saw_motion,
+            "LeadKind::Off should plunge straight to depth, but saw intermediate moves={between:?}\n{}",
+            resp.gcode,
+        );
+    }
+
+    /// `LeadKind::Straight`: rapid to a perpendicular hop point, plunge
+    /// there. No z=0 motion; rapid target is OFFSET from any corner.
+    #[test]
+    fn lead_in_straight_emits_a_straight_segment() {
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_leads_op(ToolOffset::Outside, LeadKind::Straight, 2.0)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (rapid, between, first_cut) = first_lead_phase(&resp.gcode);
+        let saw_motion = between.iter().any(|l| {
+            l.starts_with("G0 ")
+                || l.starts_with("G1 ")
+                || l.starts_with("G2 ")
+                || l.starts_with("G3 ")
+        });
+        assert!(
+            !saw_motion,
+            "Straight lead-in plunges at the offset hop XY, no z=0 motion expected; got {between:?}\n{}",
+            resp.gcode,
+        );
+        let rapid = rapid.expect("expected a G0 X Y rapid");
+        let corners = [(0.0_f64, 0.0_f64), (50.0, 0.0), (50.0, 50.0), (0.0, 50.0)];
+        let on_geom_corner = corners
+            .iter()
+            .any(|(cx, cy)| (rapid.0 - cx).abs() < 0.5 && (rapid.1 - cy).abs() < 0.5);
+        assert!(
+            !on_geom_corner,
+            "Straight lead-in's rapid target should be OFFSET from any geometry corner, got {rapid:?}\n{}",
+            resp.gcode,
+        );
+        assert!(
+            first_cut.is_some(),
+            "expected a first cut motion\n{}",
+            resp.gcode
+        );
+    }
+
+    // ─── Depth scheduling ──────────────────────────────────────────────
+
+    /// `finish_step` emits an extra thin pass just above the final Z.
+    #[test]
+    fn finish_step_emits_extra_thin_final_pass() {
+        let mut params = OpParams::mill_default();
+        params.depth = -2.0;
+        params.step = Some(-1.0);
+        params.start_depth = 0.0;
+        params.finish_step = Some(-0.2);
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("Z-1\n") || resp.gcode.contains("Z-1 "));
+        assert!(resp.gcode.contains("Z-1.8"));
+        assert!(resp.gcode.contains("Z-2\n") || resp.gcode.contains("Z-2 "));
+    }
+
+    /// `through_depth` extends the cut past nominal depth.
+    #[test]
+    fn through_depth_extends_final_z() {
+        let mut params = OpParams::mill_default();
+        params.depth = -2.0;
+        params.step = Some(-1.0);
+        params.through_depth = 0.5;
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.gcode.contains("Z-2.5"),
+            "expected through-cut Z-2.5 in gcode",
+        );
+    }
+
+    /// `depth_list` overrides the step schedule entirely.
+    #[test]
+    fn depth_list_overrides_step_schedule() {
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.step = Some(-1.0);
+        params.depth_list = vec![-0.5, -1.5, -3.0];
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                pattern: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("Z-0.5"));
+        assert!(resp.gcode.contains("Z-1.5"));
+        assert!(resp.gcode.contains("Z-3"));
+        assert!(!resp.gcode.contains("Z-1\n") && !resp.gcode.contains("Z-1 "));
+        assert!(!resp.gcode.contains("Z-2\n") && !resp.gcode.contains("Z-2 "));
+    }
+}

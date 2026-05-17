@@ -25,15 +25,14 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = "0.4"
-# Tauri's `devtools` feature would enable right-click → Inspect
-# Element in release builds, but it adds ~1.5 MB (~10%) to the
-# wiac-desktop binary. Production users get the leaner build;
-# developers debugging a frontend issue can either run a debug build
-# (where the inspector is always on) or relaunch with `WIAC_DEBUG=1`
-# to see the in-DOM error banner. Uncaught JS errors are also
-# forwarded to stderr via the `log_error` command, so terminal /
-# journalctl users see them regardless.
-tauri = { version = "2", features = [] }
+# `devtools` enables right-click → Inspect Element in release builds.
+# Cost measured at +12 KB on the wiac-desktop binary (15.82 → 15.83 MB,
+# 0.08%); negligible. The earlier "1.5 MB" estimate was a measurement
+# error — it compared `cargo build` vs `cargo tauri build`, conflating
+# the cost with Tauri's `custom-protocol` feature. Kept on because the
+# inspector is the most reliable diagnostic path when a frontend bug
+# bypasses the stderr logger.
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-window-state = "2"

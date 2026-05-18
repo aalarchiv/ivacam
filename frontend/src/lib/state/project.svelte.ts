@@ -23,6 +23,15 @@ import {
   type PipelineProgress,
 } from './generated.svelte';
 import { SelectionState, type SelectionMode } from './selection.svelte';
+import {
+  ProjectDataState,
+  DEFAULT_SETTINGS,
+  saveSettings,
+  type AppSettings,
+} from './project-data.svelte';
+
+export { DEFAULT_SETTINGS };
+export type { AppSettings };
 // Bring the union types into scope locally; project-types and op_types
 // re-export them through this module for back-compat callers.
 import type { OpEntry, OpKind, OpPatch } from './op_types';
@@ -182,101 +191,34 @@ import {
   type CommandTarget,
 } from './commands';
 
-const SETTINGS_KEY = 'wiac.settings';
-const LEGACY_THEME_KEY = 'wiac.theme';
-const LEGACY_LOCALE_KEY = 'wiac.locale';
-
-export interface AppSettings {
-  theme: 'auto' | 'light' | 'dark';
-  language: 'en' | 'de';
-  previewMode: 'wireframe' | 'solid' | 'both';
-  solidColor: string;
-  solidOpacity: number;
-  edgeColor: string;
-  edgeOpacity: number;
-  cellResolutionMode: 'auto' | 'manual';
-  cellResolutionMm: number;
-  solidPreviewByDefault: boolean;
-  maxSimulationCells: number;
-  /// When true, GenerateBar refuses to emit gcode while the most recent
-  /// sim run reported critical warnings (collisions, rapid-through-stock).
-  blockOnCriticalSimWarnings: boolean;
-  /// When true, the sim driver keeps the playhead replayed to 1.0 after
-  /// every project save / regenerate so warnings surface immediately.
-  autoRunSimOnSave: boolean;
-  /// Tauri-only: when true, source DXF/SVG/image files are reloaded
-  /// automatically when their on-disk content changes (e.g. the user
-  /// hits Ctrl+S in their CAD app). When false the user gets a
-  /// "Reload?" toast instead.
-  autoReloadSources: boolean;
-  /// When true, Scene3D draws a translucent stock-envelope box at all
-  /// times (not only when the sim heightfield is active). Combined with
-  /// the per-project `stock.visible` toggle.
-  showStockBox: boolean;
-}
-
-export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'auto',
-  language: 'en',
-  previewMode: 'wireframe',
-  solidColor: '#c8b48a',
-  solidOpacity: 0.5,
-  edgeColor: '#1a1a1a',
-  edgeOpacity: 1.0,
-  cellResolutionMode: 'auto',
-  cellResolutionMm: 0.2,
-  solidPreviewByDefault: false,
-  // Stepped voxel mesh is ~280 bytes / cell (positions + normals +
-  // indices). 1M cells is ~280 MB of GPU memory — comfortable on
-  // integrated GPUs and most laptops. Users on discrete-GPU desktops
-  // can raise this in Settings → Performance. (audit-auim)
-  maxSimulationCells: 1_000_000,
-  blockOnCriticalSimWarnings: false,
-  autoRunSimOnSave: true,
-  autoReloadSources: true,
-  showStockBox: true,
-};
-
-/// Load persisted settings, deep-merging stored values over defaults so
-/// adding new keys later doesn't break old payloads. Falls back to the
-/// legacy `wiac.theme` / `wiac.locale` keys when no `wiac.settings` blob
-/// exists yet (first run after the dialog ships).
-function loadSettings(): AppSettings {
-  if (typeof window === 'undefined') return { ...DEFAULT_SETTINGS };
-  let merged: AppSettings = { ...DEFAULT_SETTINGS };
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<AppSettings> | null;
-      if (parsed && typeof parsed === 'object') {
-        merged = { ...merged, ...parsed };
-      }
-      return merged;
-    }
-    // Migration path: seed from legacy single-purpose keys.
-    const legacyTheme = window.localStorage.getItem(LEGACY_THEME_KEY);
-    if (legacyTheme === 'auto' || legacyTheme === 'light' || legacyTheme === 'dark') {
-      merged.theme = legacyTheme;
-    }
-    const legacyLocale = window.localStorage.getItem(LEGACY_LOCALE_KEY);
-    if (legacyLocale === 'en' || legacyLocale === 'de') {
-      merged.language = legacyLocale;
-    }
-  } catch {
-    // localStorage unavailable / quota / parse failure → defaults are fine.
-  }
-  return merged;
-}
-
 class ProjectState {
-  imported = $state<ImportResponse | null>(null);
+  /// Project-data slice (audit 6cpl step 4 / n5v5). Owns `imported`,
+  /// `operations`, `tools`, `machine`, `stock`, `fixtures`,
+  /// `textLayers`, `dirty`, `visibleLayers`, `regionsVisible`, and
+  /// `settings` — i.e. every field the undo/redo command bus mutates.
+  /// The proxy getters/setters below forward `project.imported` etc.
+  /// to `this.data.…` so existing call sites stay unchanged.
+  data = new ProjectDataState();
+
+  get imported(): ImportResponse | null {
+    return this.data.imported;
+  }
+  set imported(v: ImportResponse | null) {
+    this.data.imported = v;
+  }
+
   loading = $state(false);
   loadingMessage = $state<string | null>(null);
   /// Last error surfaced to the user. `string` for legacy paths (file
   /// upload, save dialogs, etc.); `WiacError` for backend pipeline /
   /// import errors so the toast can render recovery hints + auto-fix.
   error = $state<string | WiacError | null>(null);
-  visibleLayers = $state<Set<string>>(new Set());
+  get visibleLayers(): Set<string> {
+    return this.data.visibleLayers;
+  }
+  set visibleLayers(v: Set<string>) {
+    this.data.visibleLayers = v;
+  }
 
   /// Generate-pipeline slice (audit 6cpl step 2). Holds `generated`,
   /// `generating`, `pipelineState`/`pipelineProgress`,
@@ -395,9 +337,12 @@ class ProjectState {
     this.gen.toolpathTotalLen = v;
   }
 
-  /// Project fixtures (clamps, dogs, vise jaws). Threaded into the
-  /// sim's collision check so the cutter can't run them over.
-  fixtures = $state<Fixture[]>([]);
+  get fixtures(): Fixture[] {
+    return this.data.fixtures;
+  }
+  set fixtures(v: Fixture[]) {
+    this.data.fixtures = v;
+  }
   get selectedFixtureId(): number | null {
     return this.sel.selectedFixtureId;
   }
@@ -405,60 +350,33 @@ class ProjectState {
     this.sel.selectedFixtureId = v;
   }
 
-  /// Stock visualization in the 3D view. `auto` (default) derives the
-  /// rectangular extent from the imported bbox plus a small margin and
-  /// uses setup.mill.depth for the thickness; explicit values override.
-  /// `visible` toggles the translucent box without losing the dimensions.
-  stock = $state<StockConfig>({
-    visible: true,
-    mode: 'auto',
-    margin: 5,
-    thickness: 5,
-    customX: 100,
-    customY: 100,
-  });
+  get stock(): StockConfig {
+    return this.data.stock;
+  }
+  set stock(v: StockConfig) {
+    this.data.stock = v;
+  }
 
-  /// Project-scoped tool library. Replaces the single `setup.tool`
-  /// configured via SetupPanel; ops will reference an entry by id once
-  /// the operations list lands. Today these don't drive Generate yet
-  /// (the legacy setup path is still wired) but they're persisted via
-  /// .vc-project so the user can curate a stable set across sessions.
-  tools = $state<ToolEntry[]>([
-    {
-      id: 1,
-      name: '3 mm endmill',
-      kind: 'endmill',
-      diameter: 3,
-      flutes: 2,
-      speed: 18000,
-      plungeRate: 100,
-      feedRate: 800,
-      coolant: 'off',
-    },
-  ]);
+  get tools(): ToolEntry[] {
+    return this.data.tools;
+  }
+  set tools(v: ToolEntry[]) {
+    this.data.tools = v;
+  }
 
-  /// Project-scoped machine settings. Same story as tools — duplicates
-  /// `setup.machine` until the rewire lands but is the source of truth
-  /// going forward.
-  machine = $state<MachineSettings>({
-    unit: 'mm',
-    mode: 'mill',
-    comments: true,
-    arcs: true,
-    supportsToolchange: false,
-    fastMoveZ: 5,
-    accel: { x: 250, y: 250, z: 250 },
-    toolchangeS: 5,
-    rapidSpeed: 5000,
-    workArea: { x: 200, y: 300, z: 50 },
-  });
+  get machine(): MachineSettings {
+    return this.data.machine;
+  }
+  set machine(v: MachineSettings) {
+    this.data.machine = v;
+  }
 
-  /// Ordered list of operations the program runs. Each op has a kind, a
-  /// tool reference (id into project.tools), a source (which geometry it
-  /// consumes), and per-kind parameters. Reordering = changing run
-  /// order. Disabling = excluding from the final program without
-  /// losing config.
-  operations = $state<OpEntry[]>([]);
+  get operations(): OpEntry[] {
+    return this.data.operations;
+  }
+  set operations(v: OpEntry[]) {
+    this.data.operations = v;
+  }
   get selectedOpId(): number | null {
     return this.sel.selectedOpId;
   }
@@ -466,35 +384,38 @@ class ProjectState {
     this.sel.selectedOpId = v;
   }
 
-  /// Persistent text entities — phase 1 of the text-engraving rework.
-  /// Each entry holds the editable inputs (text content, font, size,
-  /// transform, spacing) that the pipeline turns into segments at
-  /// generate time. Distinct from baked TEXT segments in `imported`:
-  /// editing a TextLayer field re-runs the renderer, and a future
-  /// `text_engrave` op references one by id.
-  textLayers = $state<TextLayer[]>([]);
+  get textLayers(): TextLayer[] {
+    return this.data.textLayers;
+  }
+  set textLayers(v: TextLayer[]) {
+    this.data.textLayers = v;
+  }
   get selectedTextLayerId(): number | null {
     return this.sel.selectedTextLayerId;
   }
   set selectedTextLayerId(v: number | null) {
     this.sel.selectedTextLayerId = v;
   }
-  /// True when the in-memory project differs from the gcode currently
-  /// shown in `generated`. Set by op edits/reorders/enable toggles;
-  /// cleared by setGenerated. The status badge in the ops list reads
-  /// this so the user knows "re-Generate to refresh".
-  dirty = $state(false);
+  get dirty(): boolean {
+    return this.data.dirty;
+  }
+  set dirty(v: boolean) {
+    this.data.dirty = v;
+  }
 
-  /// Whether the 2D canvas paints the filled-region preview for Pocket
-  /// ops on top of the wireframe. Default on — it's the answer to
-  /// "what will this op actually machine?".
-  regionsVisible = $state(true);
+  get regionsVisible(): boolean {
+    return this.data.regionsVisible;
+  }
+  set regionsVisible(v: boolean) {
+    this.data.regionsVisible = v;
+  }
 
-  /// Per-installation user preferences. Persisted to localStorage under
-  /// `wiac.settings`; not part of .vc-project (those are per-project).
-  /// The SettingsDialog owns the UX; consumers (theme application, i18n
-  /// init, future cutting-preview rendering) read from here.
-  settings = $state<AppSettings>(loadSettings());
+  get settings(): AppSettings {
+    return this.data.settings;
+  }
+  set settings(v: AppSettings) {
+    this.data.settings = v;
+  }
 
   /// Most recent sim diagnostics, written through by the sim driver
   /// after each forward advance(). Null = no sim run yet (or the
@@ -655,12 +576,7 @@ class ProjectState {
   /// tiny object) so we just call it on every mutation rather than
   /// debouncing — the dialog won't fire updates fast enough to matter.
   saveSettings() {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
-    } catch {
-      // ignore — quota / disabled storage are non-fatal here.
-    }
+    saveSettings(this.settings);
   }
 
   updateSettings(patch: Partial<AppSettings>) {

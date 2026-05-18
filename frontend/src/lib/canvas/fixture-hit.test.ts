@@ -9,30 +9,33 @@ import type { Fixture } from '../state/project-types';
 function box(id: number, ox: number, oy: number, w: number, d: number): Fixture {
   return {
     id,
+    name: `box-${id}`,
     origin: [ox, oy],
     z_bottom: 0,
     z_top: 1,
-    color: '#fff',
+    color: 0xffffffff,
     kind: { shape: 'box', width: w, depth: d },
   };
 }
 function cyl(id: number, ox: number, oy: number, r: number): Fixture {
   return {
     id,
+    name: `cyl-${id}`,
     origin: [ox, oy],
     z_bottom: 0,
     z_top: 1,
-    color: '#fff',
+    color: 0xffffffff,
     kind: { shape: 'cylinder', radius: r },
   };
 }
 function poly(id: number, ox: number, oy: number, verts: [number, number][]): Fixture {
   return {
     id,
+    name: `poly-${id}`,
     origin: [ox, oy],
     z_bottom: 0,
     z_top: 1,
-    color: '#fff',
+    color: 0xffffffff,
     kind: { shape: 'polygon', vertices: verts },
   };
 }

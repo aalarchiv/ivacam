@@ -116,11 +116,31 @@ pub struct ToolEntry {
     #[serde(default, skip_serializing_if = "is_false")]
     pub wirbeln: bool,
     /// Wirbeln stepover override (rt1.25). When `wirbeln` is `true`,
-    /// the effective cascade step is `min(op.xy_step,
-    /// wirbeln_stepover_mm OR tool_radius / 2)`. mm, positive only.
-    /// None = use the half-radius rule.
+    /// this is the **stride along the toolpath per full revolution of
+    /// the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm,
+    /// positive only. None = use the half-radius default. (3e5 made
+    /// this the spiral stride; before 3e5 it was the cascade-step
+    /// clamp, which was the "fake Wirbeln" v1 implementation.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wirbeln_stepover_mm: Option<f64>,
+    /// Wirbeln extra-width (Estlcam `T_Wirbelzusatzbreite` /
+    /// rt1.25 / 3e5). The *diameter* in mm by which the helical
+    /// overlay widens the effective cut path: the cutter centerline
+    /// scrolls on a small circle of radius `wirbeln_extra_width_mm /
+    /// 2` around the cascade ring. Net cut width is
+    /// `diameter + wirbeln_extra_width_mm`. None / 0 ⇒ overlay
+    /// disabled even when `wirbeln == true` (which then falls back
+    /// to a no-op — the v1 step clamp is gone in 3e5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wirbeln_extra_width_mm: Option<f64>,
+    /// Wirbeln Z-wobble amplitude (Estlcam `T_Osc`, 3e5). When > 0,
+    /// the spiral overlay adds a `cos(3·θ) · osc − osc` Z ripple so
+    /// the cutter dips slightly below the cut plane between
+    /// revolutions — improves chip evacuation on the wobbly cutters
+    /// the feature targets. mm, positive only. None / 0 ⇒ flat
+    /// (no Z motion added by the overlay).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wirbeln_osc_mm: Option<f64>,
     /// Spindle warm-up pause in seconds applied once per used tool by
     /// the time estimator. Mirrors `ToolConfig.pause`.
     #[serde(
@@ -202,6 +222,8 @@ impl Default for ToolEntry {
             tslot_neck_length_mm: None,
             wirbeln: false,
             wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
             pause: default_tool_pause(),
             flute_length_mm: None,
             shank_diameter_mm: None,

@@ -56,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 22;
+pub const PIPELINE_VERSION: u32 = 23;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -305,6 +305,8 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     hash_opt_f64(t.tslot_neck_length_mm, h);
     t.wirbeln.hash(h);
     hash_opt_f64(t.wirbeln_stepover_mm, h);
+    hash_opt_f64(t.wirbeln_extra_width_mm, h);
+    hash_opt_f64(t.wirbeln_osc_mm, h);
     let coolant: u8 = match t.coolant {
         Coolant::Off => 0,
         Coolant::Mist => 1,
@@ -841,6 +843,8 @@ mod tests {
             tslot_neck_length_mm: None,
             wirbeln: false,
             wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
@@ -892,7 +896,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x60de_5bd8_ee24_f9fa_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x09ce_aec1_f899_53f6_u64, "got {:#018x}", key.0);
     }
 
     #[test]

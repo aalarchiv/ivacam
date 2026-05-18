@@ -129,6 +129,21 @@ pub(super) fn synthesize_op_setup(
     } else {
         0.0
     };
+    // 3e5: Wirbeln helical overlay parameters. Off when the tool isn't
+    // tagged, or when extra-width is 0 / unset. Stepover defaults to
+    // half the spiral radius (one-revolution overlap → smooth motion).
+    let (wirbeln_radius, wirbeln_stepover, wirbeln_osc) = if tool.wirbeln {
+        let r = tool.wirbeln_extra_width_mm.unwrap_or(0.0) * 0.5;
+        if r > 0.0 {
+            let stepover = tool.wirbeln_stepover_mm.filter(|v| *v > 0.0).unwrap_or(r);
+            let osc = tool.wirbeln_osc_mm.unwrap_or(0.0).max(0.0);
+            (r, stepover, osc)
+        } else {
+            (0.0, 0.0, 0.0)
+        }
+    } else {
+        (0.0, 0.0, 0.0)
+    };
     setup.tool = ToolConfig {
         number: tool.id,
         name: tool.name.clone(),
@@ -151,6 +166,16 @@ pub(super) fn synthesize_op_setup(
         rate_v_finish: finish_plunge,
         rate_h_finish: finish_feed,
         pierce_sec,
+        wirbeln_radius,
+        wirbeln_stepover,
+        wirbeln_osc,
+        // Spiral rotation direction: matches the op's contour cut
+        // direction (Estlcam's Einstellungen.Gleichlauf). Non-contour
+        // kinds (Drill et al.) never reach the wirbeln overlay anyway,
+        // so the default doesn't matter — pick `true` (climb).
+        wirbeln_climb: op
+            .contour_params()
+            .map_or(true, |c| matches!(c.cut_direction, crate::project::CutDirection::Climb)),
     };
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
@@ -377,6 +402,14 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 rate_v_finish: fp,
                 rate_h_finish: ff,
                 pierce_sec,
+                // Wirbeln (3e5) is a cut-time overlay only — the
+                // header_setup_for path is for program header emission
+                // and never reaches the cut walker, so the resolved
+                // params here are inert defaults.
+                wirbeln_radius: 0.0,
+                wirbeln_stepover: 0.0,
+                wirbeln_osc: 0.0,
+                wirbeln_climb: true,
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
@@ -405,6 +438,10 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             rate_v_finish: fp,
             rate_h_finish: ff,
             pierce_sec,
+            wirbeln_radius: 0.0,
+            wirbeln_stepover: 0.0,
+            wirbeln_osc: 0.0,
+            wirbeln_climb: true,
         };
     }
     setup

@@ -33,6 +33,7 @@ pub mod post_profile;
 pub mod preview;
 mod tabs;
 mod walk;
+pub mod wirbeln;
 mod z_schedule;
 
 use entry::{
@@ -41,7 +42,7 @@ use entry::{
 use leads::{lead_in_geometry, lead_out_geometry, LeadGeometry};
 use order::{end_pos, order_offsets};
 use tabs::emit_path_with_tabs;
-use walk::{emit_path_with_corner_feed, fit_line_runs};
+use walk::{emit_cut_path, fit_line_runs};
 use z_schedule::{arc_length, build_z_schedule};
 
 /// Generic post-processor trait. Stateful — implementations track the last
@@ -627,8 +628,10 @@ fn multi_pass<P: PostProcessor>(
         post.feedrate(rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
         let fitted = fit_line_runs(segments, setup);
-        emit_path_with_corner_feed(
+        emit_cut_path(
             &fitted,
+            setup,
+            cut_z,
             dragoff,
             rate_h,
             setup.mill.corner_feed_reduction,
@@ -740,8 +743,10 @@ fn multi_pass<P: PostProcessor>(
             post.linear(Some(start.x), Some(start.y), Some(z));
             let dragoff = setup.tool.dragoff.unwrap_or(0.0);
             let fitted = fit_line_runs(segments, setup);
-            emit_path_with_corner_feed(
+            emit_cut_path(
                 &fitted,
+                setup,
+                z,
                 dragoff,
                 rate_h,
                 setup.mill.corner_feed_reduction,
@@ -772,8 +777,10 @@ fn multi_pass<P: PostProcessor>(
                 post.feedrate(rate_h);
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
                 let fitted = fit_line_runs(segments, setup);
-                emit_path_with_corner_feed(
+                emit_cut_path(
                     &fitted,
+                    setup,
+                    z,
                     dragoff,
                     rate_h,
                     setup.mill.corner_feed_reduction,
@@ -797,8 +804,10 @@ fn multi_pass<P: PostProcessor>(
             } else {
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
                 let fitted = fit_line_runs(segments, setup);
-                emit_path_with_corner_feed(
+                emit_cut_path(
                     &fitted,
+                    setup,
+                    z,
                     dragoff,
                     rate_h,
                     setup.mill.corner_feed_reduction,
@@ -825,8 +834,10 @@ fn multi_pass<P: PostProcessor>(
         post.feedrate(rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
         let fitted = fit_line_runs(segments, setup);
-        emit_path_with_corner_feed(
+        emit_cut_path(
             &fitted,
+            setup,
+            total_depth,
             dragoff,
             rate_h,
             setup.mill.corner_feed_reduction,

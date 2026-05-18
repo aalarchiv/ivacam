@@ -7,10 +7,41 @@
     clippy::many_single_char_names
 )]
 
+use super::wirbeln::{apply_wirbeln, WirbelnParams};
 use super::PostProcessor;
 use crate::cam::setup::Setup;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
+
+/// Cut-pass dispatcher (3e5). When the active tool has a Wirbeln
+/// overlay configured, route the path through the helical-spiral
+/// emit; otherwise fall back to the standard corner-feed walker. All
+/// five `multi_pass` call sites go through here so the Wirbeln check
+/// lives in exactly one place.
+pub(super) fn emit_cut_path<P: PostProcessor>(
+    segments: &[Segment],
+    setup: &Setup,
+    cut_z: f64,
+    dragoff: f64,
+    rate_h: u32,
+    corner_feed_reduction: f64,
+    post: &mut P,
+) {
+    if setup.tool.wirbeln_radius > 0.0 && setup.tool.wirbeln_stepover > 0.0 {
+        let params = WirbelnParams {
+            radius: setup.tool.wirbeln_radius,
+            stepover: setup.tool.wirbeln_stepover,
+            osc: setup.tool.wirbeln_osc,
+            climb: setup.tool.wirbeln_climb,
+        };
+        let pts = apply_wirbeln(segments, cut_z, params);
+        for (x, y, z) in pts {
+            post.linear(Some(x), Some(y), Some(z));
+        }
+        return;
+    }
+    emit_path_with_corner_feed(segments, dragoff, rate_h, corner_feed_reduction, post);
+}
 
 /// Emit segments with optional drag-knife trailing offset. When
 /// `dragoff > 0`, every line→line corner is preceded by an arc that swivels

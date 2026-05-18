@@ -146,15 +146,24 @@ export interface ToolEntry {
   /// commanded RPM before the cut starts. Critical for hand-controllers
   /// without spindle-at-speed feedback. Default 1.
   pause?: number;
-  /// Wirbeln (rt1.25): per-tool automatic chip-thinning flag. When
-  /// true, Pocket ops using this tool clamp their cascade step to
-  /// `wirbelnStepoverMm ?? tool_radius / 2` — bounds radial
-  /// engagement at half-radius so the cutter doesn't overload on
-  /// hard materials. Default false.
+  /// Wirbeln (rt1.25 / 3e5): per-tool helical-spiral overlay flag.
+  /// When enabled with `wirbelnExtraWidthMm > 0`, every cut move
+  /// using this tool is subdivided and the cutter centerline spirals
+  /// around the toolpath — engagement bounded at each point.
+  /// Default false.
   wirbeln?: boolean;
-  /// Wirbeln stepover override (rt1.25): mm. None = use the
-  /// half-radius rule (tool_radius / 2).
+  /// Wirbeln spiral diameter (Estlcam Wirbelzusatzbreite, 3e5): mm.
+  /// Net cut width becomes `diameter + wirbelnExtraWidthMm`. None /
+  /// 0 ⇒ overlay disabled (Wirbeln is a no-op).
+  wirbelnExtraWidthMm?: number;
+  /// Wirbeln stride along the toolpath per full spiral revolution
+  /// (Estlcam T_Wirbel_Stepover, 3e5): mm. None ⇒ half the spiral
+  /// radius (one-revolution overlap).
   wirbelnStepoverMm?: number;
+  /// Wirbeln Z-wobble amplitude (Estlcam T_Osc, 3e5): mm. Overlay
+  /// adds a `cos(3θ)·osc − osc` Z ripple between revolutions for
+  /// chip evacuation. None / 0 ⇒ flat.
+  wirbelnOscMm?: number;
   /// Default depth-per-pass (negative, mm). Operations using this tool
   /// inherit this when their own `step` is unset.
   defaultStep?: number;

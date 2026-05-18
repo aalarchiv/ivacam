@@ -159,20 +159,23 @@ mod tests {
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project, ToolEntry, ToolKind};
 
-    /// Wirbeln (rt1.25): a Pocket op with a Wirbeln-flagged tool
-    /// emits MORE cascade rings than the same op without Wirbeln,
-    /// because the effective `xy_step` gets clamped to `tool_radius/2`.
+    /// Wirbeln (3e5): when a Pocket op uses a Wirbeln-tagged tool
+    /// with a non-zero extra-width, the gcode body contains many more
+    /// G1 moves than the same op without Wirbeln — the helical-spiral
+    /// overlay subdivides every cut move at the spiral stride. The
+    /// cascade-ring count stays the same (3e5 removed the v1
+    /// `xy_step` clamp); the extra moves come from the overlay's
+    /// stride stamping at gcode-emit time.
     #[test]
-    fn wirbeln_tool_increases_cascade_ring_count() {
-        let mut tool_a = endmill(1, 6.0);
-        tool_a.wirbeln = false;
+    fn wirbeln_tool_inflates_gcode_g1_count() {
+        let tool_a = endmill(1, 6.0);
         let mut tool_b = endmill(1, 6.0);
         tool_b.wirbeln = true;
+        tool_b.wirbeln_extra_width_mm = Some(2.0); // 1 mm spiral radius
+        tool_b.wirbeln_stepover_mm = Some(2.0); // 2 mm stride per rev
         let params = OpParams::mill_default();
-        // overlap 0.05 -> xy_step = 6 * 0.95 = 5.7 mm. Wirbeln clamps
-        // to tool_radius/2 = 1.5 mm, so b should have many more rings.
         let pocket = crate::project::PocketParams {
-            xy_overlap: 0.05,
+            xy_overlap: 0.5,
             ..crate::project::PocketParams::default()
         };
         let project_with_tool = |tool: ToolEntry| Project {
@@ -199,7 +202,7 @@ mod tests {
         let resp_a = run_pipeline(
             PipelineRequest {
                 project: project_with_tool(tool_a),
-                post_processor: None,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Linuxcnc),
             },
             |_, _, _| {},
         )
@@ -207,16 +210,21 @@ mod tests {
         let resp_b = run_pipeline(
             PipelineRequest {
                 project: project_with_tool(tool_b),
-                post_processor: None,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Linuxcnc),
             },
             |_, _, _| {},
         )
         .unwrap();
+        let g1_a = resp_a.gcode.lines().filter(|l| l.starts_with("G1")).count();
+        let g1_b = resp_b.gcode.lines().filter(|l| l.starts_with("G1")).count();
         assert!(
-            resp_b.stats.offset_count > resp_a.stats.offset_count,
-            "Wirbeln should produce more cascade rings: wirbeln=on offsets={} vs off offsets={}",
-            resp_b.stats.offset_count,
-            resp_a.stats.offset_count
+            g1_b > g1_a * 3,
+            "Wirbeln overlay should multiply G1 count substantially: on={g1_b} vs off={g1_a}",
+        );
+        // Cascade ring count stays the same — the overlay doesn't add rings.
+        assert_eq!(
+            resp_a.stats.offset_count, resp_b.stats.offset_count,
+            "3e5 removed the xy_step clamp; ring count should match",
         );
     }
 

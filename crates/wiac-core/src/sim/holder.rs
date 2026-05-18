@@ -196,6 +196,8 @@ mod tests {
             tslot_neck_length_mm: None,
             wirbeln: false,
             wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
             pause: 1,
             flute_length_mm: flute,
             shank_diameter_mm: shank,

@@ -221,28 +221,13 @@ pub(super) fn build_op_offsets(
     } else {
         0.5
     };
-    let mut xy_step = setup.tool.diameter * (1.0 - overlap);
-    // Wirbeln (rt1.25): when the tool is flagged for automatic
-    // chip-thinning, clamp the cascade step so radial engagement
-    // stays bounded — half the tool radius (= tool_radius / 2) is the
-    // classic chip-thinning rule. Pocket ops only; other op kinds
-    // already control their own stepover. The user can override via
-    // `ToolEntry.wirbeln_stepover_mm`.
-    if matches!(effective_op.kind, OpKind::Pocket { .. }) {
-        if let Some(tool) = project.tools.iter().find(|t| t.id == effective_op.tool_id) {
-            if tool.wirbeln {
-                let half_r = (tool.diameter * 0.5) * 0.5;
-                let cap = tool
-                    .wirbeln_stepover_mm
-                    .filter(|v| *v > 0.0)
-                    .unwrap_or(half_r);
-                if cap > 0.0 && cap < xy_step {
-                    xy_step = cap;
-                }
-            }
-        }
-    }
-    let xy_step = xy_step;
+    let xy_step = setup.tool.diameter * (1.0 - overlap);
+    // 3e5: Wirbeln no longer clamps the cascade step. The v1
+    // implementation (xy_step ≤ tool_radius / 2) bounded engagement
+    // by reducing stepover, which slowed every cut. The 3e5 helical
+    // overlay applied at gcode-emit time bounds engagement directly
+    // by making the cutter rotate around the toolpath centerline —
+    // the cascade can stay at the user's xy_step regardless.
     let mut offsets: Vec<PolylineOffset> = Vec::new();
     let mut closed = 0usize;
     let mut emitted_objects = 0usize;
@@ -2355,6 +2340,8 @@ mod tests {
             tslot_neck_length_mm: None,
             wirbeln: false,
             wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,

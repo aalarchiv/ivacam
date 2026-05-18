@@ -126,6 +126,8 @@ interface WireToolEntry {
   tslot_neck_length_mm?: number;
   wirbeln?: boolean;
   wirbeln_stepover_mm?: number;
+  wirbeln_extra_width_mm?: number;
+  wirbeln_osc_mm?: number;
   /// Spindle warmup pause (seconds) emitted as G4 P<n> after every
   /// spindle_cw / spindle_ccw. Default 1.
   pause?: number;
@@ -471,6 +473,12 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.wirbeln ? { wirbeln: true } : {}),
     ...(t.wirbelnStepoverMm !== undefined && t.wirbelnStepoverMm > 0
       ? { wirbeln_stepover_mm: t.wirbelnStepoverMm }
+      : {}),
+    ...(t.wirbelnExtraWidthMm !== undefined && t.wirbelnExtraWidthMm > 0
+      ? { wirbeln_extra_width_mm: t.wirbelnExtraWidthMm }
+      : {}),
+    ...(t.wirbelnOscMm !== undefined && t.wirbelnOscMm > 0
+      ? { wirbeln_osc_mm: t.wirbelnOscMm }
       : {}),
     // Spindle warmup pause (seconds). Omit when at backend default
     // (1) so we don't bloat the wire payload for the common case.

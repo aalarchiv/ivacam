@@ -888,8 +888,8 @@
               <div class="holder-row pass-overrides">
                 <span
                   class="holder-label"
-                  title="Automatic chip-thinning (rt1.25 / Estlcam Wirbeln). When checked, Pocket ops using this tool clamp the cascade step down to tool_radius/2 (or the user-set Step) — keeps the cutter from overloading on hard materials. Set the Step value to override the default half-radius rule."
-                  >Chip-thinning (Estlcam: Wirbeln)</span
+                  title="Wirbeln helical-spiral overlay (3e5 / Estlcam Flooper). When enabled with an Extra width > 0, every cut move with this tool is subdivided and the cutter centerline spirals around the toolpath — bounded engagement at every point. Set Extra width to the spiral diameter (Estlcam Wirbelzusatzbreite), Stride to the path distance per revolution, Osc to a small Z-wobble for chip clearance."
+                  >Wirbeln (helical overlay)</span
                 >
               </div>
               <div class="holder-row">
@@ -903,18 +903,56 @@
                   <span>Enable</span>
                 </label>
                 <label>
-                  <span>Step (mm)</span>
+                  <span>Extra width (mm)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0"
+                    value={tool.wirbelnExtraWidthMm ?? ''}
+                    disabled={!tool.wirbeln}
+                    title="Estlcam Wirbelzusatzbreite — diameter (mm) by which the spiral overlay widens the cut. Empty / 0 ⇒ overlay disabled (Wirbeln is a no-op)."
+                    onchange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      updateField(
+                        i,
+                        'wirbelnExtraWidthMm',
+                        v === '' ? undefined : parseFloat(v),
+                      );
+                    }}
+                  />
+                </label>
+              </div>
+              <div class="holder-row">
+                <label>
+                  <span>Stride (mm)</span>
                   <input
                     type="number"
                     step="0.1"
                     min="0.05"
-                    placeholder={(tool.diameter * 0.25).toFixed(2)}
+                    placeholder={((tool.wirbelnExtraWidthMm ?? 0) * 0.5).toFixed(2)}
                     value={tool.wirbelnStepoverMm ?? ''}
                     disabled={!tool.wirbeln}
-                    title="Cascade-step cap when Wirbeln is on. Empty = use tool_radius / 2 (the classic chip-thinning rule)."
+                    title="Path distance per full spiral revolution. Empty = half the spiral radius (one-revolution overlap)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'wirbelnStepoverMm', v === '' ? undefined : parseFloat(v));
+                    }}
+                  />
+                </label>
+                <label>
+                  <span>Z-wobble (mm)</span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    placeholder="0"
+                    value={tool.wirbelnOscMm ?? ''}
+                    disabled={!tool.wirbeln}
+                    title="Z ripple amplitude. The cutter dips up to 2·osc below the cut plane between revolutions, improving chip evacuation. Empty / 0 ⇒ flat (no Z motion from the overlay)."
+                    onchange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      updateField(i, 'wirbelnOscMm', v === '' ? undefined : parseFloat(v));
                     }}
                   />
                 </label>

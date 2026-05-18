@@ -180,50 +180,59 @@ pub(super) fn synthesize_op_setup(
     } else {
         op.params.plunge
     };
+    // kbx5 step 2: read per-kind fields from the embedded variant
+    // structs. ContourParams covers Profile/Pocket/Engrave/DragKnife;
+    // ProfileParams covers Profile-only fields (overcut, reverse,
+    // helix). Non-applicable kinds fall back to defaults — same
+    // effective behavior as before since those fields were ignored
+    // downstream for non-applicable kinds.
+    let contour = op.contour_params();
+    let profile = op.profile_params();
     setup.mill = MillConfig {
         active: true,
         depth: op.params.depth,
         start_depth: op.params.start_depth,
         step,
         fast_move_z: op.params.fast_move_z,
-        helix_mode: op.params.helix,
-        reverse: op.params.reverse,
+        helix_mode: profile.is_some_and(|p| p.helix),
+        reverse: profile.is_some_and(|p| p.reverse),
         objectorder: op.params.objectorder,
         offset,
-        overcut: op.params.overcut,
+        overcut: profile.is_some_and(|p| p.overcut),
         plunge,
-        corner_feed_reduction: op.params.corner_feed_reduction.clamp(0.0, 0.95),
+        corner_feed_reduction: contour
+            .map_or(0.0, |c| c.corner_feed_reduction)
+            .clamp(0.0, 0.95),
         finish_step: op.params.finish_step,
         through_depth: op.params.through_depth.max(0.0),
         depth_list: op.params.depth_list.clone(),
     };
     setup.pockets = match &op.kind {
-        OpKind::Pocket { strategy, .. } => PocketConfig {
+        OpKind::Pocket {
+            strategy, pocket, ..
+        } => PocketConfig {
             active: true,
-            islands: op.params.pocket_islands,
+            islands: pocket.pocket_islands,
             zigzag: matches!(strategy, PocketStrategy::Zigzag),
-            insideout: op.params.pocket_insideout,
-            nocontour: op.params.pocket_nocontour,
+            insideout: pocket.pocket_insideout,
+            nocontour: pocket.pocket_nocontour,
         },
         _ => PocketConfig::default(),
     };
-    setup.tabs = op.params.tabs.clone();
-    // C8 (rt1.21 followup): drive `setup.tabs.active` from the
-    // single source of truth — `tab_mode != Off`. The legacy
-    // `op.params.tabs.active` boolean was a separate hand-mirrored
-    // flag; the FE no longer maintains it perfectly, and a non-Off
-    // tab_mode with `tabs.active=false` would silently emit no tabs
-    // despite the user seeing markers on the canvas. Honor the
-    // legacy flag too (logical OR) so projects saved before this
-    // change keep working.
+    setup.tabs = contour.map(|c| c.tabs.clone()).unwrap_or_default();
+    // C8 (rt1.21 followup): drive `setup.tabs.active` from the single
+    // source of truth — `tab_mode != Off`. The legacy `tabs.active`
+    // boolean was a separate hand-mirrored flag; honor it (logical OR)
+    // so old projects still emit tabs.
+    let tab_mode = contour.map_or(crate::project::TabPlacementMode::Off, |c| c.tab_mode);
     setup.tabs.active =
-        setup.tabs.active || !matches!(op.params.tab_mode, crate::project::TabPlacementMode::Off);
+        setup.tabs.active || !matches!(tab_mode, crate::project::TabPlacementMode::Off);
     if trochoidal {
         // Tabs aren't yet supported on trochoidal pockets; force-off so
         // the gcode emitter doesn't see active tabs.
         setup.tabs.active = false;
     }
-    setup.leads = op.params.leads.clone();
+    setup.leads = contour.map(|c| c.leads.clone()).unwrap_or_default();
     // Laser lead-in (rt1.29 follow-up, kkhf): when the tool is a
     // laser and the op didn't set its own lead-in, fall back to the
     // per-tool `laser_lead_in_mm`. Reduces edge burn at the entry

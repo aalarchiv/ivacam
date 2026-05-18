@@ -41,7 +41,8 @@ pub(super) fn run_drill<P: PostProcessor>(
     // rt1.20 (Stufenfase): when the drill op carries a
     // chamfer-after width, walk a single revolution at each hole's
     // rim at the V-bit chamfer depth.
-    if let Some(w) = op.params.chamfer_after_width_mm {
+    // kbx5 step 2: Stufenfase width is now on the OpKind::Drill variant.
+    if let Some(w) = op.drill_chamfer_after_width_mm() {
         if w > 0.0 {
             emit_stufenfase(op, project, objects, setup, w, post, last_pos, warnings)?;
         }

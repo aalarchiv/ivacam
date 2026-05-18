@@ -361,6 +361,15 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     }
     let mut project = req.project;
 
+    // kbx5 step 2: normalize legacy flat OpParams into per-kind variant
+    // structs. Idempotent — already-normalized projects (i.e. ones that
+    // came through the OpWire deserializer or were constructed with the
+    // variant structs populated) are unchanged. Required because some
+    // call sites build a Project in-memory without going through serde.
+    for op in &mut project.operations {
+        op.normalize_legacy_kind_params();
+    }
+
     // Pre-pipeline: render every TextLayer to segments and append them
     // to the project's geometry pool. Each layer's segments live under
     // the synthetic name `__text_<id>` so ops can target them via
@@ -872,8 +881,7 @@ pub(super) fn synthesize_finish_setup(
     // funnel through here; other op kinds shouldn't reach this path
     // (no offset would be tagged finish), but be defensive — return
     // None for anything else.
-    let drill_with_chamfer = matches!(op.kind, OpKind::Drill { .. })
-        && op.params.chamfer_after_width_mm.is_some_and(|w| w > 0.0);
+    let drill_with_chamfer = op.drill_chamfer_after_width_mm().is_some_and(|w| w > 0.0);
     if !matches!(op.kind, OpKind::Pocket { .. }) && !drill_with_chamfer {
         return Ok(None);
     }

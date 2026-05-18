@@ -75,6 +75,64 @@ impl From<OpWire> for Op {
 }
 
 impl Op {
+    /// [`ContourParams`] embedded in this op's variant for closed-contour
+    /// kinds (Profile / Pocket / Engrave / `DragKnife`). `None` for kinds
+    /// that don't carry contour params. (kbx5 step 2.)
+    #[must_use]
+    pub fn contour_params(&self) -> Option<&ContourParams> {
+        match &self.kind {
+            OpKind::Profile { contour, .. }
+            | OpKind::Pocket { contour, .. }
+            | OpKind::Engrave { contour }
+            | OpKind::DragKnife { contour } => Some(contour),
+            _ => None,
+        }
+    }
+
+    /// [`PocketParams`] embedded in [`OpKind::Pocket`]. `None` for every
+    /// other kind. (kbx5 step 2.)
+    #[must_use]
+    pub fn pocket_params(&self) -> Option<&PocketParams> {
+        match &self.kind {
+            OpKind::Pocket { pocket, .. } => Some(pocket),
+            _ => None,
+        }
+    }
+
+    /// [`ProfileParams`] embedded in [`OpKind::Profile`]. `None` elsewhere.
+    /// (kbx5 step 2.)
+    #[must_use]
+    pub fn profile_params(&self) -> Option<&ProfileParams> {
+        match &self.kind {
+            OpKind::Profile { profile, .. } => Some(profile),
+            _ => None,
+        }
+    }
+
+    /// [`VCarveParams`] embedded in [`OpKind::VCarve`]. `None` elsewhere.
+    /// (kbx5 step 2.)
+    #[must_use]
+    pub fn vcarve_params(&self) -> Option<&VCarveParams> {
+        match &self.kind {
+            OpKind::VCarve { carve } => Some(carve),
+            _ => None,
+        }
+    }
+
+    /// Post-drill chamfer width (Stufenfase, rt1.20) on [`OpKind::Drill`].
+    /// `None` for every other kind, or when the drill op doesn't have a
+    /// chamfer-after configured.
+    #[must_use]
+    pub fn drill_chamfer_after_width_mm(&self) -> Option<f64> {
+        match &self.kind {
+            OpKind::Drill {
+                chamfer_after_width_mm,
+                ..
+            } => *chamfer_after_width_mm,
+            _ => None,
+        }
+    }
+
     /// Copy per-kind fields from the flat [`OpParams`] bag into the
     /// matching [`OpKind`] variant struct when the variant struct is
     /// still at default. Lets legacy `.wiac-project.json` payloads

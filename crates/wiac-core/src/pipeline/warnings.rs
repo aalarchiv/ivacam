@@ -59,7 +59,7 @@ pub(super) fn push_trochoidal_warnings(op: &Op, warnings: &mut Vec<PipelineWarni
     ) {
         return;
     }
-    if op.params.tabs.active {
+    if op.contour_params().is_some_and(|c| c.tabs.active) {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
             kind: "tabs_with_trochoidal_unsupported".into(),

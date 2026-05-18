@@ -58,7 +58,8 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
         return Ok(());
     }
 
-    let r_cap = op.params.carve_max_width_mm;
+    // kbx5 step 2: V-Carve cap lives on VCarveParams.
+    let r_cap = op.vcarve_params().and_then(|v| v.carve_max_width_mm);
     let z_cap = if op.params.depth.abs() > 1e-9 {
         Some(op.params.depth)
     } else {

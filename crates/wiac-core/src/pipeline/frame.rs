@@ -35,7 +35,10 @@ pub(super) fn synthesize_pocket_outside_objects(
     objects: &[VcObject],
     tool_radius_mm: f64,
 ) -> Option<(Vec<VcObject>, Vec<usize>)> {
-    let frame_shape = op.params.frame_shape?;
+    // kbx5 step 2: read frame fields from PocketParams; non-Pocket ops
+    // never carry a frame so they short-circuit to None.
+    let pocket = op.pocket_params()?;
+    let frame_shape = pocket.frame_shape?;
     let selected_indices: Vec<usize> = (0..objects.len())
         .filter(|i| op_includes_object(op, &objects[*i], *i))
         .collect();
@@ -45,13 +48,13 @@ pub(super) fn synthesize_pocket_outside_objects(
     let frame = {
         let frame_selection: Vec<&VcObject> =
             selected_indices.iter().map(|&i| &objects[i]).collect();
-        let user_padding = op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
+        let user_padding = pocket.frame_padding_mm.unwrap_or(0.0).max(0.0);
         let padding = user_padding.max(tool_radius_mm.max(0.0));
         build_frame(
             &frame_selection,
             frame_shape,
             padding,
-            op.params.frame_corner_radius_mm,
+            pocket.frame_corner_radius_mm,
         )
     };
     let mut new_objects = objects.to_vec();

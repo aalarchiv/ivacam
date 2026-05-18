@@ -152,9 +152,14 @@ pub(super) fn build_op_offsets(
     // stale to clean up — recomputed every generate from the op params.
     let frame_op_storage: Option<Op> = {
         let cur_op: &Op = effective_op_storage.as_ref().unwrap_or(op);
-        if cur_op.params.frame_shape.is_some() {
+        // kbx5 step 2: frame fields live on PocketParams.
+        let pocket = cur_op.pocket_params();
+        if pocket.is_some_and(|p| p.frame_shape.is_some()) {
             let tool_radius_mm = setup.tool.diameter * 0.5;
-            let user_padding_mm = cur_op.params.frame_padding_mm.unwrap_or(0.0).max(0.0);
+            let user_padding_mm = pocket
+                .and_then(|p| p.frame_padding_mm)
+                .unwrap_or(0.0)
+                .max(0.0);
             if user_padding_mm < tool_radius_mm {
                 warnings.push(PipelineWarning {
                     op_id: Some(cur_op.id),
@@ -207,8 +212,12 @@ pub(super) fn build_op_offsets(
     // looser for faster cuts. Clamp to a sane envelope so a stray 1.0
     // (= no advance) doesn't loop forever and a stray 0 doesn't pin to
     // the lower bound forever either.
-    let overlap = if effective_op.params.xy_overlap > 0.0 {
-        effective_op.params.xy_overlap.clamp(0.05, 0.95)
+    // kbx5 step 2: xy_overlap lives on PocketParams. Non-Pocket ops
+    // fall through to the 0.5 default (was the prior behavior since
+    // OpParams::default initialised xy_overlap to 0.0 → 0.5 fallback).
+    let overlap_setting = effective_op.pocket_params().map_or(0.0, |p| p.xy_overlap);
+    let overlap = if overlap_setting > 0.0 {
+        overlap_setting.clamp(0.05, 0.95)
     } else {
         0.5
     };
@@ -273,15 +282,18 @@ pub(super) fn build_op_offsets(
                 emitted_objects += 1;
                 let synthetic = synthesize_region_object(region);
                 let finish_ring_r = dual_tool_finish_radius(effective_op, project);
+                let pocket_for_kind = effective_op.pocket_params();
                 for mut o in pocket_for_object(
                     &synthetic,
                     radius,
-                    effective_op.params.pocket_nocontour,
+                    pocket_for_kind.is_some_and(|p| p.pocket_nocontour),
                     6,
                     pocket_emit,
                     &region.holes,
                     xy_step,
-                    effective_op.params.finish_xy_allowance_mm.unwrap_or(0.0),
+                    pocket_for_kind
+                        .and_then(|p| p.finish_xy_allowance_mm)
+                        .unwrap_or(0.0),
                     finish_ring_r,
                 ) {
                     o.source_object_idx = region.source_idx;
@@ -291,11 +303,11 @@ pub(super) fn build_op_offsets(
             if !tabs_by_object.is_empty() {
                 attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
             }
-            if effective_op.params.overcut {
+            if effective_op.profile_params().is_some_and(|p| p.overcut) {
                 apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
             }
             apply_cut_direction(&mut offsets, effective_op, false);
-            if let Some(ap) = effective_op.params.approach_point {
+            if let Some(ap) = effective_op.contour_params().and_then(|c| c.approach_point) {
                 crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
             }
             push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
@@ -356,7 +368,9 @@ pub(super) fn build_op_offsets(
                 // what's selected matters — match that here for every
                 // pocket strategy.
                 if islands.is_empty()
-                    && effective_op.params.pocket_islands
+                    && effective_op
+                        .pocket_params()
+                        .is_some_and(|p| p.pocket_islands)
                     && matches!(effective_op.source, OpSource::All)
                 {
                     islands = obj
@@ -369,15 +383,18 @@ pub(super) fn build_op_offsets(
                 }
                 if obj.closed {
                     let finish_ring_r = dual_tool_finish_radius(effective_op, project);
+                    let pocket_for_kind = effective_op.pocket_params();
                     for mut o in pocket_for_object(
                         obj,
                         radius,
-                        effective_op.params.pocket_nocontour,
+                        pocket_for_kind.is_some_and(|p| p.pocket_nocontour),
                         6,
                         pocket_emit,
                         &islands,
                         xy_step,
-                        effective_op.params.finish_xy_allowance_mm.unwrap_or(0.0),
+                        pocket_for_kind
+                            .and_then(|p| p.finish_xy_allowance_mm)
+                            .unwrap_or(0.0),
                         finish_ring_r,
                     ) {
                         o.source_object_idx = idx;
@@ -531,11 +548,11 @@ pub(super) fn build_op_offsets(
     if !tabs_by_object.is_empty() {
         attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
     }
-    if effective_op.params.overcut {
+    if effective_op.profile_params().is_some_and(|p| p.overcut) {
         apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
     }
     apply_cut_direction(&mut offsets, effective_op, false);
-    if let Some(ap) = effective_op.params.approach_point {
+    if let Some(ap) = effective_op.contour_params().and_then(|c| c.approach_point) {
         crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
     }
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
@@ -556,7 +573,10 @@ fn pocket_emit_for(strategy: PocketStrategy, op: &Op) -> PocketEmit {
         } => PocketEmit::Trochoidal {
             engagement_angle_deg,
             loop_radius_factor,
-            climb: matches!(op.params.cut_direction, crate::project::CutDirection::Climb),
+            climb: matches!(
+                op.contour_params().map(|c| c.cut_direction),
+                Some(crate::project::CutDirection::Climb)
+            ),
         },
         // Halfpipe ops never reach this codepath — they're routed
         // through run_halfpipe_op before build_op_offsets runs. Fall

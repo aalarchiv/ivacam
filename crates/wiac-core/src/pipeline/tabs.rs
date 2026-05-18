@@ -26,15 +26,20 @@ pub(super) fn build_op_tabs_by_object(
     use crate::cam::tabs::{auto_tab_ts, polyline_at_t, resolve_tab_placements};
     use crate::project::TabPlacementMode;
 
-    let mut out: HashMap<usize, Vec<TabPoint>> = match op.params.tab_mode {
+    // kbx5 step 2: tabs come from ContourParams (Profile / Pocket /
+    // Engrave / DragKnife); other kinds have no tabs.
+    let Some(contour) = op.contour_params() else {
+        return HashMap::new();
+    };
+    let mut out: HashMap<usize, Vec<TabPoint>> = match contour.tab_mode {
         TabPlacementMode::Off => return HashMap::new(),
-        TabPlacementMode::Manual => resolve_tab_placements(&op.params.tab_placements, objects, 6),
+        TabPlacementMode::Manual => resolve_tab_placements(&contour.tab_placements, objects, 6),
         TabPlacementMode::Auto { .. } | TabPlacementMode::Mixed { .. } => HashMap::new(),
     };
     // Auto + Mixed: add evenly-spaced tabs on every selected closed
     // object.
     if let TabPlacementMode::Auto { count } | TabPlacementMode::Mixed { auto_count: count } =
-        op.params.tab_mode
+        contour.tab_mode
     {
         if count > 0 {
             let auto_ts = auto_tab_ts(count, true);
@@ -62,8 +67,8 @@ pub(super) fn build_op_tabs_by_object(
     }
     // For Mixed, also include manual placements (Manual was handled
     // above; Mixed enters this branch with no manual entries yet).
-    if matches!(op.params.tab_mode, TabPlacementMode::Mixed { .. }) {
-        for (k, v) in resolve_tab_placements(&op.params.tab_placements, objects, 6) {
+    if matches!(contour.tab_mode, TabPlacementMode::Mixed { .. }) {
+        for (k, v) in resolve_tab_placements(&contour.tab_placements, objects, 6) {
             out.entry(k).or_default().extend(v);
         }
     }

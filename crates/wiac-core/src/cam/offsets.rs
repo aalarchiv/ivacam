@@ -602,8 +602,15 @@ pub fn apply_cut_direction(
     use crate::cam::setup::ToolOffset;
     use crate::project::OpKind;
     let _ = finish_default_for_outside_profile_only; // currently unused; kept for future hook
-    let main = op.params.cut_direction;
-    let finish = op.params.finish_cut_direction;
+                                                     // kbx5 step 2: cut directions live on ContourParams. Non-contour
+                                                     // ops fall back to Conventional (the existing default).
+    let (main, finish) = op.contour_params().map_or(
+        (
+            crate::project::CutDirection::Conventional,
+            crate::project::CutDirection::Conventional,
+        ),
+        |c| (c.cut_direction, c.finish_cut_direction),
+    );
     let context_for = |offset: &PolylineOffset| -> CutContext {
         match &op.kind {
             OpKind::Profile {

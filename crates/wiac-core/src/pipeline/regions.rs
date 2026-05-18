@@ -25,7 +25,7 @@ pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> 
         // synthesize the frame + ordered-ids the same way the toolpath
         // driver does (`synthesize_pocket_outside_objects`) so preview
         // and emit stay in lockstep.
-        if op.params.frame_shape.is_some() {
+        if op.pocket_params().is_some_and(|p| p.frame_shape.is_some()) {
             let tool_radius = project
                 .tools
                 .iter()

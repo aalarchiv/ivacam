@@ -23,10 +23,12 @@
   } from '../canvas/spatial-index';
   import { fixtureAt } from '../canvas/fixture-hit';
   import {
-    approachSnapCandidates,
-    findNearestSnap,
-    type SnapCandidate,
-  } from '../canvas/approach-snap';
+    DEFAULT_OSNAP_SETTINGS,
+    findOSnap,
+    precomputeOSnapTargets,
+    type OSnapCandidate,
+    type OSnapTargets,
+  } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import {
     previewSegmentsFor,
@@ -188,22 +190,31 @@
   );
 
   /// Live preview state while picking. `lastTransform`-relative data
-  /// coords; `snapped` flags whether we landed on a candidate vertex.
-  let approachPreview = $state<{ x: number; y: number; snapped: boolean } | null>(null);
+  /// coords; `snap` carries the snap-kind classification so the
+  /// renderer can paint the matching glyph (square / triangle / X / +).
+  let approachPreview = $state<{
+    x: number;
+    y: number;
+    snap: OSnapCandidate['kind'] | null;
+  } | null>(null);
 
   /// Drag state for repositioning an already-placed approach marker
   /// (Option C: hybrid pick + draggable). Captured on pointerdown
   /// inside the marker's hit circle; released on pointerup.
   let approachDrag = $state<{ opId: number; pointerId: number } | null>(null);
 
-  /// Cached snap candidate list for the selected op. Rebuilds when
-  /// the imported geometry or op's source filter changes — never per
-  /// pointermove.
-  const approachSnapPoints = $derived<SnapCandidate[]>(
+  /// Precomputed OSnap target collection. Rebuilt only when the
+  /// imported geometry changes — never per pointermove. (64p.)
+  const osnapTargets = $derived<OSnapTargets>(
     approachPickActive || approachDrag != null
-      ? approachSnapCandidates(project.imported, selectedOp)
-      : [],
+      ? precomputeOSnapTargets(project.imported)
+      : { endpoints: [], midpoints: [], intersections: [], centers: [] },
   );
+
+  /// OSnap settings. TODO: thread through `project.settings` so users
+  /// can toggle per-kind from the Settings dialog. Today the defaults
+  /// (all CAD-feature kinds on, grid off) match what most users want.
+  const osnapSettings = DEFAULT_OSNAP_SETTINGS;
 
   // Mouse → segment hit testing. We project each segment to canvas space
   // and pick the nearest one within `HIT_PIXEL_TOL`.
@@ -342,10 +353,12 @@
       const data = pxToData(cx, cy);
       if (data) {
         const tol = approachSnapToleranceData();
-        const snap = shiftDown ? null : findNearestSnap(approachSnapPoints, data.x, data.y, tol);
+        const snap = shiftDown
+          ? null
+          : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
         approachPreview = snap
-          ? { x: snap.x, y: snap.y, snapped: true }
-          : { x: data.x, y: data.y, snapped: false };
+          ? { x: snap.x, y: snap.y, snap: snap.kind }
+          : { x: data.x, y: data.y, snap: null };
       } else {
         approachPreview = null;
       }
@@ -360,11 +373,13 @@
       const data = pxToData(cx, cy);
       if (data) {
         const tol = approachSnapToleranceData();
-        const snap = shiftDown ? null : findNearestSnap(approachSnapPoints, data.x, data.y, tol);
+        const snap = shiftDown
+          ? null
+          : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
         const x = snap ? snap.x : data.x;
         const y = snap ? snap.y : data.y;
         project.updateOperation(approachDrag.opId, { approachPoint: [x, y] });
-        approachPreview = { x, y, snapped: !!snap };
+        approachPreview = { x, y, snap: snap?.kind ?? null };
       }
       canvas.style.cursor = 'grabbing';
       return;
@@ -882,11 +897,13 @@
       const data = pxToData(cx, cy);
       if (data) {
         const tol = approachSnapToleranceData();
-        const snap = shiftDown ? null : findNearestSnap(approachSnapPoints, data.x, data.y, tol);
+        const snap = shiftDown
+          ? null
+          : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
         const x = snap ? snap.x : data.x;
         const y = snap ? snap.y : data.y;
         project.updateOperation(selectedOp.id, { approachPoint: [x, y] });
-        approachPreview = { x, y, snapped: !!snap };
+        approachPreview = { x, y, snap: snap?.kind ?? null };
       }
       e.preventDefault();
       return;
@@ -1226,7 +1243,7 @@
     // Live preview during pick / drag.
     if ((approachPickActive || approachDrag != null) && approachPreview) {
       const [sx, sy] = project2(approachPreview.x, approachPreview.y);
-      const color = approachPreview.snapped ? snapColor : markerColor;
+      const color = approachPreview.snap ? snapColor : markerColor;
       // Dashed ring while picking (vs solid for the committed point)
       // so the user sees clearly which is provisional.
       ctx.save();
@@ -1246,18 +1263,78 @@
       ctx.arc(sx, sy, 9, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Snap tick — a small "+" crosshair when we're snapped to a vertex.
-      if (approachPreview.snapped) {
-        ctx.strokeStyle = snapColor;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(sx - 10, sy);
-        ctx.lineTo(sx + 10, sy);
-        ctx.moveTo(sx, sy - 10);
-        ctx.lineTo(sx, sy + 10);
-        ctx.stroke();
+      // Snap glyph by kind (64p):
+      //   endpoint     → ■ filled square
+      //   midpoint     → ▲ filled triangle
+      //   intersection → ✕ diagonal cross
+      //   center       → ◯ ring
+      //   grid         → + plus sign
+      if (approachPreview.snap) {
+        drawOSnapGlyph(ctx, sx, sy, approachPreview.snap, snapColor);
       }
       ctx.restore();
+    }
+  }
+
+  /// Paint the OSnap classification glyph (64p) at canvas position
+  /// (sx, sy). The glyph reads at a glance which CAD feature the
+  /// cursor latched onto.
+  function drawOSnapGlyph(
+    ctx: CanvasRenderingContext2D,
+    sx: number,
+    sy: number,
+    kind: OSnapCandidate['kind'],
+    color: string,
+  ): void {
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    const r = 7;
+    switch (kind) {
+      case 'endpoint': {
+        // Filled square outline.
+        ctx.beginPath();
+        ctx.rect(sx - r, sy - r, r * 2, r * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'midpoint': {
+        // Triangle pointing up, outline only.
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - r);
+        ctx.lineTo(sx + r, sy + r * 0.8);
+        ctx.lineTo(sx - r, sy + r * 0.8);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+      }
+      case 'intersection': {
+        // Diagonal cross.
+        ctx.beginPath();
+        ctx.moveTo(sx - r, sy - r);
+        ctx.lineTo(sx + r, sy + r);
+        ctx.moveTo(sx - r, sy + r);
+        ctx.lineTo(sx + r, sy - r);
+        ctx.stroke();
+        break;
+      }
+      case 'center': {
+        // Ring (concentric with the preview ring, slightly smaller).
+        ctx.beginPath();
+        ctx.arc(sx, sy, r * 0.7, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'grid': {
+        // Axis-aligned plus.
+        ctx.beginPath();
+        ctx.moveTo(sx - r, sy);
+        ctx.lineTo(sx + r, sy);
+        ctx.moveTo(sx, sy - r);
+        ctx.lineTo(sx, sy + r);
+        ctx.stroke();
+        break;
+      }
     }
   }
 

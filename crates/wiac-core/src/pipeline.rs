@@ -157,7 +157,7 @@ pub enum PipelineError {
     #[error("operation #{0} references unknown tool id {1}")]
     UnknownTool(u32, u32),
     #[error("operation kind {0:?} is not implemented yet")]
-    UnimplementedKind(OpKind),
+    UnimplementedKind(Box<OpKind>),
     #[error("text render failed: {0}")]
     TextRender(String),
     #[error("pipeline cancelled")]
@@ -652,7 +652,7 @@ where
         resolve_auto_helix_radius(op, objects, &mut setup, warnings);
         let mut closed_count_emitted: usize = 0;
         let mut offset_count_emitted: usize = 0;
-        if matches!(op.kind, OpKind::VCarve) {
+        if matches!(op.kind, OpKind::VCarve { .. }) {
             post.raw(&format!("; OP {}", op.id));
             run_vcarve_op(
                 op,
@@ -680,6 +680,7 @@ where
             op.kind,
             OpKind::Pocket {
                 strategy: PocketStrategy::Halfpipe { .. },
+                ..
             }
         ) {
             post.raw(&format!("; OP {}", op.id));
@@ -915,7 +916,9 @@ mod tests {
             id: 1,
             name: "Engrave text".into(),
             enabled: true,
-            kind: OpKind::Engrave,
+            kind: OpKind::Engrave {
+                contour: crate::project::ContourParams::default(),
+            },
             tool_id: 1,
             finish_tool_id: None,
             source: OpSource::Layers {
@@ -1350,7 +1353,9 @@ mod tests {
                 id: 1,
                 name: "Laser cut".into(),
                 enabled: true,
-                kind: OpKind::Engrave,
+                kind: OpKind::Engrave {
+                    contour: crate::project::ContourParams::default(),
+                },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
@@ -1437,7 +1442,9 @@ mod tests {
                 id: 1,
                 name: "Laser cut".into(),
                 enabled: true,
-                kind: OpKind::Engrave,
+                kind: OpKind::Engrave {
+                    contour: crate::project::ContourParams::default(),
+                },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
@@ -1966,7 +1973,9 @@ mod tests {
                 id: 9,
                 name: "Carve".into(),
                 enabled: true,
-                kind: OpKind::VCarve,
+                kind: OpKind::VCarve {
+                    carve: crate::project::VCarveParams::default(),
+                },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
@@ -2052,6 +2061,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 91,
                 finish_tool_id: None,
@@ -2084,6 +2095,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 100 + i,
                 finish_tool_id: None,
@@ -2131,6 +2144,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 77,
                 finish_tool_id: None,

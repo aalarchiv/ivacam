@@ -53,7 +53,8 @@ pub(super) fn push_trochoidal_warnings(op: &Op, warnings: &mut Vec<PipelineWarni
     if !matches!(
         op.kind,
         OpKind::Pocket {
-            strategy: PocketStrategy::Trochoidal { .. }
+            strategy: PocketStrategy::Trochoidal { .. },
+            ..
         }
     ) {
         return;
@@ -154,6 +155,7 @@ pub(super) fn push_tool_fit_size_warning(
             | OpKind::Profile {
                 offset: crate::cam::setup::ToolOffset::Outside
                     | crate::cam::setup::ToolOffset::Inside,
+                ..
             }
     );
     if !needs_offset {

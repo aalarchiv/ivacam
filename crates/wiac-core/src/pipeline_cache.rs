@@ -417,7 +417,7 @@ fn hash_operation<H: Hasher>(op: &Op, h: &mut H) {
     op.id.hash(h);
     op.name.hash(h);
     op.enabled.hash(h);
-    hash_operation_kind(op.kind, h);
+    hash_operation_kind(&op.kind, h);
     op.tool_id.hash(h);
     hash_opt_u32(op.finish_tool_id, h);
     hash_operation_source(&op.source, h);
@@ -431,19 +431,19 @@ fn hash_operation<H: Hasher>(op: &Op, h: &mut H) {
     }
 }
 
-fn hash_operation_kind<H: Hasher>(k: OpKind, h: &mut H) {
+fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
     match k {
-        OpKind::Profile { offset } => {
+        OpKind::Profile { offset, .. } => {
             h.write_u8(1);
-            h.write_u8(tool_offset_disc(offset));
+            h.write_u8(tool_offset_disc(*offset));
         }
-        OpKind::Pocket { strategy } => {
+        OpKind::Pocket { strategy, .. } => {
             h.write_u8(2);
-            hash_pocket_strategy(strategy, h);
+            hash_pocket_strategy(*strategy, h);
         }
-        OpKind::Drill { cycle } => {
+        OpKind::Drill { cycle, .. } => {
             h.write_u8(3);
-            hash_drill_cycle(cycle, h);
+            hash_drill_cycle(*cycle, h);
         }
         OpKind::Thread {
             pitch_mm,
@@ -451,7 +451,7 @@ fn hash_operation_kind<H: Hasher>(k: OpKind, h: &mut H) {
             climb,
         } => {
             h.write_u8(4);
-            hash_f64(pitch_mm, h);
+            hash_f64(*pitch_mm, h);
             internal.hash(h);
             climb.hash(h);
         }
@@ -460,13 +460,13 @@ fn hash_operation_kind<H: Hasher>(k: OpKind, h: &mut H) {
             finish_pass,
         } => {
             h.write_u8(5);
-            hash_f64(width_mm, h);
+            hash_f64(*width_mm, h);
             finish_pass.hash(h);
         }
-        OpKind::Engrave => h.write_u8(6),
-        OpKind::DragKnife => h.write_u8(7),
+        OpKind::Engrave { .. } => h.write_u8(6),
+        OpKind::DragKnife { .. } => h.write_u8(7),
         OpKind::Helix => h.write_u8(8),
-        OpKind::VCarve => h.write_u8(9),
+        OpKind::VCarve { .. } => h.write_u8(9),
     }
 }
 
@@ -813,6 +813,8 @@ mod tests {
             enabled: true,
             kind: OpKind::Profile {
                 offset: ToolOffset::Outside,
+                contour: crate::project::ContourParams::default(),
+                profile: crate::project::ProfileParams::default(),
             },
             tool_id: 1,
             finish_tool_id: None,

@@ -33,6 +33,7 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
 ) -> Result<(), PipelineError> {
     let OpKind::Pocket {
         strategy: PocketStrategy::Halfpipe { profile: strategy },
+        ..
     } = op.kind
     else {
         return Ok(());
@@ -181,6 +182,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -265,6 +268,8 @@ mod tests {
                     strategy: crate::project::PocketStrategy::Halfpipe {
                         profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 5.0 },
                     },
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,

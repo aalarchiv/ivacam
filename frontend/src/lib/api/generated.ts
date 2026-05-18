@@ -192,6 +192,47 @@ export interface components {
             /** Format: double */
             min_y: number;
         };
+        /** @description Parameters shared by every closed-contour op (Profile / Pocket / Engrave / `DragKnife`). Embedded in the matching [`super::op::OpKind`] variants. Holds tab shape + placement, lead-in / lead-out, cut direction, corner-feed reduction, and the optional user-picked approach point. (kbx5 step 1.) */
+        ContourParams: {
+            /** @description Anfahrpunkt (rt1.26): user-picked XY where the cutter enters each closed-contour ring. `None` = auto. */
+            approach_point?: [
+                number,
+                number
+            ] | null;
+            /**
+             * Format: double
+             * @description When > 0, slow the feed at sharp corners by this fraction.
+             */
+            corner_feed_reduction?: number;
+            /** @description Cut direction for the main (roughing) passes. */
+            cut_direction?: components["schemas"]["CutDirection"];
+            /** @description Cut direction for the finishing pass — the offset that defines the wall surface (Pocket level=0 ring; Profile single-pass cut). */
+            finish_cut_direction?: components["schemas"]["CutDirection"];
+            /**
+             * @description Lead-in / lead-out shape.
+             * @default {
+             *       "in": "off",
+             *       "in_lenght": 5,
+             *       "out": "off",
+             *       "out_lenght": 5
+             *     }
+             */
+            leads: components["schemas"]["LeadsConfig"];
+            /** @description How tab positions are sourced for this op (rt1.10). */
+            tab_mode?: components["schemas"]["TabPlacementMode"];
+            /** @description User-placed tabs, anchored geometry-relative as `(object_id, t)`. Honored when `tab_mode` is `Manual` or `Mixed`; `Off` / `Auto` ignore. */
+            tab_placements?: components["schemas"]["TabPlacement"][];
+            /**
+             * @description Per-op tab SHAPE config: width / height / kind (rectangle vs ramp) / ramp angle. Effective tab POSITIONS come from `tab_placements` (manual) and / or `tab_mode` (auto-spaced).
+             * @default {
+             *       "active": false,
+             *       "height": 1,
+             *       "tab_type": "rectangle",
+             *       "width": 10
+             *     }
+             */
+            tabs: components["schemas"]["TabsConfig"];
+        };
         /** @enum {string} */
         Coolant: "off" | "mist" | "flood";
         /**
@@ -570,15 +611,69 @@ export interface components {
             tool_id: number;
         };
         OpKind: {
+            /**
+             * @default {
+             *       "leads": {
+             *         "in": "off",
+             *         "in_lenght": 5,
+             *         "out": "off",
+             *         "out_lenght": 5
+             *       },
+             *       "tabs": {
+             *         "active": false,
+             *         "height": 1,
+             *         "tab_type": "rectangle",
+             *         "width": 10
+             *       }
+             *     }
+             */
+            contour: components["schemas"]["ContourParams"];
             offset: components["schemas"]["ToolOffset"];
+            /**
+             * @default {
+             *       "helix": false,
+             *       "overcut": false,
+             *       "reverse": false
+             *     }
+             */
+            profile: components["schemas"]["ProfileParams"];
             /** @enum {string} */
             type: "profile";
         } | {
+            /**
+             * @default {
+             *       "leads": {
+             *         "in": "off",
+             *         "in_lenght": 5,
+             *         "out": "off",
+             *         "out_lenght": 5
+             *       },
+             *       "tabs": {
+             *         "active": false,
+             *         "height": 1,
+             *         "tab_type": "rectangle",
+             *         "width": 10
+             *       }
+             *     }
+             */
+            contour: components["schemas"]["ContourParams"];
+            /**
+             * @default {
+             *       "pocket_insideout": false,
+             *       "pocket_islands": false,
+             *       "pocket_nocontour": false,
+             *       "xy_overlap": 0
+             *     }
+             */
+            pocket: components["schemas"]["PocketParams"];
             strategy: components["schemas"]["PocketStrategy"];
             /** @enum {string} */
             type: "pocket";
         } | {
+            /** Format: double */
+            chamfer_after_width_mm?: number | null;
             cycle: components["schemas"]["DrillCycle"];
+            pattern?: components["schemas"]["PatternConfig"] | null;
             /** @enum {string} */
             type: "drill";
         } | {
@@ -615,15 +710,55 @@ export interface components {
              */
             width_mm: number;
         } | {
+            /**
+             * @default {
+             *       "leads": {
+             *         "in": "off",
+             *         "in_lenght": 5,
+             *         "out": "off",
+             *         "out_lenght": 5
+             *       },
+             *       "tabs": {
+             *         "active": false,
+             *         "height": 1,
+             *         "tab_type": "rectangle",
+             *         "width": 10
+             *       }
+             *     }
+             */
+            contour: components["schemas"]["ContourParams"];
             /** @enum {string} */
             type: "engrave";
         } | {
+            /**
+             * @default {
+             *       "leads": {
+             *         "in": "off",
+             *         "in_lenght": 5,
+             *         "out": "off",
+             *         "out_lenght": 5
+             *       },
+             *       "tabs": {
+             *         "active": false,
+             *         "height": 1,
+             *         "tab_type": "rectangle",
+             *         "width": 10
+             *       }
+             *     }
+             */
+            contour: components["schemas"]["ContourParams"];
             /** @enum {string} */
             type: "drag_knife";
         } | {
             /** @enum {string} */
             type: "helix";
         } | {
+            /**
+             * @default {
+             *       "multi_pass_refine": false
+             *     }
+             */
+            carve: components["schemas"]["VCarveParams"];
             /** @enum {string} */
             type: "v_carve";
         };
@@ -873,6 +1008,47 @@ export interface components {
             nocontour: boolean;
             zigzag: boolean;
         };
+        /** @description Parameters specific to [`super::op::OpKind::Pocket`]. (kbx5 step 1.) */
+        PocketParams: {
+            /**
+             * Format: double
+             * @description XY stock allowance left uncut by roughing (rt1.24).
+             */
+            finish_xy_allowance_mm?: number | null;
+            /**
+             * Format: double
+             * @description Corner radius for `FrameShape::RoundedRectangle`.
+             */
+            frame_corner_radius_mm?: number | null;
+            /**
+             * Format: double
+             * @description Padding around the selection bbox to size the frame.
+             */
+            frame_padding_mm?: number | null;
+            /** @description Pocket-Outside wrapper shape. Set only on ops created via the Pocket-Outside UX. */
+            frame_shape?: components["schemas"]["FrameShape"] | null;
+            /**
+             * @description Cascade outward-in instead of inward-out.
+             * @default false
+             */
+            pocket_insideout: boolean;
+            /**
+             * @description Treat inner contours as islands (don't cut them).
+             * @default false
+             */
+            pocket_islands: boolean;
+            /**
+             * @description Skip the wall-defining ring (contour cut).
+             * @default false
+             */
+            pocket_nocontour: boolean;
+            /**
+             * Format: double
+             * @description XY overlap between consecutive pocket cuts (0..1). Stored at 0.0 means "use the default".
+             * @default 0
+             */
+            xy_overlap: number;
+        };
         PocketStrategy: ("cascade" | "zigzag" | "spiral") | {
             /** Format: double */
             engagement_angle_deg: number;
@@ -960,6 +1136,24 @@ export interface components {
             program_start?: string | null;
             /** @description `TOOL_CHANGE` template. Replaces the `T<n> M6` toolchange line. Substitution context exposes the FUTURE tool's metadata. */
             tool_change?: string | null;
+        };
+        /** @description Parameters specific to [`super::op::OpKind::Profile`]. (kbx5 step 1.) */
+        ProfileParams: {
+            /**
+             * @description Helical descent inside a closed contour.
+             * @default false
+             */
+            helix: boolean;
+            /**
+             * @description Dip into sharp inner corners so the cutter clears the geometric corner. Only meaningful when the offset is non-zero.
+             * @default false
+             */
+            overcut: boolean;
+            /**
+             * @description Reverse the cut direction (climb ↔ conventional).
+             * @default false
+             */
+            reverse: boolean;
         };
         Project: {
             /** @description Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must avoid throughout the entire program — including rapids. The sim pass tests every toolpath segment against this set and emits `SimWarning::FixtureCollision` on overlap. Default empty: a project with no fixtures behaves exactly as before. */
@@ -1453,6 +1647,19 @@ export interface components {
         TransportKind: "python-bridge" | "rust-server" | "tauri" | "wasm";
         /** @enum {string} */
         UnitSystem: "mm" | "inch";
+        /** @description Parameters specific to [`super::op::OpKind::VCarve`]. (kbx5 step 1.) */
+        VCarveParams: {
+            /**
+             * Format: double
+             * @description V-Carve cap on the inscribed-circle radius (mm). `None` = no cap.
+             */
+            carve_max_width_mm?: number | null;
+            /**
+             * @description V-Carve "second-pass" toggle. When true, re-cuts only the points whose first pass fell short of the geometric target.
+             * @default false
+             */
+            multi_pass_refine: boolean;
+        };
         /** @description `VcObject` analogue: a chain of segments grouped after `segments2objects`. */
         VcObject: {
             closed: boolean;

@@ -605,9 +605,10 @@ pub fn apply_cut_direction(
     let main = op.params.cut_direction;
     let finish = op.params.finish_cut_direction;
     let context_for = |offset: &PolylineOffset| -> CutContext {
-        match op.kind {
+        match &op.kind {
             OpKind::Profile {
                 offset: tool_offset,
+                ..
             } => match tool_offset {
                 ToolOffset::Outside => CutContext::Outer,
                 ToolOffset::Inside => CutContext::Inner,
@@ -620,13 +621,13 @@ pub fn apply_cut_direction(
                     CutContext::Outer
                 }
             }
-            OpKind::Engrave
-            | OpKind::DragKnife
+            OpKind::Engrave { .. }
+            | OpKind::DragKnife { .. }
             | OpKind::Drill { .. }
             | OpKind::Thread { .. }
             | OpKind::Chamfer { .. }
             | OpKind::Helix
-            | OpKind::VCarve => CutContext::Skip,
+            | OpKind::VCarve { .. } => CutContext::Skip,
         }
     };
     for offset in offsets.iter_mut() {

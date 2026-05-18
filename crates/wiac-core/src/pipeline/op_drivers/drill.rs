@@ -374,6 +374,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    chamfer_after_width_mm: None,
+                    pattern: None,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -525,6 +527,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    chamfer_after_width_mm: None,
+                    pattern: None,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -589,6 +593,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    chamfer_after_width_mm: None,
+                    pattern: None,
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),

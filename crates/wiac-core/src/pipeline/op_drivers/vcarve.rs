@@ -138,7 +138,9 @@ mod tests {
             id: 7,
             name: "Carve".into(),
             enabled: true,
-            kind: OpKind::VCarve,
+            kind: OpKind::VCarve {
+                carve: crate::project::VCarveParams::default(),
+            },
             tool_id: 1,
             finish_tool_id: None,
             source: OpSource::All,
@@ -194,7 +196,9 @@ mod tests {
             id: 11,
             name: "Sign carve".into(),
             enabled: true,
-            kind: OpKind::VCarve,
+            kind: OpKind::VCarve {
+                carve: crate::project::VCarveParams::default(),
+            },
             tool_id: 1,
             finish_tool_id: None,
             source: OpSource::All,
@@ -211,7 +215,7 @@ mod tests {
         };
         let json = serde_json::to_string(&op).expect("serialize");
         let back: Op = serde_json::from_str(&json).expect("deserialize");
-        assert!(matches!(back.kind, OpKind::VCarve));
+        assert!(matches!(back.kind, OpKind::VCarve { .. }));
         assert_eq!(back.params.carve_max_width_mm, Some(4.0));
         assert!(back.params.multi_pass_refine);
         assert_eq!(back.params.depth, -8.0);

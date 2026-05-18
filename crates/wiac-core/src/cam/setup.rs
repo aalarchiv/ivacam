@@ -246,7 +246,7 @@ pub struct PocketConfig {
     pub nocontour: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TabsConfig {
     pub active: bool,
     pub width: f64,
@@ -293,7 +293,7 @@ pub enum TabType {
     Ramp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LeadsConfig {
     pub r#in: LeadKind,
     pub out: LeadKind,

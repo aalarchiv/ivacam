@@ -252,7 +252,7 @@ pub(super) fn build_op_offsets(
     // combined regions once via clipper2 and emit a pocket per region.
     // Other op kinds (Profile, Engrave, DragKnife) keep their per-object
     // semantics — they cut paths, not regions.
-    if let OpKind::Pocket { strategy } = effective_op.kind {
+    if let OpKind::Pocket { strategy, .. } = effective_op.kind {
         let combine = source_combine_mode(effective_op);
         if !matches!(combine, SourceCombine::Auto) {
             // Preserve the user-specified selection order — Difference is
@@ -316,7 +316,7 @@ pub(super) fn build_op_offsets(
         }
 
         match effective_op.kind {
-            OpKind::Pocket { strategy } => {
+            OpKind::Pocket { strategy, .. } => {
                 // Skip objects that are geometrically inside another
                 // selected object — they belong to that pocket as islands.
                 let contained_by_selected =
@@ -412,7 +412,7 @@ pub(super) fn build_op_offsets(
                     offsets.push(o);
                 }
             }
-            OpKind::Engrave | OpKind::DragKnife => {
+            OpKind::Engrave { .. } | OpKind::DragKnife { .. } => {
                 // Both follow the source path with no offset; the gcode
                 // emitter handles drag-knife trail compensation per-op.
                 offsets.push(PolylineOffset {
@@ -513,9 +513,11 @@ pub(super) fn build_op_offsets(
                 // silently here so a stray dispatch doesn't crash.
             }
             OpKind::Helix => {
-                return Err(PipelineError::UnimplementedKind(effective_op.kind));
+                return Err(PipelineError::UnimplementedKind(Box::new(
+                    effective_op.kind.clone(),
+                )));
             }
-            OpKind::VCarve => {
+            OpKind::VCarve { .. } => {
                 // V-Carve runs through `run_vcarve_op` from the per-op
                 // driver; it should never reach this offset-cascade
                 // path. Skip silently rather than erroring so a stray
@@ -596,6 +598,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -671,6 +675,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -726,6 +732,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -799,6 +807,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -867,6 +877,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -928,6 +940,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1043,6 +1057,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1093,6 +1109,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1262,6 +1280,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1302,6 +1322,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1343,6 +1365,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1447,6 +1471,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1560,7 +1586,8 @@ mod tests {
             }
         });
         let req: PipelineRequest = serde_json::from_value(raw).expect("wire JSON deserialization");
-        if let OpKind::Profile { offset } = req.project.operations[0].kind {
+        if let OpKind::Profile { offset, .. } = &req.project.operations[0].kind {
+            let offset = *offset;
             assert_eq!(
                 offset,
                 ToolOffset::Outside,
@@ -1806,6 +1833,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1873,6 +1902,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1955,6 +1986,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2030,6 +2063,8 @@ mod tests {
                     enabled: true,
                     kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
+                        contour: crate::project::ContourParams::default(),
+                        pocket: crate::project::PocketParams::default(),
                     },
                     tool_id: 1,
                     finish_tool_id: None,
@@ -2046,6 +2081,8 @@ mod tests {
                     enabled: true,
                     kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
+                        contour: crate::project::ContourParams::default(),
+                        pocket: crate::project::PocketParams::default(),
                     },
                     tool_id: 1,
                     finish_tool_id: None,
@@ -2133,6 +2170,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2237,6 +2276,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2317,6 +2358,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2357,6 +2400,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2418,6 +2463,8 @@ mod tests {
                     enabled: true,
                     kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
+                        contour: crate::project::ContourParams::default(),
+                        pocket: crate::project::PocketParams::default(),
                     },
                     tool_id: 1,
                     finish_tool_id: None,
@@ -2465,6 +2512,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Zigzag,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2532,6 +2581,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2588,6 +2639,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2642,6 +2695,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2835,6 +2890,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2883,6 +2940,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2953,6 +3012,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Zigzag,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2999,6 +3060,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -3012,6 +3075,8 @@ mod tests {
         let mut spiral_project = cascade_project.clone();
         spiral_project.operations[0].kind = OpKind::Pocket {
             strategy: crate::project::PocketStrategy::Spiral,
+            contour: crate::project::ContourParams::default(),
+            pocket: crate::project::PocketParams::default(),
         };
         let cascade_gcode = run_pipeline(
             PipelineRequest {
@@ -3078,6 +3143,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Spiral,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -3150,7 +3217,11 @@ mod tests {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OpKind::Pocket { strategy },
+                kind: OpKind::Pocket {
+                    strategy,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
+                },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::Objects {
@@ -3235,7 +3306,11 @@ mod tests {
                 id: 1,
                 name: "Pocket".into(),
                 enabled: true,
-                kind: OpKind::Pocket { strategy },
+                kind: OpKind::Pocket {
+                    strategy,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
+                },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
@@ -3324,6 +3399,8 @@ mod tests {
                         engagement_angle_deg: 30.0,
                         loop_radius_factor: 0.6,
                     },
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -3369,6 +3446,8 @@ mod tests {
                         engagement_angle_deg: 30.0,
                         loop_radius_factor: 0.6,
                     },
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,

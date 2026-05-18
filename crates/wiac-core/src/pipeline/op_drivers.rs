@@ -72,7 +72,7 @@ pub(in crate::pipeline) fn run_standard_op<P: PostProcessor>(
     let offset_count = offsets.len();
     post.raw(&format!("; OP {}", op.id));
     if !offsets.is_empty() {
-        if let OpKind::Drill { cycle } = op.kind {
+        if let OpKind::Drill { cycle, .. } = op.kind {
             drill::run_drill(
                 op, project, objects, setup, &offsets, cycle, post, last_pos, warnings,
             )?;

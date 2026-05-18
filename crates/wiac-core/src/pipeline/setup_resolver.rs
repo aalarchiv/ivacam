@@ -152,10 +152,10 @@ pub(super) fn synthesize_op_setup(
         rate_h_finish: finish_feed,
         pierce_sec,
     };
-    let offset = match op.kind {
-        OpKind::Profile { offset } => offset,
+    let offset = match &op.kind {
+        OpKind::Profile { offset, .. } => *offset,
         OpKind::Pocket { .. } => ToolOffset::None,
-        OpKind::Engrave | OpKind::DragKnife => ToolOffset::On,
+        OpKind::Engrave { .. } | OpKind::DragKnife { .. } => ToolOffset::On,
         _ => ToolOffset::None,
     };
     // Trochoidal pockets demand a helical descent. If the user picked
@@ -164,7 +164,8 @@ pub(super) fn synthesize_op_setup(
     let trochoidal = matches!(
         op.kind,
         OpKind::Pocket {
-            strategy: PocketStrategy::Trochoidal { .. }
+            strategy: PocketStrategy::Trochoidal { .. },
+            ..
         }
     );
     let plunge = if trochoidal
@@ -196,8 +197,8 @@ pub(super) fn synthesize_op_setup(
         through_depth: op.params.through_depth.max(0.0),
         depth_list: op.params.depth_list.clone(),
     };
-    setup.pockets = match op.kind {
-        OpKind::Pocket { strategy } => PocketConfig {
+    setup.pockets = match &op.kind {
+        OpKind::Pocket { strategy, .. } => PocketConfig {
             active: true,
             islands: op.params.pocket_islands,
             zigzag: matches!(strategy, PocketStrategy::Zigzag),
@@ -235,7 +236,7 @@ pub(super) fn synthesize_op_setup(
             }
         }
     }
-    if matches!(op.kind, OpKind::DragKnife) {
+    if matches!(op.kind, OpKind::DragKnife { .. }) {
         setup.machine.mode = MachineMode::Drag;
     }
     // Chamfer ops (rt1.18) carve at a single depth computed from the

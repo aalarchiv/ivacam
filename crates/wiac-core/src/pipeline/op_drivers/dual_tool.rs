@@ -112,6 +112,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),
@@ -166,6 +168,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: Some(1),
@@ -235,6 +239,8 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),

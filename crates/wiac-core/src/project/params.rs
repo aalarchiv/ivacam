@@ -82,6 +82,103 @@ impl TabPlacementMode {
     }
 }
 
+/// Parameters shared by every closed-contour op (Profile / Pocket /
+/// Engrave / `DragKnife`). Embedded in the matching [`super::op::OpKind`]
+/// variants. Holds tab shape + placement, lead-in / lead-out, cut
+/// direction, corner-feed reduction, and the optional user-picked
+/// approach point. (kbx5 step 1.)
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ContourParams {
+    /// Per-op tab SHAPE config: width / height / kind (rectangle vs
+    /// ramp) / ramp angle. Effective tab POSITIONS come from
+    /// `tab_placements` (manual) and / or `tab_mode` (auto-spaced).
+    #[serde(default)]
+    pub tabs: TabsConfig,
+    /// How tab positions are sourced for this op (rt1.10).
+    #[serde(default, skip_serializing_if = "TabPlacementMode::is_default")]
+    pub tab_mode: TabPlacementMode,
+    /// User-placed tabs, anchored geometry-relative as
+    /// `(object_id, t)`. Honored when `tab_mode` is `Manual` or
+    /// `Mixed`; `Off` / `Auto` ignore.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tab_placements: Vec<TabPlacement>,
+    /// Lead-in / lead-out shape.
+    #[serde(default)]
+    pub leads: LeadsConfig,
+    /// Cut direction for the main (roughing) passes.
+    #[serde(default, skip_serializing_if = "CutDirection::is_default")]
+    pub cut_direction: CutDirection,
+    /// Cut direction for the finishing pass — the offset that defines
+    /// the wall surface (Pocket level=0 ring; Profile single-pass cut).
+    #[serde(default, skip_serializing_if = "CutDirection::is_default")]
+    pub finish_cut_direction: CutDirection,
+    /// When > 0, slow the feed at sharp corners by this fraction.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub corner_feed_reduction: f64,
+    /// Anfahrpunkt (rt1.26): user-picked XY where the cutter enters
+    /// each closed-contour ring. `None` = auto.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approach_point: Option<(f64, f64)>,
+}
+
+/// Parameters specific to [`super::op::OpKind::Pocket`]. (kbx5 step 1.)
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PocketParams {
+    /// XY overlap between consecutive pocket cuts (0..1). Stored at 0.0
+    /// means "use the default".
+    #[serde(default)]
+    pub xy_overlap: f64,
+    /// Treat inner contours as islands (don't cut them).
+    #[serde(default)]
+    pub pocket_islands: bool,
+    /// Skip the wall-defining ring (contour cut).
+    #[serde(default)]
+    pub pocket_nocontour: bool,
+    /// Cascade outward-in instead of inward-out.
+    #[serde(default)]
+    pub pocket_insideout: bool,
+    /// XY stock allowance left uncut by roughing (rt1.24).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_xy_allowance_mm: Option<f64>,
+    /// Pocket-Outside wrapper shape. Set only on ops created via the
+    /// Pocket-Outside UX.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_shape: Option<FrameShape>,
+    /// Padding around the selection bbox to size the frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_padding_mm: Option<f64>,
+    /// Corner radius for `FrameShape::RoundedRectangle`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_corner_radius_mm: Option<f64>,
+}
+
+/// Parameters specific to [`super::op::OpKind::Profile`]. (kbx5 step 1.)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ProfileParams {
+    /// Dip into sharp inner corners so the cutter clears the geometric
+    /// corner. Only meaningful when the offset is non-zero.
+    #[serde(default)]
+    pub overcut: bool,
+    /// Reverse the cut direction (climb ↔ conventional).
+    #[serde(default)]
+    pub reverse: bool,
+    /// Helical descent inside a closed contour.
+    #[serde(default)]
+    pub helix: bool,
+}
+
+/// Parameters specific to [`super::op::OpKind::VCarve`]. (kbx5 step 1.)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VCarveParams {
+    /// V-Carve cap on the inscribed-circle radius (mm). `None` = no cap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carve_max_width_mm: Option<f64>,
+    /// V-Carve "second-pass" toggle. When true, re-cuts only the
+    /// points whose first pass fell short of the geometric target.
+    #[serde(default)]
+    pub multi_pass_refine: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct OpParams {
     /// Final cut depth (negative number — a depth, not a height).

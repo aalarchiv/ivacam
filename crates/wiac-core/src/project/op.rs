@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cam::setup::ToolOffset;
 
-use super::params::OpParams;
+use super::params::{ContourParams, OpParams, PocketParams, ProfileParams, VCarveParams};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Op {
@@ -43,6 +43,8 @@ impl Default for Op {
             enabled: true,
             kind: OpKind::Profile {
                 offset: ToolOffset::Outside,
+                contour: ContourParams::default(),
+                profile: ProfileParams::default(),
             },
             tool_id: 1,
             finish_tool_id: None,
@@ -91,18 +93,44 @@ pub enum PatternConfig {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum OpKind {
     /// Contour cut — equivalent to today's "mill" with a parallel-offset
-    /// pass at `offset` of the tool radius.
-    Profile { offset: ToolOffset },
-    /// Pocket fill — cascade of inward offsets, optionally zigzag.
-    Pocket { strategy: PocketStrategy },
+    /// pass at `offset` of the tool radius. Embedded `contour` and
+    /// `profile` carry the per-kind params (kbx5 step 1); legacy
+    /// payloads land them at default and the migration deserializer
+    /// fills them from the flat `OpParams` bag.
+    Profile {
+        offset: ToolOffset,
+        #[serde(default)]
+        contour: ContourParams,
+        #[serde(default)]
+        profile: ProfileParams,
+    },
+    /// Pocket fill — cascade of inward offsets, optionally zigzag. Embeds
+    /// `contour` (lead-in/out, cut direction, tabs) and `pocket` (xy
+    /// overlap, islands, finish allowance, Pocket-Outside frame).
+    Pocket {
+        strategy: PocketStrategy,
+        #[serde(default)]
+        contour: ContourParams,
+        #[serde(default)]
+        pocket: PocketParams,
+    },
     /// Drill cycle — point or circle smaller than tool. Carries a
     /// [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1
-    /// fallback for posts that don't support canned cycles).
-    Drill { cycle: DrillCycle },
+    /// fallback for posts that don't support canned cycles). Also
+    /// carries the Stufenfase post-drill chamfer width (rt1.20) and
+    /// the optional pattern (kbx5 step 1 — Drill is the only kind
+    /// patternable for now).
+    Drill {
+        cycle: DrillCycle,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        chamfer_after_width_mm: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pattern: Option<PatternConfig>,
+    },
     /// Helical thread — single-point cutter walks a helix inside a bore
     /// (internal) or around a stud (external). Z descends linearly by
     /// `pitch_mm` per revolution between `start_depth` and `depth`. The
@@ -144,18 +172,31 @@ pub enum OpKind {
         #[serde(default)]
         finish_pass: bool,
     },
-    /// Tool-on engraving — no offset, follows the source path.
-    Engrave,
-    /// Drag-knife — emits trail-compensation moves.
-    DragKnife,
-    /// Helical entry into a closed contour.
+    /// Tool-on engraving — no offset, follows the source path. Carries
+    /// `contour` params (leads / cut direction / approach point).
+    Engrave {
+        #[serde(default)]
+        contour: ContourParams,
+    },
+    /// Drag-knife — emits trail-compensation moves. Carries `contour`
+    /// params (mainly approach point + cut direction).
+    DragKnife {
+        #[serde(default)]
+        contour: ContourParams,
+    },
+    /// Helical entry into a closed contour. Reserved for future
+    /// thread-mill style expansion; no params today.
     Helix,
     /// V-Carve: drives a V-bit along the medial axis of a closed region,
     /// with depth varying per point so the V's tip dips deepest where the
     /// region is widest. The depth at each point is
     /// `z = -R_inscribed / tan(tip_angle / 2)` for the inscribed-circle
-    /// radius `R_inscribed` at that point of the medial axis.
-    VCarve,
+    /// radius `R_inscribed` at that point of the medial axis. Embeds the
+    /// per-kind `VCarveParams` (`carve_max_width` cap, second-pass refine).
+    VCarve {
+        #[serde(default)]
+        carve: VCarveParams,
+    },
 }
 
 fn default_chamfer_width() -> f64 {
@@ -499,7 +540,8 @@ mod tests {
         assert!(matches!(
             op.kind,
             OpKind::Profile {
-                offset: ToolOffset::Outside
+                offset: ToolOffset::Outside,
+                ..
             }
         ));
         assert!(matches!(op.source, OpSource::All));

@@ -282,6 +282,61 @@ components:
       - min_x
       - min_y
       type: object
+    ContourParams:
+      description: Parameters shared by every closed-contour op (Profile / Pocket / Engrave / `DragKnife`). Embedded in the matching [`super::op::OpKind`] variants. Holds tab shape + placement, lead-in / lead-out, cut direction, corner-feed reduction, and the optional user-picked approach point. (kbx5 step 1.)
+      properties:
+        approach_point:
+          description: 'Anfahrpunkt (rt1.26): user-picked XY where the cutter enters each closed-contour ring. `None` = auto.'
+          items:
+          - format: double
+            type: number
+          - format: double
+            type: number
+          maxItems: 2
+          minItems: 2
+          type:
+          - array
+          - 'null'
+        corner_feed_reduction:
+          description: When > 0, slow the feed at sharp corners by this fraction.
+          format: double
+          type: number
+        cut_direction:
+          allOf:
+          - $ref: '#/components/schemas/CutDirection'
+          description: Cut direction for the main (roughing) passes.
+        finish_cut_direction:
+          allOf:
+          - $ref: '#/components/schemas/CutDirection'
+          description: Cut direction for the finishing pass — the offset that defines the wall surface (Pocket level=0 ring; Profile single-pass cut).
+        leads:
+          allOf:
+          - $ref: '#/components/schemas/LeadsConfig'
+          default:
+            in: off
+            in_lenght: 5.0
+            out: off
+            out_lenght: 5.0
+          description: Lead-in / lead-out shape.
+        tab_mode:
+          allOf:
+          - $ref: '#/components/schemas/TabPlacementMode'
+          description: How tab positions are sourced for this op (rt1.10).
+        tab_placements:
+          description: User-placed tabs, anchored geometry-relative as `(object_id, t)`. Honored when `tab_mode` is `Manual` or `Mixed`; `Off` / `Auto` ignore.
+          items:
+            $ref: '#/components/schemas/TabPlacement'
+          type: array
+        tabs:
+          allOf:
+          - $ref: '#/components/schemas/TabsConfig'
+          default:
+            active: false
+            height: 1.0
+            tab_type: rectangle
+            width: 10.0
+          description: 'Per-op tab SHAPE config: width / height / kind (rectangle vs ramp) / ramp angle. Effective tab POSITIONS come from `tab_placements` (manual) and / or `tab_mode` (auto-spaced).'
+      type: object
     Coolant:
       enum:
       - off
@@ -1022,10 +1077,31 @@ components:
       type: object
     OpKind:
       oneOf:
-      - description: Contour cut — equivalent to today's "mill" with a parallel-offset pass at `offset` of the tool radius.
+      - description: Contour cut — equivalent to today's "mill" with a parallel-offset pass at `offset` of the tool radius. Embedded `contour` and `profile` carry the per-kind params (kbx5 step 1); legacy payloads land them at default and the migration deserializer fills them from the flat `OpParams` bag.
         properties:
+          contour:
+            allOf:
+            - $ref: '#/components/schemas/ContourParams'
+            default:
+              leads:
+                in: off
+                in_lenght: 5.0
+                out: off
+                out_lenght: 5.0
+              tabs:
+                active: false
+                height: 1.0
+                tab_type: rectangle
+                width: 10.0
           offset:
             $ref: '#/components/schemas/ToolOffset'
+          profile:
+            allOf:
+            - $ref: '#/components/schemas/ProfileParams'
+            default:
+              helix: false
+              overcut: false
+              reverse: false
           type:
             enum:
             - profile
@@ -1034,8 +1110,30 @@ components:
         - offset
         - type
         type: object
-      - description: Pocket fill — cascade of inward offsets, optionally zigzag.
+      - description: Pocket fill — cascade of inward offsets, optionally zigzag. Embeds `contour` (lead-in/out, cut direction, tabs) and `pocket` (xy overlap, islands, finish allowance, Pocket-Outside frame).
         properties:
+          contour:
+            allOf:
+            - $ref: '#/components/schemas/ContourParams'
+            default:
+              leads:
+                in: off
+                in_lenght: 5.0
+                out: off
+                out_lenght: 5.0
+              tabs:
+                active: false
+                height: 1.0
+                tab_type: rectangle
+                width: 10.0
+          pocket:
+            allOf:
+            - $ref: '#/components/schemas/PocketParams'
+            default:
+              pocket_insideout: false
+              pocket_islands: false
+              pocket_nocontour: false
+              xy_overlap: 0.0
           strategy:
             $ref: '#/components/schemas/PocketStrategy'
           type:
@@ -1046,10 +1144,19 @@ components:
         - strategy
         - type
         type: object
-      - description: Drill cycle — point or circle smaller than tool. Carries a [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1 fallback for posts that don't support canned cycles).
+      - description: Drill cycle — point or circle smaller than tool. Carries a [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1 fallback for posts that don't support canned cycles). Also carries the Stufenfase post-drill chamfer width (rt1.20) and the optional pattern (kbx5 step 1 — Drill is the only kind patternable for now).
         properties:
+          chamfer_after_width_mm:
+            format: double
+            type:
+            - number
+            - 'null'
           cycle:
             $ref: '#/components/schemas/DrillCycle'
+          pattern:
+            anyOf:
+            - $ref: '#/components/schemas/PatternConfig'
+            - type: 'null'
           type:
             enum:
             - drill
@@ -1098,8 +1205,22 @@ components:
         required:
         - type
         type: object
-      - description: Tool-on engraving — no offset, follows the source path.
+      - description: Tool-on engraving — no offset, follows the source path. Carries `contour` params (leads / cut direction / approach point).
         properties:
+          contour:
+            allOf:
+            - $ref: '#/components/schemas/ContourParams'
+            default:
+              leads:
+                in: off
+                in_lenght: 5.0
+                out: off
+                out_lenght: 5.0
+              tabs:
+                active: false
+                height: 1.0
+                tab_type: rectangle
+                width: 10.0
           type:
             enum:
             - engrave
@@ -1107,8 +1228,22 @@ components:
         required:
         - type
         type: object
-      - description: Drag-knife — emits trail-compensation moves.
+      - description: Drag-knife — emits trail-compensation moves. Carries `contour` params (mainly approach point + cut direction).
         properties:
+          contour:
+            allOf:
+            - $ref: '#/components/schemas/ContourParams'
+            default:
+              leads:
+                in: off
+                in_lenght: 5.0
+                out: off
+                out_lenght: 5.0
+              tabs:
+                active: false
+                height: 1.0
+                tab_type: rectangle
+                width: 10.0
           type:
             enum:
             - drag_knife
@@ -1116,7 +1251,7 @@ components:
         required:
         - type
         type: object
-      - description: Helical entry into a closed contour.
+      - description: Helical entry into a closed contour. Reserved for future thread-mill style expansion; no params today.
         properties:
           type:
             enum:
@@ -1125,8 +1260,13 @@ components:
         required:
         - type
         type: object
-      - description: 'V-Carve: drives a V-bit along the medial axis of a closed region, with depth varying per point so the V''s tip dips deepest where the region is widest. The depth at each point is `z = -R_inscribed / tan(tip_angle / 2)` for the inscribed-circle radius `R_inscribed` at that point of the medial axis.'
+      - description: 'V-Carve: drives a V-bit along the medial axis of a closed region, with depth varying per point so the V''s tip dips deepest where the region is widest. The depth at each point is `z = -R_inscribed / tan(tip_angle / 2)` for the inscribed-circle radius `R_inscribed` at that point of the medial axis. Embeds the per-kind `VCarveParams` (`carve_max_width` cap, second-pass refine).'
         properties:
+          carve:
+            allOf:
+            - $ref: '#/components/schemas/VCarveParams'
+            default:
+              multi_pass_refine: false
           type:
             enum:
             - v_carve
@@ -1545,6 +1685,50 @@ components:
       - nocontour
       - zigzag
       type: object
+    PocketParams:
+      description: Parameters specific to [`super::op::OpKind::Pocket`]. (kbx5 step 1.)
+      properties:
+        finish_xy_allowance_mm:
+          description: XY stock allowance left uncut by roughing (rt1.24).
+          format: double
+          type:
+          - number
+          - 'null'
+        frame_corner_radius_mm:
+          description: Corner radius for `FrameShape::RoundedRectangle`.
+          format: double
+          type:
+          - number
+          - 'null'
+        frame_padding_mm:
+          description: Padding around the selection bbox to size the frame.
+          format: double
+          type:
+          - number
+          - 'null'
+        frame_shape:
+          anyOf:
+          - $ref: '#/components/schemas/FrameShape'
+          - type: 'null'
+          description: Pocket-Outside wrapper shape. Set only on ops created via the Pocket-Outside UX.
+        pocket_insideout:
+          default: false
+          description: Cascade outward-in instead of inward-out.
+          type: boolean
+        pocket_islands:
+          default: false
+          description: Treat inner contours as islands (don't cut them).
+          type: boolean
+        pocket_nocontour:
+          default: false
+          description: Skip the wall-defining ring (contour cut).
+          type: boolean
+        xy_overlap:
+          default: 0.0
+          description: XY overlap between consecutive pocket cuts (0..1). Stored at 0.0 means "use the default".
+          format: double
+          type: number
+      type: object
     PocketStrategy:
       oneOf:
       - enum:
@@ -1737,6 +1921,22 @@ components:
           type:
           - string
           - 'null'
+      type: object
+    ProfileParams:
+      description: Parameters specific to [`super::op::OpKind::Profile`]. (kbx5 step 1.)
+      properties:
+        helix:
+          default: false
+          description: Helical descent inside a closed contour.
+          type: boolean
+        overcut:
+          default: false
+          description: Dip into sharp inner corners so the cutter clears the geometric corner. Only meaningful when the offset is non-zero.
+          type: boolean
+        reverse:
+          default: false
+          description: Reverse the cut direction (climb ↔ conventional).
+          type: boolean
       type: object
     Project:
       properties:
@@ -2666,6 +2866,20 @@ components:
       - mm
       - inch
       type: string
+    VCarveParams:
+      description: Parameters specific to [`super::op::OpKind::VCarve`]. (kbx5 step 1.)
+      properties:
+        carve_max_width_mm:
+          description: V-Carve cap on the inscribed-circle radius (mm). `None` = no cap.
+          format: double
+          type:
+          - number
+          - 'null'
+        multi_pass_refine:
+          default: false
+          description: V-Carve "second-pass" toggle. When true, re-cuts only the points whose first pass fell short of the geometric target.
+          type: boolean
+      type: object
     VcObject:
       description: '`VcObject` analogue: a chain of segments grouped after `segments2objects`.'
       properties:

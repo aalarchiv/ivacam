@@ -22,6 +22,11 @@
     type HitIndex,
   } from '../canvas/spatial-index';
   import { fixtureAt } from '../canvas/fixture-hit';
+  import {
+    approachSnapCandidates,
+    findNearestSnap,
+    type SnapCandidate,
+  } from '../canvas/approach-snap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import {
     previewSegmentsFor,
@@ -166,6 +171,40 @@
   /// matching the CAD-convention escape hatch.
   let altDown = $state(false);
 
+  /// Track Shift-held state for the approach-point picker (n79). When
+  /// true, snap-to-vertex is disabled — the user is asking for a
+  /// free-form pick anywhere in the canvas.
+  let shiftDown = $state(false);
+
+  /// Approach-point picker (n79). Active when project.pickMode is
+  /// `{ kind: 'approach-point', opId: <selected op id> }`. Cursor
+  /// becomes a crosshair, a preview marker tracks the mouse (snapped
+  /// to source-object vertices unless Shift is held), and a click
+  /// commits the point to `op.approachPoint` while staying in pick
+  /// mode (sticky — ESC exits).
+  const approachPickActive = $derived(
+    project.pickMode?.kind === 'approach-point' &&
+      project.pickMode.opId === selectedOp?.id,
+  );
+
+  /// Live preview state while picking. `lastTransform`-relative data
+  /// coords; `snapped` flags whether we landed on a candidate vertex.
+  let approachPreview = $state<{ x: number; y: number; snapped: boolean } | null>(null);
+
+  /// Drag state for repositioning an already-placed approach marker
+  /// (Option C: hybrid pick + draggable). Captured on pointerdown
+  /// inside the marker's hit circle; released on pointerup.
+  let approachDrag = $state<{ opId: number; pointerId: number } | null>(null);
+
+  /// Cached snap candidate list for the selected op. Rebuilds when
+  /// the imported geometry or op's source filter changes — never per
+  /// pointermove.
+  const approachSnapPoints = $derived<SnapCandidate[]>(
+    approachPickActive || approachDrag != null
+      ? approachSnapCandidates(project.imported, selectedOp)
+      : [],
+  );
+
   // Mouse → segment hit testing. We project each segment to canvas space
   // and pick the nearest one within `HIT_PIXEL_TOL`.
   const HIT_PIXEL_TOL = 8;
@@ -267,10 +306,70 @@
     );
   }
 
+  /// Convert canvas-pixel coords to data-space (mm) using the last
+  /// emitted transform. Returns `null` when no transform is staged
+  /// (project hasn't rendered yet).
+  function pxToData(cx: number, cy: number): { x: number; y: number } | null {
+    if (!lastTransform) return null;
+    const t = lastTransform;
+    // Canvas Y axis is inverted vs data Y (canvas grows downward).
+    return { x: (cx - t.offX) / t.scale, y: -(cy - t.offY) / t.scale };
+  }
+
+  /// Tolerance for the approach-point snap, in data units. Mirrors
+  /// the existing pixel-tolerance pattern used by `pixelHit` so the
+  /// snap radius stays constant in screen pixels across zoom levels.
+  function approachSnapToleranceData(): number {
+    if (!lastTransform) return 0;
+    // ~6 px feels right — matches the marker hit radius below.
+    return 6 / Math.max(Math.abs(lastTransform.scale), 1e-6);
+  }
+
+  /// Snap radius for the placed marker's drag handle, in data units.
+  function approachMarkerHitRadiusData(): number {
+    if (!lastTransform) return 0;
+    return 7 / Math.max(Math.abs(lastTransform.scale), 1e-6);
+  }
+
   function onPointerMove(e: PointerEvent) {
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    // n79: in approach-pick mode, the cursor IS the picker — update
+    // the preview marker on every move and short-circuit the
+    // hover-hit / box-select paths below.
+    if (approachPickActive) {
+      const data = pxToData(cx, cy);
+      if (data) {
+        const tol = approachSnapToleranceData();
+        const snap = shiftDown ? null : findNearestSnap(approachSnapPoints, data.x, data.y, tol);
+        approachPreview = snap
+          ? { x: snap.x, y: snap.y, snapped: true }
+          : { x: data.x, y: data.y, snapped: false };
+      } else {
+        approachPreview = null;
+      }
+      canvas.style.cursor = 'crosshair';
+      return;
+    } else if (approachPreview) {
+      approachPreview = null;
+    }
+
+    // Live drag of an already-placed approach marker (n79 hybrid).
+    if (approachDrag && e.pointerId === approachDrag.pointerId) {
+      const data = pxToData(cx, cy);
+      if (data) {
+        const tol = approachSnapToleranceData();
+        const snap = shiftDown ? null : findNearestSnap(approachSnapPoints, data.x, data.y, tol);
+        const x = snap ? snap.x : data.x;
+        const y = snap ? snap.y : data.y;
+        project.updateOperation(approachDrag.opId, { approachPoint: [x, y] });
+        approachPreview = { x, y, snapped: !!snap };
+      }
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+
     // Active pan drag: translate the user-pan offsets by the cursor
     // delta. Each move is RELATIVE so we anchor on the previous frame's
     // screen position, then update the anchor for the next frame.
@@ -318,6 +417,16 @@
   }
 
   function onPointerUp(e: PointerEvent) {
+    // n79: end an active approach-marker drag.
+    if (approachDrag && e.pointerId === approachDrag.pointerId) {
+      approachDrag = null;
+      canvas.style.cursor = 'default';
+      approachPreview = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
     // End any active pan drag.
     if (panDrag && e.pointerId === panDrag.pointerId) {
       panDrag = null;
@@ -676,6 +785,13 @@
       ctxMenu = null;
       e.preventDefault();
     }
+    // n79: ESC finalizes the approach-point picker (sticky mode exit).
+    if (e.key === 'Escape' && approachPickActive) {
+      project.pickMode = null;
+      approachPreview = null;
+      canvas.style.cursor = 'default';
+      e.preventDefault();
+    }
     // Escape mid-drag cancels the box-select without changing the
     // current selection — FreeCAD-style.
     if (e.key === 'Escape' && boxSelect) {
@@ -756,6 +872,57 @@
       } catch {}
       canvas.style.cursor = 'grabbing';
       return;
+    }
+
+    // n79: approach-point pick mode. Left-click commits the snapped
+    // (or free, if Shift) cursor position into op.approachPoint and
+    // STAYS in pick mode (sticky — ESC exits). Right-click bails
+    // out without committing.
+    if (approachPickActive && selectedOp && e.button === 0) {
+      const data = pxToData(cx, cy);
+      if (data) {
+        const tol = approachSnapToleranceData();
+        const snap = shiftDown ? null : findNearestSnap(approachSnapPoints, data.x, data.y, tol);
+        const x = snap ? snap.x : data.x;
+        const y = snap ? snap.y : data.y;
+        project.updateOperation(selectedOp.id, { approachPoint: [x, y] });
+        approachPreview = { x, y, snapped: !!snap };
+      }
+      e.preventDefault();
+      return;
+    }
+    if (approachPickActive && e.button === 2) {
+      project.pickMode = null;
+      approachPreview = null;
+      e.preventDefault();
+      return;
+    }
+
+    // n79: dragging an already-placed approach marker. Only allowed
+    // when the selected op has one and we're NOT in pick mode.
+    if (
+      !approachPickActive
+      && selectedOp
+      && (selectedOp.kind === 'profile' || selectedOp.kind === 'pocket')
+      && selectedOp.approachPoint
+      && e.button === 0
+    ) {
+      const data = pxToData(cx, cy);
+      const hitR = approachMarkerHitRadiusData();
+      if (data) {
+        const [ax, ay] = selectedOp.approachPoint;
+        const dx = data.x - ax;
+        const dy = data.y - ay;
+        if (dx * dx + dy * dy <= hitR * hitR) {
+          approachDrag = { opId: selectedOp.id, pointerId: e.pointerId };
+          try {
+            canvas.setPointerCapture(e.pointerId);
+          } catch {}
+          canvas.style.cursor = 'grabbing';
+          e.preventDefault();
+          return;
+        }
+      }
     }
 
     // rt1.10: tab-placement mode (selected op has Manual / Mixed
@@ -1015,8 +1182,82 @@
 
     drawFixtures(ctx, project2);
     drawTabs(ctx, project2, scale);
+    drawApproachPoint(ctx, project2);
     if (boxSelect && !boxSelect.armed) {
       drawBoxSelect(ctx, accent);
+    }
+  }
+
+  /// Paint the approach-point marker (n79) for the currently selected
+  /// op when it has one set, plus the live preview while in pick mode
+  /// or actively dragging.
+  function drawApproachPoint(
+    ctx: CanvasRenderingContext2D,
+    project2: (x: number, y: number) => [number, number],
+  ): void {
+    const op = selectedOp;
+    if (!op) return;
+    // approachPoint lives on ContourFields, currently shared only by
+    // Profile + Pocket on the FE type side. (The BE accepts it on
+    // Engrave / DragKnife too; expanding the FE types is a follow-up.)
+    if (op.kind !== 'profile' && op.kind !== 'pocket') return;
+
+    const markerColor = themeVar('--accent', '#3aa');
+    const snapColor = '#3c3'; // green = locked-to-vertex (matches EstlCam)
+    const ringColor = themeVar('--text', '#000');
+
+    // The committed point, when present.
+    if (op.approachPoint) {
+      const [sx, sy] = project2(op.approachPoint[0], op.approachPoint[1]);
+      ctx.beginPath();
+      ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = markerColor;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = ringColor;
+      ctx.stroke();
+      // Inner dot for precision feel.
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = ringColor;
+      ctx.fill();
+    }
+
+    // Live preview during pick / drag.
+    if ((approachPickActive || approachDrag != null) && approachPreview) {
+      const [sx, sy] = project2(approachPreview.x, approachPreview.y);
+      const color = approachPreview.snapped ? snapColor : markerColor;
+      // Dashed ring while picking (vs solid for the committed point)
+      // so the user sees clearly which is provisional.
+      ctx.save();
+      if (!op.approachPoint) {
+        // No committed point yet — make the preview the focal element.
+        ctx.beginPath();
+        ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.5;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Snap tick — a small "+" crosshair when we're snapped to a vertex.
+      if (approachPreview.snapped) {
+        ctx.strokeStyle = snapColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx - 10, sy);
+        ctx.lineTo(sx + 10, sy);
+        ctx.moveTo(sx, sy - 10);
+        ctx.lineTo(sx, sy + 10);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
   }
 
@@ -1504,11 +1745,16 @@
   onkeydown={(e) => {
     onCtxKeydown(e);
     if (e.key === 'Alt' || e.altKey) altDown = true;
+    if (e.key === 'Shift' || e.shiftKey) shiftDown = true;
   }}
   onkeyup={(e) => {
     if (e.key === 'Alt' || !e.altKey) altDown = false;
+    if (e.key === 'Shift' || !e.shiftKey) shiftDown = false;
   }}
-  onblur={() => (altDown = false)}
+  onblur={() => {
+    altDown = false;
+    shiftDown = false;
+  }}
   onclick={onCtxDocClick}
 />
 <div class="canvas-host" bind:this={container}>

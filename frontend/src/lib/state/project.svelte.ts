@@ -22,7 +22,9 @@ import {
   type PipelinePhase,
   type PipelineProgress,
 } from './generated.svelte';
-import { SelectionState, type SelectionMode } from './selection.svelte';
+import { SelectionState, type PickMode, type SelectionMode } from './selection.svelte';
+
+export type { PickMode };
 import {
   ProjectDataState,
   DEFAULT_SETTINGS,
@@ -465,6 +467,12 @@ class ProjectState {
   }
   set toolsDialogFocusId(v: number | null) {
     this.sel.toolsDialogFocusId = v;
+  }
+  get pickMode(): PickMode | null {
+    return this.sel.pickMode;
+  }
+  set pickMode(v: PickMode | null) {
+    this.sel.pickMode = v;
   }
 
   constructor() {

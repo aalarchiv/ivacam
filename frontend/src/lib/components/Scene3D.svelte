@@ -389,6 +389,18 @@
     requestRender();
   });
 
+  // n79: approach-point needle for the currently selected op. The
+  // marker shows up only when the user is looking at the op that
+  // carries it (driven by selectedOpId) — otherwise the 3D view
+  // stays uncluttered.
+  $effect(() => {
+    void project.operations;
+    void project.selectedOpId;
+    void project.machine.fastMoveZ;
+    updateApproach();
+    requestRender();
+  });
+
   // Stock bbox visual: stock config + toggle. Doesn't touch the
   // toolpath wireframe.
   $effect(() => {
@@ -751,6 +763,10 @@
   let stockGroup: THREE.Group | undefined;
   let workAreaGroup: THREE.Group | undefined;
   let fixturesGroup: THREE.Group | undefined;
+  /// n79: a vertical needle (line) + tiny dot at the selected op's
+  /// approach point. Rebuilt on every relevant project change so
+  /// drag updates show live.
+  let approachGroup: THREE.Group | undefined;
   /// Sim-warning markers (one mesh per critical / holder warning). Lazy
   /// rebuilt whenever project.simDiagnostics changes.
   let warningGroup: THREE.Group | undefined;
@@ -1154,6 +1170,45 @@
         }
       }
     }
+  }
+
+  /// n79: render a small vertical needle from z=0 up to `fast_move_z`
+  /// at the selected op's `approachPoint`. Optional small sphere at
+  /// the base so the marker reads even when the camera is top-down.
+  /// The marker only appears when the active op carries one — same
+  /// data the 2D canvas paints from.
+  function updateApproach() {
+    if (!scene) return;
+    if (!approachGroup) {
+      approachGroup = new THREE.Group();
+      scene.add(approachGroup);
+    }
+    approachGroup.clear();
+    const opId = project.selectedOpId;
+    if (opId == null) return;
+    const op = project.operations.find((o) => o.id === opId);
+    if (!op) return;
+    if (op.kind !== 'profile' && op.kind !== 'pocket') return;
+    const ap = op.approachPoint;
+    if (!ap) return;
+    const [x, y] = ap;
+    const topZ = Math.max(1, project.machine.fastMoveZ);
+    const color = cssColor('--accent', 0x44aaaa);
+    // Vertical needle from (x, y, 0) up to (x, y, topZ).
+    const geom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, y, 0),
+      new THREE.Vector3(x, y, topZ),
+    ]);
+    const mat = new THREE.LineBasicMaterial({ color, linewidth: 2 });
+    approachGroup.add(new THREE.Line(geom, mat));
+    // Base dot — tiny sphere at z=0 to anchor the needle visually
+    // when the camera is overhead.
+    const dotR = Math.max(0.4, topZ * 0.04);
+    const dotGeom = new THREE.SphereGeometry(dotR, 12, 8);
+    const dotMat = new THREE.MeshBasicMaterial({ color });
+    const dot = new THREE.Mesh(dotGeom, dotMat);
+    dot.position.set(x, y, 0);
+    approachGroup.add(dot);
   }
 
   /// Mirror of `wiac_core::pipeline::op_includes_object`. Tells us

@@ -420,9 +420,11 @@
       {/if}
 
       {#if op.kind === 'pocket' || op.kind === 'profile'}
+        {@const pickActive =
+          project.pickMode?.kind === 'approach-point' && project.pickMode.opId === op.id}
         <div
           class="row"
-          title="Anfahrpunkt (rt1.26): user-picked XY where the cutter enters each closed ring. Each closed offset's start vertex is rotated to the segment closest to this point — plunge/lead-in then happens there instead of an auto-picked vertex. Empty = auto. (Click-pick UI is a follow-up.)"
+          title="Anfahrpunkt (rt1.26): user-picked XY where the cutter enters each closed ring. Each closed offset's start vertex is rotated to the segment closest to this point — plunge/lead-in then happens there instead of an auto-picked vertex. Empty = auto."
         >
           <span>Approach point</span>
           <div class="num-cell num-cell-pair">
@@ -460,6 +462,19 @@
                 if (!isNaN(y)) patch('approachPoint', [x, y]);
               }}
             />
+            <button
+              type="button"
+              class="reset-link"
+              class:pick-active={pickActive}
+              title={pickActive
+                ? 'Picking — click in canvas, ESC to finalize'
+                : 'Pick the approach point by clicking in the 2D canvas (Shift = disable snap)'}
+              onclick={() => {
+                project.pickMode = pickActive
+                  ? null
+                  : { kind: 'approach-point', opId: op.id };
+              }}
+            >{pickActive ? 'picking…' : 'pick'}</button>
             {#if op.approachPoint}
               <button
                 type="button"
@@ -1063,6 +1078,11 @@
     cursor: pointer;
     padding: 0;
     white-space: nowrap;
+  }
+  :global(.props .reset-link.pick-active) {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
   }
   :global(.props .step-error) {
     margin: 0.1rem 0 0.2rem;

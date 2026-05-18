@@ -956,20 +956,27 @@
   {/if}
 
   <footer
-    title={project.imported
-      ? $_('footer.bbox', {
-          values: {
-            minX: project.imported.bbox.min_x.toFixed(2),
-            minY: project.imported.bbox.min_y.toFixed(2),
-            maxX: project.imported.bbox.max_x.toFixed(2),
-            maxY: project.imported.bbox.max_y.toFixed(2),
-            count: project.imported.segments.length,
-            unit: project.imported.unit_scale,
-          },
-        })
-      : $_('footer.ready')}
+    class:footer-pick={project.pickMode?.kind === 'approach-point' &&
+      project.pickMode.opId === project.selectedOpId}
+    title={project.pickMode?.kind === 'approach-point' &&
+    project.pickMode.opId === project.selectedOpId
+      ? 'Click in the 2D canvas to place the approach point (Shift = disable snap, ESC = finalize)'
+      : project.imported
+        ? $_('footer.bbox', {
+            values: {
+              minX: project.imported.bbox.min_x.toFixed(2),
+              minY: project.imported.bbox.min_y.toFixed(2),
+              maxX: project.imported.bbox.max_x.toFixed(2),
+              maxY: project.imported.bbox.max_y.toFixed(2),
+              count: project.imported.segments.length,
+              unit: project.imported.unit_scale,
+            },
+          })
+        : $_('footer.ready')}
   >
-    {#if project.imported}
+    {#if project.pickMode?.kind === 'approach-point' && project.pickMode.opId === project.selectedOpId}
+      Picking approach point — click in canvas to place, Shift to disable snap, ESC to finalize
+    {:else if project.imported}
       {$_('footer.bbox', {
         values: {
           minX: project.imported.bbox.min_x.toFixed(2),
@@ -1402,6 +1409,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  footer.footer-pick {
+    /* n79: active canvas-pick mode — accent-tinted status bar
+       grabs the eye so the user knows the canvas isn't in its
+       normal selection mode. */
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
+    color: var(--text);
+    font-weight: 600;
   }
   .close-prompt-overlay {
     position: fixed;

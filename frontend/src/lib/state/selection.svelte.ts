@@ -11,6 +11,13 @@
 
 export type SelectionMode = 'replace' | 'add' | 'toggle';
 
+/// Canvas-pick modes. The user enters one explicitly from a UI
+/// affordance ("Pick on canvas" buttons in OpPropertiesPanel) and the
+/// 2D canvas / status-bar swap to the matching interaction while it's
+/// non-null. Sticky: stays active across multiple picks until the user
+/// presses Escape or clicks the panel button again (n79).
+export type PickMode = { kind: 'approach-point'; opId: number };
+
 export class SelectionState {
   /// Per-segment hover indicator (single segment, not the chain).
   hoverSegment = $state<number | null>(null);
@@ -46,6 +53,13 @@ export class SelectionState {
   /// opens the dialog and the dialog scrolls / highlights the row
   /// whose id matches. Cleared by the dialog on close.
   toolsDialogFocusId = $state<number | null>(null);
+
+  /// Active canvas-pick interaction (n79). When set, the 2D canvas
+  /// behaves as a picker for the named target on the named op, and
+  /// the status bar prompts "ESC to finalize". Cleared on Escape, on
+  /// clicking the panel button a second time, or when the op /
+  /// project changes from under it.
+  pickMode = $state<PickMode | null>(null);
 
   /// Single-object toggle. With `additive=false` it just sets the
   /// selection to `{id}`; with `additive=true` it XORs `id` into

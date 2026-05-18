@@ -160,13 +160,17 @@ pub(in crate::pipeline) fn profile_op(id: u32, tool_id: u32, offset: ToolOffset)
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
-        pattern: None,
     }
 }
 
-pub(in crate::pipeline) fn profile_op_with_pattern(pattern: PatternConfig) -> Op {
-    let mut op = profile_op(1, 1, ToolOffset::Outside);
-    op.pattern = Some(pattern);
+/// kbx5: patterns only attach to `OpKind::Drill` now. Tests that need
+/// to exercise pattern expansion build a drill op with the pattern
+/// embedded directly.
+pub(in crate::pipeline) fn drill_op_with_pattern(pattern: PatternConfig) -> Op {
+    let mut op = drill_op(1, 1, crate::project::DrillCycle::Simple { dwell_sec: 0.0 });
+    if let crate::project::OpKind::Drill { pattern: slot, .. } = &mut op.kind {
+        *slot = Some(pattern);
+    }
     op
 }
 
@@ -179,11 +183,15 @@ pub(in crate::pipeline) fn profile_leads_op(
     params.depth = -1.0;
     params.step = Some(-1.0);
     params.fast_move_z = 5.0;
-    params.leads = LeadsConfig {
+    let leads_for_op = LeadsConfig {
         r#in: kind_in,
         out: LeadKind::Off,
         in_lenght: len_in,
         out_lenght: 0.0,
+    };
+    let contour = crate::project::ContourParams {
+        leads: leads_for_op,
+        ..crate::project::ContourParams::default()
     };
     Op {
         id: 1,
@@ -191,14 +199,13 @@ pub(in crate::pipeline) fn profile_leads_op(
         enabled: true,
         kind: OpKind::Profile {
             offset,
-            contour: crate::project::ContourParams::default(),
+            contour,
             profile: crate::project::ProfileParams::default(),
         },
         tool_id: 1,
         finish_tool_id: None,
         source: OpSource::All,
         params,
-        pattern: None,
     }
 }
 
@@ -216,7 +223,6 @@ pub(in crate::pipeline) fn pocket_op(id: u32, tool_id: u32, source: OpSource) ->
         finish_tool_id: None,
         source,
         params: OpParams::mill_default(),
-        pattern: None,
     }
 }
 
@@ -238,13 +244,20 @@ pub(in crate::pipeline) fn drill_op(id: u32, tool_id: u32, cycle: DrillCycle) ->
         finish_tool_id: None,
         source: OpSource::All,
         params,
-        pattern: None,
     }
 }
 
 pub(in crate::pipeline) fn project_with(ops: Vec<Op>, tools: Vec<ToolEntry>) -> Project {
+    project_with_segments(closed_square(20.0), ops, tools)
+}
+
+pub(in crate::pipeline) fn project_with_segments(
+    segments: Vec<Segment>,
+    ops: Vec<Op>,
+    tools: Vec<ToolEntry>,
+) -> Project {
     Project {
-        segments: closed_square(20.0),
+        segments,
         machine: MachineConfig::default(),
         tools,
         operations: ops,
@@ -269,7 +282,14 @@ pub(in crate::pipeline) fn dejavu_font_bytes() -> Vec<u8> {
 pub(in crate::pipeline) fn cut_x_values(gcode: &str) -> Vec<f64> {
     let mut xs = Vec::new();
     for line in gcode.lines() {
-        if !(line.starts_with("G1") || line.starts_with("G0")) {
+        // G0 / G1 cover the standard travel + cut moves; G81 / G82 / G83 /
+        // G73 cover the canned drill cycles whose X coordinates encode
+        // drill-hole positions (kbx5: pattern tests now use Drill ops).
+        if !(line.starts_with("G1")
+            || line.starts_with("G0")
+            || line.starts_with("G8")
+            || line.starts_with("G73"))
+        {
             continue;
         }
         if let Some(idx) = line.find('X') {

@@ -589,6 +589,7 @@ export interface components {
         MoveKind: "rapid" | "cut" | "plunge" | "retract" | "arc";
         /** @enum {string} */
         ObjectOrder: "nearest" | "per_object" | "unordered";
+        /** @description One operation in the project's program. Carries the kind-discriminator (which itself embeds the per-kind params via [`OpKind`]), the universal [`OpParamsCommon`] bag (depth schedule, plunge, feed overrides), tool refs, source selector, and that's it. Patterning is per-kind today (only `OpKind::Drill` carries it); add it to other variants if more kinds need patterning. */
         Op: {
             enabled: boolean;
             /**
@@ -600,9 +601,7 @@ export interface components {
             id: number;
             kind: components["schemas"]["OpKind"];
             name: string;
-            params: components["schemas"]["OpParams"];
-            /** @description Optional pattern repetition. When set, the op runs once per pattern instance with the source geometry translated/rotated. See [`PatternConfig`] for the concrete pattern shapes. */
-            pattern?: components["schemas"]["PatternConfig"] | null;
+            params: components["schemas"]["OpParamsCommon"];
             source: components["schemas"]["OpSource"];
             /**
              * Format: uint32
@@ -762,29 +761,14 @@ export interface components {
             /** @enum {string} */
             type: "v_carve";
         };
+        /**
+         * @description Universal per-op parameters — fields that apply to **every** op kind. Kind-specific config lives in the matching variant struct embedded in [`super::op::OpKind`]:
+         *
+         *     - Closed-contour params (tabs, leads, cut direction, approach point, corner-feed) → [`ContourParams`] - Pocket cascade / islands / Pocket-Outside frame → [`PocketParams`] - Profile overcut / reverse / helix → [`ProfileParams`] - V-Carve cap / second-pass → [`VCarveParams`] - Drill Stufenfase chamfer width → [`super::op::OpKind::Drill`]
+         *
+         *     (kbx5 step 3: the flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
+         */
         OpParams: {
-            /** @description Anfahrpunkt (rt1.26 / Estlcam): user-picked XY where the cutter enters each pocket / closed-contour ring. Honored on Pocket / Profile ops with closed offsets. When `Some((x, y))`, each closed offset gets its segment list rotated so the start vertex is the segment vertex closest to the approach point — the plunge / lead-in then happens there instead of an arbitrary auto-picked point. `None` = auto. */
-            approach_point?: [
-                number,
-                number
-            ] | null;
-            /**
-             * Format: double
-             * @description V-Carve cap on the inscribed-circle radius (mm). When set, any medial-axis point with `R_inscribed > carve_max_width_mm` clips to the cap — the V doesn't carve any wider than the bit's usable diameter. None = no cap (use the geometric inscribed circle directly).
-             */
-            carve_max_width_mm?: number | null;
-            /**
-             * Format: double
-             * @description Stufenfase (rt1.20 / Estlcam `Prog_KTD_Stufenfase)`: chamfer a drilled hole's rim immediately after the drill cycle. Honored only on `OpKind::Drill`. The post emits the drill cycle for each hole, then walks the cutter on a single revolution at the hole's edge at z = -width / `tan(tip_angle` / 2). When `Op.finish_tool_id` is set to a distinct tool, a M6 + G92 toolchange happens BEFORE the chamfer revolution so the user can chamfer with a V-bit / fly-cutter different from the drill. mm, positive only. None / 0 = no countersink.
-             */
-            chamfer_after_width_mm?: number | null;
-            /**
-             * Format: double
-             * @description When > 0, slow the feed at sharp corners by this fraction so the machine doesn't dwell on the corner with high accel demand. 0.0 = no reduction (current behavior). 0.5 = half the feed at corners. Most useful for zigzag pocket fills with their many 180° turns.
-             */
-            corner_feed_reduction?: number;
-            /** @description Cut direction for the main (roughing) passes. Default: Conventional. See [`CutDirection`] for the winding rules. */
-            cut_direction?: components["schemas"]["CutDirection"];
             /**
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
@@ -802,60 +786,16 @@ export interface components {
              * @description Override the tool's `feed_rate` for this op only. Some materials or finishing passes need a slower feed than the tool's default; rather than editing the tool library, set this per-op. None = use the tool's `feed_rate`. Units: mm/min.
              */
             feed_rate_override?: number | null;
-            /** @description Cut direction for the finishing pass — the offset that defines the wall surface (Pocket level=0 ring; Profile single-pass cut). Default: Conventional, regardless of the main `cut_direction`. Surface quality on the finish wall is almost always best with conventional milling on hobby machines. */
-            finish_cut_direction?: components["schemas"]["CutDirection"];
             /**
              * Format: double
              * @description Optional smaller step for the FINAL Z pass, for a cleaner bottom finish. None = use the same `step` for the last pass too. Negative just like `step`.
              */
             finish_step?: number | null;
             /**
-             * Format: double
-             * @description XY stock allowance left UNCUT by the roughing pass, removed by a dedicated finish pass walking the actual boundary (rt1.24 / Estlcam Schlichtzugabe). Honored on Pocket ops only — the roughing cascade insets the cutter centerline by `tool_radius + allowance`, then a wall-defining ring at `tool_radius` runs at the tool's finish-set feed/speed (rt1.27). None / 0 = no allowance (current behavior). mm, positive only.
-             */
-            finish_xy_allowance_mm?: number | null;
-            /**
-             * Format: double
-             * @description Corner radius for `FrameShape::RoundedRectangle`. None ⇒ defaults to `frame_padding_mm` inside the frame builder.
-             */
-            frame_corner_radius_mm?: number | null;
-            /**
-             * Format: double
-             * @description Padding added on every side of the selection bbox to size the frame. Honored only when `frame_shape` is set.
-             */
-            frame_padding_mm?: number | null;
-            /** @description Pocket-Outside wrapper: shape of the synthetic frame the pipeline auto-prepends around `source` before pocketing. Set only on ops created via the Pocket-Outside UX. None = no frame (regular Pocket). */
-            frame_shape?: components["schemas"]["FrameShape"] | null;
-            /**
-             * @description Helical descent inside a closed contour.
-             * @default false
-             */
-            helix: boolean;
-            /**
-             * @description Lead-in / lead-out shape for this op.
-             * @default {
-             *       "in": "off",
-             *       "in_lenght": 5,
-             *       "out": "off",
-             *       "out_lenght": 5
-             *     }
-             */
-            leads: components["schemas"]["LeadsConfig"];
-            /**
-             * @description V-Carve "second-pass" toggle. When true, the emitter runs a refinement pass that re-cuts only the points whose first pass fell short of the geometric target depth. Off by default.
-             * @default false
-             */
-            multi_pass_refine: boolean;
-            /**
              * @description Cut-order strategy for multiple objects.
              * @default nearest
              */
             objectorder: components["schemas"]["ObjectOrder"];
-            /**
-             * @description Dip into sharp inner corners so the cutter clears the geometric corner. Only meaningful for Profile ops with non-zero offset.
-             * @default false
-             */
-            overcut: boolean;
             /** @description How the cutter descends into material at the start of each Z pass. Default Direct (straight plunge). Ramp { `angle_deg` } walks forward along the path while descending Z, taking a chip in both directions simultaneously — required for non-center-cutting bits and for harder materials. */
             plunge?: components["schemas"]["PlungeStrategy"];
             /**
@@ -863,17 +803,6 @@ export interface components {
              * @description Override the tool's `plunge_rate` (Z feed) for this op. Useful for slowing the plunge on hard materials without changing the XY feed. Units: mm/min.
              */
             plunge_rate_override?: number | null;
-            /** @default false */
-            pocket_insideout: boolean;
-            /** @default false */
-            pocket_islands: boolean;
-            /** @default false */
-            pocket_nocontour: boolean;
-            /**
-             * @description Reverse the cut direction (climb ↔ conventional).
-             * @default false
-             */
-            reverse: boolean;
             /**
              * Format: double
              * @description Z at which the first pass starts.
@@ -884,31 +813,69 @@ export interface components {
              * @description Per-pass step (negative ⇒ down). None = inherit from `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to mean "unset"; the deserializer maps that to None.
              */
             step?: number | null;
-            /** @description How tab positions are sourced for this op (rt1.10). */
-            tab_mode?: components["schemas"]["TabPlacementMode"];
-            /** @description User-placed tabs, anchored geometry-relative as `(object_id, t)`. Honored when `tab_mode` is `Manual` or `Mixed`; `Off` / `Auto` ignore. Each placement may carry per-tab width / height overrides. */
-            tab_placements?: components["schemas"]["TabPlacement"][];
-            /**
-             * @description Per-op tab SHAPE config: width / height / kind (rectangle vs ramp) / ramp angle. Effective tab POSITIONS come from `tab_placements` (manual) and / or `tab_mode` (auto-spaced).
-             * @default {
-             *       "active": false,
-             *       "height": 1,
-             *       "tab_type": "rectangle",
-             *       "width": 10
-             *     }
-             */
-            tabs: components["schemas"]["TabsConfig"];
             /**
              * Format: double
              * @description Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
              */
             through_depth?: number;
+        };
+        /**
+         * @description Universal per-op parameters — fields that apply to **every** op kind. Kind-specific config lives in the matching variant struct embedded in [`super::op::OpKind`]:
+         *
+         *     - Closed-contour params (tabs, leads, cut direction, approach point, corner-feed) → [`ContourParams`] - Pocket cascade / islands / Pocket-Outside frame → [`PocketParams`] - Profile overcut / reverse / helix → [`ProfileParams`] - V-Carve cap / second-pass → [`VCarveParams`] - Drill Stufenfase chamfer width → [`super::op::OpKind::Drill`]
+         *
+         *     (kbx5 step 3: the flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
+         */
+        OpParamsCommon: {
             /**
              * Format: double
-             * @description XY overlap between consecutive pocket cuts, as a fraction in (0, 1). Drives the cascade step (= `tool_diameter` * (1 - overlap)) and the zigzag stride. 0.5 = 50% overlap = 50% stepover, a conservative default that fills tight pockets cleanly. Higher overlap = smaller step = more rings, slower cut, better finish. Lower overlap = bigger step = fewer rings, faster cut, may leave stripes. Honored only for Pocket ops; ignored elsewhere. Stored at 0.0 means "use the default" so old payloads still work.
-             * @default 0
+             * @description Final cut depth (negative number — a depth, not a height).
              */
-            xy_overlap: number;
+            depth: number;
+            /** @description Explicit list of Z depths for each pass, overriding the `step+finish_step` schedule. Useful for non-linear schedules (shallower at start for tough material, deeper later, slow finish at the end). Each entry is an absolute Z (negative number); the cutter visits them in order. Empty = use the step-down loop. */
+            depth_list?: number[];
+            /**
+             * Format: double
+             * @description Z for rapid moves between cuts.
+             */
+            fast_move_z: number;
+            /**
+             * Format: uint32
+             * @description Override the tool's `feed_rate` for this op only. Some materials or finishing passes need a slower feed than the tool's default; rather than editing the tool library, set this per-op. None = use the tool's `feed_rate`. Units: mm/min.
+             */
+            feed_rate_override?: number | null;
+            /**
+             * Format: double
+             * @description Optional smaller step for the FINAL Z pass, for a cleaner bottom finish. None = use the same `step` for the last pass too. Negative just like `step`.
+             */
+            finish_step?: number | null;
+            /**
+             * @description Cut-order strategy for multiple objects.
+             * @default nearest
+             */
+            objectorder: components["schemas"]["ObjectOrder"];
+            /** @description How the cutter descends into material at the start of each Z pass. Default Direct (straight plunge). Ramp { `angle_deg` } walks forward along the path while descending Z, taking a chip in both directions simultaneously — required for non-center-cutting bits and for harder materials. */
+            plunge?: components["schemas"]["PlungeStrategy"];
+            /**
+             * Format: uint32
+             * @description Override the tool's `plunge_rate` (Z feed) for this op. Useful for slowing the plunge on hard materials without changing the XY feed. Units: mm/min.
+             */
+            plunge_rate_override?: number | null;
+            /**
+             * Format: double
+             * @description Z at which the first pass starts.
+             */
+            start_depth: number;
+            /**
+             * Format: double
+             * @description Per-pass step (negative ⇒ down). None = inherit from `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to mean "unset"; the deserializer maps that to None.
+             */
+            step?: number | null;
+            /**
+             * Format: double
+             * @description Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
+             */
+            through_depth?: number;
         };
         OpSource: {
             combine?: components["schemas"]["SourceCombine"];

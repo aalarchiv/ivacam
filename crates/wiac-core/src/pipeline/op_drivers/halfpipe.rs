@@ -168,10 +168,13 @@ mod tests {
         tool_a.wirbeln = false;
         let mut tool_b = endmill(1, 6.0);
         tool_b.wirbeln = true;
-        let mut params = OpParams::mill_default();
+        let params = OpParams::mill_default();
         // overlap 0.05 -> xy_step = 6 * 0.95 = 5.7 mm. Wirbeln clamps
         // to tool_radius/2 = 1.5 mm, so b should have many more rings.
-        params.xy_overlap = 0.05;
+        let pocket = crate::project::PocketParams {
+            xy_overlap: 0.05,
+            ..crate::project::PocketParams::default()
+        };
         let project_with_tool = |tool: ToolEntry| Project {
             segments: closed_square_offset(80.0, 0.0, 0.0),
             machine: MachineConfig::default(),
@@ -183,13 +186,12 @@ mod tests {
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                     contour: crate::project::ContourParams::default(),
-                    pocket: crate::project::PocketParams::default(),
+                    pocket: pocket.clone(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: params.clone(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -275,7 +277,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),

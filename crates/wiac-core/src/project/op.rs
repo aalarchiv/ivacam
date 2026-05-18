@@ -9,8 +9,13 @@ use crate::cam::setup::ToolOffset;
 
 use super::params::{ContourParams, OpParams, PocketParams, ProfileParams, VCarveParams};
 
+/// One operation in the project's program. Carries the kind-discriminator
+/// (which itself embeds the per-kind params via [`OpKind`]), the
+/// universal [`OpParamsCommon`] bag (depth schedule, plunge, feed
+/// overrides), tool refs, source selector, and that's it. Patterning
+/// is per-kind today (only `OpKind::Drill` carries it); add it to
+/// other variants if more kinds need patterning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(from = "OpWire")]
 pub struct Op {
     pub id: u32,
     pub name: String,
@@ -29,49 +34,6 @@ pub struct Op {
     pub finish_tool_id: Option<u32>,
     pub source: OpSource,
     pub params: OpParams,
-    /// Optional pattern repetition. When set, the op runs once per
-    /// pattern instance with the source geometry translated/rotated.
-    /// See [`PatternConfig`] for the concrete pattern shapes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pattern: Option<PatternConfig>,
-}
-
-/// Wire-side shadow of [`Op`] for backwards-compatible deserialize.
-/// Fields are identical to `Op`, but the `From` conversion runs
-/// `normalize_legacy_kind_params` so a legacy `.wiac-project.json`
-/// (whose per-kind data sits in the flat `OpParams`) lands its values
-/// inside the matching `OpKind` variant struct. (kbx5 step 2.)
-#[derive(Deserialize)]
-struct OpWire {
-    id: u32,
-    name: String,
-    enabled: bool,
-    kind: OpKind,
-    tool_id: u32,
-    #[serde(default)]
-    finish_tool_id: Option<u32>,
-    source: OpSource,
-    params: OpParams,
-    #[serde(default)]
-    pattern: Option<PatternConfig>,
-}
-
-impl From<OpWire> for Op {
-    fn from(w: OpWire) -> Self {
-        let mut op = Op {
-            id: w.id,
-            name: w.name,
-            enabled: w.enabled,
-            kind: w.kind,
-            tool_id: w.tool_id,
-            finish_tool_id: w.finish_tool_id,
-            source: w.source,
-            params: w.params,
-            pattern: w.pattern,
-        };
-        op.normalize_legacy_kind_params();
-        op
-    }
 }
 
 impl Op {
@@ -85,6 +47,41 @@ impl Op {
             | OpKind::Pocket { contour, .. }
             | OpKind::Engrave { contour }
             | OpKind::DragKnife { contour } => Some(contour),
+            _ => None,
+        }
+    }
+
+    /// Mutable view of the same [`ContourParams`]. (kbx5 step 3.)
+    pub fn contour_params_mut(&mut self) -> Option<&mut ContourParams> {
+        match &mut self.kind {
+            OpKind::Profile { contour, .. }
+            | OpKind::Pocket { contour, .. }
+            | OpKind::Engrave { contour }
+            | OpKind::DragKnife { contour } => Some(contour),
+            _ => None,
+        }
+    }
+
+    /// Mutable view of the [`PocketParams`] inside `OpKind::Pocket`.
+    pub fn pocket_params_mut(&mut self) -> Option<&mut PocketParams> {
+        match &mut self.kind {
+            OpKind::Pocket { pocket, .. } => Some(pocket),
+            _ => None,
+        }
+    }
+
+    /// Mutable view of the [`ProfileParams`] inside `OpKind::Profile`.
+    pub fn profile_params_mut(&mut self) -> Option<&mut ProfileParams> {
+        match &mut self.kind {
+            OpKind::Profile { profile, .. } => Some(profile),
+            _ => None,
+        }
+    }
+
+    /// Mutable view of the [`VCarveParams`] inside `OpKind::VCarve`.
+    pub fn vcarve_params_mut(&mut self) -> Option<&mut VCarveParams> {
+        match &mut self.kind {
+            OpKind::VCarve { carve } => Some(carve),
             _ => None,
         }
     }
@@ -133,88 +130,16 @@ impl Op {
         }
     }
 
-    /// Copy per-kind fields from the flat [`OpParams`] bag into the
-    /// matching [`OpKind`] variant struct when the variant struct is
-    /// still at default. Lets legacy `.wiac-project.json` payloads
-    /// (where these fields live in `params`) flow into the typed
-    /// variant data without touching every reader. Idempotent.
-    pub fn normalize_legacy_kind_params(&mut self) {
-        let p = &self.params;
-        let legacy_pattern = self.pattern;
-        match &mut self.kind {
-            OpKind::Profile {
-                contour, profile, ..
-            } => {
-                if *contour == ContourParams::default() {
-                    *contour = contour_from_op_params(p);
-                }
-                if *profile == ProfileParams::default() {
-                    *profile = ProfileParams {
-                        overcut: p.overcut,
-                        reverse: p.reverse,
-                        helix: p.helix,
-                    };
-                }
-            }
-            OpKind::Pocket {
-                contour, pocket, ..
-            } => {
-                if *contour == ContourParams::default() {
-                    *contour = contour_from_op_params(p);
-                }
-                if *pocket == PocketParams::default() {
-                    *pocket = PocketParams {
-                        xy_overlap: p.xy_overlap,
-                        pocket_islands: p.pocket_islands,
-                        pocket_nocontour: p.pocket_nocontour,
-                        pocket_insideout: p.pocket_insideout,
-                        finish_xy_allowance_mm: p.finish_xy_allowance_mm,
-                        frame_shape: p.frame_shape,
-                        frame_padding_mm: p.frame_padding_mm,
-                        frame_corner_radius_mm: p.frame_corner_radius_mm,
-                    };
-                }
-            }
-            OpKind::Engrave { contour } | OpKind::DragKnife { contour } => {
-                if *contour == ContourParams::default() {
-                    *contour = contour_from_op_params(p);
-                }
-            }
-            OpKind::Drill {
-                chamfer_after_width_mm,
-                pattern,
-                ..
-            } => {
-                if chamfer_after_width_mm.is_none() {
-                    *chamfer_after_width_mm = p.chamfer_after_width_mm;
-                }
-                if pattern.is_none() {
-                    *pattern = legacy_pattern;
-                }
-            }
-            OpKind::VCarve { carve } => {
-                if *carve == VCarveParams::default() {
-                    *carve = VCarveParams {
-                        carve_max_width_mm: p.carve_max_width_mm,
-                        multi_pass_refine: p.multi_pass_refine,
-                    };
-                }
-            }
-            OpKind::Thread { .. } | OpKind::Chamfer { .. } | OpKind::Helix => {}
+    /// Pattern repetition. Today only [`OpKind::Drill`] carries one;
+    /// other kinds always return `None`. The pipeline's pattern
+    /// expansion runs unchanged — there just are no non-Drill patterned
+    /// ops to expand. (kbx5 step 3.)
+    #[must_use]
+    pub fn pattern(&self) -> Option<PatternConfig> {
+        match &self.kind {
+            OpKind::Drill { pattern, .. } => *pattern,
+            _ => None,
         }
-    }
-}
-
-fn contour_from_op_params(p: &OpParams) -> ContourParams {
-    ContourParams {
-        tabs: p.tabs.clone(),
-        tab_mode: p.tab_mode,
-        tab_placements: p.tab_placements.clone(),
-        leads: p.leads.clone(),
-        cut_direction: p.cut_direction,
-        finish_cut_direction: p.finish_cut_direction,
-        corner_feed_reduction: p.corner_feed_reduction,
-        approach_point: p.approach_point,
     }
 }
 
@@ -233,7 +158,6 @@ impl Default for Op {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::default(),
-            pattern: None,
         }
     }
 }
@@ -717,48 +641,53 @@ pub(crate) fn is_zero_f64(v: &f64) -> bool {
 mod tests {
     use super::*;
 
-    /// kbx5 step 2: a legacy `.wiac-project.json` Op (per-kind params
-    /// live in flat `params`) deserializes into the new shape with the
-    /// matching `OpKind` variant struct populated. Verifies the
-    /// `OpWire` → `Op` `From` conversion is wired through serde's
-    /// `#[serde(from = "OpWire")]`.
+    /// kbx5 step 3: an Op with the per-kind variant structs populated
+    /// deserializes losslessly. The old legacy-flat migration paths are
+    /// gone (no users carried saved files into this revision), so
+    /// `OpParams` is universal-only and the variant data lives entirely
+    /// on `OpKind`.
     #[test]
-    fn legacy_flat_pocket_op_normalizes_into_variant_struct() {
+    fn structured_pocket_op_round_trips_through_serde_json() {
         let raw = serde_json::json!({
             "id": 1,
             "name": "Pocket",
             "enabled": true,
-            "kind": {"type": "pocket", "strategy": "cascade"},
+            "kind": {
+                "type": "pocket",
+                "strategy": "cascade",
+                "contour": {
+                    "tabs": {
+                        "active": true, "width": 8.0, "height": 1.5,
+                        "tab_type": "rectangle", "ramp_angle_deg": 30.0
+                    },
+                    "leads": {
+                        "in": "straight", "out": "off",
+                        "in_lenght": 4.0, "out_lenght": 0.0
+                    },
+                    "cut_direction": "climb"
+                },
+                "pocket": {
+                    "xy_overlap": 0.4,
+                    "pocket_islands": true,
+                    "pocket_insideout": true,
+                    "finish_xy_allowance_mm": 0.3
+                }
+            },
             "tool_id": 1,
             "source": {"kind": "all"},
             "params": {
                 "depth": -2.0,
                 "start_depth": 0.0,
-                "fast_move_z": 5.0,
-                "xy_overlap": 0.4,
-                "pocket_islands": true,
-                "pocket_nocontour": false,
-                "pocket_insideout": true,
-                "finish_xy_allowance_mm": 0.3,
-                "tabs": {
-                    "active": true, "width": 8.0, "height": 1.5,
-                    "tab_type": "rectangle", "ramp_angle_deg": 30.0
-                },
-                "leads": {
-                    "in": "straight", "out": "off",
-                    "in_lenght": 4.0, "out_lenght": 0.0
-                },
-                "cut_direction": "climb"
+                "fast_move_z": 5.0
             }
         });
-        let op: Op = serde_json::from_value(raw).expect("legacy Op deserialize");
+        let op: Op = serde_json::from_value(raw).expect("Op deserialize");
         let OpKind::Pocket {
             contour, pocket, ..
         } = &op.kind
         else {
             panic!("expected Pocket kind");
         };
-        // Per-kind fields normalized into the variant struct.
         assert!((pocket.xy_overlap - 0.4).abs() < 1e-9);
         assert!(pocket.pocket_islands);
         assert!(pocket.pocket_insideout);
@@ -773,43 +702,40 @@ mod tests {
             contour.cut_direction,
             crate::project::CutDirection::Climb
         ));
-        // Flat fields stayed alongside (step 3 will drop them).
-        assert!((op.params.xy_overlap - 0.4).abs() < 1e-9);
     }
 
-    /// A legacy Op carrying `pattern` on the parent and `kind == Drill`
-    /// has its pattern moved onto the `OpKind::Drill` variant. Patterns
-    /// on non-Drill kinds stay on `Op.pattern` (and will be dropped on
-    /// step 3 when `Op.pattern` is removed).
+    /// kbx5 step 3: a Drill op with an embedded pattern round-trips.
+    /// `Op.pattern` is gone — only `OpKind::Drill.pattern` carries
+    /// pattern repetitions now.
     #[test]
-    fn legacy_pattern_migrates_onto_drill_kind() {
+    fn drill_kind_pattern_round_trips() {
         let raw = serde_json::json!({
             "id": 2,
             "name": "Drill",
             "enabled": true,
-            "kind": {"type": "drill", "cycle": {"kind": "simple"}},
+            "kind": {
+                "type": "drill",
+                "cycle": {"kind": "simple"},
+                "pattern": {"kind": "grid", "count_x": 2, "count_y": 3, "dx": 10.0, "dy": 12.0}
+            },
             "tool_id": 1,
             "source": {"kind": "all"},
             "params": {
                 "depth": -5.0, "start_depth": 0.0, "fast_move_z": 5.0
-            },
-            "pattern": {"kind": "grid", "count_x": 2, "count_y": 3, "dx": 10.0, "dy": 12.0}
+            }
         });
-        let op: Op = serde_json::from_value(raw).expect("legacy Op deserialize");
+        let op: Op = serde_json::from_value(raw).expect("Op deserialize");
         let OpKind::Drill { pattern, .. } = &op.kind else {
             panic!("expected Drill kind");
         };
-        assert!(
-            matches!(
-                pattern,
-                Some(PatternConfig::Grid {
-                    count_x: 2,
-                    count_y: 3,
-                    ..
-                })
-            ),
-            "pattern should have been migrated to OpKind::Drill.pattern; got {pattern:?}"
-        );
+        assert!(matches!(
+            pattern,
+            Some(PatternConfig::Grid {
+                count_x: 2,
+                count_y: 3,
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -391,7 +391,6 @@ mod tests {
                     p.fast_move_z = 5.0;
                     p
                 },
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -517,7 +516,6 @@ mod tests {
         params.depth = -3.0;
         params.start_depth = 0.0;
         params.fast_move_z = 5.0;
-        params.chamfer_after_width_mm = Some(1.0);
         let project = Project {
             segments: closed_circle(center, 0.5),
             machine: MachineConfig::default(),
@@ -528,14 +526,13 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
-                    chamfer_after_width_mm: None,
+                    chamfer_after_width_mm: Some(1.0),
                     pattern: None,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -583,7 +580,6 @@ mod tests {
         let mut params = OpParams::mill_default();
         params.depth = -3.0;
         params.start_depth = 0.0;
-        params.chamfer_after_width_mm = Some(0.5);
         let project = Project {
             segments: closed_circle(center, 0.5),
             machine,
@@ -594,14 +590,13 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Drill {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
-                    chamfer_after_width_mm: None,
+                    chamfer_after_width_mm: Some(0.5),
                     pattern: None,
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),

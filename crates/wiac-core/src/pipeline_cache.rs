@@ -49,13 +49,14 @@ use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::{
-    Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op, OpKind, OpParams,
-    OpSource, PatternConfig, PocketStrategy, SourceCombine, ToolEntry, ToolKind,
+    ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
+    OpKind, OpParams, OpSource, PatternConfig, PocketParams, PocketStrategy, ProfileParams,
+    SourceCombine, ToolEntry, ToolKind, VCarveParams,
 };
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 21;
+pub const PIPELINE_VERSION: u32 = 22;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -417,33 +418,54 @@ fn hash_operation<H: Hasher>(op: &Op, h: &mut H) {
     op.id.hash(h);
     op.name.hash(h);
     op.enabled.hash(h);
+    // kbx5 step 3: kind-specific params (contour, pocket, profile,
+    // vcarve, drill pattern + chamfer_after) are hashed inside
+    // hash_operation_kind alongside the variant discriminator. The
+    // remaining `params` carries only universal fields.
     hash_operation_kind(&op.kind, h);
     op.tool_id.hash(h);
     hash_opt_u32(op.finish_tool_id, h);
     hash_operation_source(&op.source, h);
     hash_operation_params(&op.params, h);
-    match op.pattern {
-        None => h.write_u8(0),
-        Some(p) => {
-            h.write_u8(1);
-            hash_pattern(p, h);
-        }
-    }
 }
 
 fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
     match k {
-        OpKind::Profile { offset, .. } => {
+        OpKind::Profile {
+            offset,
+            contour,
+            profile,
+        } => {
             h.write_u8(1);
             h.write_u8(tool_offset_disc(*offset));
+            hash_contour_params(contour, h);
+            hash_profile_params(*profile, h);
         }
-        OpKind::Pocket { strategy, .. } => {
+        OpKind::Pocket {
+            strategy,
+            contour,
+            pocket,
+        } => {
             h.write_u8(2);
             hash_pocket_strategy(*strategy, h);
+            hash_contour_params(contour, h);
+            hash_pocket_params(pocket, h);
         }
-        OpKind::Drill { cycle, .. } => {
+        OpKind::Drill {
+            cycle,
+            chamfer_after_width_mm,
+            pattern,
+        } => {
             h.write_u8(3);
             hash_drill_cycle(*cycle, h);
+            hash_opt_f64(*chamfer_after_width_mm, h);
+            match pattern {
+                None => h.write_u8(0),
+                Some(p) => {
+                    h.write_u8(1);
+                    hash_pattern(*p, h);
+                }
+            }
         }
         OpKind::Thread {
             pitch_mm,
@@ -463,10 +485,19 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             hash_f64(*width_mm, h);
             finish_pass.hash(h);
         }
-        OpKind::Engrave { .. } => h.write_u8(6),
-        OpKind::DragKnife { .. } => h.write_u8(7),
+        OpKind::Engrave { contour } => {
+            h.write_u8(6);
+            hash_contour_params(contour, h);
+        }
+        OpKind::DragKnife { contour } => {
+            h.write_u8(7);
+            hash_contour_params(contour, h);
+        }
         OpKind::Helix => h.write_u8(8),
-        OpKind::VCarve { .. } => h.write_u8(9),
+        OpKind::VCarve { carve } => {
+            h.write_u8(9);
+            hash_vcarve_params(carve, h);
+        }
     }
 }
 
@@ -609,39 +640,35 @@ fn hash_operation_params<H: Hasher>(p: &OpParams, h: &mut H) {
     hash_f64(p.start_depth, h);
     hash_opt_f64(p.step, h);
     hash_f64(p.fast_move_z, h);
-    hash_f64(p.xy_overlap, h);
-    p.helix.hash(h);
-    p.reverse.hash(h);
     let oo: u8 = match p.objectorder {
         ObjectOrder::Nearest => 0,
         ObjectOrder::PerObject => 1,
         ObjectOrder::Unordered => 2,
     };
     h.write_u8(oo);
-    p.overcut.hash(h);
-    p.pocket_islands.hash(h);
-    p.pocket_nocontour.hash(h);
-    p.pocket_insideout.hash(h);
-    hash_tabs(&p.tabs, h);
-    hash_tab_mode(p.tab_mode, h);
-    h.write_usize(p.tab_placements.len());
-    for tp in &p.tab_placements {
+    hash_plunge(p.plunge, h);
+    hash_opt_u32(p.feed_rate_override, h);
+    hash_opt_u32(p.plunge_rate_override, h);
+    hash_opt_f64(p.finish_step, h);
+    hash_f64(p.through_depth, h);
+    hash_vec_f64(&p.depth_list, h);
+}
+
+fn hash_contour_params<H: Hasher>(c: &ContourParams, h: &mut H) {
+    hash_tabs(&c.tabs, h);
+    hash_tab_mode(c.tab_mode, h);
+    h.write_usize(c.tab_placements.len());
+    for tp in &c.tab_placements {
         tp.object_id.hash(h);
         hash_f64(tp.t, h);
         hash_opt_f64(tp.width_override_mm, h);
         hash_opt_f64(tp.height_override_mm, h);
     }
-    hash_leads(&p.leads, h);
-    h.write_u8(cut_direction_disc(p.cut_direction));
-    h.write_u8(cut_direction_disc(p.finish_cut_direction));
-    hash_plunge(p.plunge, h);
-    hash_opt_u32(p.feed_rate_override, h);
-    hash_opt_u32(p.plunge_rate_override, h);
-    hash_f64(p.corner_feed_reduction, h);
-    hash_opt_f64(p.finish_step, h);
-    hash_opt_f64(p.finish_xy_allowance_mm, h);
-    hash_opt_f64(p.chamfer_after_width_mm, h);
-    match p.approach_point {
+    hash_leads(&c.leads, h);
+    h.write_u8(cut_direction_disc(c.cut_direction));
+    h.write_u8(cut_direction_disc(c.finish_cut_direction));
+    hash_f64(c.corner_feed_reduction, h);
+    match c.approach_point {
         None => h.write_u8(0),
         Some((x, y)) => {
             h.write_u8(1);
@@ -649,10 +676,14 @@ fn hash_operation_params<H: Hasher>(p: &OpParams, h: &mut H) {
             hash_f64(y, h);
         }
     }
-    hash_f64(p.through_depth, h);
-    hash_vec_f64(&p.depth_list, h);
-    hash_opt_f64(p.carve_max_width_mm, h);
-    p.multi_pass_refine.hash(h);
+}
+
+fn hash_pocket_params<H: Hasher>(p: &PocketParams, h: &mut H) {
+    hash_f64(p.xy_overlap, h);
+    p.pocket_islands.hash(h);
+    p.pocket_nocontour.hash(h);
+    p.pocket_insideout.hash(h);
+    hash_opt_f64(p.finish_xy_allowance_mm, h);
     match p.frame_shape {
         None => h.write_u8(0),
         Some(FrameShape::Rectangle) => h.write_u8(1),
@@ -660,6 +691,17 @@ fn hash_operation_params<H: Hasher>(p: &OpParams, h: &mut H) {
     }
     hash_opt_f64(p.frame_padding_mm, h);
     hash_opt_f64(p.frame_corner_radius_mm, h);
+}
+
+fn hash_profile_params<H: Hasher>(p: ProfileParams, h: &mut H) {
+    p.overcut.hash(h);
+    p.reverse.hash(h);
+    p.helix.hash(h);
+}
+
+fn hash_vcarve_params<H: Hasher>(v: &VCarveParams, h: &mut H) {
+    hash_opt_f64(v.carve_max_width_mm, h);
+    v.multi_pass_refine.hash(h);
 }
 
 fn cut_direction_disc(c: CutDirection) -> u8 {
@@ -820,7 +862,6 @@ mod tests {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
-            pattern: None,
         }
     }
 
@@ -851,7 +892,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0xc548_f2ef_ca7d_9550_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x60de_5bd8_ee24_f9fa_u64, "got {:#018x}", key.0);
     }
 
     #[test]
@@ -1124,7 +1165,9 @@ mod tests {
     fn tab_mode_change_changes_key() {
         let segs = square(20.0);
         let mut op_b = profile_op();
-        op_b.params.tab_mode = crate::project::TabPlacementMode::Auto { count: 4 };
+        if let Some(contour) = op_b.contour_params_mut() {
+            contour.tab_mode = crate::project::TabPlacementMode::Auto { count: 4 };
+        }
         let k1 = op_cache_key(
             &profile_op(),
             &endmill(),

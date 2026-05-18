@@ -361,15 +361,6 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     }
     let mut project = req.project;
 
-    // kbx5 step 2: normalize legacy flat OpParams into per-kind variant
-    // structs. Idempotent — already-normalized projects (i.e. ones that
-    // came through the OpWire deserializer or were constructed with the
-    // variant structs populated) are unchanged. Required because some
-    // call sites build a Project in-memory without going through serde.
-    for op in &mut project.operations {
-        op.normalize_legacy_kind_params();
-    }
-
     // Pre-pipeline: render every TextLayer to segments and append them
     // to the project's geometry pool. Each layer's segments live under
     // the synthetic name `__text_<id>` so ops can target them via
@@ -934,7 +925,6 @@ mod tests {
                 combine: SourceCombine::default(),
             },
             params: OpParams::mill_default(),
-            pattern: None,
         };
         let text_layer = TextLayer {
             id: 1,
@@ -1368,7 +1358,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1418,15 +1407,17 @@ mod tests {
     /// Approach point serde round-trip (rt1.26).
     #[test]
     fn approach_point_serde_round_trip() {
-        let mut params = OpParams::mill_default();
-        params.approach_point = Some((3.5, -2.0));
-        let json = serde_json::to_string(&params).unwrap();
+        let contour = crate::project::ContourParams {
+            approach_point: Some((3.5, -2.0)),
+            ..crate::project::ContourParams::default()
+        };
+        let json = serde_json::to_string(&contour).unwrap();
         assert!(json.contains("approach_point"));
-        let back: OpParams = serde_json::from_str(&json).unwrap();
+        let back: crate::project::ContourParams = serde_json::from_str(&json).unwrap();
         assert_eq!(back.approach_point, Some((3.5, -2.0)));
         // Unset round-trips as absent.
-        let none_params = OpParams::mill_default();
-        let json_none = serde_json::to_string(&none_params).unwrap();
+        let none_contour = crate::project::ContourParams::default();
+        let json_none = serde_json::to_string(&none_contour).unwrap();
         assert!(!json_none.contains("approach_point"));
     }
 
@@ -1457,7 +1448,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1700,7 +1690,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1747,7 +1736,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1784,7 +1772,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1816,18 +1803,20 @@ mod tests {
         assert!(!json_none.contains("finish_tool_id"));
     }
 
-    /// `OpParams.finish_xy_allowance_mm` round-trips through
+    /// `PocketParams.finish_xy_allowance_mm` round-trips through
     /// serde and omits the field when unset (rt1.24).
     #[test]
     fn finish_xy_allowance_serde_round_trip() {
-        let mut params = OpParams::mill_default();
-        params.finish_xy_allowance_mm = Some(0.3);
-        let json = serde_json::to_string(&params).unwrap();
+        let pocket = crate::project::PocketParams {
+            finish_xy_allowance_mm: Some(0.3),
+            ..crate::project::PocketParams::default()
+        };
+        let json = serde_json::to_string(&pocket).unwrap();
         assert!(json.contains("finish_xy_allowance_mm"));
-        let back: OpParams = serde_json::from_str(&json).unwrap();
+        let back: crate::project::PocketParams = serde_json::from_str(&json).unwrap();
         assert_eq!(back.finish_xy_allowance_mm, Some(0.3));
-        let none_params = OpParams::mill_default();
-        let json_none = serde_json::to_string(&none_params).unwrap();
+        let none_pocket = crate::project::PocketParams::default();
+        let json_none = serde_json::to_string(&none_pocket).unwrap();
         assert!(!json_none.contains("finish_xy_allowance_mm"));
     }
 
@@ -1994,7 +1983,6 @@ mod tests {
                     fast_move_z: 5.0,
                     ..OpParams::default()
                 },
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2076,7 +2064,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2110,7 +2097,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             })
             .collect();
         let mut project = Project {
@@ -2159,7 +2145,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),

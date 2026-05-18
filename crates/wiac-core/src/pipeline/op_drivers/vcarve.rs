@@ -152,7 +152,6 @@ mod tests {
                 fast_move_z: 5.0,
                 ..OpParams::default()
             },
-            pattern: None,
         };
         let project = Project {
             segments: vec![
@@ -198,7 +197,10 @@ mod tests {
             name: "Sign carve".into(),
             enabled: true,
             kind: OpKind::VCarve {
-                carve: crate::project::VCarveParams::default(),
+                carve: crate::project::VCarveParams {
+                    carve_max_width_mm: Some(4.0),
+                    multi_pass_refine: true,
+                },
             },
             tool_id: 1,
             finish_tool_id: None,
@@ -208,17 +210,16 @@ mod tests {
                 start_depth: 0.0,
                 step: Some(-0.8),
                 fast_move_z: 6.0,
-                carve_max_width_mm: Some(4.0),
-                multi_pass_refine: true,
                 ..OpParams::default()
             },
-            pattern: None,
         };
         let json = serde_json::to_string(&op).expect("serialize");
         let back: Op = serde_json::from_str(&json).expect("deserialize");
-        assert!(matches!(back.kind, OpKind::VCarve { .. }));
-        assert_eq!(back.params.carve_max_width_mm, Some(4.0));
-        assert!(back.params.multi_pass_refine);
+        let OpKind::VCarve { carve } = &back.kind else {
+            panic!("expected VCarve kind, got {:?}", back.kind);
+        };
+        assert_eq!(carve.carve_max_width_mm, Some(4.0));
+        assert!(carve.multi_pass_refine);
         assert_eq!(back.params.depth, -8.0);
     }
 }

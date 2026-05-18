@@ -100,7 +100,7 @@ pub(super) fn build_op_offsets(
     // see them via OpSource::All on the effective op), and tabs
     // attached to the original objects are translated/rotated alongside
     // the geometry so each instance keeps its tab placement.
-    let effective_op_storage: Option<Op> = if let Some(pattern) = op.pattern {
+    let effective_op_storage: Option<Op> = if let Some(pattern) = op.pattern() {
         let instances = pattern_offsets(pattern);
         let mut expanded: Vec<VcObject> = Vec::with_capacity(instances.len() * objects.len());
         let mut expanded_tabs: HashMap<usize, Vec<TabPoint>> = HashMap::new();
@@ -625,7 +625,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -702,7 +701,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -759,7 +757,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -834,7 +831,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -904,7 +900,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -967,7 +962,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1049,24 +1043,27 @@ mod tests {
         params.depth = -2.0;
         params.step = Some(-2.0);
         params.start_depth = 0.0;
-        params.tabs = TabsConfig {
-            active: true,
-            width: 10.0,
-            height: 1.0,
-            tab_type: TabType::Rectangle,
-            ramp_angle_deg: 30.0,
-        };
         params.plunge = PlungeStrategy::Helix {
             angle_deg: 3.0,
             radius_mm: Some(3.0),
         };
-        params.tab_mode = crate::project::TabPlacementMode::Manual;
-        params.tab_placements = vec![crate::project::TabPlacement {
-            object_id: 1,
-            t: 0.125,
-            width_override_mm: None,
-            height_override_mm: None,
-        }];
+        let contour = crate::project::ContourParams {
+            tabs: TabsConfig {
+                active: true,
+                width: 10.0,
+                height: 1.0,
+                tab_type: TabType::Rectangle,
+                ramp_angle_deg: 30.0,
+            },
+            tab_mode: crate::project::TabPlacementMode::Manual,
+            tab_placements: vec![crate::project::TabPlacement {
+                object_id: 1,
+                t: 0.125,
+                width_override_mm: None,
+                height_override_mm: None,
+            }],
+            ..crate::project::ContourParams::default()
+        };
         let project = Project {
             segments: closed_square_offset(100.0, 0.0, 0.0),
             machine: MachineConfig::default(),
@@ -1077,14 +1074,13 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Profile {
                     offset: ToolOffset::Outside,
-                    contour: crate::project::ContourParams::default(),
+                    contour,
                     profile: crate::project::ProfileParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1136,7 +1132,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1307,7 +1302,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1349,7 +1343,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1392,7 +1385,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1501,7 +1493,6 @@ mod tests {
                     combine: crate::project::SourceCombine::Auto,
                 },
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1863,7 +1854,6 @@ mod tests {
                     combine: SourceCombine::Difference,
                 },
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1909,9 +1899,12 @@ mod tests {
     #[test]
     fn pocket_outside_carves_between_frame_and_selection() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
-        let mut params = OpParams::mill_default();
-        params.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
-        params.frame_padding_mm = Some(10.0);
+        let params = OpParams::mill_default();
+        let pocket = crate::project::PocketParams {
+            frame_shape: Some(crate::cam::source_combine::FrameShape::Rectangle),
+            frame_padding_mm: Some(10.0),
+            ..crate::project::PocketParams::default()
+        };
         let project = Project {
             segments,
             machine: MachineConfig::default(),
@@ -1923,7 +1916,7 @@ mod tests {
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                     contour: crate::project::ContourParams::default(),
-                    pocket: crate::project::PocketParams::default(),
+                    pocket,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -1932,7 +1925,6 @@ mod tests {
                     combine: SourceCombine::Difference,
                 },
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -1993,9 +1985,12 @@ mod tests {
     #[test]
     fn pocket_outside_clamps_padding_below_tool_radius() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
-        let mut params = OpParams::mill_default();
-        params.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
-        params.frame_padding_mm = Some(1.0); // < tool radius (3.0)
+        let params = OpParams::mill_default();
+        let pocket = crate::project::PocketParams {
+            frame_shape: Some(crate::cam::source_combine::FrameShape::Rectangle),
+            frame_padding_mm: Some(1.0), // < tool radius (3.0)
+            ..crate::project::PocketParams::default()
+        };
         let project = Project {
             segments,
             machine: MachineConfig::default(),
@@ -2007,7 +2002,7 @@ mod tests {
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                     contour: crate::project::ContourParams::default(),
-                    pocket: crate::project::PocketParams::default(),
+                    pocket,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -2016,7 +2011,6 @@ mod tests {
                     combine: SourceCombine::Difference,
                 },
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2093,7 +2087,6 @@ mod tests {
                         combine: SourceCombine::Auto,
                     },
                     params: OpParams::mill_default(),
-                    pattern: None,
                 },
                 Op {
                     id: 2,
@@ -2102,7 +2095,11 @@ mod tests {
                     kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
                         contour: crate::project::ContourParams::default(),
-                        pocket: crate::project::PocketParams::default(),
+                        pocket: crate::project::PocketParams {
+                            frame_shape: Some(crate::cam::source_combine::FrameShape::Rectangle),
+                            frame_padding_mm: Some(10.0),
+                            ..crate::project::PocketParams::default()
+                        },
                     },
                     tool_id: 1,
                     finish_tool_id: None,
@@ -2110,13 +2107,7 @@ mod tests {
                         ids: vec![1],
                         combine: SourceCombine::Difference,
                     },
-                    params: {
-                        let mut p = OpParams::mill_default();
-                        p.frame_shape = Some(crate::cam::source_combine::FrameShape::Rectangle);
-                        p.frame_padding_mm = Some(10.0);
-                        p
-                    },
-                    pattern: None,
+                    params: OpParams::mill_default(),
                 },
             ],
             fixtures: Vec::default(),
@@ -2177,9 +2168,12 @@ mod tests {
     #[test]
     fn pocket_with_climb_main_and_conventional_finish_winds_correctly() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
-        let mut params = OpParams::mill_default();
-        params.cut_direction = crate::project::CutDirection::Climb;
-        params.finish_cut_direction = crate::project::CutDirection::Conventional;
+        let params = OpParams::mill_default();
+        let contour = crate::project::ContourParams {
+            cut_direction: crate::project::CutDirection::Climb,
+            finish_cut_direction: crate::project::CutDirection::Conventional,
+            ..crate::project::ContourParams::default()
+        };
         let project = Project {
             segments,
             machine: MachineConfig::default(),
@@ -2190,14 +2184,13 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
-                    contour: crate::project::ContourParams::default(),
+                    contour,
                     pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2303,7 +2296,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2385,7 +2377,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2427,7 +2418,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2471,8 +2461,11 @@ mod tests {
                 .sum()
         }
         let make = |overlap: f64| -> PipelineResponse {
-            let mut params = OpParams::mill_default();
-            params.xy_overlap = overlap;
+            let params = OpParams::mill_default();
+            let pocket = crate::project::PocketParams {
+                xy_overlap: overlap,
+                ..crate::project::PocketParams::default()
+            };
             let project = Project {
                 segments: closed_square_offset(50.0, 0.0, 0.0),
                 machine: MachineConfig::default(),
@@ -2484,13 +2477,12 @@ mod tests {
                     kind: OpKind::Pocket {
                         strategy: crate::project::PocketStrategy::Cascade,
                         contour: crate::project::ContourParams::default(),
-                        pocket: crate::project::PocketParams::default(),
+                        pocket,
                     },
                     tool_id: 1,
                     finish_tool_id: None,
                     source: OpSource::All,
                     params,
-                    pattern: None,
                 }],
                 fixtures: Vec::default(),
                 text_layers: Vec::default(),
@@ -2518,10 +2510,13 @@ mod tests {
     /// contour at four corners.
     #[test]
     fn zigzag_pocket_emits_interior_strokes() {
-        let mut params = OpParams::mill_default();
+        let params = OpParams::mill_default();
         // Force the default explicitly so the test pins behavior even
         // if the constant changes later.
-        params.xy_overlap = 0.5;
+        let pocket = crate::project::PocketParams {
+            xy_overlap: 0.5,
+            ..crate::project::PocketParams::default()
+        };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
@@ -2533,13 +2528,12 @@ mod tests {
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Zigzag,
                     contour: crate::project::ContourParams::default(),
-                    pocket: crate::project::PocketParams::default(),
+                    pocket,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2587,8 +2581,11 @@ mod tests {
     /// zigzag). The `pocket_fill_incomplete` warning fires so they know.
     #[test]
     fn cascade_with_tool_too_wide_emits_only_boundary_no_zigzag_substitute() {
-        let mut params = OpParams::mill_default();
-        params.xy_overlap = 0.05; // 95% step — no inward rings will fit
+        let params = OpParams::mill_default();
+        let pocket = crate::project::PocketParams {
+            xy_overlap: 0.05, // 95% step — no inward rings will fit
+            ..crate::project::PocketParams::default()
+        };
         let project = Project {
             // 6×6 with a 3mm tool: boundary inset by 1.5mm leaves a
             // 3×3 path; cascade inflate by 2.85mm → empty → 0 rings.
@@ -2602,13 +2599,12 @@ mod tests {
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                     contour: crate::project::ContourParams::default(),
-                    pocket: crate::project::PocketParams::default(),
+                    pocket,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2666,7 +2662,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2722,7 +2717,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2898,8 +2892,11 @@ mod tests {
         let mut tool = endmill(1, 3.0);
         tool.feed_rate = 1500;
         tool.feed_rate_finish = Some(400);
-        let mut params = OpParams::mill_default();
-        params.finish_xy_allowance_mm = Some(0.5);
+        let params = OpParams::mill_default();
+        let pocket = crate::project::PocketParams {
+            finish_xy_allowance_mm: Some(0.5),
+            ..crate::project::PocketParams::default()
+        };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
@@ -2911,13 +2908,12 @@ mod tests {
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
                     contour: crate::project::ContourParams::default(),
-                    pocket: crate::project::PocketParams::default(),
+                    pocket,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -2948,8 +2944,11 @@ mod tests {
         // the top-right corner. Without approach_point, plunge happens
         // at an arbitrary auto-picked vertex.
         let center_ap = (20.0, 20.0);
-        let mut params = OpParams::mill_default();
-        params.approach_point = Some(center_ap);
+        let params = OpParams::mill_default();
+        let contour = crate::project::ContourParams {
+            approach_point: Some(center_ap),
+            ..crate::project::ContourParams::default()
+        };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: MachineConfig::default(),
@@ -2960,14 +2959,13 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Cascade,
-                    contour: crate::project::ContourParams::default(),
+                    contour,
                     pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -3021,7 +3019,10 @@ mod tests {
     fn corner_feed_reduction_emits_slower_f_at_sharp_turns() {
         let mut params = OpParams::mill_default();
         params.feed_rate_override = Some(1000);
-        params.corner_feed_reduction = 0.5; // halve at corners
+        let contour = crate::project::ContourParams {
+            corner_feed_reduction: 0.5, // halve at corners
+            ..crate::project::ContourParams::default()
+        };
         let project = Project {
             segments: closed_square_offset(50.0, 0.0, 0.0),
             machine: MachineConfig::default(),
@@ -3032,14 +3033,13 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Zigzag,
-                    contour: crate::project::ContourParams::default(),
+                    contour,
                     pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -3087,7 +3087,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -3170,7 +3169,6 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -3240,7 +3238,10 @@ mod tests {
                 kind: OpKind::Pocket {
                     strategy,
                     contour: crate::project::ContourParams::default(),
-                    pocket: crate::project::PocketParams::default(),
+                    pocket: crate::project::PocketParams {
+                        pocket_islands,
+                        ..crate::project::PocketParams::default()
+                    },
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -3248,11 +3249,7 @@ mod tests {
                     ids: vec![1],
                     combine: SourceCombine::Auto,
                 },
-                params: OpParams {
-                    pocket_islands,
-                    ..OpParams::mill_default()
-                },
-                pattern: None,
+                params: OpParams::mill_default(),
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -3341,7 +3338,6 @@ mod tests {
                     },
                     ..OpParams::mill_default()
                 },
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -3401,10 +3397,16 @@ mod tests {
     fn trochoidal_with_tabs_emits_unsupported_warning() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
         let mut params = OpParams::mill_default();
-        params.tabs.active = true;
         params.plunge = crate::cam::setup::PlungeStrategy::Helix {
             angle_deg: 3.0,
             radius_mm: Some(4.5),
+        };
+        let contour = crate::project::ContourParams {
+            tabs: crate::cam::setup::TabsConfig {
+                active: true,
+                ..crate::cam::setup::TabsConfig::default()
+            },
+            ..crate::project::ContourParams::default()
         };
         let project = Project {
             segments,
@@ -3419,14 +3421,13 @@ mod tests {
                         engagement_angle_deg: 30.0,
                         loop_radius_factor: 0.6,
                     },
-                    contour: crate::project::ContourParams::default(),
+                    contour,
                     pocket: crate::project::PocketParams::default(),
                 },
                 tool_id: 1,
                 finish_tool_id: None,
                 source: OpSource::All,
                 params,
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
@@ -3476,7 +3477,6 @@ mod tests {
                     plunge: crate::cam::setup::PlungeStrategy::Direct,
                     ..OpParams::mill_default()
                 },
-                pattern: None,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),

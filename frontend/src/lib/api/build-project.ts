@@ -207,16 +207,93 @@ type WirePocketStrategy =
         | { kind: 'v_bottom'; included_angle_deg: number };
     };
 
+/// kbx5 step 3: per-kind params live inside the kind discriminator,
+/// not on the parent `WireOp.params` bag. The shape mirrors
+/// `crate::project::OpKind` 1:1.
+interface WireContourParams {
+  tabs?: {
+    active: boolean;
+    width: number;
+    height: number;
+    tab_type: 'rectangle' | 'ramp';
+    ramp_angle_deg?: number;
+  };
+  tab_mode?:
+    | { kind: 'off' }
+    | { kind: 'auto'; count: number }
+    | { kind: 'manual' }
+    | { kind: 'mixed'; auto_count: number };
+  tab_placements?: {
+    object_id: number;
+    t: number;
+    width_override_mm?: number;
+    height_override_mm?: number;
+  }[];
+  leads?: {
+    in: 'off' | 'straight' | 'arc';
+    out: 'off' | 'straight' | 'arc';
+    in_lenght: number;
+    out_lenght: number;
+  };
+  cut_direction?: 'conventional' | 'climb';
+  finish_cut_direction?: 'conventional' | 'climb';
+  corner_feed_reduction?: number;
+  approach_point?: [number, number];
+}
+
+interface WirePocketParams {
+  xy_overlap?: number;
+  pocket_islands?: boolean;
+  pocket_nocontour?: boolean;
+  pocket_insideout?: boolean;
+  finish_xy_allowance_mm?: number;
+  frame_shape?: 'rectangle' | 'rounded_rectangle';
+  frame_padding_mm?: number;
+  frame_corner_radius_mm?: number;
+}
+
+interface WireProfileParams {
+  overcut?: boolean;
+  reverse?: boolean;
+  helix?: boolean;
+}
+
+interface WireVCarveParams {
+  carve_max_width_mm?: number;
+  multi_pass_refine?: boolean;
+}
+
+interface WirePatternConfig {
+  kind: 'linear' | 'grid' | 'polar';
+  // narrow shape varies by kind; keep permissive on the wire side.
+  [key: string]: unknown;
+}
+
 type WireOpKind =
-  | { type: 'profile'; offset: 'outside' | 'inside' | 'on' | 'none' }
-  | { type: 'pocket'; strategy: WirePocketStrategy }
-  | { type: 'drill'; cycle: WireDrillCycle }
+  | {
+      type: 'profile';
+      offset: 'outside' | 'inside' | 'on' | 'none';
+      contour: WireContourParams;
+      profile: WireProfileParams;
+    }
+  | {
+      type: 'pocket';
+      strategy: WirePocketStrategy;
+      contour: WireContourParams;
+      pocket: WirePocketParams;
+    }
+  | {
+      type: 'drill';
+      cycle: WireDrillCycle;
+      chamfer_after_width_mm?: number;
+      pattern?: WirePatternConfig;
+    }
   | { type: 'thread'; pitch_mm?: number; internal?: boolean; climb?: boolean }
   | { type: 'chamfer'; width_mm?: number; finish_pass?: boolean }
-  | { type: 'engrave' }
-  | { type: 'drag_knife' }
+  | { type: 'engrave'; contour: WireContourParams }
+  | { type: 'drag_knife'; contour: WireContourParams }
   | { type: 'helix' }
-  | { type: 'v_carve' };
+  | { type: 'v_carve'; carve: WireVCarveParams };
 
 type WireSourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
 type WireSource =
@@ -224,6 +301,10 @@ type WireSource =
   | { kind: 'layers'; layers: string[]; combine?: WireSourceCombine }
   | { kind: 'objects'; ids: number[]; combine?: WireSourceCombine };
 
+/// kbx5 step 3: `WireOp.params` is universal-only (depth schedule,
+/// plunge, feed overrides). Every other field — tabs, leads, cut
+/// direction, pocket flags, frame, vcarve cap, drill chamfer-after,
+/// pattern — moved to its appropriate `WireOpKind` variant struct.
 interface WireOp {
   id: number;
   name: string;
@@ -231,87 +312,22 @@ interface WireOp {
   kind: WireOpKind;
   tool_id: number;
   finish_tool_id?: number;
-  /// Optional pattern repetition (rt1.5). When set, the pipeline
-  /// expands this op into N instances with translated / rotated
-  /// source geometry. The (0,0)/0° instance is the original.
-  pattern?:
-    | { kind: 'linear'; count: number; dx: number; dy: number }
-    | { kind: 'grid'; count_x: number; count_y: number; dx: number; dy: number }
-    | {
-        kind: 'polar';
-        count: number;
-        center_x: number;
-        center_y: number;
-        angle_step_deg: number;
-        start_angle_deg?: number;
-      };
   source: WireSource;
   params: {
     depth: number;
     start_depth: number;
     step?: number;
     fast_move_z: number;
-    helix: boolean;
-    reverse: boolean;
     objectorder: 'nearest' | 'per_object' | 'unordered';
-    overcut: boolean;
-    pocket_islands: boolean;
-    pocket_nocontour: boolean;
-    pocket_insideout: boolean;
-    tabs: {
-      active: boolean;
-      width: number;
-      height: number;
-      tab_type: 'rectangle' | 'ramp';
-      ramp_angle_deg?: number;
-    };
-    tab_mode?:
-      | { kind: 'off' }
-      | { kind: 'auto'; count: number }
-      | { kind: 'manual' }
-      | { kind: 'mixed'; auto_count: number };
-    tab_placements?: {
-      object_id: number;
-      t: number;
-      width_override_mm?: number;
-      height_override_mm?: number;
-    }[];
-    leads: {
-      in: 'off' | 'straight' | 'arc';
-      out: 'off' | 'straight' | 'arc';
-      in_lenght: number;
-      out_lenght: number;
-    };
-    cut_direction?: 'conventional' | 'climb';
-    finish_cut_direction?: 'conventional' | 'climb';
     plunge?:
       | { kind: 'direct' }
       | { kind: 'ramp'; angle_deg: number }
       | { kind: 'helix'; angle_deg: number; radius_mm: number | null };
-    xy_overlap?: number;
     feed_rate_override?: number;
     plunge_rate_override?: number;
-    corner_feed_reduction?: number;
     finish_step?: number;
-    finish_xy_allowance_mm?: number;
-    chamfer_after_width_mm?: number;
-    approach_point?: [number, number];
     through_depth?: number;
     depth_list?: number[];
-    /// V-Carve: optional cap on the inscribed-circle radius. None = no
-    /// cap. When set, the V-bit doesn't carve any wider than this even
-    /// where the medial axis would call for it.
-    carve_max_width_mm?: number;
-    /// V-Carve: when true, run a refinement pass that re-cuts the
-    /// points whose first pass was depth-limited. Off by default.
-    multi_pass_refine?: boolean;
-    /// Pocket-Outside (rt1.3): when set, the pipeline auto-prepends a
-    /// synthetic frame VcObject around the op's selection and runs
-    /// SourceCombine::Difference. The frame is computed at generate time
-    /// from these params — not persisted as project geometry.
-    frame_shape?: 'rectangle' | 'rounded_rectangle';
-    frame_padding_mm?: number;
-    frame_corner_radius_mm?: number;
   };
 }
 
@@ -466,12 +482,106 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
   };
 }
 
-function buildOpKind(op: OpEntry): WireOpKind {
-  switch (op.kind) {
+/// Build the `contour` sub-object embedded in every closed-contour
+/// kind (Profile / Pocket / Engrave / DragKnife). kbx5 step 3: tabs /
+/// leads / cut direction / approach point all live on the kind now.
+function buildContourParams(op: FlatOp): Record<string, unknown> {
+  const c: Record<string, unknown> = {};
+  if (
+    op.tabsActive ||
+    op.tabWidth !== undefined ||
+    op.tabHeight !== undefined ||
+    op.tabType !== undefined ||
+    op.tabRampAngleDeg !== undefined
+  ) {
+    const tabs: Record<string, unknown> = {
+      active: op.tabsActive ?? false,
+      width: op.tabWidth ?? 10,
+      height: op.tabHeight ?? 1,
+      tab_type: op.tabType ?? 'rectangle',
+    };
+    if (op.tabType === 'ramp' && op.tabRampAngleDeg !== undefined && op.tabRampAngleDeg !== 30) {
+      tabs.ramp_angle_deg = op.tabRampAngleDeg;
+    }
+    c.tabs = tabs;
+  }
+  if (op.tabMode && op.tabMode.kind !== 'off') {
+    c.tab_mode = op.tabMode;
+  }
+  if (op.tabPlacements && op.tabPlacements.length > 0) {
+    c.tab_placements = op.tabPlacements.map((p) => ({
+      object_id: p.objectId,
+      t: p.t,
+      ...(p.widthOverrideMm !== undefined ? { width_override_mm: p.widthOverrideMm } : {}),
+      ...(p.heightOverrideMm !== undefined ? { height_override_mm: p.heightOverrideMm } : {}),
+    }));
+  }
+  if (op.leadInKind || op.leadOutKind || op.leadIn !== undefined || op.leadOut !== undefined) {
+    c.leads = {
+      in: op.leadInKind ?? 'off',
+      out: op.leadOutKind ?? 'off',
+      in_lenght: op.leadIn ?? 5,
+      out_lenght: op.leadOut ?? 5,
+    };
+  }
+  if (op.cutDirection && op.cutDirection !== 'conventional') {
+    c.cut_direction = op.cutDirection;
+  }
+  if (op.finishCutDirection && op.finishCutDirection !== 'conventional') {
+    c.finish_cut_direction = op.finishCutDirection;
+  }
+  if (op.cornerFeedReduction !== undefined && op.cornerFeedReduction > 0) {
+    c.corner_feed_reduction = op.cornerFeedReduction;
+  }
+  if (op.approachPoint !== undefined) {
+    c.approach_point = op.approachPoint;
+  }
+  return c;
+}
+
+/// Pocket-only fields: xy overlap, pocket flags, finish allowance, the
+/// Pocket-Outside frame triple.
+function buildPocketParams(op: FlatOp): Record<string, unknown> {
+  const p: Record<string, unknown> = {};
+  if (op.xyOverlap !== undefined && op.xyOverlap > 0) p.xy_overlap = op.xyOverlap;
+  // Selection-driven islands: when the user picks outer + inner closed
+  // contours together, the inner ones become islands automatically. The
+  // wire flag matters only for legacy `source = All` flows.
+  p.pocket_islands = true;
+  if (op.finishXyAllowanceMm !== undefined && op.finishXyAllowanceMm > 0) {
+    p.finish_xy_allowance_mm = op.finishXyAllowanceMm;
+  }
+  if (op.frameShape !== undefined) p.frame_shape = op.frameShape;
+  if (op.framePaddingMm !== undefined) p.frame_padding_mm = op.framePaddingMm;
+  if (op.frameCornerRadiusMm !== undefined) p.frame_corner_radius_mm = op.frameCornerRadiusMm;
+  return p;
+}
+
+/// VCarve-only fields.
+function buildVCarveParams(op: FlatOp): Record<string, unknown> {
+  const v: Record<string, unknown> = {};
+  if (op.carveMaxWidthMm !== undefined && op.carveMaxWidthMm > 0) {
+    v.carve_max_width_mm = op.carveMaxWidthMm;
+  }
+  if (op.multiPassRefine) v.multi_pass_refine = true;
+  return v;
+}
+
+function buildOpKind(opIn: OpEntry): WireOpKind {
+  const op = opIn as FlatOp;
+  switch (opIn.kind) {
     case 'profile':
-      return { type: 'profile', offset: op.offset };
+      return {
+        type: 'profile',
+        offset: op.offset,
+        contour: buildContourParams(op),
+        // ProfileParams (overcut / reverse / helix) — emit at default.
+        profile: {},
+      } as WireOpKind;
     case 'pocket': {
       const strategy = op.pocketStrategy ?? 'cascade';
+      const contour = buildContourParams(op);
+      const pocket = buildPocketParams(op);
       if (strategy === 'trochoidal') {
         return {
           type: 'pocket',
@@ -480,7 +590,9 @@ function buildOpKind(op: OpEntry): WireOpKind {
             engagement_angle_deg: op.engagementAngleDeg ?? 30,
             loop_radius_factor: op.loopRadiusFactor ?? 0.6,
           },
-        };
+          contour,
+          pocket,
+        } as WireOpKind;
       }
       if (strategy === 'halfpipe') {
         const profile = op.halfpipeProfile ?? { kind: 'circular_arc' as const, radius_mm: 5 };
@@ -490,18 +602,32 @@ function buildOpKind(op: OpEntry): WireOpKind {
             kind: 'halfpipe',
             profile,
           },
-        };
+          contour,
+          pocket,
+        } as WireOpKind;
       }
-      return { type: 'pocket', strategy };
+      return { type: 'pocket', strategy, contour, pocket } as WireOpKind;
     }
     case 'drill': {
       const cycle: WireDrillCycle = op.drillCycle
         ? mapDrillCycle(op.drillCycle)
         : { kind: 'simple', dwell_sec: 0 };
-      return { type: 'drill', cycle };
+      const drill: Record<string, unknown> = { type: 'drill', cycle };
+      if (op.chamferAfterWidthMm !== undefined && op.chamferAfterWidthMm > 0) {
+        drill.chamfer_after_width_mm = op.chamferAfterWidthMm;
+      }
+      // Pattern repetition (kbx5: Drill-only now).
+      if (op.pattern && (op.pattern as { kind?: string }).kind) {
+        drill.pattern = op.pattern;
+      }
+      return drill as WireOpKind;
     }
     case 'vcarve':
-      return { type: 'v_carve' };
+      return { type: 'v_carve', carve: buildVCarveParams(op) } as WireOpKind;
+    case 'engrave':
+      return { type: 'engrave', contour: buildContourParams(op) } as WireOpKind;
+    case 'drag_knife':
+      return { type: 'drag_knife', contour: buildContourParams(op) } as WireOpKind;
     case 'chamfer':
       return {
         type: 'chamfer',
@@ -509,7 +635,7 @@ function buildOpKind(op: OpEntry): WireOpKind {
           ? { width_mm: op.chamferWidthMm }
           : {}),
         ...(op.chamferFinishPass ? { finish_pass: true } : {}),
-      };
+      } as WireOpKind;
     case 'thread':
       return {
         type: 'thread',
@@ -518,9 +644,7 @@ function buildOpKind(op: OpEntry): WireOpKind {
           : {}),
         ...(op.threadInternal === false ? { internal: false } : {}),
         ...(op.threadClimb ? { climb: true } : {}),
-      };
-    default:
-      return { type: op.kind } as WireOpKind;
+      } as WireOpKind;
   }
 }
 
@@ -561,7 +685,11 @@ function buildSource(op: OpEntry): WireSource {
 function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
   // `op` reads the flat-permissive view of every variant's optional
   // fields without per-kind narrowing; `opIn` keeps the narrow union
-  // for helpers that dispatch on `kind`.
+  // for helpers that dispatch on `kind`. Per-kind fields (tabs, leads,
+  // xy_overlap, etc.) flow into the kind discriminator's nested
+  // `contour` / `pocket` / `vcarve` / drill `pattern` sub-objects via
+  // `buildOpKind`. `params` carries only the universal depth-schedule +
+  // overrides bag (kbx5 step 3 cleanup).
   const op = opIn as FlatOp;
   return {
     id: opIn.id,
@@ -572,101 +700,25 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
     ...(op.finishToolId !== undefined && op.finishToolId !== op.toolId
       ? { finish_tool_id: op.finishToolId }
       : {}),
-    // Pattern repetition (rt1.5). When set, the pipeline expands the
-    // op into N instances. Single-count linear / grid patterns are
-    // equivalent to no pattern, so we still emit them for round-trip
-    // fidelity — backend handles the degenerate case efficiently.
-    ...(op.pattern && (op.pattern as { kind?: string }).kind ? { pattern: op.pattern } : {}),
     source: buildSource(opIn),
     params: {
       depth: op.depth,
       start_depth: op.startDepth,
       ...(op.step !== null && op.step !== undefined ? { step: op.step } : {}),
       fast_move_z: machine.fastMoveZ,
-      helix: false,
-      reverse: false,
       objectorder: 'nearest',
-      overcut: false,
-      // Pocket islands are now driven by the selection itself: when the
-      // user picks an outer + inner closed contour, the inner one is
-      // automatically treated as an island (see pipeline.rs's
-      // selected_set logic). The wire flag stays at its default and only
-      // matters for legacy `source = All` flows.
-      pocket_islands: true,
-      pocket_nocontour: false,
-      pocket_insideout: false,
-      tabs: {
-        active: op.tabsActive ?? false,
-        width: op.tabWidth ?? 10,
-        height: op.tabHeight ?? 1,
-        tab_type: op.tabType ?? 'rectangle',
-        // Only emit ramp_angle_deg when ≠ default (30°) so old payloads
-        // and the Rust serde default match — the field is
-        // skip_serializing_if=is_default_ramp_angle on the wire too.
-        ...(op.tabType === 'ramp' && op.tabRampAngleDeg !== undefined && op.tabRampAngleDeg !== 30
-          ? { ramp_angle_deg: op.tabRampAngleDeg }
-          : {}),
-      },
-      ...(op.tabMode && op.tabMode.kind !== 'off' ? { tab_mode: op.tabMode } : {}),
-      ...(op.tabPlacements && op.tabPlacements.length > 0
-        ? {
-            tab_placements: op.tabPlacements.map((p) => ({
-              object_id: p.objectId,
-              t: p.t,
-              ...(p.widthOverrideMm !== undefined ? { width_override_mm: p.widthOverrideMm } : {}),
-              ...(p.heightOverrideMm !== undefined
-                ? { height_override_mm: p.heightOverrideMm }
-                : {}),
-            })),
-          }
-        : {}),
-      leads: {
-        in: op.leadInKind ?? 'off',
-        out: op.leadOutKind ?? 'off',
-        in_lenght: op.leadIn ?? 5,
-        out_lenght: op.leadOut ?? 5,
-      },
-      // Only emit when ≠ conventional so the wire stays small and the
-      // Rust side falls back to the serde default.
-      ...(op.cutDirection && op.cutDirection !== 'conventional'
-        ? { cut_direction: op.cutDirection }
-        : {}),
-      ...(op.finishCutDirection && op.finishCutDirection !== 'conventional'
-        ? { finish_cut_direction: op.finishCutDirection }
-        : {}),
       ...(op.plunge && op.plunge.kind !== 'direct' ? { plunge: op.plunge } : {}),
-      // Only emit xy_overlap when set; the Rust default kicks in on 0.
-      ...(op.xyOverlap !== undefined && op.xyOverlap > 0 ? { xy_overlap: op.xyOverlap } : {}),
       ...(op.feedRateOverride !== undefined && op.feedRateOverride > 0
         ? { feed_rate_override: op.feedRateOverride }
         : {}),
       ...(op.plungeRateOverride !== undefined && op.plungeRateOverride > 0
         ? { plunge_rate_override: op.plungeRateOverride }
         : {}),
-      ...(op.cornerFeedReduction !== undefined && op.cornerFeedReduction > 0
-        ? { corner_feed_reduction: op.cornerFeedReduction }
-        : {}),
       ...(op.finishStep !== undefined && op.finishStep !== 0 ? { finish_step: op.finishStep } : {}),
-      ...(op.finishXyAllowanceMm !== undefined && op.finishXyAllowanceMm > 0
-        ? { finish_xy_allowance_mm: op.finishXyAllowanceMm }
-        : {}),
-      ...(op.chamferAfterWidthMm !== undefined && op.chamferAfterWidthMm > 0
-        ? { chamfer_after_width_mm: op.chamferAfterWidthMm }
-        : {}),
-      ...(op.approachPoint !== undefined ? { approach_point: op.approachPoint } : {}),
       ...(op.throughDepth !== undefined && op.throughDepth > 0
         ? { through_depth: op.throughDepth }
         : {}),
       ...(op.depthList && op.depthList.length > 0 ? { depth_list: op.depthList } : {}),
-      ...(op.carveMaxWidthMm !== undefined && op.carveMaxWidthMm > 0
-        ? { carve_max_width_mm: op.carveMaxWidthMm }
-        : {}),
-      ...(op.multiPassRefine ? { multi_pass_refine: true } : {}),
-      ...(op.frameShape !== undefined ? { frame_shape: op.frameShape } : {}),
-      ...(op.framePaddingMm !== undefined ? { frame_padding_mm: op.framePaddingMm } : {}),
-      ...(op.frameCornerRadiusMm !== undefined
-        ? { frame_corner_radius_mm: op.frameCornerRadiusMm }
-        : {}),
     },
   };
 }

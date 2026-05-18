@@ -162,18 +162,23 @@ fn transform_point(p: Point2, inst: PatternInstance) -> Point2 {
 #[cfg(test)]
 mod tests {
     use crate::cam::setup::ToolOffset;
+    use crate::geometry::Point2;
     use crate::pipeline::test_helpers::{
-        cut_x_values, endmill, profile_op, profile_op_with_pattern, project_with,
+        closed_circle, cut_x_values, drill_op_with_pattern, endmill, profile_op, project_with,
+        project_with_segments,
     };
     use crate::pipeline::{run_pipeline, PipelineRequest};
     use crate::project::PatternConfig;
 
-    /// Linear pattern: 3 instances translated dx=20. Cuts span all
-    /// three X bands and the X range covers all three instances.
+    /// Linear pattern: 3 instances translated dx=20. Drilled positions
+    /// span all three X bands and the X range covers all three
+    /// instances. (kbx5: patterns only on `OpKind::Drill` — tests use
+    /// a tiny closed circle that the drill driver accepts.)
     #[test]
     fn linear_pattern_emits_translated_copies() {
-        let project = project_with(
-            vec![profile_op_with_pattern(PatternConfig::Linear {
+        let project = project_with_segments(
+            closed_circle(Point2::new(0.0, 0.0), 0.5),
+            vec![drill_op_with_pattern(PatternConfig::Linear {
                 count: 3,
                 dx: 20.0,
                 dy: 0.0,
@@ -223,8 +228,9 @@ mod tests {
 
     #[test]
     fn grid_pattern_emits_count_xcount_y_instances() {
-        let project = project_with(
-            vec![profile_op_with_pattern(PatternConfig::Grid {
+        let project = project_with_segments(
+            closed_circle(Point2::new(0.0, 0.0), 0.5),
+            vec![drill_op_with_pattern(PatternConfig::Grid {
                 count_x: 2,
                 count_y: 2,
                 dx: 30.0,
@@ -248,7 +254,11 @@ mod tests {
         let mut max_x = f64::NEG_INFINITY;
         let mut max_y = f64::NEG_INFINITY;
         for line in resp.gcode.lines() {
-            if !(line.starts_with("G1") || line.starts_with("G0")) {
+            if !(line.starts_with("G1")
+                || line.starts_with("G0")
+                || line.starts_with("G8")
+                || line.starts_with("G73"))
+            {
                 continue;
             }
             if let Some(idx) = line.find('X') {
@@ -274,9 +284,13 @@ mod tests {
                 }
             }
         }
+        // Source drill at (0, 0); 2×2 grid puts the far-corner drill at
+        // (30, 30). Earlier (Profile) tests asserted X / Y > 45 because
+        // the source was a 20 mm square that the pattern translated by
+        // 30 mm. With drill points the bound is the translation only.
         assert!(
-            max_x > 45.0 && max_y > 45.0,
-            "grid should extend into the second column AND the second row (X>{}, Y>{}):\n{}",
+            max_x >= 30.0 && max_y >= 30.0,
+            "grid should extend into the second column AND the second row (X>={}, Y>={}):\n{}",
             max_x,
             max_y,
             resp.gcode,
@@ -285,8 +299,12 @@ mod tests {
 
     #[test]
     fn polar_pattern_rotates_around_center() {
-        let project = project_with(
-            vec![profile_op_with_pattern(PatternConfig::Polar {
+        // Source drill at (10, 10); 4-instance polar rotates that point
+        // 90° per instance around (0, 0), placing drills in all four
+        // quadrants: (10,10), (-10,10), (-10,-10), (10,-10).
+        let project = project_with_segments(
+            closed_circle(Point2::new(10.0, 10.0), 0.5),
+            vec![drill_op_with_pattern(PatternConfig::Polar {
                 count: 4,
                 center_x: 0.0,
                 center_y: 0.0,
@@ -315,7 +333,11 @@ mod tests {
         let mut last_x: Option<f64> = None;
         let mut last_y: Option<f64> = None;
         for line in resp.gcode.lines() {
-            if !(line.starts_with("G1") || line.starts_with("G0")) {
+            if !(line.starts_with("G1")
+                || line.starts_with("G0")
+                || line.starts_with("G8")
+                || line.starts_with("G73"))
+            {
                 continue;
             }
             let mut x = last_x;
@@ -368,8 +390,9 @@ mod tests {
             vec![profile_op(1, 1, ToolOffset::Outside)],
             vec![endmill(1, 3.0)],
         );
-        let mut op_b = profile_op(1, 1, ToolOffset::Outside);
-        op_b.pattern = None;
+        // Profile ops no longer carry a pattern (kbx5: only OpKind::Drill
+        // does), so this `op_b` lands without a pattern by construction.
+        let op_b = profile_op(1, 1, ToolOffset::Outside);
         let project_b = project_with(vec![op_b], vec![endmill(1, 3.0)]);
         let resp_a = run_pipeline(
             PipelineRequest {

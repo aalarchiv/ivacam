@@ -120,7 +120,21 @@
 </script>
 
 {#if project.generated && project.generated.gcode}
-  <div class="gcode" bind:this={host} role="region" aria-label={$_('gcode.title') ?? 'G-code'}>
+  <div
+    class="gcode"
+    class:stale={project.dirty}
+    bind:this={host}
+    role="region"
+    aria-label={$_('gcode.title') ?? 'G-code'}
+  >
+    {#if project.dirty}
+      <div
+        class="stale-badge"
+        title="The project has been edited since this G-code was generated. Click Generate G-code to refresh."
+      >
+        ⚠ Stale — re-Generate to refresh
+      </div>
+    {/if}
     <div class="gcode-inner">
       {#each lines as text, i (i)}
         {@const line = i + 1}
@@ -159,6 +173,7 @@
 
 <style>
   .gcode {
+    position: relative; /* anchor stale-badge */
     width: 100%;
     height: 100%;
     overflow: auto;
@@ -169,6 +184,25 @@
     line-height: 1.35;
     color: var(--text);
     contain: strict; /* keeps layout costs sane on big programs */
+  }
+  /* ld9z: dim panel content when stale so the badge can do the talking. */
+  .gcode.stale .gcode-inner {
+    opacity: 0.55;
+  }
+  /* ld9z: stale-state callout — same affordance as the Sim chip in
+     GenerateBar, applied to the actual code panel. Sticky so it stays
+     visible even when the user scrolls deep into a long program. */
+  .stale-badge {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: color-mix(in srgb, var(--warn) 22%, var(--bg-panel));
+    color: var(--text-strong);
+    border-bottom: 1px solid color-mix(in srgb, var(--warn) 50%, var(--border));
+    padding: 0.3rem 0.7rem;
+    font-family: system-ui, sans-serif;
+    font-size: 0.74rem;
+    text-align: center;
   }
   .gcode-inner {
     /* Fixed-row baseline so scrollIntoView lands cleanly. */

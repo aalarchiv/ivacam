@@ -75,6 +75,8 @@
     openProject,
     loadFromPath,
     loadProjectPath,
+    loadFile,
+    loadProjectFile,
     loadSample,
     saveProject,
     exportGeneratedGcode,
@@ -511,6 +513,51 @@
     if (target?.closest('.menu')) return;
     closeAllMenus();
   }
+
+  // dteo: window-level drag-and-drop import. Accept .dxf / .svg
+  // (loadFile) and .wiac-project.json / .json (loadProjectFile). The
+  // overlay only paints while a drag with a `Files` payload is over
+  // the window; we count enter / leave to avoid flicker when the
+  // cursor crosses child elements.
+  let dragOver = $state(false);
+  let dragDepth = 0;
+  function hasFiles(e: DragEvent): boolean {
+    return !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+  }
+  function onDragEnter(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    dragDepth += 1;
+    dragOver = true;
+  }
+  function onDragOver(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  }
+  function onDragLeave(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dragOver = false;
+  }
+  async function onDrop(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragOver = false;
+    dragDepth = 0;
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.wiac-project.json') || name.endsWith('-project.json')) {
+      await loadProjectFile(file);
+    } else if (name.endsWith('.json')) {
+      // Bare .json — also treat as a project file (loadProjectFile
+      // validates the kind: 'wiac-project' field and rejects otherwise).
+      await loadProjectFile(file);
+    } else {
+      // .dxf / .svg / anything else the importer recognizes.
+      await loadFile(file);
+    }
+  }
   function pickMenu<T>(fn: () => T): T {
     closeAllMenus();
     return fn();
@@ -646,7 +693,14 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeyDown} onclick={onWindowClick} />
+<svelte:window
+  onkeydown={onKeyDown}
+  onclick={onWindowClick}
+  ondragenter={onDragEnter}
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={onDrop}
+/>
 
 <div class="app">
   <!-- ============== MENU BAR =================================== -->
@@ -1121,6 +1175,15 @@
       {/if}
     {/if}
   </footer>
+  {#if dragOver}
+    <div class="drop-overlay" aria-hidden="true">
+      <div class="drop-card">
+        <div class="drop-glyph">⤓</div>
+        <div class="drop-title">Drop to open</div>
+        <div class="drop-sub">DXF / SVG drawings · .wiac-project files</div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1547,6 +1610,43 @@
     background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
     color: var(--text);
     font-weight: 600;
+  }
+  /* dteo: drop overlay while user is dragging a file over the window. */
+  .drop-overlay {
+    position: fixed;
+    inset: 0;
+    background: color-mix(in srgb, var(--bg-app) 70%, transparent);
+    backdrop-filter: blur(2px);
+    z-index: var(--z-floating);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .drop-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 2rem 3rem;
+    border: 2px dashed var(--accent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .drop-glyph {
+    font-size: 2.4rem;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .drop-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .drop-sub {
+    font-size: 0.82rem;
+    color: var(--text-muted);
   }
   footer .status-sep {
     margin: 0 0.5rem;

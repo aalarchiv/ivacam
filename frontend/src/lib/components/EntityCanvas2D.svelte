@@ -1935,6 +1935,15 @@
       x: {cursorXY.x.toFixed(2)} &nbsp; y: {cursorXY.y.toFixed(2)} mm
     </div>
   {/if}
+  {#if project.imported && project.operations.length === 0}
+    <div class="firstrun-hint" role="status">
+      <span class="firstrun-step">1</span>
+      <span>Click an object to select it</span>
+      <span class="firstrun-arrow">→</span>
+      <span class="firstrun-step">2</span>
+      <span>Right-click for new operation</span>
+    </div>
+  {/if}
   {#if tabPopover}
     {@const op = project.operations.find((o) => o.id === tabPopover!.opId)}
     {@const placement = op && isContourOp(op) ? op.tabPlacements?.[tabPopover!.placementIdx] : null}
@@ -2079,6 +2088,44 @@
     border-radius: 3px;
     font-size: 0.72rem;
     pointer-events: none;
+  }
+  /* a4ab: first-run hint when imported && no ops. Center bottom so it
+     hangs below the geometry without covering it. Auto-dismisses the
+     instant the user adds an op. */
+  .firstrun-hint {
+    position: absolute;
+    bottom: 1.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.9rem;
+    background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    border-radius: 999px;
+    color: var(--text-strong);
+    font-size: 0.78rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+    max-width: calc(100% - 2rem);
+    white-space: nowrap;
+  }
+  .firstrun-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.72rem;
+  }
+  .firstrun-arrow {
+    color: var(--text-muted);
+    font-size: 0.85rem;
   }
   /* 7tp5: cursor world-coordinate HUD. Top-right corner so it doesn't
      fight the selection-hud (top-left). Monospace tabular-nums so the

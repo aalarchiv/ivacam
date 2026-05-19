@@ -322,7 +322,10 @@
       (grid.material as THREE.Material).dispose();
       scene.add(newGrid);
     }
-    rebuildGeometry();
+    // After grid swap, re-emit both line buffers so the imported drawing
+    // + toolpath wireframe sit cleanly on top of the new grid.
+    rebuildImportedGeometry();
+    rebuildToolpathGeometry();
   }
 
   onDestroy(() => {

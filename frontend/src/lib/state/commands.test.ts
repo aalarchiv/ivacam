@@ -82,6 +82,13 @@ function blankTarget(): CommandTarget {
     } as StockConfig,
     settings: {} as CommandTarget['settings'],
     textLayers: [],
+    fileTransform: {
+      translate: { x: 0, y: 0 },
+      rotateDeg: 0,
+      scale: 1,
+      mirrorX: false,
+      mirrorY: false,
+    },
     dirty: false,
   };
 }

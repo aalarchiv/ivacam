@@ -177,32 +177,31 @@
     <div class="group-body">
       {#if project.imported}
         <div class="xform" class:xform-active={xfActive}>
-          <button
-            type="button"
-            class="xform-head"
-            onclick={() => (transformOpen = !transformOpen)}
-            aria-expanded={transformOpen}
-            title="Layout convenience: translate / rotate / scale / mirror the entire drawing. Pivot for rotate / scale / mirror is the original file bbox center."
-          >
-            <span class="xform-caret">{transformOpen ? '▾' : '▸'}</span>
-            <span class="xform-label">File transform</span>
-            {#if xfActive}
-              <span class="xform-dot" aria-label="Transform is active"></span>
-            {/if}
+          <div class="xform-head-row">
+            <button
+              type="button"
+              class="xform-head"
+              onclick={() => (transformOpen = !transformOpen)}
+              aria-expanded={transformOpen}
+              title="Layout convenience: translate / rotate / scale / mirror the entire drawing. Pivot for rotate / scale / mirror is the original file bbox center."
+            >
+              <span class="xform-caret">{transformOpen ? '▾' : '▸'}</span>
+              <span class="xform-label">File transform</span>
+              {#if xfActive}
+                <span class="xform-dot" aria-label="Transform is active"></span>
+              {/if}
+            </button>
             {#if transformOpen && xfActive}
               <button
                 type="button"
                 class="xform-reset"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  project.resetFileTransform();
-                }}
+                onclick={() => project.resetFileTransform()}
                 title="Reset to identity (no transform)"
               >
                 Reset
               </button>
             {/if}
-          </button>
+          </div>
           {#if transformOpen}
             <div class="xform-body">
               <label
@@ -523,11 +522,16 @@
     border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
     background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
   }
+  .xform-head-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
   .xform-head {
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    width: 100%;
+    flex: 1;
     background: transparent;
     border: 0;
     color: var(--text);

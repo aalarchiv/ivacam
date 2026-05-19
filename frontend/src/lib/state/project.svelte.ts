@@ -1396,7 +1396,12 @@ class ProjectState {
   /// (typically the field name) merges rapid edits into a single undo
   /// step — drag the rotation spinner and you get one history entry,
   /// not fifty.
-  patchFileTransform(patch: Partial<FileTransform>, coalesceKey?: string) {
+  patchFileTransform(
+    patch: Partial<Omit<FileTransform, 'translate'>> & {
+      translate?: Partial<FileTransform['translate']>;
+    },
+    coalesceKey?: string,
+  ) {
     if (Object.keys(patch).length === 0) return;
     const before = this.fileTransform;
     const after: FileTransform = {

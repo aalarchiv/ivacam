@@ -79,6 +79,43 @@
     abortController?.abort();
   }
 
+  // 75op: auto-regenerate on edit. Watch project.dirty + the setting;
+  // when both are true and we're not already running, debounce ~1.5s
+  // and fire run(). Cancel prior pending debounce on each new edit.
+  let autoTimer: ReturnType<typeof setTimeout> | null = null;
+  const AUTO_REGEN_DEBOUNCE_MS = 1500;
+  $effect(() => {
+    void project.dirty;
+    void project.settings.autoRegenerate;
+    if (autoTimer) {
+      clearTimeout(autoTimer);
+      autoTimer = null;
+    }
+    if (
+      !project.settings.autoRegenerate ||
+      !project.dirty ||
+      !project.imported ||
+      project.pipelineState === 'running' ||
+      project.pipelineState === 'cancelling'
+    ) {
+      return;
+    }
+    autoTimer = setTimeout(() => {
+      autoTimer = null;
+      // Re-check guards at fire time — the user may have already hit
+      // Generate manually, or pipelineState may have flipped.
+      if (
+        project.settings.autoRegenerate &&
+        project.dirty &&
+        project.imported &&
+        project.pipelineState !== 'running' &&
+        project.pipelineState !== 'cancelling'
+      ) {
+        void run();
+      }
+    }, AUTO_REGEN_DEBOUNCE_MS);
+  });
+
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);
   let criticalCount = $derived(warnings.filter((w) => simWarningSeverity(w) === 'critical').length);
   let isClean = $derived(warnings.length === 0);

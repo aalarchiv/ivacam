@@ -44,6 +44,10 @@ export interface AppSettings {
   /// When true, GenerateBar refuses to emit gcode while the most recent
   /// sim run reported critical warnings (collisions, rapid-through-stock).
   blockOnCriticalSimWarnings: boolean;
+  /// 75op: when true, GenerateBar debounces project.dirty changes and
+  /// auto-runs Generate after a brief idle. Off by default; power
+  /// users on big projects keep manual control.
+  autoRegenerate: boolean;
   /// When true, the sim driver keeps the playhead replayed to 1.0 after
   /// every project save / regenerate so warnings surface immediately.
   autoRunSimOnSave: boolean;
@@ -75,6 +79,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // can raise this in Settings → Performance. (audit-auim)
   maxSimulationCells: 1_000_000,
   blockOnCriticalSimWarnings: false,
+  autoRegenerate: false,
   autoRunSimOnSave: true,
   autoReloadSources: true,
   showStockBox: true,

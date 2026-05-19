@@ -308,6 +308,15 @@
             />
             <span>Auto-run sim on every project save</span>
           </label>
+          <label class="check" title="Debounces ~1.5 s after the last edit, then runs Generate G-code. Off by default so power users on big projects keep manual control.">
+            <input
+              type="checkbox"
+              checked={project.settings.autoRegenerate}
+              onchange={(e) =>
+                update('autoRegenerate', (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Auto-regenerate G-code after edits</span>
+          </label>
         </div>
         <p class="hint">
           "Critical" warnings are collisions and rapids cutting through material. With the block

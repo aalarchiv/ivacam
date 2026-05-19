@@ -723,7 +723,25 @@
     </fieldset>
 
     {#if op.kind === 'profile' || op.kind === 'pocket'}
-      <TabsSection {op} {patch} />
+      <details
+        class="optional-section"
+        open={(op.tabMode?.kind ?? 'off') !== 'off' ||
+          (op.tabPlacements && op.tabPlacements.length > 0)}
+      >
+        <summary>
+          Tabs
+          <span class="opt-summary"
+            >{op.tabMode?.kind === 'off' || !op.tabMode
+              ? 'Off'
+              : op.tabMode.kind === 'manual'
+                ? `${op.tabPlacements?.length ?? 0} manual`
+                : op.tabMode.kind === 'auto'
+                  ? `${op.tabMode.count} auto`
+                  : `${op.tabMode.auto_count} auto + ${op.tabPlacements?.length ?? 0} manual`}</span
+          >
+        </summary>
+        <TabsSection {op} {patch} />
+      </details>
     {/if}
 
     {#if op.kind === 'profile'}
@@ -737,7 +755,23 @@
     {/if}
 
     {#if op.kind === 'profile' || op.kind === 'pocket' || op.kind === 'engrave' || op.kind === 'drag_knife'}
-      <fieldset>
+      <details
+        class="optional-section"
+        open={op.feedRateOverride !== undefined ||
+          op.plungeRateOverride !== undefined ||
+          (op.cornerFeedReduction ?? 0) > 0}
+      >
+        <summary>
+          Feeds (overrides)
+          <span class="opt-summary"
+            >{op.feedRateOverride !== undefined ||
+            op.plungeRateOverride !== undefined ||
+            (op.cornerFeedReduction ?? 0) > 0
+              ? 'custom'
+              : 'tool defaults'}</span
+          >
+        </summary>
+      <fieldset class="optional-fieldset">
         <legend>Feeds (overrides)</legend>
         <label
           class="row"
@@ -816,6 +850,7 @@
           </div>
         </label>
       </fieldset>
+      </details>
     {/if}
 
     {#if op.kind === 'vcarve'}
@@ -837,7 +872,23 @@
          the eventual standalone-helix-emitter feature reintroduction. -->
 
 
-    <PatternSection {op} {patch} />
+    {#if op.kind === 'drill'}
+      <details class="optional-section" open={op.pattern !== undefined && op.pattern !== null}>
+        <summary>
+          Pattern
+          <span class="opt-summary"
+            >{op.pattern == null
+              ? 'single'
+              : op.pattern.kind === 'linear'
+                ? `linear · ${op.pattern.count}`
+                : op.pattern.kind === 'grid'
+                  ? `grid · ${op.pattern.count_x}×${op.pattern.count_y}`
+                  : `polar · ${op.pattern.count}`}</span
+          >
+        </summary>
+        <PatternSection {op} {patch} />
+      </details>
+    {/if}
   {/if}
 </aside>
 
@@ -1123,5 +1174,58 @@
   }
   :global(.props .subsection[open] > summary::before) {
     transform: rotate(90deg);
+  }
+  /* iuro: progressive disclosure for optional op sections (Tabs, Feeds
+     overrides, Pattern). Sections start collapsed unless the user has
+     explicitly customized something; the summary line shows a
+     compact value chip so the user knows what's inside without opening. */
+  :global(.props .optional-section) {
+    margin: 0.4rem 0 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--bg-elevated) 30%, transparent);
+  }
+  :global(.props .optional-section > summary) {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-strong);
+    user-select: none;
+  }
+  :global(.props .optional-section > summary::-webkit-details-marker) {
+    display: none;
+  }
+  :global(.props .optional-section > summary::before) {
+    content: '▸';
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    transition: transform 0.12s ease;
+  }
+  :global(.props .optional-section[open] > summary::before) {
+    transform: rotate(90deg);
+  }
+  :global(.props .optional-section .opt-summary) {
+    margin-left: auto;
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: var(--bg-input);
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+  }
+  /* When wrapped in an .optional-section, the inner fieldset doesn't
+     need its own border + label — the summary already labels it. */
+  :global(.props .optional-fieldset) {
+    border: 0;
+    margin: 0;
+    padding: 0 0.55rem 0.5rem;
+  }
+  :global(.props .optional-fieldset > legend) {
+    display: none;
   }
 </style>

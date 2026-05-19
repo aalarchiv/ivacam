@@ -21,6 +21,7 @@
   import { STYLE_TABLE, engravingMismatch, type TextStyle } from './text_style';
   import { computeFootprint } from '../sim/driver';
   import Modal from './Modal.svelte';
+  import { onMount } from 'svelte';
 
   interface Props {
     open: boolean;
@@ -31,11 +32,23 @@
   interface BundledFont {
     label: string;
     path: string;
+    /// CSS @font-face family name registered at mount time; the
+    /// dropdown row + sample chip render in this family so the user
+    /// previews the actual font glyphs before choosing (6y3m).
+    family: string;
   }
 
   const BUNDLED_FONTS: BundledFont[] = [
-    { label: 'DejaVu Sans (filled-outline, bundled)', path: '/fonts/DejaVuSans.ttf' },
+    {
+      label: 'DejaVu Sans (filled-outline, bundled)',
+      path: '/fonts/DejaVuSans.ttf',
+      family: 'wiac-preview-dejavu',
+    },
   ];
+  /// Glyph sample drawn in each bundled font's family on the dropdown
+  /// rows. Mixed digits / ASCII / accented / currency so the user can
+  /// pick visually based on the shapes that actually matter.
+  const FONT_SAMPLE = 'AaBb 0123 äöß€';
 
   let text = $state('Text');
   let style = $state<TextStyle>('engraving');
@@ -47,6 +60,38 @@
   let userFontFile = $state<File | null>(null);
   let bundledFontPath = $state<string>(BUNDLED_FONTS[0]?.path ?? '');
   let useUserFont = $state(false);
+  /// 6y3m: dropdown popover state. Each bundled font is registered as a
+  /// FontFace at mount so the rows + selected chip can render in the
+  /// actual font's glyphs (vs the platform default that <select>'s
+  /// option text would have used).
+  let fontDropdownOpen = $state(false);
+  let fontsLoaded = $state(false);
+  onMount(() => {
+    if (typeof document === 'undefined' || !('fonts' in document)) return;
+    let cancelled = false;
+    void Promise.all(
+      BUNDLED_FONTS.map(async (f) => {
+        try {
+          const face = new FontFace(f.family, `url(${f.path})`);
+          await face.load();
+          if (!cancelled) document.fonts.add(face);
+        } catch (e) {
+          console.warn('bundled font load failed', f, e);
+        }
+      }),
+    ).then(() => {
+      if (!cancelled) fontsLoaded = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+  const selectedBundledFont = $derived(BUNDLED_FONTS.find((f) => f.path === bundledFontPath));
+  function pickBundledFont(path: string) {
+    bundledFontPath = path;
+    useUserFont = false;
+    fontDropdownOpen = false;
+  }
   let busy = $state(false);
   let errorMsg = $state<string | null>(null);
   /// Last successful render's single-line / family classification — drives
@@ -308,11 +353,51 @@
           title="Use a font bundled with wiaconstructor. Bundled fonts are filled-outline (good for V-carve / pocket / drag-knife — not single-line engraving)."
         >
           <input type="radio" bind:group={useUserFont} value={false} />
-          <select bind:value={bundledFontPath} disabled={useUserFont}>
-            {#each BUNDLED_FONTS as f (f.path)}
-              <option value={f.path}>{f.label}</option>
-            {/each}
-          </select>
+          <div class="font-dd" class:open={fontDropdownOpen}>
+            <button
+              type="button"
+              class="font-dd-button"
+              disabled={useUserFont}
+              aria-haspopup="listbox"
+              aria-expanded={fontDropdownOpen}
+              onclick={() => (fontDropdownOpen = !fontDropdownOpen)}
+            >
+              <span
+                class="font-dd-sample"
+                style:font-family={selectedBundledFont && fontsLoaded
+                  ? `'${selectedBundledFont.family}', system-ui, sans-serif`
+                  : 'system-ui, sans-serif'}
+              >
+                {FONT_SAMPLE}
+              </span>
+              <span class="font-dd-label">{selectedBundledFont?.label ?? '—'}</span>
+              <span class="font-dd-caret">▾</span>
+            </button>
+            {#if fontDropdownOpen && !useUserFont}
+              <ul class="font-dd-list" role="listbox">
+                {#each BUNDLED_FONTS as f (f.path)}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+                  <li
+                    role="option"
+                    aria-selected={f.path === bundledFontPath}
+                    class:active={f.path === bundledFontPath}
+                    onclick={() => pickBundledFont(f.path)}
+                  >
+                    <span
+                      class="font-dd-sample"
+                      style:font-family={fontsLoaded
+                        ? `'${f.family}', system-ui, sans-serif`
+                        : 'system-ui, sans-serif'}
+                    >
+                      {FONT_SAMPLE}
+                    </span>
+                    <span class="font-dd-label">{f.label}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         </label>
         <label
           class="row"
@@ -549,6 +634,83 @@
     padding: 0.1rem 0.4rem;
     font-size: 0.72rem;
     cursor: pointer;
+  }
+  /* 6y3m: custom font dropdown with preview glyphs. <select> can't
+     render different fonts per option, so we paint our own popover.
+     Each row shows a sample of the font's actual glyphs next to its
+     label so picking is visual rather than guess-from-name. */
+  .font-dd {
+    position: relative;
+    min-width: 0;
+  }
+  .font-dd-button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.18rem 0.4rem;
+    font-size: 0.78rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .font-dd-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .font-dd-sample {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.95rem;
+    color: var(--text-strong);
+  }
+  .font-dd-label {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .font-dd-caret {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+  }
+  .font-dd-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin: 4px 0 0;
+    padding: 0.15rem;
+    list-style: none;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    z-index: var(--z-dropdown);
+    max-height: 14rem;
+    overflow-y: auto;
+  }
+  .font-dd-list li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--text);
+  }
+  .font-dd-list li:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  .font-dd-list li.active {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
   .error {
     color: var(--error);

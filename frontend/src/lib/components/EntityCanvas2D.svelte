@@ -55,6 +55,12 @@
   };
 
   let canvas: HTMLCanvasElement;
+  /// Stacked overlay canvas for state-bearing repaints (selection halos,
+  /// hover halo, ghost tab, approach point, box-select rect, fixtures,
+  /// tabs, OSnap glyph). pointer-events: none in CSS so the bg canvas
+  /// keeps receiving input. Splits the per-frame work so hover and
+  /// selection don't repaint the (often huge) imported geometry layer.
+  let canvasOverlay: HTMLCanvasElement;
   let container: HTMLDivElement;
 
   /// Cached resolved theme colors. `themeVar` was previously calling
@@ -77,28 +83,36 @@
     themeCacheToken++;
   }
 
+  /// Trigger both canvas layers — used by resize / theme / mount paths
+  /// where the right answer is "repaint everything". The $effect blocks
+  /// drive per-state-change repaints; this helper is for non-reactive
+  /// triggers.
+  function drawBoth() {
+    drawBackground();
+    drawOverlay();
+  }
+
   onMount(() => {
-    const ro = new ResizeObserver(() => draw());
+    const ro = new ResizeObserver(() => drawBoth());
     ro.observe(container);
-    draw();
+    drawBoth();
     // Re-paint when the user toggles their OS theme or picks a manual one.
     const mql = window.matchMedia('(prefers-color-scheme: light)');
     const onChange = () => {
       resetThemeCache();
-      draw();
+      drawBoth();
     };
     mql.addEventListener('change', onChange);
     // Diff the data-theme value before redrawing — MutationObserver fires
-    // on every attribute write, including same-value writes (e.g. an
-    // unrelated rerender that re-applies the stored preference). draw()
-    // is non-trivial for big imports.
+    // on every attribute write, including same-value writes. draw() is
+    // non-trivial for big imports.
     let lastTheme = document.documentElement.dataset.theme ?? '';
     const themeMo = new MutationObserver(() => {
       const cur = document.documentElement.dataset.theme ?? '';
       if (cur === lastTheme) return;
       lastTheme = cur;
       resetThemeCache();
-      draw();
+      drawBoth();
     });
     themeMo.observe(document.documentElement, {
       attributes: true,
@@ -111,28 +125,50 @@
     };
   });
 
+  // Two-effect canvas paint (split bd: 'EntityCanvas2D draw effect').
+  //
+  // The bg canvas paints the heavy static layer: imported geometry in
+  // base layer color, text-layer previews in base color, regions, grid,
+  // axes, work-area. Repaints only on data / layout / zoom / pan / theme
+  // changes — NEVER on hover or selection.
+  //
+  // The overlay canvas paints state-bearing items on top: selection /
+  // hover / op-assignment halos, ghost tab, approach point, fixtures,
+  // tab markers, box-select rect, selected-text-layer highlight, OSnap
+  // glyphs. Hover and selection only retouch this layer.
+
+  $effect(() => {
+    void project.transformedImport;
+    void project.visibleLayers;
+    void project.regionsVisible;
+    void project.generated;
+    void project.textLayers;
+    void project.selectedTextLayerId;
+    void previewVersion.v;
+    void project.machine.workArea;
+    void project.stock;
+    void userZoom;
+    void userPanX;
+    void userPanY;
+    drawBackground();
+  });
+
   $effect(() => {
     void project.transformedImport;
     void project.visibleLayers;
     void project.selectedObjects;
     void project.operations;
-    void project.generated;
     void project.selectedOpId;
-    void project.regionsVisible;
     void project.fixtures;
     void project.selectedFixtureId;
-    void project.textLayers;
     void project.selectedTextLayerId;
-    void previewVersion.v;
     void hoverIdx;
     void ghostTab;
     void boxSelect;
     void userZoom;
     void userPanX;
     void userPanY;
-    void project.machine.workArea;
-    void project.stock;
-    draw();
+    drawOverlay();
   });
 
   // Keep the live-preview cache warm. Loops every text layer and asks
@@ -1059,26 +1095,66 @@
     return ACI_FIXED[c] ?? themeVar('--text-faint', '#bbbbbb');
   }
 
-  function draw() {
-    if (!canvas || !container) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
+  /// Idempotent canvas-size + DPR sync. Returns the painting context +
+  /// CSS-pixel dimensions, or null when the host isn't mounted yet.
+  function setupCanvas(
+    c: HTMLCanvasElement | undefined,
+  ): { ctx: CanvasRenderingContext2D; w: number; h: number } | null {
+    if (!c || !container) return null;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
     const dpr = window.devicePixelRatio || 1;
     const w = container.clientWidth;
     const h = container.clientHeight;
-    // Only reallocate the backing store on real size changes.
-    // Setting canvas.width on every hover-driven redraw allocates a
-    // fresh CPU/GPU buffer and clears it — a >1ms cost per draw on
-    // big canvases.
+    // Only reallocate the backing store on real size changes — setting
+    // canvas.width on every redraw allocates a fresh GPU buffer and
+    // clears it.
     const targetW = w * dpr;
     const targetH = h * dpr;
-    if (canvas.width !== targetW) canvas.width = targetW;
-    if (canvas.height !== targetH) canvas.height = targetH;
-    if (canvas.style.width !== `${w}px`) canvas.style.width = `${w}px`;
-    if (canvas.style.height !== `${h}px`) canvas.style.height = `${h}px`;
+    if (c.width !== targetW) c.width = targetW;
+    if (c.height !== targetH) c.height = targetH;
+    if (c.style.width !== `${w}px`) c.style.width = `${w}px`;
+    if (c.style.height !== `${h}px`) c.style.height = `${h}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
 
+  /// Auto-fit transform compute. Reads bbox + user pan/zoom and writes
+  /// `lastTransform` / `lastBaseTransform` so the pointer handlers + the
+  /// overlay layer see the same projection as the bg layer.
+  function computeTransform(
+    data: import('../api/types').ImportResponse,
+    w: number,
+    h: number,
+  ): { scale: number; offX: number; offY: number; project2: (x: number, y: number) => [number, number] } {
+    const { min_x, min_y, max_x, max_y } = data.bbox;
+    const dataW = Math.max(max_x - min_x, 1e-6);
+    const dataH = Math.max(max_y - min_y, 1e-6);
+    const margin = 32;
+    const baseScale = Math.min((w - 2 * margin) / dataW, (h - 2 * margin) / dataH);
+    const baseOffX = margin - min_x * baseScale + (w - 2 * margin - dataW * baseScale) / 2;
+    // Y flipped: DXF y-up, canvas y-down.
+    const baseOffY = h - margin - -min_y * baseScale - (h - 2 * margin - dataH * baseScale) / 2;
+    lastBaseTransform = { scale: baseScale, offX: baseOffX, offY: baseOffY };
+    const scale = baseScale * userZoom;
+    const offX = baseOffX + userPanX;
+    const offY = baseOffY + userPanY;
+    lastTransform = { scale, offX, offY };
+    const project2 = (px: number, py: number): [number, number] => [
+      px * scale + offX,
+      offY - py * scale,
+    ];
+    return { scale, offX, offY, project2 };
+  }
+
+  /// Heavy static layer — repaints only on geometry / layout / theme /
+  /// zoom / pan changes. State-bearing repaints (hover / selection /
+  /// ghost tab / box-select / approach point) happen on the overlay
+  /// canvas via drawOverlay() and do NOT invalidate this layer.
+  function drawBackground() {
+    const setup = setupCanvas(canvas);
+    if (!setup) return;
+    const { ctx, w, h } = setup;
     ctx.fillStyle = themeVar('--bg-app', '#0d0d0d');
     ctx.fillRect(0, 0, w, h);
 
@@ -1090,43 +1166,58 @@
       return;
     }
 
-    // Auto-fit transform — the baseline before the user's pan/zoom
-    // multipliers are applied.
-    const { min_x, min_y, max_x, max_y } = data.bbox;
-    const dataW = Math.max(max_x - min_x, 1e-6);
-    const dataH = Math.max(max_y - min_y, 1e-6);
-    const margin = 32;
-    const baseScale = Math.min((w - 2 * margin) / dataW, (h - 2 * margin) / dataH);
-    const baseOffX = margin - min_x * baseScale + (w - 2 * margin - dataW * baseScale) / 2;
-    // Y flipped: DXF y-up, canvas y-down.
-    const baseOffY = h - margin - -min_y * baseScale - (h - 2 * margin - dataH * baseScale) / 2;
-    lastBaseTransform = { scale: baseScale, offX: baseOffX, offY: baseOffY };
-
-    // Apply user pan+zoom on top of the auto-fit baseline.
-    const scale = baseScale * userZoom;
-    const offX = baseOffX + userPanX;
-    const offY = baseOffY + userPanY;
-
-    const project2 = (px: number, py: number): [number, number] => [
-      px * scale + offX,
-      offY - py * scale,
-    ];
+    const { scale, offX, offY, project2 } = computeTransform(data, w, h);
 
     drawGrid(ctx, w, h, scale, offX, offY);
     drawAxes(ctx, w, h, offX, offY);
     drawWorkArea(ctx, project2);
-    lastTransform = { scale, offX, offY };
 
-    // Filled-region preview: paint the area each Pocket op will actually
-    // machine, before the wireframe so contours stay legible. Regions
-    // come from the backend (pipeline.rs build_region_previews) and are
-    // present whenever a /generate has run; we draw the current op's
-    // region in accent color and others in a faded muted tone so the
-    // user can see the full set without the selection getting lost.
+    // Filled-region preview painted under the wireframe so contours stay
+    // legible. Regions come from the backend (pipeline.rs
+    // build_region_previews).
     const regions = project.generated?.regions ?? [];
     if (regions.length > 0 && project.regionsVisible) {
       drawRegions(ctx, regions, scale, offX, offY);
     }
+
+    // Imported segments — paint in BASE layer color only. State-bearing
+    // overlays (selection / hover / op-assignment halos) go on the
+    // overlay canvas, so editing those does NOT invalidate this layer.
+    const visibleLayersSnap = new Set(project.visibleLayers);
+    ctx.lineWidth = 1.25;
+    for (let i = 0; i < data.segments.length; i++) {
+      const seg = data.segments[i];
+      if (!visibleLayersSnap.has(seg.layer)) continue;
+      ctx.strokeStyle = colorFor(seg.color);
+      drawSegment(ctx, seg, project2);
+    }
+
+    // Text-layer previews. The cache is filled by requestPreview() in
+    // the top-of-file effect. drawTextPreview also reads
+    // selectedTextLayerId for the highlight; selecting a text layer is
+    // rare enough that retainting bg is acceptable.
+    if (project.textLayers.length > 0) {
+      const accent = themeVar('--accent', '#2d6cdf');
+      const haloColor = themeVar('--text-strong', '#ffffff');
+      drawTextPreview(ctx, project2, accent, '', haloColor);
+    }
+  }
+
+  /// State-bearing overlay — selection halos + accent strokes, hover
+  /// halo, op-assignment tints, fixtures, tab markers + ghost tab,
+  /// approach-point marker + OSnap glyph, box-select rect. Cleared and
+  /// repainted on every interaction-state change; the bg canvas stays
+  /// put.
+  function drawOverlay() {
+    const setup = setupCanvas(canvasOverlay);
+    if (!setup) return;
+    const { ctx, w, h } = setup;
+    // Transparent clear — bg shows through.
+    ctx.clearRect(0, 0, w, h);
+
+    const data = project.transformedImport;
+    if (!data || data.segments.length === 0) return;
+    const { scale, project2 } = computeTransform(data, w, h);
 
     const accent = themeVar('--accent', '#2d6cdf');
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
@@ -1135,46 +1226,35 @@
     // Halo color = a high-contrast outline drawn UNDER selected /
     // hovered / op-assigned objects so the state stays visible even
     // when the underlying layer's ACI color happens to match the state
-    // color (e.g. ACI 3 green vs. our active-op green, ACI 5 blue vs.
-    // our selection accent). The halo uses --text-strong so it inverts
-    // automatically in light theme.
+    // color. Uses --text-strong so it inverts automatically in light
+    // theme.
     const haloColor = themeVar('--text-strong', '#ffffff');
     const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
-    // Snapshot the reactive Sets into plain Sets once. Calling .has()
-    // on $state proxies fires a trap per call — 10k segments × 2 calls
-    // = 20k proxy invocations otherwise.
     const visibleLayersSnap = new Set(project.visibleLayers);
     const selectedObjectsSnap = new Set(project.selectedObjects);
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
       if (!visibleLayersSnap.has(seg.layer)) continue;
       const objId = data.objects?.[i] ?? 0;
-      const selected = objId !== 0 && selectedObjectsSnap.has(objId);
-      const hovered = objId !== 0 && objId === hoverObj;
+      if (objId === 0) continue;
+      const selected = selectedObjectsSnap.has(objId);
+      const hovered = objId === hoverObj;
+      const inActiveOp = activeOpObjects.has(objId);
+      const inAnyOp = !inActiveOp && objectToOps.has(objId);
+      if (!selected && !hovered && !inActiveOp && !inAnyOp) continue;
       // Assignment-tint precedence (top wins):
       //   selected → accent
       //   hovered → hoverColor
       //   in active op → bright green
       //   in any other op → dim green
-      //   else → DXF/SVG layer color
-      const inActiveOp = objId !== 0 && activeOpObjects.has(objId);
-      const inAnyOp = !inActiveOp && objId !== 0 && objectToOps.has(objId);
-      const baseWidth = selected ? 2.4 : hovered ? 1.8 : inActiveOp ? 1.6 : inAnyOp ? 1.4 : 1.25;
-      // Halo pass for any state-bearing object — wide soft outline in a
-      // contrasting color so the layer color can't camouflage the state.
-      // Selected / hovered objects get the loudest halo so the focused
-      // item still pops; objects merely assigned to *other* ops use a
-      // dim halo so a project full of assignments doesn't drown in
-      // white.
-      const haloAlpha = selected ? 0.6 : hovered ? 0.55 : inActiveOp ? 0.5 : inAnyOp ? 0.3 : 0;
-      if (haloAlpha > 0) {
-        const prevAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = haloAlpha;
-        ctx.lineWidth = baseWidth + 3;
-        ctx.strokeStyle = haloColor;
-        drawSegment(ctx, seg, project2);
-        ctx.globalAlpha = prevAlpha;
-      }
+      const baseWidth = selected ? 2.4 : hovered ? 1.8 : inActiveOp ? 1.6 : 1.4;
+      const haloAlpha = selected ? 0.6 : hovered ? 0.55 : inActiveOp ? 0.5 : 0.3;
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = haloAlpha;
+      ctx.lineWidth = baseWidth + 3;
+      ctx.strokeStyle = haloColor;
+      drawSegment(ctx, seg, project2);
+      ctx.globalAlpha = prevAlpha;
       ctx.lineWidth = baseWidth;
       ctx.strokeStyle = selected
         ? accent
@@ -1182,19 +1262,8 @@
           ? hoverColor
           : inActiveOp
             ? activeAssignColor
-            : inAnyOp
-              ? otherAssignColor
-              : colorFor(seg.color);
+            : otherAssignColor;
       drawSegment(ctx, seg, project2);
-    }
-
-    // Live text-layer preview — paint each TextLayer's rendered segments
-    // on top of the imported geometry so the user sees their edits
-    // immediately. The cache is filled by requestPreview() in the
-    // top-of-file effect; if no render has resolved yet, the layer just
-    // hasn't appeared yet (the canvas redraws when previewVersion bumps).
-    if (project.textLayers.length > 0) {
-      drawTextPreview(ctx, project2, accent, hoverColor, haloColor);
     }
 
     drawFixtures(ctx, project2);
@@ -1837,6 +1906,7 @@
 <div class="canvas-host" bind:this={container}>
   <canvas
     bind:this={canvas}
+    class="bg"
     onpointermove={onPointerMove}
     onpointerleave={onPointerLeave}
     onpointerdown={onPointerDown}
@@ -1846,6 +1916,7 @@
     onwheel={onWheel}
     ondblclick={onDblClick}
   ></canvas>
+  <canvas bind:this={canvasOverlay} class="overlay"></canvas>
   {#if project.selectedEntities.size > 0}
     <div class="selection-hud">{project.selectedEntities.size} selected · esc to clear</div>
   {/if}
@@ -1969,6 +2040,19 @@
     display: block;
     user-select: none;
     touch-action: none;
+  }
+  /* Stack bg + overlay canvases so the overlay paints state-bearing
+     items (selection / hover / ghost tab / fixtures / tabs / approach /
+     box-select / OSnap glyph) without invalidating the heavy imported-
+     geometry layer. The overlay must not eat pointer events. */
+  canvas.bg,
+  canvas.overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  canvas.overlay {
+    pointer-events: none;
   }
   .selection-hud {
     position: absolute;

@@ -74,7 +74,7 @@ fn object_bbox_center(obj: &VcObject) -> Option<Point2> {
 pub(super) fn build_op_offsets(
     op: &Op,
     project: &Project,
-    objects: &mut Vec<VcObject>,
+    objects: &[VcObject],
     setup: &Setup,
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
@@ -100,7 +100,12 @@ pub(super) fn build_op_offsets(
     // see them via OpSource::All on the effective op), and tabs
     // attached to the original objects are translated/rotated alongside
     // the geometry so each instance keeps its tab placement.
-    let effective_op_storage: Option<Op> = if let Some(pattern) = op.pattern() {
+    //
+    // jzpl Phase 1: the expansion now owns a local `Vec<VcObject>` instead
+    // of mutating an input `&mut Vec<VcObject>`. The caller can pass the
+    // imported chain by shared reference and skip the per-op `.to_vec()`
+    // it used to do defensively.
+    let pattern_expanded: Option<Vec<VcObject>> = if let Some(pattern) = op.pattern() {
         let instances = pattern_offsets(pattern);
         let mut expanded: Vec<VcObject> = Vec::with_capacity(instances.len() * objects.len());
         let mut expanded_tabs: HashMap<usize, Vec<TabPoint>> = HashMap::new();
@@ -136,33 +141,44 @@ pub(super) fn build_op_offsets(
                 expanded.push(clone);
             }
         }
-        *objects = expanded;
         tabs_by_object = expanded_tabs;
-        let mut clone = op.clone();
-        clone.source = OpSource::All;
-        Some(clone)
+        Some(expanded)
     } else {
         None
     };
+    let effective_op_storage: Option<Op> = pattern_expanded.as_ref().map(|_| {
+        let mut clone = op.clone();
+        clone.source = OpSource::All;
+        clone
+    });
+
+    // View after pattern expansion (input borrow otherwise — no clone).
+    let after_pattern: &[VcObject] = pattern_expanded.as_deref().unwrap_or(objects);
+
     // Pocket-Outside (rt1.3): when an op carries `frame_shape`, the
     // pipeline auto-prepends a synthetic frame VcObject derived from
     // the op's current selection and rewrites the op source to put the
     // frame's id FIRST, with SourceCombine::Difference. The frame is not
     // persisted on the project (no Frame_<n> layer) so there's nothing
     // stale to clean up — recomputed every generate from the op params.
-    let frame_op_storage: Option<Op> = {
-        let cur_op: &Op = effective_op_storage.as_ref().unwrap_or(op);
-        // kbx5 step 2: frame fields live on PocketParams.
-        let pocket = cur_op.pocket_params();
-        if pocket.is_some_and(|p| p.frame_shape.is_some()) {
+    //
+    // jzpl Phase 1: produces a locally-owned Vec instead of mutating the
+    // caller's input. After kbx5 patterns are Drill-only so pattern +
+    // frame can't both fire on the same op; the code still composes
+    // correctly if that constraint ever loosens (frame builds from
+    // `after_pattern`, which is the pattern-expanded view when active).
+    let cur_op_for_frame: &Op = effective_op_storage.as_ref().unwrap_or(op);
+    let pocket_for_frame = cur_op_for_frame.pocket_params();
+    let (frame_expanded, frame_op_storage): (Option<Vec<VcObject>>, Option<Op>) =
+        if pocket_for_frame.is_some_and(|p| p.frame_shape.is_some()) {
             let tool_radius_mm = setup.tool.diameter * 0.5;
-            let user_padding_mm = pocket
+            let user_padding_mm = pocket_for_frame
                 .and_then(|p| p.frame_padding_mm)
                 .unwrap_or(0.0)
                 .max(0.0);
             if user_padding_mm < tool_radius_mm {
                 warnings.push(PipelineWarning {
-                    op_id: Some(cur_op.id),
+                    op_id: Some(cur_op_for_frame.id),
                     kind: "frame_padding_below_tool_radius".into(),
                     message: format!(
                         "Frame padding {user:.3} mm is below the cutter radius {radius:.3} mm \
@@ -176,34 +192,38 @@ pub(super) fn build_op_offsets(
                 });
             }
             if let Some((new_objects, ordered_indices)) =
-                synthesize_pocket_outside_objects(cur_op, objects, tool_radius_mm)
+                synthesize_pocket_outside_objects(cur_op_for_frame, after_pattern, tool_radius_mm)
             {
-                // Replace the working vec with the frame-augmented set.
-                *objects = new_objects;
                 let ordered_ids: Vec<u32> =
                     ordered_indices.iter().map(|&i| (i as u32) + 1).collect();
-                let mut clone = cur_op.clone();
+                let mut clone = cur_op_for_frame.clone();
                 clone.source = OpSource::Objects {
                     ids: ordered_ids,
                     combine: SourceCombine::Difference,
                 };
-                Some(clone)
+                (Some(new_objects), Some(clone))
             } else {
-                None
+                (None, None)
             }
         } else {
-            None
-        }
-    };
+            (None, None)
+        };
     let effective_op: &Op = frame_op_storage
         .as_ref()
         .or(effective_op_storage.as_ref())
         .unwrap_or(op);
 
-    // Apply per-op tool-offset to the chain so order_offsets / lead-in see it.
-    for obj in objects.iter_mut() {
-        obj.tool_offset = setup.mill.offset;
-    }
+    // Final effective view used by the offset cascade below. Shadow
+    // `objects` so the existing downstream code (selected_set, region
+    // combine, per-object cascade) reads through it without renames.
+    // No clone — `&[VcObject]` borrow through the chain.
+    let objects: &[VcObject] = frame_expanded.as_deref().unwrap_or(after_pattern);
+
+    // (Removed: `for obj in objects.iter_mut() { obj.tool_offset = setup.mill.offset; }`.
+    //  `obj.tool_offset` has no production reader post-55o4 — only a test
+    //  asserts on a frame's tool_offset, which `synthesize_pocket_outside_objects`
+    //  sets directly. Removing this loop was the unblock to taking `objects`
+    //  by shared reference.)
 
     let radius = setup.tool.diameter * 0.5;
     // Lateral step between consecutive Pocket cuts. Default 0.5

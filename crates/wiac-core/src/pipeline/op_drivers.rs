@@ -50,12 +50,11 @@ use crate::project::{Op, OpKind, Project};
 /// numbers into [`super::PipelineStats`] without re-walking the
 /// returned offsets.
 ///
-/// Cloned objects: [`build_op_offsets`] mutates its `&mut Vec<VcObject>`
-/// in place for pattern expansion + Pocket-Outside frame insertion.
-/// To keep the caller's `objects` set pristine for the next op in the
-/// loop (and for sibling drivers like `run_vcarve_op`), we pass a fresh
-/// `.to_vec()` clone here. Cheap: a `VcObject` is ~hundreds of bytes,
-/// op count rarely exceeds a few dozen per project.
+/// jzpl Phase 1: `build_op_offsets` now takes `&[VcObject]` and produces
+/// pattern / frame expansions in locally-owned `Vec<VcObject>`s. The
+/// caller no longer needs a defensive `.to_vec()` clone per op — a
+/// 50-op project on a 5000-segment DXF used to clone the full vec 50
+/// times every Generate.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::pipeline) fn run_standard_op<P: PostProcessor>(
     op: &Op,
@@ -68,7 +67,7 @@ pub(in crate::pipeline) fn run_standard_op<P: PostProcessor>(
     cancel: Option<&CancelToken>,
 ) -> Result<(usize, usize), PipelineError> {
     let (offsets, closed_count) =
-        build_op_offsets(op, project, &mut objects.to_vec(), setup, warnings, cancel)?;
+        build_op_offsets(op, project, objects, setup, warnings, cancel)?;
     let offset_count = offsets.len();
     post.raw(&format!("; OP {}", op.id));
     if !offsets.is_empty() {

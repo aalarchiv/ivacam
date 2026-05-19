@@ -411,15 +411,14 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         PostProcessorKind::Grbl => 1,
         PostProcessorKind::Hpgl => 2,
     };
-    // One working copy of `objects` for the chosen post — the original
-    // is kept intact for the region-preview pass below. Previously each
-    // match arm called `objects.clone()`, which made the compiler evaluate
-    // all three even though only one runs (jzpl).
-    let mut work_objects = objects.clone();
+    // jzpl Phase 1: run_per_op + every downstream driver now take
+    // `&[VcObject]`. No working copy needed — pass the imported chain
+    // by reference; pattern / frame expansion is owned inside
+    // build_op_offsets.
     let gcode = match post_kind {
         PostProcessorKind::Linuxcnc => run_per_op(
             &project,
-            &mut work_objects,
+            &objects,
             &header_setup,
             &mut linuxcnc::Post::new(),
             &stats_collector,
@@ -433,7 +432,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         )?,
         PostProcessorKind::Grbl => run_per_op(
             &project,
-            &mut work_objects,
+            &objects,
             &header_setup,
             &mut grbl::Post::new(),
             &stats_collector,
@@ -447,7 +446,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         )?,
         PostProcessorKind::Hpgl => run_per_op(
             &project,
-            &mut work_objects,
+            &objects,
             &header_setup,
             &mut hpgl::Post::new(),
             &stats_collector,
@@ -533,7 +532,7 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn run_per_op<P, F>(
     project: &Project,
-    objects: &mut [VcObject],
+    objects: &[VcObject],
     header_setup: &Setup,
     post: &mut P,
     stats: &std::cell::RefCell<(usize, usize, usize)>,

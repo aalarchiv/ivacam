@@ -8,6 +8,16 @@ export default defineConfig({
     // Scene3D + three.js is a single intentional chunk (~540 KB);
     // anything bigger than that is the warning we actually want.
     chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        // Pin three.js (+ OrbitControls) to its own chunk so it stays
+        // out of the main bundle. Scene3D is dynamic-imported (App.svelte
+        // first-3D-switch); this chunk loads with it.
+        manualChunks(id) {
+          if (id.includes('node_modules/three')) return 'three';
+        },
+      },
+    },
   },
   server: {
     host: '0.0.0.0',

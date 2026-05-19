@@ -12,13 +12,28 @@
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
-  import GcodePanel from './lib/components/GcodePanel.svelte';
-  import MachineDialog from './lib/components/MachineDialog.svelte';
-  import ToolLibraryDialog from './lib/components/ToolLibraryDialog.svelte';
-  import SettingsDialog from './lib/components/SettingsDialog.svelte';
-  import AddTextDialog from './lib/components/AddTextDialog.svelte';
+  // Heavy / seldom-touched components — dynamic-imported on first
+  // open so the main bundle stays light. Each gets a $state slot and
+  // an $effect below that triggers the import on first open-flag flip.
+  type GcodePanelComp = typeof import('./lib/components/GcodePanel.svelte').default;
+  let GcodePanel = $state<GcodePanelComp | null>(null);
+  let gcodePanelLoading = false;
+  type MachineDialogComp = typeof import('./lib/components/MachineDialog.svelte').default;
+  let MachineDialog = $state<MachineDialogComp | null>(null);
+  let machineDialogLoading = false;
+  type ToolLibraryDialogComp = typeof import('./lib/components/ToolLibraryDialog.svelte').default;
+  let ToolLibraryDialog = $state<ToolLibraryDialogComp | null>(null);
+  let toolLibraryDialogLoading = false;
+  type SettingsDialogComp = typeof import('./lib/components/SettingsDialog.svelte').default;
+  let SettingsDialog = $state<SettingsDialogComp | null>(null);
+  let settingsDialogLoading = false;
+  type AddTextDialogComp = typeof import('./lib/components/AddTextDialog.svelte').default;
+  let AddTextDialog = $state<AddTextDialogComp | null>(null);
+  let addTextDialogLoading = false;
+  type ShortcutHelpComp = typeof import('./lib/components/ShortcutHelp.svelte').default;
+  let ShortcutHelp = $state<ShortcutHelpComp | null>(null);
+  let shortcutHelpLoading = false;
   import SourceStaleToast from './lib/components/SourceStaleToast.svelte';
-  import ShortcutHelp from './lib/components/ShortcutHelp.svelte';
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
 
@@ -347,6 +362,66 @@
       void import('./lib/components/Scene3D.svelte').then((m) => {
         Scene3D = m.default;
         scene3dLoading = false;
+      });
+    }
+  });
+
+  // Lazy-load each heavy dialog on first open. Each triggers its own
+  // dynamic import; subsequent opens just toggle the open flag (the
+  // component is already in memory).
+  $effect(() => {
+    if (machineOpen && !MachineDialog && !machineDialogLoading) {
+      machineDialogLoading = true;
+      void import('./lib/components/MachineDialog.svelte').then((m) => {
+        MachineDialog = m.default;
+        machineDialogLoading = false;
+      });
+    }
+  });
+  $effect(() => {
+    if (toolsOpen && !ToolLibraryDialog && !toolLibraryDialogLoading) {
+      toolLibraryDialogLoading = true;
+      void import('./lib/components/ToolLibraryDialog.svelte').then((m) => {
+        ToolLibraryDialog = m.default;
+        toolLibraryDialogLoading = false;
+      });
+    }
+  });
+  $effect(() => {
+    if (settingsOpen && !SettingsDialog && !settingsDialogLoading) {
+      settingsDialogLoading = true;
+      void import('./lib/components/SettingsDialog.svelte').then((m) => {
+        SettingsDialog = m.default;
+        settingsDialogLoading = false;
+      });
+    }
+  });
+  $effect(() => {
+    if (addTextOpen && !AddTextDialog && !addTextDialogLoading) {
+      addTextDialogLoading = true;
+      void import('./lib/components/AddTextDialog.svelte').then((m) => {
+        AddTextDialog = m.default;
+        addTextDialogLoading = false;
+      });
+    }
+  });
+  $effect(() => {
+    if (shortcutHelpOpen && !ShortcutHelp && !shortcutHelpLoading) {
+      shortcutHelpLoading = true;
+      void import('./lib/components/ShortcutHelp.svelte').then((m) => {
+        ShortcutHelp = m.default;
+        shortcutHelpLoading = false;
+      });
+    }
+  });
+  // GcodePanel pulls in syntax-highlighter assets — defer until the
+  // user opens the panel (it's collapsed by default).
+  $effect(() => {
+    if (gcodeOpen && !GcodePanel && !gcodePanelLoading) {
+      gcodePanelLoading = true;
+      void import('./lib/components/GcodePanel.svelte').then((m) => {
+        GcodePanel = m.default;
+        gcodePanelLoading = false;
       });
     }
   });
@@ -915,7 +990,10 @@
             title="Drag to resize the G-code panel · double-click to reset"
           />
           <div class="gcode-row" style:height="{gcodeHeight}px">
-            <GcodePanel />
+            {#if GcodePanel}
+              {@const C = GcodePanel}
+              <C />
+            {/if}
           </div>
         {/if}
       {/if}
@@ -965,18 +1043,31 @@
     </aside>
   </main>
 
-  <MachineDialog open={machineOpen} onClose={() => (machineOpen = false)} />
-  <ToolLibraryDialog
-    open={toolsOpen}
-    onClose={() => {
-      toolsOpen = false;
-      project.toolsDialogFocusId = null;
-    }}
-  />
-  <SettingsDialog open={settingsOpen} onClose={() => (settingsOpen = false)} />
-  <AddTextDialog open={addTextOpen} onClose={() => (addTextOpen = false)} />
-  {#if shortcutHelpOpen}
-    <ShortcutHelp onClose={() => (shortcutHelpOpen = false)} />
+  {#if MachineDialog}
+    {@const C = MachineDialog}
+    <C open={machineOpen} onClose={() => (machineOpen = false)} />
+  {/if}
+  {#if ToolLibraryDialog}
+    {@const C = ToolLibraryDialog}
+    <C
+      open={toolsOpen}
+      onClose={() => {
+        toolsOpen = false;
+        project.toolsDialogFocusId = null;
+      }}
+    />
+  {/if}
+  {#if SettingsDialog}
+    {@const C = SettingsDialog}
+    <C open={settingsOpen} onClose={() => (settingsOpen = false)} />
+  {/if}
+  {#if AddTextDialog}
+    {@const C = AddTextDialog}
+    <C open={addTextOpen} onClose={() => (addTextOpen = false)} />
+  {/if}
+  {#if shortcutHelpOpen && ShortcutHelp}
+    {@const C = ShortcutHelp}
+    <C onClose={() => (shortcutHelpOpen = false)} />
   {/if}
   <SourceStaleToast
     onReload={async (p) => {

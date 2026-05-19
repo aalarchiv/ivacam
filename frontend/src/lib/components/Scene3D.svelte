@@ -130,29 +130,41 @@
     else stopTick();
   }
 
-  // Pickable line mesh + owner map. Each entry in `lineOwners` describes
-  // the source of one *line pair* (two consecutive vertices in the
-  // BufferAttribute) so a Raycaster.intersectObject hit can be mapped
-  // back to either an imported object id or a toolpath segment index.
+  // Pickable line meshes — split into two so editing operations or moving
+  // the playhead does NOT teardown + reupload the imported-geometry buffer
+  // (and vice versa). Each LineSegments owns its own positions / colors /
+  // owner array; raycaster.intersectObjects([…]) queries both at once.
+  //
+  //   importedLinesObject — imported drawing segments + text-layer
+  //     previews. Rebuilds on transformedImport / visibleLayers /
+  //     textLayers / previewVersion changes. Selection-color toggles
+  //     mutate its color attribute in place.
+  //
+  //   toolpathLinesObject — generated toolpath wireframe. Rebuilds on
+  //     generated / operations changes (op enable/disable filter is
+  //     reapplied). Playhead fade + sim-warning tints mutate its color
+  //     attribute in place.
   type LineOwner = { kind: 'object'; objectId: number } | { kind: 'toolpath'; segIdx: number };
-  let linesObject: THREE.LineSegments | undefined;
-  let lineOwners: LineOwner[] = [];
+  let importedLinesObject: THREE.LineSegments | undefined;
+  let importedLineOwners: LineOwner[] = [];
+  let toolpathLinesObject: THREE.LineSegments | undefined;
+  let toolpathLineOwners: LineOwner[] = [];
   let sceneRadius = 100;
 
-  /// Per-object color ranges into linesObject.geometry.attributes.color.
+  /// Per-object color ranges into importedLinesObject's color attribute.
   /// Each entry is `{ start, count, base: [r,g,b] }` — start is the
   /// vertex index (not floats) where this object's first vertex lives,
   /// count is how many vertices belong to it, base is the original
   /// (non-selected) color the object should revert to. Filled during
-  /// rebuildGeometry so the selection-only $effect can mutate the
-  /// color attribute in-place instead of rebuilding the whole mesh.
+  /// rebuildImportedGeometry so the selection-only $effect can mutate
+  /// the color attribute in-place.
   type ColorRange = { start: number; count: number; base: [number, number, number] };
   let objectColorRanges = new Map<number, ColorRange[]>();
   /// Selection set the color attribute currently reflects. Compared
   /// against project.selectedObjects to compute the symmetric diff.
   let appliedSelection = new Set<number>();
 
-  /// Per-toolpath-segment color ranges into linesObject's color
+  /// Per-toolpath-segment color ranges into toolpathLinesObject's color
   /// attribute, baked at rebuild time. Each entry covers exactly two
   /// vertices (one line segment), records the segment's BASE color
   /// (un-faded), and lets the playhead $effect mutate the attribute in
@@ -377,17 +389,28 @@
 
   // Geometry wireframe: imported drawing, layer toggles, generated
   // toolpath, and the op set (color stamps follow op_id).
+  // Two effects, two buffers (see LineSegments declaration above for
+  // rationale). Each rebuild is independent — editing an op no longer
+  // tears down the imported-geometry buffer, and toggling a layer no
+  // longer teardowns the toolpath buffer.
+
+  // Imported drawing + text-layer previews.
   $effect(() => {
     void project.transformedImport;
     void project.visibleLayers;
-    void project.generated;
-    void project.operations;
-    // Text-layer previews live in a separate cache; rebuild on changes to
-    // either the layer list (new / removed / edited layers) or the
-    // version counter (async render result arrived).
     void project.textLayers;
     void previewVersion.v;
-    rebuildGeometry();
+    void project.generated; // affects fade for non-selected imports
+    rebuildImportedGeometry();
+    requestRender();
+  });
+
+  // Generated toolpath wireframe (re-emitted when a new pipeline run
+  // resolves or the user toggles an op enable / disable).
+  $effect(() => {
+    void project.generated;
+    void project.operations;
+    rebuildToolpathGeometry();
     requestRender();
   });
 
@@ -462,9 +485,9 @@
   /// (e.g. before the first rebuild has run).
   $effect(() => {
     const sel = project.selectedObjects;
-    if (!linesObject) {
-      // Geometry hasn't been built yet; the next rebuildGeometry will
-      // pick up the current selection naturally.
+    if (!importedLinesObject) {
+      // Geometry hasn't been built yet; the next rebuildImportedGeometry
+      // will pick up the current selection naturally.
       return;
     }
     applySelectionDelta(sel);
@@ -500,14 +523,22 @@
   // bbox box) still update every keystroke via `updateStock`.
   const SIM_REBUILD_DEBOUNCE_MS = 1000;
 
+  /// Wireframe visibility — wireframe/both modes show lines, solid mode
+  /// hides them. Used by both the preview-mode effect and the rebuild
+  /// functions so freshly-created LineSegments start with the right
+  /// visibility (otherwise toggling solid → wireframe would only affect
+  /// the buffer that was alive at the toggle moment).
+  const wireVisible = $derived(project.settings.previewMode !== 'solid');
+
   $effect(() => {
     if (!scene) return;
     const settings = project.settings;
     // Wire-mesh visibility tracks the preview mode: wireframe / both
     // show the toolpath + imported lines; solid hides them in favor of
-    // the heightfield carved-stock mesh.
-    const wireVisible = settings.previewMode !== 'solid';
-    if (linesObject) linesObject.visible = wireVisible;
+    // the heightfield carved-stock mesh. wireVisible is a $derived at
+    // module scope so the rebuild functions see the same value.
+    if (importedLinesObject) importedLinesObject.visible = wireVisible;
+    if (toolpathLinesObject) toolpathLinesObject.visible = wireVisible;
     if (settings.previewMode === 'wireframe') {
       driver?.setVisible(false);
       requestRender();
@@ -684,7 +715,7 @@
   });
 
   function applyToolpathFade() {
-    if (!linesObject || toolpathColors.length === 0) return;
+    if (!toolpathLinesObject || toolpathColors.length === 0) return;
     const total = toolpathColors.length;
     // Arc-length mapping: head = segIdx + 1 so the segment currently
     // under the cutter (segIdx) is rendered as "past" (fully colored)
@@ -701,7 +732,7 @@
         ? Math.max(0, Math.min(total, Math.round(project.playhead * total)))
         : Math.max(0, Math.min(total, segIdx + 1));
     if (head === appliedHead) return;
-    const attr = linesObject.geometry.attributes.color as THREE.BufferAttribute;
+    const attr = toolpathLinesObject.geometry.attributes.color as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
     const f = 0.25; // fade factor for future moves
     const fade_offset = 0.05;
@@ -736,8 +767,8 @@
   }
 
   function applySelectionDelta(next: Set<number>) {
-    if (!linesObject) return;
-    const attr = linesObject.geometry.attributes.color as THREE.BufferAttribute;
+    if (!importedLinesObject) return;
+    const attr = importedLinesObject.geometry.attributes.color as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
     const selectedColor = cssColor('--accent', 0x4a8df0);
     let touched = false;
@@ -1359,80 +1390,84 @@
     toolMesh.position.set(px, py, pz);
   }
 
-  function rebuildGeometry() {
+  /// Imported drawing + text-layer previews. Independent of toolpath /
+  /// op enable state — re-runs only on transformedImport / visibleLayers /
+  /// textLayers / previewVersion changes (plus `generated` to switch
+  /// imported geometry to faded-color when a toolpath exists).
+  function rebuildImportedGeometry() {
     if (!geometryGroup || !scene) return;
-    geometryGroup.clear();
-    linesObject = undefined;
-    lineOwners = [];
+    // Tear down only the imported half; toolpath stays put.
+    if (importedLinesObject) {
+      geometryGroup.remove(importedLinesObject);
+      importedLinesObject.geometry.dispose();
+      (importedLinesObject.material as THREE.Material).dispose();
+      importedLinesObject = undefined;
+    }
+    importedLineOwners = [];
     objectColorRanges = new Map();
-    toolpathColors = [];
-    appliedHead = -1;
     const data = project.transformedImport;
-    const gen = project.generated;
-    if (!data && !gen) return;
+    if (!data) {
+      updateSceneRadius();
+      return;
+    }
 
     const positions: number[] = [];
     const colors: number[] = [];
     const c = new THREE.Color();
-
     const fadedColor = cssColor('--imported-faded', 0x444444);
     const selectedColor = cssColor('--accent', 0x4a8df0);
-    if (data) {
-      const flat = !!gen;
-      let segIdx = 0;
-      for (const seg of data.segments) {
-        if (!project.visibleLayers.has(seg.layer)) {
-          segIdx++;
-          continue;
-        }
-        const objectId = data.objects?.[segIdx] ?? 0;
-        const isSelected = objectId > 0 && project.selectedObjects.has(objectId);
-        const points = tessellate(seg);
-        // Base color (non-selected) so selection toggles can revert without
-        // recomputing aciColor / fadedColor / etc.
-        let baseR: number;
-        let baseG: number;
-        let baseB: number;
-        if (flat) {
-          baseR = fadedColor.r;
-          baseG = fadedColor.g;
-          baseB = fadedColor.b;
-        } else {
-          c.copy(aciColor(seg.color));
-          baseR = c.r;
-          baseG = c.g;
-          baseB = c.b;
-        }
-        const r = isSelected ? selectedColor.r : baseR;
-        const g = isSelected ? selectedColor.g : baseG;
-        const b = isSelected ? selectedColor.b : baseB;
-        const startVertex = positions.length / 3;
-        let pairCount = 0;
-        for (let i = 0; i < points.length - 1; i++) {
-          const [ax, ay] = points[i];
-          const [bx, by] = points[i + 1];
-          positions.push(ax, ay, 0, bx, by, 0);
-          colors.push(r, g, b, r, g, b);
-          lineOwners.push({ kind: 'object', objectId });
-          pairCount++;
-        }
-        if (objectId > 0 && pairCount > 0) {
-          const range: ColorRange = {
-            start: startVertex,
-            count: pairCount * 2,
-            base: [baseR, baseG, baseB],
-          };
-          const list = objectColorRanges.get(objectId);
-          if (list) list.push(range);
-          else objectColorRanges.set(objectId, [range]);
-        }
+    const flat = !!project.generated;
+    let segIdx = 0;
+    for (const seg of data.segments) {
+      if (!project.visibleLayers.has(seg.layer)) {
         segIdx++;
+        continue;
       }
+      const objectId = data.objects?.[segIdx] ?? 0;
+      const isSelected = objectId > 0 && project.selectedObjects.has(objectId);
+      const points = tessellate(seg);
+      let baseR: number;
+      let baseG: number;
+      let baseB: number;
+      if (flat) {
+        baseR = fadedColor.r;
+        baseG = fadedColor.g;
+        baseB = fadedColor.b;
+      } else {
+        c.copy(aciColor(seg.color));
+        baseR = c.r;
+        baseG = c.g;
+        baseB = c.b;
+      }
+      const r = isSelected ? selectedColor.r : baseR;
+      const g = isSelected ? selectedColor.g : baseG;
+      const b = isSelected ? selectedColor.b : baseB;
+      const startVertex = positions.length / 3;
+      let pairCount = 0;
+      for (let i = 0; i < points.length - 1; i++) {
+        const [ax, ay] = points[i];
+        const [bx, by] = points[i + 1];
+        positions.push(ax, ay, 0, bx, by, 0);
+        colors.push(r, g, b, r, g, b);
+        importedLineOwners.push({ kind: 'object', objectId });
+        pairCount++;
+      }
+      if (objectId > 0 && pairCount > 0) {
+        const range: ColorRange = {
+          start: startVertex,
+          count: pairCount * 2,
+          base: [baseR, baseG, baseB],
+        };
+        const list = objectColorRanges.get(objectId);
+        if (list) list.push(range);
+        else objectColorRanges.set(objectId, [range]);
+      }
+      segIdx++;
     }
 
     // Text-layer previews. Each TextLayer renders client-side into a
     // segment list cached by `text_preview`; the 2D canvas reads the
-    // same cache. Draw them in the accent color so they read as "live
+    // same cache. Drawn in the accent color so they read as "live
     // preview, not yet baked into the toolpath".
     if (project.textLayers.length > 0) {
       const previewC = cssColor('--accent', 0x4a8df0);
@@ -1446,103 +1481,137 @@
             const [bx, by] = points[i + 1];
             positions.push(ax, ay, 0, bx, by, 0);
             colors.push(previewC.r, previewC.g, previewC.b, previewC.r, previewC.g, previewC.b);
-            lineOwners.push({ kind: 'object', objectId: 0 });
+            importedLineOwners.push({ kind: 'object', objectId: 0 });
           }
         }
       }
     }
 
-    if (gen) {
-      const moveTints: Record<string, THREE.Color> = {
-        rapid: cssColor('--toolpath-rapid', 0x35a2ff),
-        cut: cssColor('--toolpath-cut', 0xff5555),
-        plunge: cssColor('--toolpath-plunge', 0xffd23a),
-        retract: cssColor('--toolpath-retract', 0x5fd06e),
-        arc: cssColor('--toolpath-arc', 0xff8a3a),
-      };
-      // Per-op enable filter: when the user disables an op via the
-      // OperationsList checkbox, the previously-generated gcode still
-      // carries its segments — we hide them visually here so the
-      // wireframe matches the (commented-out) gcode-panel view
-      // without forcing a re-Generate.
-      const disabledOpIds = new Set<number>();
-      for (const o of project.operations) {
-        if (!o.enabled) disabledOpIds.add(o.id);
-      }
-      const total = gen.toolpath.length;
-      // Bake colors at full intensity here; the playhead $effect below
-      // applies the past/future fade in-place by mutating the color
-      // attribute for the affected slice. Reading project.playhead in
-      // rebuildGeometry would auto-track it as a dep, causing 60fps
-      // re-tessellation + camera reset during playback (which fought
-      // OrbitControls and made pan/zoom unusable).
-      for (let i = 0; i < total; i++) {
-        const seg = gen.toolpath[i];
-        // Per-op base hue from a stable hash of op_id; the move tint
-        // brightens it 1.5× for cuts, halves it for rapids — so the eye
-        // can pick out each operation while still distinguishing
-        // rapid/cut/plunge/retract within an op.
-        const opId = seg.op_id ?? 0;
-        // Skip segments whose op was disabled by the user — keeps the
-        // wireframe in sync with the gcode panel's commented-out
-        // chapter view without requiring a re-Generate.
-        if (opId > 0 && disabledOpIds.has(opId)) continue;
-        const moveTint = moveTints[seg.kind] ?? moveTints.cut;
-        const opHue = opId === 0 ? 0.0 : opPalette(opId);
-        const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
-        const moveBoost =
-          seg.kind === 'rapid'
-            ? 0.5
-            : seg.kind === 'plunge' || seg.kind === 'retract'
-              ? 0.85
-              : 1.15;
-        const r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
-        const g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
-        const b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
-        const startVertex = positions.length / 3;
-        positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
-        colors.push(r, g, b, r, g, b);
-        lineOwners.push({ kind: 'toolpath', segIdx: i });
-        toolpathColors.push({ start: startVertex, base: [r, g, b] });
-      }
+    if (positions.length > 0) {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      const mat = new THREE.LineBasicMaterial({ vertexColors: true });
+      importedLinesObject = new THREE.LineSegments(geom, mat);
+      importedLinesObject.visible = wireVisible;
+      geometryGroup.add(importedLinesObject);
     }
-    if (positions.length === 0) return;
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    const mat = new THREE.LineBasicMaterial({ vertexColors: true });
-    const lines = new THREE.LineSegments(geom, mat);
-    geometryGroup.add(lines);
-    linesObject = lines;
-    // Snapshot the selection that's now baked into the color attribute,
-    // so the selection-only $effect can compute deltas against it.
+    // Selection set is now baked into the imported color attribute.
     appliedSelection = new Set(project.selectedObjects);
+    updateSceneRadius();
+  }
 
-    // Update sceneRadius for raycaster threshold scaling, but do NOT
-    // touch the camera here — fit-to-view is moved to a dedicated
-    // $effect that only fires when project.imported actually changes.
-    // Resetting the camera on every rebuild fought OrbitControls: any
-    // layer toggle / Generate / op edit cancelled the user's view.
-    lines.geometry.computeBoundingSphere();
-    if (lines.geometry.boundingSphere) {
-      sceneRadius = Math.max(lines.geometry.boundingSphere.radius, 1);
+  /// Generated toolpath wireframe. Rebuilds on `generated` /
+  /// `operations` (op enable filter) only. Playhead fade + sim-warning
+  /// tints mutate the color attribute in place after this.
+  function rebuildToolpathGeometry() {
+    if (!geometryGroup || !scene) return;
+    if (toolpathLinesObject) {
+      geometryGroup.remove(toolpathLinesObject);
+      toolpathLinesObject.geometry.dispose();
+      (toolpathLinesObject.material as THREE.Material).dispose();
+      toolpathLinesObject = undefined;
     }
+    toolpathLineOwners = [];
+    toolpathColors = [];
+    appliedHead = -1;
+    const gen = project.generated;
+    if (!gen) {
+      // Toolpath went away — the imported $effect also tracks
+      // `project.generated` and will rebuild with the un-faded baseline.
+      updateSceneRadius();
+      return;
+    }
+
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const moveTints: Record<string, THREE.Color> = {
+      rapid: cssColor('--toolpath-rapid', 0x35a2ff),
+      cut: cssColor('--toolpath-cut', 0xff5555),
+      plunge: cssColor('--toolpath-plunge', 0xffd23a),
+      retract: cssColor('--toolpath-retract', 0x5fd06e),
+      arc: cssColor('--toolpath-arc', 0xff8a3a),
+    };
+    // Per-op enable filter: disabling an op via OperationsList hides its
+    // segments without forcing a re-Generate (matches the gcode panel's
+    // commented-out chapter view).
+    const disabledOpIds = new Set<number>();
+    for (const o of project.operations) {
+      if (!o.enabled) disabledOpIds.add(o.id);
+    }
+    const total = gen.toolpath.length;
+    for (let i = 0; i < total; i++) {
+      const seg = gen.toolpath[i];
+      const opId = seg.op_id ?? 0;
+      if (opId > 0 && disabledOpIds.has(opId)) continue;
+      const moveTint = moveTints[seg.kind] ?? moveTints.cut;
+      const opHue = opId === 0 ? 0.0 : opPalette(opId);
+      const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
+      const moveBoost =
+        seg.kind === 'rapid'
+          ? 0.5
+          : seg.kind === 'plunge' || seg.kind === 'retract'
+            ? 0.85
+            : 1.15;
+      const r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
+      const g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
+      const b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
+      const startVertex = positions.length / 3;
+      positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
+      colors.push(r, g, b, r, g, b);
+      toolpathLineOwners.push({ kind: 'toolpath', segIdx: i });
+      toolpathColors.push({ start: startVertex, base: [r, g, b] });
+    }
+
+    if (positions.length > 0) {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      const mat = new THREE.LineBasicMaterial({ vertexColors: true });
+      toolpathLinesObject = new THREE.LineSegments(geom, mat);
+      toolpathLinesObject.visible = wireVisible;
+      geometryGroup.add(toolpathLinesObject);
+    }
+    updateSceneRadius();
     // Re-apply the past/future fade to the freshly-baked colors so the
     // playhead tint is correct even when no playhead change triggered
-    // the rebuild (e.g. layer toggle).
+    // this rebuild.
     applyToolpathFade();
+  }
+
+  /// Bounding sphere across whichever line buffers exist. Used by
+  /// fit-to-view and raycaster threshold scaling. Returns null when
+  /// nothing's rendered yet.
+  function combinedBoundingSphere(): THREE.Sphere | null {
+    const spheres: THREE.Sphere[] = [];
+    for (const obj of [importedLinesObject, toolpathLinesObject]) {
+      if (!obj) continue;
+      obj.geometry.computeBoundingSphere();
+      if (obj.geometry.boundingSphere) spheres.push(obj.geometry.boundingSphere);
+    }
+    if (spheres.length === 0) return null;
+    if (spheres.length === 1) return spheres[0].clone();
+    // Two spheres: take a sphere covering both. Cheap approximation
+    // (axis-aligned containment) — adequate for camera framing.
+    const out = spheres[0].clone();
+    for (let i = 1; i < spheres.length; i++) out.union(spheres[i]);
+    return out;
+  }
+
+  /// Refresh `sceneRadius` (used for raycaster threshold) without
+  /// touching the camera. Called from both rebuilds.
+  function updateSceneRadius() {
+    const sphere = combinedBoundingSphere();
+    if (sphere) sceneRadius = Math.max(sphere.radius, 1);
   }
 
   /// Camera fit-to-view, run once when a new geometry source appears.
   /// Manual fit (e.g. a "frame" button) would call this directly. Layer
   /// toggles / generates / op edits no longer reset the user's view.
   function fitCameraToScene() {
-    if (!camera || !controls || !linesObject) return;
-    const sphere = new THREE.Sphere();
-    linesObject.geometry.computeBoundingSphere();
-    if (linesObject.geometry.boundingSphere) {
-      sphere.copy(linesObject.geometry.boundingSphere);
-    }
+    if (!camera || !controls) return;
+    const sphere = combinedBoundingSphere();
+    if (!sphere) return;
     const radius = Math.max(sphere.radius, 1);
     sceneRadius = radius;
     const fov = (camera.fov * Math.PI) / 180;
@@ -1582,20 +1651,29 @@
   /// the playhead so the gcode panel scrolls + highlights the matching
   /// line.
   function handlePick(e: PointerEvent) {
-    if (!camera || !renderer || !linesObject) return;
+    if (!camera || !renderer) return;
+    const targets: THREE.LineSegments[] = [];
+    if (importedLinesObject) targets.push(importedLinesObject);
+    if (toolpathLinesObject) targets.push(toolpathLinesObject);
+    if (targets.length === 0) return;
     const rect = renderer.domElement.getBoundingClientRect();
     ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
     raycaster.params.Line = { threshold: Math.max(0.5, sceneRadius * 0.01) };
-    const hits = raycaster.intersectObject(linesObject, false);
+    const hits = raycaster.intersectObjects(targets, false);
     if (hits.length === 0) {
       if (!e.shiftKey) project.clearSelection();
       return;
     }
     const hit = hits[0];
     if (hit.index == null) return;
-    const owner = lineOwners[Math.floor(hit.index / 2)];
+    // Resolve which owner array to consult based on which LineSegments
+    // produced the hit. Both buffers are pickable; closer wins (Three's
+    // intersectObjects sorts by distance).
+    const owners =
+      hit.object === importedLinesObject ? importedLineOwners : toolpathLineOwners;
+    const owner = owners[Math.floor(hit.index / 2)];
     if (!owner) return;
     if (owner.kind === 'object') {
       if (owner.objectId > 0) project.toggleObject(owner.objectId, e.shiftKey);

@@ -140,7 +140,11 @@
     try {
       const opProject = buildProject(project);
       if (!opProject) {
-        project.setError('Add at least one operation to generate G-code.');
+        // Early bail: `beginGenerate()` flipped pipelineState to 'running'
+        // above, so just `setError + return` would leave the UI stuck on
+        // the progress bar + cancel button. Route through `failGenerate`
+        // which snaps state back to 'idle'.
+        project.failGenerate('Add at least one operation to generate G-code.');
         return;
       }
       // The hand-rolled WireProject in build-project.ts trims the

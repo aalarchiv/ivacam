@@ -152,9 +152,15 @@ export class GeneratedState {
 
   /// Reset transient generate state regardless of how the run ended.
   /// Always pairs with `beginGenerate` so the UI doesn't leak a stale
-  /// progress card after the awaited generate promise settles.
+  /// progress card after the awaited generate promise settles. Acts as
+  /// a safety net for `pipelineState` too — if a code path bypassed
+  /// `finishGenerate` / `failGenerate` / cancellation cleanup, snap back
+  /// to idle here instead of stranding the UI on the progress bar.
   endGenerate(): void {
     this.generating = false;
     this.pipelineProgress = null;
+    if (this.pipelineState === 'running' || this.pipelineState === 'cancelling') {
+      this.pipelineState = 'idle';
+    }
   }
 }

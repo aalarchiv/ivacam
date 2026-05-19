@@ -16,6 +16,8 @@
 
   "footer.ready": "Bereit",
   "footer.bbox": "bbox=({minX},{minY})–({maxX},{maxY}) · {count} Segmente · unit_scale={unit}",
+  "bottom.gcode": "G-Code",
+  "gcode.title": "G-Code",
 
   "file.open_file": "Datei öffnen",
   "file.open_project": "Projekt öffnen",
@@ -24,12 +26,14 @@
 
   "generate.title": "Generieren:",
   "generate.post": "Postprozessor",
-  "generate.run": "Generieren",
-  "generate.running": "Generiere…",
+  "generate.run": "G-Code generieren",
+  "generate.running": "Generiere G-Code…",
   "generate.download_ngc": ".ngc herunterladen",
   "generate.download_plt": ".plt herunterladen",
   "generate.stats": "{objects} Obj. · {offsets} Versätze · {moves} Bewegungen",
   "generate.starting": "starte…",
+  "generate.cancel": "G-Code-Generierung abbrechen",
+  "generate.cancelling": "Breche G-Code-Generierung ab…",
 
   "setup.title": "Einstellungen",
   "setup.reset": "zurück",

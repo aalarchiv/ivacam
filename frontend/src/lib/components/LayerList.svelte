@@ -5,7 +5,7 @@
   /// the user can fold away when they're not adjusting visibility.
   /// Same visual language as op groups so the sidebar reads as one
   /// coherent panel.
-  import { project } from '../state/project.svelte';
+  import { isIdentityFileTransform, project } from '../state/project.svelte';
 
   interface Props {
     onOpenFileClick?: () => void;
@@ -90,15 +90,7 @@
   /// transform is active so it's visible at a glance.
   let transformOpen = $state(false);
   let xfActive = $derived(
-    !!project.imported &&
-      !(
-        project.fileTransform.translate.x === 0 &&
-        project.fileTransform.translate.y === 0 &&
-        project.fileTransform.rotateDeg === 0 &&
-        project.fileTransform.scale === 1 &&
-        !project.fileTransform.mirrorX &&
-        !project.fileTransform.mirrorY
-      ),
+    !!project.imported && !isIdentityFileTransform(project.fileTransform),
   );
   function patchTx(patch: Parameters<typeof project.patchFileTransform>[0], key: string) {
     project.patchFileTransform(patch, key);

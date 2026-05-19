@@ -16,6 +16,8 @@
 
   "footer.ready": "Ready",
   "footer.bbox": "bbox=({minX},{minY})–({maxX},{maxY}) · {count} segments · unit_scale={unit}",
+  "bottom.gcode": "G-code",
+  "gcode.title": "G-code",
 
   "file.open_file": "Open file",
   "file.open_project": "Open project",
@@ -24,12 +26,14 @@
 
   "generate.title": "Generate:",
   "generate.post": "post",
-  "generate.run": "Generate",
-  "generate.running": "Generating…",
+  "generate.run": "Generate G-code",
+  "generate.running": "Generating G-code…",
   "generate.download_ngc": "Download .ngc",
   "generate.download_plt": "Download .plt",
   "generate.stats": "{objects} obj · {offsets} offsets · {moves} moves",
   "generate.starting": "starting…",
+  "generate.cancel": "Cancel G-code generation",
+  "generate.cancelling": "Cancelling G-code generation…",
 
   "setup.title": "Setup",
   "setup.reset": "reset",

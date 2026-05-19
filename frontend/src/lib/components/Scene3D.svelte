@@ -15,6 +15,11 @@
   import { tessellate } from '../scene3d/tessellate';
   import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
   import type { SimWarning } from '../api/types';
+  import {
+    previewSegmentsFor,
+    previewVersion,
+    requestPreview,
+  } from '../state/text_preview.svelte';
 
   let host: HTMLDivElement;
   let renderer: THREE.WebGLRenderer | undefined;
@@ -377,8 +382,21 @@
     void project.visibleLayers;
     void project.generated;
     void project.operations;
+    // Text-layer previews live in a separate cache; rebuild on changes to
+    // either the layer list (new / removed / edited layers) or the
+    // version counter (async render result arrived).
+    void project.textLayers;
+    void previewVersion.v;
     rebuildGeometry();
     requestRender();
+  });
+
+  // Keep the text-preview cache warm independent of the 2D canvas — the
+  // user might never visit 2D and still expects text to show in 3D.
+  $effect(() => {
+    for (const layer of project.textLayers) {
+      requestPreview(layer);
+    }
   });
 
   // Tab markers: per-op tab placements + tabMode.
@@ -1409,6 +1427,28 @@
           else objectColorRanges.set(objectId, [range]);
         }
         segIdx++;
+      }
+    }
+
+    // Text-layer previews. Each TextLayer renders client-side into a
+    // segment list cached by `text_preview`; the 2D canvas reads the
+    // same cache. Draw them in the accent color so they read as "live
+    // preview, not yet baked into the toolpath".
+    if (project.textLayers.length > 0) {
+      const previewC = cssColor('--accent', 0x4a8df0);
+      for (const layer of project.textLayers) {
+        const segs = previewSegmentsFor(layer.id);
+        if (!segs || segs.length === 0) continue;
+        for (const seg of segs) {
+          const points = tessellate(seg);
+          for (let i = 0; i < points.length - 1; i++) {
+            const [ax, ay] = points[i];
+            const [bx, by] = points[i + 1];
+            positions.push(ax, ay, 0, bx, by, 0);
+            colors.push(previewC.r, previewC.g, previewC.b, previewC.r, previewC.g, previewC.b);
+            lineOwners.push({ kind: 'object', objectId: 0 });
+          }
+        }
       }
     }
 

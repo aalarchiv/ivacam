@@ -258,6 +258,7 @@
 <div class="bar">
   <span class="title">{$_('generate.title')}</span>
   <label
+    title="Output dialect. LinuxCNC: standard RS-274 G-code. GRBL: hobby-CNC subset with manual tool-change prompts. HPGL: vinyl-cutter / plotter language (drag-knife mode)."
     >{$_('generate.post')}
     <select bind:value={post}>
       <option value="linuxcnc">LinuxCNC</option>
@@ -268,12 +269,20 @@
   {#if project.pipelineState === 'running' || project.pipelineState === 'cancelling'}
     <GenerateProgress onCancel={cancelRun} />
   {:else}
-    <button onclick={run} disabled={!project.imported || project.generating}>
+    <button
+      onclick={run}
+      disabled={!project.imported || project.generating}
+      title="Run the CAM pipeline and produce a toolpath. Reads the current ops, tools, stock, and machine — output is cached so unchanged ops re-emit instantly."
+    >
       {project.generating ? $_('generate.running') : $_('generate.run')}
     </button>
   {/if}
   {#if project.generated}
-    <button onclick={downloadGcode} class="download">
+    <button
+      onclick={downloadGcode}
+      class="download"
+      title="Save the generated toolpath to disk in the selected dialect's file extension."
+    >
       {post === 'hpgl' ? $_('generate.download_plt') : $_('generate.download_ngc')}
     </button>
     <span class="stats">

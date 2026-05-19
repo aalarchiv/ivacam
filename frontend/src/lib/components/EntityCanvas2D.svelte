@@ -1927,7 +1927,12 @@
       <div class="ctx-menu" style:left={`${ctxMenu.x}px`} style:top={`${ctxMenu.y}px`} role="menu">
         {#if hasTextSelected}
           <div class="ctx-header">Text layer</div>
-          <button type="button" class="ctx-item" onclick={setTextOriginHere}>
+          <button
+            type="button"
+            class="ctx-item"
+            onclick={setTextOriginHere}
+            title="Move the selected text layer's left-baseline origin to the right-clicked spot."
+          >
             Set text origin here
           </button>
           {#if hasObjsSelected}

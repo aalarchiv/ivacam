@@ -508,6 +508,66 @@
     gcodeHeight = Math.round(window.innerHeight * 0.35);
     persistLayout();
   }
+
+  /// Status bar text — three layers.
+  ///   1. `modalStatusHint`: when a modal click-tool is active (approach
+  ///      pick, tab placement), render its instructions verbatim and skip
+  ///      the rest. Modal hints take precedence because the user needs
+  ///      to know how to exit the mode.
+  ///   2. `statusInfoText`: idle context — bbox + segment count if a
+  ///      drawing is loaded, otherwise the "Ready" message.
+  ///   3. `statusShortcutHints`: trailing shortcut reminder appropriate
+  ///      to current state (selection multi-modifiers when there's an
+  ///      active selection, context-menu hint while drawing-only).
+  const selectedOpForHint = $derived(
+    project.selectedOpId == null
+      ? null
+      : (project.operations.find((o) => o.id === project.selectedOpId) ?? null),
+  );
+  const tabPlacementForHint = $derived(
+    !!selectedOpForHint &&
+      (selectedOpForHint.kind === 'profile' || selectedOpForHint.kind === 'pocket') &&
+      (selectedOpForHint.tabMode?.kind === 'manual' ||
+        selectedOpForHint.tabMode?.kind === 'mixed'),
+  );
+  const modalStatusHint = $derived.by<string | null>(() => {
+    if (
+      project.pickMode?.kind === 'approach-point' &&
+      project.pickMode.opId === project.selectedOpId
+    ) {
+      return 'Picking approach point — click in canvas to place · Shift = disable snap · ESC = finalize';
+    }
+    if (tabPlacementForHint) {
+      return 'Tab placement active — click contour to add a tab · click an existing tab to remove · set Tabs = Off to exit';
+    }
+    return null;
+  });
+  const statusInfoText = $derived.by<string>(() => {
+    if (project.imported) {
+      return $_('footer.bbox', {
+        values: {
+          minX: project.imported.bbox.min_x.toFixed(2),
+          minY: project.imported.bbox.min_y.toFixed(2),
+          maxX: project.imported.bbox.max_x.toFixed(2),
+          maxY: project.imported.bbox.max_y.toFixed(2),
+          count: project.imported.segments.length,
+          unit: project.imported.unit_scale,
+        },
+      });
+    }
+    return $_('footer.ready');
+  });
+  const statusShortcutHints = $derived.by<string | null>(() => {
+    if (!project.imported) return null;
+    if (project.selectedEntities.size > 0) {
+      return 'Shift = add range · Ctrl/⌘ = toggle · ESC = clear · right-click for context menu';
+    }
+    return 'Click to select · Shift/Ctrl to multi-select · right-click for context menu · ? for shortcuts';
+  });
+  const statusBarText = $derived.by<string>(() => {
+    if (statusShortcutHints) return `${statusInfoText} · ${statusShortcutHints}`;
+    return statusInfoText;
+  });
 </script>
 
 <svelte:window onkeydown={onKeyDown} onclick={onWindowClick} />
@@ -956,39 +1016,17 @@
   {/if}
 
   <footer
-    class:footer-pick={project.pickMode?.kind === 'approach-point' &&
-      project.pickMode.opId === project.selectedOpId}
-    title={project.pickMode?.kind === 'approach-point' &&
-    project.pickMode.opId === project.selectedOpId
-      ? 'Click in the 2D canvas to place the approach point (Shift = disable snap, ESC = finalize)'
-      : project.imported
-        ? $_('footer.bbox', {
-            values: {
-              minX: project.imported.bbox.min_x.toFixed(2),
-              minY: project.imported.bbox.min_y.toFixed(2),
-              maxX: project.imported.bbox.max_x.toFixed(2),
-              maxY: project.imported.bbox.max_y.toFixed(2),
-              count: project.imported.segments.length,
-              unit: project.imported.unit_scale,
-            },
-          })
-        : $_('footer.ready')}
+    class:footer-pick={modalStatusHint != null}
+    title={modalStatusHint ?? statusBarText}
   >
-    {#if project.pickMode?.kind === 'approach-point' && project.pickMode.opId === project.selectedOpId}
-      Picking approach point — click in canvas to place, Shift to disable snap, ESC to finalize
-    {:else if project.imported}
-      {$_('footer.bbox', {
-        values: {
-          minX: project.imported.bbox.min_x.toFixed(2),
-          minY: project.imported.bbox.min_y.toFixed(2),
-          maxX: project.imported.bbox.max_x.toFixed(2),
-          maxY: project.imported.bbox.max_y.toFixed(2),
-          count: project.imported.segments.length,
-          unit: project.imported.unit_scale,
-        },
-      })}
+    {#if modalStatusHint}
+      {modalStatusHint}
     {:else}
-      {$_('footer.ready')}
+      <span class="status-info">{statusInfoText}</span>
+      {#if statusShortcutHints}
+        <span class="status-sep">·</span>
+        <span class="status-shortcuts">{statusShortcutHints}</span>
+      {/if}
     {/if}
   </footer>
 </div>
@@ -1417,6 +1455,13 @@
     background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
     color: var(--text);
     font-weight: 600;
+  }
+  footer .status-sep {
+    margin: 0 0.5rem;
+    opacity: 0.55;
+  }
+  footer .status-shortcuts {
+    opacity: 0.75;
   }
   .close-prompt-overlay {
     position: fixed;

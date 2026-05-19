@@ -235,14 +235,18 @@
 
     <div class="grid">
       <label
-        >Unit
+        title="Output units in the emitted G-code (G20 inch / G21 mm). Internal storage is always mm — this only affects the post."
+      >
+        Unit
         <select bind:value={draft.unit}>
           <option value="mm">mm</option>
           <option value="inch">inch</option>
         </select>
       </label>
       <label
-        >Mode
+        title="Machine kind. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL instead of G-code."
+      >
+        Mode
         <select bind:value={draft.mode}>
           <option value="mill">Mill (CNC)</option>
           <option value="laser">Laser</option>
@@ -250,7 +254,9 @@
         </select>
       </label>
       <label
-        >Fast-move Z
+        title="Safe Z height for rapids between cuts. Spindle rapids to this height before XY moves so the tool clears clamps and stock."
+      >
+        Fast-move Z
         <span class="field"
           ><input type="number" bind:value={draft.fastMoveZ} step="0.1" /><span class="unit"
             >mm</span
@@ -314,11 +320,17 @@
           >
         </label>
       </fieldset>
-      <label class="check">
+      <label
+        class="check"
+        title="Include (parenthesized) comments in the G-code — section markers, op names, tool numbers. Disable for controllers that reject comments."
+      >
         <input type="checkbox" bind:checked={draft.comments} />
         Emit comments in G-code
       </label>
-      <label class="check">
+      <label
+        class="check"
+        title="Fit curved polylines into native G2/G3 arc moves where possible. Yields smaller, smoother G-code. Disable if your controller has buggy arc handling."
+      >
         <input type="checkbox" bind:checked={draft.arcs} />
         Emit G2 / G3 arc moves
       </label>
@@ -341,7 +353,10 @@
           /><span class="unit">mm</span></span
         >
       </label>
-      <label class="check">
+      <label
+        class="check"
+        title="Emit M6 tool-change commands between ops with different tools. Disable for hobby controllers (GRBL etc.) that need manual tool-change prompts instead."
+      >
         <input type="checkbox" bind:checked={draft.supportsToolchange} />
         Machine supports tool changes (M6)
       </label>
@@ -467,7 +482,9 @@
 
       <div class="section-title">Kinematics</div>
       <label
-        >Rapid speed
+        title="G0 rapid feed rate. Used by the simulator for time estimates; most controllers ignore the F-word on G0 and use their own internal max."
+      >
+        Rapid speed
         <span class="field"
           ><input type="number" min="0" step="100" bind:value={draft.rapidSpeed} /><span
             class="unit">mm/min</span
@@ -475,7 +492,9 @@
         >
       </label>
       <label
-        >Tool-change time
+        title="Wall-clock seconds spent on an M6 tool change. Used by the simulator for total runtime estimates."
+      >
+        Tool-change time
         <span class="field"
           ><input type="number" min="0" step="0.5" bind:value={draft.toolchangeS} /><span
             class="unit">s</span
@@ -527,7 +546,10 @@
           }}
         />
       </div>
-      <label class="check">
+      <label
+        class="check"
+        title="Use S-curve (jerk-limited) acceleration in the simulator. Better matches modern controllers (LinuxCNC trajectory planner, MachineKit). Off = simple trapezoidal velocity profile."
+      >
         <input type="checkbox" bind:checked={jerkEnabled} />
         Enable jerk limits (S-curve, Phase 2)
       </label>

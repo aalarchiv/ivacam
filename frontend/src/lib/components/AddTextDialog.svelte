@@ -296,14 +296,17 @@
     </header>
 
     <div class="body">
-      <label class="full">
+      <label class="full" title="Text to render. Newlines split into multiple lines (MTEXT).">
         <span>Text</span>
         <textarea bind:value={text} rows="2"></textarea>
       </label>
 
       <fieldset class="full">
         <legend>Font</legend>
-        <label class="row">
+        <label
+          class="row"
+          title="Use a font bundled with wiaconstructor. Bundled fonts are filled-outline (good for V-carve / pocket / drag-knife — not single-line engraving)."
+        >
           <input type="radio" bind:group={useUserFont} value={false} />
           <select bind:value={bundledFontPath} disabled={useUserFont}>
             {#each BUNDLED_FONTS as f (f.path)}
@@ -311,7 +314,10 @@
             {/each}
           </select>
         </label>
-        <label class="row">
+        <label
+          class="row"
+          title="Load any TTF/OTF from disk. Single-line / Hershey fonts are auto-detected and required for the Engraving style."
+        >
           <input type="radio" bind:group={useUserFont} value={true} />
           <span class="picker">
             <input type="file" accept=".ttf,.otf" onchange={onUserFontPick} />
@@ -327,7 +333,7 @@
         {/if}
       </fieldset>
 
-      <label>
+      <label title="Cap height of the text in millimeters.">
         <span>Size</span>
         <span class="field"
           ><input type="number" bind:value={sizeMm} step="0.5" min="0.1" /><span class="unit"
@@ -335,13 +341,13 @@
           ></span
         >
       </label>
-      <label>
+      <label title="X-position of the text origin (left baseline) in stock coordinates.">
         <span>Position X</span>
         <span class="field"
           ><input type="number" bind:value={posX} step="1" /><span class="unit">mm</span></span
         >
       </label>
-      <label>
+      <label title="Y-position of the text origin (left baseline) in stock coordinates.">
         <span>Position Y</span>
         <span class="field"
           ><input type="number" bind:value={posY} step="1" /><span class="unit">mm</span></span
@@ -370,7 +376,9 @@
       {/if}
 
       {#if STYLE_TABLE[style].toolKind != null}
-        <label>
+        <label
+          title="Tool to use for this text op. The list is filtered to tools matching the style's required kind."
+        >
           <span>Tool</span>
           <select bind:value={toolId}>
             {#each filteredTools as t (t.id)}
@@ -384,7 +392,9 @@
       {/if}
 
       {#if STYLE_TABLE[style].defaultDepth != null}
-        <label>
+        <label
+          title="Final Z depth for the text op. Negative values cut into the stock — e.g. -0.5 mm for a typical engraving."
+        >
           <span>Depth</span>
           <span class="field"
             ><input type="number" bind:value={depth} step="0.1" /><span class="unit">mm</span></span

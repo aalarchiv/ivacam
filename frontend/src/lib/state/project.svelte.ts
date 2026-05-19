@@ -46,6 +46,8 @@ import {
   DEFAULT_FIXTURE_COLOR,
   defaultAxesConfig,
   defaultFixtureName,
+  identityFileTransform,
+  isIdentityFileTransform,
   prettyOpKind,
 } from './project-types';
 import type {
@@ -55,6 +57,7 @@ import type {
   CoolantMode,
   CutDirection,
   DrillCycle,
+  FileTransform,
   Fixture,
   FixtureKind,
   HalfpipeProfile,
@@ -74,11 +77,14 @@ import type {
   TextLayerKind,
   ToolEntry,
 } from './project-types';
+import { applyFileTransform } from './file-transform';
 
 export {
   DEFAULT_FIXTURE_COLOR,
   defaultAxesConfig,
   defaultFixtureName,
+  identityFileTransform,
+  isIdentityFileTransform,
   prettyOpKind,
 };
 export type {
@@ -88,6 +94,7 @@ export type {
   CoolantMode,
   CutDirection,
   DrillCycle,
+  FileTransform,
   Fixture,
   FixtureKind,
   HalfpipeProfile,
@@ -184,6 +191,7 @@ import {
   reorderOperationCommand,
   replaceImportedCommand,
   replaceToolsCommand,
+  setFileTransformCommand,
   setMachineCommand,
   setStockCommand,
   toggleTabPlacementCommand,
@@ -208,6 +216,26 @@ class ProjectState {
   set imported(v: ImportResponse | null) {
     this.data.imported = v;
   }
+
+  /// File-level transform (bww). Stored verbatim; mutate via the
+  /// `setFileTransform()` command for undo support.
+  get fileTransform(): FileTransform {
+    return this.data.fileTransform;
+  }
+  set fileTransform(v: FileTransform) {
+    this.data.fileTransform = v;
+  }
+
+  /// `imported` with `fileTransform` applied. Every visual consumer
+  /// (canvas / 3D scene / OSnap / sim / build-project payload / footprint)
+  /// should read this, NOT `imported`, so the user's layout edits show up
+  /// everywhere. Identity transform short-circuits to the same reference
+  /// as `imported` — cheap equality check for downstream memoization.
+  transformedImport = $derived.by<ImportResponse | null>(() => {
+    const raw = this.data.imported;
+    if (!raw) return null;
+    return applyFileTransform(raw, this.data.fileTransform);
+  });
 
   loading = $state(false);
   loadingMessage = $state<string | null>(null);
@@ -975,6 +1003,11 @@ class ProjectState {
       kind: 'wiac-project',
       version: 1,
       imported: this.imported,
+      // Omit identity transform — keeps the file clean for projects that
+      // never touched the file-transform UI.
+      ...(isIdentityFileTransform(this.fileTransform)
+        ? {}
+        : { fileTransform: this.fileTransform }),
       visibleLayers: [],
       selectedEntities: [],
       stock: this.stock,
@@ -993,6 +1026,7 @@ class ProjectState {
       throw new Error('not a wiaConstructor project file');
     }
     if (file.imported) this.setImported(file.imported, file.lastImportPath ?? null);
+    this.fileTransform = file.fileTransform ?? identityFileTransform();
     // Layer visibility precedence (best wins):
     //   1. workspace.per_project[path].visible_layers (applied in
     //      setActiveProjectPath after restore returns).
@@ -1356,6 +1390,34 @@ class ProjectState {
   setStock(patch: Partial<StockConfig>) {
     if (Object.keys(patch).length === 0) return;
     this.history.exec(setStockCommand(patch), this.target());
+  }
+
+  /// Apply a patch to the file-level transform (bww). `coalesceKey`
+  /// (typically the field name) merges rapid edits into a single undo
+  /// step — drag the rotation spinner and you get one history entry,
+  /// not fifty.
+  patchFileTransform(patch: Partial<FileTransform>, coalesceKey?: string) {
+    if (Object.keys(patch).length === 0) return;
+    const before = this.fileTransform;
+    const after: FileTransform = {
+      ...before,
+      ...patch,
+      // Merge translate sub-object explicitly so partial updates ({ x: 5 })
+      // don't drop the other axis.
+      translate: { ...before.translate, ...(patch.translate ?? {}) },
+    };
+    this.history.exec(
+      setFileTransformCommand(before, after, coalesceKey),
+      this.target(),
+    );
+  }
+
+  resetFileTransform() {
+    if (isIdentityFileTransform(this.fileTransform)) return;
+    this.history.exec(
+      setFileTransformCommand(this.fileTransform, identityFileTransform()),
+      this.target(),
+    );
   }
 }
 

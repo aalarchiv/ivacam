@@ -104,7 +104,7 @@
     // Center the new text on the effective stock footprint — same
     // computation Scene3D / sim use, so the preview lands inside the
     // visible workpiece regardless of whether a drawing is loaded.
-    const fp = computeFootprint(project.imported, project.stock, project.machine.workArea);
+    const fp = computeFootprint(project.transformedImport, project.stock, project.machine.workArea);
     return {
       x: (fp.minX + fp.maxX) / 2,
       y: (fp.minY + fp.maxY) / 2,

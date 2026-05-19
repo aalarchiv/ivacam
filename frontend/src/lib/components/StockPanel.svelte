@@ -19,7 +19,7 @@
   }
 
   const footprint = $derived(
-    computeFootprint(project.imported, project.stock, project.machine.workArea),
+    computeFootprint(project.transformedImport, project.stock, project.machine.workArea),
   );
   const computedLength = $derived(Math.max(0, footprint.maxX - footprint.minX));
   const computedWidth = $derived(Math.max(0, footprint.maxY - footprint.minY));

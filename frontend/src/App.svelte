@@ -90,7 +90,7 @@
   let stockExpanded = $state(true);
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.stock;
-    const fp = computeFootprint(project.imported, cfg, project.machine.workArea);
+    const fp = computeFootprint(project.transformedImport, cfg, project.machine.workArea);
     const x = Math.max(0, fp.maxX - fp.minX);
     const y = Math.max(0, fp.maxY - fp.minY);
     const z = Math.max(0, cfg.thickness);
@@ -543,15 +543,16 @@
     return null;
   });
   const statusInfoText = $derived.by<string>(() => {
-    if (project.imported) {
+    const imp = project.transformedImport;
+    if (imp) {
       return $_('footer.bbox', {
         values: {
-          minX: project.imported.bbox.min_x.toFixed(2),
-          minY: project.imported.bbox.min_y.toFixed(2),
-          maxX: project.imported.bbox.max_x.toFixed(2),
-          maxY: project.imported.bbox.max_y.toFixed(2),
-          count: project.imported.segments.length,
-          unit: project.imported.unit_scale,
+          minX: imp.bbox.min_x.toFixed(2),
+          minY: imp.bbox.min_y.toFixed(2),
+          maxX: imp.bbox.max_x.toFixed(2),
+          maxY: imp.bbox.max_y.toFixed(2),
+          count: imp.segments.length,
+          unit: imp.unit_scale,
         },
       });
     }

@@ -14,12 +14,14 @@
 /// `updateMachine` that wrap the right command in the history bus.
 
 import type { ImportResponse } from '../api/types';
-import type {
-  Fixture,
-  MachineSettings,
-  StockConfig,
-  TextLayer,
-  ToolEntry,
+import {
+  identityFileTransform,
+  type FileTransform,
+  type Fixture,
+  type MachineSettings,
+  type StockConfig,
+  type TextLayer,
+  type ToolEntry,
 } from './project-types';
 import type { OpEntry } from './op_types';
 
@@ -124,6 +126,13 @@ export function saveSettings(s: AppSettings): void {
 
 export class ProjectDataState {
   imported = $state<ImportResponse | null>(null);
+
+  /// Non-destructive file-level transform (bww). Translates / rotates /
+  /// scales / mirrors the entire imported drawing as a layout convenience
+  /// — lets the user reposition the part on stock without re-exporting
+  /// from CAD. Applied lazily by `project.transformedImport`; the raw
+  /// `imported` is unchanged. Identity = no-op short-circuit.
+  fileTransform = $state<FileTransform>(identityFileTransform());
 
   /// Ordered list of operations the program runs. Each op has a kind, a
   /// tool reference (id into `tools`), a source (which geometry it

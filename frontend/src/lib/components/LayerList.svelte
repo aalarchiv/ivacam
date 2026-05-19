@@ -82,6 +82,27 @@
       if (has !== on) project.toggleLayer(l.name);
     }
   }
+
+  /// File-transform foldout (bww). Layout convenience — translate /
+  /// rotate / scale / mirror the entire imported drawing so the user
+  /// can position the part on stock without re-exporting from CAD.
+  /// Closed by default; the dot in the caret signals when a non-identity
+  /// transform is active so it's visible at a glance.
+  let transformOpen = $state(false);
+  let xfActive = $derived(
+    !!project.imported &&
+      !(
+        project.fileTransform.translate.x === 0 &&
+        project.fileTransform.translate.y === 0 &&
+        project.fileTransform.rotateDeg === 0 &&
+        project.fileTransform.scale === 1 &&
+        !project.fileTransform.mirrorX &&
+        !project.fileTransform.mirrorY
+      ),
+  );
+  function patchTx(patch: Parameters<typeof project.patchFileTransform>[0], key: string) {
+    project.patchFileTransform(patch, key);
+  }
 </script>
 
 <svelte:window onclick={onWindowClick} />
@@ -162,6 +183,141 @@
   </div>
   {#if !collapsed}
     <div class="group-body">
+      {#if project.imported}
+        <div class="xform" class:xform-active={xfActive}>
+          <button
+            type="button"
+            class="xform-head"
+            onclick={() => (transformOpen = !transformOpen)}
+            aria-expanded={transformOpen}
+            title="Layout convenience: translate / rotate / scale / mirror the entire drawing. Pivot for rotate / scale / mirror is the original file bbox center."
+          >
+            <span class="xform-caret">{transformOpen ? '▾' : '▸'}</span>
+            <span class="xform-label">File transform</span>
+            {#if xfActive}
+              <span class="xform-dot" aria-label="Transform is active"></span>
+            {/if}
+            {#if transformOpen && xfActive}
+              <button
+                type="button"
+                class="xform-reset"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  project.resetFileTransform();
+                }}
+                title="Reset to identity (no transform)"
+              >
+                Reset
+              </button>
+            {/if}
+          </button>
+          {#if transformOpen}
+            <div class="xform-body">
+              <label
+                title="Move the entire drawing by this many mm in X. Positive = right."
+              >
+                <span>X</span>
+                <span class="xform-field">
+                  <input
+                    type="number"
+                    step="1"
+                    value={project.fileTransform.translate.x}
+                    oninput={(e) => {
+                      const v = (e.target as HTMLInputElement).valueAsNumber;
+                      if (Number.isFinite(v))
+                        patchTx({ translate: { x: v } }, 'translate.x');
+                    }}
+                  />
+                  <span class="xform-unit">mm</span>
+                </span>
+              </label>
+              <label
+                title="Move the entire drawing by this many mm in Y. Positive = up."
+              >
+                <span>Y</span>
+                <span class="xform-field">
+                  <input
+                    type="number"
+                    step="1"
+                    value={project.fileTransform.translate.y}
+                    oninput={(e) => {
+                      const v = (e.target as HTMLInputElement).valueAsNumber;
+                      if (Number.isFinite(v))
+                        patchTx({ translate: { y: v } }, 'translate.y');
+                    }}
+                  />
+                  <span class="xform-unit">mm</span>
+                </span>
+              </label>
+              <label
+                title="Rotate the drawing around its original bbox center. Positive = counter-clockwise."
+              >
+                <span>Rotate</span>
+                <span class="xform-field">
+                  <input
+                    type="number"
+                    step="5"
+                    value={project.fileTransform.rotateDeg}
+                    oninput={(e) => {
+                      const v = (e.target as HTMLInputElement).valueAsNumber;
+                      if (Number.isFinite(v)) patchTx({ rotateDeg: v }, 'rotateDeg');
+                    }}
+                  />
+                  <span class="xform-unit">°</span>
+                </span>
+              </label>
+              <label
+                title="Uniform scale around the original bbox center. 1 = no scale, 2 = twice as big, 0.5 = half size."
+              >
+                <span>Scale</span>
+                <span class="xform-field">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.001"
+                    value={project.fileTransform.scale}
+                    oninput={(e) => {
+                      const v = (e.target as HTMLInputElement).valueAsNumber;
+                      if (Number.isFinite(v) && v > 0) patchTx({ scale: v }, 'scale');
+                    }}
+                  />
+                  <span class="xform-unit">×</span>
+                </span>
+              </label>
+              <label
+                class="xform-check"
+                title="Mirror across the horizontal axis through the bbox center (flip top↔bottom). Negates arc bulges so curvature stays valid."
+              >
+                <input
+                  type="checkbox"
+                  checked={project.fileTransform.mirrorX}
+                  onchange={(e) =>
+                    patchTx(
+                      { mirrorX: (e.currentTarget as HTMLInputElement).checked },
+                      'mirrorX',
+                    )}
+                />
+                Mirror X (flip vertical)
+              </label>
+              <label
+                class="xform-check"
+                title="Mirror across the vertical axis through the bbox center (flip left↔right). Negates arc bulges."
+              >
+                <input
+                  type="checkbox"
+                  checked={project.fileTransform.mirrorY}
+                  onchange={(e) =>
+                    patchTx(
+                      { mirrorY: (e.currentTarget as HTMLInputElement).checked },
+                      'mirrorY',
+                    )}
+                />
+                Mirror Y (flip horizontal)
+              </label>
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if usableLayers.length > 0}
         <ul>
           {#each usableLayers as layer (layer.name)}
@@ -362,6 +518,100 @@
     /* Cap so a huge layer set doesn't dominate; scrolls internally. */
     max-height: 28vh;
     overflow-y: auto;
+  }
+  /* File-transform foldout (bww). Lives at the top of group-body, above
+     the layers list. */
+  .xform {
+    margin: 0.05rem 0 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--bg-elevated) 50%, var(--bg-panel));
+  }
+  .xform-active {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
+  }
+  .xform-head {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    padding: 0.18rem 0.35rem;
+    cursor: pointer;
+    text-align: left;
+    font-size: 0.74rem;
+  }
+  .xform-caret {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .xform-label {
+    flex: 1;
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .xform-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .xform-reset {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+  .xform-reset:hover {
+    border-color: var(--accent);
+  }
+  .xform-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.25rem 0.4rem;
+    padding: 0.25rem 0.4rem 0.4rem;
+  }
+  .xform-body label {
+    display: grid;
+    grid-template-columns: 4rem 1fr;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.74rem;
+    cursor: default;
+  }
+  .xform-body label.xform-check {
+    grid-column: 1 / -1;
+    grid-template-columns: auto 1fr;
+    cursor: pointer;
+  }
+  .xform-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+  .xform-field input[type='number'] {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.74rem;
+    font-family: inherit;
+  }
+  .xform-unit {
+    color: var(--text-muted);
+    font-size: 0.7rem;
   }
   ul {
     list-style: none;

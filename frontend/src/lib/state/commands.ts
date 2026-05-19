@@ -10,6 +10,7 @@
 import type { Command } from './history';
 import type {
   AppSettings,
+  FileTransform,
   Fixture,
   FixtureKind,
   MachineSettings,
@@ -43,6 +44,7 @@ function clone<T>(v: T): T {
 /// the fields it touches.
 export interface CommandTarget {
   imported: ImportResponse | null;
+  fileTransform: FileTransform;
   operations: OpEntry[];
   tools: ToolEntry[];
   fixtures: Fixture[];
@@ -552,6 +554,32 @@ export function appendImportedCommand(p: AppendImportedSegmentsPayload): Command
     revert: (s) => {
       const t = s as CommandTarget;
       t.imported = p.before ? clone(p.before) : null;
+      t.dirty = true;
+    },
+  };
+}
+
+/// File-level transform mutation (bww). Stores before/after snapshots so
+/// the user can undo the whole transform in one step (vs. one undo per
+/// nudge of the X spinner, which is hostile when iterating on layout).
+/// Coalesces by the changed-field key so dragging a single spinner only
+/// produces one undo entry.
+export function setFileTransformCommand(
+  before: FileTransform,
+  after: FileTransform,
+  coalesceKey?: string,
+): Command {
+  return {
+    label: 'Edit file transform',
+    coalesce_key: coalesceKey ? `setFileTransform:${coalesceKey}` : undefined,
+    apply: (s) => {
+      const t = s as CommandTarget;
+      t.fileTransform = clone(after);
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.fileTransform = clone(before);
       t.dirty = true;
     },
   };

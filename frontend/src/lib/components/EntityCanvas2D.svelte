@@ -112,7 +112,7 @@
   });
 
   $effect(() => {
-    void project.imported;
+    void project.transformedImport;
     void project.visibleLayers;
     void project.selectedObjects;
     void project.operations;
@@ -207,7 +207,7 @@
   /// imported geometry changes — never per pointermove. (64p.)
   const osnapTargets = $derived<OSnapTargets>(
     approachPickActive || approachDrag != null
-      ? precomputeOSnapTargets(project.imported)
+      ? precomputeOSnapTargets(project.transformedImport)
       : { endpoints: [], midpoints: [], intersections: [], centers: [] },
   );
 
@@ -301,12 +301,12 @@
   let hitIndex: HitIndex | null = null;
 
   $effect(() => {
-    void project.imported;
-    hitIndex = buildHitIndexPure(project.imported);
+    void project.transformedImport;
+    hitIndex = buildHitIndexPure(project.transformedImport);
   });
 
   function pixelHit(canvasX: number, canvasY: number): number | null {
-    const data = project.imported;
+    const data = project.transformedImport;
     if (!data || !lastTransform) return null;
     const { scale, offX, offY } = lastTransform;
     const dataX = (canvasX - offX) / scale;
@@ -514,7 +514,7 @@
   /// coordinates: we transform the rectangle once into data space and
   /// containment-test each object's bbox (audit-1dqh).
   function objectsInBox(x0: number, y0: number, x1: number, y1: number): number[] {
-    const data = project.imported;
+    const data = project.transformedImport;
     if (!data || !lastTransform) return [];
     const { scale, offX, offY } = lastTransform;
     const px2dx = (x: number) => (x - offX) / scale;
@@ -551,7 +551,7 @@
   let objectPolylinesCache: ObjectPolyline[] | null = null;
   let objectPolylinesCacheKey: unknown = null;
   function getObjectPolylines(): ObjectPolyline[] {
-    const imp = project.imported;
+    const imp = project.transformedImport;
     if (!imp) return [];
     if (objectPolylinesCacheKey !== imp) {
       objectPolylinesCache = buildObjectPolylines(imp);
@@ -1003,7 +1003,7 @@
       return;
     }
     // Map segment index → its 1-based object id from the chaining pass.
-    const objId = project.imported?.objects?.[idx] ?? 0;
+    const objId = project.transformedImport?.objects?.[idx] ?? 0;
     if (objId === 0) return;
     if (mode === 'series') {
       project.seriesSelectTo(objId);
@@ -1043,7 +1043,7 @@
     canvasX: number,
     canvasY: number,
   ): { x: number; y: number } | null {
-    const data = project.imported;
+    const data = project.transformedImport;
     if (!data || !lastTransform) return null;
     const { scale, offX, offY } = lastTransform;
     const dataX = (canvasX - offX) / scale;
@@ -1082,7 +1082,7 @@
     ctx.fillStyle = themeVar('--bg-app', '#0d0d0d');
     ctx.fillRect(0, 0, w, h);
 
-    const data = project.imported;
+    const data = project.transformedImport;
     if (!data || data.segments.length === 0) {
       ctx.fillStyle = themeVar('--canvas-empty', '#555');
       ctx.font = '13px system-ui, sans-serif';

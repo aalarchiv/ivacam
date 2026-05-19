@@ -373,7 +373,7 @@
   // Geometry wireframe: imported drawing, layer toggles, generated
   // toolpath, and the op set (color stamps follow op_id).
   $effect(() => {
-    void project.imported;
+    void project.transformedImport;
     void project.visibleLayers;
     void project.generated;
     void project.operations;
@@ -383,7 +383,7 @@
 
   // Tab markers: per-op tab placements + tabMode.
   $effect(() => {
-    void project.imported;
+    void project.transformedImport;
     void project.operations;
     updateTabs();
     requestRender();
@@ -434,7 +434,7 @@
   /// ran inside rebuildGeometry, which made every layer toggle / op
   /// edit / Generate snap the camera back to the default angle.
   $effect(() => {
-    void project.imported;
+    void project.transformedImport;
     fitCameraToScene();
   });
 
@@ -495,7 +495,7 @@
       requestRender();
       return;
     }
-    const imported = project.imported;
+    const imported = project.transformedImport;
     const generated = project.generated;
     const firstOp = project.operations[0];
     const tool = project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
@@ -901,7 +901,7 @@
     disposeStockGroup();
     const cfg = project.stock;
     if (!cfg.visible || !project.settings.showStockBox) return;
-    const data = project.imported;
+    const data = project.transformedImport;
     // Stock-first: render the stock even without a drawing (falls back
     // to machine work-area inside computeFootprint).
     const fp = computeFootprint(data, cfg, project.machine.workArea);
@@ -1121,7 +1121,7 @@
       scene.add(tabsGroup);
     }
     tabsGroup.clear();
-    const imp = project.imported;
+    const imp = project.transformedImport;
     if (!imp) return;
     const color = cssColor('--tab-marker', 0xffd23a);
     const radius = Math.max(0.5, (imp.bbox.max_x - imp.bbox.min_x || 100) * 0.008);
@@ -1349,7 +1349,7 @@
     objectColorRanges = new Map();
     toolpathColors = [];
     appliedHead = -1;
-    const data = project.imported;
+    const data = project.transformedImport;
     const gen = project.generated;
     if (!data && !gen) return;
 

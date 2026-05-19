@@ -401,10 +401,54 @@ export type DrillCycle =
 /// what the UI needs to show + edit; the wire format expands to the
 /// full Operation when Generate ships.
 
+/// Non-destructive file-level transform (bww). Applied to the entire
+/// imported drawing as a layout convenience — translates, rotates, scales,
+/// and / or mirrors every segment so the user can position the part on
+/// stock for good material use without re-exporting from CAD.
+///
+/// All non-translate ops use a fixed pivot: the ORIGINAL (untransformed)
+/// file bbox center. Application order: scale → mirrors → rotate → translate.
+/// Bulge handling follows `crates/wiac-core/src/cam.rs` — only mirrors flip
+/// it; scale / rotate / translate leave it unchanged.
+///
+/// `identityFileTransform()` returns the no-op identity; consumers should
+/// short-circuit and return the original `ImportResponse` reference when
+/// the transform compares equal to it (cheap deep-equal in
+/// `applyFileTransform`).
+export interface FileTransform {
+  translate: { x: number; y: number };
+  rotateDeg: number;
+  scale: number;
+  mirrorX: boolean;
+  mirrorY: boolean;
+}
+
+export function identityFileTransform(): FileTransform {
+  return {
+    translate: { x: 0, y: 0 },
+    rotateDeg: 0,
+    scale: 1,
+    mirrorX: false,
+    mirrorY: false,
+  };
+}
+
+export function isIdentityFileTransform(t: FileTransform): boolean {
+  return (
+    t.translate.x === 0 &&
+    t.translate.y === 0 &&
+    t.rotateDeg === 0 &&
+    t.scale === 1 &&
+    !t.mirrorX &&
+    !t.mirrorY
+  );
+}
+
 export interface ProjectFile {
   kind: 'wiac-project';
   version: 1;
   imported: ImportResponse | null;
+  fileTransform?: FileTransform;
   visibleLayers: string[];
   selectedEntities: number[];
   stock?: StockConfig;

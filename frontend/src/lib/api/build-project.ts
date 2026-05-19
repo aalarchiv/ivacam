@@ -378,6 +378,11 @@ export interface WireProject {
 
 interface ProjectStateView {
   imported: ImportResponse | null;
+  /// File-transform-applied view of `imported`. Equals `imported` when
+  /// the transform is identity; otherwise carries segments + bbox after
+  /// the layout transform (bww). The wire payload always sends this so
+  /// the pipeline sees the same geometry the user does.
+  transformedImport: ImportResponse | null;
   machine: MachineSettings;
   tools: FrontToolEntry[];
   operations: OpEntry[];
@@ -736,9 +741,10 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
 /// back to the legacy segments+setup path.
 export function buildProject(state: ProjectStateView): WireProject | null {
   if (state.operations.length === 0) return null;
-  if (!state.imported) return null;
+  const imp = state.transformedImport ?? state.imported;
+  if (!imp) return null;
   return {
-    segments: state.imported.segments,
+    segments: imp.segments,
     machine: buildMachine(state.machine),
     tools: state.tools.map(buildTool),
     operations: state.operations.map((op) => buildOp(op, state.machine)),

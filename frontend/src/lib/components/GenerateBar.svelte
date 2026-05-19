@@ -92,7 +92,7 @@
     const gen = project.generated;
     if (!gen) return null;
     const wa = project.machine.workArea;
-    const stockFp = computeFootprint(project.imported, project.stock, wa);
+    const stockFp = computeFootprint(project.transformedImport, project.stock, wa);
     const stockTop = 0;
     const stockBottom = -Math.max(0.01, project.stock.thickness);
     const isCut = (k: string) => k === 'cut' || k === 'plunge' || k === 'arc';

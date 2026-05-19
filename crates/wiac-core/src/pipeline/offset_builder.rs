@@ -482,7 +482,7 @@ pub(super) fn build_op_offsets(
                     offsets.push(drill);
                 } else if obj.closed {
                     if let Some(center) = object_bbox_center(obj) {
-                        let pt = Segment::point(center, &obj.layer, obj.color);
+                        let pt = Segment::point(center, obj.layer.clone(), obj.color);
                         offsets.push(PolylineOffset {
                             segments: vec![pt],
                             closed: false,
@@ -1422,7 +1422,7 @@ mod tests {
         let cw_segments: Vec<Segment> = ccw_segments
             .iter()
             .rev()
-            .map(|s| Segment::line(s.end, s.start, &s.layer, s.color))
+            .map(|s| Segment::line(s.end, s.start, s.layer.clone(), s.color))
             .collect();
         for (winding_label, segments) in &[("CCW", &ccw_segments), ("CW", &cw_segments)] {
             let mk = |offset: ToolOffset| Project {

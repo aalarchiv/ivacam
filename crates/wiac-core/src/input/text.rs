@@ -679,7 +679,7 @@ mod tests {
         let segs = render_text_layer(&layer).expect("render");
         assert!(!segs.is_empty());
         assert!(
-            segs.iter().all(|s| s.layer == "__text_1"),
+            segs.iter().all(|s| s.layer.as_ref() == "__text_1"),
             "all segments should land on the synthetic text layer"
         );
     }

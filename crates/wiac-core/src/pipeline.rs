@@ -760,7 +760,7 @@ fn resolve_op_segments(op: &Op, all: &[Segment], objects: &[VcObject]) -> Vec<Se
         OpSource::All => all.to_vec(),
         OpSource::Layers { layers, .. } => all
             .iter()
-            .filter(|s| layers.iter().any(|l| l == &s.layer))
+            .filter(|s| layers.iter().any(|l| l.as_str() == s.layer.as_ref()))
             .cloned()
             .collect(),
         OpSource::Objects { ids, .. } => {
@@ -790,7 +790,7 @@ pub(super) fn ordered_selection(op: &Op, objects: &[VcObject]) -> Vec<usize> {
         OpSource::Layers { layers, .. } => objects
             .iter()
             .enumerate()
-            .filter(|(_, obj)| layers.iter().any(|l| l == &obj.layer))
+            .filter(|(_, obj)| layers.iter().any(|l| l.as_str() == obj.layer.as_ref()))
             .map(|(i, _)| i)
             .collect(),
         OpSource::Objects { ids, .. } => ids
@@ -823,7 +823,7 @@ pub(super) fn source_combine_mode(op: &Op) -> SourceCombine {
 pub(super) fn op_includes_object(op: &Op, obj: &VcObject, idx: usize) -> bool {
     match &op.source {
         OpSource::All => true,
-        OpSource::Layers { layers, .. } => layers.iter().any(|l| l == &obj.layer),
+        OpSource::Layers { layers, .. } => layers.iter().any(|l| l.as_str() == obj.layer.as_ref()),
         // OpSource::Objects ids are 1-based, matching the
         // ImportOutput.objects[i] mapping the frontend uses for
         // selection.

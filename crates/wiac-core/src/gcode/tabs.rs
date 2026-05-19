@@ -222,7 +222,7 @@ fn emit_arc_chord_with_tabs<P: PostProcessor>(
     let r = (seg.start.x - center.x).hypot(seg.start.y - center.y);
     if r < 1e-9 {
         // Degenerate arc — just emit the endpoints as a line.
-        let line = Segment::line(seg.start, seg.end, &seg.layer, seg.color);
+        let line = Segment::line(seg.start, seg.end, seg.layer.clone(), seg.color);
         emit_line_with_tabs(
             &line,
             tabs,
@@ -266,7 +266,7 @@ fn emit_arc_chord_with_tabs<P: PostProcessor>(
                 center.y + r * next_theta.sin(),
             )
         };
-        let chord = Segment::line(a, b, &seg.layer, seg.color);
+        let chord = Segment::line(a, b, seg.layer.clone(), seg.color);
         emit_line_with_tabs(
             &chord,
             tabs,

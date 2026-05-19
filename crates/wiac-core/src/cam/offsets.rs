@@ -45,7 +45,8 @@ pub struct PolylineOffset {
     pub level: u32,
     /// 0 = boundary, 1 = zigzag fill stroke, 2 = pocket ring.
     pub is_pocket: u8,
-    pub layer: String,
+    #[schemars(with = "String")]
+    pub layer: std::sync::Arc<str>,
     pub color: i32,
     pub source_object_idx: usize,
     /// Tab positions (data-space XY) the cutter should lift over while
@@ -853,12 +854,12 @@ pub fn pocket_for_object(
             }
             let mut segs = Vec::with_capacity(ring.len());
             for win in ring.windows(2) {
-                segs.push(Segment::line(win[0], win[1], &offset.layer, offset.color));
+                segs.push(Segment::line(win[0], win[1], offset.layer.clone(), offset.color));
             }
             // Close the ring.
             if let (Some(first), Some(last)) = (ring.first(), ring.last()) {
                 if first.distance(*last) > 1e-6 {
-                    segs.push(Segment::line(*last, *first, &offset.layer, offset.color));
+                    segs.push(Segment::line(*last, *first, offset.layer.clone(), offset.color));
                 }
             }
             out.push(PolylineOffset {
@@ -1098,7 +1099,7 @@ pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOf
         return None;
     }
     Some(PolylineOffset {
-        segments: vec![Segment::point(center, &obj.layer, obj.color)],
+        segments: vec![Segment::point(center, obj.layer.clone(), obj.color)],
         closed: false,
         level: 0,
         is_pocket: 0,

@@ -114,7 +114,8 @@ pub enum ImportedTextKind {
 pub struct ImportedObject {
     pub id: u32,
     pub closed: bool,
-    pub layer: String,
+    #[schemars(with = "String")]
+    pub layer: std::sync::Arc<str>,
     pub color: i32,
     pub bbox: BBox,
 }
@@ -218,7 +219,7 @@ pub(crate) fn summarize_layers(
     let mut counts: BTreeMap<String, (i32, usize)> = BTreeMap::new();
     for seg in segments {
         let entry = counts
-            .entry(seg.layer.clone())
+            .entry(seg.layer.as_ref().to_owned())
             .or_insert_with(|| (seg.color, 0));
         entry.1 += 1;
     }

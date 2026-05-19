@@ -2015,7 +2015,10 @@ components:
       - single_line
       type: object
     Segment:
-      description: A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
+      description: |-
+        A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
+
+        `layer` is `Arc<str>` rather than `String` (jzpl Phase 2). A typical DXF has thousands of segments across a handful of layer names — the Arc lets every segment on the same layer share one allocation. Clone becomes a refcount bump; serde + `JsonSchema` treat it as a normal string on the wire.
       properties:
         bulge:
           default: 0.0

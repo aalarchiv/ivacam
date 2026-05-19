@@ -37,6 +37,12 @@ pub enum SegmentKind {
 
 /// A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between
 /// `start` and `end` (bulge = `tan(included_angle / 4)`).
+///
+/// `layer` is `Arc<str>` rather than `String` (jzpl Phase 2). A typical
+/// DXF has thousands of segments across a handful of layer names — the
+/// Arc lets every segment on the same layer share one allocation. Clone
+/// becomes a refcount bump; serde + `JsonSchema` treat it as a normal
+/// string on the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Segment {
     #[serde(rename = "type")]
@@ -48,20 +54,26 @@ pub struct Segment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub center: Option<Point2>,
     #[serde(default = "default_layer")]
-    pub layer: String,
+    #[schemars(with = "String")]
+    pub layer: std::sync::Arc<str>,
     #[serde(default = "default_color")]
     pub color: i32,
 }
 
-fn default_layer() -> String {
-    "0".into()
+fn default_layer() -> std::sync::Arc<str> {
+    std::sync::Arc::from("0")
 }
 fn default_color() -> i32 {
     7
 }
 
 impl Segment {
-    pub fn line(start: Point2, end: Point2, layer: impl Into<String>, color: i32) -> Self {
+    pub fn line(
+        start: Point2,
+        end: Point2,
+        layer: impl Into<std::sync::Arc<str>>,
+        color: i32,
+    ) -> Self {
         Self {
             kind: SegmentKind::Line,
             start,
@@ -78,7 +90,7 @@ impl Segment {
         end: Point2,
         bulge: f64,
         center: Option<Point2>,
-        layer: impl Into<String>,
+        layer: impl Into<std::sync::Arc<str>>,
         color: i32,
     ) -> Self {
         Self {
@@ -92,7 +104,7 @@ impl Segment {
         }
     }
 
-    pub fn point(at: Point2, layer: impl Into<String>, color: i32) -> Self {
+    pub fn point(at: Point2, layer: impl Into<std::sync::Arc<str>>, color: i32) -> Self {
         Self {
             kind: SegmentKind::Point,
             start: at,

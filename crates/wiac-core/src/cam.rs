@@ -43,7 +43,8 @@ pub struct VcObject {
     pub outer_objects: Vec<usize>,
     /// IDs of objects fully contained by this one.
     pub inner_objects: Vec<usize>,
-    pub layer: String,
+    #[schemars(with = "String")]
+    pub layer: std::sync::Arc<str>,
     pub color: i32,
     /// Optional starting point for cut-order seeding.
     pub start: Option<Point2>,
@@ -54,9 +55,9 @@ pub struct VcObject {
 impl VcObject {
     #[must_use]
     pub fn new(segments: Vec<Segment>, closed: bool) -> Self {
-        let layer = segments
+        let layer: std::sync::Arc<str> = segments
             .first()
-            .map_or_else(|| "0".into(), |s| s.layer.clone());
+            .map_or_else(|| std::sync::Arc::from("0"), |s| s.layer.clone());
         let color = segments.first().map_or(7, |s| s.color);
         Self {
             segments,

@@ -1170,7 +1170,11 @@ export interface components {
             /** @description True if the font is a single-line / engraving / Hershey-port style font. Drives the dialog's "use a single-line font" chip. */
             single_line: boolean;
         };
-        /** @description A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`). */
+        /**
+         * @description A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
+         *
+         *     `layer` is `Arc<str>` rather than `String` (jzpl Phase 2). A typical DXF has thousands of segments across a handful of layer names — the Arc lets every segment on the same layer share one allocation. Clone becomes a refcount bump; serde + `JsonSchema` treat it as a normal string on the wire.
+         */
         Segment: {
             /**
              * Format: double

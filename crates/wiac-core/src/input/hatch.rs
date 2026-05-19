@@ -390,7 +390,7 @@ mod tests {
         let n = extract_hatch_boundaries(&text, 1.0, &mut out, &mut warns);
         assert_eq!(n, 1);
         assert_eq!(out.len(), 4, "expected 4 line segments, got {out:?}");
-        assert_eq!(out[0].layer, "INSULATION");
+        assert_eq!(out[0].layer.as_ref(), "INSULATION");
         assert_eq!(out[0].color, 5);
     }
 

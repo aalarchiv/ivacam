@@ -149,7 +149,7 @@ pub struct CombinedRegion {
     /// boolean modes it's the first selected object that contributed to
     /// this region; for Auto/None it's the index of the boundary object.
     pub source_idx: usize,
-    pub layer: String,
+    pub layer: std::sync::Arc<str>,
     pub color: i32,
 }
 
@@ -440,7 +440,7 @@ fn polytree_to_regions(
             boundary,
             holes,
             source_idx,
-            layer: layer.to_string(),
+            layer: std::sync::Arc::from(layer),
             color,
         });
     }
@@ -568,7 +568,7 @@ mod tests {
         let frame = build_frame(&selection, FrameShape::Rectangle, 10.0, None);
         assert!(frame.closed);
         assert_eq!(frame.segments.len(), 4);
-        assert_eq!(frame.layer, "Frame");
+        assert_eq!(frame.layer.as_ref(), "Frame");
         assert_eq!(frame.color, 6);
         assert!(matches!(frame.tool_offset, ToolOffset::Inside));
         let mut bbox = crate::geometry::BBox::EMPTY;

@@ -44,7 +44,7 @@ missing_panics_doc = "allow"
 
 [workspace.dependencies]
 # Core deps shared across crates
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 thiserror = "2"
 anyhow = "1"

@@ -334,7 +334,7 @@
 </script>
 
 {#if open}
-  <Modal onClose={close} modalClass="addtext-modal">
+  <Modal onClose={close} width="min(540px, 95vw)">
     <header>
       <h2 id="addtext-title">Add Text</h2>
       <button class="close" onclick={close} aria-label="Close">×</button>
@@ -500,9 +500,6 @@
 {/if}
 
 <style>
-  :global(.addtext-modal) {
-    width: min(540px, 95vw);
-  }
   header {
     display: flex;
     align-items: center;

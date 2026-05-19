@@ -12,7 +12,8 @@
   let { onClose }: Props = $props();
 </script>
 
-<Modal {onClose} modalClass="shortcut-help">
+<Modal {onClose} width="min(560px, 95vw)" maxHeight="90vh">
+ <div class="shortcut-grid">
   <header>
     <h2 id="shortcut-help-title">Keyboard &amp; mouse shortcuts</h2>
     <button class="close" onclick={onClose} type="button" aria-label="Close">×</button>
@@ -71,14 +72,15 @@
   <footer>
     <button class="primary" onclick={onClose} type="button">Done</button>
   </footer>
+ </div>
 </Modal>
 
 <style>
-  :global(.shortcut-help) {
-    width: min(560px, 95vw);
-    max-height: 90vh;
+  /* Modal sizing comes from Modal.svelte's width / max-height props. */
+  .shortcut-grid {
     display: grid;
     grid-template-rows: auto 1fr auto;
+    height: 100%;
     overflow: hidden;
   }
   header {

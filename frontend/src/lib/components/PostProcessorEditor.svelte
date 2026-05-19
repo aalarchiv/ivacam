@@ -175,7 +175,7 @@
 </script>
 
 {#if open}
-  <Modal {onClose} modalClass="pp-editor-modal">
+  <Modal {onClose} width="min(1000px, 94vw)">
     <header>
       <h2>Post-processor editor</h2>
       <button class="close" onclick={onClose} aria-label="Close">×</button>
@@ -679,8 +679,5 @@
     padding: 0.3rem 0.8rem;
     border-radius: 3px;
     cursor: pointer;
-  }
-  :global(.pp-editor-modal) {
-    width: min(1000px, 94vw);
   }
 </style>

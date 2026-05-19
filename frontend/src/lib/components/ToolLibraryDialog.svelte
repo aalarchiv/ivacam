@@ -344,7 +344,7 @@
 </script>
 
 {#if open}
-  <Modal onClose={close} persistKey="tool-library" modalClass="tools-modal">
+  <Modal onClose={close} persistKey="tool-library" width="min(960px, 96vw)">
     <header>
       <h2 id="tools-title">Tool library</h2>
       <button class="close" onclick={close} aria-label="Close">×</button>
@@ -1138,9 +1138,6 @@
 {/if}
 
 <style>
-  :global(.tools-modal) {
-    width: min(960px, 96vw);
-  }
   header {
     display: flex;
     align-items: center;

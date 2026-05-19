@@ -6,9 +6,15 @@
     onClose: () => void;
     persistKey?: string;
     modalClass?: string;
+    /// Inline width / max-height for the dialog body. Lets callers size
+    /// the modal without resorting to `:global(.X-modal)` overrides
+    /// (Svelte's escape hatch leaks selector scope into the global
+    /// namespace, which the linter audit flagged).
+    width?: string;
+    maxHeight?: string;
     children: import('svelte').Snippet;
   }
-  let { onClose, persistKey, modalClass, children }: Props = $props();
+  let { onClose, persistKey, modalClass, width, maxHeight, children }: Props = $props();
 
   let trigger: Element | null = null;
   let overlay: HTMLDivElement;
@@ -42,7 +48,14 @@
   onkeydown={onKey}
   onclick={onOverlayClick}
 >
-  <div bind:this={body} class="modal {modalClass ?? ''}" role="dialog" aria-modal="true">
+  <div
+    bind:this={body}
+    class="modal {modalClass ?? ''}"
+    role="dialog"
+    aria-modal="true"
+    style:width={width ?? null}
+    style:max-height={maxHeight ?? null}
+  >
     {@render children()}
   </div>
 </div>

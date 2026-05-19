@@ -256,6 +256,10 @@
   // and pick the nearest one within `HIT_PIXEL_TOL`.
   const HIT_PIXEL_TOL = 8;
   let hoverIdx = $state<number | null>(null);
+  /// 7tp5: cursor world coordinates for the on-canvas HUD. Updated on
+  /// every pointermove (regardless of modal mode); cleared on
+  /// pointerleave. null until the first import + first move.
+  let cursorXY = $state<{ x: number; y: number } | null>(null);
   let lastTransform: { scale: number; offX: number; offY: number } | null = null;
   /// Last-computed AUTO-FIT (base) transform — the scale/offset the
   /// canvas would use with zoom=1 and no pan. Stored separately so the
@@ -382,6 +386,11 @@
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    // 7tp5: cursor coordinate HUD. Track the world (data) position on
+    // every move regardless of modal mode — users want to read X/Y
+    // while pan/zoom/select/picking. pxToData returns null if the
+    // transform isn't staged yet (no imported drawing).
+    cursorXY = pxToData(cx, cy);
     // n79: in approach-pick mode, the cursor IS the picker — update
     // the preview marker on every move and short-circuit the
     // hover-hit / box-select paths below.
@@ -579,6 +588,7 @@
   function onPointerLeave() {
     hoverIdx = null;
     ghostTab = null;
+    cursorXY = null;
     canvas.style.cursor = tabPlacementActive ? 'crosshair' : 'default';
   }
 
@@ -1920,6 +1930,11 @@
   {#if project.selectedEntities.size > 0}
     <div class="selection-hud">{project.selectedEntities.size} selected · esc to clear</div>
   {/if}
+  {#if cursorXY}
+    <div class="cursor-hud" aria-hidden="true">
+      x: {cursorXY.x.toFixed(2)} &nbsp; y: {cursorXY.y.toFixed(2)} mm
+    </div>
+  {/if}
   {#if tabPopover}
     {@const op = project.operations.find((o) => o.id === tabPopover!.opId)}
     {@const placement = op && isContourOp(op) ? op.tabPlacements?.[tabPopover!.placementIdx] : null}
@@ -2064,6 +2079,24 @@
     border-radius: 3px;
     font-size: 0.72rem;
     pointer-events: none;
+  }
+  /* 7tp5: cursor world-coordinate HUD. Top-right corner so it doesn't
+     fight the selection-hud (top-left). Monospace tabular-nums so the
+     numbers don't dance as the cursor moves. */
+  .cursor-hud {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: color-mix(in srgb, var(--bg-elevated) 85%, transparent);
+    color: var(--text);
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 0.72rem;
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    white-space: nowrap;
   }
   .ctx-menu {
     position: absolute;

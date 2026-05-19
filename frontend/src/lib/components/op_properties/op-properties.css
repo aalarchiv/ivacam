@@ -1,0 +1,326 @@
+/*
+ * Shared op-properties styling. Lifted from OpPropertiesPanel.svelte's
+ * `:global(.props X)` rules (d0mr). Lives as a plain CSS module so the
+ * 53 rules don't pollute every Svelte component's scoped-CSS audit, and
+ * sub-components (TabsSection / ProfileSection / PocketSection /
+ * DrillSection / VCarveSection / ChamferSection / ThreadSection /
+ * PatternSection) can read them via a normal `import './op-properties.css'`.
+ *
+ * All rules are namespaced under `.props` — the wrapper element is
+ * rendered by OpPropertiesPanel.svelte. This file becomes a global
+ * stylesheet at build time (Vite static-imports it once); the .props
+ * prefix keeps the surface bounded.
+ */
+
+.props h3 {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+.props .empty {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+  }
+.props .empty.embedded-empty {
+    text-align: center;
+    font-size: 0.72rem;
+    opacity: 0.7;
+    margin: 0.4rem 0;
+  }
+.props .placeholder {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    font-style: italic;
+  }
+.props .row {
+    display: grid;
+    grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0.2rem 0;
+    font-size: 0.78rem;
+  }
+.props fieldset {
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin: 0.4rem 0;
+    padding: 0.3rem 0.5rem 0.4rem;
+    background: var(--bg-elevated);
+  }
+.props legend {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 0.3rem;
+  }
+.props input,
+.props select {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.18rem 0.32rem;
+    font-size: 0.78rem;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+.props .hint {
+    margin: 0.2rem 0 0;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+.props .hint.warn {
+    color: var(--warn, #b86f00);
+    background: var(--warn-bg, rgba(184, 111, 0, 0.08));
+    border-left: 2px solid var(--warn, #b86f00);
+    padding: 0.15rem 0.4rem;
+    border-radius: 2px;
+  }
+.props .num {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    min-width: 3em;
+    text-align: right;
+  }
+.props .from-selection {
+    margin-top: 0.3rem;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.74rem;
+    cursor: pointer;
+    width: 100%;
+  }
+.props .from-selection:disabled {
+    cursor: not-allowed;
+  }
+.props .from-selection.ghost {
+    opacity: 0.5;
+    border-style: dashed;
+  }
+.props .warn-chip {
+    margin: 0.2rem 0;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--warn) 14%, transparent);
+    color: var(--warn);
+    border: 1px solid var(--warn);
+    font-size: 0.72rem;
+  }
+.props .step-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+.props .step-cell input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+.props .num-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+.props .num-cell input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+.props .num-cell-pair input {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+.props .segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--bg-elevated);
+  }
+.props .segmented button {
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    border-left: 1px solid var(--border);
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    text-transform: capitalize;
+    cursor: pointer;
+  }
+.props .segmented button:first-child {
+    border-left: 0;
+  }
+.props .segmented button.active {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: var(--text-strong);
+  }
+.props .segmented button:hover:not(.active) {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+.props .unit {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-left: 0.25rem;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+.props .range-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+.props .range-cell input[type='range'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+  }
+.props .range-min,
+.props .range-max {
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+.props .tool-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+.props .tool-cell select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+.props .tool-edit {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 0.4rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+.props .tool-edit:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent);
+  }
+.props input.inherit::placeholder {
+    font-style: italic;
+    color: var(--text-faint);
+  }
+.props input.invalid {
+    border-color: var(--danger, #c44);
+  }
+.props .reset-link {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    white-space: nowrap;
+  }
+.props .reset-link.pick-active {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+.props .step-error {
+    margin: 0.1rem 0 0.2rem;
+    padding: 0.15rem 0.4rem;
+    background: color-mix(in srgb, var(--danger, #c44) 18%, transparent);
+    color: var(--danger, #c44);
+    border: 1px solid var(--danger, #c44);
+    border-radius: 3px;
+    font-size: 0.72rem;
+    width: max-content;
+  }
+.props .subsection {
+    margin: 0.3rem 0 0.1rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.2rem;
+  }
+.props .subsection > summary {
+    cursor: pointer;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    padding: 0.15rem 0;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    user-select: none;
+  }
+.props .subsection > summary::-webkit-details-marker {
+    display: none;
+  }
+.props .subsection > summary::before {
+    content: '▸';
+    font-size: 0.6rem;
+    transition: transform 0.12s ease;
+    color: var(--text-faint);
+  }
+.props .subsection[open] > summary::before {
+    transform: rotate(90deg);
+  }
+.props .optional-section {
+    margin: 0.4rem 0 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--bg-elevated) 30%, transparent);
+  }
+.props .optional-section > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-strong);
+    user-select: none;
+  }
+.props .optional-section > summary::-webkit-details-marker {
+    display: none;
+  }
+.props .optional-section > summary::before {
+    content: '▸';
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    transition: transform 0.12s ease;
+  }
+.props .optional-section[open] > summary::before {
+    transform: rotate(90deg);
+  }
+.props .optional-section .opt-summary {
+    margin-left: auto;
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: var(--bg-input);
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+  }
+.props .optional-fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0 0.55rem 0.5rem;
+  }
+.props .optional-fieldset > legend {
+    display: none;
+  }

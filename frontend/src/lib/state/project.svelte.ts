@@ -800,8 +800,11 @@ class ProjectState {
     if (typeof window === 'undefined') return;
     if (!isTauriEnv()) return;
     const paths = new Set<string>();
-    if (this.lastImportPath && isAbsolutePath(this.lastImportPath)) {
-      paths.add(this.lastImportPath);
+    // wrsu Phase 2: watch every import's source path, not just imports[0].
+    for (const entry of this.data.imports) {
+      if (entry.lastImportPath && isAbsolutePath(entry.lastImportPath)) {
+        paths.add(entry.lastImportPath);
+      }
     }
     if (this.activeProjectPath && isAbsolutePath(this.activeProjectPath)) {
       paths.add(this.activeProjectPath);
@@ -834,14 +837,19 @@ class ProjectState {
   /// After the swap, ops whose `sourceObjects` reference object ids no
   /// longer present in the new geometry are flagged via console.warn —
   /// richer recovery is a follow-up. Returns true on success.
+  /// Source-file watcher callback (eb8.4 + wrsu Phase 2). The watcher
+  /// fires per-path; we look up the matching ImportEntry and replace
+  /// its source in place, preserving its fileTransform + id. If no
+  /// entry matches the path (stale watch), bail rather than overwrite
+  /// an unrelated import.
   async reimportFromPath(path: string): Promise<boolean> {
     if (typeof window === 'undefined') return false;
     if (!isTauriEnv()) return false;
-    // JSON-roundtrip clone avoids the $state proxy / structuredClone
-    // DataCloneError seen in production builds.
-    const before = this.imported
-      ? (JSON.parse(JSON.stringify(this.imported)) as ImportResponse)
-      : null;
+    const idx = this.data.imports.findIndex((e) => e.lastImportPath === path);
+    if (idx < 0) {
+      this.setError(`reload: no import is watching ${path}`);
+      return false;
+    }
     let after: ImportResponse;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -850,15 +858,16 @@ class ProjectState {
       this.setError(`reload: ${e instanceof Error ? e.message : String(e)}`);
       return false;
     }
-    this.history.beginTransaction('Reload source');
-    try {
-      this.history.exec(appendImportedCommand({ before, after }), this.target());
-    } finally {
-      this.history.commitTransaction();
-    }
-    this.lastImportPath = path;
+    const next = [...this.data.imports];
+    next[idx] = { ...next[idx], source: after };
+    this.data.imports = next;
+    this.dirty = true;
     this.sourceFileStaleNotice = null;
-    const presentIds = new Set(after.objects ?? []);
+    // Orphan-source detection runs against the merged view (post-reload)
+    // so ops keyed by ids from OTHER imports still see their objects.
+    // eb8.7's inline Re-pick chip on OperationsList rows surfaces the
+    // affected ops; this warn keeps the dev console signal too.
+    const presentIds = new Set(this.transformedImport?.objects ?? []);
     for (const op of this.operations) {
       if (!Array.isArray(op.sourceObjects) || op.sourceObjects.length === 0) continue;
       const orphans = op.sourceObjects.filter((id) => !presentIds.has(id));

@@ -22,6 +22,7 @@
     type HitIndex,
   } from '../canvas/spatial-index';
   import { fixtureAt } from '../canvas/fixture-hit';
+  import { reduceCanvasClick } from '../canvas/entity-selection';
   import {
     DEFAULT_OSNAP_SETTINGS,
     findOSnap,
@@ -1010,61 +1011,49 @@
     }
 
     const idx = pixelHit(cx, cy);
-    // Modifier semantics (audit-eqxd):
-    //   * Shift+click  → SERIES select — extend the selection from the
-    //                    anchor object (last single-clicked) to the
-    //                    clicked one, sweeping every object whose bbox
-    //                    is crossed by the imaginary line between them.
-    //                    Falls back to plain replace when no anchor.
-    //   * Ctrl/Cmd+click → TOGGLE in selection (add or deselect).
-    //   * plain click  → REPLACE selection.
-    const mode: 'replace' | 'add' | 'toggle' | 'series' = e.shiftKey
-      ? 'series'
-      : e.ctrlKey || e.metaKey
-        ? 'toggle'
-        : 'replace';
-    if (idx == null) {
-      // Clicked empty space — arm a potential box-select. If the
-      // pointer comes back up without ever moving past
-      // BOX_DRAG_THRESHOLD, this collapses to a "click on empty"
-      // which clears the selection for `replace` mode and is a
-      // no-op for `add` / `toggle` / `series` (so the user can't
-      // accidentally drop their selection mid-modifier).
-      if (mode === 'replace') {
-        project.clearSelection();
-        project.selectFixture(null);
-      }
-      // Series-select needs an object target — on empty space we fall
-      // back to additive box-select so Shift+drag stays useful.
-      const boxMode: 'replace' | 'add' | 'toggle' = mode === 'series' ? 'add' : mode;
-      boxSelect = { startX: cx, startY: cy, curX: cx, curY: cy, mode: boxMode, armed: true };
-      // Capture so pointermove keeps firing if the user drags past the
-      // canvas edge — otherwise the box-select would freeze at the
-      // last point inside the canvas.
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch {
-        /* not all browsers / older versions; harmless */
-      }
-      return;
-    }
-    // Map segment index → its 1-based object id from the chaining pass.
-    const objId = project.transformedImport?.objects?.[idx] ?? 0;
-    if (objId === 0) return;
-    if (mode === 'series') {
-      project.seriesSelectTo(objId);
-    } else {
-      project.selectObjects([objId], mode);
-    }
-    // Clicking an object that's already wired into an operation makes
-    // that op the active one — surfaces the right edit form on the
-    // right-hand panel without a separate trip to the operations list.
-    // Only fires for plain clicks; modifier-clicks are about building
-    // selections, not switching the active op.
-    if (mode === 'replace') {
-      const ops = objectToOps.get(objId);
-      if (ops && ops.length > 0 && project.selectedOpId !== ops[0]) {
-        project.selectedOpId = ops[0];
+    // Map segment index → its 1-based object id (or null for empty
+    // space). The pure reducer in lib/canvas/entity-selection.ts (774f)
+    // resolves modifiers and emits the action list; we dispatch and
+    // arm the box-select store.
+    const hitObjectId =
+      idx == null ? null : (project.transformedImport?.objects?.[idx] ?? 0);
+    const actions = reduceCanvasClick(
+      {
+        hitObjectId,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+      },
+      objectToOps,
+    );
+    for (const action of actions) {
+      switch (action.kind) {
+        case 'clear-selection':
+          project.clearSelection();
+          break;
+        case 'clear-fixture-selection':
+          project.selectFixture(null);
+          break;
+        case 'select-objects':
+          project.selectObjects(action.ids, action.mode);
+          break;
+        case 'series-select-to':
+          project.seriesSelectTo(action.id);
+          break;
+        case 'set-active-op':
+          if (project.selectedOpId !== action.opId) project.selectedOpId = action.opId;
+          break;
+        case 'arm-box-select':
+          boxSelect = { startX: cx, startY: cy, curX: cx, curY: cy, mode: action.mode, armed: true };
+          // Capture so pointermove keeps firing if the user drags past
+          // the canvas edge — otherwise box-select would freeze at the
+          // last point inside the canvas.
+          try {
+            canvas.setPointerCapture(e.pointerId);
+          } catch {
+            /* not all browsers / older versions; harmless */
+          }
+          break;
       }
     }
   }

@@ -139,6 +139,7 @@ pub fn import_drawing(
         select: select_set.as_ref(),
         cam_setup: String::new(),
         text_entities: Vec::new(),
+        layer_intern: crate::input::intern::LayerIntern::new(),
     };
 
     // Build a block index for INSERT expansion. Block lookup is by the
@@ -230,6 +231,10 @@ struct ImportCtx<'a> {
     /// `ImportOutput.text_entities` so the frontend can turn each into
     /// an editable `TextLayer` instead of consuming pre-rendered glyphs.
     text_entities: Vec<crate::input::ImportedTextEntity>,
+    /// Per-import layer-name cache (mieu). Interned once per resolved
+    /// layer string; every Segment on that layer reuses the cached
+    /// Arc<str> instead of allocating a fresh one.
+    layer_intern: crate::input::intern::LayerIntern,
 }
 
 impl ImportCtx<'_> {
@@ -270,15 +275,18 @@ impl ImportCtx<'_> {
         if !self.layer_selected(&layer) {
             return;
         }
+        // mieu: intern once per entity. Every Segment this emit_* fans out
+        // to clones the cached Arc<str> instead of allocating its own.
+        let layer_arc = self.layer_intern.intern(&layer);
         match &entity.specific {
-            EntityType::Line(line) => self.emit_line(line, &layer, color, xform),
-            EntityType::Circle(c) => self.emit_circle(c, &layer, color, xform),
-            EntityType::Arc(a) => self.emit_arc(a, &layer, color, xform),
-            EntityType::Ellipse(e) => self.emit_ellipse(e, &layer, color, xform),
-            EntityType::ModelPoint(p) => self.emit_point(p, &layer, color, xform),
-            EntityType::LwPolyline(p) => self.emit_lwpolyline(p, &layer, color, xform),
-            EntityType::Polyline(p) => self.emit_polyline(p, &layer, color, xform),
-            EntityType::Spline(s) => self.emit_spline(s, &layer, color, xform),
+            EntityType::Line(line) => self.emit_line(line, &layer_arc, color, xform),
+            EntityType::Circle(c) => self.emit_circle(c, &layer_arc, color, xform),
+            EntityType::Arc(a) => self.emit_arc(a, &layer_arc, color, xform),
+            EntityType::Ellipse(e) => self.emit_ellipse(e, &layer_arc, color, xform),
+            EntityType::ModelPoint(p) => self.emit_point(p, &layer_arc, color, xform),
+            EntityType::LwPolyline(p) => self.emit_lwpolyline(p, &layer_arc, color, xform),
+            EntityType::Polyline(p) => self.emit_polyline(p, &layer_arc, color, xform),
+            EntityType::Spline(s) => self.emit_spline(s, &layer_arc, color, xform),
             EntityType::Insert(insert) => {
                 let Some(block) = blocks.get(&insert.name) else {
                     self.warnings
@@ -296,7 +304,7 @@ impl ImportCtx<'_> {
                     self.add_entity(sub, blocks, &block_xform, depth + 1);
                 }
             }
-            EntityType::MLine(m) => self.emit_mline(m, &layer, color, xform),
+            EntityType::MLine(m) => self.emit_mline(m, &layer_arc, color, xform),
             EntityType::Text(t) if !self.opts.no_text => self.emit_text(t, &layer, color, xform),
             EntityType::MText(t) if !self.opts.no_text => self.emit_mtext(t, &layer, color, xform),
             EntityType::AttributeDefinition(_) => {
@@ -311,9 +319,10 @@ impl ImportCtx<'_> {
         }
     }
 
-    fn push_line(&mut self, start: Point2, end: Point2, layer: &str, color: i32) {
+    fn push_line(&mut self, start: Point2, end: Point2, layer: &std::sync::Arc<str>, color: i32) {
         if start.distance(end) > MIN_DIST {
-            self.segments.push(Segment::line(start, end, layer, color));
+            self.segments
+                .push(Segment::line(start, end, layer.clone(), color));
         }
     }
 
@@ -323,7 +332,7 @@ impl ImportCtx<'_> {
         end: Point2,
         bulge: f64,
         center: Option<Point2>,
-        layer: &str,
+        layer: &std::sync::Arc<str>,
         color: i32,
     ) {
         if start.distance(end) <= MIN_DIST && bulge.abs() < 1e-12 {
@@ -333,7 +342,7 @@ impl ImportCtx<'_> {
         if step >= std::f64::consts::TAU || bulge.abs() < 1e-9 {
             // Single segment with bulge — preferred for the CAM core.
             self.segments
-                .push(Segment::arc(start, end, bulge, center, layer, color));
+                .push(Segment::arc(start, end, bulge, center, layer.clone(), color));
             return;
         }
         let pts = math::tessellate_arc(start, end, bulge, step);
@@ -358,23 +367,23 @@ impl ImportCtx<'_> {
             cumulative += per_step;
             let sub_bulge = (per_step * 0.25).tan();
             self.segments
-                .push(Segment::arc(s, e, sub_bulge, center_known, layer, color));
+                .push(Segment::arc(s, e, sub_bulge, center_known, layer.clone(), color));
         }
         let _ = cumulative; // appeasing the borrow checker on shadowed math
     }
 
-    fn emit_line(&mut self, line: &Line, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_line(&mut self, line: &Line, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         let s = xform.apply(line.p1.x, line.p1.y);
         let e = xform.apply(line.p2.x, line.p2.y);
         self.push_line(self.scale(s), self.scale(e), layer, color);
     }
 
-    fn emit_point(&mut self, p: &ModelPoint, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_point(&mut self, p: &ModelPoint, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         let pt = self.scale(xform.apply(p.location.x, p.location.y));
-        self.segments.push(Segment::point(pt, layer, color));
+        self.segments.push(Segment::point(pt, layer.clone(), color));
     }
 
-    fn emit_circle(&mut self, circle: &Circle, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_circle(&mut self, circle: &Circle, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         let center_world = xform.apply(circle.center.x, circle.center.y);
         let center = self.scale(center_world);
         let radius = circle.radius * self.unit_scale * xform.uniform_scale_factor();
@@ -393,7 +402,7 @@ impl ImportCtx<'_> {
             end: p_left,
             bulge: 1.0,
             center: Some(center),
-            layer: layer.into(),
+            layer: layer.clone(),
             color,
         };
         let half2 = Segment {
@@ -402,14 +411,14 @@ impl ImportCtx<'_> {
             end: p_right,
             bulge: 1.0,
             center: Some(center),
-            layer: layer.into(),
+            layer: layer.clone(),
             color,
         };
         self.segments.push(half1);
         self.segments.push(half2);
     }
 
-    fn emit_arc(&mut self, arc: &Arc, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_arc(&mut self, arc: &Arc, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         let center_world = xform.apply(arc.center.x, arc.center.y);
         let center = self.scale(center_world);
         let radius = arc.radius * self.unit_scale * xform.uniform_scale_factor();
@@ -436,13 +445,13 @@ impl ImportCtx<'_> {
             let next = t + per;
             let (s, e, bulge) = math::arc_to_bulge(center, t, next, radius);
             self.segments
-                .push(Segment::arc(s, e, bulge, Some(center), layer, color));
+                .push(Segment::arc(s, e, bulge, Some(center), layer.clone(), color));
             t = next;
         }
         let _ = (xform, &mut a0); // silence unused warning patterns
     }
 
-    fn emit_ellipse(&mut self, e: &Ellipse, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_ellipse(&mut self, e: &Ellipse, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         // Parametric flattening: r(t) = center + cos(t)*major + sin(t)*minor,
         // t in [start, end].
         let center_world = xform.apply(e.center.x, e.center.y);
@@ -478,7 +487,7 @@ impl ImportCtx<'_> {
         }
     }
 
-    fn emit_lwpolyline(&mut self, poly: &LwPolyline, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_lwpolyline(&mut self, poly: &LwPolyline, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         let n = poly.vertices.len();
         if n < 2 {
             return;
@@ -501,7 +510,7 @@ impl ImportCtx<'_> {
         }
     }
 
-    fn emit_polyline(&mut self, poly: &Polyline, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_polyline(&mut self, poly: &Polyline, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         let vertices: Vec<&Vertex> = poly.vertices().collect();
         let n = vertices.len();
         if n < 2 {
@@ -528,7 +537,7 @@ impl ImportCtx<'_> {
     /// offsets at ±`scale_factor/2` along each vertex's miter direction. Style
     /// table support (per-element offsets, caps, joints) is intentionally
     /// out of scope; the typical 2-element default style emerges naturally.
-    fn emit_mline(&mut self, m: &MLine, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_mline(&mut self, m: &MLine, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         if m.vertices.len() < 2 {
             return;
         }
@@ -620,7 +629,7 @@ impl ImportCtx<'_> {
         });
     }
 
-    fn emit_spline(&mut self, spline: &Spline, layer: &str, color: i32, xform: &Transform2D) {
+    fn emit_spline(&mut self, spline: &Spline, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
         let degree = spline.degree_of_curve as usize;
         let knots: Vec<f64> = spline.knot_values.clone();
         let cps: Vec<(f64, f64, f64)> = spline

@@ -50,6 +50,7 @@ pub fn import_svg_bytes(
         // SVG y axis points down; CAM expects y up. Flip on import using
         // the document height so output sits in [0, h].
         flip_y: tree.size().height(),
+        layer_arc: std::sync::Arc::from(SVG_LAYER),
     };
     walk(tree.root(), &mut ctx);
 
@@ -76,6 +77,9 @@ struct SvgCtx {
     unit_scale: f64,
     chord_step: f64,
     flip_y: f32,
+    /// mieu: pre-interned once at construction so every Segment::line below
+    /// shares this Arc instead of allocating per call.
+    layer_arc: std::sync::Arc<str>,
 }
 
 fn walk(group: &usvg::Group, ctx: &mut SvgCtx) {
@@ -155,7 +159,7 @@ fn push_line(ctx: &mut SvgCtx, from: Point2, to: Point2) {
         return;
     }
     ctx.segments
-        .push(Segment::line(from, to, SVG_LAYER, SVG_COLOR));
+        .push(Segment::line(from, to, ctx.layer_arc.clone(), SVG_COLOR));
 }
 
 /// Adaptive de Casteljau quadratic flattener. Subdivides until either the

@@ -268,6 +268,8 @@ pub fn render_text(
     let single_line = is_single_line_font(&face);
     let mut pen = origin;
     let mut out = Vec::new();
+    // mieu: intern once so every emitted Segment shares the layer Arc.
+    let layer_arc: std::sync::Arc<str> = std::sync::Arc::from(layer);
     for ch in text.chars() {
         let Some(glyph_id) = face.glyph_index(ch) else {
             // Treat unknown char as a wide space.
@@ -282,11 +284,11 @@ pub fn render_text(
         }
         if single_line {
             for c in &contours {
-                push_polyline_unclosed(c, layer, color, &mut out);
+                push_polyline_unclosed(c, &layer_arc, color, &mut out);
             }
         } else {
             for c in &contours {
-                push_polyline_closed(c, layer, color, &mut out);
+                push_polyline_closed(c, &layer_arc, color, &mut out);
             }
         }
         let advance = f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)) * scale;
@@ -308,7 +310,11 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
     let single_line = is_single_line_font(&face);
     let units = f64::from(face.units_per_em().max(1));
     let scale = layer.size_mm / units;
-    let layer_name = text_layer_synthetic_layer(layer.id);
+    // mieu: intern once. The text-layer synthetic name is the same for
+    // every glyph in this layer, so a single Arc is shared across N
+    // segments.
+    let layer_name: std::sync::Arc<str> =
+        std::sync::Arc::from(text_layer_synthetic_layer(layer.id).as_str());
     // BYLAYER — the canvas uses the assigned-op tint anyway, so the
     // glyph color is mostly cosmetic.
     let color = 7;
@@ -426,27 +432,27 @@ fn transform_text_point(p: Point2, origin: Point2, cos: f64, sin: f64) -> Point2
     )
 }
 
-fn push_polyline_closed(pts: &[Point2], layer: &str, color: i32, out: &mut Vec<Segment>) {
+fn push_polyline_closed(pts: &[Point2], layer: &std::sync::Arc<str>, color: i32, out: &mut Vec<Segment>) {
     for w in pts.windows(2) {
         if w[0].distance(w[1]) > 1e-6 {
-            out.push(Segment::line(w[0], w[1], layer, color));
+            out.push(Segment::line(w[0], w[1], layer.clone(), color));
         }
     }
     if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
         if first.distance(*last) > 1e-6 {
-            out.push(Segment::line(*last, *first, layer, color));
+            out.push(Segment::line(*last, *first, layer.clone(), color));
         }
     }
 }
 
-fn push_polyline_unclosed(pts: &[Point2], layer: &str, color: i32, out: &mut Vec<Segment>) {
+fn push_polyline_unclosed(pts: &[Point2], layer: &std::sync::Arc<str>, color: i32, out: &mut Vec<Segment>) {
     // For single-line fonts: emit segments without auto-closing the loop.
     // Walking the outline forwards already gives us the centerline; closing
     // it would draw the same path back on itself (the artifact we're
     // detecting around).
     for w in pts.windows(2) {
         if w[0].distance(w[1]) > 1e-6 {
-            out.push(Segment::line(w[0], w[1], layer, color));
+            out.push(Segment::line(w[0], w[1], layer.clone(), color));
         }
     }
 }

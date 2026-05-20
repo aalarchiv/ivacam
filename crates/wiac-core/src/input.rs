@@ -15,6 +15,7 @@ use std::path::Path;
 
 pub mod dxf_in;
 pub mod hatch;
+pub mod intern;
 pub mod nurbs;
 pub mod svg_in;
 pub mod text;

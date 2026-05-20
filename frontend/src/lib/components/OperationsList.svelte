@@ -33,6 +33,29 @@
       : new Set<string>(),
   );
 
+  /// eb8.7: orphan-source diagnostics for an op. Returns the object ids
+  /// or layer names that the op points at but that the current import
+  /// doesn't carry. Used by both the status chip and the inline
+  /// 'Re-pick' shortcut on the row.
+  function orphansFor(op: OpEntry): { objectIds: number[]; layers: string[] } {
+    const objectIds =
+      op.sourceObjects?.filter((id) => !importedObjectsSet.has(id)) ?? [];
+    const layers = op.sourceLayers?.filter((l) => !importedLayersSet.has(l)) ?? [];
+    return { objectIds, layers };
+  }
+
+  /// Replace this op's sourceObjects with the currently-selected
+  /// objects. Convenience for the orphan recovery flow: after a source
+  /// re-import that changed object ids, the user selects the new
+  /// equivalents and clicks 'Re-pick'.
+  function repickFromSelection(opId: number) {
+    if (project.selectedObjects.size === 0) return;
+    project.updateOperation(opId, {
+      sourceObjects: [...project.selectedObjects],
+      sourceLayers: null,
+    });
+  }
+
   function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad'; reason: string } {
     if (!project.tools.find((t) => t.id === op.toolId)) {
       return {
@@ -207,6 +230,8 @@
         {@const status = statusFor(op)}
         {@const selected = project.selectedOpId === op.id}
         {@const dragOver = dragOverId === op.id}
+        {@const orphans = orphansFor(op)}
+        {@const hasOrphans = orphans.objectIds.length > 0 || orphans.layers.length > 0}
         <li
           class:selected
           class:drag-over={dragOver}
@@ -254,6 +279,22 @@
             <span class="name">{op.name}</span>
             <span class="tool">{toolName(op.toolId)}</span>
             <span class="status {status.tone}" title={status.reason}>{status.label}</span>
+            {#if hasOrphans}
+              <button
+                class="repick"
+                disabled={project.selectedObjects.size === 0}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  repickFromSelection(op.id);
+                }}
+                title={project.selectedObjects.size === 0
+                  ? `Source references ${orphans.objectIds.length} object id(s)${orphans.layers.length ? ` + ${orphans.layers.length} layer(s)` : ''} that no longer exist. Select objects on the canvas, then click Re-pick to attach them to this op.`
+                  : `Replace this op's source with the ${project.selectedObjects.size} currently-selected object${project.selectedObjects.size === 1 ? '' : 's'}.`}
+                aria-label={`Re-pick source for operation ${op.name}`}
+              >
+                Re-pick
+              </button>
+            {/if}
             <button
               class="dup"
               onclick={(e) => {
@@ -461,6 +502,28 @@
   }
   .del:hover {
     color: var(--error);
+  }
+  /* eb8.7: inline Re-pick shortcut on rows whose source references
+     objects / layers that no longer exist in the current import.
+     Disabled state surfaces a tooltip telling the user to select
+     objects first. */
+  .repick {
+    background: color-mix(in srgb, var(--warn) 22%, transparent);
+    color: var(--text-strong);
+    border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--border));
+    border-radius: 3px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .repick:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--warn) 35%, transparent);
+  }
+  .repick:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .props {
     margin: 0.2rem 0 0.4rem 0.5rem;

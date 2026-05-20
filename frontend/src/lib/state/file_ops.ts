@@ -202,7 +202,7 @@ export async function loadProjectFile(file: File) {
 /// browser = anchor-tag download trick.
 export async function saveProject() {
   const snapshot = JSON.stringify(project.snapshot(), null, 2);
-  const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
+  const base = project.transformedImport?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
   const filename = `${base}.wiac-project.json`;
   if (isTauri()) {
     const { save } = await import('@tauri-apps/plugin-dialog');
@@ -261,7 +261,7 @@ export async function exportGeneratedGcode(
   postProcessor: 'linuxcnc' | 'grbl' | 'hpgl',
 ): Promise<void> {
   if (!project.generated) return;
-  const base = project.imported?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
+  const base = project.transformedImport?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
   const ext = postProcessor === 'hpgl' ? 'plt' : 'ngc';
   const filename = `${base}.${ext}`;
   if (isTauri()) {

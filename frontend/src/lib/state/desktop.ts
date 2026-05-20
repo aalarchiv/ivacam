@@ -28,7 +28,11 @@ export async function wireSourceWatch(): Promise<() => void> {
   try {
     const { onSourceFileChanged } = await import('../api/tauri');
     return await onSourceFileChanged(async ({ path }) => {
-      if (path !== project.lastImportPath) return;
+      // wrsu Phase 5a: with multi-file imports every entry has its own
+      // lastImportPath. Accept the event if any current import is
+      // watching this path (reimportFromPath addresses the right entry).
+      const watched = project.imports.some((e) => e.lastImportPath === path);
+      if (!watched) return;
       if (project.settings.autoReloadSources) {
         await project.reimportFromPath(path);
       } else {

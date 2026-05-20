@@ -283,7 +283,7 @@
   /// intact across normal redraws.
   let _lastImportedKey: string | null = null;
   $effect(() => {
-    const key = project.imported?.filename ?? null;
+    const key = project.transformedImport?.filename ?? null;
     if (key !== _lastImportedKey) {
       _lastImportedKey = key;
       userZoom = 1;
@@ -1924,7 +1924,7 @@
       x: {cursorXY.x.toFixed(2)} &nbsp; y: {cursorXY.y.toFixed(2)} mm
     </div>
   {/if}
-  {#if project.imported && project.operations.length === 0}
+  {#if project.transformedImport && project.operations.length === 0}
     <div class="firstrun-hint" role="status">
       <span class="firstrun-step">1</span>
       <span>Click an object to select it</span>

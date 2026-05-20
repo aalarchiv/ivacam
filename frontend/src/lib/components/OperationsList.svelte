@@ -24,12 +24,16 @@
 
   /// Per-render Set lookups for source-id / layer validity. Lifted out
   /// of statusFor() so a 5000-object DXF doesn't re-build them N times.
+  /// Reads `transformedImport` so all imports' objects and layers are
+  /// visible (combineImports namespaces object ids; layers union by name).
   let importedObjectsSet = $derived(
-    project.imported?.objects ? new Set(project.imported.objects) : new Set<number>(),
+    project.transformedImport?.objects
+      ? new Set(project.transformedImport.objects)
+      : new Set<number>(),
   );
   let importedLayersSet = $derived(
-    project.imported?.layers
-      ? new Set(project.imported.layers.map((l) => l.name))
+    project.transformedImport?.layers
+      ? new Set(project.transformedImport.layers.map((l) => l.name))
       : new Set<string>(),
   );
 
@@ -64,7 +68,7 @@
         reason: `Tool #${op.toolId} is not in the project's tool library. Pick a tool in the operation properties.`,
       };
     }
-    if (!project.imported) {
+    if (!project.transformedImport) {
       return {
         label: '⚠',
         tone: 'warn',

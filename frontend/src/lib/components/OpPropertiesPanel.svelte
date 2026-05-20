@@ -107,7 +107,8 @@
     op != null && op.plunge != null && op.plunge.kind === 'helix' && op.plunge.radius_mm === null,
   );
   const helixHasGeometry = $derived(
-    project.imported != null && (project.imported.segments?.length ?? 0) > 0,
+    project.transformedImport != null &&
+      (project.transformedImport.segments?.length ?? 0) > 0,
   );
   const helixHasSelection = $derived(op != null && (op.sourceObjects?.length ?? 0) > 0);
 
@@ -124,7 +125,7 @@
     // the .then to detect "user selected a different op while the
     // request was in flight".
     const opIdAtStart = op?.id;
-    const segments = project.imported?.segments ?? [];
+    const segments = project.transformedImport?.segments ?? [];
     const objectIds = op?.sourceObjects ?? [];
     const toolD = helixToolDiameter;
     helixPreviewLoading = true;
@@ -258,8 +259,8 @@
             onchange={(e) => patch('sourceLayers', [(e.currentTarget as HTMLSelectElement).value])}
           >
             <option value="">— pick a layer —</option>
-            {#if project.imported}
-              {#each project.imported.layers.filter((l) => l.segment_count > 0) as layer (layer.name)}
+            {#if project.transformedImport}
+              {#each project.transformedImport.layers.filter((l) => l.segment_count > 0) as layer (layer.name)}
                 <option value={layer.name}>"{layer.name}"</option>
               {/each}
             {/if}

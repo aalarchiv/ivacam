@@ -33,7 +33,7 @@
   function disconnectedTabCount(o: ProfileOp | PocketOp): number {
     const placements = o.tabPlacements ?? [];
     if (placements.length === 0) return 0;
-    const imp = project.imported;
+    const imp = project.transformedImport;
     if (!imp) return 0;
     const liveIds = new Set<number>(imp.objects ?? []);
     const so = o.sourceObjects;
@@ -45,7 +45,7 @@
   /// One-click strip of disconnected placements. Single
   /// updateOperation call so it lands as one undoable history entry.
   function clearDisconnectedTabs(o: ProfileOp | PocketOp) {
-    const imp = project.imported;
+    const imp = project.transformedImport;
     if (!imp) return;
     const liveIds = new Set<number>(imp.objects ?? []);
     const so = o.sourceObjects;

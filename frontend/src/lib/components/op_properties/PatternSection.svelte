@@ -23,7 +23,7 @@
   /// state). Uses `object_meta[id-1].bbox` so the math matches the
   /// pipeline / box-select hit-test (data-space, not pixels).
   function setCenterFromSelection(pol: Extract<PatternConfig, { kind: 'polar' }>) {
-    const meta = project.imported?.object_meta ?? [];
+    const meta = project.transformedImport?.object_meta ?? [];
     const sel = project.selectedObjects;
     if (sel.size === 0 || meta.length === 0) return;
     let minX = Infinity;

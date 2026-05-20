@@ -94,7 +94,7 @@
     if (
       !project.settings.autoRegenerate ||
       !project.dirty ||
-      !project.imported ||
+      !project.transformedImport ||
       project.pipelineState === 'running' ||
       project.pipelineState === 'cancelling'
     ) {
@@ -107,7 +107,7 @@
       if (
         project.settings.autoRegenerate &&
         project.dirty &&
-        project.imported &&
+        project.transformedImport &&
         project.pipelineState !== 'running' &&
         project.pipelineState !== 'cancelling'
       ) {
@@ -163,7 +163,7 @@
   });
 
   async function run() {
-    if (!project.imported) return;
+    if (!project.transformedImport) return;
     if (project.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
       project.setError(
         `Sim has ${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} — fix or disable the safety check in Settings`,
@@ -312,7 +312,7 @@
   {:else}
     <button
       onclick={run}
-      disabled={!project.imported || project.generating}
+      disabled={!project.transformedImport || project.generating}
       title="Run the CAM pipeline and produce a toolpath. Reads the current ops, tools, stock, and machine — output is cached so unchanged ops re-emit instantly."
     >
       {project.generating ? $_('generate.running') : $_('generate.run')}

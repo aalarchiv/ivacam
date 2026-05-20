@@ -251,8 +251,8 @@
     // the app to a blank canvas with no obvious "show it" affordance.
     // Reset to all-visible on reopen so the geometry is visible
     // immediately; subsequent toggles still persist within the session.
-    if (project.imported) {
-      project.visibleLayers = new Set(project.imported.layers.map((l) => l.name));
+    if (project.transformedImport) {
+      project.visibleLayers = new Set(project.transformedImport.layers.map((l) => l.name));
     }
   }
   function dismissReopen() {
@@ -263,9 +263,9 @@
   // any path (the user clicked Open, dragged a file, or accepted the
   // banner). The banner only makes sense as a startup affordance.
   $effect(() => {
-    void project.imported;
+    void project.transformedImport;
     void project.activeProjectPath;
-    if (reopenPrompt && (project.imported || project.activeProjectPath)) {
+    if (reopenPrompt && (project.transformedImport || project.activeProjectPath)) {
       reopenPrompt = null;
     }
   });
@@ -681,7 +681,7 @@
     return $_('footer.ready');
   });
   const statusShortcutHints = $derived.by<string | null>(() => {
-    if (!project.imported) return null;
+    if (!project.transformedImport) return null;
     if (project.selectedEntities.size > 0) {
       return 'Shift = add range · Ctrl/⌘ = toggle · ESC = clear · right-click for context menu';
     }
@@ -725,7 +725,7 @@
           <button
             role="menuitem"
             class="item"
-            disabled={!project.imported}
+            disabled={!project.transformedImport}
             onclick={() => pickMenu(saveProject)}
           >
             <span class="label">Save project…</span><span class="kbd">Ctrl+S</span>
@@ -936,7 +936,7 @@
     <button
       class="tb-btn"
       onclick={() => saveProject()}
-      disabled={!project.imported}
+      disabled={!project.transformedImport}
       title="Save the current project (Ctrl+S)"
     >
       Save

@@ -343,22 +343,33 @@ pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegi
 
 /// Map a medial-axis polyline to a per-point Z polyline using the V-bit
 /// geometry. Returns `(x, y, z, r)` so callers can keep the inscribed
-/// radius around for diagnostics; `z = -r / tan(angle/2)`.
+/// radius around for diagnostics.
 ///
-/// `tip_angle_rad` is the FULL apex angle of the V cone. `r_cap` clips
-/// `r` from above (the `carve_max_width_mm` parameter); `z_cap` clips
-/// `|z|` from below (the `OpParams.depth` parameter — itself a
-/// negative number, we treat its absolute value as the limit). Returns
-/// `(polyline, depth_limited)` where `depth_limited` is true when at
-/// least one point hit the |z| cap.
+/// Math (post tool-tip-aware refactor):
+/// - `tip_angle_rad` is the FULL apex angle of the V cone.
+/// - `tip_radius_mm` is the cone's flat tip (`tool.tip_diameter / 2`).
+///   When the inscribed radius `r ≤ tip_radius_mm`, the bit's flat
+///   nose rides the surface and `z = 0` — the cone hasn't engaged yet.
+///   Past the tip, depth is `-(r - tip_radius_mm) / tan(angle / 2)`.
+///   `0` reduces to the ideal pointed-bit formula.
+/// - `r_cap` clips `r` from above. Callers typically pass
+///   `min(user_carve_max_width_mm, tool.diameter / 2)` so neither the
+///   user setting nor the bit's physical reach is exceeded.
+/// - `z_cap` clips `|z|` from below (the `OpParams.depth` parameter —
+///   itself a negative number; we treat its absolute value as the limit).
+///
+/// Returns `(polyline, depth_limited)` where `depth_limited` is true
+/// when at least one point hit either cap.
 #[must_use]
 pub fn polyline_to_z(
     axis: &[VPoint],
     tip_angle_rad: f64,
+    tip_radius_mm: f64,
     r_cap: Option<f64>,
     z_cap: Option<f64>,
 ) -> (Vec<(f64, f64, f64, f64)>, bool) {
     let tan_half = (tip_angle_rad * 0.5).tan().max(1e-9);
+    let tip_r = tip_radius_mm.max(0.0);
     let mut depth_limited = false;
     let mut out = Vec::with_capacity(axis.len());
     for v in axis {
@@ -369,7 +380,13 @@ pub fn polyline_to_z(
                 depth_limited = true;
             }
         }
-        let mut z = -r / tan_half;
+        // Inside the flat-tip plateau the bit can't engage — z stays 0
+        // even when the medial-axis radius is technically smaller.
+        let mut z = if r <= tip_r {
+            0.0
+        } else {
+            -(r - tip_r) / tan_half
+        };
         if let Some(c) = z_cap {
             let limit = c.abs();
             if z < -limit {
@@ -507,14 +524,14 @@ mod tests {
         );
 
         let tip = (60.0_f64).to_radians();
-        let (z_poly, _) = polyline_to_z(&polylines[0], tip, None, None);
+        let (z_poly, _) = polyline_to_z(&polylines[0], tip, 0.0, None, None);
         let z_min = z_poly.iter().map(|t| t.2).fold(0.0_f64, f64::min);
         // The deepest point along ANY of the three axis segments
         // converges on the incenter; verify the deepest one across
         // all polylines.
         let mut z_min_all = 0.0_f64;
         for poly in &polylines {
-            let (zp, _) = polyline_to_z(poly, tip, None, None);
+            let (zp, _) = polyline_to_z(poly, tip, 0.0, None, None);
             for t in &zp {
                 if t.2 < z_min_all {
                     z_min_all = t.2;

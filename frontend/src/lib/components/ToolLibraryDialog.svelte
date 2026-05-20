@@ -315,6 +315,8 @@
         // Drill has its own peck-step in the expanded section, not
         // the generic Z step.
         return !['drag_knife', 'laser_beam', 'drill'].includes(kind);
+      case 'tipAngleDeg':
+        return ['v_bit', 'engraver'].includes(kind);
       case 'coolant':
         // Laser uses gas-assist (not implemented yet) — coolant
         // dropdown still applies as a generic "assist" toggle.
@@ -339,6 +341,8 @@
       return `Drill uses the peck step in the expanded section, not the generic Z step.`;
     if (field === 'defaultStep' && kind === 'drag_knife') return `Drag-knife runs at fixed depth.`;
     if (field === 'defaultStep' && kind === 'laser_beam') return `Laser cuts at constant Z.`;
+    if (field === 'tipAngleDeg')
+      return `Tip angle only applies to V-bits / engravers (it drives the V-Carve / Chamfer cone math).`;
     return '';
   }
 </script>
@@ -357,6 +361,7 @@
           <span>Kind</span>
           <span>⌀ <span class="unit-hdr">mm</span></span>
           <span>tip ⌀ <span class="unit-hdr">mm</span></span>
+          <span title="Full apex angle for V-bits / engravers — drives V-Carve depth.">tip ∠ <span class="unit-hdr">°</span></span>
           <span>flutes</span>
           <span>speed <span class="unit-hdr">RPM</span></span>
           <span>feed <span class="unit-hdr">mm/min</span></span>
@@ -420,6 +425,22 @@
               onchange={(e) => {
                 const v = (e.currentTarget as HTMLInputElement).value;
                 updateField(i, 'tipDiameter', v === '' ? undefined : parseFloat(v));
+              }}
+            />
+            <input
+              type="number"
+              step="1"
+              min="1"
+              max="179"
+              value={tool.tipAngleDeg ?? ''}
+              placeholder={fieldApplies('tipAngleDeg', tool.kind) ? '60' : 'n/a'}
+              disabled={!fieldApplies('tipAngleDeg', tool.kind)}
+              title={fieldApplies('tipAngleDeg', tool.kind)
+                ? 'Full apex angle of the V cone in degrees. Drives V-Carve depth (z = -(r - tip_r) / tan(angle / 2)) and Chamfer width. Common values: 30°, 45°, 60°, 90°.'
+                : fieldReasonForKind('tipAngleDeg', tool.kind)}
+              onchange={(e) => {
+                const v = (e.currentTarget as HTMLInputElement).value;
+                updateField(i, 'tipAngleDeg', v === '' ? undefined : parseFloat(v));
               }}
             />
             <input
@@ -991,33 +1012,6 @@
                   />
                 </label>
               </div>
-              {#if tool.kind === 'v_bit' || tool.kind === 'engraver'}
-                <div class="holder-row pass-overrides">
-                  <span
-                    class="holder-label"
-                    title="V-bit / engraver fields. The cone math drives V-Carve depth and Chamfer width."
-                    >V-bit</span
-                  >
-                </div>
-                <div class="holder-row">
-                  <label>
-                    <span>Tip angle (°)</span>
-                    <input
-                      type="number"
-                      step="1"
-                      min="1"
-                      max="179"
-                      placeholder="60"
-                      value={tool.tipAngleDeg ?? ''}
-                      title="Full included angle of the V-bit point (degrees). Drives V-Carve depth (z = -R / tan(angle / 2)) and Chamfer depth. Common values: 30°, 45°, 60°, 90°."
-                      onchange={(e) => {
-                        const v = (e.currentTarget as HTMLInputElement).value;
-                        updateField(i, 'tipAngleDeg', v === '' ? undefined : parseFloat(v));
-                      }}
-                    />
-                  </label>
-                </div>
-              {/if}
               {#if tool.kind === 'drag_knife'}
                 <div class="holder-row pass-overrides">
                   <span
@@ -1206,7 +1200,7 @@
     display: grid;
     grid-template-columns:
       2.5rem minmax(0, 1.6fr) minmax(0, 1fr)
-      4.5rem 4.5rem 3.5rem 5rem 5rem 5rem 4.5rem minmax(0, 1fr) 2rem;
+      4.5rem 4.5rem 4rem 3.5rem 5rem 5rem 5rem 4.5rem minmax(0, 1fr) 2rem;
     gap: 0.3rem;
     align-items: center;
     font-size: 0.78rem;

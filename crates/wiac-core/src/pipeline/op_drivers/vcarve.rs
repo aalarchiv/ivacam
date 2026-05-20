@@ -50,16 +50,42 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     }
     let tip_angle_deg = tool.tip_angle_deg.clamp(1.0, 179.0);
     let tip_angle_rad = tip_angle_deg.to_radians();
+    let tip_radius_mm = tool.tip_diameter.unwrap_or(0.0).max(0.0) * 0.5;
+    // Physical reach of the V-bit. Past `diameter / 2` the cutter has
+    // run out of cone — engaging deeper would scrape the shank into
+    // the stock. Folded into the r_cap below.
+    let tool_reach_r = tool.diameter * 0.5;
 
     let selected = ordered_selection(op, objects);
     let combine = source_combine_mode(op);
     let regions = combine_source_regions(objects, &selected, combine);
+    // Guard (rt1.7 / user report): combine_source_regions returns empty
+    // when the selection has no closable contours — e.g. the user pointed
+    // a V-Carve op at a single-line text layer or at open polylines from
+    // an SVG <line>. Silently no-op'ing left the user wondering why
+    // Generate produced no toolpath. Surface it instead.
     if regions.is_empty() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "vcarve_no_closed_region".into(),
+            message: format!(
+                "V-Carve op '{}' has no closed source regions. V-Carve operates on the medial axis of a closed shape — pick objects whose contours close (DXF LWPOLYLINE/POLYLINE/CIRCLE/etc.). Single-line text or open polylines need an Engrave op.",
+                op.name,
+            ),
+        });
         return Ok(());
     }
 
     // kbx5 step 2: V-Carve cap lives on VCarveParams.
-    let r_cap = op.vcarve_params().and_then(|v| v.carve_max_width_mm);
+    // Effective r cap = min(user carve_max_width_mm, tool reach radius).
+    // The tool-reach clamp prevents the medial-axis-driven depth from
+    // running deeper than the cone can physically reach, which would
+    // produce gcode that scrapes the shank into the workpiece.
+    let user_cap = op.vcarve_params().and_then(|v| v.carve_max_width_mm);
+    let effective_r_cap = match user_cap {
+        Some(c) => Some(c.min(tool_reach_r)),
+        None => Some(tool_reach_r),
+    };
     let z_cap = if op.params.depth.abs() > 1e-9 {
         Some(op.params.depth)
     } else {
@@ -89,8 +115,13 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             return Err(PipelineError::Cancelled);
         }
         for axis in &axes {
-            let (z_axis, depth_limited) =
-                crate::cam::vcarve::polyline_to_z(axis, tip_angle_rad, r_cap, z_cap);
+            let (z_axis, depth_limited) = crate::cam::vcarve::polyline_to_z(
+                axis,
+                tip_angle_rad,
+                tip_radius_mm,
+                effective_r_cap,
+                z_cap,
+            );
             if depth_limited {
                 any_depth_limited = true;
             }
@@ -187,6 +218,132 @@ mod tests {
             any_deep,
             "expected at least one cutting move below start_depth - 0.1; got {} toolpath segs",
             resp.toolpath.len()
+        );
+    }
+
+    /// User report: V-Carve op pointed at an open polyline (e.g. a
+    /// single-line text layer) silently produced no toolpath because
+    /// combine_source_regions returns empty. Now warns instead.
+    #[test]
+    fn vcarve_op_warns_when_no_closed_region() {
+        let op = Op {
+            id: 7,
+            name: "Carve".into(),
+            enabled: true,
+            kind: OpKind::VCarve {
+                carve: crate::project::VCarveParams::default(),
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams {
+                depth: -3.0,
+                start_depth: 0.0,
+                step: Some(-1.0),
+                fast_move_z: 5.0,
+                ..OpParams::default()
+            },
+        };
+        // A single LINE segment doesn't form a closed contour. No
+        // region → expect the warning.
+        let project = Project {
+            segments: vec![Segment::line(
+                Point2::new(0.0, 0.0),
+                Point2::new(50.0, 0.0),
+                "0",
+                7,
+            )],
+            machine: MachineConfig::default(),
+            tools: vec![vbit()],
+            operations: vec![op],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline ran");
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "vcarve_no_closed_region"),
+            "expected vcarve_no_closed_region warning; got {:?}",
+            resp.warnings
+                .iter()
+                .map(|w| &w.kind)
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    /// Tool-reach clamp (rbl follow-up): a 6mm V-bit physically can't
+    /// engage past r = 3mm. For a 30x30 square (incircle radius 15mm)
+    /// the medial axis hits r = 15 — without the clamp the depth math
+    /// would dive to z = -15 / tan(30°) ≈ -26mm regardless of the bit's
+    /// 3mm reach. The clamp keeps z above ≈ -5.2mm (3 / tan(30°)).
+    #[test]
+    fn vcarve_op_respects_tool_reach() {
+        let op = Op {
+            id: 7,
+            name: "Carve".into(),
+            enabled: true,
+            kind: OpKind::VCarve {
+                carve: crate::project::VCarveParams::default(),
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams {
+                depth: -50.0, // very deep so the tool-reach cap is the limiting factor
+                start_depth: 0.0,
+                step: Some(-1.0),
+                fast_move_z: 5.0,
+                ..OpParams::default()
+            },
+        };
+        // 30x30 closed square — incircle radius 15mm.
+        let project = Project {
+            segments: vec![
+                Segment::line(Point2::new(0.0, 0.0), Point2::new(30.0, 0.0), "0", 7),
+                Segment::line(Point2::new(30.0, 0.0), Point2::new(30.0, 30.0), "0", 7),
+                Segment::line(Point2::new(30.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
+                Segment::line(Point2::new(0.0, 30.0), Point2::new(0.0, 0.0), "0", 7),
+            ],
+            machine: MachineConfig::default(),
+            tools: vec![vbit()],
+            operations: vec![op],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline ran");
+        let z_min = resp
+            .toolpath
+            .iter()
+            .map(|s| s.to.z)
+            .fold(0.0_f64, f64::min);
+        // vbit() default is diameter 6.35mm, tip 60° → tool_reach_r = 3.175,
+        // tan(30°) ≈ 0.5774, z_min_expected ≈ -5.50mm. The cone-floor
+        // depth could only go that deep with the clamp; without it, the
+        // medial-axis radius of ~15mm produces z ≈ -26mm.
+        assert!(
+            z_min > -10.0,
+            "with tool-reach clamp, z_min should be > -10mm; got {z_min}",
+        );
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "vcarve_depth_limited"),
+            "tool-reach cap should mark depth_limited",
         );
     }
 

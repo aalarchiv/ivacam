@@ -235,10 +235,15 @@
     renderer.domElement.addEventListener('pointerup', onPointerUp);
 
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    // OrbitControls dispatches 'change' whenever the camera moves —
-    // user drag, zoom, pan, AND each damping tick after release. Hooking
-    // it is enough to keep the scene rendering until damping settles.
+    // Damping defaults to true on OrbitControls, which produced a ~30-
+    // frame ease-out drift after every drag/zoom/pan release. Users
+    // read that as lag, not smoothness — disable it so motion stops on
+    // release. tickFrame() still calls controls.update() each frame; it's
+    // a no-op when nothing changed.
+    controls.enableDamping = false;
+    // OrbitControls dispatches 'change' on user drag, zoom, pan.
+    // Hooking it is enough to keep the scene rendering and to persist
+    // the camera pose to the workspace.
     controls.addEventListener('change', requestRender);
     controls.addEventListener('change', onCameraChanged);
 
@@ -473,12 +478,16 @@
     requestRender();
   });
 
-  /// Fit-to-view fires only when a *new* geometry source appears (the
-  /// reference identity of project.imported changes). Previously this
-  /// ran inside rebuildGeometry, which made every layer toggle / op
-  /// edit / Generate snap the camera back to the default angle.
+  /// Fit-to-view fires ONLY when the count of imports changes — i.e.
+  /// the user added or removed a drawing. fileTransform tweaks, layer
+  /// toggles, op edits, and Generates all derive a new
+  /// `transformedImport` reference but must NOT overrule the user's
+  /// chosen camera angle (user feedback this session). Tracking the
+  /// length directly (rather than the derived reference) gives the
+  /// right invalidation profile: add file → fit; tweak transform → no
+  /// touch.
   $effect(() => {
-    void project.transformedImport;
+    void project.imports.length;
     fitCameraToScene();
   });
 

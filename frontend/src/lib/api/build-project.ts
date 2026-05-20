@@ -64,6 +64,8 @@ interface FlatOp extends OpBase, ContourFields {
   multiPassRefine?: VCarveOp['multiPassRefine'];
   fullMedialAxis?: VCarveOp['fullMedialAxis'];
   sourceInsetMm?: VCarveOp['sourceInsetMm'];
+  // PauseOp
+  message?: string;
   // ThreadOp
   threadPitchMm?: ThreadOp['threadPitchMm'];
   threadInternal?: ThreadOp['threadInternal'];
@@ -299,7 +301,8 @@ type WireOpKind =
   | { type: 'engrave'; contour: WireContourParams }
   | { type: 'drag_knife'; contour: WireContourParams }
   | { type: 'helix' }
-  | { type: 'v_carve'; carve: WireVCarveParams };
+  | { type: 'v_carve'; carve: WireVCarveParams }
+  | { type: 'pause'; message: string };
 
 type WireSourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
 type WireSource =
@@ -670,6 +673,8 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
         ...(op.threadInternal === false ? { internal: false } : {}),
         ...(op.threadClimb ? { climb: true } : {}),
       } as WireOpKind;
+    case 'pause':
+      return { type: 'pause', message: op.message ?? '' } as WireOpKind;
   }
 }
 

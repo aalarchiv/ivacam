@@ -304,6 +304,20 @@ pub enum OpKind {
         #[serde(default)]
         carve: VCarveParams,
     },
+    /// rt1.34: program-level optional-stop. Emits `M5` (spindle off)
+    /// + `M0` + an operator-readable comment + `M3` (spindle back on)
+    /// where the op sits in the operations list. The cutter doesn't
+    /// move and no source geometry is required — the op exists purely
+    /// to pause the machine between two other ops so the operator
+    /// can intervene (manual tool change on a machine without ATC,
+    /// inspect the cut, flip the stock for double-sided work, etc.).
+    /// Mirrors Estlcam's "Insert M0" entry (decompile `_I.cs:3394`).
+    Pause {
+        /// One-line message shown on the operator console / pendant.
+        /// Empty string is allowed; the post still emits the M0 stop.
+        #[serde(default)]
+        message: String,
+    },
 }
 
 fn default_chamfer_width() -> f64 {

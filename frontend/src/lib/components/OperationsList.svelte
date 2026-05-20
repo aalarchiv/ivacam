@@ -61,6 +61,18 @@
   }
 
   function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad'; reason: string } {
+    // rt1.34: Pause ops carry no tool / source / geometry and always
+    // emit (M0). The standard validation chain below would mark them
+    // red for "Tool #0 missing". Short-circuit to OK so the row reads
+    // as a deliberate program-flow stop instead of a config error.
+    if (op.kind === 'pause') {
+      return {
+        label: '✓',
+        tone: 'ok',
+        reason:
+          'Pause op — emits M0 at this slot. Operator presses Cycle Start to resume.',
+      };
+    }
     if (!project.tools.find((t) => t.id === op.toolId)) {
       return {
         label: '✘',
@@ -281,7 +293,7 @@
               >{KIND_ICON[op.kind]}</span
             >
             <span class="name">{op.name}</span>
-            <span class="tool">{toolName(op.toolId)}</span>
+            <span class="tool">{op.kind === 'pause' ? '— pause —' : toolName(op.toolId)}</span>
             <span class="status {status.tone}" title={status.reason}>{status.label}</span>
             {#if hasOrphans}
               <button

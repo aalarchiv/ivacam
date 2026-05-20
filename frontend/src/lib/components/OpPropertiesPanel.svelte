@@ -160,6 +160,33 @@
 
   {#if !op}
     <p class="empty" class:embedded-empty={embedded}>Select an operation in the list to edit it.</p>
+  {:else if op.kind === 'pause'}
+    <!-- rt1.34: minimal property panel — name + operator message. No
+         tool, no source, no geometry: the op is a program-flow stop. -->
+    <label class="row">
+      <span>Name</span>
+      <input
+        type="text"
+        value={op.name}
+        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
+      />
+    </label>
+    <label
+      class="row"
+      title="Rendered as a gcode comment immediately before the M0 stop. Shown on most controllers' operator console / pendant — write what the operator should do (e.g. 'Swap to 1/8 endmill', 'Flip the workpiece')."
+    >
+      <span>Message</span>
+      <input
+        type="text"
+        value={op.message ?? ''}
+        placeholder="Tool change, inspect, flip stock, …"
+        oninput={(e) => patch('message', (e.currentTarget as HTMLInputElement).value)}
+      />
+    </label>
+    <p class="hint" style="margin-top:0.5rem">
+      The pipeline emits <code>M5</code>, this message as a comment, <code>M0</code>,
+      and <code>M3</code> at this slot. Spindle stops; pressing Cycle Start resumes.
+    </p>
   {:else}
     <label class="row">
       <span>Name</span>

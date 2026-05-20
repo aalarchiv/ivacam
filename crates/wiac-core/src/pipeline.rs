@@ -604,6 +604,34 @@ where
         post.reset_state();
         let body_marker = post.out_lines_count();
 
+        // rt1.34: Pause op — emit M5 → optional-stop → M3 and skip the
+        // rest of the op machinery (no tool, no source, no setup, no
+        // cache). The controller halts on M0; pressing Cycle Start
+        // resumes. M3 with no S argument restores the spindle to its
+        // last commanded RPM (handled controller-side; the post's
+        // last_speed state is unchanged so the next op's spindle_cw at
+        // the same RPM correctly elides its own M3).
+        if let OpKind::Pause { message } = &op.kind {
+            post.raw(&format!("; OP {} (pause)", op.id));
+            post.raw("M5");
+            if !message.is_empty() {
+                post.comment(message);
+            }
+            post.raw("M0");
+            post.raw("M3");
+            emitted_ops += 1;
+            progress(
+                "gcode",
+                gcode_progress(emitted_ops, n_ops),
+                &format!("emitted op {} (pause)", op.id),
+            );
+            sink(PipelineEvent::OpCompleted {
+                op_id: op.id,
+                cached: false,
+            });
+            continue;
+        }
+
         // Cache lookup. We skip caching when no cache is provided.
         let cache_key = cache.and_then(|_| {
             let tool = project.tools.iter().find(|t| t.id == op.tool_id)?;

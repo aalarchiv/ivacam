@@ -32,6 +32,8 @@ export function prettyOpKind(kind: OpKind): string {
       return 'Drag-knife';
     case 'vcarve':
       return 'V-Carve';
+    case 'pause':
+      return 'Pause';
   }
 }
 

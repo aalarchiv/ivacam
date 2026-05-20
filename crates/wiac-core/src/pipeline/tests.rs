@@ -1330,3 +1330,142 @@
         let err = PipelineError::Cancelled;
         assert!(err.to_structured(None).is_none());
     }
+
+    /// rt1.34: a Pause op emits M5 → M0 → M3 inline at its slot in the
+    /// op list. The cutter doesn't move and no source geometry is
+    /// touched. The comment carries the operator message.
+    #[test]
+    fn pipeline_emits_m0_for_pause_op() {
+        let pause = Op {
+            id: 2,
+            name: "Tool change".into(),
+            enabled: true,
+            kind: OpKind::Pause {
+                message: "Swap to 1/8 endmill".into(),
+            },
+            tool_id: 0,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        // Real op in front of the Pause so the pipeline header machinery
+        // resolves correctly (it picks the first enabled op's tool for
+        // z_shift / etc.).
+        let profile = Op {
+            id: 1,
+            name: "Profile".into(),
+            enabled: true,
+            kind: OpKind::Profile {
+                offset: ToolOffset::Outside,
+                contour: crate::project::ContourParams::default(),
+                profile: crate::project::ProfileParams::default(),
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams {
+                depth: -1.0,
+                start_depth: 0.0,
+                step: Some(-1.0),
+                fast_move_z: 5.0,
+                ..OpParams::default()
+            },
+        };
+        let project = crate::project::Project {
+            segments: vec![Segment::line(
+                crate::geometry::Point2::new(0.0, 0.0),
+                crate::geometry::Point2::new(10.0, 0.0),
+                "0",
+                7,
+            )],
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile, pause],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline ran");
+        let gcode = &resp.gcode;
+        // M0 line is present and ordered AFTER the profile cut, BEFORE
+        // program end. Comment with the user's message is adjacent.
+        assert!(gcode.contains("\nM0\n"), "expected M0 line; got:\n{gcode}");
+        assert!(
+            gcode.contains("Swap to 1/8 endmill"),
+            "expected message comment; got:\n{gcode}",
+        );
+        // M5 (spindle off) immediately before M0; M3 (spindle back on)
+        // immediately after.
+        let m0_pos = gcode.find("\nM0\n").unwrap();
+        let pre = &gcode[..m0_pos];
+        let post = &gcode[m0_pos..];
+        assert!(pre.rfind("\nM5\n").is_some(), "expected M5 before M0");
+        assert!(post.find("\nM3\n").is_some(), "expected M3 after M0");
+    }
+
+    /// rt1.34: Pause carries no tool reference, so the missing-tool
+    /// validation that would normally fail a 0-id lookup must skip it.
+    #[test]
+    fn pause_op_skips_tool_validation() {
+        let pause = Op {
+            id: 2,
+            name: "Stop".into(),
+            enabled: true,
+            kind: OpKind::Pause {
+                message: String::new(),
+            },
+            tool_id: 999, // would otherwise UnknownTool
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        let project = crate::project::Project {
+            segments: Vec::new(),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![pause],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        );
+        assert!(
+            resp.is_ok(),
+            "Pause op should not require a valid tool; got {resp:?}",
+        );
+    }
+
+    /// rt1.34: Pause op round-trips through serde JSON (snake_case tag).
+    #[test]
+    fn pause_op_round_trips_through_serde() {
+        let pause = Op {
+            id: 5,
+            name: "Pause".into(),
+            enabled: true,
+            kind: OpKind::Pause {
+                message: "Flip the stock".into(),
+            },
+            tool_id: 0,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        let json = serde_json::to_string(&pause).expect("serialize");
+        assert!(json.contains("\"pause\""), "expected pause tag in {json}");
+        let back: Op = serde_json::from_str(&json).expect("deserialize");
+        match back.kind {
+            OpKind::Pause { message } => assert_eq!(message, "Flip the stock"),
+            other => panic!("expected Pause, got {other:?}"),
+        }
+    }

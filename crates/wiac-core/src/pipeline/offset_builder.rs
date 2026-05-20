@@ -551,6 +551,12 @@ pub(super) fn build_op_offsets(
                 // call here doesn't crash the program — the dedicated
                 // dispatcher already produced the toolpath.
             }
+            OpKind::Pause { .. } => {
+                // rt1.34: Pause is emitted inline by the pipeline op
+                // loop (M5 + M0 + M3) before this offset-cascade path
+                // ever runs. Reach here means a programming error
+                // upstream; skip silently to keep the program intact.
+            }
         }
     }
     let _ = emitted_objects;

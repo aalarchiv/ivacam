@@ -497,6 +497,10 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             hash_contour_params(contour, h);
         }
         OpKind::Helix => h.write_u8(8),
+        OpKind::Pause { message } => {
+            h.write_u8(10);
+            message.hash(h);
+        }
         OpKind::VCarve { carve } => {
             h.write_u8(9);
             hash_vcarve_params(carve, h);

@@ -1247,6 +1247,24 @@ class ProjectState {
 
   addOperation(kind: OpKind): OpEntry {
     const nextId = this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
+    // rt1.34: Pause has no tool, no source, no geometry — only a
+    // message. Skip the source-selection presets and the geometry-side
+    // defaults that the variant types don't carry.
+    if (kind === 'pause') {
+      const pauseOp: OpEntry = {
+        id: nextId,
+        name: prettyOpKind(kind),
+        enabled: true,
+        kind: 'pause',
+        toolId: 0,
+        sourceCombine: 'auto',
+        sourceLayers: null,
+        message: '',
+      } as OpEntry;
+      this.history.exec(addOperationCommand(pauseOp), this.target());
+      this.selectedOpId = pauseOp.id;
+      return pauseOp;
+    }
     const tool = this.tools[0];
     // When the user has objects selected on the canvas, pin the new op
     // to that exact set. Most users select first, click "+ Pocket"

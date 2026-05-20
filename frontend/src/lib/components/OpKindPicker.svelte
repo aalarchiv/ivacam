@@ -14,6 +14,7 @@
     engrave: 'Engrave',
     drag_knife: 'Drag-knife',
     vcarve: 'V-Carve',
+    pause: 'Pause',
   };
   export const KIND_ICON: Record<OpKind, string> = {
     profile: '▢',
@@ -24,6 +25,7 @@
     engrave: '✎',
     drag_knife: '✁',
     vcarve: '⌃',
+    pause: '⏸',
   };
   // Helix is omitted intentionally: it's an OperationKind in the
   // schema but the dedicated standalone helix-op emitter isn't shipped
@@ -41,6 +43,7 @@
     'engrave',
     'drag_knife',
     'vcarve',
+    'pause',
   ];
 
   export const PICKER_LABEL: Record<PickerKind, string> = {
@@ -73,6 +76,8 @@
       'Chamfering pass with a V-bit. Set the chamfer width and the depth is derived from the bit angle.',
     thread:
       'Single-point thread milling inside a circular bore (internal) or around a stud (external). Requires a closed-circle selection.',
+    pause:
+      'Optional-stop: emits M0 with an operator message at this slot. The machine halts so the operator can change tools manually, inspect the cut, or flip the stock. Press Cycle Start to resume.',
   };
 </script>
 

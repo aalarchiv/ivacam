@@ -34,7 +34,8 @@ export type OpKind =
   | 'chamfer'
   | 'engrave'
   | 'drag_knife'
-  | 'vcarve';
+  | 'vcarve'
+  | 'pause';
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
 export type SourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
@@ -218,6 +219,18 @@ export interface DragKnifeOp extends OpBase {
   offset: ProfileOffset;
 }
 
+/// rt1.34: program-level optional-stop op. Emits M5 → M0 → M3 at the
+/// op's slot in the operations list, with the message rendered as a
+/// gcode comment. No tool, no source — the op exists purely to pause
+/// the controller so the operator can intervene (manual tool change,
+/// inspect cut, flip stock for double-sided work).
+export interface PauseOp extends OpBase {
+  kind: 'pause';
+  /// One-line message shown on the operator console. Empty string is
+  /// allowed; the M0 stop still emits.
+  message: string;
+}
+
 /// Tagged-union over every op kind. TypeScript narrows the variant
 /// on `op.kind === '<value>'` so reads of kind-specific fields are
 /// only valid inside the matching branch — wrong-kind reads (e.g.
@@ -231,7 +244,8 @@ export type OpEntry =
   | VCarveOp
   | ThreadOp
   | EngraveOp
-  | DragKnifeOp;
+  | DragKnifeOp
+  | PauseOp;
 
 /// Patch type for `project.updateOperation`. A patch covers the full
 /// variant-specific shape — callers may pass `{ depth: -3 }` against

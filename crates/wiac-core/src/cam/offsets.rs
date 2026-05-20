@@ -668,6 +668,7 @@ pub fn apply_cut_direction(
             | OpKind::Thread { .. }
             | OpKind::Chamfer { .. }
             | OpKind::Helix
+            | OpKind::Pause { .. }
             | OpKind::VCarve { .. } => CutContext::Skip,
         }
     };

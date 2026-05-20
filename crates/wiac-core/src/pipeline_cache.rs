@@ -56,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 23;
+pub const PIPELINE_VERSION: u32 = 24;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -314,6 +314,7 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     };
     h.write_u8(coolant);
     hash_opt_f64(t.default_step, h);
+    hash_opt_f64(t.default_xy_overlap, h);
     t.pause.hash(h);
     hash_opt_f64(t.flute_length_mm, h);
     hash_opt_f64(t.shank_diameter_mm, h);
@@ -835,6 +836,8 @@ mod tests {
             feed_rate_drill: None,
             default_peck_step_mm: None,
             default_step: None,
+            default_xy_overlap: None,
+            comment: None,
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,
@@ -896,7 +899,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x09ce_aec1_f899_53f6_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x9357_87d2_15ff_1ffb_u64, "got {:#018x}", key.0);
     }
 
     #[test]

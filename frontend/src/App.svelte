@@ -33,7 +33,6 @@
   type ShortcutHelpComp = typeof import('./lib/components/ShortcutHelp.svelte').default;
   let ShortcutHelp = $state<ShortcutHelpComp | null>(null);
   let shortcutHelpLoading = false;
-  import SourceStaleToast from './lib/components/SourceStaleToast.svelte';
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
 
@@ -967,6 +966,35 @@
       <span>Text</span>
     </button>
     <span class="tb-sep"></span>
+    <!-- anvm: always-visible entries for the three config dialogs that
+         otherwise only live under the Tools menu. Frequent edits, easy
+         to miss behind menu bar. Menu items stay for keyboard / muscle
+         memory. -->
+    <button
+      class="tb-btn icon config"
+      onclick={() => (machineOpen = true)}
+      title="Machine settings — work area, units, post-processor"
+      aria-label="Open Machine dialog"
+    >
+      M
+    </button>
+    <button
+      class="tb-btn icon config"
+      onclick={() => (toolsOpen = true)}
+      title="Tool library — cutters, feeds, speeds"
+      aria-label="Open Tools dialog"
+    >
+      T
+    </button>
+    <button
+      class="tb-btn icon config"
+      onclick={() => (settingsOpen = true)}
+      title="App settings — language, sim safety, theme, auto-regenerate"
+      aria-label="Open Settings dialog"
+    >
+      ⚙
+    </button>
+    <span class="tb-sep"></span>
     <GenerateBar />
     <span class="tb-flex"></span>
     {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
@@ -1123,12 +1151,6 @@
     {@const C = ShortcutHelp}
     <C onClose={() => (shortcutHelpOpen = false)} />
   {/if}
-  <SourceStaleToast
-    onReload={async (p) => {
-      await project.reimportFromPath(p);
-    }}
-  />
-
   {#if closePrompt}
     <div
       class="close-prompt-overlay"
@@ -1391,6 +1413,15 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+  }
+  /* anvm: single-glyph config-dialog buttons (M / T / ⚙). Slightly
+     bigger glyph + square button so they read as icons rather than
+     truncated text. */
+  .tb-btn.icon.config {
+    min-width: 1.8rem;
+    justify-content: center;
+    font-weight: 600;
+    padding: 0.3rem 0.4rem;
   }
   .tb-sep {
     width: 1px;

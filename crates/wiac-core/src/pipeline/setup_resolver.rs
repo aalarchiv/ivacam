@@ -176,6 +176,7 @@ pub(super) fn synthesize_op_setup(
         wirbeln_climb: op
             .contour_params()
             .map_or(true, |c| matches!(c.cut_direction, crate::project::CutDirection::Climb)),
+        default_xy_overlap: tool.default_xy_overlap,
     };
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
@@ -410,6 +411,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 wirbeln_stepover: 0.0,
                 wirbeln_osc: 0.0,
                 wirbeln_climb: true,
+                default_xy_overlap: None,
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
@@ -442,6 +444,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             wirbeln_stepover: 0.0,
             wirbeln_osc: 0.0,
             wirbeln_climb: true,
+            default_xy_overlap: tool.default_xy_overlap,
         };
     }
     setup

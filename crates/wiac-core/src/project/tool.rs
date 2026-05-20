@@ -64,6 +64,18 @@ pub struct ToolEntry {
     /// inherit this when their own `step` is unset. None = no default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_step: Option<f64>,
+    /// Default XY overlap (0..1) for pocket / cascade ops that don't set
+    /// their own [`crate::project::PocketParams::xy_overlap`]. Mirrors
+    /// the `default_step` pattern (dr5). None = fall through to the
+    /// global 0.5 default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_xy_overlap: Option<f64>,
+    /// Free-text comment / description (rt1.31). Surfaced as the
+    /// tooltip on the tool dropdown in OpPropertiesPanel and as an
+    /// expandable text area in ToolLibraryDialog. Empty / None = no
+    /// comment; doesn't affect any pipeline output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
     /// Per-tool Z origin offset (rt1.30 / Estlcam `Z_Shift`). For
     /// machines without automatic tool-length probing — the user
     /// pre-measures each tool's tip Z relative to a reference tool and
@@ -214,6 +226,8 @@ impl Default for ToolEntry {
             feed_rate_drill: None,
             default_peck_step_mm: None,
             default_step: None,
+            default_xy_overlap: None,
+            comment: None,
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,

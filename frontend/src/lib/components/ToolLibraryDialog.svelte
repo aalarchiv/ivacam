@@ -846,6 +846,40 @@
                   />
                 </label>
                 <label>
+                  <span>Default XY overlap (0..1)</span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.05"
+                    max="0.95"
+                    placeholder="0.5"
+                    value={tool.defaultXyOverlap ?? ''}
+                    title="Per-tool default XY overlap for pocket / cascade ops (dr5). Empty = fall through to the global 0.5. Clamped to 0.05–0.95 at generate time."
+                    onchange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      if (v === '') {
+                        updateField(i, 'defaultXyOverlap', undefined);
+                        return;
+                      }
+                      const n = parseFloat(v);
+                      updateField(i, 'defaultXyOverlap', isNaN(n) ? undefined : n);
+                    }}
+                  />
+                </label>
+                <label class="comment-row">
+                  <span>Comment</span>
+                  <textarea
+                    rows="2"
+                    value={tool.comment ?? ''}
+                    placeholder="Notes about this tool — material, vendor, sharpening date, etc. Appears as the tooltip on the tool dropdown in op properties."
+                    title="Free-text description (rt1.31). Doesn't affect any pipeline output."
+                    onchange={(e) => {
+                      const v = (e.currentTarget as HTMLTextAreaElement).value;
+                      updateField(i, 'comment', v === '' ? undefined : v);
+                    }}
+                  ></textarea>
+                </label>
+                <label>
                   <span>Z shift (mm)</span>
                   <input
                     type="number"

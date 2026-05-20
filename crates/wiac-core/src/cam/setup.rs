@@ -87,6 +87,11 @@ pub struct ToolConfig {
     /// matches Estlcam's `Einstellungen.Gleichlauf` flag.
     #[serde(default = "default_true")]
     pub wirbeln_climb: bool,
+    /// Per-tool default XY overlap (dr5). Resolved from
+    /// [`crate::project::ToolEntry::default_xy_overlap`] at synth time;
+    /// `None` = no tool-level default, fall through to global 0.5.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_xy_overlap: Option<f64>,
 }
 
 fn default_true() -> bool {
@@ -114,6 +119,7 @@ impl Default for ToolConfig {
             wirbeln_stepover: 0.0,
             wirbeln_osc: 0.0,
             wirbeln_climb: true,
+            default_xy_overlap: None,
         }
     }
 }

@@ -361,6 +361,37 @@
       </span>
     {/if}
   {/if}
+  {#if project.sourceFileStaleNotice}
+    <!-- opqb: source-file-changed chip lives in the toolbar where the
+         user looks for actionable state, instead of the standalone
+         bottom-right toast that competed with other floating UI. -->
+    <span class="stale-chip" role="alert" aria-live="polite" title="The source file on disk has changed since the last import. Reload to pick up the changes; Ignore to keep the current view.">
+      <span class="stale-msg">
+        ⟳ <strong
+          >{project.sourceFileStaleNotice.path.split(/[\\/]/).pop()}</strong
+        > changed
+      </span>
+      <button
+        type="button"
+        class="stale-reload"
+        onclick={async () => {
+          const path = project.sourceFileStaleNotice?.path;
+          if (!path) return;
+          project.sourceFileStaleNotice = null;
+          await project.reimportFromPath(path);
+        }}
+      >
+        Reload
+      </button>
+      <button
+        type="button"
+        class="stale-ignore"
+        onclick={() => (project.sourceFileStaleNotice = null)}
+      >
+        ×
+      </button>
+    </span>
+  {/if}
   {#if project.simDiagnostics == null && project.generated == null}
     <span class="sim-chip idle" title={SIM_IDLE_HINT}>
       🛡 {chipLabel()}
@@ -570,6 +601,54 @@
     font-size: 0.74rem;
     border: 1px solid transparent;
     color: var(--text-strong);
+  }
+  /* opqb: source-file-changed chip. Warning palette, inline Reload /
+     dismiss buttons so the user can act without leaving the toolbar. */
+  .stale-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.18rem 0.5rem 0.18rem 0.65rem;
+    font-size: 0.74rem;
+    background: var(--sim-warn-bg, color-mix(in srgb, var(--warn) 18%, var(--bg-elevated)));
+    color: var(--sim-warn-fg, var(--text-strong));
+    border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  }
+  .stale-chip .stale-msg {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 24ch;
+  }
+  .stale-chip .stale-msg strong {
+    font-weight: 600;
+  }
+  .stale-chip button {
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 3px;
+    line-height: 1.2;
+  }
+  .stale-chip .stale-reload {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  .stale-chip .stale-reload:hover {
+    background: var(--accent-strong);
+  }
+  .stale-chip .stale-ignore {
+    opacity: 0.8;
+    padding: 0.05rem 0.3rem;
+  }
+  .stale-chip .stale-ignore:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--warn) 25%, transparent);
   }
   .sim-chip.idle {
     background: var(--bg-elevated);

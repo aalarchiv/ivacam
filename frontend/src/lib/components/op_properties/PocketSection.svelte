@@ -282,9 +282,14 @@
       {/if}
     </details>
   {:else}
+    {@const toolDefault = opTool?.defaultXyOverlap}
+    {@const inheritedOverlap = toolDefault ?? 0.5}
+    {@const opOverlap = op.xyOverlap}
     <label
       class="row"
-      title="XY overlap between consecutive pocket cuts. 0.5 = 50% overlap (step is half the tool diameter, the standard default). Higher = tighter cascade rings, cleaner fill on small pockets but slower; lower = bigger steps, faster but may leave stripes."
+      title={opOverlap === undefined
+        ? `XY overlap between consecutive pocket cuts. Empty = inherit from the tool (${toolDefault !== undefined ? `${toolDefault} from "${opTool?.name}"` : '0.5 global default'}). 0.5 = 50 % overlap (step is half the tool diameter). Higher = tighter cascade rings, cleaner fill but slower; lower = bigger steps, faster but may leave stripes.`
+        : `XY overlap between consecutive pocket cuts. 0.5 = 50 % overlap (step is half the tool diameter). Higher = tighter cascade rings, cleaner fill but slower; lower = bigger steps, faster but may leave stripes. Clear the field to inherit ${toolDefault !== undefined ? `${toolDefault} from tool "${opTool?.name}"` : 'the 0.5 global default'}.`}
     >
       <span>XY overlap</span>
       <div class="num-cell">
@@ -293,9 +298,16 @@
           step="0.05"
           min="0.05"
           max="0.95"
-          value={op.xyOverlap ?? 0.5}
+          value={opOverlap ?? ''}
+          placeholder={String(inheritedOverlap)}
+          class:inherit-italic={opOverlap === undefined}
           onchange={(e) => {
-            const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+            const raw = (e.currentTarget as HTMLInputElement).value;
+            if (raw === '') {
+              patch('xyOverlap', undefined);
+              return;
+            }
+            const v = parseFloat(raw);
             if (!isNaN(v)) patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
           }}
         />
@@ -304,3 +316,13 @@
     </label>
   {/if}
 </fieldset>
+
+<style>
+  /* dr5: italic styling for the XY overlap input when it's empty and
+     inheriting from the tool's defaultXyOverlap. Reads as "this is a
+     computed default, not a user-typed value". */
+  input.inherit-italic::placeholder {
+    font-style: italic;
+    opacity: 0.75;
+  }
+</style>

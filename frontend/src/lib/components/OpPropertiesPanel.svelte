@@ -170,7 +170,13 @@
       />
     </label>
 
-    <label class="row">
+    {@const selectedTool = project.tools.find((t) => t.id === op.toolId)}
+    <label
+      class="row"
+      title={selectedTool?.comment
+        ? selectedTool.comment
+        : 'Tool from the project library. Drives the offset radius + feeds + speeds + holder collision check.'}
+    >
       <span>Tool</span>
       <div class="tool-cell">
         <select
@@ -179,7 +185,9 @@
             patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
           {#each project.tools as t (t.id)}
-            <option value={t.id}>#{t.id} {t.name} ({t.diameter}mm)</option>
+            <option value={t.id} title={t.comment ?? ''}
+              >#{t.id} {t.name} ({t.diameter}mm)</option
+            >
           {/each}
         </select>
         <button

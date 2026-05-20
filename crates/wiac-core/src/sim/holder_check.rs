@@ -236,6 +236,8 @@ mod tests {
             feed_rate_drill: None,
             default_peck_step_mm: None,
             default_step: None,
+            default_xy_overlap: None,
+            comment: None,
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,

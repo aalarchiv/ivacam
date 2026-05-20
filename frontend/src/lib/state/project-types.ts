@@ -167,6 +167,14 @@ export interface ToolEntry {
   /// Default depth-per-pass (negative, mm). Operations using this tool
   /// inherit this when their own `step` is unset.
   defaultStep?: number;
+  /// Default XY overlap (0..1) for pocket / cascade ops that don't set
+  /// their own `xyOverlap`. Mirrors `defaultStep` (dr5). Undefined =
+  /// fall through to the global 0.5 default.
+  defaultXyOverlap?: number;
+  /// Free-text comment / description (rt1.31). Surfaced as the tooltip
+  /// on the tool select in OpPropertiesPanel and as a multi-line text
+  /// area in ToolLibraryDialog. Doesn't affect any pipeline output.
+  comment?: string;
   /// Length of cutting flutes in mm. Undefined = treat the entire tool
   /// as cutting (legacy behavior — no holder collision check is done).
   fluteLengthMm?: number;

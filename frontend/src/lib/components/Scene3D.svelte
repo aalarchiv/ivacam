@@ -1617,9 +1617,16 @@
     if (sphere) sceneRadius = Math.max(sphere.radius, 1);
   }
 
+  /// Manual "Fit view" entry point (1ei2). Resets the one-shot workspace
+  /// restore so the auto-fit isn't immediately overruled, then refits.
+  /// Called by the toolbar button and (planned) the numpad-'.' shortcut.
+  function requestFitView() {
+    restoredFromWorkspace = true; // suppress the auto-restore inside fit
+    fitCameraToScene();
+  }
+
   /// Camera fit-to-view, run once when a new geometry source appears.
-  /// Manual fit (e.g. a "frame" button) would call this directly. Layer
-  /// toggles / generates / op edits no longer reset the user's view.
+  /// Layer toggles / generates / op edits no longer reset the user's view.
   function fitCameraToScene() {
     if (!camera || !controls) return;
     const sphere = combinedBoundingSphere();
@@ -1721,7 +1728,17 @@
   }
 </script>
 
-<div class="scene" bind:this={host}></div>
+<div class="scene" bind:this={host}>
+  <button
+    type="button"
+    class="fit-btn"
+    onclick={requestFitView}
+    title="Fit view to scene"
+    aria-label="Fit view to scene"
+  >
+    ⌖
+  </button>
+</div>
 
 <style>
   .scene {
@@ -1730,5 +1747,36 @@
     height: 100%;
     overflow: hidden;
     background: var(--bg-app);
+  }
+  /* 1ei2: manual fit-view trigger. Same overlay style as EntityCanvas2D's
+     help-btn so the two stack visually consistently across the 2D / 3D
+     panes. */
+  .fit-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.7;
+    transition:
+      opacity 0.12s ease,
+      color 0.12s ease;
+    z-index: 2;
+  }
+  .fit-btn:hover,
+  .fit-btn:focus {
+    opacity: 1;
+    color: var(--text-strong);
   }
 </style>

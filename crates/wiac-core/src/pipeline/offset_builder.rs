@@ -235,9 +235,14 @@ pub(super) fn build_op_offsets(
     // kbx5 step 2: xy_overlap lives on PocketParams. Non-Pocket ops
     // fall through to the 0.5 default (was the prior behavior since
     // OpParams::default initialised xy_overlap to 0.0 → 0.5 fallback).
+    // dr5: when the op leaves it at 0 ("use default") and the tool
+    // carries a `default_xy_overlap`, the tool value wins; otherwise
+    // fall through to the global 0.5.
     let overlap_setting = effective_op.pocket_params().map_or(0.0, |p| p.xy_overlap);
     let overlap = if overlap_setting > 0.0 {
         overlap_setting.clamp(0.05, 0.95)
+    } else if let Some(tool_default) = setup.tool.default_xy_overlap {
+        tool_default.clamp(0.05, 0.95)
     } else {
         0.5
     };
@@ -2352,6 +2357,8 @@ mod tests {
             feed_rate_drill: None,
             default_peck_step_mm: None,
             default_step: None,
+            default_xy_overlap: None,
+            comment: None,
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,

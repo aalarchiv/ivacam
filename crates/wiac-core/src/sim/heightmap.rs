@@ -175,6 +175,17 @@ pub enum ToolProfile {
     LaserBeam {
         r: f32,
     },
+    /// rt1.28 / rbl: flat-bottom endmill with a rounded corner fillet
+    /// between the floor and the side. Floor up to `r ≤ r_outer -
+    /// corner_r`; a quarter-arc of radius `corner_r` from there to the
+    /// full radius.
+    BullNose {
+        /// Outer cutter radius (= tool diameter / 2).
+        r: f32,
+        /// Corner-fillet radius in mm. 0 reduces to a flat endmill;
+        /// `corner_r == r` reduces to a ball-nose.
+        corner_r: f32,
+    },
 }
 
 impl ToolProfile {
@@ -186,7 +197,8 @@ impl ToolProfile {
             | ToolProfile::Drill { r }
             | ToolProfile::LaserBeam { r }
             | ToolProfile::VBit { r, .. }
-            | ToolProfile::DragKnife { r, .. } => r,
+            | ToolProfile::DragKnife { r, .. }
+            | ToolProfile::BullNose { r, .. } => r,
         }
     }
 
@@ -233,6 +245,24 @@ impl ToolProfile {
                     None
                 }
             }
+            ToolProfile::BullNose { r: rr, corner_r } => {
+                if r > rr {
+                    return None;
+                }
+                // Flat-bottom plateau out to (rr - corner_r); from there
+                // a quarter-arc rises to corner_r at r = rr. Clamp
+                // corner_r to the cutter radius so a misconfigured tool
+                // collapses to ball-nose rather than blowing up.
+                let cr = corner_r.clamp(0.0, rr);
+                let plateau = rr - cr;
+                if r <= plateau || cr <= 0.0 {
+                    Some(0.0)
+                } else {
+                    let dx = r - plateau;
+                    let inside = cr.mul_add(cr, -(dx * dx));
+                    Some(cr - inside.max(0.0).sqrt())
+                }
+            }
         }
     }
 
@@ -276,15 +306,29 @@ impl ToolProfile {
             // Laser kerf is effectively zero; give it a small finite radius
             // so the heightmap can still register etching.
             ToolKind::LaserBeam => ToolProfile::LaserBeam { r: 0.15 },
-            // rt1.28: new cutter geometries collapse to an Endmill
-            // profile for the sim sweep — the cross-section
-            // differences (fillet floor, undercut disk, profile
-            // shape) are still a follow-up. The tool library carries
-            // the metadata; algorithmic use ships in rt1.28.x.
-            ToolKind::BullNose
-            | ToolKind::Compression
-            | ToolKind::TSlot
-            | ToolKind::FormProfile => ToolProfile::Endmill { r },
+            // rbl: BullNose uses the per-tool corner_radius_mm for an
+            // accurate fillet floor; the sim now models the rounded
+            // corner instead of pretending it's a square endmill.
+            // Falls back to flat Endmill when corner_radius is missing
+            // / zero (same observable cross-section).
+            ToolKind::BullNose => {
+                let corner_r = (tool.corner_radius_mm.unwrap_or(0.0).max(0.0)) as f32;
+                if corner_r > 0.0 {
+                    ToolProfile::BullNose { r, corner_r }
+                } else {
+                    ToolProfile::Endmill { r }
+                }
+            }
+            // Compression: identical floor profile to Endmill (the
+            // up-cut / down-cut flute split affects chip evacuation,
+            // not the cross-section). TSlot: the head profile is flat
+            // like an Endmill; the neck above only matters for shank /
+            // holder collision (sim/holder.rs), not the heightmap.
+            // FormProfile: needs user-supplied geometry which has no
+            // UI yet — defer once that's filed.
+            ToolKind::Compression | ToolKind::TSlot | ToolKind::FormProfile => {
+                ToolProfile::Endmill { r }
+            }
         }
     }
 }
@@ -514,5 +558,46 @@ mod tests {
         } else {
             panic!("expected VBit profile");
         }
+    }
+
+    /// rbl: BullNose with corner_radius_mm builds a fillet profile;
+    /// without it (or with 0) collapses to a flat endmill. Eval at the
+    /// rim equals corner_r (the lip rises by exactly the fillet radius);
+    /// eval inside the plateau equals 0.
+    #[test]
+    fn from_tool_bullnose_uses_corner_radius() {
+        let mut t = make_tool(ToolKind::BullNose, 6.0);
+        t.corner_radius_mm = Some(0.8);
+        match ToolProfile::from_tool(&t) {
+            ToolProfile::BullNose { r, corner_r } => {
+                assert!(approx(r, 3.0));
+                assert!(approx(corner_r, 0.8));
+                // r=0 → centre of flat bottom → depth 0
+                assert_eq!(ToolProfile::BullNose { r, corner_r }.eval(0.0), Some(0.0));
+                // r at the plateau edge (rr - corner_r = 2.2) → still 0
+                assert!(approx(
+                    ToolProfile::BullNose { r, corner_r }.eval(2.2).unwrap(),
+                    0.0,
+                ));
+                // r at the rim (r = rr) → lip has risen by corner_r.
+                // f32 precision near the boundary leaves a residual of
+                // ~3e-4 mm; the heightmap grid step is orders of
+                // magnitude coarser than that so the slack is harmless.
+                let lip = ToolProfile::BullNose { r, corner_r }.eval(3.0).unwrap();
+                assert!((lip - 0.8).abs() < 1e-3, "lip = {lip}, expected ≈ 0.8");
+                // r > rr → outside the cutter
+                assert!(ToolProfile::BullNose { r, corner_r }.eval(3.5).is_none());
+            }
+            other => panic!("expected BullNose profile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_tool_bullnose_no_corner_radius_collapses_to_endmill() {
+        let t = make_tool(ToolKind::BullNose, 6.0); // corner_radius_mm = None
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::Endmill { .. }
+        ));
     }
 }

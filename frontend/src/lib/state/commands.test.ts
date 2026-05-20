@@ -8,7 +8,6 @@ import {
   addFixtureCommand,
   addOperationCommand,
   addToolCommand,
-  appendImportedCommand,
   assignToolCommand,
   autoFixToCommand,
   changeProfileOffsetCommand,
@@ -60,7 +59,6 @@ function sampleTextLayer(id: number, text = 'Hello'): TextLayer {
 
 function blankTarget(): CommandTarget {
   return {
-    imported: null,
     operations: [],
     tools: [],
     fixtures: [],
@@ -82,13 +80,6 @@ function blankTarget(): CommandTarget {
     } as StockConfig,
     settings: {} as CommandTarget['settings'],
     textLayers: [],
-    fileTransform: {
-      translate: { x: 0, y: 0 },
-      rotateDeg: 0,
-      scale: 1,
-      mirrorX: false,
-      mirrorY: false,
-    },
     imports: [],
     dirty: false,
   };
@@ -415,29 +406,6 @@ describe('machine / stock', () => {
     cmd.revert(t);
     expect(t.stock.margin).toBe(5);
     expect(cmd.coalesce_key).toBe('setStock:margin');
-  });
-});
-
-describe('appendImportedCommand', () => {
-  it('round-trips before / after snapshots', () => {
-    const t = blankTarget();
-    const after = {
-      filename: 'text',
-      format: 'text',
-      bbox: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 },
-      layers: [],
-      segments: [],
-      unit_scale: 1,
-      warnings: [],
-      objects: [],
-      object_meta: [],
-    };
-    const cmd = appendImportedCommand({ before: null, after });
-    cmd.apply(t);
-    expect(t.imported).not.toBeNull();
-    expect(t.imported!.bbox.max_x).toBe(10);
-    cmd.revert(t);
-    expect(t.imported).toBeNull();
   });
 });
 

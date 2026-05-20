@@ -10,7 +10,6 @@
 import type { Command } from './history';
 import type {
   AppSettings,
-  FileTransform,
   Fixture,
   FixtureKind,
   ImportEntry,
@@ -21,7 +20,7 @@ import type {
   TextLayer,
   ToolEntry,
 } from './project.svelte';
-import type { ImportResponse, WiacAutoFix } from '../api/types';
+import type { WiacAutoFix } from '../api/types';
 import type { ContourFields, ProfileOffset } from './op_types';
 import { isContourOp } from './op_types';
 
@@ -44,11 +43,6 @@ function clone<T>(v: T): T {
 /// commands.ts doesn't pull in the Svelte-runtime class itself; only
 /// the fields it touches.
 export interface CommandTarget {
-  imported: ImportResponse | null;
-  fileTransform: FileTransform;
-  /// Raw imports array (wrsu). Phase 2 commands address by id; Phase 1's
-  /// `imported` / `fileTransform` proxy fields keep targeting imports[0]
-  /// for back-compat with pre-Phase-2 commands.
   imports: ImportEntry[];
   operations: OpEntry[];
   tools: ToolEntry[];
@@ -540,38 +534,16 @@ export function setStockCommand(patch: Partial<StockConfig>): Command {
 
 // ── imported geometry ────────────────────────────────────────────────
 
-export interface AppendImportedSegmentsPayload {
-  before: ImportResponse | null;
-  after: ImportResponse;
-}
-
-/// Append-imported-segments is the only `imported` mutation that should
-/// be undoable in the normal authoring flow (Add Text). `setImported`
-/// (file load) and `restore` (project load) instead clear history.
-export function appendImportedCommand(p: AppendImportedSegmentsPayload): Command {
-  return {
-    label: 'Add geometry',
-    apply: (s) => {
-      const t = s as CommandTarget;
-      t.imported = clone(p.after);
-      t.dirty = true;
-    },
-    revert: (s) => {
-      const t = s as CommandTarget;
-      t.imported = p.before ? clone(p.before) : null;
-      t.dirty = true;
-    },
-  };
-}
-
-/// Multi-import shape swap (wrsu Phase 2B). Used by addImported,
-/// removeImport, patchFileTransformForImport, resetFileTransformForImport.
-/// The whole-array swap is conceptually heavier than a per-field patch
-/// but the array is tiny (1-handful of entries, each a shallow header
-/// around an ImportResponse reference); clone() handles it fine.
+/// Whole-imports-array swap (wrsu). Every undoable mutation of the
+/// imports list — add/remove a drawing, edit a per-import fileTransform,
+/// delete a layer across all imports, append text segments to imports[0]
+/// — goes through this single command. The whole-array swap is
+/// conceptually heavier than a per-field patch but the array is tiny
+/// (1-handful of entries, each a shallow header around an ImportResponse
+/// reference); clone() handles it fine.
 ///
-/// `coalesceKey` lets per-entry transform spinner drags collapse into
-/// a single undo entry (typical pattern: `transform:<importId>:<field>`).
+/// `coalesceKey` lets per-entry transform spinner drags collapse into a
+/// single undo entry (typical pattern: `xform:<importId>:<field>`).
 export function setImportsCommand(
   before: ImportEntry[],
   after: ImportEntry[],
@@ -589,55 +561,6 @@ export function setImportsCommand(
     revert: (s) => {
       const t = s as CommandTarget;
       t.imports = clone(before);
-      t.dirty = true;
-    },
-  };
-}
-
-/// File-level transform mutation (bww). Stores before/after snapshots so
-/// the user can undo the whole transform in one step (vs. one undo per
-/// nudge of the X spinner, which is hostile when iterating on layout).
-/// Coalesces by the changed-field key so dragging a single spinner only
-/// produces one undo entry.
-export function setFileTransformCommand(
-  before: FileTransform,
-  after: FileTransform,
-  coalesceKey?: string,
-): Command {
-  return {
-    label: 'Edit file transform',
-    coalesce_key: coalesceKey ? `setFileTransform:${coalesceKey}` : undefined,
-    apply: (s) => {
-      const t = s as CommandTarget;
-      t.fileTransform = clone(after);
-      t.dirty = true;
-    },
-    revert: (s) => {
-      const t = s as CommandTarget;
-      t.fileTransform = clone(before);
-      t.dirty = true;
-    },
-  };
-}
-
-/// Generic imported-swap with a custom label. Used by per-layer delete
-/// (and any future imported-geometry mutation that isn't a simple
-/// append). Same before/after snapshot pattern as appendImportedCommand.
-export function replaceImportedCommand(
-  before: ImportResponse | null,
-  after: ImportResponse | null,
-  label: string,
-): Command {
-  return {
-    label,
-    apply: (s) => {
-      const t = s as CommandTarget;
-      t.imported = after ? clone(after) : null;
-      t.dirty = true;
-    },
-    revert: (s) => {
-      const t = s as CommandTarget;
-      t.imported = before ? clone(before) : null;
       t.dirty = true;
     },
   };

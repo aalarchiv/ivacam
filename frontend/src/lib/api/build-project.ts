@@ -377,11 +377,9 @@ export interface WireProject {
 }
 
 interface ProjectStateView {
-  imported: ImportResponse | null;
-  /// File-transform-applied view of `imported`. Equals `imported` when
-  /// the transform is identity; otherwise carries segments + bbox after
-  /// the layout transform (bww). The wire payload always sends this so
-  /// the pipeline sees the same geometry the user does.
+  /// File-transform-applied combined view of every import (wrsu Phase 2).
+  /// The wire payload always sends this so the pipeline sees the same
+  /// geometry the user sees on the canvas.
   transformedImport: ImportResponse | null;
   machine: MachineSettings;
   tools: FrontToolEntry[];
@@ -741,7 +739,7 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
 /// back to the legacy segments+setup path.
 export function buildProject(state: ProjectStateView): WireProject | null {
   if (state.operations.length === 0) return null;
-  const imp = state.transformedImport ?? state.imported;
+  const imp = state.transformedImport;
   if (!imp) return null;
   return {
     segments: imp.segments,

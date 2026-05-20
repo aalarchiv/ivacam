@@ -184,16 +184,13 @@ import {
   addOperationCommand,
   addTextLayerCommand,
   addToolCommand,
-  appendImportedCommand,
   deleteOperationCommand,
   deleteTextLayerCommand,
   deleteToolCommand,
   duplicateOperationCommand,
   removeFixtureCommand,
   reorderOperationCommand,
-  replaceImportedCommand,
   replaceToolsCommand,
-  setFileTransformCommand,
   setImportsCommand,
   setMachineCommand,
   setStockCommand,
@@ -213,47 +210,15 @@ class ProjectState {
   /// to `this.data.…` so existing call sites stay unchanged.
   data = new ProjectDataState();
 
-  /// Raw imports array (wrsu). Phase 1: most consumers still read the
-  /// derived `imported` / `fileTransform` accessors below, which target
-  /// `imports[0]`. Phases 2+ migrate them to iterate or address by id.
+  /// Raw imports array (wrsu). Every external consumer reads this via
+  /// `transformedImport` (combined view); per-entry mutations go through
+  /// `addImported`, `removeImport`, `patchFileTransformForImport`, and
+  /// `resetFileTransformForImport`.
   get imports(): ImportEntry[] {
     return this.data.imports;
   }
   set imports(v: ImportEntry[]) {
     this.data.imports = v;
-  }
-
-  /// First import's ImportResponse, for single-import call sites.
-  /// Replacing it builds a fresh ImportEntry that inherits the previous
-  /// entry's fileTransform + lastImportPath when one exists, falling back
-  /// to identity transform + null path. Setting `null` clears the array.
-  get imported(): ImportResponse | null {
-    return this.data.imports[0]?.source ?? null;
-  }
-  set imported(v: ImportResponse | null) {
-    if (v == null) {
-      this.data.imports = [];
-      return;
-    }
-    const prev = this.data.imports[0];
-    const next: ImportEntry = {
-      id: prev?.id ?? 1,
-      source: v,
-      fileTransform: prev?.fileTransform ?? identityFileTransform(),
-      lastImportPath: prev?.lastImportPath,
-    };
-    this.data.imports = [next];
-  }
-
-  /// First import's file-level transform (bww). Identity when no import.
-  /// Mutate via the `setFileTransform()` command for undo support.
-  get fileTransform(): FileTransform {
-    return this.data.imports[0]?.fileTransform ?? identityFileTransform();
-  }
-  set fileTransform(v: FileTransform) {
-    const entry = this.data.imports[0];
-    if (!entry) return;
-    this.data.imports = [{ ...entry, fileTransform: v }, ...this.data.imports.slice(1)];
   }
 
   /// All imports merged into one ImportResponse with each entry's
@@ -505,19 +470,6 @@ class ProjectState {
   /// + plugin-svelte upgrade, not a code-level change).
   historyVersion = $state(0);
 
-  /// Absolute path of the source file backing the first import (wrsu).
-  /// Drives the auto-reload watcher + 'Reload?' toast. Reads / writes
-  /// route through `imports[0].lastImportPath`; null when no import or
-  /// when the import didn't come from disk (paste / drop / Add Text).
-  get lastImportPath(): string | null {
-    return this.data.imports[0]?.lastImportPath ?? null;
-  }
-  set lastImportPath(v: string | null) {
-    const entry = this.data.imports[0];
-    if (!entry) return;
-    this.data.imports = [{ ...entry, lastImportPath: v }, ...this.data.imports.slice(1)];
-  }
-
   /// Absolute path of the currently-open project, or null if the user
   /// hasn't loaded one yet. Drives both the per-project workspace state
   /// look-up (eb8.6) and the watch set for source-change events (eb8.4).
@@ -561,8 +513,9 @@ class ProjectState {
     if (path == null) return;
     const saved = workspace.get().per_project[path];
     if (!saved) return;
-    if (this.imported && saved.visible_layers.length > 0) {
-      const valid = new Set(this.imported.layers.map((l) => l.name));
+    const view = this.transformedImport;
+    if (view && saved.visible_layers.length > 0) {
+      const valid = new Set(view.layers.map((l) => l.name));
       const restored = saved.visible_layers.filter((n) => valid.has(n));
       if (restored.length > 0) this.visibleLayers = new Set(restored);
     }
@@ -777,7 +730,22 @@ class ProjectState {
   }
 
   setImported(r: ImportResponse, sourcePath?: string | null) {
-    this.imported = r;
+    // Replace imports[0] in place: inherit the previous entry's id when
+    // there was one (so undo entries built against that id stay valid),
+    // reset the per-import fileTransform to identity (a new source means
+    // the old layout was for different geometry), and seed lastImportPath
+    // from `sourcePath` when the caller provided one.
+    const prev = this.data.imports[0];
+    const nextPath =
+      sourcePath !== undefined ? sourcePath : (prev?.lastImportPath ?? null);
+    this.data.imports = [
+      {
+        id: prev?.id ?? 1,
+        source: r,
+        fileTransform: identityFileTransform(),
+        lastImportPath: nextPath,
+      },
+    ];
     this.generated = null;
     this.toolpathCumLen = null;
     this.toolpathTotalLen = 0;
@@ -787,7 +755,6 @@ class ProjectState {
     this.selectedEntities = new Set();
     this.selectedObjects = new Set();
     this.hoverSegment = null;
-    if (sourcePath !== undefined) this.lastImportPath = sourcePath;
     this.sourceFileStaleNotice = null;
     // Replacing the imported geometry implies a new project boundary —
     // drop any text-preview segments cached from the previous project
@@ -905,7 +872,7 @@ class ProjectState {
   seriesSelectTo(targetId: number) {
     if (targetId <= 0) return;
     const anchorId = this.selectionAnchorObjectId;
-    const meta = this.imported?.object_meta ?? [];
+    const meta = this.transformedImport?.object_meta ?? [];
     if (anchorId == null || anchorId === targetId || meta.length === 0) {
       this.selectObjects([targetId], 'replace');
       return;
@@ -1018,25 +985,40 @@ class ProjectState {
   /// — entries for deleted objects become orphaned but no remaining
   /// segment references them, so they're harmless until the next
   /// re-import. Bbox is recomputed from the surviving segments.
-  /// Undoable via the imported-snapshot command pattern.
+  /// Undoable via the imports-snapshot command pattern.
+  ///
+  /// Multi-file: removes the layer from EVERY import that carries it,
+  /// matching what the user sees in the unioned LayerList count.
   removeImportedLayer(layerName: string) {
-    if (!this.imported) return;
-    const cur = this.imported;
-    const keep = cur.segments.map((s) => s.layer !== layerName);
-    if (keep.every((k) => k)) return; // nothing matched
-    const newSegments = cur.segments.filter((_, i) => keep[i]);
-    const newObjects = (cur.objects ?? []).filter((_, i) => keep[i]);
-    const newLayers = cur.layers.filter((l) => l.name !== layerName);
-    const newBbox = bboxOfSegments(newSegments);
-    const after: ImportResponse = {
-      ...cur,
-      segments: newSegments,
-      layers: newLayers,
-      bbox: newBbox,
-      objects: newObjects,
-    };
+    const before = this.data.imports;
+    if (before.length === 0) return;
+    let touched = false;
+    const after = before.map((entry) => {
+      const src = entry.source;
+      const keep = src.segments.map((s) => s.layer !== layerName);
+      if (keep.every((k) => k)) return entry;
+      touched = true;
+      const newSegments = src.segments.filter((_, i) => keep[i]);
+      const newObjects = (src.objects ?? []).filter((_, i) => keep[i]);
+      const newLayers = src.layers.filter((l) => l.name !== layerName);
+      const newBbox = bboxOfSegments(newSegments);
+      return {
+        ...entry,
+        source: {
+          ...src,
+          segments: newSegments,
+          layers: newLayers,
+          bbox: newBbox,
+          objects: newObjects,
+        },
+      };
+    });
+    if (!touched) return;
     this.history.beginTransaction(`Delete layer "${layerName}"`);
-    this.history.exec(replaceImportedCommand(cur, after, `Delete layer "${layerName}"`), this.target());
+    this.history.exec(
+      setImportsCommand(before, after, `Delete layer "${layerName}"`),
+      this.target(),
+    );
     // Drop visibility tracking for the gone layer too — visibleLayers
     // lives outside the command target, so this is a plain mutation.
     if (this.visibleLayers.has(layerName)) {
@@ -1126,11 +1108,15 @@ class ProjectState {
   /// id 0 (unchained), but we still return an array of ids so callers
   /// can use the same flow.
   appendImportedSegments(segments: Segment[], layerName: string, singleLine: boolean): number[] {
-    const before: ImportResponse | null = this.imported
-      ? (JSON.parse(JSON.stringify(this.imported)) as ImportResponse)
-      : null;
-    if (!this.imported) {
-      const empty: ImportResponse = {
+    const before = this.data.imports;
+    // imports[0] is the canonical Add-Text target. Synthesize an empty
+    // entry when none exists so the user can author text in a fresh
+    // project before importing geometry; this synthesis is captured in
+    // the command's `before` snapshot so a single undo wipes the whole
+    // Add-Text run including the synthetic seed.
+    const seedEntry: ImportEntry = before[0] ?? {
+      id: 1,
+      source: {
         filename: 'text',
         format: 'text',
         bbox: { min_x: 0, min_y: 0, max_x: 0, max_y: 0 },
@@ -1140,10 +1126,11 @@ class ProjectState {
         warnings: [],
         objects: [],
         object_meta: [],
-      };
-      this.imported = empty;
-    }
-    const cur = this.imported!;
+      },
+      fileTransform: identityFileTransform(),
+      lastImportPath: null,
+    };
+    const cur = seedEntry.source;
     const baseObjId = (cur.objects ?? []).reduce((m, o) => Math.max(m, o), 0);
 
     // Group consecutive segments by closed contour heuristic: each chain
@@ -1222,7 +1209,7 @@ class ProjectState {
       };
     }
 
-    const after: ImportResponse = {
+    const afterSource: ImportResponse = {
       ...cur,
       segments: [...cur.segments, ...segments],
       objects: [...(cur.objects ?? []), ...newObjects],
@@ -1230,9 +1217,14 @@ class ProjectState {
       layers,
       bbox,
     };
-    // If we just synthesized an empty import above, fold that into the
-    // command's `before` so a single undo wipes the whole "Add Text" run.
-    this.history.exec(appendImportedCommand({ before, after }), this.target());
+    const after: ImportEntry[] = [
+      { ...seedEntry, source: afterSource },
+      ...before.slice(1),
+    ];
+    this.history.exec(
+      setImportsCommand(before, after, 'Add geometry'),
+      this.target(),
+    );
     this.visibleLayers = new Set([...this.visibleLayers, layerName]);
 
     // Return the de-duplicated set of new object ids (in insertion order).
@@ -1324,8 +1316,9 @@ class ProjectState {
   /// can swap fonts later from the sidebar. No-op when nothing was
   /// imported or no TEXT/MTEXT entities were present.
   async convertImportedTextEntities(): Promise<void> {
-    if (!this.imported) return;
-    const entities = this.imported.text_entities;
+    const entry = this.data.imports[0];
+    if (!entry) return;
+    const entities = entry.source.text_entities;
     if (!entities || entities.length === 0) return;
     const bytes_b64 = await loadDefaultFontBytesB64();
     if (!bytes_b64) return;
@@ -1353,7 +1346,15 @@ class ProjectState {
     }
     // Consume the queue so subsequent addImported() calls don't try
     // to convert the same entities again into duplicate TextLayers.
-    this.imported = { ...this.imported, text_entities: [] };
+    // Plain mutation (not a command): this is bookkeeping after the
+    // text-layer-add commands above, not user-undoable state.
+    const cur = this.data.imports[0];
+    if (cur) {
+      this.data.imports = [
+        { ...cur, source: { ...cur.source, text_entities: [] } },
+        ...this.data.imports.slice(1),
+      ];
+    }
   }
 
   removeTextLayer(id: number) {
@@ -1448,39 +1449,6 @@ class ProjectState {
   setStock(patch: Partial<StockConfig>) {
     if (Object.keys(patch).length === 0) return;
     this.history.exec(setStockCommand(patch), this.target());
-  }
-
-  /// Apply a patch to the file-level transform (bww). `coalesceKey`
-  /// (typically the field name) merges rapid edits into a single undo
-  /// step — drag the rotation spinner and you get one history entry,
-  /// not fifty.
-  patchFileTransform(
-    patch: Partial<Omit<FileTransform, 'translate'>> & {
-      translate?: Partial<FileTransform['translate']>;
-    },
-    coalesceKey?: string,
-  ) {
-    if (Object.keys(patch).length === 0) return;
-    const before = this.fileTransform;
-    const after: FileTransform = {
-      ...before,
-      ...patch,
-      // Merge translate sub-object explicitly so partial updates ({ x: 5 })
-      // don't drop the other axis.
-      translate: { ...before.translate, ...(patch.translate ?? {}) },
-    };
-    this.history.exec(
-      setFileTransformCommand(before, after, coalesceKey),
-      this.target(),
-    );
-  }
-
-  resetFileTransform() {
-    if (isIdentityFileTransform(this.fileTransform)) return;
-    this.history.exec(
-      setFileTransformCommand(this.fileTransform, identityFileTransform()),
-      this.target(),
-    );
   }
 
   /// Per-import variant of patchFileTransform (wrsu Phase 2). Undoable;

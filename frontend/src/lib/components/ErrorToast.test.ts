@@ -10,7 +10,6 @@ import type { WiacError } from '../api/types';
 
 function blankCommandTarget(): CommandTarget {
   return {
-    imported: null,
     operations: [
       {
         id: 1,
@@ -31,13 +30,6 @@ function blankCommandTarget(): CommandTarget {
     stock: {} as CommandTarget['stock'],
     settings: {} as CommandTarget['settings'],
     textLayers: [],
-    fileTransform: {
-      translate: { x: 0, y: 0 },
-      rotateDeg: 0,
-      scale: 1,
-      mirrorX: false,
-      mirrorY: false,
-    },
     imports: [],
     dirty: false,
   };

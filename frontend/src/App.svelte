@@ -33,6 +33,9 @@
   type ShortcutHelpComp = typeof import('./lib/components/ShortcutHelp.svelte').default;
   let ShortcutHelp = $state<ShortcutHelpComp | null>(null);
   let shortcutHelpLoading = false;
+  type ReportDialogComp = typeof import('./lib/components/ReportDialog.svelte').default;
+  let ReportDialog = $state<ReportDialogComp | null>(null);
+  let reportDialogLoading = false;
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
 
@@ -41,6 +44,7 @@
   let settingsOpen = $state(false);
   let addTextOpen = $state(false);
   let shortcutHelpOpen = $state(false);
+  let reportOpen = $state(false);
   /// Startup banner: when set, the user was previously editing a
   /// project and we offer to reopen it. Styled in-app instead of a
   /// native window.confirm so the first impression of the app isn't
@@ -415,6 +419,15 @@
       });
     }
   });
+  $effect(() => {
+    if (reportOpen && !ReportDialog && !reportDialogLoading) {
+      reportDialogLoading = true;
+      void import('./lib/components/ReportDialog.svelte').then((m) => {
+        ReportDialog = m.default;
+        reportDialogLoading = false;
+      });
+    }
+  });
   // GcodePanel pulls in syntax-highlighter assets — defer until the
   // user opens the panel (it's collapsed by default).
   $effect(() => {
@@ -736,6 +749,14 @@
             onclick={() => pickMenu(exportGcode)}
           >
             <span class="label">Export G-code…</span>
+          </button>
+          <button
+            role="menuitem"
+            class="item"
+            onclick={() => pickMenu(() => (reportOpen = true))}
+            title="Printable project summary — toolpath stats, time estimate, tools, ops, warnings."
+          >
+            <span class="label">Report…</span>
           </button>
           <div class="divider"></div>
           <div class="submenu">
@@ -1150,6 +1171,10 @@
   {#if shortcutHelpOpen && ShortcutHelp}
     {@const C = ShortcutHelp}
     <C onClose={() => (shortcutHelpOpen = false)} />
+  {/if}
+  {#if reportOpen && ReportDialog}
+    {@const C = ReportDialog}
+    <C open={reportOpen} onClose={() => (reportOpen = false)} />
   {/if}
   {#if closePrompt}
     <div

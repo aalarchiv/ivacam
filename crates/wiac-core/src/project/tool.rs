@@ -71,8 +71,8 @@ pub struct ToolEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_xy_overlap: Option<f64>,
     /// Free-text comment / description (rt1.31). Surfaced as the
-    /// tooltip on the tool dropdown in OpPropertiesPanel and as an
-    /// expandable text area in ToolLibraryDialog. Empty / None = no
+    /// tooltip on the tool dropdown in `OpPropertiesPanel` and as an
+    /// expandable text area in `ToolLibraryDialog`. Empty / None = no
     /// comment; doesn't affect any pipeline output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,

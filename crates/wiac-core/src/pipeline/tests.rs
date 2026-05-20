@@ -1406,7 +1406,7 @@
         let pre = &gcode[..m0_pos];
         let post = &gcode[m0_pos..];
         assert!(pre.rfind("\nM5\n").is_some(), "expected M5 before M0");
-        assert!(post.find("\nM3\n").is_some(), "expected M3 after M0");
+        assert!(post.contains("\nM3\n"), "expected M3 after M0");
     }
 
     /// rt1.34: Pause carries no tool reference, so the missing-tool
@@ -1446,8 +1446,8 @@
         );
     }
 
-    /// rt1.9: PocketStrategy::Zigzag wire compatibility — `"zigzag"`
-    /// string still loads (legacy form, angle_deg defaults to 0), AND
+    /// rt1.9: `PocketStrategy::Zigzag` wire compatibility — `"zigzag"`
+    /// string still loads (legacy form, `angle_deg` defaults to 0), AND
     /// a non-zero angle serialises as the tagged-object form.
     #[test]
     fn zigzag_strategy_legacy_string_round_trip() {
@@ -1478,13 +1478,13 @@
         let back: crate::project::PocketStrategy = serde_json::from_str(&json).unwrap();
         match back {
             crate::project::PocketStrategy::Zigzag { angle_deg } => {
-                assert!((angle_deg - 45.0).abs() < 1e-9)
+                assert!((angle_deg - 45.0).abs() < 1e-9);
             }
             other => panic!("expected Zigzag, got {other:?}"),
         }
     }
 
-    /// rt1.34: Pause op round-trips through serde JSON (snake_case tag).
+    /// rt1.34: Pause op round-trips through serde JSON (`snake_case` tag).
     #[test]
     fn pause_op_round_trips_through_serde() {
         let pause = Op {

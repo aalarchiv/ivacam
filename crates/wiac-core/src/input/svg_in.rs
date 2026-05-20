@@ -77,8 +77,8 @@ struct SvgCtx {
     unit_scale: f64,
     chord_step: f64,
     flip_y: f32,
-    /// mieu: pre-interned once at construction so every Segment::line below
-    /// shares this Arc instead of allocating per call.
+    /// mieu: pre-interned once at construction so every `Segment::line`
+    /// below shares this `Arc` instead of allocating per call.
     layer_arc: std::sync::Arc<str>,
 }
 

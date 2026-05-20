@@ -142,6 +142,7 @@ fn pocket_cascade_lock() -> MutexGuard<'static, LruCache<u64, PocketCascadeOutpu
 /// Keys by the boundary, every island, and the step delta. Re-runs of
 /// the same pocket op with different depth / feed / plunge inputs all
 /// hit the cache.
+#[must_use]
 pub fn pocket_cascade_with_islands_cached(
     boundary: &[Point2],
     islands: &[Vec<Point2>],

@@ -560,9 +560,9 @@ mod tests {
         }
     }
 
-    /// rbl: BullNose with corner_radius_mm builds a fillet profile;
+    /// rbl: `BullNose` with `corner_radius_mm` builds a fillet profile;
     /// without it (or with 0) collapses to a flat endmill. Eval at the
-    /// rim equals corner_r (the lip rises by exactly the fillet radius);
+    /// rim equals `corner_r` (the lip rises by exactly the fillet radius);
     /// eval inside the plateau equals 0.
     #[test]
     fn from_tool_bullnose_uses_corner_radius() {

@@ -20,8 +20,9 @@ use crate::project::{Op, Project};
 
 // V-Carve driver couples medial-axis sampling, multi-pass cascade, and
 // optional finish-pass into a single state machine — see 55o4 for the
-// planned per-stage extraction.
-#[allow(clippy::too_many_arguments)]
+// planned per-stage extraction. Length budget waived for the same
+// reason — the function is the per-stage split's main entry point.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     op: &Op,
     project: &Project,
@@ -326,7 +327,7 @@ mod tests {
 
     /// User report: V-Carve op pointed at an open polyline (e.g. a
     /// single-line text layer) silently produced no toolpath because
-    /// combine_source_regions returns empty. Now warns instead.
+    /// `combine_source_regions` returns empty. Now warns instead.
     #[test]
     fn vcarve_op_warns_when_no_closed_region() {
         let op = Op {
@@ -387,7 +388,7 @@ mod tests {
     /// the medial axis hits r = 15 — without the clamp the depth math
     /// would dive to z = -15 / tan(30°) ≈ -26mm regardless of the bit's
     /// 3mm reach. The clamp keeps z above ≈ -5.2mm (3 / tan(30°)).
-    /// Exercises full_medial_axis = true so the medial-axis path runs.
+    /// Exercises `full_medial_axis` = true so the medial-axis path runs.
     #[test]
     fn vcarve_op_respects_tool_reach() {
         let op = Op {
@@ -454,7 +455,7 @@ mod tests {
         );
     }
 
-    /// r8ut: default V-Carve (full_medial_axis = false) traces ONLY a
+    /// r8ut: default V-Carve (`full_medial_axis` = false) traces ONLY a
     /// perimeter loop on a 30×30 square — no spine cuts through the
     /// interior. Compare with `vcarve_op_respects_tool_reach` above
     /// which exercises the medial-axis branch on the same geometry.

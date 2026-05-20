@@ -38,6 +38,7 @@ function blankCommandTarget(): CommandTarget {
       mirrorX: false,
       mirrorY: false,
     },
+    imports: [],
     dirty: false,
   };
 }

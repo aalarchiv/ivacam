@@ -13,6 +13,7 @@ import type {
   FileTransform,
   Fixture,
   FixtureKind,
+  ImportEntry,
   MachineSettings,
   OpEntry,
   StockConfig,
@@ -45,6 +46,10 @@ function clone<T>(v: T): T {
 export interface CommandTarget {
   imported: ImportResponse | null;
   fileTransform: FileTransform;
+  /// Raw imports array (wrsu). Phase 2 commands address by id; Phase 1's
+  /// `imported` / `fileTransform` proxy fields keep targeting imports[0]
+  /// for back-compat with pre-Phase-2 commands.
+  imports: ImportEntry[];
   operations: OpEntry[];
   tools: ToolEntry[];
   fixtures: Fixture[];
@@ -554,6 +559,36 @@ export function appendImportedCommand(p: AppendImportedSegmentsPayload): Command
     revert: (s) => {
       const t = s as CommandTarget;
       t.imported = p.before ? clone(p.before) : null;
+      t.dirty = true;
+    },
+  };
+}
+
+/// Multi-import shape swap (wrsu Phase 2B). Used by addImported,
+/// removeImport, patchFileTransformForImport, resetFileTransformForImport.
+/// The whole-array swap is conceptually heavier than a per-field patch
+/// but the array is tiny (1-handful of entries, each a shallow header
+/// around an ImportResponse reference); clone() handles it fine.
+///
+/// `coalesceKey` lets per-entry transform spinner drags collapse into
+/// a single undo entry (typical pattern: `transform:<importId>:<field>`).
+export function setImportsCommand(
+  before: ImportEntry[],
+  after: ImportEntry[],
+  label: string,
+  coalesceKey?: string,
+): Command {
+  return {
+    label,
+    coalesce_key: coalesceKey ? `setImports:${coalesceKey}` : undefined,
+    apply: (s) => {
+      const t = s as CommandTarget;
+      t.imports = clone(after);
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.imports = clone(before);
       t.dirty = true;
     },
   };

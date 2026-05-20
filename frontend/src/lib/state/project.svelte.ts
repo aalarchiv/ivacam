@@ -194,6 +194,7 @@ import {
   replaceImportedCommand,
   replaceToolsCommand,
   setFileTransformCommand,
+  setImportsCommand,
   setMachineCommand,
   setStockCommand,
   toggleTabPlacementCommand,
@@ -729,8 +730,9 @@ class ProjectState {
       return;
     }
     const nextId = this.data.imports.reduce((m, e) => (e.id > m ? e.id : m), 0) + 1;
-    this.data.imports = [
-      ...this.data.imports,
+    const before = this.data.imports;
+    const after: ImportEntry[] = [
+      ...before,
       {
         id: nextId,
         source: r,
@@ -738,34 +740,39 @@ class ProjectState {
         lastImportPath: sourcePath ?? null,
       },
     ];
+    const label = `Add ${sourcePath?.split(/[\\/]/).pop() ?? r.filename ?? 'drawing'}`;
+    this.history.exec(setImportsCommand(before, after, label), this.target());
+    // Visibility lives outside history (UI-only); reveal the new layers
+    // now even though undo won't reverse the toggle.
     const nextVis = new Set(this.visibleLayers);
     for (const l of r.layers) nextVis.add(l.name);
     this.visibleLayers = nextVis;
     this.generated = null;
     this.toolpathCumLen = null;
     this.toolpathTotalLen = 0;
-    this.dirty = true;
     this.error = null;
     void this.refreshSourceWatch();
   }
 
   /// Remove an import by its ImportEntry.id (wrsu Phase 2). Layer
   /// visibility entries that no longer have any backing import are
-  /// pruned. Generated G-code is invalidated.
+  /// pruned (visibility lives outside history). Undoable via the
+  /// `setImportsCommand` shape.
   removeImport(id: number) {
     const before = this.data.imports;
-    const next = before.filter((e) => e.id !== id);
-    if (next.length === before.length) return;
-    this.data.imports = next;
+    const after = before.filter((e) => e.id !== id);
+    if (after.length === before.length) return;
+    const removed = before.find((e) => e.id === id);
+    const label = `Remove ${removed?.source.filename ?? 'drawing'}`;
+    this.history.exec(setImportsCommand(before, after, label), this.target());
     const stillThere = new Set<string>();
-    for (const e of next) for (const l of e.source.layers) stillThere.add(l.name);
+    for (const e of after) for (const l of e.source.layers) stillThere.add(l.name);
     const filtered = new Set<string>();
     for (const l of this.visibleLayers) if (stillThere.has(l)) filtered.add(l);
     this.visibleLayers = filtered;
     this.generated = null;
     this.toolpathCumLen = null;
     this.toolpathTotalLen = 0;
-    this.dirty = true;
     void this.refreshSourceWatch();
   }
 
@@ -1476,40 +1483,50 @@ class ProjectState {
     );
   }
 
-  /// Per-import variant of patchFileTransform (wrsu Phase 2). Bypasses
-  /// history for now — adding a per-import command shape is Phase 2B.
-  /// `coalesceKey` left in the signature for API symmetry; ignored until
-  /// the command is wired.
+  /// Per-import variant of patchFileTransform (wrsu Phase 2). Undoable;
+  /// the optional coalesceKey is per-import-per-field so two consecutive
+  /// nudges of the X spinner on entry #3 collapse to one history step.
   patchFileTransformForImport(
     importId: number,
     patch: Partial<Omit<FileTransform, 'translate'>> & {
       translate?: Partial<FileTransform['translate']>;
     },
-    _coalesceKey?: string,
+    coalesceKey?: string,
   ) {
     const idx = this.data.imports.findIndex((e) => e.id === importId);
     if (idx < 0) return;
     const entry = this.data.imports[idx];
-    const before = entry.fileTransform;
-    const after: FileTransform = {
-      ...before,
+    const beforeXf = entry.fileTransform;
+    const afterXf: FileTransform = {
+      ...beforeXf,
       ...patch,
-      translate: { ...before.translate, ...(patch.translate ?? {}) },
+      translate: { ...beforeXf.translate, ...(patch.translate ?? {}) },
     };
-    const next = [...this.data.imports];
-    next[idx] = { ...entry, fileTransform: after };
-    this.data.imports = next;
-    this.dirty = true;
+    const before = this.data.imports;
+    const after = [...before];
+    after[idx] = { ...entry, fileTransform: afterXf };
+    this.history.exec(
+      setImportsCommand(
+        before,
+        after,
+        'Edit file transform',
+        coalesceKey ? `xform:${importId}:${coalesceKey}` : undefined,
+      ),
+      this.target(),
+    );
   }
 
   resetFileTransformForImport(importId: number) {
     const idx = this.data.imports.findIndex((e) => e.id === importId);
     if (idx < 0) return;
     if (isIdentityFileTransform(this.data.imports[idx].fileTransform)) return;
-    const next = [...this.data.imports];
-    next[idx] = { ...next[idx], fileTransform: identityFileTransform() };
-    this.data.imports = next;
-    this.dirty = true;
+    const before = this.data.imports;
+    const after = [...before];
+    after[idx] = { ...after[idx], fileTransform: identityFileTransform() };
+    this.history.exec(
+      setImportsCommand(before, after, 'Reset file transform'),
+      this.target(),
+    );
   }
 }
 

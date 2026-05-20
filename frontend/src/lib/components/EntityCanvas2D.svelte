@@ -962,6 +962,14 @@
       return;
     }
 
+    // Past this point we only handle LEFT-click. Right-click (button 2)
+    // is exclusively a context-menu trigger — onContextMenu runs next
+    // and reads the current selection. Letting right-click fall through
+    // into the hit-test + selection reducer collapsed multi-selections
+    // (user report) and silently fired tab placements / approach-marker
+    // drags. Forward / back navigation buttons (3, 4) also bail here.
+    if (e.button !== 0) return;
+
     // n79: dragging an already-placed approach marker. Only allowed
     // when the selected op has one and we're NOT in pick mode.
     if (

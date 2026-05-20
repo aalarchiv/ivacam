@@ -31,7 +31,7 @@ use wiac_core::project::{Fixture, ToolEntry};
 use wiac_core::sim::diagnostics::SimDiagnostics;
 use wiac_core::sim::heightmap::{Heightmap, ToolProfile};
 use wiac_core::sim::holder::HolderProfile;
-use wiac_core::sim::sweep::sweep_range;
+use wiac_core::sim::sweep::{sweep_range, sweep_segment_partial};
 
 use crate::into_js_error;
 
@@ -165,6 +165,50 @@ impl Simulator {
         })
     }
 
+    /// Carve only the chunk `[t_start, t_end]` (parametric position) of
+    /// segment `seg_idx` from the cached toolpath. Same wire shape as
+    /// `advance(...)`: returns the dirty AABB as `[ix0, iy0, ix1, iy1]`,
+    /// empty when no cells changed. Used by the per-frame driver so the
+    /// 3D-sim destruction visually tracks the cutter inside long
+    /// segments (drill plunges, long cuts) instead of popping in at
+    /// segment-start (pi8r). Fixture / holder / rapid warnings fire only
+    /// on the first slice of the segment (`t_start ≈ 0`) so 60 fps
+    /// driver frames don't duplicate diagnostics.
+    pub fn partial_advance(
+        &mut self,
+        tool: JsValue,
+        seg_idx: u32,
+        t_start: f64,
+        t_end: f64,
+    ) -> Result<Vec<u32>, JsValue> {
+        let tool_entry: ToolEntry = from_tool_value(tool)?;
+        let idx = seg_idx as usize;
+        if idx >= self.toolpath.len() {
+            return Err(JsValue::from_str(
+                "partial_advance: seg_idx out of range for cached toolpath",
+            ));
+        }
+        self.heightmap.clear_dirty();
+        self.last_diagnostics = SimDiagnostics::new();
+        let profile = ToolProfile::from_tool(&tool_entry);
+        let holder = HolderProfile::from_tool(&tool_entry);
+        let _touched = sweep_segment_partial(
+            &mut self.heightmap,
+            &self.toolpath[idx],
+            profile,
+            idx,
+            &self.fixtures,
+            holder.as_ref(),
+            &mut self.last_diagnostics,
+            t_start,
+            t_end,
+        );
+        Ok(match self.heightmap.dirty_aabb() {
+            Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
+            None => Vec::new(),
+        })
+    }
+
     /// Number of grid columns (X cells).
     #[must_use]
     pub fn cols(&self) -> u32 {
@@ -243,6 +287,42 @@ impl Simulator {
             holder.as_ref(),
             &mut self.last_diagnostics,
         );
+        match self.heightmap.dirty_aabb() {
+            Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
+            None => Vec::new(),
+        }
+    }
+
+    /// Pure-Rust core of `partial_advance()` — same role as
+    /// `advance_inner`, used by Rust-side tests that can't pass
+    /// `JsValue`.
+    #[cfg(test)]
+    pub(crate) fn partial_advance_inner(
+        &mut self,
+        segments: &[ToolpathSegment],
+        tool: &ToolEntry,
+        seg_idx: u32,
+        t_start: f64,
+        t_end: f64,
+    ) -> Vec<u32> {
+        self.heightmap.clear_dirty();
+        self.last_diagnostics = SimDiagnostics::new();
+        let profile = ToolProfile::from_tool(tool);
+        let holder = HolderProfile::from_tool(tool);
+        let idx = seg_idx as usize;
+        if idx < segments.len() {
+            let _touched = sweep_segment_partial(
+                &mut self.heightmap,
+                &segments[idx],
+                profile,
+                idx,
+                &self.fixtures,
+                holder.as_ref(),
+                &mut self.last_diagnostics,
+                t_start,
+                t_end,
+            );
+        }
         match self.heightmap.dirty_aabb() {
             Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
             None => Vec::new(),
@@ -409,5 +489,111 @@ mod tests {
         let len = (sim.cols() as usize) * (sim.rows() as usize);
         assert_eq!(len, sim.heightmap().data_len());
         assert!(!sim.data_ptr().is_null());
+    }
+
+    /// `partial_advance(idx, 0, 0.5)` on a Plunge segment should carve
+    /// the column down to the midpoint Z, not the full final depth.
+    /// Calling `partial_advance(idx, 0.5, 1.0)` afterwards lowers the
+    /// same column to the final depth.
+    #[test]
+    fn partial_advance_plunge_grows_as_t_advances() {
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let segs = vec![plunge(20.0, 20.0, 0.0, -2.0)];
+        let tool = endmill(4.0);
+        let aabb_half = sim.partial_advance_inner(&segs, &tool, 0, 0.0, 0.5);
+        assert_eq!(aabb_half.len(), 4, "expected non-empty AABB at half-plunge");
+        let center_after_half = sim.heightmap().data[(20 * sim.heightmap().cols + 20) as usize];
+        assert!(
+            (center_after_half - -1.0).abs() < 1e-5,
+            "plunge halfway should reach z=-1, got {center_after_half}"
+        );
+        let _ = sim.partial_advance_inner(&segs, &tool, 0, 0.5, 1.0);
+        let center_after_full = sim.heightmap().data[(20 * sim.heightmap().cols + 20) as usize];
+        assert!(
+            (center_after_full - -2.0).abs() < 1e-5,
+            "plunge fully should reach z=-2, got {center_after_full}"
+        );
+    }
+
+    /// A straight cut from x=5 to x=25 carved up to t=0.5 should only
+    /// touch cells in the left half of the segment. The right half stays
+    /// at `top_z`.
+    #[test]
+    fn partial_advance_cut_only_touches_swept_chunk() {
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let cut = ToolpathSegment {
+            from: Pose3 {
+                x: 5.0,
+                y: 20.0,
+                z: -1.0,
+            },
+            to: Pose3 {
+                x: 25.0,
+                y: 20.0,
+                z: -1.0,
+            },
+            kind: MoveKind::Cut,
+            gcode_line: 0,
+            op_id: 0,
+        };
+        let segs = vec![cut];
+        let tool = endmill(2.0);
+        let _ = sim.partial_advance_inner(&segs, &tool, 0, 0.0, 0.5);
+        let hm = sim.heightmap();
+        // Cell at x≈10 (within carved chunk [5..15]) is below top_z.
+        let near = hm.data[(20 * hm.cols + 10) as usize];
+        assert!(near < hm.top_z, "cell in carved half should be lowered");
+        // Cell at x≈22 (in uncarved chunk [15..25]) is still at top_z.
+        let far = hm.data[(20 * hm.cols + 22) as usize];
+        assert!(
+            (far - hm.top_z).abs() < 1e-6,
+            "cell in un-carved half should still be at top_z, got {far}"
+        );
+        // After t goes 0.5→1, the right half also drops.
+        let _ = sim.partial_advance_inner(&segs, &tool, 0, 0.5, 1.0);
+        let far_after = sim.heightmap().data[(20 * sim.heightmap().cols + 22) as usize];
+        assert!(
+            far_after < sim.heightmap().top_z,
+            "right half should be carved after full partial sweep, got {far_after}"
+        );
+    }
+
+    /// Partial slices with `t_start > 0` MUST NOT emit fixture / holder /
+    /// rapid diagnostics — a 60 fps driver would otherwise spam the same
+    /// warning each frame. The first slice (`t_start ≈ 0`) emits once.
+    #[test]
+    fn partial_advance_emits_rapid_warning_only_on_first_slice() {
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        // Rapid through material: starts below top_z, so check_rapid_against_stock
+        // reports a collision.
+        let rapid = ToolpathSegment {
+            from: Pose3 {
+                x: 0.0,
+                y: 20.0,
+                z: -5.0,
+            },
+            to: Pose3 {
+                x: 40.0,
+                y: 20.0,
+                z: -5.0,
+            },
+            kind: MoveKind::Rapid,
+            gcode_line: 0,
+            op_id: 0,
+        };
+        let segs = vec![rapid];
+        let tool = endmill(2.0);
+        let _ = sim.partial_advance_inner(&segs, &tool, 0, 0.0, 0.3);
+        assert_eq!(
+            sim.last_diagnostics.count("rapid_through_material"),
+            1,
+            "first partial slice should emit one warning"
+        );
+        let _ = sim.partial_advance_inner(&segs, &tool, 0, 0.3, 0.6);
+        assert_eq!(
+            sim.last_diagnostics.count("rapid_through_material"),
+            0,
+            "mid-segment partial slice must not re-emit the warning"
+        );
     }
 }

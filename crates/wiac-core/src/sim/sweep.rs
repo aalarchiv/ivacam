@@ -28,7 +28,7 @@
     clippy::cast_possible_wrap
 )]
 
-use crate::gcode::preview::{MoveKind, ToolpathSegment};
+use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
 use crate::pipeline::CancelToken;
 use crate::project::Fixture;
 use crate::sim::diagnostics::{SimDiagnostics, SimWarning};
@@ -60,6 +60,83 @@ pub fn sweep_segment(
     holder: Option<&HolderProfile>,
     diagnostics: &mut SimDiagnostics,
 ) -> u32 {
+    run_segment_warnings(
+        heightmap,
+        segment,
+        profile,
+        segment_idx,
+        fixtures,
+        holder,
+        diagnostics,
+    );
+    sweep_chord_carve(heightmap, segment, profile)
+}
+
+/// Like [`sweep_segment`] but carves only the chunk `[t_start, t_end]`
+/// of the segment (parametric position along the chord). The full-segment
+/// fixture / holder / rapid checks fire only when `t_start ≈ 0` so a
+/// driver that issues many partial slices per second doesn't emit the
+/// same warning every frame (pi8r).
+///
+/// `t_start` and `t_end` are clamped to `[0, 1]`; an inverted or empty
+/// interval is a no-op. The internally constructed synthetic chord has
+/// `from = lerp(seg.from, seg.to, t_start)` and `to = lerp(..., t_end)`,
+/// which by construction makes pre-tessellated arcs Just Work — arcs
+/// reach `sim/sweep.rs` as already-chorded line segments.
+#[allow(clippy::too_many_arguments)]
+pub fn sweep_segment_partial(
+    heightmap: &mut Heightmap,
+    segment: &ToolpathSegment,
+    profile: ToolProfile,
+    segment_idx: usize,
+    fixtures: &[Fixture],
+    holder: Option<&HolderProfile>,
+    diagnostics: &mut SimDiagnostics,
+    t_start: f64,
+    t_end: f64,
+) -> u32 {
+    let lo = t_start.clamp(0.0, 1.0);
+    let hi = t_end.clamp(0.0, 1.0);
+    if hi <= lo {
+        return 0;
+    }
+    if lo <= 1e-9 {
+        run_segment_warnings(
+            heightmap,
+            segment,
+            profile,
+            segment_idx,
+            fixtures,
+            holder,
+            diagnostics,
+        );
+    }
+    if matches!(segment.kind, MoveKind::Rapid) {
+        return 0;
+    }
+    let chord = ToolpathSegment {
+        from: lerp_pose3(&segment.from, &segment.to, lo),
+        to: lerp_pose3(&segment.from, &segment.to, hi),
+        kind: segment.kind,
+        gcode_line: segment.gcode_line,
+        op_id: segment.op_id,
+    };
+    sweep_chord_carve(heightmap, &chord, profile)
+}
+
+/// Fixture / holder / rapid-vs-stock diagnostic pass. Extracted so the
+/// partial-carve path can run it on the original segment (full-length
+/// geometry) and skip the carve.
+#[allow(clippy::too_many_arguments)]
+fn run_segment_warnings(
+    heightmap: &Heightmap,
+    segment: &ToolpathSegment,
+    profile: ToolProfile,
+    segment_idx: usize,
+    fixtures: &[Fixture],
+    holder: Option<&HolderProfile>,
+    diagnostics: &mut SimDiagnostics,
+) {
     let r_tool = profile.radius() as f64;
     for fc in check_segment_against_fixtures(segment, r_tool, fixtures) {
         if let FixtureCheck::Collision {
@@ -109,8 +186,20 @@ pub fn sweep_segment(
                 rapid_pz,
             });
         }
+    }
+}
+
+/// Carve-only pass: lower every cell under the (possibly synthetic)
+/// chord. No diagnostics. Rapid moves bail.
+fn sweep_chord_carve(
+    heightmap: &mut Heightmap,
+    segment: &ToolpathSegment,
+    profile: ToolProfile,
+) -> u32 {
+    if matches!(segment.kind, MoveKind::Rapid) {
         return 0;
     }
+    let r_tool = profile.radius() as f64;
     if r_tool <= 0.0 {
         return 0;
     }
@@ -133,6 +222,14 @@ pub fn sweep_segment(
         touched += 1;
     });
     touched
+}
+
+fn lerp_pose3(a: &Pose3, b: &Pose3, t: f64) -> Pose3 {
+    Pose3 {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+    }
 }
 
 /// Owned snapshot of a heightmap's grid layout — origin/cell/dim only,

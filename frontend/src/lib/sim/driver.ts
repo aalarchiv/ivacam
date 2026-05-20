@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { HeightfieldMesh } from './heightfield_mesh';
+import { planAdvance, playheadToSegment } from './playhead';
 import type {
   GenerateResponse,
   ImportResponse,
@@ -33,6 +34,16 @@ interface SimulatorWasm {
   ): SimulatorWasm;
   reset(): void;
   advance(tool: unknown, from_idx: number, to_idx: number): Uint32Array;
+  /// Carve only chunk `[t_start, t_end]` of segment `seg_idx`. Used per
+  /// render frame so the heightfield destruction follows the cutter
+  /// inside long segments (drill plunges) instead of popping at segment
+  /// boundaries (pi8r).
+  partial_advance(
+    tool: unknown,
+    seg_idx: number,
+    t_start: number,
+    t_end: number,
+  ): Uint32Array;
   set_fixtures(fixtures: unknown): void;
   set_toolpath(segments: unknown): number;
   clear_toolpath(): void;
@@ -215,7 +226,13 @@ export class HeightfieldDriver {
   /// driver picking up a new Generate response) and trigger a single
   /// re-cache rather than re-deserializing per frame (audit-9l52).
   private cachedToolpath: ToolpathSegment[] | null = null;
-  private appliedHead = 0;
+  /// Position in the toolpath that the heightfield is fully carved up
+  /// to. Semantics: segments `[0, appliedSeg)` are bulk-carved; segment
+  /// `appliedSeg` is carved up to `partialT ∈ [0, 1]` (pi8r). Together
+  /// they fully describe the rendered destruction state and let the
+  /// driver issue tiny partial carves per render frame.
+  private appliedSeg = 0;
+  private partialT = 0;
   /// Cumulative sim warnings collected since the last replay. Cleared on
   /// dispose / reset; merged-into on every forward advance() so the UI
   /// can mark the offending segments as the user scrubs.
@@ -314,7 +331,8 @@ export class HeightfieldDriver {
     // by `cachedToolpath` below.
     this.sim.set_toolpath(input.generated.toolpath);
     this.cachedToolpath = input.generated.toolpath;
-    this.appliedHead = 0;
+    this.appliedSeg = 0;
+    this.partialT = 0;
     this.diagnostics = { warnings: [] };
     this.notifyDiagnostics();
     this.refreshHeightView();
@@ -327,7 +345,8 @@ export class HeightfieldDriver {
     if (!this.sim) return;
     this.sim.set_fixtures(fixtures);
     this.sim.reset();
-    this.appliedHead = 0;
+    this.appliedSeg = 0;
+    this.partialT = 0;
     this.diagnostics = { warnings: [] };
     this.notifyDiagnostics();
     this.refreshHeightView();
@@ -351,14 +370,15 @@ export class HeightfieldDriver {
   /// project.playhead). Returns true if the mesh was modified.
   ///
   /// `cumLen` / `totalLen` are the arc-length cumulative table built
-  /// alongside the toolpath. Without them this falls back to plain
-  /// index-fraction mapping (round(playhead × N segments)), but the
-  /// 3D tool mesh and the gcode panel both use arc-length mapping —
-  /// when the heightfield uses index-fraction here, mixed long-cut /
-  /// short-rapid programs show a sync gap between the tool tip and
-  /// the carved surface (the tool floats over un-carved material, or
-  /// the carve runs ahead of the tip). With cumLen/totalLen they
-  /// agree.
+  /// alongside the toolpath; we map `headFraction` to `(segIdx, segT)`
+  /// using arc length so the heightfield destruction tracks the 3D
+  /// tool mesh and the gcode panel (which also use arc-length mapping).
+  ///
+  /// Carving happens at sub-segment resolution: segment `appliedSeg` is
+  /// carved up to `partialT` and segments `[0, appliedSeg)` are fully
+  /// done (pi8r). Forward steps issue a small `partial_advance` to
+  /// extend the in-flight segment, finalize it when crossing a
+  /// boundary, and bulk-`advance` any skipped segments in between.
   advanceTo(
     headFraction: number,
     segments: ToolpathSegment[],
@@ -368,71 +388,97 @@ export class HeightfieldDriver {
   ): boolean {
     if (!this.sim || !this.mesh) return false;
     const total = segments.length;
-    let newHead: number;
+    if (total === 0) return false;
+
+    let segIdx: number;
+    let segT: number;
     if (cumLen && cumLen.length === total && totalLen && totalLen > 0) {
-      const target = Math.max(0, Math.min(1, headFraction)) * totalLen;
-      // Binary search for smallest i where cumLen[i] >= target.
-      let lo = 0;
-      let hi = cumLen.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (cumLen[mid] < target) lo = mid + 1;
-        else hi = mid;
-      }
-      const segIdx = lo;
-      const segEndLen = cumLen[segIdx];
-      const segStartLen = segIdx === 0 ? 0 : cumLen[segIdx - 1];
-      const segLen = segEndLen - segStartLen;
-      const segT = segLen > 1e-12 ? (target - segStartLen) / segLen : 0;
-      // Include the in-progress segment when the tool is more than
-      // halfway through it. With segT ∈ [0, 0.5) the carve stops at
-      // segIdx (matching the tool sitting near segment start); with
-      // segT ∈ [0.5, 1] the carve advances to segIdx+1 (matching the
-      // tool sitting near segment end). Worst-case carve-vs-tool
-      // mismatch is then ½ segment of arc length, regardless of
-      // segment count distribution.
-      newHead = Math.max(0, Math.min(total, segIdx + Math.round(segT)));
+      const r = playheadToSegment(headFraction, cumLen, totalLen);
+      if (r.segIdx < 0) return false;
+      segIdx = r.segIdx;
+      segT = r.segT;
     } else {
-      newHead = Math.max(0, Math.min(total, Math.round(headFraction * total)));
+      const clamped = Math.max(0, Math.min(1, headFraction));
+      const c = clamped * total;
+      segIdx = Math.min(total - 1, Math.floor(c));
+      segT = c - segIdx;
     }
-    if (newHead === this.appliedHead) return false;
-    if (newHead < this.appliedHead) {
-      // Backward scrub: the heightfield is monotone — cuts can only
-      // deepen — so we reset the simulator and replay forward. The mesh
-      // also has to be refreshed from the now-clean sim heights BEFORE
-      // the forward replay; otherwise cells outside the replay's dirty
-      // AABB keep the stale (deeper) heights from the previous playhead
-      // position, and the user sees material that's still "removed"
-      // ahead of where the tool actually is.
+
+    const plan = planAdvance(this.appliedSeg, this.partialT, segIdx, segT, total);
+    if (!plan) return false;
+
+    // Backward scrub: the heightfield is monotone (cuts can only deepen),
+    // so we reset the simulator and let the planner's forward ops replay.
+    // The mesh has to be refreshed from the clean sim heights BEFORE the
+    // forward replay; otherwise cells outside the replay's dirty AABB
+    // keep the stale (deeper) heights from the previous playhead.
+    if (plan.reset) {
       this.sim.reset();
-      this.appliedHead = 0;
       this.diagnostics = { warnings: [] };
       this.notifyDiagnostics();
       this.refreshHeightView();
       if (this.heightView && this.mesh) this.mesh.updateHeights(this.heightView);
     }
-    if (newHead > this.appliedHead) {
-      const wireTool = toWireTool(tool);
-      // Defensive re-cache if the toolpath identity drifts from the
-      // build()-time snapshot (e.g. a Generate response replaced
-      // `project.generated.toolpath` without going through build()).
-      // The common path is a no-op compare (audit-9l52).
-      if (segments !== this.cachedToolpath) {
-        this.sim.set_toolpath(segments);
-        this.cachedToolpath = segments;
+
+    const wireTool = toWireTool(tool);
+    // Defensive re-cache if the toolpath identity drifts from the
+    // build()-time snapshot (e.g. a Generate response replaced
+    // `project.generated.toolpath` without going through build()).
+    // The common path is a no-op compare (audit-9l52).
+    if (segments !== this.cachedToolpath) {
+      this.sim.set_toolpath(segments);
+      this.cachedToolpath = segments;
+    }
+
+    let unionAabb: [number, number, number, number] | null = null;
+    const unionWith = (a: Uint32Array | number[]) => {
+      if (a.length !== 4) return;
+      if (!unionAabb) {
+        unionAabb = [a[0], a[1], a[2], a[3]];
+      } else {
+        if (a[0] < unionAabb[0]) unionAabb[0] = a[0];
+        if (a[1] < unionAabb[1]) unionAabb[1] = a[1];
+        if (a[2] > unionAabb[2]) unionAabb[2] = a[2];
+        if (a[3] > unionAabb[3]) unionAabb[3] = a[3];
       }
-      const aabb = this.sim.advance(wireTool, this.appliedHead, newHead);
-      this.appliedHead = newHead;
+    };
+
+    if (plan.finalizePartial) {
+      const { segIdx: fIdx, fromT } = plan.finalizePartial;
+      unionWith(this.sim.partial_advance(wireTool, fIdx, fromT, 1));
       this.collectDiagnostics();
-      // Memory may have grown — re-take the view before reading cells.
-      this.refreshHeightView();
-      if (this.heightView && aabb.length === 4) {
-        const [ix0, iy0, ix1, iy1] = aabb;
-        this.mesh.updateHeights(this.heightView, { ix0, iy0, ix1, iy1 });
-      } else if (this.heightView) {
+    }
+    if (plan.bulkAdvance) {
+      const { from, to } = plan.bulkAdvance;
+      unionWith(this.sim.advance(wireTool, from, to));
+      this.collectDiagnostics();
+    }
+    if (plan.startPartial) {
+      const { segIdx: sIdx, startT, endT } = plan.startPartial;
+      unionWith(this.sim.partial_advance(wireTool, sIdx, startT, endT));
+      this.collectDiagnostics();
+    }
+
+    this.appliedSeg = plan.newAppliedSeg;
+    this.partialT = plan.newPartialT;
+
+    // Re-take the buffer view: any advance / partial_advance call may
+    // have grown WASM linear memory and detached the prior view.
+    this.refreshHeightView();
+    if (this.heightView) {
+      const a = unionAabb as [number, number, number, number] | null;
+      if (a) {
+        this.mesh.updateHeights(this.heightView, {
+          ix0: a[0],
+          iy0: a[1],
+          ix1: a[2],
+          iy1: a[3],
+        });
+      } else {
         this.mesh.updateHeights(this.heightView);
       }
     }
+
     this.scheduleEdgeRebuild();
     this.opts.requestRender();
     return true;
@@ -475,7 +521,8 @@ export class HeightfieldDriver {
       this.sim = null;
     }
     this.heightView = null;
-    this.appliedHead = 0;
+    this.appliedSeg = 0;
+    this.partialT = 0;
     this.cachedToolpath = null;
     if (this.diagnostics.warnings.length > 0) {
       this.diagnostics = { warnings: [] };

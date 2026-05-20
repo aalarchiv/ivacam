@@ -285,6 +285,54 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
 /// `tool_diameter` is needed separately to inset the rasters by half a
 /// tool diameter from the polygon edges so the cutter doesn't carve
 /// past the boundary.
+///
+/// rt1.9: angled raster wrapper around `pocket_zigzag` (see below).
+/// Rotates the boundary by `-angle_deg` around its bbox centre, runs
+/// the axis-aligned zigzag, then rotates the emitted segments back by
+/// `+angle_deg`. Identity short-circuits when `angle_deg.abs() < 1e-9`
+/// so the 0° case has no additional cost.
+#[must_use]
+pub fn pocket_zigzag_angled(
+    boundary: &[Point2],
+    stride: f64,
+    tool_diameter: f64,
+    angle_deg: f64,
+) -> Vec<Segment> {
+    let a = angle_deg.rem_euclid(180.0);
+    if a.abs() < 1e-9 {
+        return pocket_zigzag(boundary, stride, tool_diameter);
+    }
+    // Pivot: bbox centre of the input boundary.
+    let (min_x, max_x, min_y, max_y) = boundary.iter().fold(
+        (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ),
+        |(lx, hx, ly, hy), p| (lx.min(p.x), hx.max(p.x), ly.min(p.y), hy.max(p.y)),
+    );
+    let pivot = Point2::new((min_x + max_x) * 0.5, (min_y + max_y) * 0.5);
+    let rad = a.to_radians();
+    let (cos, sin) = (rad.cos(), rad.sin());
+    let rotate = |p: Point2, sign: f64| -> Point2 {
+        let dx = p.x - pivot.x;
+        let dy = p.y - pivot.y;
+        let s = sign * sin;
+        Point2::new(
+            pivot.x + dx * cos - dy * s,
+            pivot.y + dx * s + dy * cos,
+        )
+    };
+    let rotated: Vec<Point2> = boundary.iter().map(|p| rotate(*p, -1.0)).collect();
+    let mut segs = pocket_zigzag(&rotated, stride, tool_diameter);
+    for s in &mut segs {
+        s.start = rotate(s.start, 1.0);
+        s.end = rotate(s.end, 1.0);
+    }
+    segs
+}
+
 #[must_use]
 pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Vec<Segment> {
     if boundary.len() < 3 || stride <= 0.0 {
@@ -705,7 +753,13 @@ pub fn apply_cut_direction(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PocketEmit {
     Cascade,
-    Zigzag,
+    /// Raster fill. rt1.9: `angle_deg` rotates the sweep direction — 0 =
+    /// horizontal sweeps (original behaviour), 90 = vertical, 45 =
+    /// diagonal, etc. Wrap-around is at 180° (the algorithm is
+    /// direction-symmetric).
+    Zigzag {
+        angle_deg: f64,
+    },
     Spiral,
     Trochoidal {
         engagement_angle_deg: f64,
@@ -781,10 +835,21 @@ pub fn pocket_for_object(
         let pts = segments_to_points(&offset.segments, interpolate);
 
         match emit {
-            PocketEmit::Zigzag => {
+            PocketEmit::Zigzag { angle_deg } => {
                 // Zigzag stride is the same step semantics — distance
                 // between raster lines. Default ~50% overlap.
-                let strokes = pocket_zigzag(&pts, step.max(0.1), tool_radius * 2.0);
+                // rt1.9: angle_deg rotates the raster direction. We
+                // implement it by rotating the boundary into a frame
+                // where the sweep is horizontal, running the existing
+                // pocket_zigzag, then rotating the output back. Pivot is
+                // the boundary's bbox centre — keeps the result on the
+                // same canvas.
+                let strokes = pocket_zigzag_angled(
+                    &pts,
+                    step.max(0.1),
+                    tool_radius * 2.0,
+                    angle_deg,
+                );
                 if !strokes.is_empty() {
                     out.push(PolylineOffset {
                         segments: strokes,
@@ -1642,6 +1707,46 @@ mod tests {
                 "right end should sit at hi=18.5, got {hi} (was 17.0 before C1 fix)",
             );
         }
+    }
+
+    /// rt1.9: angled zigzag produces strokes oriented at the given
+    /// angle. At 90° the strokes are vertical (start.x == end.x); at
+    /// 0° they're horizontal (start.y == end.y, the original case).
+    /// Span and stride still fit inside the original square boundary.
+    #[test]
+    fn pocket_zigzag_angled_rotates_strokes() {
+        let boundary = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(20.0, 0.0),
+            Point2::new(20.0, 20.0),
+            Point2::new(0.0, 20.0),
+        ];
+        // 0° behaviour matches axis-aligned pocket_zigzag.
+        let base = pocket_zigzag(&boundary, 2.0, 3.0);
+        let zero = pocket_zigzag_angled(&boundary, 2.0, 3.0, 0.0);
+        assert_eq!(base.len(), zero.len(), "0° should equal axis-aligned");
+        // 90° rotation produces vertical strokes inside the same bbox.
+        let vert = pocket_zigzag_angled(&boundary, 2.0, 3.0, 90.0);
+        assert!(!vert.is_empty(), "expected strokes for 90°");
+        let strokes: Vec<_> = vert
+            .iter()
+            .filter(|s| (s.start.x - s.end.x).abs() < 1e-6)
+            .collect();
+        assert!(
+            strokes.len() >= 3,
+            "expected ≥3 vertical strokes at 90°; got {}",
+            strokes.len(),
+        );
+        for s in &strokes {
+            assert!(
+                s.start.x >= -1e-6 && s.start.x <= 20.0 + 1e-6,
+                "stroke x = {} should be inside [0, 20]",
+                s.start.x,
+            );
+        }
+        // 45° rotation: strokes are diagonal — no exact-axis match.
+        let diag = pocket_zigzag_angled(&boundary, 2.0, 3.0, 45.0);
+        assert!(!diag.is_empty(), "expected strokes for 45°");
     }
 
     /// Regression for C5 (audit): a CW-encoded full circle (two

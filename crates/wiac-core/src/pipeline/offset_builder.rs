@@ -580,7 +580,7 @@ pub(super) fn build_op_offsets(
 /// loop parameters.
 fn pocket_emit_for(strategy: PocketStrategy, op: &Op) -> PocketEmit {
     match strategy {
-        PocketStrategy::Zigzag => PocketEmit::Zigzag,
+        PocketStrategy::Zigzag { angle_deg } => PocketEmit::Zigzag { angle_deg },
         PocketStrategy::Spiral => PocketEmit::Spiral,
         PocketStrategy::Cascade => PocketEmit::Cascade,
         PocketStrategy::Trochoidal {
@@ -2546,7 +2546,7 @@ mod tests {
                 name: "Zigzag pocket".into(),
                 enabled: true,
                 kind: OpKind::Pocket {
-                    strategy: crate::project::PocketStrategy::Zigzag,
+                    strategy: crate::project::PocketStrategy::Zigzag { angle_deg: 0.0 },
                     contour: crate::project::ContourParams::default(),
                     pocket,
                 },
@@ -3052,7 +3052,7 @@ mod tests {
                 name: "Pocket".into(),
                 enabled: true,
                 kind: OpKind::Pocket {
-                    strategy: crate::project::PocketStrategy::Zigzag,
+                    strategy: crate::project::PocketStrategy::Zigzag { angle_deg: 0.0 },
                     contour,
                     pocket: crate::project::PocketParams::default(),
                 },
@@ -3277,7 +3277,7 @@ mod tests {
         let strategies = [
             PocketStrategy::Cascade,
             PocketStrategy::Spiral,
-            PocketStrategy::Zigzag,
+            PocketStrategy::Zigzag { angle_deg: 0.0 },
         ];
         for strategy in strategies {
             for pocket_islands in [false, true] {

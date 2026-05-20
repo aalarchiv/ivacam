@@ -66,6 +66,8 @@ interface FlatOp extends OpBase, ContourFields {
   sourceInsetMm?: VCarveOp['sourceInsetMm'];
   // PauseOp
   message?: string;
+  // PocketOp (rt1.9)
+  pocketZigzagAngleDeg?: number;
   // ThreadOp
   threadPitchMm?: ThreadOp['threadPitchMm'];
   threadInternal?: ThreadOp['threadInternal'];
@@ -207,6 +209,7 @@ type WirePocketStrategy =
   | 'cascade'
   | 'zigzag'
   | 'spiral'
+  | { kind: 'zigzag'; angle_deg: number }
   | { kind: 'trochoidal'; engagement_angle_deg: number; loop_radius_factor: number }
   | {
       kind: 'halfpipe';
@@ -610,6 +613,14 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       const strategy = op.pocketStrategy ?? 'cascade';
       const contour = buildContourParams(op);
       const pocket = buildPocketParams(op);
+      if (strategy === 'zigzag' && op.pocketZigzagAngleDeg && op.pocketZigzagAngleDeg !== 0) {
+        return {
+          type: 'pocket',
+          strategy: { kind: 'zigzag', angle_deg: op.pocketZigzagAngleDeg },
+          contour,
+          pocket,
+        } as WireOpKind;
+      }
       if (strategy === 'trochoidal') {
         return {
           type: 'pocket',

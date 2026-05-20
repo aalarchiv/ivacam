@@ -120,6 +120,11 @@ export interface PocketOp extends OpBase, ContourFields {
   engagementAngleDeg?: number;
   /// Trochoidal loop radius as a fraction of tool radius.
   loopRadiusFactor?: number;
+  /// rt1.9: zigzag raster angle in degrees. 0 (default) = horizontal
+  /// sweeps; 90 = vertical; 45 = diagonal. Honored when
+  /// `pocketStrategy === 'zigzag'`. Wire-compatible: 0 serialises as
+  /// the bare `"zigzag"` string, non-zero as a tagged object.
+  pocketZigzagAngleDeg?: number;
   /// Halfpipe cross-section profile (rt1.19). Honored when
   /// `pocketStrategy === 'halfpipe'`.
   halfpipeProfile?: HalfpipeProfile;

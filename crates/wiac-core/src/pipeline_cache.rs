@@ -521,7 +521,16 @@ fn hash_pocket_strategy<H: Hasher>(s: PocketStrategy, h: &mut H) {
     use crate::project::HalfpipeProfile;
     match s {
         PocketStrategy::Cascade => h.write_u8(0),
-        PocketStrategy::Zigzag => h.write_u8(1),
+        PocketStrategy::Zigzag { angle_deg } => {
+            h.write_u8(1);
+            // rt1.9: only fold the angle when non-zero so legacy zigzag
+            // ops (angle = 0 default) keep their pre-rt1.9 hash and
+            // continue hitting the in-process cache without
+            // PIPELINE_VERSION churn.
+            if angle_deg.abs() >= 1e-9 {
+                hash_f64(angle_deg, h);
+            }
+        }
         PocketStrategy::Spiral => h.write_u8(2),
         PocketStrategy::Trochoidal {
             engagement_angle_deg,

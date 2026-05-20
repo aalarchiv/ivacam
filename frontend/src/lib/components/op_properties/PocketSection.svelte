@@ -222,6 +222,51 @@
       {/if}
     </details>
   {/if}
+  {#if op.pocketStrategy === 'zigzag'}
+    <details class="subsection" open>
+      <summary>Zigzag direction</summary>
+      <label
+        class="row"
+        title="rt1.9: rotates the raster sweep. 0° = horizontal sweeps (default); 90° = vertical; 45° = diagonal. Long-thin pockets cut faster + cleaner when the sweep runs ALONG the long axis."
+      >
+        <span>Angle</span>
+        <div class="range-cell">
+          <span class="range-min">0°</span>
+          <input
+            type="range"
+            min="0"
+            max="180"
+            step="5"
+            value={op.pocketZigzagAngleDeg ?? 0}
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              if (!isNaN(v)) {
+                patch(
+                  'pocketZigzagAngleDeg',
+                  v === 0 ? undefined : Math.max(0, Math.min(180, v)),
+                );
+              }
+            }}
+          />
+          <span class="range-max">180°</span>
+          <span class="num">{op.pocketZigzagAngleDeg ?? 0}°</span>
+        </div>
+      </label>
+      <div class="quick-row">
+        {#each [0, 45, 90, 135] as a (a)}
+          <button
+            type="button"
+            class="quick-btn"
+            class:active={(op.pocketZigzagAngleDeg ?? 0) === a}
+            onclick={() => patch('pocketZigzagAngleDeg', a === 0 ? undefined : a)}
+            title={`Set raster angle to ${a}°`}
+          >
+            {a}°
+          </button>
+        {/each}
+      </div>
+    </details>
+  {/if}
   {#if op.pocketStrategy === 'trochoidal'}
     <details class="subsection" open>
       <summary>{$_('op.section.trochoidal')}</summary>
@@ -324,5 +369,29 @@
   input.inherit-italic::placeholder {
     font-style: italic;
     opacity: 0.75;
+  }
+  /* rt1.9: quick-pick angle buttons for the zigzag direction. Match
+     the existing chip styles so they sit naturally below the slider. */
+  .quick-row {
+    display: inline-flex;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+  .quick-btn {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .quick-btn:hover {
+    color: var(--text);
+  }
+  .quick-btn.active {
+    background: color-mix(in srgb, var(--accent) 25%, var(--bg-elevated));
+    color: var(--text-strong);
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
   }
 </style>

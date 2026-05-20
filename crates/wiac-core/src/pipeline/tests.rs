@@ -1446,6 +1446,44 @@
         );
     }
 
+    /// rt1.9: PocketStrategy::Zigzag wire compatibility — `"zigzag"`
+    /// string still loads (legacy form, angle_deg defaults to 0), AND
+    /// a non-zero angle serialises as the tagged-object form.
+    #[test]
+    fn zigzag_strategy_legacy_string_round_trip() {
+        // Legacy form: bare string deserialises with angle 0.
+        let s: crate::project::PocketStrategy =
+            serde_json::from_str("\"zigzag\"").expect("deserialize");
+        match s {
+            crate::project::PocketStrategy::Zigzag { angle_deg } => assert_eq!(angle_deg, 0.0),
+            other => panic!("expected Zigzag, got {other:?}"),
+        }
+        // Re-serialise: angle 0 → bare string (compact).
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(json, "\"zigzag\"");
+    }
+
+    #[test]
+    fn zigzag_strategy_angled_round_trip() {
+        let s = crate::project::PocketStrategy::Zigzag { angle_deg: 45.0 };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            json.contains("\"angle_deg\":45"),
+            "expected angle_deg in tagged form; got {json}",
+        );
+        assert!(
+            json.contains("\"kind\":\"zigzag\""),
+            "expected kind:zigzag in tagged form; got {json}",
+        );
+        let back: crate::project::PocketStrategy = serde_json::from_str(&json).unwrap();
+        match back {
+            crate::project::PocketStrategy::Zigzag { angle_deg } => {
+                assert!((angle_deg - 45.0).abs() < 1e-9)
+            }
+            other => panic!("expected Zigzag, got {other:?}"),
+        }
+    }
+
     /// rt1.34: Pause op round-trips through serde JSON (snake_case tag).
     #[test]
     fn pause_op_round_trips_through_serde() {

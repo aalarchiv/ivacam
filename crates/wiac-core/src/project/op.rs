@@ -375,7 +375,15 @@ impl Default for DrillCycle {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PocketStrategy {
     Cascade,
-    Zigzag,
+    /// Raster fill. rt1.9: `angle_deg` rotates the sweep direction —
+    /// `0` (default) = horizontal sweeps (original behaviour), 90 =
+    /// vertical, 45 = diagonal. Wire-compatible: serialises as the
+    /// bare string `"zigzag"` when `angle_deg == 0`, otherwise as
+    /// `{ "kind": "zigzag", "angle_deg": <n> }`. Pre-rt1.9 projects
+    /// that wrote `"zigzag"` load with `angle_deg = 0`.
+    Zigzag {
+        angle_deg: f64,
+    },
     Spiral,
     Trochoidal {
         engagement_angle_deg: f64,
@@ -420,7 +428,18 @@ impl Serialize for PocketStrategy {
         use serde::ser::SerializeStruct;
         match *self {
             Self::Cascade => ser.serialize_str("cascade"),
-            Self::Zigzag => ser.serialize_str("zigzag"),
+            // rt1.9: bare-string serialisation when the angle is the
+            // default 0; tagged-object form when the user picked an
+            // angle. Keeps wire size minimal for the common case AND
+            // pre-rt1.9 projects re-serialise to the original `"zigzag"`
+            // string, so workspace files don't churn on load.
+            Self::Zigzag { angle_deg } if angle_deg.abs() < 1e-9 => ser.serialize_str("zigzag"),
+            Self::Zigzag { angle_deg } => {
+                let mut s = ser.serialize_struct("Zigzag", 2)?;
+                s.serialize_field("kind", "zigzag")?;
+                s.serialize_field("angle_deg", &angle_deg)?;
+                s.end()
+            }
             Self::Spiral => ser.serialize_str("spiral"),
             Self::Trochoidal {
                 engagement_angle_deg,
@@ -471,6 +490,14 @@ impl JsonSchema for PocketStrategy {
                 {
                     "type": "string",
                     "enum": ["cascade", "zigzag", "spiral"]
+                },
+                {
+                    "type": "object",
+                    "required": ["kind"],
+                    "properties": {
+                        "kind": { "type": "string", "enum": ["zigzag"] },
+                        "angle_deg": { "type": "number", "format": "double" }
+                    }
                 },
                 {
                     "type": "object",
@@ -535,13 +562,15 @@ impl<'de> Deserialize<'de> for PocketStrategy {
                 #[serde(default)]
                 loop_radius_factor: Option<f64>,
                 #[serde(default)]
+                angle_deg: Option<f64>,
+                #[serde(default)]
                 profile: Option<ProfileObj>,
             },
         }
         match Repr::deserialize(de)? {
             Repr::Str(s) => match s.as_str() {
                 "cascade" => Ok(Self::Cascade),
-                "zigzag" => Ok(Self::Zigzag),
+                "zigzag" => Ok(Self::Zigzag { angle_deg: 0.0 }),
                 "spiral" => Ok(Self::Spiral),
                 other => Err(serde::de::Error::unknown_variant(
                     other,
@@ -552,10 +581,13 @@ impl<'de> Deserialize<'de> for PocketStrategy {
                 kind,
                 engagement_angle_deg,
                 loop_radius_factor,
+                angle_deg,
                 profile,
             } => match kind.as_str() {
                 "cascade" => Ok(Self::Cascade),
-                "zigzag" => Ok(Self::Zigzag),
+                "zigzag" => Ok(Self::Zigzag {
+                    angle_deg: angle_deg.unwrap_or(0.0),
+                }),
                 "spiral" => Ok(Self::Spiral),
                 "trochoidal" => Ok(Self::Trochoidal {
                     engagement_angle_deg: engagement_angle_deg.unwrap_or(30.0),

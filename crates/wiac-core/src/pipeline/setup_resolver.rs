@@ -239,7 +239,7 @@ pub(super) fn synthesize_op_setup(
         } => PocketConfig {
             active: true,
             islands: pocket.pocket_islands,
-            zigzag: matches!(strategy, PocketStrategy::Zigzag),
+            zigzag: matches!(strategy, PocketStrategy::Zigzag { .. }),
             insideout: pocket.pocket_insideout,
             nocontour: pocket.pocket_nocontour,
         },

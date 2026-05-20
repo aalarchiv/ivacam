@@ -55,6 +55,7 @@ function hashLayer(layer: TextLayer): string {
     layer.letterSpacingMm,
     layer.lineSpacingMm,
     layer.alignment,
+    layer.widthScale,
     fontKey,
   ].join('|');
 }
@@ -82,6 +83,7 @@ interface WireLayer {
   letter_spacing_mm: number;
   line_spacing_mm: number;
   alignment: 'left' | 'center' | 'right';
+  width_scale: number;
 }
 
 function toWire(layer: TextLayer): WireLayer {
@@ -97,6 +99,7 @@ function toWire(layer: TextLayer): WireLayer {
     letter_spacing_mm: layer.letterSpacingMm,
     line_spacing_mm: layer.lineSpacingMm,
     alignment: layer.alignment,
+    width_scale: layer.widthScale,
   };
 }
 

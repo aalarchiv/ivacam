@@ -1336,6 +1336,7 @@ class ProjectState {
           letterSpacingMm: 0,
           lineSpacingMm: 0,
           alignment: 'left',
+          widthScale: 1.0,
           singleLine: false,
         });
       }

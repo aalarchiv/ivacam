@@ -53,6 +53,7 @@ function sampleTextLayer(id: number, text = 'Hello'): TextLayer {
     letterSpacingMm: 0,
     lineSpacingMm: 0,
     alignment: 'left',
+    widthScale: 1.0,
     singleLine: false,
   };
 }

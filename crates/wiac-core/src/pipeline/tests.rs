@@ -46,6 +46,7 @@
             letter_spacing_mm: 0.0,
             line_spacing_mm: 0.0,
             alignment: TextAlignment::Left,
+            width_scale: 1.0,
         };
         let project = Project {
             segments: Vec::new(), // pipeline pre-pass appends the rendered text

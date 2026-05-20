@@ -152,6 +152,10 @@ struct Walker<'a> {
     /// Affine transform applied per output point (pixels-per-em scaling +
     /// translation for the glyph's pen position).
     scale: f64,
+    /// Horizontal stretch (969h). Multiplies the per-point local X *after*
+    /// scaling but before adding the pen origin, so each glyph's internal
+    /// width changes while the y-axis stays untouched.
+    x_scale: f64,
     origin: Point2,
 }
 
@@ -162,13 +166,19 @@ impl<'a> Walker<'a> {
             current: Vec::new(),
             last: Point2::new(0.0, 0.0),
             scale,
+            x_scale: 1.0,
             origin,
         }
     }
 
+    fn with_x_scale(mut self, x_scale: f64) -> Self {
+        self.x_scale = x_scale;
+        self
+    }
+
     fn point(&self, x: f32, y: f32) -> Point2 {
         Point2::new(
-            self.origin.x + f64::from(x) * self.scale,
+            self.origin.x + f64::from(x) * self.scale * self.x_scale,
             self.origin.y + f64::from(y) * self.scale,
         )
     }
@@ -314,10 +324,21 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
         layer.size_mm * 1.2
     };
 
+    // 969h: width_scale stretches glyph X coords and per-glyph advance.
+    // Clamp out-of-band wire values so the rest of the path doesn't need
+    // to defend against zero / negative / absurd widths.
+    let x_scale = layer.width_scale.clamp(0.5, 2.0);
+
     let mut out: Vec<Segment> = Vec::new();
     for (line_idx, line) in lines.iter().enumerate() {
-        let line_width =
-            measure_line_width(&face, line, scale, layer.size_mm, layer.letter_spacing_mm);
+        let line_width = measure_line_width(
+            &face,
+            line,
+            scale,
+            layer.size_mm,
+            layer.letter_spacing_mm,
+            x_scale,
+        );
         let x_shift = match layer.alignment {
             TextAlignment::Left => 0.0,
             TextAlignment::Center => -line_width / 2.0,
@@ -328,13 +349,15 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
         let mut pen = Point2::new(x_shift, line_y);
         for ch in line.chars() {
             let Some(glyph_id) = face.glyph_index(ch) else {
-                // Unknown char → wide-space placeholder.
-                pen.x += layer.size_mm * 0.4 + layer.letter_spacing_mm;
+                // Unknown char → wide-space placeholder. The 0.4 × size_mm
+                // advance stretches with width_scale; letter_spacing_mm
+                // stays in mm (additive gap, not scaled).
+                pen.x += layer.size_mm * 0.4 * x_scale + layer.letter_spacing_mm;
                 continue;
             };
             let mut contours: Vec<Vec<Point2>> = Vec::new();
             {
-                let mut walker = Walker::new(&mut contours, scale, pen);
+                let mut walker = Walker::new(&mut contours, scale, pen).with_x_scale(x_scale);
                 face.outline_glyph(glyph_id, &mut walker);
                 walker.finish_contour();
             }
@@ -348,7 +371,7 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
                 }
             }
             let advance = f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)) * scale;
-            pen.x += advance + layer.letter_spacing_mm;
+            pen.x += advance * x_scale + layer.letter_spacing_mm;
         }
     }
 
@@ -374,6 +397,7 @@ fn measure_line_width(
     scale: f64,
     size_mm: f64,
     letter_spacing_mm: f64,
+    x_scale: f64,
 ) -> f64 {
     let mut width = 0.0;
     let mut count = 0usize;
@@ -383,10 +407,12 @@ fn measure_line_width(
         } else {
             size_mm * 0.4
         };
-        width += advance;
+        width += advance * x_scale;
         count += 1;
     }
-    // letter_spacing_mm applies between glyphs (count - 1 gaps).
+    // letter_spacing_mm applies between glyphs (count - 1 gaps). Not
+    // scaled by x_scale — additive gap stays in mm so the user can
+    // tune spacing independently of the stretch factor.
     if count > 1 {
         width += letter_spacing_mm * (count - 1) as f64;
     }
@@ -670,6 +696,7 @@ mod tests {
             letter_spacing_mm: 0.0,
             line_spacing_mm: 0.0,
             alignment: TextAlignment::Left,
+            width_scale: 1.0,
         }
     }
 
@@ -721,6 +748,65 @@ mod tests {
         assert!(
             min_center < min_left,
             "centered min_x ({min_center}) should be left of left-aligned min_x ({min_left})"
+        );
+    }
+
+    #[test]
+    fn render_text_layer_width_scale_stretches_x_only(/* 969h */) {
+        let base = dejavu_layer("AB");
+        let mut stretched = dejavu_layer("AB");
+        stretched.width_scale = 2.0;
+        let base_segs = render_text_layer(&base).expect("base");
+        let wide_segs = render_text_layer(&stretched).expect("wide");
+
+        let max_x = |segs: &[Segment]| {
+            segs.iter()
+                .flat_map(|s| [s.start.x, s.end.x])
+                .fold(f64::NEG_INFINITY, f64::max)
+        };
+        let max_y = |segs: &[Segment]| {
+            segs.iter()
+                .flat_map(|s| [s.start.y, s.end.y])
+                .fold(f64::NEG_INFINITY, f64::max)
+        };
+        // width_scale 2× ⇒ total horizontal extent ~2× the un-stretched
+        // baseline; vertical extent untouched.
+        let ratio_x = max_x(&wide_segs) / max_x(&base_segs);
+        let ratio_y = max_y(&wide_segs) / max_y(&base_segs);
+        assert!(
+            (1.9..=2.1).contains(&ratio_x),
+            "expected ~2× x extent, got ratio {ratio_x}"
+        );
+        assert!(
+            (0.95..=1.05).contains(&ratio_y),
+            "expected ~1× y extent, got ratio {ratio_y}"
+        );
+    }
+
+    #[test]
+    fn render_text_layer_width_scale_clamps_extreme_values(/* 969h */) {
+        // 0.0 / negative / 10.0 should all clamp to the 0.5–2.0 band; renderer
+        // must not divide-by-zero or emit pathological geometry.
+        let mut layer = dejavu_layer("AB");
+        layer.width_scale = 0.0;
+        let zero = render_text_layer(&layer).expect("zero");
+        assert!(!zero.is_empty(), "zero width_scale should clamp, not erase");
+
+        layer.width_scale = 10.0;
+        let huge = render_text_layer(&layer).expect("huge");
+        // 10× clamps to 2×, so max_x should be ≤ 4× the 1× baseline (slack
+        // for the clamp + a small font-metric safety margin).
+        let base = render_text_layer(&dejavu_layer("AB")).expect("base");
+        let mx = |segs: &[Segment]| {
+            segs.iter()
+                .flat_map(|s| [s.start.x, s.end.x])
+                .fold(f64::NEG_INFINITY, f64::max)
+        };
+        assert!(
+            mx(&huge) < mx(&base) * 4.0,
+            "10× should clamp to ≤2×; got max_x {} vs base {}",
+            mx(&huge),
+            mx(&base),
         );
     }
 

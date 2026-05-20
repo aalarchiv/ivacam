@@ -53,6 +53,9 @@
   let text = $state('Text');
   let style = $state<TextStyle>('engraving');
   let sizeMm = $state(12);
+  /// 969h: horizontal stretch as a percentage. UI exposes 50–200 %;
+  /// stored on TextLayer as a 0.5–2.0 multiplier.
+  let widthPct = $state(100);
   let posX = $state(0);
   let posY = $state(0);
   let depth = $state(-0.5);
@@ -118,6 +121,7 @@
     posY = def.y;
     text = 'Text';
     sizeMm = 12;
+    widthPct = 100;
     style = 'engraving';
     bundledFontPath = BUNDLED_FONTS[0]?.path ?? '';
     useUserFont = false;
@@ -218,7 +222,24 @@
         color: 7,
       };
       const resp = await client.renderText(req);
-      previewSegments = resp.segments;
+      // 969h: client.renderText is the simple legacy endpoint and doesn't
+      // accept width_scale. The TextLayer renderer that runs at generate
+      // time DOES — so we mirror its X-stretch here for the dialog preview
+      // by scaling every segment endpoint about the text origin's x. Y is
+      // untouched; arc centers stretch too so the preview matches glyph
+      // curve behaviour after the real render.
+      const xs = Math.max(0.5, Math.min(2.0, widthPct / 100));
+      previewSegments =
+        Math.abs(xs - 1) < 1e-9
+          ? resp.segments
+          : resp.segments.map((s) => ({
+              ...s,
+              start: { ...s.start, x: posX + (s.start.x - posX) * xs },
+              end: { ...s.end, x: posX + (s.end.x - posX) * xs },
+              ...(s.center
+                ? { center: { ...s.center, x: posX + (s.center.x - posX) * xs } }
+                : {}),
+            }));
       lastFontIsSingleLine = resp.single_line;
       lastFontFamily = resp.family_name ?? null;
       errorMsg = null;
@@ -279,6 +300,7 @@
         letterSpacingMm: 0,
         lineSpacingMm: 0,
         alignment: 'left',
+        widthScale: widthPct / 100,
         singleLine: lastFontIsSingleLine === true,
       };
 
@@ -424,6 +446,18 @@
           ><input type="number" bind:value={sizeMm} step="0.5" min="0.1" /><span class="unit"
             >mm</span
           ></span
+        >
+      </label>
+      <label title="Horizontal stretch (50–200 %). 100 % = the font's natural width.">
+        <span>Width</span>
+        <span class="field"
+          ><input
+            type="number"
+            bind:value={widthPct}
+            step="5"
+            min="50"
+            max="200"
+          /><span class="unit">%</span></span
         >
       </label>
       <label title="X-position of the text origin (left baseline) in stock coordinates.">

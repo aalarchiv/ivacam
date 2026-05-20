@@ -365,6 +365,7 @@ interface WireTextLayer {
   letter_spacing_mm: number;
   line_spacing_mm: number;
   alignment: TextAlignment;
+  width_scale: number;
 }
 
 export interface WireProject {
@@ -411,6 +412,7 @@ function buildTextLayer(layer: TextLayer): WireTextLayer {
     letter_spacing_mm: layer.letterSpacingMm,
     line_spacing_mm: layer.lineSpacingMm,
     alignment: layer.alignment,
+    width_scale: layer.widthScale,
   };
 }
 

@@ -510,6 +510,10 @@ export interface TextLayer {
   /// (~1.2 * sizeMm — the renderer picks the value).
   lineSpacingMm: number;
   alignment: TextAlignment;
+  /// Horizontal stretch factor (969h). 1.0 = font natural width; UI
+  /// exposes 0.5–2.0 (50–200 %). Backend clamps so legacy files without
+  /// the field (deserialised as default 1.0) render unchanged.
+  widthScale: number;
   /// Detection from `is_single_line_font` on the most recent render —
   /// cached so the UI can show "single-line" without re-fetching the
   /// font. Refreshed when fontSource changes.

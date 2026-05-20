@@ -39,10 +39,22 @@ pub struct TextLayer {
     pub line_spacing_mm: f64,
     #[serde(default = "default_alignment")]
     pub alignment: TextAlignment,
+    /// Horizontal stretch factor applied to glyph outlines and per-glyph
+    /// advance. `1.0` (default) = font's natural width; range 0.5–2.0 is
+    /// what the UI exposes (50–200 %). Letter spacing is NOT scaled —
+    /// the additive gap between glyphs stays in mm. Renderer clamps
+    /// to the 0.5–2.0 range so out-of-band wire payloads degrade
+    /// gracefully.
+    #[serde(default = "default_width_scale")]
+    pub width_scale: f64,
 }
 
 fn default_alignment() -> TextAlignment {
     TextAlignment::Left
+}
+
+fn default_width_scale() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

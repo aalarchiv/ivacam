@@ -224,6 +224,21 @@
                         })}
                     />
                   </label>
+                  <label title="Horizontal stretch (50–200 %). 100 % = natural font width.">
+                    <span>Width %</span>
+                    <input
+                      type="number"
+                      step="5"
+                      min="50"
+                      max="200"
+                      value={Math.round(layer.widthScale * 100)}
+                      oninput={(e) => {
+                        const pct =
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 100;
+                        patch(layer.id, { widthScale: pct / 100 });
+                      }}
+                    />
+                  </label>
                   <label class:hidden={layer.kind !== 'MTEXT'}>
                     <span>Line spacing</span>
                     <input

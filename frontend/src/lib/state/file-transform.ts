@@ -24,6 +24,7 @@ import type { BBox, ImportResponse, Point2, Segment } from '../api/types';
 import {
   isIdentityFileTransform,
   type FileTransform,
+  type ImportEntry,
 } from './project-types';
 
 /// Apply `t` to a full ImportResponse. Object ids, layers, object_meta,
@@ -94,6 +95,77 @@ function transformPoint(
   x += t.translate.x;
   y += t.translate.y;
   return { x, y };
+}
+
+/// Merge N imports into a single ImportResponse (wrsu Phase 2). Each
+/// entry's `fileTransform` is applied to its own copy first; then
+/// segments / objects / layers / object_meta are concatenated.
+///
+/// Object id namespacing: each entry contributes a range `[idOffset+1,
+/// idOffset+maxLocalId]` to the combined output, where idOffset = sum
+/// of previous entries' maxLocalId. Existing op references to entries[0]
+/// stay valid (idOffset = 0); later imports occupy unused id ranges.
+///
+/// Layers from different imports are unioned by name (segment counts
+/// summed). Existing ops that reference layers by name continue to
+/// resolve against the union — Phase 3 will add per-import namespacing
+/// if collisions become a real problem.
+///
+/// The single-entry case short-circuits to `applyFileTransform(entry.source,
+/// entry.fileTransform)` — same path as before Phase 2.
+export function combineImports(entries: readonly ImportEntry[]): ImportResponse | null {
+  if (entries.length === 0) return null;
+  if (entries.length === 1) {
+    return applyFileTransform(entries[0].source, entries[0].fileTransform);
+  }
+  const segments: Segment[] = [];
+  const objects: number[] = [];
+  const objectMeta: ImportResponse['object_meta'] = [];
+  const layerByName = new Map<string, ImportResponse['layers'][number]>();
+  let idOffset = 0;
+  let mergedBbox: BBox | null = null;
+  let filenameParts: string[] = [];
+  for (const entry of entries) {
+    const t = applyFileTransform(entry.source, entry.fileTransform);
+    segments.push(...t.segments);
+    for (const id of t.objects ?? []) {
+      objects.push(id === 0 ? 0 : id + idOffset);
+    }
+    for (const m of t.object_meta ?? []) {
+      objectMeta.push({ ...m, id: m.id + idOffset });
+    }
+    for (const l of t.layers ?? []) {
+      const existing = layerByName.get(l.name);
+      if (existing) {
+        existing.segment_count += l.segment_count;
+      } else {
+        layerByName.set(l.name, { ...l });
+      }
+    }
+    if (t.segments.length > 0) {
+      if (!mergedBbox) {
+        mergedBbox = { ...t.bbox };
+      } else {
+        mergedBbox.min_x = Math.min(mergedBbox.min_x, t.bbox.min_x);
+        mergedBbox.min_y = Math.min(mergedBbox.min_y, t.bbox.min_y);
+        mergedBbox.max_x = Math.max(mergedBbox.max_x, t.bbox.max_x);
+        mergedBbox.max_y = Math.max(mergedBbox.max_y, t.bbox.max_y);
+      }
+    }
+    const localMax = (t.objects ?? []).reduce((m, id) => (id > m ? id : m), 0);
+    idOffset += localMax;
+    filenameParts.push(t.filename);
+  }
+  const head = entries[0].source;
+  return {
+    ...head,
+    filename: filenameParts.join(' + '),
+    segments,
+    objects,
+    object_meta: objectMeta,
+    layers: Array.from(layerByName.values()),
+    bbox: mergedBbox ?? head.bbox,
+  };
 }
 
 /// Recompute axis-aligned bbox by scanning the transformed segments.

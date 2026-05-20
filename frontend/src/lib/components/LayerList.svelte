@@ -70,7 +70,21 @@
     return ACI[c] ?? 'var(--text-faint)';
   }
 
-  let usableLayers = $derived(project.imported?.layers.filter((l) => l.segment_count > 0) ?? []);
+  /// Usable layers across ALL imports (wrsu Phase 2). When several
+  /// drawings share a layer name (e.g. both have "0") the counts sum;
+  /// visibility toggles apply across imports.
+  let usableLayers = $derived.by(() => {
+    const byName = new Map<string, { name: string; color: number; segment_count: number }>();
+    for (const entry of project.imports) {
+      for (const l of entry.source.layers) {
+        if (l.segment_count <= 0) continue;
+        const existing = byName.get(l.name);
+        if (existing) existing.segment_count += l.segment_count;
+        else byName.set(l.name, { ...l });
+      }
+    }
+    return Array.from(byName.values());
+  });
 
   let allVisible = $derived(
     usableLayers.length > 0 && usableLayers.every((l) => project.visibleLayers.has(l.name)),
@@ -83,17 +97,14 @@
     }
   }
 
-  /// File-transform foldout (bww). Layout convenience — translate /
-  /// rotate / scale / mirror the entire imported drawing so the user
-  /// can position the part on stock without re-exporting from CAD.
-  /// Closed by default; the dot in the caret signals when a non-identity
-  /// transform is active so it's visible at a glance.
-  let transformOpen = $state(false);
-  let xfActive = $derived(
-    !!project.imported && !isIdentityFileTransform(project.fileTransform),
-  );
-  function patchTx(patch: Parameters<typeof project.patchFileTransform>[0], key: string) {
-    project.patchFileTransform(patch, key);
+  /// Per-import transform foldout state — keyed by ImportEntry.id so
+  /// adding / removing imports doesn't shift the open/closed flags.
+  let openTransforms = $state<Set<number>>(new Set());
+  function toggleTransform(id: number) {
+    const next = new Set(openTransforms);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    openTransforms = next;
   }
 </script>
 
@@ -117,16 +128,19 @@
         onchange={(e) => setAllVisible((e.currentTarget as HTMLInputElement).checked)}
       />
     {/if}
-    {#if usableLayers.length > 0 && project.imported?.filename}
-      <span class="filename" title={project.imported.filename}>
-        {project.imported.filename}
+    {#if project.imports.length === 1 && usableLayers.length > 0}
+      <span class="filename" title={project.imports[0].source.filename}>
+        {project.imports[0].source.filename}
       </span>
-      <span class="file-stats" title="Segments · layers · units">
-        {project.imported.segments.length} seg · {usableLayers.length} layer{usableLayers.length ===
+      <span class="file-stats" title="Segments · layers">
+        {project.imports[0].source.segments.length} seg · {usableLayers.length} layer{usableLayers.length ===
         1
           ? ''
           : 's'}
       </span>
+    {:else if project.imports.length > 1}
+      <span class="group-name">Drawings</span>
+      <span class="group-count">{project.imports.length}</span>
     {:else}
       <span class="group-name">Layers</span>
       <span class="group-count">{usableLayers.length}</span>
@@ -175,140 +189,157 @@
   </div>
   {#if !collapsed}
     <div class="group-body">
-      {#if project.imported}
-        <div class="xform" class:xform-active={xfActive}>
-          <div class="xform-head-row">
-            <button
-              type="button"
-              class="xform-head"
-              onclick={() => (transformOpen = !transformOpen)}
-              aria-expanded={transformOpen}
-              title="Layout convenience: translate / rotate / scale / mirror the entire drawing. Pivot for rotate / scale / mirror is the original file bbox center."
-            >
-              <span class="xform-caret">{transformOpen ? '▾' : '▸'}</span>
-              <span class="xform-label">File transform</span>
-              {#if xfActive}
-                <span class="xform-dot" aria-label="Transform is active"></span>
-              {/if}
-            </button>
-            {#if transformOpen && xfActive}
+      {#each project.imports as entry (entry.id)}
+        {@const xfActive = !isIdentityFileTransform(entry.fileTransform)}
+        {@const transformOpen = openTransforms.has(entry.id)}
+        <div class="import-card">
+          {#if project.imports.length > 1}
+            <div class="import-head">
+              <span class="import-filename" title={entry.source.filename}
+                >{entry.source.filename}</span
+              >
+              <span class="import-stats"
+                >{entry.source.segments.length} seg · {entry.source.layers.length} layer</span
+              >
               <button
                 type="button"
-                class="xform-reset"
-                onclick={() => project.resetFileTransform()}
-                title="Reset to identity (no transform)"
+                class="import-remove"
+                onclick={() => project.removeImport(entry.id)}
+                title="Remove this drawing from the project"
+                aria-label={`Remove ${entry.source.filename}`}>×</button
               >
-                Reset
-              </button>
-            {/if}
-          </div>
-          {#if transformOpen}
-            <div class="xform-body">
-              <label
-                title="Move the entire drawing by this many mm in X. Positive = right."
-              >
-                <span>X</span>
-                <span class="xform-field">
-                  <input
-                    type="number"
-                    step="1"
-                    value={project.fileTransform.translate.x}
-                    oninput={(e) => {
-                      const v = (e.target as HTMLInputElement).valueAsNumber;
-                      if (Number.isFinite(v))
-                        patchTx({ translate: { x: v } }, 'translate.x');
-                    }}
-                  />
-                  <span class="xform-unit">mm</span>
-                </span>
-              </label>
-              <label
-                title="Move the entire drawing by this many mm in Y. Positive = up."
-              >
-                <span>Y</span>
-                <span class="xform-field">
-                  <input
-                    type="number"
-                    step="1"
-                    value={project.fileTransform.translate.y}
-                    oninput={(e) => {
-                      const v = (e.target as HTMLInputElement).valueAsNumber;
-                      if (Number.isFinite(v))
-                        patchTx({ translate: { y: v } }, 'translate.y');
-                    }}
-                  />
-                  <span class="xform-unit">mm</span>
-                </span>
-              </label>
-              <label
-                title="Rotate the drawing around its original bbox center. Positive = counter-clockwise."
-              >
-                <span>Rotate</span>
-                <span class="xform-field">
-                  <input
-                    type="number"
-                    step="5"
-                    value={project.fileTransform.rotateDeg}
-                    oninput={(e) => {
-                      const v = (e.target as HTMLInputElement).valueAsNumber;
-                      if (Number.isFinite(v)) patchTx({ rotateDeg: v }, 'rotateDeg');
-                    }}
-                  />
-                  <span class="xform-unit">°</span>
-                </span>
-              </label>
-              <label
-                title="Uniform scale around the original bbox center. 1 = no scale, 2 = twice as big, 0.5 = half size."
-              >
-                <span>Scale</span>
-                <span class="xform-field">
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0.001"
-                    value={project.fileTransform.scale}
-                    oninput={(e) => {
-                      const v = (e.target as HTMLInputElement).valueAsNumber;
-                      if (Number.isFinite(v) && v > 0) patchTx({ scale: v }, 'scale');
-                    }}
-                  />
-                  <span class="xform-unit">×</span>
-                </span>
-              </label>
-              <label
-                class="xform-check"
-                title="Mirror across the horizontal axis through the bbox center (flip top↔bottom). Negates arc bulges so curvature stays valid."
-              >
-                <input
-                  type="checkbox"
-                  checked={project.fileTransform.mirrorX}
-                  onchange={(e) =>
-                    patchTx(
-                      { mirrorX: (e.currentTarget as HTMLInputElement).checked },
-                      'mirrorX',
-                    )}
-                />
-                Mirror X (flip vertical)
-              </label>
-              <label
-                class="xform-check"
-                title="Mirror across the vertical axis through the bbox center (flip left↔right). Negates arc bulges."
-              >
-                <input
-                  type="checkbox"
-                  checked={project.fileTransform.mirrorY}
-                  onchange={(e) =>
-                    patchTx(
-                      { mirrorY: (e.currentTarget as HTMLInputElement).checked },
-                      'mirrorY',
-                    )}
-                />
-                Mirror Y (flip horizontal)
-              </label>
             </div>
           {/if}
+          <div class="xform" class:xform-active={xfActive}>
+            <div class="xform-head-row">
+              <button
+                type="button"
+                class="xform-head"
+                onclick={() => toggleTransform(entry.id)}
+                aria-expanded={transformOpen}
+                title="Layout convenience: translate / rotate / scale / mirror this drawing. Pivot for rotate / scale / mirror is the drawing's original bbox center."
+              >
+                <span class="xform-caret">{transformOpen ? '▾' : '▸'}</span>
+                <span class="xform-label">File transform</span>
+                {#if xfActive}
+                  <span class="xform-dot" aria-label="Transform is active"></span>
+                {/if}
+              </button>
+              {#if transformOpen && xfActive}
+                <button
+                  type="button"
+                  class="xform-reset"
+                  onclick={() => project.resetFileTransformForImport(entry.id)}
+                  title="Reset to identity (no transform)"
+                >
+                  Reset
+                </button>
+              {/if}
+            </div>
+            {#if transformOpen}
+              <div class="xform-body">
+                <label title="Move this drawing by this many mm in X. Positive = right.">
+                  <span>X</span>
+                  <span class="xform-field">
+                    <input
+                      type="number"
+                      step="1"
+                      value={entry.fileTransform.translate.x}
+                      oninput={(e) => {
+                        const v = (e.target as HTMLInputElement).valueAsNumber;
+                        if (Number.isFinite(v))
+                          project.patchFileTransformForImport(entry.id, { translate: { x: v } });
+                      }}
+                    />
+                    <span class="xform-unit">mm</span>
+                  </span>
+                </label>
+                <label title="Move this drawing by this many mm in Y. Positive = up.">
+                  <span>Y</span>
+                  <span class="xform-field">
+                    <input
+                      type="number"
+                      step="1"
+                      value={entry.fileTransform.translate.y}
+                      oninput={(e) => {
+                        const v = (e.target as HTMLInputElement).valueAsNumber;
+                        if (Number.isFinite(v))
+                          project.patchFileTransformForImport(entry.id, { translate: { y: v } });
+                      }}
+                    />
+                    <span class="xform-unit">mm</span>
+                  </span>
+                </label>
+                <label
+                  title="Rotate around the drawing's original bbox center. Positive = counter-clockwise."
+                >
+                  <span>Rotate</span>
+                  <span class="xform-field">
+                    <input
+                      type="number"
+                      step="5"
+                      value={entry.fileTransform.rotateDeg}
+                      oninput={(e) => {
+                        const v = (e.target as HTMLInputElement).valueAsNumber;
+                        if (Number.isFinite(v))
+                          project.patchFileTransformForImport(entry.id, { rotateDeg: v });
+                      }}
+                    />
+                    <span class="xform-unit">°</span>
+                  </span>
+                </label>
+                <label
+                  title="Uniform scale around the bbox center. 1 = no scale, 2 = twice as big, 0.5 = half size."
+                >
+                  <span>Scale</span>
+                  <span class="xform-field">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0.001"
+                      value={entry.fileTransform.scale}
+                      oninput={(e) => {
+                        const v = (e.target as HTMLInputElement).valueAsNumber;
+                        if (Number.isFinite(v) && v > 0)
+                          project.patchFileTransformForImport(entry.id, { scale: v });
+                      }}
+                    />
+                    <span class="xform-unit">×</span>
+                  </span>
+                </label>
+                <label
+                  class="xform-check"
+                  title="Mirror across the horizontal axis through the bbox center (flip top↔bottom). Negates arc bulges so curvature stays valid."
+                >
+                  <input
+                    type="checkbox"
+                    checked={entry.fileTransform.mirrorX}
+                    onchange={(e) =>
+                      project.patchFileTransformForImport(entry.id, {
+                        mirrorX: (e.currentTarget as HTMLInputElement).checked,
+                      })}
+                  />
+                  Mirror X (flip vertical)
+                </label>
+                <label
+                  class="xform-check"
+                  title="Mirror across the vertical axis through the bbox center (flip left↔right). Negates arc bulges."
+                >
+                  <input
+                    type="checkbox"
+                    checked={entry.fileTransform.mirrorY}
+                    onchange={(e) =>
+                      project.patchFileTransformForImport(entry.id, {
+                        mirrorY: (e.currentTarget as HTMLInputElement).checked,
+                      })}
+                  />
+                  Mirror Y (flip horizontal)
+                </label>
+              </div>
+            {/if}
+          </div>
         </div>
-      {/if}
+      {/each}
       {#if usableLayers.length > 0}
         <ul>
           {#each usableLayers as layer (layer.name)}
@@ -510,8 +541,45 @@
     max-height: 28vh;
     overflow-y: auto;
   }
-  /* File-transform foldout (bww). Lives at the top of group-body, above
-     the layers list. */
+  /* Per-import card (wrsu Phase 2). When the project has multiple
+     drawings the head row identifies each one and offers a remove
+     button; single-import projects skip the head row entirely. */
+  .import-card {
+    margin: 0.1rem 0 0.4rem;
+  }
+  .import-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.18rem 0.2rem 0.15rem;
+    font-size: 0.72rem;
+  }
+  .import-filename {
+    color: var(--text-strong);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .import-stats {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .import-remove {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+    cursor: pointer;
+  }
+  .import-remove:hover {
+    color: var(--error);
+  }
+  /* File-transform foldout (bww). Lives inside each import-card. */
   .xform {
     margin: 0.05rem 0 0.3rem;
     border: 1px solid var(--border);

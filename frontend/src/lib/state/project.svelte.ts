@@ -78,7 +78,7 @@ import type {
   TextLayerKind,
   ToolEntry,
 } from './project-types';
-import { applyFileTransform } from './file-transform';
+import { combineImports } from './file-transform';
 
 export {
   DEFAULT_FIXTURE_COLOR,
@@ -255,16 +255,18 @@ class ProjectState {
     this.data.imports = [{ ...entry, fileTransform: v }, ...this.data.imports.slice(1)];
   }
 
-  /// First import's ImportResponse with its fileTransform applied. Every
-  /// visual consumer (canvas / 3D scene / OSnap / sim / build-project
-  /// payload / footprint) reads this, NOT `imported`, so the user's
-  /// layout edits show up everywhere. Identity transform short-circuits
-  /// to the same reference as the source — cheap equality check for
-  /// downstream memoization.
+  /// All imports merged into one ImportResponse with each entry's
+  /// fileTransform applied (wrsu Phase 2). Every visual consumer (canvas
+  /// / 3D scene / OSnap / sim / build-project payload / footprint) reads
+  /// this rather than `imported`, so the user sees N drawings on stock
+  /// with independent layout transforms.
+  ///
+  /// Single-entry case short-circuits to `applyFileTransform(entry.source,
+  /// entry.fileTransform)` — same identity-fast path as Phase 1. Multi-
+  /// entry case namespaces object ids (entries[0] keeps ids 1..N, later
+  /// entries get the next range) so existing op references stay valid.
   transformedImport = $derived.by<ImportResponse | null>(() => {
-    const entry = this.data.imports[0];
-    if (!entry) return null;
-    return applyFileTransform(entry.source, entry.fileTransform);
+    return combineImports(this.data.imports);
   });
 
   loading = $state(false);
@@ -706,61 +708,64 @@ class ProjectState {
     this.sel.selectFixture(id);
   }
 
-  /// Merge an additional imported file into the current project. Unlike
-  /// `setImported` (which replaces everything), this preserves existing
-  /// segments / layers / objects so the user can build a workspace from
-  /// multiple drawings. Object ids are renumbered to follow existing
-  /// ones; layers with matching names merge their segment counts;
-  /// bbox is unioned. Layer visibility opens for newly-arrived layer
-  /// names so the user sees what they just added.
+  /// Append another drawing to the project as its own ImportEntry
+  /// (wrsu Phase 2). Each entry keeps its own fileTransform so the user
+  /// can position drawings independently on stock. Layer visibility
+  /// opens for newly-arrived names so the user sees the new drawing.
+  ///
+  /// Object id namespacing is handled at view time by `combineImports`
+  /// — each entry occupies a contiguous id range starting after the
+  /// previous entries. Existing op references stay valid because
+  /// imports[0]'s id range is unchanged.
+  ///
+  /// Undo: not history-tracked in Phase 2A — adding a drawing crosses
+  /// a project boundary similar to setImported. Phase 2B is filed to
+  /// thread the add through a proper command if users complain.
   addImported(r: ImportResponse, sourcePath?: string | null) {
-    if (!this.imported) {
+    if (this.data.imports.length === 0) {
+      // First import: identical to setImported for back-compat with
+      // the open-file flows that always call addImported.
       this.setImported(r, sourcePath);
       return;
     }
-    const cur = this.imported;
-    // Renumber new object ids to follow the existing pool. Zero stays
-    // zero (means "didn't chain into an object").
-    const curMaxId = Math.max(
-      0,
-      ...(cur.objects ?? []),
-      ...((cur.object_meta ?? []).map((m) => m.id)),
-    );
-    const newObjects = (r.objects ?? []).map((o) => (o === 0 ? 0 : o + curMaxId));
-    const newObjectMeta = (r.object_meta ?? []).map((m) => ({ ...m, id: m.id + curMaxId }));
-    // Merge layers — same-name layers add their counts; new names append.
-    const mergedLayers = cur.layers.map((l) => ({ ...l }));
-    for (const l of r.layers) {
-      const existing = mergedLayers.find((ml) => ml.name === l.name);
-      if (existing) existing.segment_count += l.segment_count;
-      else mergedLayers.push({ ...l });
-    }
-    const bbox = {
-      min_x: Math.min(cur.bbox.min_x, r.bbox.min_x),
-      min_y: Math.min(cur.bbox.min_y, r.bbox.min_y),
-      max_x: Math.max(cur.bbox.max_x, r.bbox.max_x),
-      max_y: Math.max(cur.bbox.max_y, r.bbox.max_y),
-    };
-    const after: ImportResponse = {
-      ...cur,
-      segments: [...cur.segments, ...r.segments],
-      layers: mergedLayers,
-      bbox,
-      objects: [...(cur.objects ?? []), ...newObjects],
-      object_meta: [...(cur.object_meta ?? []), ...newObjectMeta],
-      text_entities: [...(cur.text_entities ?? []), ...(r.text_entities ?? [])],
-    };
-    // Route the merge through the imported-replace command so the new
-    // file is undoable in one Ctrl+Z. Visibility is non-history view
-    // state, so we update it separately.
-    this.history.exec(
-      replaceImportedCommand(cur, after, `Add ${sourcePath?.split(/[\\/]/).pop() ?? 'drawing'}`),
-      this.target(),
-    );
+    const nextId = this.data.imports.reduce((m, e) => (e.id > m ? e.id : m), 0) + 1;
+    this.data.imports = [
+      ...this.data.imports,
+      {
+        id: nextId,
+        source: r,
+        fileTransform: identityFileTransform(),
+        lastImportPath: sourcePath ?? null,
+      },
+    ];
     const nextVis = new Set(this.visibleLayers);
     for (const l of r.layers) nextVis.add(l.name);
     this.visibleLayers = nextVis;
-    if (sourcePath !== undefined) this.lastImportPath = sourcePath;
+    this.generated = null;
+    this.toolpathCumLen = null;
+    this.toolpathTotalLen = 0;
+    this.dirty = true;
+    this.error = null;
+    void this.refreshSourceWatch();
+  }
+
+  /// Remove an import by its ImportEntry.id (wrsu Phase 2). Layer
+  /// visibility entries that no longer have any backing import are
+  /// pruned. Generated G-code is invalidated.
+  removeImport(id: number) {
+    const before = this.data.imports;
+    const next = before.filter((e) => e.id !== id);
+    if (next.length === before.length) return;
+    this.data.imports = next;
+    const stillThere = new Set<string>();
+    for (const e of next) for (const l of e.source.layers) stillThere.add(l.name);
+    const filtered = new Set<string>();
+    for (const l of this.visibleLayers) if (stillThere.has(l)) filtered.add(l);
+    this.visibleLayers = filtered;
+    this.generated = null;
+    this.toolpathCumLen = null;
+    this.toolpathTotalLen = 0;
+    this.dirty = true;
     void this.refreshSourceWatch();
   }
 
@@ -1460,6 +1465,42 @@ class ProjectState {
       setFileTransformCommand(this.fileTransform, identityFileTransform()),
       this.target(),
     );
+  }
+
+  /// Per-import variant of patchFileTransform (wrsu Phase 2). Bypasses
+  /// history for now — adding a per-import command shape is Phase 2B.
+  /// `coalesceKey` left in the signature for API symmetry; ignored until
+  /// the command is wired.
+  patchFileTransformForImport(
+    importId: number,
+    patch: Partial<Omit<FileTransform, 'translate'>> & {
+      translate?: Partial<FileTransform['translate']>;
+    },
+    _coalesceKey?: string,
+  ) {
+    const idx = this.data.imports.findIndex((e) => e.id === importId);
+    if (idx < 0) return;
+    const entry = this.data.imports[idx];
+    const before = entry.fileTransform;
+    const after: FileTransform = {
+      ...before,
+      ...patch,
+      translate: { ...before.translate, ...(patch.translate ?? {}) },
+    };
+    const next = [...this.data.imports];
+    next[idx] = { ...entry, fileTransform: after };
+    this.data.imports = next;
+    this.dirty = true;
+  }
+
+  resetFileTransformForImport(importId: number) {
+    const idx = this.data.imports.findIndex((e) => e.id === importId);
+    if (idx < 0) return;
+    if (isIdentityFileTransform(this.data.imports[idx].fileTransform)) return;
+    const next = [...this.data.imports];
+    next[idx] = { ...next[idx], fileTransform: identityFileTransform() };
+    this.data.imports = next;
+    this.dirty = true;
   }
 }
 

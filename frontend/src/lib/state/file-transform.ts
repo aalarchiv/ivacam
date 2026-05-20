@@ -97,6 +97,49 @@ export function applyFileTransformToPoint(
   return transformPoint(p, t, bboxCenter(bbox));
 }
 
+/// Inverse of `applyFileTransformToPoint`: map a transformed-world
+/// point back to the original raw-import space (43l2). The pivot stays
+/// at the ORIGINAL bbox center (the same pivot the forward transform
+/// uses), so callers pass the raw `bbox`. Composition with
+/// `applyFileTransformToPoint(_, T, bbox)` round-trips to identity
+/// within f64 precision.
+export function invertFileTransformPoint(
+  p: { x: number; y: number },
+  t: FileTransform,
+  bbox: BBox,
+): { x: number; y: number } {
+  if (isIdentityFileTransform(t)) return p;
+  return inverseTransformPoint(p, t, bboxCenter(bbox));
+}
+
+function inverseTransformPoint(
+  p: { x: number; y: number },
+  t: FileTransform,
+  pivot: Point2,
+): { x: number; y: number } {
+  // Forward order is: scale → mirrorX → mirrorY → rotate → translate.
+  // Inverse runs the steps in reverse with each step's inverse:
+  // -translate, -rotate, mirrorY (self-inverse), mirrorX, 1/scale.
+  let x = p.x - t.translate.x;
+  let y = p.y - t.translate.y;
+  if (t.rotateDeg !== 0) {
+    const rad = (-t.rotateDeg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const dx = x - pivot.x;
+    const dy = y - pivot.y;
+    x = pivot.x + dx * cos - dy * sin;
+    y = pivot.y + dx * sin + dy * cos;
+  }
+  if (t.mirrorY) x = 2 * pivot.x - x;
+  if (t.mirrorX) y = 2 * pivot.y - y;
+  if (t.scale !== 0) {
+    x = pivot.x + (x - pivot.x) / t.scale;
+    y = pivot.y + (y - pivot.y) / t.scale;
+  }
+  return { x, y };
+}
+
 function bboxCenter(b: BBox): Point2 {
   return { x: (b.min_x + b.max_x) / 2, y: (b.min_y + b.max_y) / 2 };
 }

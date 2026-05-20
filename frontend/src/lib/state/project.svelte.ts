@@ -36,7 +36,7 @@ export { DEFAULT_SETTINGS };
 export type { AppSettings };
 // Bring the union types into scope locally; project-types and op_types
 // re-export them through this module for back-compat callers.
-import type { OpEntry, OpKind, OpPatch } from './op_types';
+import { isContourOp, type OpEntry, type OpKind, type OpPatch } from './op_types';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs
 // and non-Svelte helpers can import them without booting the rune
@@ -78,7 +78,11 @@ import type {
   TextLayerKind,
   ToolEntry,
 } from './project-types';
-import { combineImports } from './file-transform';
+import {
+  applyFileTransformToPoint,
+  combineImports,
+  invertFileTransformPoint,
+} from './file-transform';
 
 export {
   DEFAULT_FIXTURE_COLOR,
@@ -1455,6 +1459,14 @@ class ProjectState {
   /// Per-import variant of patchFileTransform (wrsu Phase 2). Undoable;
   /// the optional coalesceKey is per-import-per-field so two consecutive
   /// nudges of the X spinner on entry #3 collapse to one history step.
+  ///
+  /// 43l2: after swapping the transform, project every op's
+  /// approachPoint and (mirror-sensitive) tabPlacements through the
+  /// delta so they stay attached to the same geometry the user sees.
+  /// Approach points round-trip via raw-import space; tab `t` values
+  /// flip 1-t when the mirror parity changed since contour traversal
+  /// reverses. Bundled into the same transaction as the imports swap
+  /// so Ctrl+Z reverts the whole intent in one step.
   patchFileTransformForImport(
     importId: number,
     patch: Partial<Omit<FileTransform, 'translate'>> & {
@@ -1474,15 +1486,116 @@ class ProjectState {
     const before = this.data.imports;
     const after = [...before];
     after[idx] = { ...entry, fileTransform: afterXf };
-    this.history.exec(
-      setImportsCommand(
-        before,
-        after,
-        'Edit file transform',
-        coalesceKey ? `xform:${importId}:${coalesceKey}` : undefined,
-      ),
-      this.target(),
+    const label = 'Edit file transform';
+    const opPatches = this.computeOpPatchesForXfDelta(before, idx, beforeXf, afterXf);
+    if (opPatches.length === 0) {
+      // Hot path: spinner drags with no affected ops stay as a single
+      // command so the coalesce key still collapses streaks of nudges
+      // into one undo entry.
+      this.history.exec(
+        setImportsCommand(
+          before,
+          after,
+          label,
+          coalesceKey ? `xform:${importId}:${coalesceKey}` : undefined,
+        ),
+        this.target(),
+      );
+      return;
+    }
+    this.history.beginTransaction(label);
+    try {
+      this.history.exec(setImportsCommand(before, after, label), this.target());
+      for (const { opId, patch: opPatch } of opPatches) {
+        this.history.exec(updateOperationCommand(opId, opPatch), this.target());
+      }
+      this.history.commitTransaction();
+    } catch (e) {
+      this.history.cancelTransaction(this.target());
+      throw e;
+    }
+  }
+
+  /// 43l2 helper: compute the per-op `approachPoint` + `tabPlacements`
+  /// patches needed to keep the user's authored markers stuck to the
+  /// geometry when the import at `idx`'s fileTransform changes. Returns
+  /// only ops that actually need an update; ops whose source touches
+  /// OTHER imports aren't moved. Pure — doesn't mutate.
+  private computeOpPatchesForXfDelta(
+    imports: readonly ImportEntry[],
+    idx: number,
+    beforeXf: FileTransform,
+    afterXf: FileTransform,
+  ): { opId: number; patch: OpPatch }[] {
+    if (isIdentityFileTransform(beforeXf) && isIdentityFileTransform(afterXf)) {
+      return [];
+    }
+    // Compute this entry's namespaced object-id range (matches
+    // combineImports' offset arithmetic — entries[0] keeps 1..N0,
+    // entries[1] gets N0+1..N0+N1, etc.).
+    let idOffset = 0;
+    for (let i = 0; i < idx; i++) {
+      const m = (imports[i].source.objects ?? []).reduce(
+        (max, id) => (id > max ? id : max),
+        0,
+      );
+      idOffset += m;
+    }
+    const localMax = (imports[idx].source.objects ?? []).reduce(
+      (m, id) => (id > m ? id : m),
+      0,
     );
+    const lo = idOffset + 1;
+    const hi = idOffset + localMax;
+    const ownsId = (id: number) => id >= lo && id <= hi;
+    // The pivot for both forward + inverse is the RAW import bbox
+    // centre, which doesn't change with the transform itself.
+    const rawBbox = imports[idx].source.bbox;
+    const mirrorParityChanged =
+      Number(beforeXf.mirrorX) !== Number(afterXf.mirrorX) ||
+      Number(beforeXf.mirrorY) !== Number(afterXf.mirrorY);
+    const out: { opId: number; patch: OpPatch }[] = [];
+    for (const op of this.operations) {
+      // approachPoint + tabPlacements live on contour ops only.
+      // Non-contour ops (Drill / VCarve / …) have no markers to keep
+      // attached, so skip them — also avoids narrowing pain on the
+      // OpEntry discriminated union.
+      if (!isContourOp(op)) continue;
+      // Empty sourceObjects = "all geometry" — ambiguous which import
+      // it belongs to. Skip; the user re-positions if needed (no worse
+      // than today for that case).
+      if (!Array.isArray(op.sourceObjects) || op.sourceObjects.length === 0) continue;
+      const ownedIds = op.sourceObjects.filter(ownsId);
+      if (ownedIds.length === 0) continue;
+      // The op is narrowed to ProfileOp | PocketOp by isContourOp
+      // above, so its patch can carry the contour-only fields directly.
+      const patch: Partial<typeof op> = {};
+      // Approach point: world(before) → raw → world(after).
+      if (op.approachPoint) {
+        const [ax, ay] = op.approachPoint;
+        const raw = invertFileTransformPoint({ x: ax, y: ay }, beforeXf, rawBbox);
+        const next = applyFileTransformToPoint(raw, afterXf, rawBbox);
+        // Skip the write when the result is identical (no-op transforms
+        // that still survived the identity guard above).
+        if (Math.abs(next.x - ax) > 1e-9 || Math.abs(next.y - ay) > 1e-9) {
+          patch.approachPoint = [next.x, next.y];
+        }
+      }
+      // Tab placements: mirror parity flip reverses contour traversal,
+      // so t → 1-t per placement on this import's objects.
+      const tabs = op.tabPlacements;
+      if (mirrorParityChanged && Array.isArray(tabs) && tabs.length > 0) {
+        const flipped = tabs.map((tp) =>
+          ownsId(tp.objectId) ? { ...tp, t: 1 - tp.t } : tp,
+        );
+        // Only emit when at least one placement actually flipped.
+        if (flipped.some((tp, i) => tp.t !== tabs[i].t)) {
+          patch.tabPlacements = flipped;
+        }
+      }
+      if (Object.keys(patch).length > 0) out.push({ opId: op.id, patch });
+    }
+    return out;
   }
 
   resetFileTransformForImport(importId: number) {

@@ -2,7 +2,11 @@
 /// projects an imported ImportResponse through a FileTransform.
 
 import { describe, expect, it } from 'vitest';
-import { applyFileTransform } from './file-transform';
+import {
+  applyFileTransform,
+  applyFileTransformToPoint,
+  invertFileTransformPoint,
+} from './file-transform';
 import { identityFileTransform, type FileTransform } from './project-types';
 import type { ImportResponse, Segment } from '../api/types';
 
@@ -171,6 +175,32 @@ describe('applyFileTransform', () => {
     const out = applyFileTransform(base, tx({ translate: { x: 100, y: 50 } }));
     expect(out.object_meta[0].bbox).toEqual({ min_x: 100, min_y: 50, max_x: 101, max_y: 51 });
     expect(out.object_meta[1].bbox).toEqual({ min_x: 120, min_y: 50, max_x: 121, max_y: 51 });
+  });
+
+  it('invertFileTransformPoint round-trips applyFileTransformToPoint (43l2)', () => {
+    const bbox = { min_x: 0, min_y: 0, max_x: 10, max_y: 10 };
+    const cases: FileTransform[] = [
+      tx({ translate: { x: 5, y: -3 } }),
+      tx({ rotateDeg: 33 }),
+      tx({ scale: 1.7 }),
+      tx({ mirrorX: true }),
+      tx({ mirrorY: true }),
+      tx({ mirrorX: true, mirrorY: true }),
+      tx({
+        translate: { x: 4, y: 2 },
+        rotateDeg: -45,
+        scale: 0.6,
+        mirrorX: true,
+        mirrorY: false,
+      }),
+    ];
+    for (const t of cases) {
+      const p = { x: 7.5, y: 2.25 };
+      const fwd = applyFileTransformToPoint(p, t, bbox);
+      const back = invertFileTransformPoint(fwd, t, bbox);
+      expect(back.x).toBeCloseTo(p.x, 8);
+      expect(back.y).toBeCloseTo(p.y, 8);
+    }
   });
 
   it('object_meta untagged segments (id 0) leave entries untouched (86ho)', () => {

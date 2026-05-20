@@ -84,7 +84,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             outer: region.boundary.clone(),
             holes: region.holes.clone(),
         };
-        let axes = crate::cam::vcarve::medial_axis_cancellable(&vc_region, cancel);
+        let axes = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);
         }

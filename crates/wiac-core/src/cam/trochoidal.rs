@@ -32,7 +32,7 @@
 )]
 
 use crate::cam::offsets::{
-    bridge_stays_inside_polygon, pocket_cascade_with_islands, point_in_polygon_pts,
+    bridge_stays_inside_polygon, point_in_polygon_pts,
     stitch_rings_to_polyline,
 };
 use crate::geometry::{Point2, Segment};
@@ -89,7 +89,11 @@ pub fn pocket_trochoidal_cancellable(
     let step_main = (tool_diameter * (1.0 - main_overlap)).max(tool_radius * 0.05);
     let r_loop = (tool_radius * loop_radius_factor.clamp(0.3, 1.0)).max(1e-3);
 
-    let rings = pocket_cascade_with_islands(boundary_pts, islands, step_main);
+    let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
+        boundary_pts,
+        islands,
+        step_main,
+    );
     if rings.is_empty() {
         return Some(Vec::new());
     }

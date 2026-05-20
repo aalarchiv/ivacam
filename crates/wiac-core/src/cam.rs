@@ -19,6 +19,7 @@ use crate::math;
 
 pub mod chaining;
 pub mod chamfer;
+pub mod geometry_cache;
 pub mod halfpipe;
 pub mod inscribed;
 pub mod offsets;

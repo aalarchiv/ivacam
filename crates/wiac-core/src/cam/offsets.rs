@@ -773,7 +773,9 @@ pub fn pocket_for_object(
                 // shortens the bridge segment between rings and gives
                 // the path a natural "spiral inward" shape. Approximates
                 // an Archimedean spiral well enough for pocket clearing.
-                let rings = pocket_cascade_with_islands(&pts, islands, step);
+                let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
+                    &pts, islands, step,
+                );
                 if rings.is_empty() {
                     continue;
                 }
@@ -842,7 +844,9 @@ pub fn pocket_for_object(
             PocketEmit::Cascade => {}
         }
 
-        let rings = pocket_cascade_with_islands(&pts, islands, step);
+        let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
+            &pts, islands, step,
+        );
         // No silent fallback to zigzag here: the user picked cascade or
         // spiral explicitly, and substituting zigzag when no ring fits
         // is surprising. The pocket_fill_incomplete warning fires

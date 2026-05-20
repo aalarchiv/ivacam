@@ -386,6 +386,39 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
     pocket_cascade_with_islands(boundary, &[], delta)
 }
 
+/// Single-step inward offset of a boundary + holes by `delta` (r8ut).
+/// Unlike [`pocket_cascade_with_islands`], stops after ONE inflate so
+/// callers that only want the level-0 ring (V-Carve perimeter mode)
+/// don't pay for the rest of the cascade. Holes are NOT pre-inflated
+/// here — `delta` IS the desired clearance from each hole.
+#[must_use]
+pub fn boundary_offset_inward(
+    boundary: &[Point2],
+    holes: &[Vec<Point2>],
+    delta: f64,
+) -> Vec<Vec<Point2>> {
+    if boundary.len() < 3 || delta <= 1e-9 {
+        return Vec::new();
+    }
+    let paths = build_paths(boundary, holes);
+    let next = inflate_paths_d(
+        &paths,
+        -delta,
+        JoinType::Round,
+        EndType::Polygon,
+        2.0,
+        4,
+        0.25,
+    );
+    let mut rings = Vec::with_capacity(next.len());
+    for ring in &next {
+        if ring.len() >= 3 {
+            rings.push(ring.iter().map(|pt| Point2::new(pt.x, pt.y)).collect());
+        }
+    }
+    rings
+}
+
 /// Inward-cascade pocket offsets that respect islands (closed contours
 /// inside the boundary that should be left uncut). Each `island` is a
 /// closed polyline already inflated by `tool_radius` outward — the

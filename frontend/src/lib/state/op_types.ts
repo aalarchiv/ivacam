@@ -173,6 +173,13 @@ export interface VCarveOp extends OpBase {
   carveMaxWidthMm?: number;
   /// Multi-pass refinement toggle.
   multiPassRefine?: boolean;
+  /// r8ut: trace the full medial axis. Default (undefined / false) =
+  /// Estlcam-style perimeter-only — the cutter traces the boundary
+  /// offset inward by `R = effective_r_cap` at constant depth, leaving
+  /// the centre plateau untouched. Set true to recover the prior wiac
+  /// behaviour for the rare "carve a depth gradient across the entire
+  /// interior" workflow (Aspire-style relief).
+  fullMedialAxis?: boolean;
 }
 
 /// Thread op (rt1.17) — helical pass cutting an internal or external

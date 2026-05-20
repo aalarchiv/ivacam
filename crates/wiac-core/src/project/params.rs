@@ -177,6 +177,16 @@ pub struct VCarveParams {
     /// points whose first pass fell short of the geometric target.
     #[serde(default)]
     pub multi_pass_refine: bool,
+    /// r8ut: trace the full medial axis (creates extra spine cuts
+    /// through the interior of wide regions). Default `false` matches
+    /// Estlcam's behaviour — the toolpath traces the BOUNDARY offset
+    /// inward by `R = effective_r_cap`, plunged to depth
+    /// `-R / tan(angle / 2)`, and the centre plateau is left
+    /// untouched. Set true to recover the prior wiac behaviour for the
+    /// rare "carve a depth gradient across the whole interior"
+    /// workflow (think Aspire-style relief).
+    #[serde(default)]
+    pub full_medial_axis: bool,
 }
 
 /// Universal per-op parameters — fields that apply to **every** op kind.

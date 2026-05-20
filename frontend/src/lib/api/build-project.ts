@@ -62,6 +62,7 @@ interface FlatOp extends OpBase, ContourFields {
   // VCarveOp
   carveMaxWidthMm?: VCarveOp['carveMaxWidthMm'];
   multiPassRefine?: VCarveOp['multiPassRefine'];
+  fullMedialAxis?: VCarveOp['fullMedialAxis'];
   // ThreadOp
   threadPitchMm?: ThreadOp['threadPitchMm'];
   threadInternal?: ThreadOp['threadInternal'];
@@ -583,6 +584,7 @@ function buildVCarveParams(op: FlatOp): Record<string, unknown> {
     v.carve_max_width_mm = op.carveMaxWidthMm;
   }
   if (op.multiPassRefine) v.multi_pass_refine = true;
+  if (op.fullMedialAxis) v.full_medial_axis = true;
   return v;
 }
 

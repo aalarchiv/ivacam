@@ -55,6 +55,24 @@
     </label>
     <label
       class="row"
+      title="Default OFF (Estlcam-style): the cutter traces the boundary offset inward by Max width / 2 at constant depth, leaving the centre plateau untouched. Turn ON for the medial-axis approach — depth varies along an interior spine; useful for Aspire-style depth-gradient relief, but typically NOT what you want for sign-making."
+    >
+      <span>Full medial axis</span>
+      <input
+        type="checkbox"
+        checked={op.fullMedialAxis ?? false}
+        onchange={(e) =>
+          patch(
+            'fullMedialAxis',
+            (e.currentTarget as HTMLInputElement).checked ? true : undefined,
+          )}
+      />
+      <span class="hint" style="margin-left:0.5rem">
+        spine cuts through wide interiors
+      </span>
+    </label>
+    <label
+      class="row"
       title="Planned for a future release: re-cut only the points whose first pass fell short of the geometric target depth. The control is disabled until the refinement pass ships."
     >
       <span>Refine pass</span>

@@ -99,6 +99,15 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut any_depth_limited = false;
 
+    // r8ut: full_medial_axis defaults to false → Estlcam-style perimeter
+    // pass. The medial-axis path is opt-in for the rare "carve a depth
+    // gradient across the entire interior" workflow (think Aspire-style
+    // relief). The two paths share tip-angle / tip-radius / reach-cap
+    // / depth-cap math; only the traversal shape differs.
+    let full_medial = op
+        .vcarve_params()
+        .is_some_and(|v| v.full_medial_axis);
+
     for region in &regions {
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);
@@ -106,27 +115,85 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
         if region.boundary.len() < 3 {
             continue;
         }
-        let vc_region = crate::cam::vcarve::VcRegion {
-            outer: region.boundary.clone(),
-            holes: region.holes.clone(),
-        };
-        let axes = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
-        if cancelled(cancel) {
-            return Err(PipelineError::Cancelled);
-        }
-        for axis in &axes {
-            let (z_axis, depth_limited) = crate::cam::vcarve::polyline_to_z(
-                axis,
-                tip_angle_rad,
-                tip_radius_mm,
-                effective_r_cap,
-                z_cap,
-            );
-            if depth_limited {
-                any_depth_limited = true;
+        if full_medial {
+            // Medial-axis traversal (pre-r8ut behaviour). Plunges along
+            // every interior medial-axis chain; depth follows local
+            // inscribed radius up to effective_r_cap.
+            let vc_region = crate::cam::vcarve::VcRegion {
+                outer: region.boundary.clone(),
+                holes: region.holes.clone(),
+            };
+            let axes = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
+            if cancelled(cancel) {
+                return Err(PipelineError::Cancelled);
             }
-            let path = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
-            if path.len() >= 2 {
+            for axis in &axes {
+                let (z_axis, depth_limited) = crate::cam::vcarve::polyline_to_z(
+                    axis,
+                    tip_angle_rad,
+                    tip_radius_mm,
+                    effective_r_cap,
+                    z_cap,
+                );
+                if depth_limited {
+                    any_depth_limited = true;
+                }
+                let path = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
+                if path.len() >= 2 {
+                    polylines.push(path);
+                }
+            }
+        } else {
+            // Default Estlcam-style perimeter pass: inset the boundary
+            // (and holes) by R = effective_r_cap; emit each resulting
+            // ring at constant z = -(R - tip_r) / tan(angle / 2).
+            // Centre plateau and any deep interior are left untouched.
+            let r_offset = effective_r_cap.unwrap_or(tool_reach_r);
+            if r_offset <= tip_radius_mm + 1e-9 {
+                // The cap is below the bit's flat tip — perimeter offset
+                // would lie at z=0, indistinguishable from an engrave.
+                // Bail with a warning so the user knows nothing got cut.
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "vcarve_below_tip_radius".into(),
+                    message: format!(
+                        "V-Carve op '{}' effective carve width ({:.3} mm) is at or below the V-bit's flat tip ({:.3} mm); the bit's nose rides the surface and no material would be removed. Pick a sharper bit or raise carve_max_width_mm.",
+                        op.name, r_offset, tip_radius_mm,
+                    ),
+                });
+                continue;
+            }
+            // Compute target z. polyline_to_z's r-cap logic isn't needed
+            // here — we already know we're cutting at the cap.
+            let tan_half = (tip_angle_rad * 0.5).tan().max(1e-9);
+            let mut z_target = -(r_offset - tip_radius_mm) / tan_half;
+            if let Some(c) = z_cap {
+                let limit = c.abs();
+                if z_target < -limit {
+                    z_target = -limit;
+                    any_depth_limited = true;
+                }
+            }
+            let rings = crate::cam::offsets::boundary_offset_inward(
+                &region.boundary,
+                &region.holes,
+                r_offset,
+            );
+            for ring in rings {
+                if ring.len() < 2 {
+                    continue;
+                }
+                // Close the ring so the cutter returns to its start —
+                // perimeter passes are closed loops, not open polylines.
+                let mut path: Vec<(f64, f64, f64)> = ring
+                    .iter()
+                    .map(|p| (p.x, p.y, z_target))
+                    .collect();
+                let first = path[0];
+                let last = *path.last().expect("len >= 2");
+                if (first.0 - last.0).hypot(first.1 - last.1) > 1e-9 {
+                    path.push(first);
+                }
                 polylines.push(path);
             }
         }
@@ -284,6 +351,7 @@ mod tests {
     /// the medial axis hits r = 15 — without the clamp the depth math
     /// would dive to z = -15 / tan(30°) ≈ -26mm regardless of the bit's
     /// 3mm reach. The clamp keeps z above ≈ -5.2mm (3 / tan(30°)).
+    /// Exercises full_medial_axis = true so the medial-axis path runs.
     #[test]
     fn vcarve_op_respects_tool_reach() {
         let op = Op {
@@ -291,7 +359,10 @@ mod tests {
             name: "Carve".into(),
             enabled: true,
             kind: OpKind::VCarve {
-                carve: crate::project::VCarveParams::default(),
+                carve: crate::project::VCarveParams {
+                    full_medial_axis: true,
+                    ..Default::default()
+                },
             },
             tool_id: 1,
             finish_tool_id: None,
@@ -347,6 +418,84 @@ mod tests {
         );
     }
 
+    /// r8ut: default V-Carve (full_medial_axis = false) traces ONLY a
+    /// perimeter loop on a 30×30 square — no spine cuts through the
+    /// interior. Compare with `vcarve_op_respects_tool_reach` above
+    /// which exercises the medial-axis branch on the same geometry.
+    #[test]
+    fn vcarve_op_default_is_perimeter_only() {
+        let op = Op {
+            id: 7,
+            name: "Carve".into(),
+            enabled: true,
+            kind: OpKind::VCarve {
+                carve: crate::project::VCarveParams::default(),
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams {
+                depth: -10.0,
+                start_depth: 0.0,
+                step: Some(-1.0),
+                fast_move_z: 5.0,
+                ..OpParams::default()
+            },
+        };
+        // 30x30 closed square — incircle radius 15mm. Boundary inset by
+        // R = 3.175 mm (vbit tool reach) → expect a ~23.65×23.65 square
+        // loop centred on (15, 15).
+        let project = Project {
+            segments: vec![
+                Segment::line(Point2::new(0.0, 0.0), Point2::new(30.0, 0.0), "0", 7),
+                Segment::line(Point2::new(30.0, 0.0), Point2::new(30.0, 30.0), "0", 7),
+                Segment::line(Point2::new(30.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
+                Segment::line(Point2::new(0.0, 30.0), Point2::new(0.0, 0.0), "0", 7),
+            ],
+            machine: MachineConfig::default(),
+            tools: vec![vbit()],
+            operations: vec![op],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline ran");
+        // All cut points should be in a thin annular band near the
+        // boundary — no point should be deep inside the square (which
+        // is where the medial-axis spine would land). The inset is
+        // ≤ 5 mm so points beyond (5, 25) on both axes signal a spine
+        // cut that shouldn't exist in perimeter mode.
+        let cut_pts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| !matches!(s.kind, crate::gcode::preview::MoveKind::Rapid))
+            .map(|s| (s.to.x, s.to.y, s.to.z))
+            .collect();
+        assert!(!cut_pts.is_empty(), "perimeter pass should emit cut moves");
+        for (x, y, _z) in &cut_pts {
+            // Distance from boundary <= ~5 mm tolerance. The boundary
+            // is the [0..30] square; the closest edge gives the
+            // distance.
+            let d = x.min(30.0 - x).min(*y).min(30.0 - y);
+            assert!(
+                d < 5.0,
+                "perimeter mode emitted a cut at ({x:.2}, {y:.2}) which is {d:.2} mm from any edge — looks like a spine cut",
+            );
+        }
+        // The perimeter should sit at the expected z depth (≈ -5.5 mm).
+        let z_min = cut_pts.iter().map(|(_, _, z)| *z).fold(0.0_f64, f64::min);
+        assert!(
+            z_min < -3.0 && z_min > -8.0,
+            "expected perimeter depth around -5.5 mm; got z_min = {z_min}",
+        );
+    }
+
     #[test]
     fn vcarve_op_round_trips_through_serde_json() {
         let op = Op {
@@ -357,6 +506,7 @@ mod tests {
                 carve: crate::project::VCarveParams {
                     carve_max_width_mm: Some(4.0),
                     multi_pass_refine: true,
+                    full_medial_axis: false,
                 },
             },
             tool_id: 1,

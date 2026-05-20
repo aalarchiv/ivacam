@@ -148,4 +148,39 @@ describe('applyFileTransform', () => {
     expect(w).toBeCloseTo(Math.SQRT2 * 10, 2);
     expect(h).toBeCloseTo(Math.SQRT2 * 10, 2);
   });
+
+  it('object_meta[i].bbox is recomputed against transformed segments (86ho)', () => {
+    // Two disjoint objects: obj 1 = unit square at origin, obj 2 = unit
+    // square at (20, 0). Translate the whole import +(100, 50).
+    const segs: Segment[] = [
+      line(0, 0, 1, 0),
+      line(1, 0, 1, 1),
+      line(1, 1, 0, 1),
+      line(0, 1, 0, 0),
+      line(20, 0, 21, 0),
+      line(21, 0, 21, 1),
+      line(21, 1, 20, 1),
+      line(20, 1, 20, 0),
+    ];
+    const base = imp(segs);
+    base.objects = [1, 1, 1, 1, 2, 2, 2, 2];
+    base.object_meta = [
+      { id: 1, closed: true, layer: '0', color: 7, bbox: { min_x: 0, min_y: 0, max_x: 1, max_y: 1 } },
+      { id: 2, closed: true, layer: '0', color: 7, bbox: { min_x: 20, min_y: 0, max_x: 21, max_y: 1 } },
+    ];
+    const out = applyFileTransform(base, tx({ translate: { x: 100, y: 50 } }));
+    expect(out.object_meta[0].bbox).toEqual({ min_x: 100, min_y: 50, max_x: 101, max_y: 51 });
+    expect(out.object_meta[1].bbox).toEqual({ min_x: 120, min_y: 50, max_x: 121, max_y: 51 });
+  });
+
+  it('object_meta untagged segments (id 0) leave entries untouched (86ho)', () => {
+    const base = imp([line(0, 0, 10, 0)]);
+    base.objects = [0];
+    base.object_meta = [
+      { id: 1, closed: false, layer: '0', color: 7, bbox: { min_x: -5, min_y: -5, max_x: 5, max_y: 5 } },
+    ];
+    const out = applyFileTransform(base, tx({ translate: { x: 100, y: 0 } }));
+    // No segment tagged id=1, so the original bbox survives (not Infinity).
+    expect(out.object_meta[0].bbox).toEqual({ min_x: -5, min_y: -5, max_x: 5, max_y: 5 });
+  });
 });

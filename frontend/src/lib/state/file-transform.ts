@@ -27,9 +27,10 @@ import {
   type ImportEntry,
 } from './project-types';
 
-/// Apply `t` to a full ImportResponse. Object ids, layers, object_meta,
-/// warnings, unit_scale, format, filename — all unchanged. Only segments
-/// and bbox are recomputed.
+/// Apply `t` to a full ImportResponse. Object ids, layers, warnings,
+/// unit_scale, format, filename — all unchanged. Segments, top-level
+/// bbox, and per-object object_meta[i].bbox are recomputed against the
+/// transformed segments.
 export function applyFileTransform(
   imp: ImportResponse,
   t: FileTransform,
@@ -41,7 +42,48 @@ export function applyFileTransform(
     ...imp,
     segments: transformedSegments,
     bbox: computeBbox(transformedSegments, imp.bbox),
+    object_meta: recomputeObjectMetaBbox(imp, transformedSegments),
   };
+}
+
+/// Recompute each object_meta[i].bbox by walking the transformed
+/// segments tagged with that object's id. Matches the endpoint-based
+/// bbox that the top-level `computeBbox` already produces (no arc-extent
+/// inflation — same limitation, kept symmetric on purpose).
+///
+/// Falls back to the original meta entry when an object has no
+/// segments tagged with its id (degenerate import; preserves the
+/// authored bbox rather than emitting Infinity sentinels).
+function recomputeObjectMetaBbox(
+  imp: ImportResponse,
+  transformedSegments: readonly Segment[],
+): ImportResponse['object_meta'] {
+  const meta = imp.object_meta ?? [];
+  if (meta.length === 0) return meta;
+  const tags = imp.objects ?? [];
+  const byId = new Map<number, { min_x: number; min_y: number; max_x: number; max_y: number }>();
+  for (let i = 0; i < transformedSegments.length; i++) {
+    const id = tags[i];
+    if (!id) continue;
+    const seg = transformedSegments[i];
+    let b = byId.get(id);
+    if (!b) {
+      b = { min_x: Infinity, min_y: Infinity, max_x: -Infinity, max_y: -Infinity };
+      byId.set(id, b);
+    }
+    if (seg.start.x < b.min_x) b.min_x = seg.start.x;
+    if (seg.start.y < b.min_y) b.min_y = seg.start.y;
+    if (seg.end.x < b.min_x) b.min_x = seg.end.x;
+    if (seg.end.y < b.min_y) b.min_y = seg.end.y;
+    if (seg.start.x > b.max_x) b.max_x = seg.start.x;
+    if (seg.start.y > b.max_y) b.max_y = seg.start.y;
+    if (seg.end.x > b.max_x) b.max_x = seg.end.x;
+    if (seg.end.y > b.max_y) b.max_y = seg.end.y;
+  }
+  return meta.map((m) => {
+    const b = byId.get(m.id);
+    return b ? { ...m, bbox: b } : m;
+  });
 }
 
 /// Apply the same transform to a single (x, y) world point. Used by the

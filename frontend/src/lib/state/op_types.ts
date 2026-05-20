@@ -180,6 +180,13 @@ export interface VCarveOp extends OpBase {
   /// behaviour for the rare "carve a depth gradient across the entire
   /// interior" workflow (Aspire-style relief).
   fullMedialAxis?: boolean;
+  /// rt1.7: extra inward offset applied to the source region BEFORE
+  /// the V-Carve pass. Used to build the "plug" side of an inlay pair —
+  /// the plug is `sourceInsetMm` smaller per side than the pocket so
+  /// it wedges into the pocket walls with that clearance when glued in.
+  /// Pocket side leaves this undefined / 0; plug side sets it to the
+  /// shared gap (typical 0.05–0.2 mm).
+  sourceInsetMm?: number;
 }
 
 /// Thread op (rt1.17) — helical pass cutting an internal or external

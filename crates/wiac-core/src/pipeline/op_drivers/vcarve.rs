@@ -107,6 +107,14 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     let full_medial = op
         .vcarve_params()
         .is_some_and(|v| v.full_medial_axis);
+    // rt1.7: optional pre-offset for the source region. Inlay plug side
+    // sets this to the desired gap so the plug ends up `gap` mm smaller
+    // per side than the pocket. None / 0 = identity (the common case).
+    let source_inset = op
+        .vcarve_params()
+        .and_then(|v| v.source_inset_mm)
+        .unwrap_or(0.0)
+        .max(0.0);
 
     for region in &regions {
         if cancelled(cancel) {
@@ -115,13 +123,41 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
         if region.boundary.len() < 3 {
             continue;
         }
+        // rt1.7: when the user requested a pre-inset (inlay plug side),
+        // shrink the boundary and any holes BEFORE the V-carve pass.
+        // If the inset collapses the region we silently skip it — the
+        // plug is geometrically too small to exist (e.g. a 0.1 mm-wide
+        // sliver with 0.1 mm gap).
+        let (inset_outer, inset_holes_storage);
+        let (boundary, holes): (&[Point2], &[Vec<Point2>]) = if source_inset > 1e-9 {
+            let rings = crate::cam::offsets::boundary_offset_inward(
+                &region.boundary,
+                &region.holes,
+                source_inset,
+            );
+            if rings.is_empty() {
+                continue;
+            }
+            // clipper2 with EndType::Polygon returns the inset boundary
+            // first, then any inset hole rings. Inscribed area > 0
+            // means at least one outer ring; treat rings[0] as the new
+            // outer and rings[1..] as the new holes.
+            inset_outer = rings[0].clone();
+            inset_holes_storage = rings.into_iter().skip(1).collect::<Vec<_>>();
+            (inset_outer.as_slice(), inset_holes_storage.as_slice())
+        } else {
+            (region.boundary.as_slice(), region.holes.as_slice())
+        };
+        if boundary.len() < 3 {
+            continue;
+        }
         if full_medial {
             // Medial-axis traversal (pre-r8ut behaviour). Plunges along
             // every interior medial-axis chain; depth follows local
             // inscribed radius up to effective_r_cap.
             let vc_region = crate::cam::vcarve::VcRegion {
-                outer: region.boundary.clone(),
-                holes: region.holes.clone(),
+                outer: boundary.to_vec(),
+                holes: holes.to_vec(),
             };
             let axes = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
             if cancelled(cancel) {
@@ -175,8 +211,8 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                 }
             }
             let rings = crate::cam::offsets::boundary_offset_inward(
-                &region.boundary,
-                &region.holes,
+                boundary,
+                holes,
                 r_offset,
             );
             for ring in rings {
@@ -496,6 +532,85 @@ mod tests {
         );
     }
 
+    /// rt1.7: a Plug-side V-Carve with `source_inset_mm = 1.0` emits a
+    /// perimeter loop further from the original boundary than the
+    /// Pocket-side default. We pair them on the same 30×30 square and
+    /// verify the plug's outer extent is ≈ 1 mm narrower than the
+    /// pocket's — that's the geometric clearance an inlay needs.
+    #[test]
+    fn vcarve_inlay_plug_offsets_by_source_inset() {
+        let make_op = |source_inset: Option<f64>| Op {
+            id: 7,
+            name: "Carve".into(),
+            enabled: true,
+            kind: OpKind::VCarve {
+                carve: crate::project::VCarveParams {
+                    source_inset_mm: source_inset,
+                    ..Default::default()
+                },
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams {
+                depth: -3.0,
+                start_depth: 0.0,
+                step: Some(-1.0),
+                fast_move_z: 5.0,
+                ..OpParams::default()
+            },
+        };
+        let square = vec![
+            Segment::line(Point2::new(0.0, 0.0), Point2::new(30.0, 0.0), "0", 7),
+            Segment::line(Point2::new(30.0, 0.0), Point2::new(30.0, 30.0), "0", 7),
+            Segment::line(Point2::new(30.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
+            Segment::line(Point2::new(0.0, 30.0), Point2::new(0.0, 0.0), "0", 7),
+        ];
+        let extent_x = |resp: &crate::pipeline::PipelineResponse| -> (f64, f64) {
+            let xs: Vec<f64> = resp
+                .toolpath
+                .iter()
+                .filter(|s| !matches!(s.kind, crate::gcode::preview::MoveKind::Rapid))
+                .map(|s| s.to.x)
+                .collect();
+            (
+                xs.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
+                xs.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
+            )
+        };
+        let run = |op: Op| -> crate::pipeline::PipelineResponse {
+            let project = Project {
+                segments: square.clone(),
+                machine: MachineConfig::default(),
+                tools: vec![vbit()],
+                operations: vec![op],
+                fixtures: Vec::default(),
+                text_layers: Vec::default(),
+            };
+            run_pipeline(
+                PipelineRequest {
+                    project,
+                    post_processor: None,
+                },
+                |_, _, _| {},
+            )
+            .expect("pipeline ran")
+        };
+        let pocket = run(make_op(None));
+        let plug = run(make_op(Some(1.0)));
+        let (pmin, pmax) = extent_x(&pocket);
+        let (qmin, qmax) = extent_x(&plug);
+        // Plug perimeter is offset inward by 1mm MORE than pocket.
+        assert!(
+            (qmin - pmin - 1.0).abs() < 0.2,
+            "plug x_min {qmin:.3} should be ~1mm inside pocket x_min {pmin:.3}",
+        );
+        assert!(
+            (pmax - qmax - 1.0).abs() < 0.2,
+            "plug x_max {qmax:.3} should be ~1mm inside pocket x_max {pmax:.3}",
+        );
+    }
+
     #[test]
     fn vcarve_op_round_trips_through_serde_json() {
         let op = Op {
@@ -507,6 +622,7 @@ mod tests {
                     carve_max_width_mm: Some(4.0),
                     multi_pass_refine: true,
                     full_medial_axis: false,
+                    source_inset_mm: None,
                 },
             },
             tool_id: 1,

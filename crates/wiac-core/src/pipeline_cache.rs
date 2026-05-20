@@ -56,7 +56,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 25;
+pub const PIPELINE_VERSION: u32 = 26;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -706,6 +706,7 @@ fn hash_vcarve_params<H: Hasher>(v: &VCarveParams, h: &mut H) {
     hash_opt_f64(v.carve_max_width_mm, h);
     v.multi_pass_refine.hash(h);
     v.full_medial_axis.hash(h);
+    hash_opt_f64(v.source_inset_mm, h);
 }
 
 fn cut_direction_disc(c: CutDirection) -> u8 {
@@ -900,7 +901,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x1e17_5380_a6a5_c390_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x449f_a82e_dc8c_1270_u64, "got {:#018x}", key.0);
     }
 
     #[test]

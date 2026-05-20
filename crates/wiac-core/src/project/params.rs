@@ -187,6 +187,15 @@ pub struct VCarveParams {
     /// workflow (think Aspire-style relief).
     #[serde(default)]
     pub full_medial_axis: bool,
+    /// rt1.7: extra inward offset applied to the source region BEFORE
+    /// the V-Carve pass. Used to build the "plug" side of an inlay pair:
+    /// the plug is `gap_mm` smaller per side than the pocket, so when
+    /// glued in it wedges into the tapered pocket walls with that
+    /// clearance. The pocket side uses `None` / `0`; the plug uses the
+    /// shared `gap_mm` value (typical 0.05–0.2 mm). The offset is
+    /// applied to both the medial-axis and perimeter modes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_inset_mm: Option<f64>,
 }
 
 /// Universal per-op parameters — fields that apply to **every** op kind.

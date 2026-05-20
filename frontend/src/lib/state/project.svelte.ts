@@ -62,6 +62,7 @@ import type {
   FixtureKind,
   HalfpipeProfile,
   HolderShape,
+  ImportEntry,
   MachineSettings,
   PatternConfig,
   PlungeStrategy,
@@ -99,6 +100,7 @@ export type {
   FixtureKind,
   HalfpipeProfile,
   HolderShape,
+  ImportEntry,
   MachineSettings,
   PatternConfig,
   PlungeStrategy,
@@ -210,31 +212,59 @@ class ProjectState {
   /// to `this.data.…` so existing call sites stay unchanged.
   data = new ProjectDataState();
 
+  /// Raw imports array (wrsu). Phase 1: most consumers still read the
+  /// derived `imported` / `fileTransform` accessors below, which target
+  /// `imports[0]`. Phases 2+ migrate them to iterate or address by id.
+  get imports(): ImportEntry[] {
+    return this.data.imports;
+  }
+  set imports(v: ImportEntry[]) {
+    this.data.imports = v;
+  }
+
+  /// First import's ImportResponse, for single-import call sites.
+  /// Replacing it builds a fresh ImportEntry that inherits the previous
+  /// entry's fileTransform + lastImportPath when one exists, falling back
+  /// to identity transform + null path. Setting `null` clears the array.
   get imported(): ImportResponse | null {
-    return this.data.imported;
+    return this.data.imports[0]?.source ?? null;
   }
   set imported(v: ImportResponse | null) {
-    this.data.imported = v;
+    if (v == null) {
+      this.data.imports = [];
+      return;
+    }
+    const prev = this.data.imports[0];
+    const next: ImportEntry = {
+      id: prev?.id ?? 1,
+      source: v,
+      fileTransform: prev?.fileTransform ?? identityFileTransform(),
+      lastImportPath: prev?.lastImportPath,
+    };
+    this.data.imports = [next];
   }
 
-  /// File-level transform (bww). Stored verbatim; mutate via the
-  /// `setFileTransform()` command for undo support.
+  /// First import's file-level transform (bww). Identity when no import.
+  /// Mutate via the `setFileTransform()` command for undo support.
   get fileTransform(): FileTransform {
-    return this.data.fileTransform;
+    return this.data.imports[0]?.fileTransform ?? identityFileTransform();
   }
   set fileTransform(v: FileTransform) {
-    this.data.fileTransform = v;
+    const entry = this.data.imports[0];
+    if (!entry) return;
+    this.data.imports = [{ ...entry, fileTransform: v }, ...this.data.imports.slice(1)];
   }
 
-  /// `imported` with `fileTransform` applied. Every visual consumer
-  /// (canvas / 3D scene / OSnap / sim / build-project payload / footprint)
-  /// should read this, NOT `imported`, so the user's layout edits show up
-  /// everywhere. Identity transform short-circuits to the same reference
-  /// as `imported` — cheap equality check for downstream memoization.
+  /// First import's ImportResponse with its fileTransform applied. Every
+  /// visual consumer (canvas / 3D scene / OSnap / sim / build-project
+  /// payload / footprint) reads this, NOT `imported`, so the user's
+  /// layout edits show up everywhere. Identity transform short-circuits
+  /// to the same reference as the source — cheap equality check for
+  /// downstream memoization.
   transformedImport = $derived.by<ImportResponse | null>(() => {
-    const raw = this.data.imported;
-    if (!raw) return null;
-    return applyFileTransform(raw, this.data.fileTransform);
+    const entry = this.data.imports[0];
+    if (!entry) return null;
+    return applyFileTransform(entry.source, entry.fileTransform);
   });
 
   loading = $state(false);
@@ -472,10 +502,18 @@ class ProjectState {
   /// + plugin-svelte upgrade, not a code-level change).
   historyVersion = $state(0);
 
-  /// Absolute path of the source file backing the current `imported`
-  /// payload, when it was loaded from disk via `loadFromPath`. Drives
-  /// the auto-reload watcher and the "Reload?" toast.
-  lastImportPath = $state<string | null>(null);
+  /// Absolute path of the source file backing the first import (wrsu).
+  /// Drives the auto-reload watcher + 'Reload?' toast. Reads / writes
+  /// route through `imports[0].lastImportPath`; null when no import or
+  /// when the import didn't come from disk (paste / drop / Add Text).
+  get lastImportPath(): string | null {
+    return this.data.imports[0]?.lastImportPath ?? null;
+  }
+  set lastImportPath(v: string | null) {
+    const entry = this.data.imports[0];
+    if (!entry) return;
+    this.data.imports = [{ ...entry, lastImportPath: v }, ...this.data.imports.slice(1)];
+  }
 
   /// Absolute path of the currently-open project, or null if the user
   /// hasn't loaded one yet. Drives both the per-project workspace state
@@ -1002,12 +1040,7 @@ class ProjectState {
     return {
       kind: 'wiac-project',
       version: 1,
-      imported: this.imported,
-      // Omit identity transform — keeps the file clean for projects that
-      // never touched the file-transform UI.
-      ...(isIdentityFileTransform(this.fileTransform)
-        ? {}
-        : { fileTransform: this.fileTransform }),
+      imports: this.data.imports,
       visibleLayers: [],
       selectedEntities: [],
       stock: this.stock,
@@ -1016,8 +1049,6 @@ class ProjectState {
       operations: this.operations,
       fixtures: this.fixtures,
       textLayers: this.textLayers,
-      // Save the source-DXF/SVG path so reopen restores the watcher.
-      ...(this.lastImportPath ? { lastImportPath: this.lastImportPath } : {}),
     };
   }
 
@@ -1025,8 +1056,14 @@ class ProjectState {
     if (file.kind !== 'wiac-project') {
       throw new Error('not a wiaConstructor project file');
     }
-    if (file.imported) this.setImported(file.imported, file.lastImportPath ?? null);
-    this.fileTransform = file.fileTransform ?? identityFileTransform();
+    // wrsu Phase 1: imports[] is the canonical shape. Pre-wrsu project
+    // files (with bare `imported` / `fileTransform` / `lastImportPath`
+    // fields) are no longer loadable — the user explicitly waived
+    // backward compatibility for this migration.
+    this.data.imports = Array.isArray(file.imports) ? file.imports : [];
+    if (this.data.imports[0]) {
+      this.setImported(this.data.imports[0].source, this.data.imports[0].lastImportPath ?? null);
+    }
     // Layer visibility precedence (best wins):
     //   1. workspace.per_project[path].visible_layers (applied in
     //      setActiveProjectPath after restore returns).

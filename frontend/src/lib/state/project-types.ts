@@ -444,11 +444,28 @@ export function isIdentityFileTransform(t: FileTransform): boolean {
   );
 }
 
+/// One slot in `project.imports[]` (wrsu Phase 1). Each entry holds the
+/// imported drawing, its own non-destructive layout transform (bww),
+/// and the absolute path on disk for the source-file watcher.
+/// Multi-file workflows (wrsu Phase 2+) just push more entries onto
+/// the array; today the typical project has 0 or 1.
+export interface ImportEntry {
+  /// 1-based id assigned at import time; stable across save/load. Future
+  /// per-entry mutations (transform edits, removal) key off this rather
+  /// than array index so reordering / undo works cleanly.
+  id: number;
+  source: ImportResponse;
+  fileTransform: FileTransform;
+  /// Absolute path on disk to the source DXF/SVG. Drives the
+  /// source-file watcher (auto-reload toast on change). `null` for
+  /// imports created via paste / drop / Add Text rather than file load.
+  lastImportPath?: string | null;
+}
+
 export interface ProjectFile {
   kind: 'wiac-project';
   version: 1;
-  imported: ImportResponse | null;
-  fileTransform?: FileTransform;
+  imports: ImportEntry[];
   visibleLayers: string[];
   selectedEntities: number[];
   stock?: StockConfig;
@@ -457,12 +474,6 @@ export interface ProjectFile {
   operations?: OpEntry[];
   fixtures?: Fixture[];
   textLayers?: TextLayer[];
-  /// Absolute path on disk to the most recent DXF / SVG that backed
-  /// this project's geometry. Persisted so reopening a .wiac-project
-  /// restores the source-file watcher + "Reload changed file" toast —
-  /// otherwise restore() would clear lastImportPath to null and the
-  /// auto-reload path goes dead.
-  lastImportPath?: string | null;
 }
 
 /// Persistent text entity — editable text + typography + transform.

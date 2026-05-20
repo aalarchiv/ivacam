@@ -13,11 +13,9 @@
 /// `ProjectState` still owns operations like `addOperation` /
 /// `updateMachine` that wrap the right command in the history bus.
 
-import type { ImportResponse } from '../api/types';
 import {
-  identityFileTransform,
-  type FileTransform,
   type Fixture,
+  type ImportEntry,
   type MachineSettings,
   type StockConfig,
   type TextLayer,
@@ -130,14 +128,14 @@ export function saveSettings(s: AppSettings): void {
 }
 
 export class ProjectDataState {
-  imported = $state<ImportResponse | null>(null);
-
-  /// Non-destructive file-level transform (bww). Translates / rotates /
-  /// scales / mirrors the entire imported drawing as a layout convenience
-  /// — lets the user reposition the part on stock without re-exporting
-  /// from CAD. Applied lazily by `project.transformedImport`; the raw
-  /// `imported` is unchanged. Identity = no-op short-circuit.
-  fileTransform = $state<FileTransform>(identityFileTransform());
+  /// Imported drawings (wrsu). Each entry owns its own ImportResponse,
+  /// non-destructive layout transform (bww — fileTransform), and source
+  /// file path. Multi-file workflows append entries; common-case projects
+  /// have 0 or 1. Phase 1 keeps existing single-import consumers reading
+  /// imports[0] via the proxy accessors on `ProjectState` (project.imported,
+  /// project.fileTransform, etc.). Phases 2+ migrate consumers to iterate
+  /// or address by id.
+  imports = $state<ImportEntry[]>([]);
 
   /// Ordered list of operations the program runs. Each op has a kind, a
   /// tool reference (id into `tools`), a source (which geometry it

@@ -199,7 +199,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each thirdParty as lib (lib.name)}
+        {#each [...thirdParty].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) as lib (lib.name)}
           <tr>
             <td>
               <a href={lib.home} target="_blank" rel="noreferrer">{lib.name}</a>

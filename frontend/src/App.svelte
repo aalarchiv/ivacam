@@ -127,14 +127,18 @@
   /// without expanding the panel. Uses `computeFootprint` so the
   /// numbers match what Scene3D / sim use (auto mode follows imported
   /// bbox; manual = customX/Y; no-import fallback = machine work area).
-  /// Collapsible state for the Stock panel — matches the LayerList /
-  /// OperationsList caret-collapse pattern. Default COLLAPSED so the
-  /// Operations panel (the one the user actually edits in) gets the
-  /// vertical space in the sidebar; expand on click when the user
-  /// wants to tweak stock dims. The summary chip in the header still
-  /// shows current Length × Width × Thickness so collapsing doesn't
-  /// hide the working numbers.
-  let stockExpanded = $state(false);
+  /// Accordion-style sidebar (replaces the per-panel `collapsed`
+  /// state): exactly one of Stock / Layers / Text / Operations is
+  /// active at a time. Clicking another panel's header makes it the
+  /// active one and the previous active collapses to its header
+  /// strip. Default = 'layers' so the file-open + reopen affordances
+  /// are visible on cold start (the typical first-action is "open
+  /// drawing"). Each panel still shows its summary chip when
+  /// collapsed (Stock dims, layer count + filename, text count), so
+  /// the user can read working numbers at a glance without
+  /// switching panes.
+  type SidebarPane = 'stock' | 'layers' | 'text' | 'operations';
+  let activeSidebarPane = $state<SidebarPane>('layers');
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.stock;
     const fp = computeFootprint(project.transformedImport, cfg, project.machine.workArea);
@@ -1178,29 +1182,31 @@
       onReset={resetSidebar}
       title="Drag to resize the side panel · double-click to reset"
     />
-    <aside class="sidebar">
-      <div class="stock-host">
+    <aside class="sidebar" data-active={activeSidebarPane}>
+      <div class="stock-host" class:active={activeSidebarPane === 'stock'}>
         <button
           type="button"
           class="group-head"
-          onclick={() => (stockExpanded = !stockExpanded)}
-          aria-expanded={stockExpanded}
-          title="Click to {stockExpanded ? 'collapse' : 'expand'} stock settings"
+          onclick={() => (activeSidebarPane = 'stock')}
+          aria-expanded={activeSidebarPane === 'stock'}
+          title="Click to expand stock settings"
         >
-          <span class="caret">{stockExpanded ? '▾' : '▸'}</span>
+          <span class="caret">{activeSidebarPane === 'stock' ? '▾' : '▸'}</span>
           <span class="stock-name">Stock</span>
           <span class="stock-dims" title="Current stock dimensions (Length × Width × Thickness) in mm">
             {stockDimsLabel}
           </span>
         </button>
-        {#if stockExpanded}
+        {#if activeSidebarPane === 'stock'}
           <div class="group-body">
             <StockPanel />
           </div>
         {/if}
       </div>
-      <div class="layers-host">
+      <div class="layers-host" class:active={activeSidebarPane === 'layers'}>
         <LayerList
+          active={activeSidebarPane === 'layers'}
+          onActivate={() => (activeSidebarPane = 'layers')}
           onOpenFileClick={() => openFile()}
           onAddTextClick={() => (addTextOpen = true)}
           {reopenPrompt}
@@ -1208,11 +1214,18 @@
           onReopenDismiss={dismissReopen}
         />
       </div>
-      <div class="text-list-host">
-        <TextList onAddText={() => (addTextOpen = true)} />
+      <div class="text-list-host" class:active={activeSidebarPane === 'text'}>
+        <TextList
+          active={activeSidebarPane === 'text'}
+          onActivate={() => (activeSidebarPane = 'text')}
+          onAddText={() => (addTextOpen = true)}
+        />
       </div>
-      <div class="ops-host">
-        <OperationsList />
+      <div class="ops-host" class:active={activeSidebarPane === 'operations'}>
+        <OperationsList
+          active={activeSidebarPane === 'operations'}
+          onActivate={() => (activeSidebarPane = 'operations')}
+        />
       </div>
     </aside>
   </main>
@@ -1615,13 +1628,26 @@
   }
   .sidebar {
     display: grid;
-    /* Stock (auto) · Layers (auto) · Text (auto) · Operations (1fr).
-       The stock panel sits at the top — it's the always-present
-       workpiece every layer/op attaches to. */
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    /* Accordion: exactly one of the four hosts is `.active` — that
+       row gets the 1fr space, the others collapse to their header
+       strip (`auto`). `data-active` drives which row goes wide via
+       the four matched `grid-template-rows` declarations below. */
+    grid-template-rows: auto auto auto auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
+  }
+  .sidebar[data-active='stock'] {
+    grid-template-rows: minmax(0, 1fr) auto auto auto;
+  }
+  .sidebar[data-active='layers'] {
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+  }
+  .sidebar[data-active='text'] {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+  .sidebar[data-active='operations'] {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
   }
   .stock-host,
   .layers-host,
@@ -1634,17 +1660,23 @@
        their own clipping where it matters. */
     overflow: visible;
   }
-  .ops-host {
-    /* Operations list is the 1fr row — its own internal panel needs to
-       scroll, so re-clip here. */
+  /* When a host is `.active` (1fr row) we need to clip overflow on the
+     host wrapper so the inner list scrolls instead of pushing the
+     sibling hosts off-screen. */
+  .stock-host.active,
+  .layers-host.active,
+  .text-list-host.active,
+  .ops-host.active {
     overflow: hidden;
   }
   .stock-host {
     background: var(--bg-panel);
     padding: 0.4rem 0.6rem 0.5rem;
-    max-height: 50vh;
-    overflow: auto;
+    overflow: visible;
     border-bottom: 1px solid var(--border);
+  }
+  .stock-host.active {
+    overflow: auto;
   }
   /* Stock panel header mirrors LayerList's .group-head so all three
      sidebar panels (Stock / Layers / Operations) share one visual

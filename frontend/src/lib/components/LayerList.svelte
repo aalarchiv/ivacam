@@ -8,6 +8,11 @@
   import { isIdentityFileTransform, project } from '../state/project.svelte';
 
   interface Props {
+    /// Accordion-controlled: parent passes `active` and `onActivate`;
+    /// the panel renders its body iff `active` and clicking the caret
+    /// asks the parent to activate (no internal collapsed state).
+    active: boolean;
+    onActivate: () => void;
     onOpenFileClick?: () => void;
     /// Add Text entry point — phase B of the stock-first rework. When
     /// provided, the panel header sprouts an Add+ dropdown that offers
@@ -22,18 +27,15 @@
     onReopenDismiss?: () => void;
   }
   let {
+    active,
+    onActivate,
     onOpenFileClick,
     onAddTextClick,
     reopenPrompt = null,
     onReopenAccept,
     onReopenDismiss,
   }: Props = $props();
-
-  // Default collapsed so the Operations panel (the one the user
-  // primarily edits in) gets the sidebar's vertical space. The +Add
-  // menu + filename/segment chip stay in the group-head while
-  // collapsed, so common actions still work.
-  let collapsed = $state(true);
+  let collapsed = $derived(!active);
   /// Add+ dropdown visibility. Closes on any item click and on the
   /// next window click outside the panel (svelte:window onclick handler
   /// below).
@@ -118,9 +120,9 @@
   <div class="group-head">
     <button
       class="caret-btn"
-      onclick={() => (collapsed = !collapsed)}
-      title={collapsed ? 'Expand layers' : 'Collapse layers'}
-      aria-label="Toggle layers panel">{collapsed ? '▸' : '▾'}</button
+      onclick={onActivate}
+      title={active ? 'Layers panel is active' : 'Expand layers'}
+      aria-label="Activate layers panel">{active ? '▾' : '▸'}</button
     >
     {#if usableLayers.length > 0}
       <input

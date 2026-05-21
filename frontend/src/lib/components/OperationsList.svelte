@@ -13,6 +13,14 @@
     type PickerKind,
   } from './OpKindPicker.svelte';
 
+  interface Props {
+    /// Accordion-controlled by the sidebar parent. `active` =
+    /// expanded; clicking the header asks the parent to activate.
+    active: boolean;
+    onActivate: () => void;
+  }
+  let { active, onActivate }: Props = $props();
+
   let pickerOpen = $state(false);
   let dragId = $state<number | null>(null);
   let dragOverId = $state<number | null>(null);
@@ -220,12 +228,21 @@
   }
 </script>
 
-<div class="ops">
-  <header>
+<div class="ops" class:collapsed={!active}>
+  <header onclick={onActivate} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') onActivate(); }}>
+    <button
+      class="caret-btn"
+      onclick={(e) => { e.stopPropagation(); onActivate(); }}
+      title={active ? 'Operations panel is active' : 'Expand operations panel'}
+      aria-label="Activate operations panel"
+    >
+      {active ? '▾' : '▸'}
+    </button>
     <h3>Operations</h3>
+    <span class="ops-count" title="Number of operations">{project.operations.length}</span>
     <button
       class="add"
-      onclick={() => (pickerOpen = !pickerOpen)}
+      onclick={(e) => { e.stopPropagation(); if (!active) onActivate(); pickerOpen = !pickerOpen; }}
       title="Add operation"
       aria-label="Add operation"
     >
@@ -233,6 +250,7 @@
     </button>
   </header>
 
+{#if active}
   {#if pickerOpen}
     <div class="picker-host">
       <OpKindPicker onPick={pick} />
@@ -348,6 +366,7 @@
       {/each}
     </ul>
   {/if}
+{/if}
 </div>
 
 <style>
@@ -362,11 +381,32 @@
     box-sizing: border-box;
     min-width: 0;
   }
+  /* When collapsed by the accordion, the panel shrinks to its header
+     strip — no body padding, no scroll bar. */
+  .ops.collapsed {
+    overflow-y: visible;
+    padding: 0.25rem 0.6rem;
+    height: auto;
+  }
+  .ops.collapsed header {
+    margin-bottom: 0;
+  }
   header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 0.3rem;
     margin-bottom: 0.4rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .caret-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0 0.15rem;
+    cursor: pointer;
   }
   h3 {
     margin: 0;
@@ -374,6 +414,13 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
+    flex: 0 0 auto;
+  }
+  .ops-count {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-left: 0.1rem;
+    flex: 1 1 auto;
   }
   .add {
     background: var(--bg-elevated);

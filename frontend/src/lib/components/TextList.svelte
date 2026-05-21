@@ -15,13 +15,13 @@
   import type { TextLayer, TextLayerKind, TextAlignment } from '../state/project.svelte';
 
   interface Props {
+    /// Accordion-controlled (sidebar parent passes active + activate).
+    active: boolean;
+    onActivate: () => void;
     onAddText?: () => void;
   }
-  let { onAddText }: Props = $props();
-
-  // Default collapsed (matches Stock + LayerList) so Operations gets
-  // the sidebar's vertical space. +Add stays in the group-head.
-  let collapsed = $state(true);
+  let { active, onActivate, onAddText }: Props = $props();
+  let collapsed = $derived(!active);
 
   function isSelected(id: number): boolean {
     return project.selectedTextLayerId === id;
@@ -85,9 +85,9 @@
   <div class="group-head">
     <button
       class="caret-btn"
-      onclick={() => (collapsed = !collapsed)}
-      title={collapsed ? 'Expand text layers' : 'Collapse text layers'}
-      aria-label="Toggle text panel">{collapsed ? '▸' : '▾'}</button
+      onclick={onActivate}
+      title={active ? 'Text panel is active' : 'Expand text panel'}
+      aria-label="Activate text panel">{active ? '▾' : '▸'}</button
     >
     <span class="group-name">Text</span>
     <span class="group-count">{project.textLayers.length}</span>

@@ -173,6 +173,14 @@
   let importedLinesObject: THREE.LineSegments | undefined;
   let importedLineOwners: LineOwner[] = [];
   let toolpathLinesObject: THREE.LineSegments | undefined;
+  /// Direction-indicator chevrons drawn on top of the toolpath
+  /// wireframe. One pair of short line segments per qualifying
+  /// toolpath segment (cut / plunge / retract / arc; rapids omitted
+  /// — the user doesn't care about feed direction on positioning
+  /// moves). Decluttered by a min-length threshold + a cumulative
+  /// spacing rule so a dense raster pocket doesn't drown the scene
+  /// in arrowheads.
+  let toolpathArrowsObject: THREE.LineSegments | undefined;
   let toolpathLineOwners: LineOwner[] = [];
   let sceneRadius = 100;
 
@@ -577,6 +585,7 @@
     // module scope so the rebuild functions see the same value.
     if (importedLinesObject) importedLinesObject.visible = wireVisible;
     if (toolpathLinesObject) toolpathLinesObject.visible = wireVisible;
+    if (toolpathArrowsObject) toolpathArrowsObject.visible = wireVisible;
     if (settings.previewMode === 'wireframe') {
       driver?.setVisible(false);
       requestRender();
@@ -1579,6 +1588,12 @@
       (toolpathLinesObject.material as THREE.Material).dispose();
       toolpathLinesObject = undefined;
     }
+    if (toolpathArrowsObject) {
+      geometryGroup.remove(toolpathArrowsObject);
+      toolpathArrowsObject.geometry.dispose();
+      (toolpathArrowsObject.material as THREE.Material).dispose();
+      toolpathArrowsObject = undefined;
+    }
     toolpathLineOwners = [];
     toolpathColors = [];
     appliedHead = -1;
@@ -1592,6 +1607,17 @@
 
     const positions: number[] = [];
     const colors: number[] = [];
+    // Direction-arrow geometry — separate buffer so it doesn't
+    // interfere with selectionDelta / playhead-fade range math on
+    // the main toolpath buffer.
+    const arrowPositions: number[] = [];
+    const arrowColors: number[] = [];
+    const ARROW_MIN_LEN = 2.0; // mm; shorter segments never get an arrow
+    const ARROW_MAX_SIZE = 5.0; // mm; absolute cap on arrow size
+    const ARROW_SIZE_FRAC = 0.15; // arrow size relative to segment length
+    const ARROW_HALF_WING = Math.tan((30 * Math.PI) / 180); // ±30° wings
+    const ARROW_MIN_SPACING = 8.0; // mm of cumulative path between arrows
+    let lenSinceLastArrow = ARROW_MIN_SPACING; // emit on first qualifying segment
     const moveTints: Record<string, THREE.Color> = {
       rapid: cssColor('--toolpath-rapid', 0x35a2ff),
       cut: cssColor('--toolpath-cut', 0xff5555),
@@ -1628,6 +1654,62 @@
       colors.push(r, g, b, r, g, b);
       toolpathLineOwners.push({ kind: 'toolpath', segIdx: i });
       toolpathColors.push({ start: startVertex, base: [r, g, b] });
+
+      // Direction-arrow chevron at the segment midpoint when
+      // qualifying. Rapids skip — feed direction matters only for
+      // material-cutting moves. The cumulative-spacing guard
+      // prevents arrow noise on dense raster pockets.
+      const dx = seg.to.x - seg.from.x;
+      const dy = seg.to.y - seg.from.y;
+      const dz = seg.to.z - seg.from.z;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (len > 0) lenSinceLastArrow += len;
+      const arrowEligible =
+        len >= ARROW_MIN_LEN &&
+        lenSinceLastArrow >= ARROW_MIN_SPACING &&
+        seg.kind !== 'rapid';
+      if (arrowEligible) {
+        const A = Math.min(len * ARROW_SIZE_FRAC, ARROW_MAX_SIZE);
+        const ux = dx / len;
+        const uy = dy / len;
+        const uz = dz / len;
+        // Perpendicular: rotate forward dir 90° CCW in XY when the
+        // segment has meaningful horizontal component (the common
+        // case). Pure-Z plunge/retract gets a fixed +X side so
+        // arrows stay visible from any camera angle.
+        let nx: number;
+        let ny: number;
+        let nz: number;
+        const xyLen = Math.hypot(ux, uy);
+        if (xyLen > 0.01) {
+          nx = -uy / xyLen;
+          ny = ux / xyLen;
+          nz = 0;
+        } else {
+          nx = 1;
+          ny = 0;
+          nz = 0;
+        }
+        const mx = (seg.from.x + seg.to.x) * 0.5;
+        const my = (seg.from.y + seg.to.y) * 0.5;
+        const mz = (seg.from.z + seg.to.z) * 0.5;
+        const side = A * ARROW_HALF_WING;
+        const p1x = mx - A * ux + side * nx;
+        const p1y = my - A * uy + side * ny;
+        const p1z = mz - A * uz + side * nz;
+        const p2x = mx - A * ux - side * nx;
+        const p2y = my - A * uy - side * ny;
+        const p2z = mz - A * uz - side * nz;
+        arrowPositions.push(mx, my, mz, p1x, p1y, p1z);
+        arrowPositions.push(mx, my, mz, p2x, p2y, p2z);
+        // Slight brightness boost so arrows pop on top of the
+        // base line.
+        const ar = Math.min(1, r * 1.25);
+        const ag = Math.min(1, g * 1.25);
+        const ab = Math.min(1, b * 1.25);
+        arrowColors.push(ar, ag, ab, ar, ag, ab, ar, ag, ab, ar, ag, ab);
+        lenSinceLastArrow = 0;
+      }
     }
 
     if (positions.length > 0) {
@@ -1638,6 +1720,17 @@
       toolpathLinesObject = new THREE.LineSegments(geom, mat);
       toolpathLinesObject.visible = wireVisible;
       geometryGroup.add(toolpathLinesObject);
+    }
+    if (arrowPositions.length > 0) {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(arrowPositions, 3));
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(arrowColors, 3));
+      const mat = new THREE.LineBasicMaterial({ vertexColors: true });
+      toolpathArrowsObject = new THREE.LineSegments(geom, mat);
+      toolpathArrowsObject.visible = wireVisible;
+      // Render after the base line so the chevron sits on top.
+      toolpathArrowsObject.renderOrder = 1;
+      geometryGroup.add(toolpathArrowsObject);
     }
     updateSceneRadius();
     // Re-apply the past/future fade to the freshly-baked colors so the

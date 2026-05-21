@@ -39,8 +39,13 @@
 
   interface Props {
     onShowHelp?: () => void;
+    /// Hint the sidebar to switch its accordion to a given pane.
+    /// Used by right-click "Add op from selection" so the new op
+    /// row is visible in the Operations panel without an extra
+    /// click on the sidebar.
+    onActivateSidebarPane?: (pane: 'stock' | 'layers' | 'text' | 'operations') => void;
   }
-  let { onShowHelp }: Props = $props();
+  let { onShowHelp, onActivateSidebarPane }: Props = $props();
 
   // AutoCAD ACI palette. ACI 7 means "white in dark mode, black in light" —
   // this is exactly how AutoCAD itself renders it. We resolve it at draw
@@ -916,6 +921,9 @@
       project.cancelTransaction();
       throw e;
     }
+    // Bounce the sidebar to Operations so the freshly-added op
+    // row is visible without a second click on the sidebar.
+    onActivateSidebarPane?.('operations');
     ctxMenu = null;
   }
 

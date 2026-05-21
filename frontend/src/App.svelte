@@ -1156,7 +1156,10 @@
     <section class="viewport">
       <div class="canvas-area">
         <div class:pane-hidden={activePane !== '2d'} class="pane">
-          <EntityCanvas2D onShowHelp={() => (shortcutHelpOpen = true)} />
+          <EntityCanvas2D
+            onShowHelp={() => (shortcutHelpOpen = true)}
+            onActivateSidebarPane={activateSidebarPane}
+          />
         </div>
         {#if Scene3D}
           {@const C = Scene3D}

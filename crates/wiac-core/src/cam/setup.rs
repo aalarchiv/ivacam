@@ -458,6 +458,20 @@ pub struct MachineConfig {
     /// `None` = hard-coded defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_profile: Option<crate::gcode::post_profile::PostProfile>,
+    /// h0tx: free-text identifier for the machine setup ("Shop CNC",
+    /// "Garage MPCNC", …). Empty string by default; persisted into
+    /// the project file + the `.wiac-machine.json` save/load files.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// h0tx: which op kinds the machine can run. Drives the
+    /// frontend's OpKindPicker filter — a laser-only machine
+    /// doesn't show milling ops. `mode` (above) stays as the
+    /// PRIMARY mode used by the gcode emitter; capabilities is the
+    /// broader set so a multi-purpose machine can pick the right
+    /// op set without flipping `mode`. Empty Vec ⇒ implicitly
+    /// `[mode]` (back-compat default for old project files).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<MachineMode>,
 }
 
 impl MachineConfig {
@@ -465,6 +479,18 @@ impl MachineConfig {
     #[must_use]
     pub fn effective_arc_tolerance(&self) -> f64 {
         self.arc_fit_tolerance_mm.unwrap_or(0.01).max(0.0)
+    }
+
+    /// Effective op-kind capability set (h0tx). Falls back to a vec
+    /// containing the primary `mode` so projects that predate the
+    /// `capabilities` field still pass through cleanly.
+    #[must_use]
+    pub fn effective_capabilities(&self) -> Vec<MachineMode> {
+        if self.capabilities.is_empty() {
+            vec![self.mode]
+        } else {
+            self.capabilities.clone()
+        }
     }
 }
 
@@ -528,6 +554,8 @@ impl Default for MachineConfig {
             plot_mode_z: false,
             post_profile: None,
             work_area: default_work_area(),
+            name: String::new(),
+            capabilities: Vec::new(),
         }
     }
 }

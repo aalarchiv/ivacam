@@ -12,6 +12,7 @@ import { defaultClient } from '../api/http';
 import { tryParseStructuredError } from '../api/client';
 import { pushRecent } from '../recent';
 import type { ImportResponse } from '../api/types';
+import type { MachineSettings, ToolEntry } from './project.svelte';
 
 export function reportError(input: unknown) {
   const raw = input instanceof Error ? input.message : String(input);
@@ -308,6 +309,208 @@ export async function loadSampleWithGenerate(sampleUrl: string, generatedUrl: st
     project.loading = false;
     project.loadingMessage = null;
   }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// h0tx: toolset + machine save/load files.
+//
+// Two side-files independent of the .wiac-project.json: a toolset
+// snapshot the user can share across projects, and a machine config
+// snapshot the user can share across shop floors. Both wrap the
+// payload in a small envelope:
+//
+//   {
+//     kind: 'toolset' | 'machine',
+//     format_version: 1,
+//     updated_at: ISO timestamp at save,
+//     payload: <data>,
+//   }
+//
+// `updated_at` is a monotonic-ish identifier — when two snapshots
+// disagree, the newer ISO timestamp wins. Used by the planned
+// project-load merge prompt (deferred to a follow-up issue).
+// ───────────────────────────────────────────────────────────────────
+
+interface SnapshotEnvelope<K extends 'toolset' | 'machine', P> {
+  kind: K;
+  format_version: number;
+  updated_at: string;
+  payload: P;
+}
+
+const TOOLSET_FORMAT_VERSION = 1;
+const MACHINE_FORMAT_VERSION = 1;
+
+async function pickAndReadJson(
+  filters: Array<{ name: string; extensions: string[] }>,
+): Promise<string | null> {
+  if (isTauri()) {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const { readTextFile } = await import('@tauri-apps/plugin-fs');
+    const selected = await open({ filters, multiple: false });
+    if (typeof selected !== 'string') return null;
+    return readTextFile(selected);
+  }
+  return new Promise<string | null>((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = filters
+      .flatMap((f) => f.extensions.map((e) => `.${e}`))
+      .join(',');
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) {
+        resolve(null);
+        return;
+      }
+      resolve(await file.text());
+    };
+    input.click();
+  });
+}
+
+async function writeJson(
+  defaultName: string,
+  body: string,
+  filters: Array<{ name: string; extensions: string[] }>,
+) {
+  if (isTauri()) {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+    const path = await save({ defaultPath: defaultName, filters });
+    if (typeof path === 'string') {
+      await writeTextFile(path, body);
+    }
+    return;
+  }
+  const blob = new Blob([body], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = defaultName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/// Export the current tool library to a `.wiac-toolset.json` file.
+/// The user's set of tools, no machine, no project state. Reusable
+/// across projects.
+export async function saveToolset() {
+  const envelope: SnapshotEnvelope<'toolset', ToolEntry[]> = {
+    kind: 'toolset',
+    format_version: TOOLSET_FORMAT_VERSION,
+    updated_at: new Date().toISOString(),
+    payload: project.tools.map((t) => ({ ...t })),
+  };
+  await writeJson('toolset.wiac-toolset.json', JSON.stringify(envelope, null, 2), [
+    { name: 'wiaConstructor toolset', extensions: ['wiac-toolset.json', 'json'] },
+  ]);
+}
+
+/// Import a `.wiac-toolset.json`. `mode` controls how the file's
+/// tools merge into the current set:
+///   * `'replace'` — drop the current tools, use the file's
+///   * `'add'`     — append; tools whose `name` already exists are
+///                   skipped (the user's existing entries win).
+export async function loadToolset(mode: 'replace' | 'add') {
+  let text: string | null = null;
+  try {
+    text = await pickAndReadJson([
+      { name: 'wiaConstructor toolset', extensions: ['wiac-toolset.json', 'json'] },
+    ]);
+  } catch (e) {
+    project.setError(`toolset load: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (!text) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    project.setError(`toolset parse: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  const env = parsed as SnapshotEnvelope<'toolset', ToolEntry[]>;
+  if (
+    env == null ||
+    typeof env !== 'object' ||
+    env.kind !== 'toolset' ||
+    !Array.isArray(env.payload)
+  ) {
+    project.setError('toolset load: not a .wiac-toolset.json file');
+    return;
+  }
+  const incoming = env.payload;
+  if (mode === 'replace') {
+    // Re-number ids 1..N so the new tools have a clean monotonic
+    // sequence the project file can reference.
+    const next = incoming.map((t, idx) => ({ ...t, id: idx + 1 }));
+    project.replaceTools(next);
+    return;
+  }
+  // Add: append everything not already present by name (case-insensitive).
+  const existingNames = new Set(project.tools.map((t) => t.name.toLowerCase()));
+  let nextId = project.tools.reduce((m, t) => Math.max(m, t.id), 0);
+  const additions: ToolEntry[] = [];
+  for (const t of incoming) {
+    if (existingNames.has(t.name.toLowerCase())) continue;
+    nextId += 1;
+    additions.push({ ...t, id: nextId });
+  }
+  if (additions.length > 0) {
+    project.replaceTools([...project.tools, ...additions]);
+  }
+}
+
+/// Export the current machine config to a `.wiac-machine.json` file.
+export async function saveMachine() {
+  const envelope: SnapshotEnvelope<'machine', MachineSettings> = {
+    kind: 'machine',
+    format_version: MACHINE_FORMAT_VERSION,
+    updated_at: new Date().toISOString(),
+    payload: { ...project.machine },
+  };
+  const fileBase =
+    (project.machine.name && project.machine.name.trim()) || 'machine';
+  await writeJson(
+    `${fileBase}.wiac-machine.json`,
+    JSON.stringify(envelope, null, 2),
+    [{ name: 'wiaConstructor machine', extensions: ['wiac-machine.json', 'json'] }],
+  );
+}
+
+/// Import a `.wiac-machine.json`. Replaces the active machine
+/// config wholesale.
+export async function loadMachine() {
+  let text: string | null = null;
+  try {
+    text = await pickAndReadJson([
+      { name: 'wiaConstructor machine', extensions: ['wiac-machine.json', 'json'] },
+    ]);
+  } catch (e) {
+    project.setError(`machine load: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (!text) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    project.setError(`machine parse: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  const env = parsed as SnapshotEnvelope<'machine', MachineSettings>;
+  if (
+    env == null ||
+    typeof env !== 'object' ||
+    env.kind !== 'machine' ||
+    env.payload == null ||
+    typeof env.payload !== 'object'
+  ) {
+    project.setError('machine load: not a .wiac-machine.json file');
+    return;
+  }
+  project.setMachine(env.payload);
 }
 
 /// Decide whether a dropped/picked file is a project vs. raw geometry

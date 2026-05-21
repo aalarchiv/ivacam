@@ -498,6 +498,8 @@ export interface components {
             arc_fit_tolerance_mm?: number | null;
             /** @description Whether the machine emits arc commands (G2/G3). */
             arcs: boolean;
+            /** @description h0tx: which op kinds the machine can run. Drives the frontend's OpKindPicker filter — a laser-only machine doesn't show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (back-compat default for old project files). */
+            capabilities?: components["schemas"]["MachineMode"][];
             comments: boolean;
             /** @description Decimal separator for emitted numbers (rt1.36). `'.'` (default) suits `LinuxCNC` / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'. */
             decimal_separator?: string;
@@ -509,6 +511,8 @@ export interface components {
              */
             line_number_start?: number | null;
             mode: components["schemas"]["MachineMode"];
+            /** @description h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.wiac-machine.json` save/load files. */
+            name?: string;
             /** @description Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op's cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op's `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers. */
             plot_mode_z?: boolean;
             /** @description User-configurable post-processor profile (rt1.15). When `Some`, the built-in posts (linuxcnc / grbl) read its templates instead of emitting their hard-coded `program_start` / `program_end` / `tool_change` / coolant lines. `None` = hard-coded defaults. */
@@ -754,12 +758,21 @@ export interface components {
         } | {
             /**
              * @default {
+             *       "full_medial_axis": false,
              *       "multi_pass_refine": false
              *     }
              */
             carve: components["schemas"]["VCarveParams"];
             /** @enum {string} */
             type: "v_carve";
+        } | {
+            /**
+             * @description One-line message shown on the operator console / pendant. Empty string is allowed; the post still emits the M0 stop.
+             * @default
+             */
+            message: string;
+            /** @enum {string} */
+            type: "pause";
         };
         /**
          * @description Universal per-op parameters — fields that apply to **every** op kind. Kind-specific config lives in the matching variant struct embedded in [`super::op::OpKind`]:
@@ -1017,6 +1030,11 @@ export interface components {
             xy_overlap: number;
         };
         PocketStrategy: ("cascade" | "zigzag" | "spiral") | {
+            /** Format: double */
+            angle_deg?: number;
+            /** @enum {string} */
+            kind: "zigzag";
+        } | {
             /** Format: double */
             engagement_angle_deg: number;
             /** @enum {string} */
@@ -1381,6 +1399,12 @@ export interface components {
             size_mm: number;
             /** @description Full string. For `Mtext`, lines are `\n`-separated. */
             text: string;
+            /**
+             * Format: double
+             * @description Horizontal stretch factor applied to glyph outlines and per-glyph advance. `1.0` (default) = font's natural width; range 0.5–2.0 is what the UI exposes (50–200 %). Letter spacing is NOT scaled — the additive gap between glyphs stays in mm. Renderer clamps to the 0.5–2.0 range so out-of-band wire payloads degrade gracefully.
+             * @default 1
+             */
+            width_scale: number;
         };
         /** @enum {string} */
         TextLayerKind: "TEXT" | "MTEXT";
@@ -1403,6 +1427,11 @@ export interface components {
             total_s: number;
         };
         ToolConfig: {
+            /**
+             * Format: double
+             * @description Per-tool default XY overlap (dr5). Resolved from [`crate::project::ToolEntry::default_xy_overlap`] at synth time; `None` = no tool-level default, fall through to global 0.5.
+             */
+            default_xy_overlap?: number | null;
             /** Format: double */
             diameter: number;
             /**
@@ -1485,6 +1514,8 @@ export interface components {
             wirbeln_stepover: number;
         };
         ToolEntry: {
+            /** @description Free-text comment / description (rt1.31). Surfaced as the tooltip on the tool dropdown in `OpPropertiesPanel` and as an expandable text area in `ToolLibraryDialog`. Empty / None = no comment; doesn't affect any pipeline output. */
+            comment?: string | null;
             coolant: components["schemas"]["Coolant"];
             /**
              * Format: double
@@ -1501,6 +1532,11 @@ export interface components {
              * @description Default depth-per-pass (negative, mm). Operations using this tool inherit this when their own `step` is unset. None = no default.
              */
             default_step?: number | null;
+            /**
+             * Format: double
+             * @description Default XY overlap (0..1) for pocket / cascade ops that don't set their own [`crate::project::PocketParams::xy_overlap`]. Mirrors the `default_step` pattern (dr5). None = fall through to the global 0.5 default.
+             */
+            default_xy_overlap?: number | null;
             /** Format: double */
             diameter: number;
             /**
@@ -1659,10 +1695,20 @@ export interface components {
              */
             carve_max_width_mm?: number | null;
             /**
+             * @description r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam's behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true to recover the prior wiac behaviour for the rare "carve a depth gradient across the whole interior" workflow (think Aspire-style relief).
+             * @default false
+             */
+            full_medial_axis: boolean;
+            /**
              * @description V-Carve "second-pass" toggle. When true, re-cuts only the points whose first pass fell short of the geometric target.
              * @default false
              */
             multi_pass_refine: boolean;
+            /**
+             * Format: double
+             * @description rt1.7: extra inward offset applied to the source region BEFORE the V-Carve pass. Used to build the "plug" side of an inlay pair: the plug is `gap_mm` smaller per side than the pocket, so when glued in it wedges into the tapered pocket walls with that clearance. The pocket side uses `None` / `0`; the plug uses the shared `gap_mm` value (typical 0.05–0.2 mm). The offset is applied to both the medial-axis and perimeter modes.
+             */
+            source_inset_mm?: number | null;
         };
         /** @description `VcObject` analogue: a chain of segments grouped after `segments2objects`. */
         VcObject: {

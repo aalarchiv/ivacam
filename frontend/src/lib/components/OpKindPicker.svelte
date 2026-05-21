@@ -98,10 +98,38 @@
   const pocketOutsideDisabled = $derived(
     requireSelectionForPocketOutside && project.selectedObjects.size === 0,
   );
+
+  /// h0tx: each op kind's required machine capability. The picker
+  /// hides kinds whose required capability isn't in the machine's
+  /// effective set (empty `machine.capabilities` ⇒ `[mode]` —
+  /// back-compat for projects that predate the field).
+  const OP_REQUIRES: Record<PickerKind, ('mill' | 'laser' | 'drag')[]> = {
+    profile: ['mill', 'laser'],
+    pocket: ['mill'],
+    pocket_outside: ['mill'],
+    drill: ['mill'],
+    thread: ['mill'],
+    chamfer: ['mill'],
+    engrave: ['mill', 'laser'],
+    drag_knife: ['drag'],
+    vcarve: ['mill'],
+    // Pause carries no tool / motion — every machine can pause.
+    pause: ['mill', 'laser', 'drag'],
+  };
+  const machineCapabilities = $derived<('mill' | 'laser' | 'drag')[]>(
+    project.machine.capabilities && project.machine.capabilities.length > 0
+      ? project.machine.capabilities
+      : [project.machine.mode],
+  );
+  function isPickerKindSupported(kind: PickerKind): boolean {
+    const req = OP_REQUIRES[kind];
+    return req.some((c) => machineCapabilities.includes(c));
+  }
+  const visibleKinds = $derived(ALL_PICKER_KINDS.filter(isPickerKindSupported));
 </script>
 
 <div class="picker" role="menu">
-  {#each ALL_PICKER_KINDS as k (k)}
+  {#each visibleKinds as k (k)}
     {@const disabled = k === 'pocket_outside' && pocketOutsideDisabled}
     <button
       class="kind"

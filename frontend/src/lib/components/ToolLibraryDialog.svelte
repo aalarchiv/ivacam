@@ -11,6 +11,7 @@
     type HolderShape,
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
+  import * as fileOps from '../state/file_ops';
 
   interface Props {
     open: boolean;
@@ -1208,6 +1209,38 @@
         <button class="secondary" onclick={cancelDiscard}>Keep editing</button>
         <button class="danger" onclick={discardAndClose}>Discard</button>
       {:else}
+        <button
+          class="secondary"
+          onclick={async () => {
+            await fileOps.saveToolset();
+          }}
+          title="Save the current tool library to a .wiac-toolset.json file."
+        >
+          Save…
+        </button>
+        <button
+          class="secondary"
+          onclick={async () => {
+            await fileOps.loadToolset('replace');
+            // Editor draft must follow the new tools so the dialog
+            // doesn't keep showing stale entries.
+            draft = project.tools.map((t) => ({ ...t }));
+          }}
+          title="Replace the current tools with the contents of a .wiac-toolset.json file."
+        >
+          Load (replace)…
+        </button>
+        <button
+          class="secondary"
+          onclick={async () => {
+            await fileOps.loadToolset('add');
+            draft = project.tools.map((t) => ({ ...t }));
+          }}
+          title="Add tools from a .wiac-toolset.json file. Tools whose name already exists are skipped."
+        >
+          Load (add)…
+        </button>
+        <span class="sep"></span>
         <button class="secondary" onclick={close}>Cancel</button>
         <button class="primary" onclick={commit}>OK</button>
       {/if}

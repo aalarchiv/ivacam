@@ -209,6 +209,15 @@ export interface AxisLimits {
 }
 
 export interface MachineSettings {
+  /// h0tx: free-text identifier for this machine ("Shop CNC",
+  /// "Garage MPCNC"). Surfaces in the MachineDialog header + the
+  /// .wiac-machine.json save file. Empty by default.
+  name?: string;
+  /// h0tx: which op kinds the machine can run. Drives the
+  /// OpKindPicker's filter — a laser-only machine doesn't show
+  /// milling ops. Empty array = implicitly `[mode]` (back-compat
+  /// for projects that predate this field).
+  capabilities?: ('mill' | 'laser' | 'drag')[];
   unit: 'mm' | 'inch';
   mode: 'mill' | 'laser' | 'drag';
   comments: boolean;

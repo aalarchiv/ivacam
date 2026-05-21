@@ -12,6 +12,7 @@
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
   import PostProcessorEditor from './PostProcessorEditor.svelte';
+  import * as fileOps from '../state/file_ops';
 
   interface Props {
     open: boolean;
@@ -235,6 +236,17 @@
 
     <div class="grid">
       <label
+        title="Free-text identifier for this machine setup. Shown in the dialog header + persisted into .wiac-machine.json save files. (h0tx)"
+      >
+        Name
+        <input
+          type="text"
+          placeholder="e.g. Shop CNC"
+          value={draft.name ?? ''}
+          oninput={(e) => (draft.name = (e.currentTarget as HTMLInputElement).value)}
+        />
+      </label>
+      <label
         title="Output units in the emitted G-code (G20 inch / G21 mm). Internal storage is always mm — this only affects the post."
       >
         Unit
@@ -244,7 +256,7 @@
         </select>
       </label>
       <label
-        title="Machine kind. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL instead of G-code."
+        title="Primary mode — drives the gcode emitter. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL. Adjust 'Capabilities' below if the machine can do more than this primary mode."
       >
         Mode
         <select bind:value={draft.mode}>
@@ -253,6 +265,30 @@
           <option value="drag">Drag-knife / vinyl</option>
         </select>
       </label>
+      <fieldset class="capabilities">
+        <legend title="Which op kinds the machine can run. The op-picker hides kinds the machine doesn't support — e.g. a laser-only machine never shows Drill. Defaults to just the primary Mode above if left empty.">
+          Capabilities
+        </legend>
+        {#each ['mill', 'laser', 'drag'] as cap (cap)}
+          <label class="cap-toggle">
+            <input
+              type="checkbox"
+              checked={(draft.capabilities ?? [draft.mode]).includes(cap as 'mill' | 'laser' | 'drag')}
+              onchange={(e) => {
+                const on = (e.currentTarget as HTMLInputElement).checked;
+                const cur = new Set(draft.capabilities ?? [draft.mode]);
+                if (on) cur.add(cap as 'mill' | 'laser' | 'drag');
+                else cur.delete(cap as 'mill' | 'laser' | 'drag');
+                // Always keep the primary mode in the set so the
+                // gcode emitter never targets a removed capability.
+                cur.add(draft.mode);
+                draft.capabilities = [...cur];
+              }}
+            />
+            <span>{cap === 'mill' ? 'Mill' : cap === 'laser' ? 'Laser' : 'Drag-knife'}</span>
+          </label>
+        {/each}
+      </fieldset>
       <label
         title="Safe Z height for rapids between cuts. Spindle rapids to this height before XY moves so the tool clears clamps and stock."
       >
@@ -587,6 +623,34 @@
         <button class="secondary" onclick={cancelDiscard}>Keep editing</button>
         <button class="danger" onclick={discardAndClose}>Discard</button>
       {:else}
+        <button
+          class="secondary"
+          onclick={async () => {
+            // Commit any pending edits first so the saved snapshot
+            // reflects what the user is looking at, not the
+            // previously-committed values.
+            commit();
+            await fileOps.saveMachine();
+          }}
+          title="Save this machine config to a .wiac-machine.json file."
+        >
+          Save…
+        </button>
+        <button
+          class="secondary"
+          onclick={async () => {
+            await fileOps.loadMachine();
+            // Refresh draft so the dialog shows the freshly-loaded
+            // values; otherwise it still mirrors the old pre-load draft.
+            draft = structuredClone(project.machine) as MachineSettings;
+            jerkDraft = draft.jerk ? { ...draft.jerk } : { x: 0, y: 0, z: 0 };
+            jerkEnabled = !!draft.jerk;
+          }}
+          title="Replace the active machine config with the contents of a .wiac-machine.json file."
+        >
+          Load…
+        </button>
+        <span class="sep"></span>
         <button class="secondary" onclick={close}>Cancel</button>
         <button class="primary" onclick={commit}>OK</button>
       {/if}

@@ -92,6 +92,49 @@ pub struct ToolConfig {
     /// `None` = no tool-level default, fall through to global 0.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_xy_overlap: Option<f64>,
+    /// Full apex angle of the tool tip cone, in degrees. Default 60°
+    /// (V-bit shape). The drill emitter uses this together with
+    /// `tip_diameter_mm` to compute `tip_cone_length()` — the extra
+    /// depth to extend a through-drill cycle so the FULL bore
+    /// diameter reaches the bottom of the stock.
+    #[serde(default = "default_tip_angle_deg")]
+    pub tip_angle_deg: f64,
+    /// Diameter at the tip of the cone in mm. 0 = sharp point
+    /// (drill, V-bit). > 0 = flat tip (engraver). For flat-bottom
+    /// tools (endmill / ball-nose / bull-nose / compression /
+    /// t-slot / form-profile / drag-knife / laser) the synth step
+    /// sets this equal to `diameter` so `tip_cone_length()` returns
+    /// 0 — no auto-extend needed.
+    #[serde(default)]
+    pub tip_diameter_mm: f64,
+}
+
+fn default_tip_angle_deg() -> f64 {
+    60.0
+}
+
+impl ToolConfig {
+    /// Axial distance from the FULL-diameter shoulder to the tip
+    /// point. For a drill / V-bit (`tip_diameter_mm == 0`) this is
+    /// `R / tan(apex / 2)`. Engravers (`tip_diameter_mm > 0`)
+    /// shorten it by their tip radius. Flat-bottom tools (tip_dia
+    /// == diameter) return 0.
+    #[must_use]
+    pub fn tip_cone_length(&self) -> f64 {
+        let r = self.diameter * 0.5;
+        let tip_r = self.tip_diameter_mm.max(0.0) * 0.5;
+        let cut_r = (r - tip_r).max(0.0);
+        if cut_r <= 0.0 {
+            return 0.0;
+        }
+        let half = (self.tip_angle_deg.clamp(1.0, 179.0) * 0.5).to_radians();
+        let tan_half = half.tan();
+        if tan_half < 1e-6 {
+            0.0
+        } else {
+            cut_r / tan_half
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -103,6 +146,11 @@ impl Default for ToolConfig {
         Self {
             number: 1,
             diameter: 3.0,
+            tip_angle_deg: default_tip_angle_deg(),
+            // Default tip_diameter = diameter = flat-bottom; the drill
+            // synthesis path overrides to 0 (sharp point) when the
+            // tool's kind warrants it.
+            tip_diameter_mm: 3.0,
             speed: 18000,
             name: String::new(),
             pause: 1,

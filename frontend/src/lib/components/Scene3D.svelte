@@ -1626,11 +1626,11 @@
     // the main toolpath buffer.
     const arrowPositions: number[] = [];
     const arrowColors: number[] = [];
-    const ARROW_MIN_LEN = 2.0; // mm; shorter segments never get an arrow
-    const ARROW_MAX_SIZE = 5.0; // mm; absolute cap on arrow size
-    const ARROW_SIZE_FRAC = 0.15; // arrow size relative to segment length
+    const ARROW_MIN_LEN = 1.0; // mm; shorter segments never get an arrow
+    const ARROW_MAX_SIZE = 4.0; // mm; absolute cap on arrow size
+    const ARROW_SIZE_FRAC = 0.2; // arrow size relative to segment length
     const ARROW_HALF_WING = Math.tan((30 * Math.PI) / 180); // ±30° wings
-    const ARROW_MIN_SPACING = 8.0; // mm of cumulative path between arrows
+    const ARROW_MIN_SPACING = 3.0; // mm of cumulative path between arrows
     let lenSinceLastArrow = ARROW_MIN_SPACING; // emit on first qualifying segment
     const moveTints: Record<string, THREE.Color> = {
       rapid: cssColor('--toolpath-rapid', 0x35a2ff),

@@ -72,6 +72,20 @@
   --z-drop-catcher: 1000;/* full-window drag-drop indicator */
 }
 
+/* Sync the browser-native `color-scheme` with the user's chosen
+ * theme so OS-rendered form controls — `<select>` popups,
+ * scrollbars, the date-picker calendar — flip dark/light alongside
+ * our own token-driven colors. Without these overrides the page
+ * defaults to `color-scheme: light dark` (declared at :root) and
+ * the browser picks per OS, so a user in OS-light but app-dark
+ * sees a glaring white `<option>` dropdown. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
 /* Light tokens applied for explicit light. */
 :root[data-theme='light'] {
   --bg-app: #fafafa;

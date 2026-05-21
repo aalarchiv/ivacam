@@ -541,7 +541,7 @@
       {/if}
       <label
         class="row"
-        title="Cut past the nominal depth by this many mm. Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom. 0 = no extension."
+        title="Cut past the nominal depth by this many mm. Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom. 0 = no extension. Drill ops additionally extend the cut by the tool's tip-cone length automatically (so the full bore diameter reaches the bottom of the stock) — this manual extension stacks on top of the auto-cone."
       >
         <span>Through depth</span>
         <div class="num-cell">

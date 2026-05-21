@@ -363,7 +363,17 @@ pub fn emit_drill_block<P: PostProcessor>(
     last_pos: &mut Point2,
 ) {
     let order = order_offsets(setup, offsets, *last_pos);
-    let z = setup.mill.depth;
+    // Drill final Z. `setup.mill.depth` is the nominal bore floor;
+    // `through_depth` extends it deeper to clear minor stock-
+    // thickness variation. For conical tool tips (twist drills,
+    // V-bits, engravers), `tool.tip_cone_length()` is the extra
+    // depth needed for the FULL bore diameter to reach the bottom,
+    // so we add it automatically — clarifying the user's
+    // through-cut intent matches the actual geometry. The user's
+    // explicit `through_depth` stacks on top so manual extension
+    // still works.
+    let cone_extra = setup.tool.tip_cone_length();
+    let z = setup.mill.depth - setup.mill.through_depth.max(0.0) - cone_extra;
     let r = setup.mill.start_depth;
     let fast_z = setup.mill.fast_move_z;
     if setup.machine.mode == MachineMode::Mill {

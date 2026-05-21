@@ -177,6 +177,8 @@ pub(super) fn synthesize_op_setup(
             .contour_params()
             .map_or(true, |c| matches!(c.cut_direction, crate::project::CutDirection::Climb)),
         default_xy_overlap: tool.default_xy_overlap,
+        tip_angle_deg: tool.tip_angle_deg,
+        tip_diameter_mm: effective_tip_diameter_mm(tool),
     };
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
@@ -432,6 +434,8 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 wirbeln_osc: 0.0,
                 wirbeln_climb: true,
                 default_xy_overlap: None,
+                tip_angle_deg: tool.tip_angle_deg,
+                tip_diameter_mm: effective_tip_diameter_mm(tool),
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
@@ -465,9 +469,29 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             wirbeln_osc: 0.0,
             wirbeln_climb: true,
             default_xy_overlap: tool.default_xy_overlap,
+            tip_angle_deg: tool.tip_angle_deg,
+            tip_diameter_mm: effective_tip_diameter_mm(tool),
         };
     }
     setup
+}
+
+/// Resolve the effective `tip_diameter_mm` for a tool. Flat-bottom
+/// kinds (endmill, ball-nose, bull-nose, compression, t-slot,
+/// form-profile, drag-knife, laser) report their FULL diameter so
+/// `ToolConfig.tip_cone_length()` returns 0 — they don't add cone
+/// extension to through-cuts. Pointed kinds (drill, V-bit,
+/// engraver) report the user-set `tip_diameter` (default 0 for
+/// sharp tools).
+#[must_use]
+fn effective_tip_diameter_mm(tool: &crate::project::ToolEntry) -> f64 {
+    use crate::project::ToolKind;
+    match tool.kind {
+        ToolKind::Drill | ToolKind::VBit | ToolKind::Engraver => {
+            tool.tip_diameter.unwrap_or(0.0).max(0.0)
+        }
+        _ => tool.diameter,
+    }
 }
 
 #[cfg(test)]

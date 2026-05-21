@@ -5,7 +5,6 @@
 /// Excluded from history (view-state, not project state):
 ///   • project.playhead         — toolpath scrub position
 ///   • project.selectedOpId     — currently-selected operation
-///   • project.selectedObjects  — 2D canvas selection
 ///   • project.selectedEntities — legacy per-segment selection
 ///   • project.selectedFixtureId
 ///   • project.visibleLayers    — layer visibility toggles
@@ -13,6 +12,11 @@
 ///   • project.settings         — per-installation prefs (localStorage)
 ///   • project.error, project.dirty, project.loading, project.generating
 ///   • project.simDiagnostics, project.generated, project.toolpath*
+///
+/// Selection-aware commands (80gv): object selection IS in the undo
+/// stack so Ctrl+Z reverts to the previous selection set. Commands
+/// with `marksDirty: false` push into history but do NOT mark the
+/// project file dirty — view-only state.
 ///
 /// History is per-session only. We don't persist it to .vc-project.json.
 ///
@@ -31,6 +35,11 @@ export interface Command {
   /// for slider drags and number-field typing so the user doesn't have
   /// to undo a hundred 0.1 mm steps.
   coalesce_key?: string;
+  /// Default true — exec() flips `state.dirty = true` after apply so
+  /// the project file shows unsaved changes. Selection commands (80gv)
+  /// pass `false` so the canvas selection enters the undo stack
+  /// without falsely flagging the project as edited.
+  marksDirty?: boolean;
 }
 
 interface Transaction {
@@ -92,7 +101,9 @@ export class History {
       // The original wrapper's prevDirty already captures the pre-edit
       // dirty state from when the first command ran.
       cmd.apply(state);
-      markDirty(state);
+      // Selection (and other marksDirty=false) commands don't flip
+      // the dirty bit even when coalescing.
+      if (cmd.marksDirty !== false) markDirty(state);
     } else {
       const wrapped = wrapWithDirty(cmd, state);
       wrapped.apply(state);
@@ -217,17 +228,21 @@ function nowMs(): number {
 function wrapWithDirty(cmd: Command, state: unknown): Command {
   const target = state as { dirty?: boolean };
   const prevDirty = 'dirty' in target ? !!target.dirty : false;
+  const marksDirty = cmd.marksDirty !== false;
   return {
     label: cmd.label,
     coalesce_key: cmd.coalesce_key,
+    marksDirty,
     apply(s) {
       cmd.apply(s);
-      markDirty(s);
+      if (marksDirty) markDirty(s);
     },
     revert(s) {
       cmd.revert(s);
-      const t = s as { dirty?: boolean };
-      if ('dirty' in t) t.dirty = prevDirty;
+      if (marksDirty) {
+        const t = s as { dirty?: boolean };
+        if ('dirty' in t) t.dirty = prevDirty;
+      }
     },
   };
 }

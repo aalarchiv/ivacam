@@ -717,21 +717,49 @@
     }
     return null;
   });
+  /// pbi4: when the canvas selection is non-empty, the status bar
+  /// shows the union bbox of selected objects as (center · L × W).
+  /// Empty selection falls back to the import-wide bbox + segment
+  /// count so the user still sees the drawing's extent.
   const statusInfoText = $derived.by<string>(() => {
     const imp = project.transformedImport;
-    if (imp) {
-      return $_('footer.bbox', {
-        values: {
-          minX: imp.bbox.min_x.toFixed(2),
-          minY: imp.bbox.min_y.toFixed(2),
-          maxX: imp.bbox.max_x.toFixed(2),
-          maxY: imp.bbox.max_y.toFixed(2),
-          count: imp.segments.length,
-          unit: imp.unit_scale,
-        },
-      });
+    if (!imp) return $_('footer.ready');
+    const meta = imp.object_meta ?? [];
+    const sel = project.selectedObjects;
+    if (sel.size > 0 && meta.length > 0) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      let counted = 0;
+      for (const id of sel) {
+        const m = meta[id - 1];
+        if (!m) continue;
+        if (m.bbox.min_x < minX) minX = m.bbox.min_x;
+        if (m.bbox.min_y < minY) minY = m.bbox.min_y;
+        if (m.bbox.max_x > maxX) maxX = m.bbox.max_x;
+        if (m.bbox.max_y > maxY) maxY = m.bbox.max_y;
+        counted += 1;
+      }
+      if (counted > 0) {
+        const cx = (minX + maxX) * 0.5;
+        const cy = (minY + maxY) * 0.5;
+        const w = Math.max(0, maxX - minX);
+        const h = Math.max(0, maxY - minY);
+        const tag = counted === 1 ? '1 object' : `${counted} objects`;
+        return `${tag} · center=(${cx.toFixed(2)}, ${cy.toFixed(2)}) · ${w.toFixed(2)} × ${h.toFixed(2)} mm`;
+      }
     }
-    return $_('footer.ready');
+    return $_('footer.bbox', {
+      values: {
+        minX: imp.bbox.min_x.toFixed(2),
+        minY: imp.bbox.min_y.toFixed(2),
+        maxX: imp.bbox.max_x.toFixed(2),
+        maxY: imp.bbox.max_y.toFixed(2),
+        count: imp.segments.length,
+        unit: imp.unit_scale,
+      },
+    });
   });
   const statusShortcutHints = $derived.by<string | null>(() => {
     if (!project.transformedImport) return null;

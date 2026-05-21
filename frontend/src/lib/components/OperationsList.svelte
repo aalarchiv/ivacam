@@ -137,6 +137,15 @@
     const wasSelected = project.selectedOpId === id;
     project.selectedOpId = wasSelected ? null : id;
     if (!wasSelected) {
+      // gucf: highlight the op's source objects on the canvas so the
+      // user can see what this op will cut. Only act when sourceObjects
+      // is explicitly set — when undefined the op runs over "all" or
+      // "all in these layers", and overwriting the canvas selection
+      // with that potentially-huge set would surprise mid-edit.
+      const op = project.operations.find((o) => o.id === id);
+      if (op?.sourceObjects && op.sourceObjects.length > 0) {
+        project.selectObjects(op.sourceObjects, 'replace');
+      }
       queueMicrotask(() => {
         const row = document.querySelector(`[data-op-row-id="${id}"]`) as HTMLElement | null;
         row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });

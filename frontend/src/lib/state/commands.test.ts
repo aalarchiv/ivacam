@@ -572,3 +572,45 @@ describe('text-layer commands', () => {
     expect(cmd.coalesce_key).toBeUndefined();
   });
 });
+
+describe('selectObjectsCommand (80gv)', () => {
+  // Selection target shape matches what `SelectionState` exposes,
+  // but we use a plain object here to avoid pulling in the Svelte
+  // rune runtime (selection.svelte.ts) from the test.
+  function blankSel() {
+    return {
+      selectedObjects: new Set<number>(),
+      selectionAnchorObjectId: null as number | null,
+    };
+  }
+
+  it('apply → revert restores the prior selection set and anchor', async () => {
+    const { selectObjectsCommand } = await import('./commands');
+    const sel = blankSel();
+    sel.selectedObjects = new Set([3, 7]);
+    sel.selectionAnchorObjectId = 7;
+    const cmd = selectObjectsCommand(
+      sel,
+      { selected: new Set([3, 7]), anchor: 7 },
+      { selected: new Set([4]), anchor: 4 },
+    );
+    cmd.apply(undefined);
+    expect([...sel.selectedObjects]).toEqual([4]);
+    expect(sel.selectionAnchorObjectId).toBe(4);
+    cmd.revert(undefined);
+    expect([...sel.selectedObjects].sort()).toEqual([3, 7]);
+    expect(sel.selectionAnchorObjectId).toBe(7);
+  });
+
+  it('is marked as view-only (marksDirty=false) so undo does not flag the project as edited', async () => {
+    const { selectObjectsCommand } = await import('./commands');
+    const sel = blankSel();
+    const cmd = selectObjectsCommand(
+      sel,
+      { selected: new Set(), anchor: null },
+      { selected: new Set([1]), anchor: 1 },
+    );
+    expect(cmd.marksDirty).toBe(false);
+    expect(cmd.coalesce_key).toBe('selection');
+  });
+});

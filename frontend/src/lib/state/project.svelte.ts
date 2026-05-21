@@ -152,6 +152,7 @@ export { isContourOp, isPathOp } from './op_types';
 // Pure 2D geometry primitives extracted to `lib/canvas/selection-geometry.ts`
 // so vitest specs can exercise them without mounting the canvas (audit y0ez).
 import { bboxOfSegments, lineCrossesBBox } from '../canvas/selection-geometry';
+import { pickBestToolForOp } from './tool_picker';
 
 function isAbsolutePath(p: string): boolean {
   return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
@@ -195,6 +196,7 @@ import {
   removeFixtureCommand,
   reorderOperationCommand,
   replaceToolsCommand,
+  selectObjectsCommand,
   setImportsCommand,
   setMachineCommand,
   setStockCommand,
@@ -204,6 +206,7 @@ import {
   updateTextLayerCommand,
   type CommandTarget,
 } from './commands';
+import { computeSelectionUpdate, selectionsEqual } from './selection.svelte';
 
 class ProjectState {
   /// Project-data slice (audit 6cpl step 4 / n5v5). Owns `imported`,
@@ -859,14 +862,48 @@ class ProjectState {
   }
 
   toggleObject(id: number, additive = false) {
-    this.sel.toggleObject(id, additive);
+    if (id <= 0) return;
+    // Route through the same command path as `selectObjects` so the
+    // canvas-click toggle ends up in the undo/redo stack (80gv).
+    this.selectObjects([id], additive ? 'toggle' : 'replace');
   }
 
   /// Bulk selection update — used by box-select and any other path
   /// that needs to commit a set of object ids with FreeCAD-style
-  /// modifier semantics in one go. Delegates to `sel.selectObjects`.
+  /// modifier semantics in one go. Pushes the change through the
+  /// History so Ctrl+Z reverts the selection (80gv).
   selectObjects(ids: Iterable<number>, mode: SelectionMode) {
-    this.sel.selectObjects(ids, mode);
+    const prevSelected = new Set(this.sel.selectedObjects);
+    const prevAnchor = this.sel.selectionAnchorObjectId;
+    const { selected: nextSelected, anchor: nextAnchor } = computeSelectionUpdate(
+      prevSelected,
+      prevAnchor,
+      ids,
+      mode,
+    );
+    this.pushSelectionChange(prevSelected, prevAnchor, nextSelected, nextAnchor);
+  }
+
+  /// Internal: emit a single selection-change command. Used by
+  /// `selectObjects`, `clearSelection`, `seriesSelectTo`, and any
+  /// future selection helper that needs to land in the undo stack.
+  /// Skips the push when prev == next (no-op selection updates
+  /// shouldn't waste an undo slot).
+  private pushSelectionChange(
+    prevSelected: Set<number>,
+    prevAnchor: number | null,
+    nextSelected: Set<number>,
+    nextAnchor: number | null,
+  ) {
+    if (selectionsEqual(prevSelected, nextSelected) && prevAnchor === nextAnchor) return;
+    this.history.exec(
+      selectObjectsCommand(
+        this.sel,
+        { selected: prevSelected, anchor: prevAnchor },
+        { selected: nextSelected, anchor: nextAnchor },
+      ),
+      this.target(),
+    );
   }
   /// Series-select: extend the selection from the current anchor object
   /// to `targetId`, picking every visible object whose bbox is crossed
@@ -898,13 +935,24 @@ class ProjectState {
       if (!visible.has(m.layer)) continue;
       if (lineCrossesBBox(p0, p1, m.bbox)) picked.push(m.id);
     }
-    this.selectObjects(picked, 'add');
-    // Anchor moves to the target so consecutive Shift+clicks chain
-    // (anchor → click → click → click).
-    this.selectionAnchorObjectId = targetId;
+    // Compute the post-add selection + override the anchor to `targetId`
+    // so consecutive Shift+clicks chain (anchor → click → click → click).
+    // Single command so Ctrl+Z restores both selection and anchor in
+    // one undo step (80gv).
+    const prevSelected = new Set(this.sel.selectedObjects);
+    const prevAnchor = this.sel.selectionAnchorObjectId;
+    const { selected: nextSelected } = computeSelectionUpdate(
+      prevSelected,
+      prevAnchor,
+      picked,
+      'add',
+    );
+    this.pushSelectionChange(prevSelected, prevAnchor, nextSelected, targetId);
   }
   clearSelection() {
-    this.sel.clearSelection();
+    const prevSelected = new Set(this.sel.selectedObjects);
+    const prevAnchor = this.sel.selectionAnchorObjectId;
+    this.pushSelectionChange(prevSelected, prevAnchor, new Set(), null);
   }
 
   setGenerated(r: GenerateResponse) {
@@ -1265,15 +1313,24 @@ class ProjectState {
       this.selectedOpId = pauseOp.id;
       return pauseOp;
     }
-    const tool = this.tools[0];
     // When the user has objects selected on the canvas, pin the new op
     // to that exact set. Most users select first, click "+ Pocket"
     // expecting the op to apply to what they highlighted — the
     // alternative (default to All) silently runs across every imported
     // chain. Empty selection ⇒ keep the All default (sourceObjects
     // undefined + sourceLayers: null).
-    const presetSources =
-      this.selectedObjects.size > 0 ? { sourceObjects: [...this.selectedObjects] } : {};
+    const selectionIds = [...this.selectedObjects];
+    const presetSources = selectionIds.length > 0 ? { sourceObjects: selectionIds } : {};
+    // dx8p: when adding a drill against a square-ish selection, pick
+    // the library tool whose diameter best matches the inferred hole.
+    // Falls through to the first-tool default for other kinds or when
+    // the geometry signal is ambiguous.
+    const tool = pickBestToolForOp(
+      kind,
+      selectionIds,
+      this.transformedImport?.object_meta ?? [],
+      this.tools,
+    );
     // The literal builds a merged shape with conditionally-included
     // variant-specific fields (`offset` for profile/engrave/drag_knife,
     // `pocketStrategy` for pocket, `drillCycle` for drill, …) — TS

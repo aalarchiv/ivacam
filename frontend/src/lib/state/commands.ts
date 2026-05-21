@@ -566,6 +566,41 @@ export function setImportsCommand(
   };
 }
 
+// ── selection (80gv: view-only, marksDirty=false) ────────────────────
+
+/// Minimum view of a SelectionState the selection commands touch.
+/// Carving this out lets commands.ts stay decoupled from the
+/// Svelte-runtime class declaration in selection.svelte.ts.
+export interface SelectionTarget {
+  selectedObjects: Set<number>;
+  selectionAnchorObjectId: number | null;
+}
+
+/// Selection-update command (80gv). Captures the BEFORE selection
+/// + anchor and the AFTER selection + anchor; apply restores AFTER,
+/// revert restores BEFORE. `marksDirty: false` so undo-able selection
+/// changes don't flag the project file as edited. `coalesce_key`
+/// merges rapid consecutive clicks into one undo step.
+export function selectObjectsCommand(
+  sel: SelectionTarget,
+  prev: { selected: Set<number>; anchor: number | null },
+  next: { selected: Set<number>; anchor: number | null },
+): Command {
+  return {
+    label: 'Change selection',
+    coalesce_key: 'selection',
+    marksDirty: false,
+    apply() {
+      sel.selectedObjects = new Set(next.selected);
+      sel.selectionAnchorObjectId = next.anchor;
+    },
+    revert() {
+      sel.selectedObjects = new Set(prev.selected);
+      sel.selectionAnchorObjectId = prev.anchor;
+    },
+  };
+}
+
 // ── helpers ──────────────────────────────────────────────────────────
 
 function coalesceKeyForPatch(opId: number, patch: Partial<OpEntry>): string | undefined {

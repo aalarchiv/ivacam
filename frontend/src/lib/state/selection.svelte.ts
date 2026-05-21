@@ -5,11 +5,54 @@
 /// parent `ProjectState` as orchestrators that call the slice's
 /// `selectObjects` here.
 ///
-/// Like `GeneratedState`, none of this is touched by the undo/redo
-/// command bus — selection state is per-session view state, not
-/// project data, and lives outside `.vc-project.json`.
+/// 80gv: object selection (`selectedObjects` + `selectionAnchorObjectId`)
+/// is now in the undo/redo stack via a marksDirty=false Command —
+/// `ProjectState.selectObjects` etc. push through History. Other
+/// view-state fields (selectedOpId, hoverSegment, …) are still NOT
+/// in history — they're transient per-action highlights.
 
 export type SelectionMode = 'replace' | 'add' | 'toggle';
+
+/// Pure helper: given the current selection set + anchor and an
+/// incoming `(ids, mode)` request, return the resulting state.
+/// Used by both the live `SelectionState.selectObjects` and the
+/// History command factory so the two paths share logic.
+export function computeSelectionUpdate(
+  prevSelected: ReadonlySet<number>,
+  prevAnchor: number | null,
+  ids: Iterable<number>,
+  mode: SelectionMode,
+): { selected: Set<number>; anchor: number | null } {
+  const incoming = [...ids].filter((id) => id > 0);
+  if (mode === 'replace') {
+    return {
+      selected: new Set(incoming),
+      anchor: incoming.length === 1 ? incoming[0] : null,
+    };
+  }
+  const next = new Set(prevSelected);
+  let anchor = prevAnchor;
+  if (mode === 'add') {
+    for (const id of incoming) next.add(id);
+    if (incoming.length === 1) anchor = incoming[0];
+  } else {
+    for (const id of incoming) {
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+    }
+    if (incoming.length === 1 && next.has(incoming[0])) anchor = incoming[0];
+  }
+  return { selected: next, anchor };
+}
+
+/// Cheap structural equality for two Set<number>'s. Used to drop
+/// no-op selection commands before they hit the history stack.
+export function selectionsEqual(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
 
 /// Canvas-pick modes. The user enters one explicitly from a UI
 /// affordance ("Pick on canvas" buttons in OpPropertiesPanel) and the
@@ -83,27 +126,14 @@ export class SelectionState {
   /// bulk replace (box-select) clears it; a toggle that adds the
   /// id sets it, a toggle that removes the id leaves it alone.
   selectObjects(ids: Iterable<number>, mode: SelectionMode): void {
-    const incoming = [...ids].filter((id) => id > 0);
-    if (mode === 'replace') {
-      this.selectedObjects = new Set(incoming);
-      this.selectionAnchorObjectId = incoming.length === 1 ? incoming[0] : null;
-      return;
-    }
-    const next = new Set(this.selectedObjects);
-    if (mode === 'add') {
-      for (const id of incoming) next.add(id);
-      if (incoming.length === 1) this.selectionAnchorObjectId = incoming[0];
-    } else {
-      // toggle
-      for (const id of incoming) {
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-      }
-      if (incoming.length === 1 && next.has(incoming[0])) {
-        this.selectionAnchorObjectId = incoming[0];
-      }
-    }
-    this.selectedObjects = next;
+    const { selected, anchor } = computeSelectionUpdate(
+      this.selectedObjects,
+      this.selectionAnchorObjectId,
+      ids,
+      mode,
+    );
+    this.selectedObjects = selected;
+    this.selectionAnchorObjectId = anchor;
   }
 
   /// Clear the object selection AND drop the anchor so the next

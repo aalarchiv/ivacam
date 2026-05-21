@@ -434,6 +434,7 @@
     void project.textLayers;
     void previewVersion.v;
     void project.generated; // affects fade for non-selected imports
+    void project.settings.previewMode; // affects contrast-against-stock color
     rebuildImportedGeometry();
     requestRender();
   });
@@ -1459,6 +1460,21 @@
     const c = new THREE.Color();
     const fadedColor = cssColor('--imported-faded', 0x444444);
     const selectedColor = cssColor('--accent', 0x4a8df0);
+    // When the stock heightfield is visible as a solid surface, the
+    // tan / configured stock color drowns out the ACI / faded
+    // wireframe colors. Use the user-configured EDGE color (already
+    // chosen for contrast against the stock material) as the line
+    // tint. Falls back to ACI when no solid is showing.
+    const previewMode = project.settings.previewMode;
+    const solidVisible = previewMode === 'solid' || previewMode === 'both';
+    const contrastOverStock = solidVisible
+      ? new THREE.Color(project.settings.edgeColor)
+      : null;
+    // Lift the wireframe slightly above the stock top surface so it
+    // doesn't Z-fight with the heightfield mesh (top_z = 0 in the
+    // stock coord system). 0.1 mm is below the smallest carve step
+    // but enough to win the depth test.
+    const lineZ = solidVisible ? 0.1 : 0;
     const flat = !!project.generated;
     let segIdx = 0;
     for (const seg of data.segments) {
@@ -1472,7 +1488,11 @@
       let baseR: number;
       let baseG: number;
       let baseB: number;
-      if (flat) {
+      if (contrastOverStock) {
+        baseR = contrastOverStock.r;
+        baseG = contrastOverStock.g;
+        baseB = contrastOverStock.b;
+      } else if (flat) {
         baseR = fadedColor.r;
         baseG = fadedColor.g;
         baseB = fadedColor.b;
@@ -1490,7 +1510,7 @@
       for (let i = 0; i < points.length - 1; i++) {
         const [ax, ay] = points[i];
         const [bx, by] = points[i + 1];
-        positions.push(ax, ay, 0, bx, by, 0);
+        positions.push(ax, ay, lineZ, bx, by, lineZ);
         colors.push(r, g, b, r, g, b);
         importedLineOwners.push({ kind: 'object', objectId });
         pairCount++;
@@ -1522,7 +1542,7 @@
           for (let i = 0; i < points.length - 1; i++) {
             const [ax, ay] = points[i];
             const [bx, by] = points[i + 1];
-            positions.push(ax, ay, 0, bx, by, 0);
+            positions.push(ax, ay, lineZ, bx, by, lineZ);
             colors.push(previewC.r, previewC.g, previewC.b, previewC.r, previewC.g, previewC.b);
             importedLineOwners.push({ kind: 'object', objectId: 0 });
           }
@@ -1534,7 +1554,11 @@
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      const mat = new THREE.LineBasicMaterial({ vertexColors: true });
+      // `linewidth` is widely ignored in WebGL LineBasicMaterial, but
+      // setting it lets the few platforms that DO honour it draw 2 px
+      // strokes. The contrast-over-stock tint above is the primary
+      // visibility win — see Scene3D's imported-line audit notes.
+      const mat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 });
       importedLinesObject = new THREE.LineSegments(geom, mat);
       importedLinesObject.visible = wireVisible;
       geometryGroup.add(importedLinesObject);

@@ -24,6 +24,11 @@ export default defineConfig({
   plugins: [svelte()],
   define: {
     __WIAC_BUILD_VERSION__: JSON.stringify(gitVersion()),
+    // ISO-8601 UTC timestamp at build time. Shown in the About
+    // dialog alongside the git-describe identifier so users can
+    // tell which day a binary was produced without scraping the
+    // commit hash against the git log.
+    __WIAC_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
   },
   build: {
     // Scene3D + three.js is a single intentional chunk (~540 KB);

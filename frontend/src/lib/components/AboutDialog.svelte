@@ -16,6 +16,19 @@
 
   const buildVersion =
     typeof __WIAC_BUILD_VERSION__ === 'string' ? __WIAC_BUILD_VERSION__ : 'unknown';
+  /// ISO-8601 UTC timestamp baked at vite-build time. Rendered in the
+  /// user's locale below the build identifier so bug reports carry
+  /// "this is the build I produced on date X" alongside the commit.
+  const buildDateIso =
+    typeof __WIAC_BUILD_DATE__ === 'string' ? __WIAC_BUILD_DATE__ : '';
+  const buildDateDisplay = (() => {
+    if (!buildDateIso) return '';
+    const d = new Date(buildDateIso);
+    if (isNaN(d.getTime())) return buildDateIso;
+    // Date + time in the user's locale + UTC ISO suffix so it stays
+    // unambiguous when pasted into issues across timezones.
+    return `${d.toLocaleString()} (${buildDateIso})`;
+  })();
 
   let copyState = $state<'idle' | 'copied'>('idle');
   async function copyBuildId() {
@@ -144,6 +157,14 @@
           {copyState === 'copied' ? 'Copied' : 'Copy'}
         </button>
       </dd>
+      {#if buildDateDisplay}
+        <dt>Date</dt>
+        <dd>
+          <span class="build-date" title="UTC timestamp the binary was produced at — for cross-timezone bug reports.">
+            {buildDateDisplay}
+          </span>
+        </dd>
+      {/if}
     </dl>
     <p class="hint">
       Include the build identifier above when filing issues - it pins the report to the
@@ -171,6 +192,12 @@
   <section>
     <h3>Acknowledgements</h3>
     <ul class="acks">
+      <li>
+        <strong>
+          <a href="https://github.com/multigcs/viaconstructor" target="_blank" rel="noreferrer">viaConstructor</a>
+        </strong> - the project that gave the idea. viaConstructor is a Python CAM tool with a similar
+        scope; wiaConstructor reuses none of its code but stands on the shoulders of its UX exploration.
+      </li>
       <li>
         <strong>Estlcam</strong> - its feature catalogue inspired the CAM
         primitives wiaConstructor implements. No Estlcam code is used; algorithms are
@@ -279,6 +306,11 @@
     padding: 0.18rem 0.45rem;
     font-family: ui-monospace, Menlo, monospace;
     font-size: 0.82rem;
+    user-select: text;
+  }
+  .build-date {
+    color: var(--text-muted);
+    font-size: 0.78rem;
     user-select: text;
   }
   .copy-btn {

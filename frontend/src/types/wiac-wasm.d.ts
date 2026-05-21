@@ -21,3 +21,7 @@ declare module 'wiac-wasm' {
 /// `git describe --always --dirty` at build time, or `"unknown"` when
 /// the build runs outside a git checkout.
 declare const __WIAC_BUILD_VERSION__: string;
+
+/// ISO-8601 UTC timestamp of the vite build. Shown in the About
+/// dialog so users can tell when a binary was produced.
+declare const __WIAC_BUILD_DATE__: string;

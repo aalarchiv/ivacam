@@ -51,6 +51,17 @@ export interface HeightfieldOptions {
 /// neighbors (since those walls reference this cell's Z on their
 /// far side) and sets `position.updateRange` so Three.js uploads
 /// only the touched sub-range to the GPU.
+/// Darken a CSS color string by ~65 % lightness. Used for the floor
+/// quad material so a through-hole reads as a void rather than a
+/// same-color fill.
+function deriveFloorColor(stockColor: string): THREE.Color {
+  const c = new THREE.Color(stockColor);
+  const hsl: { h: number; s: number; l: number } = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  c.setHSL(hsl.h, hsl.s, Math.max(0.04, hsl.l * 0.35));
+  return c;
+}
+
 export class HeightfieldMesh {
   readonly group: THREE.Group;
 
@@ -103,6 +114,11 @@ export class HeightfieldMesh {
   private readonly edgeMaterial: THREE.LineBasicMaterial;
   private readonly edgeLines: THREE.LineSegments;
   private readonly edgeThresholdDeg: number;
+  /// Darker variant of `material` used ONLY for the floor quad —
+  /// when a cell carves through, exposing the floor, the user should
+  /// perceive the through-hole as a darker void rather than the same
+  /// stock color (which read as "filled" before this split).
+  private readonly floorMaterial: THREE.MeshStandardMaterial;
 
   constructor(opts: HeightfieldOptions) {
     this.cols = opts.cols;
@@ -140,6 +156,15 @@ export class HeightfieldMesh {
     this.geometry.setAttribute('position', this.positionAttr);
     this.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     this.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    // Split into two material groups: everything UP TO the floor
+    // quad uses the main stock material; the 6 floor-quad indices
+    // use a darker floor material so cut-through cells expose a
+    // visibly different surface. Index offsets must match the
+    // initStaticBuffers emit order (cells, LEFT fringe, BOTTOM
+    // fringe, FLOOR).
+    const floorIndexStart = 18 * n + 6 * this.rows + 6 * this.cols;
+    this.geometry.addGroup(0, floorIndexStart, 0);
+    this.geometry.addGroup(floorIndexStart, 6, 1);
     this.geometry.boundingBox = new THREE.Box3(
       new THREE.Vector3(this.originX, this.originY, this.floorZ),
       new THREE.Vector3(
@@ -169,8 +194,21 @@ export class HeightfieldMesh {
       roughness: 0.8,
       metalness: 0.0,
     });
+    // Floor material: same shape as the main one but with lightness
+    // reduced ~65 % so a hole carved through the stock reads as a
+    // dark void instead of a same-color fill. Opacity tracks the
+    // stock so translucent mode stays translucent below the holes.
+    this.floorMaterial = new THREE.MeshStandardMaterial({
+      color: deriveFloorColor(opts.solidColor),
+      opacity: opts.solidOpacity,
+      transparent: isTransparent,
+      depthWrite: !isTransparent,
+      side: THREE.DoubleSide,
+      roughness: 0.9,
+      metalness: 0.0,
+    });
 
-    this.mesh = new THREE.Mesh(this.geometry, this.material);
+    this.mesh = new THREE.Mesh(this.geometry, [this.material, this.floorMaterial]);
     // Defensive: with the manually-set boundingBox / boundingSphere a
     // tilted camera at the wrong distance occasionally culled the
     // whole mesh on the previous voxel-box renderer; the stepped mesh
@@ -257,9 +295,16 @@ export class HeightfieldMesh {
       this.positions[p + 2] = this.floorZ;
       this.positions[p + 5] = this.floorZ;
     }
-    // FLOOR quad is fixed at floorZ regardless of carve state.
+    // FLOOR quad is fixed slightly BELOW floorZ. The 0.05 mm offset
+    // prevents Z-fighting when a cell carves all the way through —
+    // the cell's top face sits at exactly floorZ, the floor quad
+    // a hair below, so the cell's top wins the depth test from
+    // above instead of striping with the coplanar floor (which
+    // showed up as a "weird texture in stock colors" in cut-through
+    // regions before this offset).
+    const floorQuadZ = this.floorZ - 0.05;
     for (let k = 0; k < 4; k++) {
-      this.positions[(this.FLOOR_BASE + k) * 3 + 2] = this.floorZ;
+      this.positions[(this.FLOOR_BASE + k) * 3 + 2] = floorQuadZ;
     }
     this.positionAttr.needsUpdate = true;
   }
@@ -554,6 +599,10 @@ export class HeightfieldMesh {
   setStyle(opts: Partial<HeightfieldOptions>): void {
     if (opts.solidColor !== undefined) {
       this.material.color.set(opts.solidColor);
+      // Keep the floor material's color in sync with the (darkened)
+      // stock color so cut-through holes always read as a void of
+      // the current stock material, not a stale palette mismatch.
+      this.floorMaterial.color.copy(deriveFloorColor(opts.solidColor));
     }
     if (opts.solidOpacity !== undefined) {
       this.material.opacity = opts.solidOpacity;
@@ -563,6 +612,12 @@ export class HeightfieldMesh {
       // comment there for why transparent + depthWrite=true hides
       // chunks of the stepped mesh.
       this.material.depthWrite = !transparent;
+      // Mirror onto the floor material so opacity changes stay
+      // consistent across the two-material split.
+      this.floorMaterial.opacity = opts.solidOpacity;
+      this.floorMaterial.transparent = transparent;
+      this.floorMaterial.depthWrite = !transparent;
+      this.floorMaterial.needsUpdate = true;
       // Depth pre-pass is only needed in translucent mode. Opaque
       // mode writes depth in the main pass so the pre-pass would be
       // redundant work.
@@ -598,6 +653,7 @@ export class HeightfieldMesh {
   dispose(): void {
     this.geometry.dispose();
     this.material.dispose();
+    this.floorMaterial.dispose();
     this.group.remove(this.mesh);
     this.group.remove(this.depthMesh);
     this.depthMaterial.dispose();

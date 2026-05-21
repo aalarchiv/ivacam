@@ -28,7 +28,7 @@
     } catch {
       // Clipboard API unavailable (insecure context, permissions).
       // The text is also `user-select: text` so the user can copy by
-      // hand — silent fallback.
+      // hand - silent fallback.
     }
   }
 
@@ -146,7 +146,7 @@
       </dd>
     </dl>
     <p class="hint">
-      Include the build identifier above when filing issues — it pins the report to the
+      Include the build identifier above when filing issues - it pins the report to the
       exact binary you tested.
     </p>
   </section>
@@ -158,8 +158,8 @@
       <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noreferrer">
         GNU General Public License v3.0 or later</a
       >. Source is available at
-      <a href="https://github.com/sjepeters/wiaconstructor" target="_blank" rel="noreferrer">
-        github.com/sjepeters/wiaconstructor</a
+      <a href="https://github.com/aalarchiv/wiaconstructor" target="_blank" rel="noreferrer">
+        github.com/aalarchiv/wiaconstructor</a
       >.
     </p>
     <p>
@@ -172,12 +172,12 @@
     <h3>Acknowledgements</h3>
     <ul class="acks">
       <li>
-        <strong>Estlcam</strong> — feature catalogue and UX shape inspiration for the CAM
+        <strong>Estlcam</strong> - its feature catalogue inspired the CAM
         primitives wiaConstructor implements. No Estlcam code is used; algorithms are
-        implemented from public literature.
+        implemented from public literature. Estlcam is not free, but it is great software at reasonable price. Buy it!
       </li>
       <li>
-        <strong>CNC + maker community</strong> — bug reports, test geometries, and the
+        <strong>CNC + maker community</strong> - bug reports, test geometries, and the
         machine quirks that turned synthetic test suites into real shop-floor coverage.
       </li>
     </ul>

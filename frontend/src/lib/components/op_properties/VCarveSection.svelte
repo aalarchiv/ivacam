@@ -34,6 +34,35 @@
       Tool kind mismatch — V-Carve needs a V-bit.
     </p>
   {/if}
+  <!--
+    Carve mode is the most consequential V-Carve setting (it changes the
+    toolpath structure entirely), so it sits at the top of the section
+    rather than buried inside Advanced. Stored as the
+    `fullMedialAxis: boolean | undefined` field — undefined means
+    default-perimeter for forward compat with old projects.
+  -->
+  <div
+    class="row"
+    title="Perimeter (default, Estlcam-style): the cutter traces the boundary offset inward by Max width / 2 at constant depth, leaving the centre plateau untouched. Medial axis (Aspire-style): depth varies along an interior spine through the widest parts of the region; useful for depth-gradient relief, but typically NOT what you want for sign-making."
+  >
+    <span>Mode</span>
+    <div class="segmented">
+      <button
+        type="button"
+        class:active={!(op.fullMedialAxis ?? false)}
+        onclick={() => patch('fullMedialAxis', undefined)}
+      >
+        Perimeter
+      </button>
+      <button
+        type="button"
+        class:active={op.fullMedialAxis ?? false}
+        onclick={() => patch('fullMedialAxis', true)}
+      >
+        Medial axis
+      </button>
+    </div>
+  </div>
   <details class="subsection" open>
     <summary>{$_('op.section.vcarve_advanced')}</summary>
     <label
@@ -55,24 +84,6 @@
         />
         <span class="unit">mm</span>
       </div>
-    </label>
-    <label
-      class="row"
-      title="Default OFF (Estlcam-style): the cutter traces the boundary offset inward by Max width / 2 at constant depth, leaving the centre plateau untouched. Turn ON for the medial-axis approach — depth varies along an interior spine; useful for Aspire-style depth-gradient relief, but typically NOT what you want for sign-making."
-    >
-      <span>Full medial axis</span>
-      <input
-        type="checkbox"
-        checked={op.fullMedialAxis ?? false}
-        onchange={(e) =>
-          patch(
-            'fullMedialAxis',
-            (e.currentTarget as HTMLInputElement).checked ? true : undefined,
-          )}
-      />
-      <span class="hint" style="margin-left:0.5rem">
-        spine cuts through wide interiors
-      </span>
     </label>
     <label
       class="row"

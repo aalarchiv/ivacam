@@ -16,3 +16,8 @@ declare module 'wiac-wasm' {
   export function importBytes(filename: string, bytes: Uint8Array): unknown;
   export function generate(request: unknown): unknown;
 }
+
+/// Build-time version stamp injected by vite (see `vite.config.ts`).
+/// `git describe --always --dirty` at build time, or `"unknown"` when
+/// the build runs outside a git checkout.
+declare const __WIAC_BUILD_VERSION__: string;

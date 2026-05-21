@@ -1,9 +1,30 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { execSync } from 'node:child_process';
+
+/// Build-time version stamp. `git describe --always --dirty` so each
+/// build carries the exact commit (and `-dirty` if the working tree
+/// had uncommitted changes). When the build runs outside a git
+/// checkout (release tarball, CI without git history), fall back to
+/// `"unknown"` — the About chip then hides itself.
+function gitVersion(): string {
+  try {
+    return execSync('git describe --always --dirty', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return 'unknown';
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte()],
+  define: {
+    __WIAC_BUILD_VERSION__: JSON.stringify(gitVersion()),
+  },
   build: {
     // Scene3D + three.js is a single intentional chunk (~540 KB);
     // anything bigger than that is the warning we actually want.

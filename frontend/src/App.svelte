@@ -45,6 +45,11 @@
   let addTextOpen = $state(false);
   let shortcutHelpOpen = $state(false);
   let reportOpen = $state(false);
+  /// Build-time version stamp baked by vite.config.ts. Surfaces in
+  /// the Help menu so the user can paste an exact build identifier
+  /// into bug reports.
+  const buildVersion =
+    typeof __WIAC_BUILD_VERSION__ === 'string' ? __WIAC_BUILD_VERSION__ : 'unknown';
   /// Startup banner: when set, the user was previously editing a
   /// project and we offer to reopen it. Styled in-app instead of a
   /// native window.confirm so the first impression of the app isn't
@@ -935,6 +940,12 @@
               <span class="label">Check for updates…</span>
             </button>
           {/if}
+          {#if buildVersion && buildVersion !== 'unknown'}
+            <div class="item static" role="presentation" title="Build version (git describe --always --dirty at compile time). Include this when reporting bugs so we know which exact binary you're running.">
+              <span class="label">Build</span>
+              <span class="kbd">{buildVersion}</span>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1336,6 +1347,15 @@
     color: var(--text-faint);
     font-style: italic;
     cursor: default;
+  }
+  /* Help-menu Build-version row — informational, not clickable. */
+  .dropdown .item.static {
+    color: var(--text-muted);
+    cursor: default;
+    user-select: text;
+  }
+  .dropdown .item.static:hover {
+    background: transparent;
   }
   .dropdown .item.subtle {
     color: var(--text-muted);

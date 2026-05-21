@@ -137,8 +137,29 @@
   /// collapsed (Stock dims, layer count + filename, text count), so
   /// the user can read working numbers at a glance without
   /// switching panes.
+  ///
+  /// Click the ACTIVE panel's caret to bounce back to the previously
+  /// active pane — the typical "I jumped to Stock to tweak dims, now
+  /// take me back to Operations" flow. `activateSidebarPane(p)` swaps
+  /// `prev` ↔ `active` when the same pane is clicked twice, so the
+  /// pair toggles cleanly.
   type SidebarPane = 'stock' | 'layers' | 'text' | 'operations';
   let activeSidebarPane = $state<SidebarPane>('layers');
+  /// Last non-current pane. Initial value matches "user hasn't
+  /// switched yet but wants Operations" — the most likely return
+  /// destination for a Layers-default startup.
+  let prevSidebarPane = $state<SidebarPane>('operations');
+  function activateSidebarPane(target: SidebarPane) {
+    if (target === activeSidebarPane) {
+      // Swap: collapse current, restore the previous pane.
+      const a = activeSidebarPane;
+      activeSidebarPane = prevSidebarPane;
+      prevSidebarPane = a;
+    } else {
+      prevSidebarPane = activeSidebarPane;
+      activeSidebarPane = target;
+    }
+  }
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.stock;
     const fp = computeFootprint(project.transformedImport, cfg, project.machine.workArea);
@@ -1187,9 +1208,11 @@
         <button
           type="button"
           class="group-head"
-          onclick={() => (activeSidebarPane = 'stock')}
+          onclick={() => activateSidebarPane('stock')}
           aria-expanded={activeSidebarPane === 'stock'}
-          title="Click to expand stock settings"
+          title={activeSidebarPane === 'stock'
+            ? 'Collapse stock (return to previous panel)'
+            : 'Expand stock settings'}
         >
           <span class="caret">{activeSidebarPane === 'stock' ? '▾' : '▸'}</span>
           <span class="stock-name">Stock</span>
@@ -1206,7 +1229,7 @@
       <div class="layers-host" class:active={activeSidebarPane === 'layers'}>
         <LayerList
           active={activeSidebarPane === 'layers'}
-          onActivate={() => (activeSidebarPane = 'layers')}
+          onActivate={() => (activateSidebarPane('layers'))}
           onOpenFileClick={() => openFile()}
           onAddTextClick={() => (addTextOpen = true)}
           {reopenPrompt}
@@ -1217,14 +1240,14 @@
       <div class="text-list-host" class:active={activeSidebarPane === 'text'}>
         <TextList
           active={activeSidebarPane === 'text'}
-          onActivate={() => (activeSidebarPane = 'text')}
+          onActivate={() => (activateSidebarPane('text'))}
           onAddText={() => (addTextOpen = true)}
         />
       </div>
       <div class="ops-host" class:active={activeSidebarPane === 'operations'}>
         <OperationsList
           active={activeSidebarPane === 'operations'}
-          onActivate={() => (activeSidebarPane = 'operations')}
+          onActivate={() => (activateSidebarPane('operations'))}
         />
       </div>
     </aside>

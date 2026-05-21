@@ -121,8 +121,9 @@
     <button
       class="caret-btn"
       onclick={onActivate}
-      title={active ? 'Layers panel is active' : 'Expand layers'}
-      aria-label="Activate layers panel">{active ? '▾' : '▸'}</button
+      title={active ? 'Collapse layers (return to previous panel)' : 'Expand layers'}
+      aria-label={active ? 'Collapse layers panel' : 'Activate layers panel'}
+      >{active ? '▾' : '▸'}</button
     >
     {#if usableLayers.length > 0}
       <input

@@ -86,8 +86,9 @@
     <button
       class="caret-btn"
       onclick={onActivate}
-      title={active ? 'Text panel is active' : 'Expand text panel'}
-      aria-label="Activate text panel">{active ? '▾' : '▸'}</button
+      title={active ? 'Collapse text panel (return to previous panel)' : 'Expand text panel'}
+      aria-label={active ? 'Collapse text panel' : 'Activate text panel'}
+      >{active ? '▾' : '▸'}</button
     >
     <span class="group-name">Text</span>
     <span class="group-count">{project.textLayers.length}</span>

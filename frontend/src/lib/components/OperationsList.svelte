@@ -233,8 +233,8 @@
     <button
       class="caret-btn"
       onclick={(e) => { e.stopPropagation(); onActivate(); }}
-      title={active ? 'Operations panel is active' : 'Expand operations panel'}
-      aria-label="Activate operations panel"
+      title={active ? 'Collapse operations (return to previous panel)' : 'Expand operations panel'}
+      aria-label={active ? 'Collapse operations panel' : 'Activate operations panel'}
     >
       {active ? '▾' : '▸'}
     </button>

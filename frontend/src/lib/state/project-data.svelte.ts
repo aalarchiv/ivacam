@@ -39,6 +39,12 @@ export interface AppSettings {
   cellResolutionMm: number;
   solidPreviewByDefault: boolean;
   maxSimulationCells: number;
+  /// 9tba: ceiling on render triangle count for the 3D-sim heightfield.
+  /// When the active LOD level's mesh would exceed this, the renderer
+  /// drops to a coarser pyramid level. Decouples sim accuracy
+  /// (`maxSimulationCells`) from GPU budget so projects with high
+  /// `maxSimulationCells` still render smoothly on integrated GPUs.
+  maxRenderTriangles: number;
   /// When true, GenerateBar refuses to emit gcode while the most recent
   /// sim run reported critical warnings (collisions, rapid-through-stock).
   blockOnCriticalSimWarnings: boolean;
@@ -76,6 +82,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // integrated GPUs and most laptops. Users on discrete-GPU desktops
   // can raise this in Settings → Performance. (audit-auim)
   maxSimulationCells: 1_000_000,
+  // Stepped voxel mesh emits ~6 triangles / cell. 2M triangles maps to
+  // ~333k cells active — a comfortable mid-range integrated-GPU
+  // budget (audit-9tba). Above this the renderer drops to a coarser
+  // LOD level. Independent from `maxSimulationCells` so high sim
+  // accuracy doesn't force a GPU stall.
+  maxRenderTriangles: 2_000_000,
   blockOnCriticalSimWarnings: false,
   autoRegenerate: false,
   autoRunSimOnSave: true,

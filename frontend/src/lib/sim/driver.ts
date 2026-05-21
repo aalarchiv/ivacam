@@ -13,7 +13,7 @@
 ///   * project.generated changes: rebuild both Simulator + mesh.
 
 import * as THREE from 'three';
-import { HeightfieldMesh } from './heightfield_mesh';
+import { HeightfieldMeshPyramid, pickMinLodLevelForBudget } from './heightfield_mesh';
 import { planAdvance, playheadToSegment } from './playhead';
 import type {
   GenerateResponse,
@@ -216,7 +216,7 @@ export interface DriverOptions {
 export class HeightfieldDriver {
   readonly group: THREE.Group;
   private sim: SimulatorWasm | null = null;
-  private mesh: HeightfieldMesh | null = null;
+  private mesh: HeightfieldMeshPyramid | null = null;
   private wasm: WasmHandle | null = null;
   /// Cached buffer view; valid until the next advance() that may grow
   /// WASM linear memory. Re-taken after every advance.
@@ -280,22 +280,19 @@ export class HeightfieldDriver {
     }
     const fp = computeFootprint(input.imported, input.stock);
     const cellSize = computeCellSize(input.tool.diameter, input.settings);
-    // Cap the resolution so a tiny tool on a big stock doesn't OOM.
     const cols = Math.ceil((fp.maxX - fp.minX) / cellSize) + 1;
     const rows = Math.ceil((fp.maxY - fp.minY) / cellSize) + 1;
     const cellCount = cols * rows;
-    // Mesh memory hard backstop. The stepped voxel BufferGeometry
-    // uses ~280 bytes/cell of GPU memory; existing users still
-    // carrying a 4M-cell persisted setting from the old InstancedMesh
-    // renderer would push it to ~1.2 GB and observe partial-mesh
-    // allocation failures. 1.5M cells (~420 MB) is a safe ceiling
-    // across iGPUs and mid-range discrete GPUs; the per-user setting
-    // remains the primary throttle, this clamps the worst case.
-    const MESH_CELL_HARD_LIMIT = 1_500_000;
-    const effectiveCap = Math.min(input.settings.maxSimulationCells, MESH_CELL_HARD_LIMIT);
+    // Sim-side cap: `maxSimulationCells` bounds WASM heap allocation
+    // (4 bytes / cell). Halve cell density only when the user's
+    // setting is exceeded — accurately reflecting their preference.
+    // The GPU-side cap is handled separately by the LOD pyramid
+    // (9tba) via `maxRenderTriangles`, so high sim accuracy no
+    // longer forces a coarse mesh.
+    const simCellCap = Math.max(1, input.settings.maxSimulationCells);
     let effectiveCellSize = cellSize;
-    if (cellCount > effectiveCap) {
-      const scale = Math.sqrt(cellCount / effectiveCap);
+    if (cellCount > simCellCap) {
+      const scale = Math.sqrt(cellCount / simCellCap);
       effectiveCellSize = cellSize * scale;
     }
     const topZ = 0; // stock surface is z=0; carving descends to negative Z
@@ -306,19 +303,33 @@ export class HeightfieldDriver {
     const stockThickness = input.stock.thickness > 0 ? input.stock.thickness : 10.0;
     this.dispose();
     this.sim = new this.wasm.Simulator(fp.minX, fp.minY, fp.maxX, fp.maxY, effectiveCellSize, topZ);
-    this.mesh = new HeightfieldMesh({
-      cols: this.sim.cols(),
-      rows: this.sim.rows(),
-      cellSize: this.sim.cell_size(),
-      originX: this.sim.origin_x(),
-      originY: this.sim.origin_y(),
-      topZ: this.sim.top_z(),
-      floorZ: this.sim.top_z() - stockThickness,
-      solidColor: input.settings.solidColor,
-      solidOpacity: input.settings.solidOpacity,
-      edgeColor: input.settings.edgeColor,
-      edgeOpacity: input.settings.edgeOpacity,
-    });
+    // 9tba: pick the lowest LOD level whose mesh fits the user's
+    // `maxRenderTriangles` budget. Skip building finer (heavier)
+    // levels so total GPU memory stays predictable.
+    const simCols = this.sim.cols();
+    const simRows = this.sim.rows();
+    const minLevel = pickMinLodLevelForBudget(
+      simCols,
+      simRows,
+      input.settings.maxRenderTriangles,
+    );
+    this.mesh = new HeightfieldMeshPyramid(
+      {
+        cols: simCols,
+        rows: simRows,
+        cellSize: this.sim.cell_size(),
+        originX: this.sim.origin_x(),
+        originY: this.sim.origin_y(),
+        topZ: this.sim.top_z(),
+        floorZ: this.sim.top_z() - stockThickness,
+        solidColor: input.settings.solidColor,
+        solidOpacity: input.settings.solidOpacity,
+        edgeColor: input.settings.edgeColor,
+        edgeOpacity: input.settings.edgeOpacity,
+      },
+      3,
+      minLevel,
+    );
     this.group.add(this.mesh.group);
     if (input.fixtures && input.fixtures.length > 0) {
       this.sim.set_fixtures(input.fixtures);
@@ -349,6 +360,10 @@ export class HeightfieldDriver {
     this.partialT = 0;
     this.diagnostics = { warnings: [] };
     this.notifyDiagnostics();
+    // 9tba: clear the LOD pyramid's coarse pools so the next
+    // updateHeights doesn't pick up stale carved data from before
+    // the reset.
+    this.mesh?.reset();
     this.refreshHeightView();
   }
 
@@ -416,6 +431,9 @@ export class HeightfieldDriver {
       this.sim.reset();
       this.diagnostics = { warnings: [] };
       this.notifyDiagnostics();
+      // 9tba: clear coarse pool data before the forward replay so
+      // the active LOD level draws an uncut block to start.
+      this.mesh?.reset();
       this.refreshHeightView();
       if (this.heightView && this.mesh) this.mesh.updateHeights(this.heightView);
     }
@@ -508,6 +526,51 @@ export class HeightfieldDriver {
       edgeOpacity: settings.edgeOpacity,
     });
     this.opts.requestRender();
+  }
+
+  /// 9tba: drive the LOD pyramid's active level. Caller is Scene3D's
+  /// render loop, which feeds `pixelsPerL0Cell` from the camera
+  /// projection and `maxRenderTriangles` from settings; the pyramid
+  /// picks the coarser of the distance- and budget-recommended
+  /// levels. Returns the level actually applied so the caller can
+  /// debug-log or display it.
+  ///
+  /// Distance hysteresis: switching to a COARSER level uses the
+  /// `1.0 px / cell` threshold; switching back to a FINER level
+  /// requires `1.2 px / cell` (20% gap). Without this, a tiny pan
+  /// near the threshold would oscillate the active level every
+  /// frame.
+  setLodHint(pixelsPerL0Cell: number, maxRenderTriangles: number): number {
+    if (!this.mesh) return 0;
+    const current = this.mesh.getActiveLevel();
+    const budgetLevel = this.mesh.recommendBudgetLevel(maxRenderTriangles);
+    const coarsenLevel = this.mesh.recommendDistanceLevel(pixelsPerL0Cell, 1.0);
+    const finerLevel = this.mesh.recommendDistanceLevel(pixelsPerL0Cell, 1.2);
+    const coarsenTarget = Math.max(coarsenLevel, budgetLevel);
+    const finerTarget = Math.max(finerLevel, budgetLevel);
+    let next = current;
+    if (coarsenTarget > current) {
+      next = coarsenTarget;
+    } else if (finerTarget < current) {
+      next = finerTarget;
+    }
+    if (next !== current) {
+      this.mesh.setActiveLevel(next);
+      this.opts.requestRender();
+    }
+    return this.mesh.getActiveLevel();
+  }
+
+  /// Current active LOD level (or `null` when no mesh exists). Used
+  /// by Scene3D for the debug overlay.
+  getLodLevel(): number | null {
+    return this.mesh ? this.mesh.getActiveLevel() : null;
+  }
+
+  /// L0 cell-size in mm so the camera-distance LOD heuristic can
+  /// project a single cell to screen pixels.
+  getCellSize(): number | null {
+    return this.sim ? this.sim.cell_size() : null;
   }
 
   dispose() {

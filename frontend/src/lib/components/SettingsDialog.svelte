@@ -279,11 +279,34 @@
                 )}
             />
           </label>
+
+          <label
+            >Max render triangles
+            <input
+              type="number"
+              min="100000"
+              step="100000"
+              value={project.settings.maxRenderTriangles}
+              oninput={(e) =>
+                update(
+                  'maxRenderTriangles',
+                  Math.round(
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.maxRenderTriangles,
+                      100_000,
+                    ),
+                  ),
+                )}
+            />
+          </label>
         </div>
         <p class="hint">
-          Caps the heightmap grid size before resolution gets coarsened automatically. Higher values
-          look sharper at the cost of memory + redraw time. The stepped voxel mesh uses about
-          280 bytes per cell — 1M cells ≈ 280 MB of GPU memory.
+          <b>Max simulation cells</b> caps the WASM heightmap grid (and so the simulation accuracy).
+          <b>Max render triangles</b> caps the 3D-sim preview's mesh size: the renderer automatically
+          drops to a coarser LOD level when zoomed out or when simulation cells exceed the budget.
+          Simulation accuracy is preserved; only the rendered mesh degrades. Stepped voxel mesh ≈
+          6 triangles per cell.
         </p>
       </section>
 

@@ -515,3 +515,318 @@ export class HeightfieldMesh {
     this.group.remove(this.mesh);
   }
 }
+
+/// LOD pyramid of HeightfieldMesh instances (9tba). Builds N parallel
+/// meshes at successively coarser resolution (L0 = full, L1 = 2×2-pooled,
+/// L2 = 4×4, …) and exposes the same `updateHeights` surface as a single
+/// HeightfieldMesh so the driver can swap in a pyramid without touching
+/// its dispatch logic.
+///
+/// Only the active level's mesh is attached to the scene group; every
+/// other level's group is detached until selected. Memory cost over a
+/// single mesh is `sum_{k≥1} 1/4^k = 1/3` for an infinite pyramid; with
+/// the default 4 levels it's ~33%.
+///
+/// **MIN-pool semantics.** Heights drop monotonically as the sim
+/// carves, so we pool each LOD block as `min(L0 cells in block)`. This
+/// keeps the deepest cut visible at any LOD; a MAX-pool would hide
+/// cuts at coarse levels (the LOD would over-report uncarved
+/// material). A small-trace-loss caveat: cuts narrower than the LOD
+/// cell width may disappear at that level, but at the camera distance
+/// triggering that LOD the trace was sub-pixel anyway.
+///
+/// **Dirty-AABB flow.** The driver hands the WASM L0 view + an L0-coord
+/// AABB to `updateHeights`. If the active level is L0, that forwards
+/// directly to mesh.updateHeights. For Lk > 0 the pyramid re-pools the
+/// L0 AABB span (padded out to whole pool blocks) into its own Lk
+/// buffer, then forwards a translated LOD-coord AABB to `levels[k]`.
+export class HeightfieldMeshPyramid {
+  readonly group: THREE.Group;
+  /// `levels[k]` is the HeightfieldMesh for LOD level k, or `null` when
+  /// `k < minLevel` (we skip building unaffordable fine levels — the
+  /// L0 mesh alone is ~280 MB at 1 M cells, so the budget-driven
+  /// `minLevel` keeps us inside the GPU ceiling regardless of sim
+  /// cell count).
+  private readonly levels: Array<HeightfieldMesh | null>;
+  /// `pools[0]` is the WASM-backed Float32Array stored on the latest
+  /// updateHeights call so a level-swap can re-pool from it. `pools[k>0]`
+  /// is owned by the pyramid — one Float32Array of cols_k * rows_k
+  /// floats per coarse level. `pools[k]` for `k < minLevel` is an
+  /// empty placeholder (no mesh attached, no buffer needed).
+  private readonly pools: Float32Array[];
+  private readonly levelCols: number[];
+  private readonly levelRows: number[];
+  /// Source-grid dimensions (L0 cols/rows). Mirrored on each level via
+  /// `levelCols[0]`/`levelRows[0]` for symmetry.
+  private readonly cols: number;
+  private readonly rows: number;
+  private readonly topZ: number;
+  private activeLevel: number;
+
+  /// Lowest pyramid level the user can render at. Levels below this
+  /// were skipped at construction because the budget said their mesh
+  /// would exceed the render-triangle ceiling.
+  readonly minLevel: number;
+  /// Maximum LOD level index — the deepest pool index (so total levels
+  /// = `maxLevel + 1`). Default 3 → 4 levels (L0..L3 with 1×, 4×, 16×,
+  /// 64× area pooling) before `minLevel` trims the bottom.
+  readonly maxLevel: number;
+
+  /// `minLevel` is the lowest LOD index whose mesh is actually built.
+  /// Callers pass the budget-driven floor (see
+  /// `pickMinLodLevelForBudget`) so unaffordable fine levels never
+  /// allocate. Defaults to 0 (build all levels including L0) for tests
+  /// and small grids.
+  constructor(opts: HeightfieldOptions, maxLevel = 3, minLevel = 0) {
+    this.group = new THREE.Group();
+    this.cols = opts.cols;
+    this.rows = opts.rows;
+    this.topZ = opts.topZ;
+    this.maxLevel = Math.max(0, maxLevel);
+    this.minLevel = Math.max(0, Math.min(this.maxLevel, minLevel));
+    this.levels = [];
+    this.pools = [];
+    this.levelCols = [];
+    this.levelRows = [];
+    // Build each level k in [minLevel, maxLevel]. Cell dimensions halve
+    // per step, rounded up so a grid with a residual partial cell still
+    // gets one LOD cell that covers it. Levels below minLevel are kept
+    // as null placeholders so `levels[k]` indexing stays one-to-one
+    // with k regardless of skipped fine levels.
+    for (let k = 0; k <= this.maxLevel; k++) {
+      const factor = 1 << k;
+      const cols_k = Math.max(1, Math.ceil(this.cols / factor));
+      const rows_k = Math.max(1, Math.ceil(this.rows / factor));
+      this.levelCols.push(cols_k);
+      this.levelRows.push(rows_k);
+      if (k < this.minLevel) {
+        this.levels.push(null);
+        this.pools.push(new Float32Array(0));
+        continue;
+      }
+      const cellSize_k = opts.cellSize * factor;
+      const mesh = new HeightfieldMesh({
+        ...opts,
+        cols: cols_k,
+        rows: rows_k,
+        cellSize: cellSize_k,
+      });
+      this.levels.push(mesh);
+      if (k === 0) {
+        // L0's pool view is plugged in by updateHeights.
+        this.pools.push(new Float32Array(0));
+      } else {
+        const pool = new Float32Array(cols_k * rows_k);
+        pool.fill(this.topZ);
+        this.pools.push(pool);
+      }
+    }
+    // Active level starts at the floor.
+    this.activeLevel = this.minLevel;
+    const initialMesh = this.levels[this.activeLevel];
+    if (initialMesh) this.group.add(initialMesh.group);
+  }
+
+  /// Swap the active mesh in the scene. Clamps to `[minLevel, maxLevel]`.
+  /// If switching to a non-L0 level, fully re-pool from the stored L0
+  /// view so the new mesh shows the current carved state from frame
+  /// one. Cheap: only one mesh is in the scene at a time so the GPU
+  /// draw set doesn't grow.
+  setActiveLevel(k: number): void {
+    const clamped = Math.max(this.minLevel, Math.min(this.maxLevel, k));
+    if (clamped === this.activeLevel) return;
+    const oldMesh = this.levels[this.activeLevel];
+    const newMesh = this.levels[clamped];
+    if (oldMesh) this.group.remove(oldMesh.group);
+    if (newMesh) this.group.add(newMesh.group);
+    this.activeLevel = clamped;
+    if (!newMesh) return;
+    if (this.pools[0].length === 0) {
+      // No L0 view yet — driver hasn't called updateHeights. Leave the
+      // new level at its initial-stock state until the next update.
+      return;
+    }
+    if (clamped === 0) {
+      newMesh.updateHeights(this.pools[0]);
+      return;
+    }
+    this.poolRange(clamped, 0, 0, this.cols, this.rows);
+    newMesh.updateHeights(this.pools[clamped]);
+  }
+
+  /// Recommend an LOD level from the rendered cell-pixel-size + the
+  /// configured triangle budget. The caller picks the coarser of the
+  /// two (i.e. `Math.max(distLevel, budgetLevel)`), then optionally
+  /// applies hysteresis before calling `setActiveLevel`.
+  ///
+  /// `pixelsPerL0Cell` is the apparent screen pixel size of a single
+  /// L0 cell at the current camera distance. `minPixelsPerCell` is the
+  /// target floor (≈1 keeps cells at sub-pixel size before promoting
+  /// to a coarser LOD).
+  recommendDistanceLevel(pixelsPerL0Cell: number, minPixelsPerCell: number): number {
+    if (pixelsPerL0Cell <= 0 || minPixelsPerCell <= 0) return this.minLevel;
+    if (pixelsPerL0Cell >= minPixelsPerCell) return this.minLevel;
+    const ratio = minPixelsPerCell / pixelsPerL0Cell;
+    // log2 floor: e.g. ratio 1.4 → 0 (stay); 2.1 → 1; 4.5 → 2; 9.0 → 3.
+    const k = Math.floor(Math.log2(ratio));
+    return Math.min(this.maxLevel, Math.max(this.minLevel, k));
+  }
+
+  recommendBudgetLevel(maxRenderTriangles: number): number {
+    if (maxRenderTriangles <= 0) return this.minLevel;
+    for (let k = this.minLevel; k <= this.maxLevel; k++) {
+      const tris = this.levelCols[k] * this.levelRows[k] * 6;
+      if (tris <= maxRenderTriangles) return k;
+    }
+    return this.maxLevel;
+  }
+
+  /// Active level index. Useful for debug overlays / tests.
+  getActiveLevel(): number {
+    return this.activeLevel;
+  }
+
+  /// Triangle count of the currently-active level's mesh. Excludes the
+  /// constant fringe / floor quads (negligible vs cell × 6).
+  getActiveTriangleCount(): number {
+    return this.levelCols[this.activeLevel] * this.levelRows[this.activeLevel] * 6;
+  }
+
+  /// Drop-in for HeightfieldMesh.updateHeights. Stores the L0 view so a
+  /// later level-swap can re-pool from it, then forwards the dirty
+  /// span to the active level (with min-pooling for Lk > 0).
+  updateHeights(
+    dataView: Float32Array,
+    aabb?: { ix0: number; iy0: number; ix1: number; iy1: number },
+  ): void {
+    this.pools[0] = dataView;
+    const k = this.activeLevel;
+    const activeMesh = this.levels[k];
+    if (!activeMesh) return;
+    if (k === 0) {
+      activeMesh.updateHeights(dataView, aabb);
+      return;
+    }
+    const f = 1 << k;
+    if (!aabb) {
+      this.poolRange(k, 0, 0, this.cols, this.rows);
+      activeMesh.updateHeights(this.pools[k]);
+      return;
+    }
+    this.poolRange(k, aabb.ix0, aabb.iy0, aabb.ix1, aabb.iy1);
+    const lod_ix0 = Math.max(0, Math.floor(aabb.ix0 / f));
+    const lod_iy0 = Math.max(0, Math.floor(aabb.iy0 / f));
+    const lod_ix1 = Math.min(this.levelCols[k], Math.ceil(aabb.ix1 / f));
+    const lod_iy1 = Math.min(this.levelRows[k], Math.ceil(aabb.iy1 / f));
+    if (lod_ix1 > lod_ix0 && lod_iy1 > lod_iy0) {
+      activeMesh.updateHeights(this.pools[k], {
+        ix0: lod_ix0,
+        iy0: lod_iy0,
+        ix1: lod_ix1,
+        iy1: lod_iy1,
+      });
+    }
+  }
+
+  /// MIN-pool L0 cells in `[ix0, ix1) × [iy0, iy1)` into the
+  /// corresponding LOD-k cells of `pools[k]`. The LOD-cell range is the
+  /// AABB ceiling-divided by `2^k`. Exposed-as-private only.
+  private poolRange(
+    k: number,
+    ix0: number,
+    iy0: number,
+    ix1: number,
+    iy1: number,
+  ): void {
+    const f = 1 << k;
+    const cols_k = this.levelCols[k];
+    const rows_k = this.levelRows[k];
+    const lod_ix0 = Math.max(0, Math.floor(ix0 / f));
+    const lod_iy0 = Math.max(0, Math.floor(iy0 / f));
+    const lod_ix1 = Math.min(cols_k, Math.ceil(ix1 / f));
+    const lod_iy1 = Math.min(rows_k, Math.ceil(iy1 / f));
+    const L0 = this.pools[0];
+    const pool = this.pools[k];
+    const cols = this.cols;
+    const rows = this.rows;
+    for (let py = lod_iy0; py < lod_iy1; py++) {
+      const blockY0 = py * f;
+      const blockY1 = Math.min(rows, blockY0 + f);
+      for (let px = lod_ix0; px < lod_ix1; px++) {
+        const blockX0 = px * f;
+        const blockX1 = Math.min(cols, blockX0 + f);
+        let m = L0[blockY0 * cols + blockX0];
+        for (let iy = blockY0; iy < blockY1; iy++) {
+          const row = iy * cols;
+          for (let ix = blockX0; ix < blockX1; ix++) {
+            const v = L0[row + ix];
+            if (v < m) m = v;
+          }
+        }
+        pool[py * cols_k + px] = m;
+      }
+    }
+  }
+
+  /// Reset every level back to uncut stock state. Mirrors the
+  /// `HeightfieldMesh` post-`sim.reset()` flow: L0's WASM data is back
+  /// at topZ (the driver will re-feed its view); coarse pools must be
+  /// re-filled and uploaded so the active LOD's mesh shows topZ instead
+  /// of the previous frame's carved state.
+  reset(): void {
+    for (let k = this.minLevel; k <= this.maxLevel; k++) {
+      if (k > 0) this.pools[k].fill(this.topZ);
+    }
+    // Don't re-upload here: the driver calls updateHeights right after
+    // its own refreshHeightView, and that's the right time to push the
+    // reset pool data to the GPU.
+  }
+
+  rebuildEdges(): void {
+    this.levels[this.activeLevel]?.rebuildEdges();
+  }
+
+  setStyle(opts: Partial<HeightfieldOptions>): void {
+    for (const m of this.levels) m?.setStyle(opts);
+  }
+
+  setVisible(visible: boolean): void {
+    this.group.visible = visible;
+  }
+
+  setEdgesVisible(visible: boolean): void {
+    for (const m of this.levels) m?.setEdgesVisible(visible);
+  }
+
+  setSolidVisible(visible: boolean): void {
+    for (const m of this.levels) m?.setSolidVisible(visible);
+  }
+
+  dispose(): void {
+    for (const m of this.levels) m?.dispose();
+    while (this.group.children.length > 0) {
+      this.group.remove(this.group.children[0]);
+    }
+  }
+}
+
+/// 9tba helper: smallest LOD level `k ∈ [0, maxLevel]` whose mesh fits
+/// the render-triangle budget for a `cols × rows` source heightmap.
+/// Used by callers to decide the pyramid's `minLevel` BEFORE the
+/// constructor allocates any HeightfieldMesh — skipping unaffordable
+/// fine levels keeps total GPU memory predictable regardless of the
+/// user's `maxSimulationCells` setting.
+export function pickMinLodLevelForBudget(
+  cols: number,
+  rows: number,
+  maxRenderTriangles: number,
+  maxLevel = 3,
+): number {
+  if (maxRenderTriangles <= 0) return 0;
+  for (let k = 0; k <= maxLevel; k++) {
+    const cols_k = Math.max(1, Math.ceil(cols / (1 << k)));
+    const rows_k = Math.max(1, Math.ceil(rows / (1 << k)));
+    if (cols_k * rows_k * 6 <= maxRenderTriangles) return k;
+  }
+  return maxLevel;
+}

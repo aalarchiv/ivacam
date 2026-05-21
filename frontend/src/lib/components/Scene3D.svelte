@@ -78,6 +78,31 @@
         },
       });
     }, 500);
+    // 9tba: re-evaluate the heightfield LOD level whenever the camera
+    // moves. setLodHint is a no-op when the recommended level matches
+    // the current one (the common case during smooth orbiting), so the
+    // per-event cost is just a few divisions.
+    updateHeightfieldLod();
+  }
+
+  /// 9tba: ask the heightfield driver to pick an LOD level for the
+  /// current camera distance + the user's render-triangle budget.
+  /// Cheap; safe to call on every camera-change tick.
+  function updateHeightfieldLod() {
+    if (!driver || !camera || !controls || !renderer) return;
+    const cellSize = driver.getCellSize();
+    if (cellSize == null) return;
+    const distance = camera.position.distanceTo(controls.target);
+    if (distance <= 0) return;
+    const fovRad = (camera.fov * Math.PI) / 180;
+    const renderHeight = renderer.domElement.clientHeight;
+    if (renderHeight <= 0) return;
+    // Pixel-projection of a single L0 cell at the camera target.
+    // For a perspective camera with vertical FOV, a world-space length
+    // `L` at distance `d` projects to `L * (renderHeight / 2) /
+    // (d * tan(fov/2))` pixels.
+    const pixelsPerCell = (cellSize * renderHeight) / (2 * distance * Math.tan(fovRad / 2));
+    driver.setLodHint(pixelsPerCell, project.settings.maxRenderTriangles);
   }
 
   /// Apply the saved camera pose, if any. Run once after the initial
@@ -635,6 +660,10 @@
             project.toolpathCumLen,
             project.toolpathTotalLen,
           );
+          // 9tba: select the right LOD level for the current camera
+          // distance once the new pyramid exists, so the first paint
+          // uses the affordable level instead of L0.
+          updateHeightfieldLod();
           requestRender();
         })
         .catch((e) => {

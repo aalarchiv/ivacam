@@ -164,6 +164,7 @@ export function buildToolMesh(
   fluteLen?: number,
   shankDia?: number,
   holder?: HolderShape,
+  tipAngleDeg?: number,
 ): THREE.Mesh {
   const radius = diameter * 0.5;
   const mat = new THREE.MeshBasicMaterial({
@@ -186,14 +187,36 @@ export function buildToolMesh(
     geom.translate(0, 0, beamLen / 2);
     return new THREE.Mesh(geom, mat);
   }
-  if (kind === 'v_bit' || kind === 'engraver' || kind === 'drill') {
-    // Tapered cutter: cone with apex at the cutting tip.
+  if (kind === 'v_bit' || kind === 'engraver') {
+    // Tapered cutter: cone with apex at the cutting tip. tipDiameter
+    // is 0 for true V-bits, >0 for engravers with a flat tip.
     const len = Math.max(diameter * 4, 8);
     const tipR = (tipDiameter ?? 0) * 0.5;
     const geom = new THREE.CylinderGeometry(radius, Math.max(tipR, 0.05), len, 24);
     geom.rotateX(Math.PI / 2);
     geom.translate(0, 0, len / 2);
     return new THREE.Mesh(geom, mat);
+  }
+  if (kind === 'drill') {
+    // Twist drill: cylindrical body with a short conical tip whose
+    // FULL apex angle = tipAngleDeg (118° for general-purpose HSS, 90°
+    // for thin material, 135° for stainless). Tip cone length =
+    // R / tan(apex / 2) so the cone tapers from full diameter down to
+    // a point.
+    const apexDeg = tipAngleDeg ?? 118;
+    const apexRad = (apexDeg * Math.PI) / 180;
+    // Numerical safety: half-angle near 90° → tan → ∞, no visible tip.
+    const halfTan = Math.tan(apexRad * 0.5);
+    const tipLen = halfTan > 1e-6 ? radius / halfTan : radius * 0.01;
+    const bodyLen = Math.max(diameter * 6, 8);
+    const tip = new THREE.CylinderGeometry(radius, 0.001, tipLen, 24);
+    tip.rotateX(Math.PI / 2);
+    tip.translate(0, 0, tipLen / 2);
+    const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
+    body.rotateX(Math.PI / 2);
+    body.translate(0, 0, tipLen + bodyLen / 2);
+    const merged = mergeBufferGeometries([tip, body]);
+    return new THREE.Mesh(merged, mat);
   }
   if (kind === 'ball_nose') {
     // Cylinder body with a hemisphere at the cutting end.

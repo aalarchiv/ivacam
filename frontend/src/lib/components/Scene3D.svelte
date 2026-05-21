@@ -1395,6 +1395,7 @@
     const mode = project.machine.mode;
     const dragoff = tool?.dragoff;
     const tipDiameter = tool?.tipDiameter;
+    const tipAngleDeg = tool?.tipAngleDeg;
     const kind = tool?.kind ?? 'endmill';
     const fluteLen = tool?.fluteLengthMm;
     const shankDia = tool?.shankDiameterMm;
@@ -1404,7 +1405,7 @@
     // part of the key; we only mutate material.color on the cached mesh
     // for that. Holder fields are JSON-stringified so the key updates
     // whenever any part of the holder spec changes.
-    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${dragoff ?? ''}|${fluteLen ?? ''}|${shankDia ?? ''}|${holder ? JSON.stringify(holder) : ''}`;
+    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${tipAngleDeg ?? ''}|${dragoff ?? ''}|${fluteLen ?? ''}|${shankDia ?? ''}|${holder ? JSON.stringify(holder) : ''}`;
     if (key !== toolMeshKey || !toolMesh) {
       if (toolMesh) {
         toolGroup.remove(toolMesh);
@@ -1420,6 +1421,7 @@
         fluteLen,
         shankDia,
         holder,
+        tipAngleDeg,
       );
       toolGroup.add(toolMesh);
       toolMeshKey = key;

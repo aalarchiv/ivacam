@@ -133,6 +133,26 @@
     draft = draft.map((t, i) => (i === idx ? { ...t, [key]: value } : t));
   }
 
+  /// Per-kind default fill-in on `kind` change. Pre-populates the
+  /// fields that newly APPLY to the target kind so the user doesn't
+  /// see blank inputs when flipping endmill → drill (twist drills
+  /// usually have 2 flutes and a 118° tip). Existing user-set values
+  /// are preserved.
+  function onKindChange(idx: number, kind: ToolKind) {
+    draft = draft.map((t, i) => {
+      if (i !== idx) return t;
+      const next: ToolEntry = { ...t, kind };
+      if (kind === 'drill') {
+        if (next.flutes === 0 || next.flutes === undefined) next.flutes = 2;
+        if (next.tipAngleDeg === undefined) next.tipAngleDeg = 118;
+      }
+      if ((kind === 'v_bit' || kind === 'engraver') && next.tipAngleDeg === undefined) {
+        next.tipAngleDeg = 60;
+      }
+      return next;
+    });
+  }
+
   function toggleExpanded(id: number) {
     const next = new Set(expanded);
     if (next.has(id)) next.delete(id);
@@ -304,7 +324,9 @@
   function fieldApplies(field: string, kind: ToolKind): boolean {
     switch (field) {
       case 'flutes':
-        return !['v_bit', 'engraver', 'drag_knife', 'laser_beam', 'drill'].includes(kind);
+        // Drills HAVE flutes (twist drills typically 2; some 3-/4-flute);
+        // Estlcam exposes the field for Bohrer-type tools too (_TP.Flutes).
+        return !['drag_knife', 'laser_beam'].includes(kind);
       case 'tipDiameter':
         return ['v_bit', 'engraver'].includes(kind);
       case 'speed':
@@ -316,7 +338,10 @@
         // the generic Z step.
         return !['drag_knife', 'laser_beam', 'drill'].includes(kind);
       case 'tipAngleDeg':
-        return ['v_bit', 'engraver'].includes(kind);
+        // V-bits / engravers use the apex angle for V-Carve depth math;
+        // drills carry the conical-tip apex (typically 118°) for the
+        // 3D-preview mesh + a future drill-into-stock collision model.
+        return ['v_bit', 'engraver', 'drill'].includes(kind);
       case 'coolant':
         // Laser uses gas-assist (not implemented yet) — coolant
         // dropdown still applies as a generic "assist" toggle.
@@ -328,6 +353,8 @@
 
   function fieldReasonForKind(field: string, kind: ToolKind): string {
     const k = kindLabels[kind];
+    if (field === 'flutes' && kind === 'drag_knife') return `Drag-knife doesn't cut by rotation.`;
+    if (field === 'flutes' && kind === 'laser_beam') return `Laser has no cutting edges.`;
     if (field === 'flutes') return `Flutes not used for ${k.toLowerCase()}.`;
     if (field === 'tipDiameter') return `Tip ⌀ only applies to V-bits / engravers.`;
     if (field === 'speed' && kind === 'drag_knife') return `Drag-knife doesn't spin.`;
@@ -342,7 +369,7 @@
     if (field === 'defaultStep' && kind === 'drag_knife') return `Drag-knife runs at fixed depth.`;
     if (field === 'defaultStep' && kind === 'laser_beam') return `Laser cuts at constant Z.`;
     if (field === 'tipAngleDeg')
-      return `Tip angle only applies to V-bits / engravers (it drives the V-Carve / Chamfer cone math).`;
+      return `Tip angle drives V-Carve depth math (V-bits / engravers) and the drill-tip 3D preview.`;
     return '';
   }
 </script>
@@ -396,7 +423,7 @@
             <select
               value={tool.kind}
               onchange={(e) =>
-                updateField(i, 'kind', (e.currentTarget as HTMLSelectElement).value as ToolKind)}
+                onKindChange(i, (e.currentTarget as HTMLSelectElement).value as ToolKind)}
             >
               {#each kindOptions as k (k)}
                 <option value={k}>{kindLabels[k]}</option>

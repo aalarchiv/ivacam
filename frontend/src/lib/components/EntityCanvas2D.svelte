@@ -99,7 +99,22 @@
   }
 
   onMount(() => {
-    const ro = new ResizeObserver(() => drawBoth());
+    // Defer the resize-driven redraw to the next animation frame.
+    // ResizeObserver fires synchronously during layout; if the
+    // callback mutates the observed element's children (which
+    // drawBoth does — it resizes the canvases inside `container`),
+    // the browser logs "ResizeObserver loop completed with
+    // undelivered notifications" and skips dispatching the next
+    // batch. Coalescing into one rAF eliminates the warning and
+    // makes the redraw cost predictable across multi-event resizes.
+    let resizeFrame = 0;
+    const ro = new ResizeObserver(() => {
+      if (resizeFrame !== 0) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+        drawBoth();
+      });
+    });
     ro.observe(container);
     drawBoth();
     // Re-paint when the user toggles their OS theme or picks a manual one.

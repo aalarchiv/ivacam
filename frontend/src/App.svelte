@@ -233,11 +233,24 @@
 
     window.addEventListener('error', (ev) => {
       const msg = ev.error?.stack ?? ev.error?.message ?? ev.message ?? 'unknown error';
-      const line = `UI error: ${String(msg)}`;
+      const text = String(msg);
+      // Benign browser warning: ResizeObserver fires a "loop completed
+      // with undelivered notifications" event when an observer callback
+      // mutates the layout it was observing. Our canvases coalesce
+      // resize work via rAF (EntityCanvas2D + Scene3D) so this should
+      // never fire from our code anymore; but Chromium still
+      // periodically surfaces it from inside third-party iframes / dev
+      // overlays during HMR. Log to stderr for diagnostics, don't
+      // toast — it's pure noise.
+      if (text.startsWith('ResizeObserver loop')) {
+        void logErrorToStderr(`benign: ${text}`);
+        return;
+      }
+      const line = `UI error: ${text}`;
       void logErrorToStderr(line);
       errorBanner?.push(line);
       try {
-        project.setError(`UI error: ${String(msg).slice(0, 240)}`);
+        project.setError(`UI error: ${text.slice(0, 240)}`);
       } catch {
         // setError might itself fail if the scheduler is dead; the
         // stderr log and (in debug) the banner are the fallback.

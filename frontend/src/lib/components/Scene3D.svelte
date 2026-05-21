@@ -302,7 +302,21 @@
     toolGroup = new THREE.Group();
     scene.add(toolGroup);
 
-    observer = new ResizeObserver(() => fit());
+    // Defer the resize-driven fit() to the next animation frame.
+    // `fit()` calls `renderer.setSize(w, h)` which adjusts the
+    // observed canvas, retriggering the observer in the same layout
+    // pass → "ResizeObserver loop completed with undelivered
+    // notifications". Coalescing into one rAF eliminates the
+    // warning and avoids duplicate `setSize` calls during multi-
+    // event resizes.
+    let fitFrame = 0;
+    observer = new ResizeObserver(() => {
+      if (fitFrame !== 0) return;
+      fitFrame = requestAnimationFrame(() => {
+        fitFrame = 0;
+        fit();
+      });
+    });
     observer.observe(host);
     fit();
 

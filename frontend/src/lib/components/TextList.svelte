@@ -19,7 +19,9 @@
   }
   let { onAddText }: Props = $props();
 
-  let collapsed = $state(false);
+  // Default collapsed (matches Stock + LayerList) so Operations gets
+  // the sidebar's vertical space. +Add stays in the group-head.
+  let collapsed = $state(true);
 
   function isSelected(id: number): boolean {
     return project.selectedTextLayerId === id;

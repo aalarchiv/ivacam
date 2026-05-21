@@ -29,7 +29,11 @@
     onReopenDismiss,
   }: Props = $props();
 
-  let collapsed = $state(false);
+  // Default collapsed so the Operations panel (the one the user
+  // primarily edits in) gets the sidebar's vertical space. The +Add
+  // menu + filename/segment chip stay in the group-head while
+  // collapsed, so common actions still work.
+  let collapsed = $state(true);
   /// Add+ dropdown visibility. Closes on any item click and on the
   /// next window click outside the panel (svelte:window onclick handler
   /// below).

@@ -128,9 +128,13 @@
   /// numbers match what Scene3D / sim use (auto mode follows imported
   /// bbox; manual = customX/Y; no-import fallback = machine work area).
   /// Collapsible state for the Stock panel — matches the LayerList /
-  /// OperationsList caret-collapse pattern. Default open so a fresh
-  /// project shows the stock settings prominently.
-  let stockExpanded = $state(true);
+  /// OperationsList caret-collapse pattern. Default COLLAPSED so the
+  /// Operations panel (the one the user actually edits in) gets the
+  /// vertical space in the sidebar; expand on click when the user
+  /// wants to tweak stock dims. The summary chip in the header still
+  /// shows current Length × Width × Thickness so collapsing doesn't
+  /// hide the working numbers.
+  let stockExpanded = $state(false);
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.stock;
     const fp = computeFootprint(project.transformedImport, cfg, project.machine.workArea);

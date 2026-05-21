@@ -80,10 +80,14 @@ export class HeightfieldMesh {
   private readonly UP_BASE: number; // 4 * N
   private readonly LEFT_BASE: number; // 4 * rows
   private readonly BOTTOM_BASE: number; // 4 * cols
-  /// Single flat quad at floorZ closing the underside of the stock so
-  /// the user sees a solid block from any camera angle (regression
-  /// fix euxi). 4 static verts, never updated after init.
-  private readonly FLOOR_BASE: number; // 4
+  /// v0no: per-cell floor quad. 4 verts per cell; on carve-through
+  /// (cell.z ≤ floorZ + ε) the quad collapses to a degenerate point
+  /// so the user looking from underneath sees empty space where the
+  /// material is gone. Was a single big quad pre-v0no (4 static
+  /// verts, fix euxi); the per-cell layout lets us punch true holes
+  /// through the underside while keeping the darker-floor material
+  /// treatment for non-cut cells (k94n).
+  private readonly FLOOR_BASE: number; // 4 * N
   private readonly TOTAL_VERTS: number;
 
   private readonly positions: Float32Array;
@@ -136,17 +140,17 @@ export class HeightfieldMesh {
     this.LEFT_BASE = 12 * n;
     this.BOTTOM_BASE = this.LEFT_BASE + 4 * this.rows;
     this.FLOOR_BASE = this.BOTTOM_BASE + 4 * this.cols;
-    this.TOTAL_VERTS = this.FLOOR_BASE + 4;
+    this.TOTAL_VERTS = this.FLOOR_BASE + 4 * n;
 
     this.positions = new Float32Array(this.TOTAL_VERTS * 3);
     const normals = new Float32Array(this.TOTAL_VERTS * 3);
-    // Per cell: top(2) + right(2) + up(2) = 6 triangles × 3 indices
-    // = 18 indices. Per fringe wall: 2 triangles = 6 indices. Plus 6
-    // for the floor quad's 2 triangles. The old `6 * n` allocation
-    // (audit-euxi) was sized as triangle COUNT not index count, so
-    // writes past index 6*N silently no-op'd — explained the
-    // half-missing-mesh regression.
-    const indices = new Uint32Array(18 * n + 6 * this.rows + 6 * this.cols + 6);
+    // Per cell: top(2) + right(2) + up(2) + floor(2) = 8 triangles ×
+    // 3 indices = 24 indices. Per fringe wall: 2 triangles = 6
+    // indices. The floor used to be a single big quad (6 indices);
+    // v0no replaces it with per-cell quads so cut-through cells can
+    // collapse their underside and the user sees through the stock
+    // from below.
+    const indices = new Uint32Array(24 * n + 6 * this.rows + 6 * this.cols);
 
     this.initStaticBuffers(normals, indices);
 
@@ -156,15 +160,16 @@ export class HeightfieldMesh {
     this.geometry.setAttribute('position', this.positionAttr);
     this.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     this.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    // Split into two material groups: everything UP TO the floor
-    // quad uses the main stock material; the 6 floor-quad indices
-    // use a darker floor material so cut-through cells expose a
-    // visibly different surface. Index offsets must match the
+    // Split into two material groups: cells (top + walls + fringes)
+    // use the main stock material; per-cell floor quads (v0no) use
+    // a darker floor material so cut-through cells expose a visibly
+    // different surface. Index offsets must match the
     // initStaticBuffers emit order (cells, LEFT fringe, BOTTOM
-    // fringe, FLOOR).
+    // fringe, per-cell floors). The floor region is 6 indices per
+    // cell × N cells.
     const floorIndexStart = 18 * n + 6 * this.rows + 6 * this.cols;
     this.geometry.addGroup(0, floorIndexStart, 0);
-    this.geometry.addGroup(floorIndexStart, 6, 1);
+    this.geometry.addGroup(floorIndexStart, 6 * n, 1);
     this.geometry.boundingBox = new THREE.Box3(
       new THREE.Vector3(this.originX, this.originY, this.floorZ),
       new THREE.Vector3(
@@ -295,15 +300,15 @@ export class HeightfieldMesh {
       this.positions[p + 2] = this.floorZ;
       this.positions[p + 5] = this.floorZ;
     }
-    // FLOOR quad is fixed slightly BELOW floorZ. The 0.05 mm offset
-    // prevents Z-fighting when a cell carves all the way through —
-    // the cell's top face sits at exactly floorZ, the floor quad
-    // a hair below, so the cell's top wins the depth test from
-    // above instead of striping with the coplanar floor (which
-    // showed up as a "weird texture in stock colors" in cut-through
-    // regions before this offset).
+    // Per-cell floor quads (v0no) sit slightly BELOW floorZ. The
+    // 0.05 mm offset prevents Z-fighting against a cell whose top
+    // happens to land at exactly floorZ (clamped from below) — the
+    // cell's top wins the depthTest from above, the per-cell floor
+    // wins from below. On carve-through, `writeCellFloor` collapses
+    // the cell's floor quad to a degenerate point so the user sees
+    // empty space when looking up from underneath.
     const floorQuadZ = this.floorZ - 0.05;
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < 4 * this.cols * this.rows; k++) {
       this.positions[(this.FLOOR_BASE + k) * 3 + 2] = floorQuadZ;
     }
     this.positionAttr.needsUpdate = true;
@@ -426,25 +431,32 @@ export class HeightfieldMesh {
       pushQuad(indexOff, bBase + 0, bBase + 1, bBase + 2, bBase + 3);
       indexOff += 6;
     }
-    // FLOOR: single quad closing the underside of the stock so the
-    // mesh looks solid from any camera angle (regression euxi). Z is
-    // floorZ and gets written by the constructor's initial-state
-    // loop along with everything else.
-    const fxR = ox + cols * cell;
-    const fyT = oy + rows * cell;
-    const f = this.FLOOR_BASE;
-    writeVertex(f + 0, ox, oy);
-    writeVertex(f + 1, fxR, oy);
-    writeVertex(f + 2, fxR, fyT);
-    writeVertex(f + 3, ox, fyT);
-    writeNormal(f + 0, 0, 0, -1);
-    writeNormal(f + 1, 0, 0, -1);
-    writeNormal(f + 2, 0, 0, -1);
-    writeNormal(f + 3, 0, 0, -1);
-    // CCW from below = (v0, v3, v1) + (v1, v3, v2) so the normal
-    // computed from the winding agrees with the stored (-Z) normal.
-    pushQuad(indexOff, f + 0, f + 3, f + 1, f + 2);
-    indexOff += 6;
+    // PER-CELL FLOOR (v0no): one quad per cell at floorZ, normal
+    // -Z. On carve-through, `writeCellFloor` collapses the quad to
+    // a degenerate point so the user sees empty space from below.
+    // CCW winding from BELOW = (v0, v3, v1) + (v1, v3, v2), matching
+    // the old single-floor quad's orientation. Z lands at floorZ
+    // via the constructor's initial-state loop.
+    for (let iy = 0; iy < rows; iy++) {
+      const yB = oy + iy * cell;
+      const yT = yB + cell;
+      for (let ix = 0; ix < cols; ix++) {
+        const xL = ox + ix * cell;
+        const xR = xL + cell;
+        const cellIdx = iy * cols + ix;
+        const fBase = this.FLOOR_BASE + cellIdx * 4;
+        writeVertex(fBase + 0, xL, yB);
+        writeVertex(fBase + 1, xR, yB);
+        writeVertex(fBase + 2, xR, yT);
+        writeVertex(fBase + 3, xL, yT);
+        writeNormal(fBase + 0, 0, 0, -1);
+        writeNormal(fBase + 1, 0, 0, -1);
+        writeNormal(fBase + 2, 0, 0, -1);
+        writeNormal(fBase + 3, 0, 0, -1);
+        pushQuad(indexOff, fBase + 0, fBase + 3, fBase + 1, fBase + 2);
+        indexOff += 6;
+      }
+    }
   }
 
   /// Clamp a cell's Z to [floorZ, topZ]. Cells carved below floorZ
@@ -523,6 +535,47 @@ export class HeightfieldMesh {
     this.positions[p + 11] = zA;
   }
 
+  /// v0no: per-cell floor quad. When the cell's height `z` is at
+  /// (or below) the stock bottom, collapse the quad to a degenerate
+  /// point — the four verts all land at the cell center at floorZ,
+  /// triangles drop in the rasterizer, the user sees through the
+  /// stock from below. Otherwise restore the four corners at
+  /// `floorZ - 0.05` (slight offset matches the initial-state
+  /// fill, avoids Z-fight against a cell whose top happens to be
+  /// at exactly floorZ).
+  private writeCellFloor(ix: number, iy: number, z: number): void {
+    const cellIdx = iy * this.cols + ix;
+    const p = (this.FLOOR_BASE + cellIdx * 4) * 3;
+    if (z <= this.floorZ + 1e-6) {
+      const cx = this.originX + (ix + 0.5) * this.cellSize;
+      const cy = this.originY + (iy + 0.5) * this.cellSize;
+      const cz = this.floorZ;
+      for (let k = 0; k < 4; k++) {
+        this.positions[p + k * 3 + 0] = cx;
+        this.positions[p + k * 3 + 1] = cy;
+        this.positions[p + k * 3 + 2] = cz;
+      }
+      return;
+    }
+    const xL = this.originX + ix * this.cellSize;
+    const xR = xL + this.cellSize;
+    const yB = this.originY + iy * this.cellSize;
+    const yT = yB + this.cellSize;
+    const fz = this.floorZ - 0.05;
+    this.positions[p + 0] = xL;
+    this.positions[p + 1] = yB;
+    this.positions[p + 2] = fz;
+    this.positions[p + 3] = xR;
+    this.positions[p + 4] = yB;
+    this.positions[p + 5] = fz;
+    this.positions[p + 6] = xR;
+    this.positions[p + 7] = yT;
+    this.positions[p + 8] = fz;
+    this.positions[p + 9] = xL;
+    this.positions[p + 10] = yT;
+    this.positions[p + 11] = fz;
+  }
+
   updateHeights(
     dataView: Float32Array,
     aabb?: { ix0: number; iy0: number; ix1: number; iy1: number },
@@ -547,6 +600,11 @@ export class HeightfieldMesh {
           (!aabb || (ix >= aabb.ix0 && ix < aabb.ix1 && iy >= aabb.iy0 && iy < aabb.iy1));
         if (inOriginal) {
           this.writeTop(ix, iy, z);
+          // v0no: refresh the per-cell floor too so cut-through
+          // cells collapse and non-cut cells stay closed. Skipped
+          // on the −X/−Y expansion rows because neighbours' floors
+          // don't depend on this cell's value.
+          this.writeCellFloor(ix, iy, z);
         }
         // Both walls always need refresh: their far-side Z could have
         // moved even if this cell didn't change.
@@ -581,6 +639,11 @@ export class HeightfieldMesh {
         (ix1 - ix0) * 4 * 3,
       );
     }
+    // v0no: per-cell floor region. Same dirty AABB as TOP / RIGHT /
+    // UP — one range over the same low→high cell span.
+    const floorMinVert = this.FLOOR_BASE + lowCellIdx * 4;
+    const floorMaxVert = this.FLOOR_BASE + highCellIdx * 4 + 4;
+    this.positionAttr.addUpdateRange(floorMinVert * 3, (floorMaxVert - floorMinVert) * 3);
     this.positionAttr.needsUpdate = true;
   }
 

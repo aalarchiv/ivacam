@@ -80,6 +80,18 @@ export class HeightfieldMesh {
   private readonly geometry: THREE.BufferGeometry;
   private readonly material: THREE.MeshStandardMaterial;
   private readonly mesh: THREE.Mesh;
+  /// Translucent-mode depth pre-pass. Without it, transparent
+  /// fragments blend in geometry-emit order (TOP face first, walls,
+  /// floor last), so top-down views end up seeing TOO MUCH of the
+  /// floor below and bottom-up views see TOO MUCH of the top — an
+  /// asymmetric "more translucent from above" artifact. The pre-pass
+  /// writes depth for the front-most face only; the main mesh's
+  /// depthTest then keeps just the visible surface (which is what
+  /// CAM users actually want to see — the carved top is geometric,
+  /// not visible-through-translucency). `setStyle` toggles its
+  /// `.visible` so live opacity changes work.
+  private readonly depthMesh: THREE.Mesh;
+  private readonly depthMaterial: THREE.Material;
 
   constructor(opts: HeightfieldOptions) {
     this.cols = opts.cols;
@@ -155,6 +167,28 @@ export class HeightfieldMesh {
     // culprit, so just opt out of frustum culling entirely.
     this.mesh.frustumCulled = false;
     this.group = new THREE.Group();
+
+    // Depth pre-pass: a colorless draw of the same geometry that
+    // populates the depth buffer with the front-most surface. When
+    // the main material is translucent, the main mesh's depthTest
+    // then culls back faces so the user sees ONE tinted surface
+    // rather than the alpha-blended layer stack. Built unconditionally
+    // and toggled via `.visible` so live opacity changes (setStyle)
+    // work without rebuilding meshes. Redundant when opaque (the main
+    // mesh writes depth itself), so kept hidden in that case.
+    this.depthMaterial = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.DoubleSide,
+    });
+    this.depthMesh = new THREE.Mesh(this.geometry, this.depthMaterial);
+    this.depthMesh.frustumCulled = false;
+    // Lower renderOrder → drawn first.
+    this.depthMesh.renderOrder = -1;
+    this.mesh.renderOrder = 0;
+    this.depthMesh.visible = isTransparent;
+    this.group.add(this.depthMesh);
     this.group.add(this.mesh);
 
     // Initial state: every cell at topZ (uncut stock). Walls between
@@ -493,6 +527,10 @@ export class HeightfieldMesh {
       // comment there for why transparent + depthWrite=true hides
       // chunks of the stepped mesh.
       this.material.depthWrite = !transparent;
+      // Depth pre-pass is only needed in translucent mode. Opaque
+      // mode writes depth in the main pass so the pre-pass would be
+      // redundant work.
+      this.depthMesh.visible = transparent;
     }
     this.material.needsUpdate = true;
   }
@@ -507,12 +545,18 @@ export class HeightfieldMesh {
 
   setSolidVisible(visible: boolean): void {
     this.mesh.visible = visible;
+    // Depth pre-pass writes depth ONLY when the solid is visible —
+    // otherwise it would occlude other scene geometry behind an
+    // invisible mesh.
+    this.depthMesh.visible = visible && this.material.transparent;
   }
 
   dispose(): void {
     this.geometry.dispose();
     this.material.dispose();
     this.group.remove(this.mesh);
+    this.group.remove(this.depthMesh);
+    this.depthMaterial.dispose();
   }
 }
 

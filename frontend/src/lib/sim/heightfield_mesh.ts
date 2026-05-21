@@ -743,11 +743,11 @@ export class HeightfieldMeshPyramid {
       this.poolRange(clamped, 0, 0, this.cols, this.rows);
       newMesh.updateHeights(this.pools[clamped]);
     }
-    // The new level's EdgesGeometry was built from initial-stock
-    // positions in its constructor. After we've pushed the current
-    // carved state into it, rebuild edges so step transitions show
-    // immediately rather than waiting for the next debounce tick.
-    newMesh.rebuildEdges();
+    // The new level's EdgesGeometry is stale (positions were just
+    // updated), but the rebuild is O(triangles) — call out to the
+    // driver's trailing-debounce scheduler instead of running it
+    // synchronously here so an LOD swap during a pan doesn't stall
+    // the frame. Edges will catch up on the next idle tick.
   }
 
   /// Recommend an LOD level from the rendered cell-pixel-size + the

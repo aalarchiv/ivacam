@@ -238,13 +238,22 @@ export class HeightfieldDriver {
   /// can mark the offending segments as the user scrubs.
   private diagnostics: SimDiagnostics = { warnings: [] };
   private onDiagnosticsChange: ((d: SimDiagnostics) => void) | null = null;
-  /// Edges rebuild is expensive; debounce to avoid stalling on every
-  /// playhead frame. Tracks the last time edges were rebuilt; the
-  /// driver only triggers a rebuild every EDGE_REBUILD_MS or at the
-  /// end of a playback session.
-  private lastEdgeRebuild = 0;
+  /// Edges rebuild walks every triangle in the active heightfield
+  /// (THREE.EdgesGeometry has no incremental API), so it must NOT run
+  /// during continuous activity. Pure trailing debounce — every call
+  /// to `scheduleEdgeRebuild` resets the timer, the rebuild fires
+  /// only after `EDGE_REBUILD_MS` of quiet (no carve + no camera
+  /// move). Continuous playback never hits it; idle frames after
+  /// playback stops, do.
   private edgeRebuildTimer: ReturnType<typeof setTimeout> | null = null;
-  private static readonly EDGE_REBUILD_MS = 120;
+  private static readonly EDGE_REBUILD_MS = 400;
+  /// Hard cap on active-level triangle count for which edges are
+  /// computed at all. Above this, the EdgesGeometry rebuild cost
+  /// (~25 ns / triangle in v8) exceeds a frame budget by itself, and
+  /// the lines visually clutter the cell field anyway. The LOD
+  /// pyramid normally pushes the active level coarser before this
+  /// hits, but the cap is a hard ceiling regardless.
+  private static readonly EDGE_MAX_TRIANGLES = 400_000;
 
   constructor(private opts: DriverOptions) {
     this.group = new THREE.Group();
@@ -556,6 +565,11 @@ export class HeightfieldDriver {
     }
     if (next !== current) {
       this.mesh.setActiveLevel(next);
+      // The new level's EdgesGeometry is stale — schedule a rebuild
+      // through the same trailing-debounce path that handles carves
+      // so a pan that crosses LOD thresholds doesn't stall on a
+      // synchronous edge rebuild.
+      this.scheduleEdgeRebuild();
       this.opts.requestRender();
     }
     return this.mesh.getActiveLevel();
@@ -628,23 +642,28 @@ export class HeightfieldDriver {
 
   private scheduleEdgeRebuild() {
     if (!this.mesh) return;
-    const now = performance.now();
-    if (now - this.lastEdgeRebuild >= HeightfieldDriver.EDGE_REBUILD_MS) {
-      this.mesh.rebuildEdges();
-      this.lastEdgeRebuild = now;
+    // Bail above the budget — too expensive to rebuild and visually
+    // useless at that density. The LOD pyramid normally swaps to a
+    // coarser level long before this, but the cap protects against
+    // a user-configured `maxRenderTriangles` that pushes L0 over it.
+    if (this.mesh.getActiveTriangleCount() > HeightfieldDriver.EDGE_MAX_TRIANGLES) {
       if (this.edgeRebuildTimer != null) {
         clearTimeout(this.edgeRebuildTimer);
         this.edgeRebuildTimer = null;
       }
       return;
     }
-    if (this.edgeRebuildTimer != null) return;
+    // Pure trailing debounce: reset the timer on every call so the
+    // rebuild only fires after EDGE_REBUILD_MS of quiet. Continuous
+    // playback at 60 fps never sees it; idle frames after the user
+    // stops scrubbing do.
+    if (this.edgeRebuildTimer != null) clearTimeout(this.edgeRebuildTimer);
     this.edgeRebuildTimer = setTimeout(() => {
       this.edgeRebuildTimer = null;
-      this.lastEdgeRebuild = performance.now();
-      // Guard the dispose race — by the time the debounced rebuild
-      // fires, dispose() / destroy() may have cleared the mesh.
       if (!this.mesh) return;
+      // Re-check the cap in case the active level changed since the
+      // timer was armed.
+      if (this.mesh.getActiveTriangleCount() > HeightfieldDriver.EDGE_MAX_TRIANGLES) return;
       this.mesh.rebuildEdges();
       this.opts.requestRender();
     }, HeightfieldDriver.EDGE_REBUILD_MS);

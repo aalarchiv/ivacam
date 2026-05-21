@@ -22,6 +22,8 @@
   import { defaultClient } from '../api/http';
   import type { HelixRadiusResponse } from '../api/types';
   import { _ } from 'svelte-i18n';
+  import { prettyOpKind } from '../state/project-types';
+  import { formatExpectedToolKinds, isToolKindAcceptable } from '../state/op_tool_constraint';
   import VCarveSection from './op_properties/VCarveSection.svelte';
   import ChamferSection from './op_properties/ChamferSection.svelte';
   import ThreadSection from './op_properties/ThreadSection.svelte';
@@ -198,6 +200,16 @@
     </label>
 
     {@const selectedTool = project.tools.find((t) => t.id === op.toolId)}
+    {@const toolKindOk =
+      selectedTool == null || isToolKindAcceptable(op.kind, selectedTool.kind)}
+    {#if selectedTool != null && !toolKindOk}
+      <p
+        class="warn-chip"
+        title={`This op typically uses ${formatExpectedToolKinds(op.kind)}; running it with the assigned tool will likely produce unexpected gcode.`}
+      >
+        Tool kind mismatch — {prettyOpKind(op.kind)} expects {formatExpectedToolKinds(op.kind)}.
+      </p>
+    {/if}
     <label
       class="row"
       title={selectedTool?.comment

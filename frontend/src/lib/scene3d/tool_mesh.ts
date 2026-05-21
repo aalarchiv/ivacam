@@ -202,20 +202,28 @@ export function buildToolMesh(
     // FULL apex angle = tipAngleDeg (118° for general-purpose HSS, 90°
     // for thin material, 135° for stainless). Tip cone length =
     // R / tan(apex / 2) so the cone tapers from full diameter down to
-    // a point.
+    // a point. Body length honours `fluteLen` when set (the cutting
+    // length of the drill) — falls back to `6 × diameter` for tools
+    // without that field. The body extends UP from the top of the tip
+    // cone (`zCursor = tipLen`) so the cutting edge starts at the
+    // right Z and the user can see real stickout when they edit
+    // fluteLengthMm in the library.
     const apexDeg = tipAngleDeg ?? 118;
     const apexRad = (apexDeg * Math.PI) / 180;
-    // Numerical safety: half-angle near 90° → tan → ∞, no visible tip.
     const halfTan = Math.tan(apexRad * 0.5);
     const tipLen = halfTan > 1e-6 ? radius / halfTan : radius * 0.01;
-    const bodyLen = Math.max(diameter * 6, 8);
+    const bodyLen = Math.max(0, fluteLen ?? Math.max(diameter * 6, 8));
     const tip = new THREE.CylinderGeometry(radius, 0.001, tipLen, 24);
     tip.rotateX(Math.PI / 2);
     tip.translate(0, 0, tipLen / 2);
-    const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
-    body.rotateX(Math.PI / 2);
-    body.translate(0, 0, tipLen + bodyLen / 2);
-    const merged = mergeBufferGeometries([tip, body]);
+    const pieces: THREE.BufferGeometry[] = [tip];
+    if (bodyLen > 0) {
+      const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
+      body.rotateX(Math.PI / 2);
+      body.translate(0, 0, tipLen + bodyLen / 2);
+      pieces.push(body);
+    }
+    const merged = pieces.length === 1 ? pieces[0] : mergeBufferGeometries(pieces);
     return new THREE.Mesh(merged, mat);
   }
   if (kind === 'ball_nose') {

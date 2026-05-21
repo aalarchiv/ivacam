@@ -1,12 +1,7 @@
 <script lang="ts">
   /// Chamfer op-properties fieldset. Shown only when op.kind === 'chamfer'.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
-  import {
-    project,
-    type ChamferOp,
-    type OpField,
-    type OpFieldValue,
-  } from '../../state/project.svelte';
+  import type { ChamferOp, OpField, OpFieldValue } from '../../state/project.svelte';
 
   interface Props {
     op: ChamferOp;
@@ -18,20 +13,13 @@
   }
   let { op, patch }: Props = $props();
 
-  let opTool = $derived(project.tools.find((tt) => tt.id === op.toolId));
-  let toolMismatch = $derived(opTool != null && opTool.kind !== 'v_bit');
 </script>
 
 <fieldset>
   <legend>Chamfer</legend>
-  {#if toolMismatch}
-    <p
-      class="warn-chip"
-      title="Chamfer assumes a V-bit cone; flat / ball tools won't produce a true bevel. Pick a V-bit in the tool library."
-    >
-      Tool kind mismatch — Chamfer needs a V-bit.
-    </p>
-  {/if}
+  <!-- Tool-kind warning is now emitted by OpPropertiesPanel against
+       the central op_tool_constraint helper — see k94n. -->
+
   <label
     class="row"
     title="Horizontal width of the chamfer cut on the workpiece. The Z depth is computed automatically from the V-bit's apex angle: depth = -width / tan(tipAngle/2). Default 1 mm."

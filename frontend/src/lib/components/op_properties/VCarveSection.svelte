@@ -11,6 +11,8 @@
     type OpFieldValue,
     type VCarveOp,
   } from '../../state/project.svelte';
+  // `project` import kept for the inlay-plug Duplicate-as-plug button
+  // below (line 99). The toolMismatch chip moved to OpPropertiesPanel.
   import { _ } from 'svelte-i18n';
 
   interface Props {
@@ -20,20 +22,13 @@
   }
   let { op, patch }: Props = $props();
 
-  let opTool = $derived(project.tools.find((tt) => tt.id === op.toolId));
-  let toolMismatch = $derived(opTool != null && opTool.kind !== 'v_bit');
 </script>
 
 <fieldset>
   <legend>V-Carve</legend>
-  {#if toolMismatch}
-    <p
-      class="warn-chip"
-      title="V-Carve assumes a V-bit cone — pick a V-bit in the tool library or the carve depth math won't match the actual cutter."
-    >
-      Tool kind mismatch — V-Carve needs a V-bit.
-    </p>
-  {/if}
+  <!-- Tool-kind warning is now emitted by OpPropertiesPanel against
+       the central op_tool_constraint helper — see k94n. -->
+
   <!--
     Carve mode is the most consequential V-Carve setting (it changes the
     toolpath structure entirely), so it sits at the top of the section

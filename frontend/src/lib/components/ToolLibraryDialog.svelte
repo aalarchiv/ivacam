@@ -43,10 +43,24 @@
       // MachineDialog).
       const newDraft = project.tools.map((t) => ({ ...t }));
       draft = newDraft;
-      expanded = new Set();
+      // k94n: tools whose kind has a REQUIRED kind-specific field
+      // open by default so the user sees `dragoff` / `cornerRadiusMm`
+      // / T-slot neck dims without hunting for them. Other kinds
+      // start collapsed.
+      expanded = new Set(
+        newDraft.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id),
+      );
       pristine = JSON.stringify(newDraft);
     }
   });
+
+  /// Kinds whose kind-specific block in the expanded row is
+  /// LOAD-BEARING — without those fields the gcode emitter falls
+  /// back to defaults that almost always produce wrong output.
+  /// Auto-expanding the row keeps the field visible (k94n).
+  function kindNeedsExpansion(kind: ToolKind): boolean {
+    return kind === 'drag_knife' || kind === 'bull_nose' || kind === 't_slot';
+  }
 
   let isDirty = $derived.by(() => open && JSON.stringify(draft) !== pristine);
 
@@ -139,6 +153,7 @@
   /// usually have 2 flutes and a 118° tip). Existing user-set values
   /// are preserved.
   function onKindChange(idx: number, kind: ToolKind) {
+    let touchedId: number | null = null;
     draft = draft.map((t, i) => {
       if (i !== idx) return t;
       const next: ToolEntry = { ...t, kind };
@@ -149,8 +164,16 @@
       if ((kind === 'v_bit' || kind === 'engraver') && next.tipAngleDeg === undefined) {
         next.tipAngleDeg = 60;
       }
+      touchedId = next.id;
       return next;
     });
+    // k94n: open the expanded section so the new kind's required
+    // kind-specific field is in view (e.g. dragoff for drag_knife).
+    if (touchedId != null && kindNeedsExpansion(kind)) {
+      const next = new Set(expanded);
+      next.add(touchedId);
+      expanded = next;
+    }
   }
 
   function toggleExpanded(id: number) {

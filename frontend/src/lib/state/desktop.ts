@@ -128,19 +128,3 @@ export async function isDebugSession(): Promise<boolean> {
   }
 }
 
-/// Trigger the auto-updater flow: check for a new release, download,
-/// install, relaunch. No-op on web (no installer to update). Errors
-/// surface via `project.setError`.
-export async function runUpdateCheck(): Promise<void> {
-  if (!isTauri()) return;
-  try {
-    const { check } = await import('@tauri-apps/plugin-updater');
-    const update = await check();
-    if (!update) return;
-    await update.downloadAndInstall();
-    const { relaunch } = await import('@tauri-apps/plugin-process');
-    await relaunch();
-  } catch (e) {
-    project.setError(`update: ${e instanceof Error ? e.message : String(e)}`);
-  }
-}

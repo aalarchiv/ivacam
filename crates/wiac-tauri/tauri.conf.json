@@ -9,16 +9,7 @@
     "beforeBuildCommand": "pnpm --dir ../frontend build",
     "frontendDist": "../../frontend/dist"
   },
-  "plugins": {
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://github.com/wiaconstructor/wiaconstructor/releases/latest/download/latest.json"
-      ],
-      "dialog": true,
-      "pubkey": ""
-    }
-  },
+  "plugins": {},
   "app": {
     "windows": [
       {

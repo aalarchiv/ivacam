@@ -36,6 +36,9 @@
   type ReportDialogComp = typeof import('./lib/components/ReportDialog.svelte').default;
   let ReportDialog = $state<ReportDialogComp | null>(null);
   let reportDialogLoading = false;
+  type AboutDialogComp = typeof import('./lib/components/AboutDialog.svelte').default;
+  let AboutDialog = $state<AboutDialogComp | null>(null);
+  let aboutDialogLoading = false;
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
 
@@ -45,11 +48,27 @@
   let addTextOpen = $state(false);
   let shortcutHelpOpen = $state(false);
   let reportOpen = $state(false);
+  let aboutOpen = $state(false);
   /// Build-time version stamp baked by vite.config.ts. Surfaces in
-  /// the Help menu so the user can paste an exact build identifier
-  /// into bug reports.
+  /// the window title and the Help → About dialog so users can
+  /// paste an exact build identifier into bug reports.
   const buildVersion =
     typeof __WIAC_BUILD_VERSION__ === 'string' ? __WIAC_BUILD_VERSION__ : 'unknown';
+
+  /// Window title carries the build version so a screenshot pins the
+  /// report to the exact binary. Format: "wiaConstructor v<pkg>
+  /// (<git-describe>)" — the package version is hard-coded for now
+  /// (still 0.0.0); when we cut a real release we wire it through
+  /// here. `document.title` updates on every paint that touches the
+  /// effect, but it's cheap.
+  $effect(() => {
+    const pkg = '0.0.0';
+    if (buildVersion && buildVersion !== 'unknown') {
+      document.title = `wiaConstructor v${pkg} (${buildVersion})`;
+    } else {
+      document.title = `wiaConstructor v${pkg}`;
+    }
+  });
   /// Startup banner: when set, the user was previously editing a
   /// project and we offer to reopen it. Styled in-app instead of a
   /// native window.confirm so the first impression of the app isn't
@@ -100,7 +119,6 @@
     confirmClose,
     logErrorToStderr,
     isDebugSession,
-    runUpdateCheck,
   } from './lib/state/desktop';
   import { computeFootprint } from './lib/sim/driver';
 
@@ -435,6 +453,15 @@
       void import('./lib/components/ReportDialog.svelte').then((m) => {
         ReportDialog = m.default;
         reportDialogLoading = false;
+      });
+    }
+  });
+  $effect(() => {
+    if (aboutOpen && !AboutDialog && !aboutDialogLoading) {
+      aboutDialogLoading = true;
+      void import('./lib/components/AboutDialog.svelte').then((m) => {
+        AboutDialog = m.default;
+        aboutDialogLoading = false;
       });
     }
   });
@@ -935,17 +962,13 @@
           >
             <span class="label">Keyboard shortcuts…</span><span class="kbd">?</span>
           </button>
-          {#if isDesktop()}
-            <button role="menuitem" class="item" onclick={() => pickMenu(runUpdateCheck)}>
-              <span class="label">Check for updates…</span>
-            </button>
-          {/if}
-          {#if buildVersion && buildVersion !== 'unknown'}
-            <div class="item static" role="presentation" title="Build version (git describe --always --dirty at compile time). Include this when reporting bugs so we know which exact binary you're running.">
-              <span class="label">Build</span>
-              <span class="kbd">{buildVersion}</span>
-            </div>
-          {/if}
+          <button
+            role="menuitem"
+            class="item"
+            onclick={() => pickMenu(() => (aboutOpen = true))}
+          >
+            <span class="label">About wiaConstructor…</span>
+          </button>
         </div>
       {/if}
     </div>
@@ -1192,6 +1215,10 @@
     {@const C = ReportDialog}
     <C open={reportOpen} onClose={() => (reportOpen = false)} />
   {/if}
+  {#if aboutOpen && AboutDialog}
+    {@const C = AboutDialog}
+    <C onClose={() => (aboutOpen = false)} />
+  {/if}
   {#if closePrompt}
     <div
       class="close-prompt-overlay"
@@ -1347,15 +1374,6 @@
     color: var(--text-faint);
     font-style: italic;
     cursor: default;
-  }
-  /* Help-menu Build-version row — informational, not clickable. */
-  .dropdown .item.static {
-    color: var(--text-muted);
-    cursor: default;
-    user-select: text;
-  }
-  .dropdown .item.static:hover {
-    background: transparent;
   }
   .dropdown .item.subtle {
     color: var(--text-muted);

@@ -92,6 +92,17 @@ export class HeightfieldMesh {
   /// `.visible` so live opacity changes work.
   private readonly depthMesh: THREE.Mesh;
   private readonly depthMaterial: THREE.Material;
+  /// Edge overlay: a `LineSegments` over `THREE.EdgesGeometry`
+  /// derived from the current heightfield. Rebuilt by
+  /// `rebuildEdges()` on the existing 120ms driver debounce so
+  /// fast carve sequences don't trigger a per-frame rebuild
+  /// (EdgesGeometry is O(triangles)). Highlights the per-cell
+  /// step transitions + outer stock boundary so carved features
+  /// pop visually against the lit solid.
+  private edgeGeometry: THREE.EdgesGeometry;
+  private readonly edgeMaterial: THREE.LineBasicMaterial;
+  private readonly edgeLines: THREE.LineSegments;
+  private readonly edgeThresholdDeg: number;
 
   constructor(opts: HeightfieldOptions) {
     this.cols = opts.cols;
@@ -190,6 +201,25 @@ export class HeightfieldMesh {
     this.depthMesh.visible = isTransparent;
     this.group.add(this.depthMesh);
     this.group.add(this.mesh);
+
+    // Edge overlay. ThresholdDeg = 1 catches every wall→top transition
+    // (walls are vertical, exactly 90° from the top face) without
+    // emitting noise for coplanar same-height cell boundaries. Lines
+    // ride at renderOrder=2 so they sit on top of both the depth
+    // pre-pass (renderOrder=-1) and the lit solid (renderOrder=0).
+    this.edgeThresholdDeg = opts.edgeThresholdDeg ?? 1;
+    this.edgeGeometry = new THREE.EdgesGeometry(this.geometry, this.edgeThresholdDeg);
+    this.edgeMaterial = new THREE.LineBasicMaterial({
+      color: new THREE.Color(opts.edgeColor),
+      opacity: opts.edgeOpacity,
+      transparent: opts.edgeOpacity < 1,
+      depthTest: true,
+      depthWrite: false,
+    });
+    this.edgeLines = new THREE.LineSegments(this.edgeGeometry, this.edgeMaterial);
+    this.edgeLines.frustumCulled = false;
+    this.edgeLines.renderOrder = 2;
+    this.group.add(this.edgeLines);
 
     // Initial state: every cell at topZ (uncut stock). Walls between
     // INTERIOR cells collapse to degenerate triangles automatically
@@ -509,10 +539,16 @@ export class HeightfieldMesh {
     this.positionAttr.needsUpdate = true;
   }
 
-  /// No-op in the stepped renderer; kept for API compatibility with
-  /// the previous PlaneGeometry implementation.
+  /// Rebuild the edge overlay from the current heightfield positions.
+  /// `THREE.EdgesGeometry` is O(triangles) and doesn't support partial
+  /// updates, so this is on the driver's 120ms debounce — fast carve
+  /// sequences won't thrash it. The edge color/opacity stay on
+  /// `edgeMaterial` across rebuilds; only the geometry is swapped.
   rebuildEdges(): void {
-    // Intentionally empty.
+    const old = this.edgeGeometry;
+    this.edgeGeometry = new THREE.EdgesGeometry(this.geometry, this.edgeThresholdDeg);
+    this.edgeLines.geometry = this.edgeGeometry;
+    old.dispose();
   }
 
   setStyle(opts: Partial<HeightfieldOptions>): void {
@@ -532,6 +568,14 @@ export class HeightfieldMesh {
       // redundant work.
       this.depthMesh.visible = transparent;
     }
+    if (opts.edgeColor !== undefined) {
+      this.edgeMaterial.color.set(opts.edgeColor);
+    }
+    if (opts.edgeOpacity !== undefined) {
+      this.edgeMaterial.opacity = opts.edgeOpacity;
+      this.edgeMaterial.transparent = opts.edgeOpacity < 1;
+      this.edgeMaterial.needsUpdate = true;
+    }
     this.material.needsUpdate = true;
   }
 
@@ -539,8 +583,8 @@ export class HeightfieldMesh {
     this.group.visible = visible;
   }
 
-  setEdgesVisible(_visible: boolean): void {
-    // Stepped renderer has no separate edge mesh.
+  setEdgesVisible(visible: boolean): void {
+    this.edgeLines.visible = visible;
   }
 
   setSolidVisible(visible: boolean): void {
@@ -557,6 +601,9 @@ export class HeightfieldMesh {
     this.group.remove(this.mesh);
     this.group.remove(this.depthMesh);
     this.depthMaterial.dispose();
+    this.group.remove(this.edgeLines);
+    this.edgeGeometry.dispose();
+    this.edgeMaterial.dispose();
   }
 }
 
@@ -692,10 +739,15 @@ export class HeightfieldMeshPyramid {
     }
     if (clamped === 0) {
       newMesh.updateHeights(this.pools[0]);
-      return;
+    } else {
+      this.poolRange(clamped, 0, 0, this.cols, this.rows);
+      newMesh.updateHeights(this.pools[clamped]);
     }
-    this.poolRange(clamped, 0, 0, this.cols, this.rows);
-    newMesh.updateHeights(this.pools[clamped]);
+    // The new level's EdgesGeometry was built from initial-stock
+    // positions in its constructor. After we've pushed the current
+    // carved state into it, rebuild edges so step transitions show
+    // immediately rather than waiting for the next debounce tick.
+    newMesh.rebuildEdges();
   }
 
   /// Recommend an LOD level from the rendered cell-pixel-size + the

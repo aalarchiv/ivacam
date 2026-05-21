@@ -266,11 +266,16 @@
   // any path (the user clicked Open, dragged a file, or accepted the
   // banner). The banner only makes sense as a startup affordance.
   $effect(() => {
-    void project.transformedImport;
-    void project.activeProjectPath;
-    if (reopenPrompt && (project.transformedImport || project.activeProjectPath)) {
-      reopenPrompt = null;
-    }
+    const hasImport = project.transformedImport;
+    const hasPath = project.activeProjectPath;
+    if (!hasImport && !hasPath) return;
+    // Deferred so the prompt clear runs outside the effect scheduler.
+    // Inline mutation would self-trigger this effect (it reads
+    // `reopenPrompt` itself), which works but is fragile to refactor.
+    // queueMicrotask matches the locale-sync effect above.
+    queueMicrotask(() => {
+      if (reopenPrompt) reopenPrompt = null;
+    });
   });
 
   /// Persist per-project workspace state when the user adjusts visible

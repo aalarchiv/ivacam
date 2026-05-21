@@ -191,7 +191,7 @@
     // broken. The error is logged and surfaces via the global error
     // banner so the underlying bug stays visible.
     try {
-      const snap = JSON.parse(JSON.stringify(draft)) as MachineSettings;
+      const snap = structuredClone(draft) as MachineSettings;
       snap.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
       project.setMachine(snap);
     } catch (e) {

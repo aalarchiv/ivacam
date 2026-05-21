@@ -66,7 +66,7 @@ pub struct HelixRadiusResponse {
 pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
     use crate::cam::chaining::{classify_containment, segments_to_objects};
     use crate::cam::source_combine::combine_source_regions;
-    use crate::cam::vcarve::VcRegion;
+    use crate::pipeline::fit_helix_radius_for_selection;
     use crate::project::SourceCombine;
 
     let mut objects = segments_to_objects(&req.segments);
@@ -84,8 +84,12 @@ pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
             .collect()
     };
 
-    let regions = combine_source_regions(&objects, &selected, SourceCombine::Auto);
-    if regions.is_empty() {
+    // Run combine_source_regions once just for the "no closed boundary"
+    // diagnostic — the shared fit kernel re-runs it internally. Cheap
+    // (regions cache key already populated by the per-op path) and the
+    // alternative is leaking an empty-vs-None signal through the
+    // helper's public surface for one preview-only message.
+    if combine_source_regions(&objects, &selected, SourceCombine::Auto).is_empty() {
         return HelixRadiusResponse {
             radius_mm: None,
             fallback_reason: Some("no closed pocket boundary in selection".into()),
@@ -93,21 +97,7 @@ pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
     }
 
     let tool_radius = req.tool_diameter_mm * 0.5;
-    let mut best: Option<f64> = None;
-    for region in &regions {
-        if region.boundary.len() < 3 {
-            continue;
-        }
-        let vc_region = VcRegion {
-            outer: region.boundary.clone(),
-            holes: region.holes.clone(),
-        };
-        if let Some((_, _, r)) = crate::cam::inscribed::inscribed_circle(&vc_region, tool_radius) {
-            best = Some(best.map_or(r, |prev| prev.max(r)));
-        }
-    }
-
-    match best {
+    match fit_helix_radius_for_selection(&objects, &selected, SourceCombine::Auto, tool_radius) {
         Some(r) => HelixRadiusResponse {
             radius_mm: Some(r),
             fallback_reason: None,

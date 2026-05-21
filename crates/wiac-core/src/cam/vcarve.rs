@@ -33,7 +33,7 @@ use crate::geometry::Point2;
 /// One medial-axis vertex: (x, y, `R_inscribed`). The inscribed-circle
 /// radius is the distance from the vertex to the nearest boundary
 /// sample.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct VPoint {
     pub x: f64,
     pub y: f64,
@@ -178,21 +178,23 @@ pub fn medial_axis_cancellable(
     let boundary_segments = collect_boundary_segments(region);
 
     // A medial-axis vertex is a circumcenter that lies inside the
-    // region. Build a parallel list of VPoints aligned to `centers`,
-    // each tagged with its true inscribed radius.
-    let inside: Vec<Option<VPoint>> = centers
-        .iter()
-        .map(|c| {
-            c.and_then(|p| {
-                if point_in_region(region, p) {
-                    let r = nearest_boundary_distance(p, &boundary_segments);
-                    Some(VPoint { x: p.x, y: p.y, r })
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
+    // region. Build parallel arrays aligned to `centers`: `inside` is
+    // the bitset of "circumcenter lies in region AND its triangle has
+    // a defined circumcenter"; `vpts` stores the inscribed-radius
+    // VPoint for valid entries (sentinel `VPoint::default()` for
+    // invalid ones — they're never read because the graph below only
+    // adds adjacencies where both endpoints are `inside`).
+    let mut inside: Vec<bool> = vec![false; n_tri];
+    let mut vpts: Vec<VPoint> = vec![VPoint::default(); n_tri];
+    for (i, c) in centers.iter().enumerate() {
+        if let Some(p) = c {
+            if point_in_region(region, *p) {
+                let r = nearest_boundary_distance(*p, &boundary_segments);
+                inside[i] = true;
+                vpts[i] = VPoint { x: p.x, y: p.y, r };
+            }
+        }
+    }
 
     // Edges between adjacent triangles whose circumcenters are both
     // inside form the medial-axis graph. We deduplicate by halfedge ↔
@@ -205,13 +207,13 @@ pub fn medial_axis_cancellable(
         }
         let t0 = e / 3;
         let t1 = twin / 3;
-        if inside[t0].is_some() && inside[t1].is_some() {
+        if inside[t0] && inside[t1] {
             // Reject the edge between the two triangles' circumcenters
             // if any midpoint along that segment exits the region —
             // protects against thin "narrow neck" cases where the
             // two endpoints sit inside but the chord cuts a hole.
-            let p0 = Point2::new(inside[t0].unwrap().x, inside[t0].unwrap().y);
-            let p1 = Point2::new(inside[t1].unwrap().x, inside[t1].unwrap().y);
+            let p0 = Point2::new(vpts[t0].x, vpts[t0].y);
+            let p1 = Point2::new(vpts[t1].x, vpts[t1].y);
             let mid = Point2::new(0.5 * (p0.x + p1.x), 0.5 * (p0.y + p1.y));
             if !point_in_region(region, mid) {
                 continue;
@@ -235,7 +237,7 @@ pub fn medial_axis_cancellable(
         if is_cancelled() {
             return polylines;
         }
-        if inside[start].is_none() || adj[start].len() != 1 {
+        if !inside[start] || adj[start].len() != 1 {
             continue;
         }
         // Avoid restarting from the other endpoint of an already-walked
@@ -245,12 +247,12 @@ pub fn medial_axis_cancellable(
             continue;
         }
         let mut chain: Vec<VPoint> = Vec::new();
-        chain.push(inside[start].unwrap());
+        chain.push(vpts[start]);
         let mut prev = start;
         let mut cur = nb;
         loop {
             visited_edge.insert(edge_key(prev, cur));
-            chain.push(inside[cur].unwrap());
+            chain.push(vpts[cur]);
             // Pick the next neighbor that isn't `prev` and whose edge
             // isn't visited; if there's a branch, end this chain at the
             // junction (we'll start fresh chains from the junction's
@@ -277,7 +279,7 @@ pub fn medial_axis_cancellable(
         if is_cancelled() {
             return polylines;
         }
-        if inside[start].is_none() {
+        if !inside[start] {
             continue;
         }
         for &nb in &adj[start].clone() {
@@ -285,12 +287,12 @@ pub fn medial_axis_cancellable(
                 continue;
             }
             let mut chain: Vec<VPoint> = Vec::new();
-            chain.push(inside[start].unwrap());
+            chain.push(vpts[start]);
             let mut prev = start;
             let mut cur = nb;
             loop {
                 visited_edge.insert(edge_key(prev, cur));
-                chain.push(inside[cur].unwrap());
+                chain.push(vpts[cur]);
                 let nexts: Vec<usize> = adj[cur]
                     .iter()
                     .copied()
@@ -303,7 +305,7 @@ pub fn medial_axis_cancellable(
                 cur = nexts[0];
                 if cur == start {
                     visited_edge.insert(edge_key(prev, cur));
-                    chain.push(inside[cur].unwrap());
+                    chain.push(vpts[cur]);
                     break;
                 }
             }

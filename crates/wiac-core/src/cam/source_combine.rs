@@ -25,7 +25,7 @@
 use std::collections::HashSet;
 
 use clipper2_rust::{
-    boolean_op_tree_d, intersect_d, union_subjects_d, xor_d, ClipType, FillRule, PathD, PathsD,
+    boolean_op_tree_d, intersect_d, xor_d, ClipType, FillRule, PathD, PathsD,
     Point as ClipperPoint, PolyTreeD,
 };
 use schemars::JsonSchema;
@@ -299,18 +299,17 @@ fn combine_difference(
     polytree_to_regions(&tree, *first, &template.layer, template.color)
 }
 
-/// Union of N subjects in one shot — clipper's `union_subjects_d` does
-/// exactly this and has the polytree variant we need for hole recovery.
+/// Union of N subjects in one shot. Uses `boolean_op_tree_d` with empty
+/// clips because we need the polytree variant for hole recovery —
+/// clipper's bare `union_subjects_d` only returns flat `PathsD`. The
+/// "subjects minus nothing" framing is what clipper folds into a
+/// self-union.
 fn combine_union(
     objects: &[VcObject],
     selected: &[usize],
     cache: &mut TessCache,
 ) -> Vec<CombinedRegion> {
     let subjects = paths_for(selected, objects, cache);
-    // For Union, "intersection between subjects only" doesn't apply, so
-    // we use union_subjects via a no-op subjects-only Difference (subj
-    // minus empty clips), which clipper folds into a self-union. Simpler
-    // and gets us the polytree version: just fall through boolean_op_tree.
     let clips = PathsD::new();
     let mut tree = PolyTreeD::new();
     boolean_op_tree_d(
@@ -322,7 +321,6 @@ fn combine_union(
         CLIPPER_PRECISION,
     );
     let template = &objects[selected[0]];
-    let _ = union_subjects_d; // silence unused-import lint when only the tree variant is used
     polytree_to_regions(&tree, selected[0], &template.layer, template.color)
 }
 

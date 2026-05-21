@@ -65,6 +65,7 @@ mod test_helpers;
 
 use op_drivers::{run_halfpipe_op, run_standard_op, run_thread_op, run_vcarve_op};
 use regions::build_region_previews;
+pub use setup_resolver::fit_helix_radius_for_selection;
 use setup_resolver::{header_setup_for, resolve_auto_helix_radius, synthesize_op_setup};
 
 use std::collections::HashSet;

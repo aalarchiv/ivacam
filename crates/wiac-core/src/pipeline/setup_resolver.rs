@@ -326,20 +326,7 @@ pub(super) fn resolve_auto_helix_radius(
     let tool_radius = setup.tool.diameter * 0.5;
     let selected = ordered_selection(op, objects);
     let mode = source_combine_mode(op);
-    let regions = combine_source_regions(objects, &selected, mode);
-    let mut best: Option<f64> = None;
-    for region in &regions {
-        if region.boundary.len() < 3 {
-            continue;
-        }
-        let vc_region = crate::cam::vcarve::VcRegion {
-            outer: region.boundary.clone(),
-            holes: region.holes.clone(),
-        };
-        if let Some((_, _, r)) = crate::cam::inscribed::inscribed_circle(&vc_region, tool_radius) {
-            best = Some(best.map_or(r, |prev| prev.max(r)));
-        }
-    }
+    let best = fit_helix_radius_for_selection(objects, &selected, mode, tool_radius);
     if let Some(r) = best {
         setup.mill.plunge = PlungeStrategy::Helix {
             angle_deg,
@@ -355,6 +342,39 @@ pub(super) fn resolve_auto_helix_radius(
             ),
         });
     }
+}
+
+/// Pure-fit kernel shared by [`resolve_auto_helix_radius`] (per-op
+/// pipeline path) and the public [`crate::compute_helix_radius`]
+/// preview entry point. Returns the largest inscribed-circle radius
+/// across the combined source regions, or `None` when none fit.
+///
+/// Centralising the math here was an audit follow-up: the two
+/// pre-existing call sites had drifted on containment handling — the
+/// preview path silently disagreed with the per-op resolution. They
+/// now share `combine_source_regions` + the same fit loop.
+#[must_use]
+pub fn fit_helix_radius_for_selection(
+    objects: &[VcObject],
+    selected: &[usize],
+    combine: crate::project::SourceCombine,
+    tool_radius: f64,
+) -> Option<f64> {
+    let regions = combine_source_regions(objects, selected, combine);
+    let mut best: Option<f64> = None;
+    for region in &regions {
+        if region.boundary.len() < 3 {
+            continue;
+        }
+        let vc_region = crate::cam::vcarve::VcRegion {
+            outer: region.boundary.clone(),
+            holes: region.holes.clone(),
+        };
+        if let Some((_, _, r)) = crate::cam::inscribed::inscribed_circle(&vc_region, tool_radius) {
+            best = Some(best.map_or(r, |prev| prev.max(r)));
+        }
+    }
+    best
 }
 
 /// Header / footer [`Setup`] for the program. Synthesised from the

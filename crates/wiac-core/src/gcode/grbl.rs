@@ -155,6 +155,24 @@ impl PostProcessor for Post {
     fn dwell(&mut self, seconds: f64) {
         self.inner.dwell(seconds);
     }
+    fn plane_xy(&mut self) {
+        // GRBL accepts G17 (and only G17 — G18/G19 are rejected). Emit
+        // through the inner post so the prologue is consistent.
+        self.inner.plane_xy();
+    }
+    fn cutter_comp_off(&mut self) {
+        // GRBL rejects G41 / G42 (no cutter compensation), but G40 is
+        // accepted as a no-op. Emit it for symmetry — keeps the
+        // modal-state defense in place if the user later switches to a
+        // post that DOES emit comp.
+        self.inner.cutter_comp_off();
+    }
+    fn feed_per_minute(&mut self) {
+        self.inner.feed_per_minute();
+    }
+    // cancel_canned_cycle: GRBL doesn't support canned cycles — our
+    // drill block was emitted via the default G0/G1 trait expansion —
+    // so there's no modal state to cancel. Default no-op suffices.
     fn set_post_profile(&mut self, profile: Option<&crate::gcode::post_profile::PostProfile>) {
         self.inner.set_post_profile(profile);
     }

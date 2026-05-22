@@ -92,6 +92,30 @@ impl Post {
         }
     }
 
+    /// Emit a single G2/G3 line (no full-circle splitting). The
+    /// public `arc_cw` / `arc_ccw` wrap this with the split-detection
+    /// for 3p7v.
+    fn emit_arc_raw(
+        &mut self,
+        g: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        z: Option<f64>,
+        i: Option<f64>,
+        j: Option<f64>,
+    ) {
+        let body = self.coords(x, y, z);
+        let i = i
+            .and_then(|v| self.fmt_axis('I', v))
+            .map(|s| format!(" {s}"))
+            .unwrap_or_default();
+        let j = j
+            .and_then(|v| self.fmt_axis('J', v))
+            .map(|s| format!(" {s}"))
+            .unwrap_or_default();
+        self.write(format!("{g} {body}{i}{j}").trim().to_string());
+    }
+
     fn coords(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) -> String {
         let last_x = self.state.last_x;
         let last_y = self.state.last_y;
@@ -117,6 +141,48 @@ impl Post {
         }
         parts.join(" ")
     }
+}
+
+/// 3p7v: detect a full-circle arc (start XY ≈ target XY, with a
+/// non-trivial I/J vector to the center) and return the midpoint XY
+/// (diametrically opposite the start across the center) so the
+/// caller can split the arc into two halves. Returns None when the
+/// arc is a normal partial sweep, or when start / target / center
+/// aren't well-defined (no prior position, missing target / I / J,
+/// or a degenerate zero-radius circle).
+fn full_circle_midpoint(
+    state: &PostState,
+    x: Option<f64>,
+    y: Option<f64>,
+    i: Option<f64>,
+    j: Option<f64>,
+) -> Option<(f64, f64)> {
+    let last_x = state.last_x?;
+    let last_y = state.last_y?;
+    // Target XY: explicit value or "same as previous" (modal). When
+    // both are missing the arc is degenerate; treat as not a circle.
+    let target_x = x.unwrap_or(last_x);
+    let target_y = y.unwrap_or(last_y);
+    let i = i?;
+    let j = j?;
+    // Same-point check: start XY ≈ target XY within a generous
+    // tolerance (1e-6 mm — well below CAM precision). Compared
+    // squared to avoid a hypot call.
+    const EPS: f64 = 1e-6;
+    let dx = target_x - last_x;
+    let dy = target_y - last_y;
+    if dx * dx + dy * dy > EPS * EPS {
+        return None;
+    }
+    // Trivial I/J (no offset to center) → degenerate "arc" with
+    // zero radius; nothing to split. The post would emit a
+    // syntactically valid but geometrically meaningless line anyway.
+    if i * i + j * j < EPS * EPS {
+        return None;
+    }
+    // Midpoint: start + 2·(I, J) lands diametrically opposite on the
+    // circle so each half-arc sweeps a clean 180°.
+    Some((last_x + 2.0 * i, last_y + 2.0 * j))
 }
 
 /// Pick the matching `AxisFormat` from a profile's `AxesConfig` given
@@ -328,16 +394,19 @@ impl PostProcessor for Post {
         i: Option<f64>,
         j: Option<f64>,
     ) {
-        let body = self.coords(x, y, z);
-        let i = i
-            .and_then(|v| self.fmt_axis('I', v))
-            .map(|s| format!(" {s}"))
-            .unwrap_or_default();
-        let j = j
-            .and_then(|v| self.fmt_axis('J', v))
-            .map(|s| format!(" {s}"))
-            .unwrap_or_default();
-        self.write(format!("G2 {body}{i}{j}").trim().to_string());
+        if let Some((mid_x, mid_y)) = full_circle_midpoint(&self.state, x, y, i, j) {
+            // 3p7v: split a start==end arc into two halves around the
+            // shared center. GRBL rejects full-circles outright
+            // (error:33); LinuxCNC accepts them in some configs but
+            // splitting is universally safe.
+            self.emit_arc_raw("G2", Some(mid_x), Some(mid_y), z, i, j);
+            // I/J for the second half are the vector from the midpoint
+            // to the same center — that's the negation of the first
+            // half's I/J because the midpoint is diametrically opposite.
+            self.emit_arc_raw("G2", x, y, z, i.map(|v| -v), j.map(|v| -v));
+            return;
+        }
+        self.emit_arc_raw("G2", x, y, z, i, j);
     }
     fn arc_ccw(
         &mut self,
@@ -347,16 +416,12 @@ impl PostProcessor for Post {
         i: Option<f64>,
         j: Option<f64>,
     ) {
-        let body = self.coords(x, y, z);
-        let i = i
-            .and_then(|v| self.fmt_axis('I', v))
-            .map(|s| format!(" {s}"))
-            .unwrap_or_default();
-        let j = j
-            .and_then(|v| self.fmt_axis('J', v))
-            .map(|s| format!(" {s}"))
-            .unwrap_or_default();
-        self.write(format!("G3 {body}{i}{j}").trim().to_string());
+        if let Some((mid_x, mid_y)) = full_circle_midpoint(&self.state, x, y, i, j) {
+            self.emit_arc_raw("G3", Some(mid_x), Some(mid_y), z, i, j);
+            self.emit_arc_raw("G3", x, y, z, i.map(|v| -v), j.map(|v| -v));
+            return;
+        }
+        self.emit_arc_raw("G3", x, y, z, i, j);
     }
     fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, dwell_sec: f64) {
         // LinuxCNC G81 / G82 (G82 is the dwell variant). Use G82 when dwell > 0,
@@ -467,6 +532,21 @@ impl PostProcessor for Post {
         }
         let s = self.fmt(seconds);
         self.write(format!("G4 P{s}"));
+    }
+    fn plane_xy(&mut self) {
+        self.write("G17");
+    }
+    fn cutter_comp_off(&mut self) {
+        self.write("G40");
+    }
+    fn feed_per_minute(&mut self) {
+        self.write("G94");
+    }
+    fn cancel_canned_cycle(&mut self) {
+        self.write("G80");
+        // G80 cancels any canned cycle. The drill cycles set
+        // `last_z = r` so subsequent moves know where the head is —
+        // that's still accurate after G80, so we don't touch state.
     }
     fn set_post_profile(&mut self, profile: Option<&PostProfile>) {
         self.state.profile = profile.cloned();

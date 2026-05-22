@@ -235,6 +235,30 @@ pub trait PostProcessor {
     /// time). `LinuxCNC` / GRBL emit `G4 P<seconds>`; HPGL ignores.
     /// Skip when `seconds <= 0`.
     fn dwell(&mut self, _seconds: f64) {}
+
+    /// sbtg: select the XY plane for arc interpretation. `LinuxCNC` /
+    /// GRBL emit `G17`; HPGL ignores. A controller booted in G18 / G19
+    /// would otherwise reinterpret our G2/G3 arcs in XZ / YZ. Called
+    /// once per program in [`program_begin`] before any motion.
+    fn plane_xy(&mut self) {}
+
+    /// sbtg: cancel any active cutter-radius compensation. `LinuxCNC`
+    /// / GRBL emit `G40`; HPGL ignores. Defends against G41 / G42
+    /// left modal by a prior program.
+    fn cutter_comp_off(&mut self) {}
+
+    /// sbtg: select feed-per-minute mode. `LinuxCNC` / GRBL emit
+    /// `G94`; HPGL ignores. Defends against G95 (units-per-revolution)
+    /// left modal by a prior turning program.
+    fn feed_per_minute(&mut self) {}
+
+    /// olpn: cancel any active canned drill cycle. `LinuxCNC` emits
+    /// `G80`; GRBL has no canned cycles so the default no-op is fine
+    /// (its drill block was already G0/G1 expanded). Called at the end
+    /// of [`emit_drill_block`] so a following op's G0 / G1 is not
+    /// reinterpreted by FANUC / Mach3 as another drill at the canned
+    /// cycle's modal Z / R.
+    fn cancel_canned_cycle(&mut self) {}
 }
 
 /// Public projection of [`PostState`] used by the per-op cache. Mirrors
@@ -425,6 +449,13 @@ pub fn emit_drill_block<P: PostProcessor>(
         }
         *last_pos = pt;
     }
+    // olpn: cancel the canned drill cycle before any subsequent G0 /
+    // G1 from the next op. Otherwise FANUC / Mach3 (and LinuxCNC in
+    // strict modes) reinterpret the next G0 as another invocation of
+    // the same drill cycle at the modal Z / R, with disastrous
+    // results. Emit BEFORE the safe-Z lift so the G80 lands inside
+    // the drill block, not adjacent to the next op's spindle line.
+    post.cancel_canned_cycle();
     // Lift back to safe Z so subsequent ops start clean.
     post.move_to(None, None, Some(fast_z));
 }
@@ -453,6 +484,15 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     post.program_start();
     post.unit(setup.machine.unit);
     post.absolute(true);
+    // sbtg: emit a known modal preamble before any motion so a
+    // controller booted in a non-default state doesn't reinterpret our
+    // arcs in XZ (G18), leave cutter-comp on from a prior program
+    // (G42/G41), or feed in units-per-revolution (G95) instead of
+    // units-per-minute (G94). `raw` is a no-op on HPGL so plotter
+    // output is unaffected.
+    post.plane_xy();
+    post.cutter_comp_off();
+    post.feed_per_minute();
     post.feedrate(setup.tool.rate_h);
     post.move_to(None, None, Some(setup.mill.fast_move_z));
 }
@@ -532,10 +572,17 @@ fn emit_offset<P: PostProcessor>(
     // defocused, never pierced, and the first cut yanked unmelted
     // material. Order matches Lightburn / T2Laser / Estlcam laser.
     let pierce_sec = setup.tool.pierce_sec;
+    // lyq6: the lead-in plunge must drop to `start_depth` (the entry
+    // plane just above the workpiece), NOT to a literal Z=0. Stock
+    // proud of Z=0 (start_depth < 0) would crash the cutter at the
+    // approach; recesses (start_depth > 0) would have the cutter
+    // cutting air. `multi_pass` then descends from `start_depth` to
+    // the first pass depth via plunge / ramp / helix.
+    let entry_z = setup.mill.start_depth;
     match lead_in {
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
-            post.linear(None, None, Some(0.0));
+            post.linear(None, None, Some(entry_z));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
@@ -546,7 +593,7 @@ fn emit_offset<P: PostProcessor>(
             ccw,
         } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
-            post.linear(None, None, Some(0.0));
+            post.linear(None, None, Some(entry_z));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
@@ -562,7 +609,7 @@ fn emit_offset<P: PostProcessor>(
         }
         LeadGeometry::None => {
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
-            post.linear(None, None, Some(0.0));
+            post.linear(None, None, Some(entry_z));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }

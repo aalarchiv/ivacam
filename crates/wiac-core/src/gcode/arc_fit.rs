@@ -149,6 +149,26 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
         // into two ~90° halves by lowering the cap to π·0.999 (about
         // 179.82°). The previous `> π + 1e-9` admitted exact π.
         if arc_sweep(nc, p0, next, ccw) > std::f64::consts::PI * 0.999 {
+            // Retreat best so the SECOND arc has room: the caller
+            // advances `start += consumed - 1` and then runs another
+            // 3-point fit, which needs at least three remaining
+            // points. Without this retreat, a near-π run breaks one
+            // index short of the final point and the second arc
+            // can't close — `fit_arc_run` then falls back to Lines.
+            let remaining = points.len() - (j + 1);
+            if remaining < 3 && j > 3 {
+                // Back up best_count so points.len() - (best_count - 1)
+                // >= 3, i.e. best_count <= points.len() - 2.
+                let target = points.len().saturating_sub(2);
+                if best_count > target {
+                    best_count = target;
+                    best = FittedArc {
+                        end: points[best_count - 1],
+                        center: current_center,
+                        ccw,
+                    };
+                }
+            }
             break;
         }
         current_center = nc;

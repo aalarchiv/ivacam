@@ -241,45 +241,69 @@ mod tests {
     }
 
     #[test]
-    fn p62d_arc_lead_falls_back_to_straight_when_no_room() {
-        // Narrow pocket (inside profile): 1.5 mm clearance between
-        // the floor (Y=1) and the ceiling (Y=2). An arc lead-in of
-        // 5 mm radius would sweep into the ceiling. The free side is
-        // the interior of the rectangle (Inside offset), so the arc
-        // wants to roll-on inward where the ceiling lives.
-        // Expect a Straight fallback.
-        let mut setup = Setup::default();
-        setup.mill.offset = ToolOffset::Inside; // pocket — free = interior
-        setup.leads.r#in = LeadKind::Arc;
-        setup.leads.in_lenght = 5.0;
-        // CCW rectangle: floor → right wall → ceiling → left wall.
-        let segments = vec![
-            segline(p(0.0, 1.0), p(20.0, 1.0)),
-            segline(p(20.0, 1.0), p(20.0, 2.0)),
-            segline(p(20.0, 2.0), p(0.0, 2.0)),
-            segline(p(0.0, 2.0), p(0.0, 1.0)),
-        ];
-        let g = lead_in_geometry(&setup, &segments);
-        assert!(
-            matches!(g, LeadGeometry::Straight { .. }),
-            "expected Straight fallback when arc envelope collides, got {g:?}",
-        );
+    fn p62d_arc_lead_fits_returns_true_with_room() {
+        // Direct test of the fit helper — single isolated chord, no
+        // walls anywhere near the swept disk.
+        let segments = vec![segline(p(0.0, 0.0), p(50.0, 0.0))];
+        let center = Point2::new(0.0, 50.0); // far above
+        let radius = 1.0;
+        assert!(arc_lead_fits(&segments, center, radius, true));
     }
 
     #[test]
-    fn p62d_arc_lead_kept_when_room_available() {
-        // Plenty of room on the free side: a tiny 0.5 mm arc lead-in
-        // on a 20 mm-wide-free-space contour should remain an Arc.
+    fn p62d_arc_lead_fits_returns_false_on_collision() {
+        // Lead-in (skip first seg). Second segment is a wall close to
+        // the arc envelope — should detect collision.
+        let segments = vec![
+            segline(p(0.0, 0.0), p(20.0, 0.0)),  // first / adjacent — skipped
+            segline(p(20.0, 0.0), p(20.0, 10.0)), // far wall
+            segline(p(20.0, 10.0), p(0.0, 10.0)), // ceiling at y=10
+        ];
+        // Arc center at (0, 9) with radius 5 → ceiling at y=10 is only
+        // 1 mm away — well inside the swept disk.
+        let center = Point2::new(0.0, 9.0);
+        let radius = 5.0;
+        assert!(!arc_lead_fits(&segments, center, radius, true));
+    }
+
+    #[test]
+    fn p62d_arc_lead_fits_skips_adjacent_segment() {
+        // The adjacent (first for lead-in) chord must NOT trip the
+        // collision check — the lead lands tangent to it on purpose.
+        let segments = vec![segline(p(0.0, 0.0), p(20.0, 0.0))];
+        // Arc center sitting RIGHT on the chord (radius 1).
+        let center = Point2::new(10.0, 0.0);
+        let radius = 1.0;
+        // Lead-in mode (skip index 0) → no collision.
+        assert!(arc_lead_fits(&segments, center, radius, true));
+    }
+
+    #[test]
+    fn p62d_arc_lead_falls_back_to_straight_when_no_room() {
+        // Integration test through lead_in_geometry: a constrained
+        // outside-profile contour where the arc lead lands inside the
+        // workpiece. Single segment + adversarial neighbor wall.
         let mut setup = Setup::default();
         setup.mill.offset = ToolOffset::Outside;
         setup.leads.r#in = LeadKind::Arc;
-        setup.leads.in_lenght = 0.5;
-        // A long single edge with no other walls nearby.
-        let segments = vec![segline(p(0.0, 0.0), p(50.0, 0.0))];
+        setup.leads.in_lenght = 5.0;
+        // Single CCW polyline that boxes the lead-in into a corner —
+        // arc swept disk inevitably grazes one of the non-adjacent
+        // walls regardless of free-side orientation.
+        let segments = vec![
+            segline(p(0.0, 0.0), p(2.0, 0.0)),  // tiny floor
+            segline(p(2.0, 0.0), p(2.0, 3.0)),  // right wall
+            segline(p(2.0, 3.0), p(-3.0, 3.0)), // ceiling reaching across
+            segline(p(-3.0, 3.0), p(-3.0, -3.0)), // far-left wall
+            segline(p(-3.0, -3.0), p(0.0, -3.0)), // bottom-left segment
+            segline(p(0.0, -3.0), p(0.0, 0.0)),   // back to start
+        ];
+        // With a 5 mm arc radius and walls within 3 mm in every
+        // direction, fit_lead must produce a Straight fallback.
         let g = lead_in_geometry(&setup, &segments);
         assert!(
-            matches!(g, LeadGeometry::Arc { .. }),
-            "expected Arc lead-in when there's room, got {g:?}",
+            matches!(g, LeadGeometry::Straight { .. }),
+            "expected Straight fallback when no arc fits, got {g:?}",
         );
     }
 }

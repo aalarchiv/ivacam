@@ -30,7 +30,8 @@ use wiac_core::input::text::{
     RenderTextResponse,
 };
 use wiac_core::pipeline::{
-    generate_streaming, run_pipeline, CancelToken, PipelineEvent, PipelineRequest, PipelineResponse,
+    clear_pipeline_cache, generate_streaming, run_pipeline, CancelToken, PipelineEvent,
+    PipelineRequest, PipelineResponse,
 };
 use wiac_core::project::TextLayer;
 use wiac_core::{
@@ -120,6 +121,19 @@ pub struct VersionResponse {
 #[tauri::command]
 pub fn healthz() -> HealthResponse {
     HealthResponse { ok: true }
+}
+
+/// eu2b: drop every entry from the process-global pipeline cache.
+/// Frontend project-load / replace flows call this whenever the
+/// machine config or tool library changes since the last load — the
+/// cache key already encodes both fingerprints (so stale gcode can't
+/// surface), but the entries from the previous project are dead
+/// memory and would only get reclaimed by LRU eviction. Clearing on
+/// project boundaries keeps the working set bounded by ops in the
+/// CURRENT project.
+#[tauri::command]
+pub fn clear_pipeline_cache_cmd() {
+    clear_pipeline_cache();
 }
 
 #[tauri::command]

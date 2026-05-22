@@ -179,6 +179,7 @@ fn run() -> tauri::Result<()> {
             commands::confirm_close,
             commands::log_error,
             commands::is_debug,
+            commands::clear_pipeline_cache_cmd,
         ])
         // qjec: intercept window close so the user can confirm
         // discarding unsaved work. First CloseRequested call emits an

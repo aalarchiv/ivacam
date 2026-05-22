@@ -381,6 +381,70 @@ mod tests {
         );
     }
 
+    /// 1ztc: a Polar pattern at 180° must reflect each tab/lead
+    /// anchor point through the rotation center — the rotated instance
+    /// must NOT share the original tab's world position. This is the
+    /// load-bearing guarantee for re-anchoring leads/tabs under
+    /// rotation: when patterns extend to Profile/Pocket (currently
+    /// Drill-only by kbx5), the tab transform must follow geometry,
+    /// not stay at the original world XY.
+    #[test]
+    fn polar_180deg_reflects_tab_anchor_through_center() {
+        use crate::pipeline::patterns::{
+            apply_pattern_to_point, apply_pattern_to_segments, pattern_offsets,
+        };
+        use crate::project::PatternConfig;
+        let pattern = PatternConfig::Polar {
+            count: 2,
+            center_x: 0.0,
+            center_y: 0.0,
+            angle_step_deg: 180.0,
+            start_angle_deg: 0.0,
+        };
+        let instances = pattern_offsets(pattern);
+        assert_eq!(instances.len(), 2);
+        // Instance 0 = identity, instance 1 = 180° rotation about origin.
+        let tab = Point2::new(10.0, 5.0);
+        let inst0 = apply_pattern_to_point(tab, instances[0]);
+        let inst1 = apply_pattern_to_point(tab, instances[1]);
+        // Identity returns the same point.
+        assert!((inst0.x - tab.x).abs() < 1e-9, "inst0 x = {}", inst0.x);
+        assert!((inst0.y - tab.y).abs() < 1e-9, "inst0 y = {}", inst0.y);
+        // 180° about origin reflects through origin.
+        assert!(
+            (inst1.x + tab.x).abs() < 1e-9,
+            "expected reflected x = -10, got {}",
+            inst1.x
+        );
+        assert!(
+            (inst1.y + tab.y).abs() < 1e-9,
+            "expected reflected y = -5, got {}",
+            inst1.y
+        );
+        // The two anchor points are clearly distinct — NOT shared with
+        // the original. This is the audit assertion: rotated instances
+        // get their own tab placement, anchored on rotated geometry.
+        let dist_sq = (inst0.x - inst1.x).powi(2) + (inst0.y - inst1.y).powi(2);
+        assert!(
+            dist_sq > 1.0,
+            "rotated tab anchor must NOT share the original's world position"
+        );
+        // Same guarantee for a segment endpoint — leads anchor on
+        // segment endpoints, so the lead's start travels with the
+        // rotated geometry.
+        let mut seg = vec![crate::geometry::Segment::line(
+            Point2::new(10.0, 5.0),
+            Point2::new(15.0, 5.0),
+            "0",
+            7,
+        )];
+        apply_pattern_to_segments(&mut seg, instances[1]);
+        assert!((seg[0].start.x + 10.0).abs() < 1e-9);
+        assert!((seg[0].start.y + 5.0).abs() < 1e-9);
+        assert!((seg[0].end.x + 15.0).abs() < 1e-9);
+        assert!((seg[0].end.y + 5.0).abs() < 1e-9);
+    }
+
     /// Locks in back-compat: a Profile op with `pattern: None` must
     /// produce the exact same gcode it produced before pattern support
     /// was added.

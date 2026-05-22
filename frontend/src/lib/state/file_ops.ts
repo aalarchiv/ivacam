@@ -14,6 +14,27 @@ import { pushRecent } from '../recent';
 import type { ImportResponse } from '../api/types';
 import type { MachineSettings, ToolEntry } from './project.svelte';
 
+/// eu2b: clear the Rust-side process-global pipeline cache when a
+/// project replace flow runs (open file, open project, load sample,
+/// load project from disk). The cache key already encodes the
+/// machine + tool fingerprints, so this is purely a hygiene step —
+/// it bounds the working set to ops in the CURRENT project rather
+/// than letting LRU eviction reclaim the previous project's entries
+/// at its own pace. Browser/HTTP builds skip the invoke; the cache
+/// lives in the same wasm address space and is bounded by the same
+/// LRU there.
+async function clearPipelineCacheOnReplace(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('clear_pipeline_cache_cmd');
+  } catch {
+    // Cache invalidation is best-effort — a failed invoke shouldn't
+    // block the load flow. The next Generate will compute fresh
+    // entries either way.
+  }
+}
+
 export function reportError(input: unknown) {
   const raw = input instanceof Error ? input.message : String(input);
   const structured = tryParseStructuredError(raw);
@@ -117,6 +138,7 @@ export async function openProject() {
     try {
       const text = await readTextFile(selected);
       project.clearProject();
+      await clearPipelineCacheOnReplace();
       project.restore(JSON.parse(text));
       const filename = selected.split(/[\\/]/).pop() ?? selected;
       await pushRecent({ path: selected, filename, lastOpened: new Date().toISOString() });
@@ -149,6 +171,7 @@ export async function loadFromPath(path: string) {
     const { invoke } = await import('@tauri-apps/api/core');
     const result = await invoke<ImportResponse>('import_path', { path });
     project.clearProject();
+    await clearPipelineCacheOnReplace();
     project.setImported(result, path);
     await project.convertImportedTextEntities();
     const filename = path.split(/[\\/]/).pop() ?? path;
@@ -199,6 +222,7 @@ export async function loadProjectPath(path: string) {
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
     const text = await readTextFile(path);
     project.clearProject();
+    await clearPipelineCacheOnReplace();
     project.restore(JSON.parse(text));
     const filename = path.split(/[\\/]/).pop() ?? path;
     await pushRecent({ path, filename, lastOpened: new Date().toISOString() });
@@ -225,6 +249,7 @@ export async function loadFile(file: File) {
   try {
     const result = await client.importFile(file);
     project.clearProject();
+    await clearPipelineCacheOnReplace();
     project.setImported(result);
     await project.convertImportedTextEntities();
     project.dirty = false;
@@ -245,6 +270,7 @@ export async function loadProjectFile(file: File) {
   try {
     const text = await file.text();
     project.clearProject();
+    await clearPipelineCacheOnReplace();
     project.restore(JSON.parse(text));
     project.dirty = false;
   } catch (e) {
@@ -304,6 +330,7 @@ export async function loadSample(url: string) {
     if (!res.ok) throw new Error(`fetch ${url}: ${res.status}`);
     const data = (await res.json()) as ImportResponse;
     project.clearProject();
+    await clearPipelineCacheOnReplace();
     project.setImported(data);
     project.dirty = false;
   } catch (e) {
@@ -506,6 +533,11 @@ export async function loadToolset(mode: 'replace' | 'add') {
     // Re-number ids 1..N so the new tools have a clean monotonic
     // sequence the project file can reference.
     const next = incoming.map((t, idx) => ({ ...t, id: idx + 1 }));
+    // eu2b: the cache key folds in every ToolEntry field, so swapping
+    // the library mid-session would force a miss-and-recompute on every
+    // op anyway. Clear up front so the old entries stop occupying LRU
+    // slots that will never hit again.
+    await clearPipelineCacheOnReplace();
     project.replaceTools(next);
     return;
   }
@@ -571,6 +603,11 @@ export async function loadMachine() {
     project.setError('machine load: not a .wiac-machine.json file');
     return;
   }
+  // eu2b: machine swap invalidates the cache the same way as a tool
+  // library swap — hash_machine folds every relevant field, so the
+  // post-swap Generate will miss-and-recompute. Drop the old entries
+  // proactively.
+  await clearPipelineCacheOnReplace();
   project.setMachine(env.payload);
 }
 

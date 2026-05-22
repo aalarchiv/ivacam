@@ -129,6 +129,13 @@ pub(super) fn build_op_offsets(
                 clone.inner_objects.clear();
                 let new_idx = expanded.len();
                 if let Some(src_tabs) = tabs_by_object.get(&idx) {
+                    // 1ztc: each instance's tab is re-anchored on the
+                    // rotated/translated geometry via
+                    // `apply_pattern_to_point`. Tabs aren't "shared with
+                    // the original" — every instance gets its own
+                    // entry, and the per-tab width/height overrides
+                    // carry over so a manually-tuned tab keeps its size
+                    // across the pattern copies.
                     let xformed: Vec<TabPoint> = src_tabs
                         .iter()
                         .map(|t| {
@@ -136,8 +143,8 @@ pub(super) fn build_op_offsets(
                             TabPoint {
                                 x: p.x,
                                 y: p.y,
-                                width_override_mm: None,
-                                height_override_mm: None,
+                                width_override_mm: t.width_override_mm,
+                                height_override_mm: t.height_override_mm,
                             }
                         })
                         .collect();

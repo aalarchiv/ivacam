@@ -110,9 +110,19 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
         .map(f64::abs)
         .unwrap_or(1.0)
         .max(0.05);
+    // 898l: cap Z to the cutting flute length so the ball-nose shank
+    // never engages stock. Fallback to tool radius when flute_length
+    // isn't recorded — past that depth the shank starts to drag even
+    // on a pointed bit if it's a long-thin cutter.
+    let tool_reach_z = Some(
+        tool.flute_length_mm
+            .filter(|v| *v > 0.0)
+            .unwrap_or(tool.diameter * 0.5),
+    );
 
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut any_depth_limited = false;
+    let mut any_tool_reach_limited = false;
 
     let tool_r_for_prune = tool.diameter * 0.5;
     for region in &regions {
@@ -157,18 +167,27 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
             push_ring(h, &mut boundary_segs);
         }
         for axis in &axes {
-            let (z_axis, depth_limited) = crate::cam::halfpipe::polyline_to_z(
-                axis,
-                strategy,
-                z_cap,
-                Some(&boundary_segs),
-            );
+            let (z_axis, depth_limited, tool_reach_limited) =
+                crate::cam::halfpipe::polyline_to_z(
+                    axis,
+                    strategy,
+                    z_cap,
+                    tool_reach_z,
+                    Some(&boundary_segs),
+                );
             if depth_limited {
                 any_depth_limited = true;
             }
-            let path = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
-            if path.len() >= 2 {
-                polylines.push(path);
+            if tool_reach_limited {
+                any_tool_reach_limited = true;
+            }
+            // kagr: ratchet_emit returns sub-polylines split at any
+            // above-surface gaps. Push each one as a separate cut
+            // block so the caller G0-rapids between them at safe Z.
+            for p in crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp) {
+                if p.len() >= 2 {
+                    polylines.push(p);
+                }
             }
         }
     }
@@ -180,6 +199,17 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
             message: format!(
                 "Halfpipe op '{}' was depth-limited: the slot is wider than the configured profile cap (or the op's `depth` clipped it) at some medial-axis points.",
                 op.name
+            ),
+        });
+    }
+    if any_tool_reach_limited {
+        let reach = tool_reach_z.unwrap_or(0.0);
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "halfpipe_tool_reach_exceeded".into(),
+            message: format!(
+                "Halfpipe op '{}': cut depth clipped to tool reach {:.3} mm (ball-nose '{}' flute length) at some medial-axis points. The profile is deeper than the cutter can reach without engaging the shank — pick a longer-flute tool or reduce the profile radius.",
+                op.name, reach, tool.name,
             ),
         });
     }
@@ -422,6 +452,86 @@ mod tests {
             "expected halfpipe_radius_mismatch warning; got {:?}",
             resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
+    }
+
+    /// 898l: halfpipe with profile R larger than the cutter's flute
+    /// length must clamp Z to -flute_length and emit a
+    /// `halfpipe_tool_reach_exceeded` warning.
+    #[test]
+    fn halfpipe_tool_reach_clamps_deep_profile() {
+        // 40mm-wide rectangle slot (matches the existing harness).
+        let mut segs: Vec<Segment> = Vec::new();
+        let p = |x: f64, y: f64| Point2::new(x, y);
+        // 80×40 — middle inscribed circle radius = 20.
+        segs.push(Segment::line(p(0.0, 0.0), p(80.0, 0.0), "0", 7));
+        segs.push(Segment::line(p(80.0, 0.0), p(80.0, 40.0), "0", 7));
+        segs.push(Segment::line(p(80.0, 40.0), p(0.0, 40.0), "0", 7));
+        segs.push(Segment::line(p(0.0, 40.0), p(0.0, 0.0), "0", 7));
+
+        // 40mm-diameter ball-nose (radius 20mm matches profile R=20)
+        // but ONLY 5mm flute length — the bit can only engage stock
+        // 5mm deep before the shank starts dragging.
+        let mut ball = endmill(1, 40.0);
+        ball.kind = ToolKind::BallNose;
+        ball.flute_length_mm = Some(5.0);
+        let mut params = OpParams::mill_default();
+        params.depth = -50.0; // permissive; the tool cap should drive
+        params.start_depth = 0.0;
+        params.step = Some(-2.0);
+        let project = Project {
+            segments: segs,
+            machine: MachineConfig::default(),
+            tools: vec![ball],
+            operations: vec![Op {
+                id: 1,
+                name: "Halfpipe".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Halfpipe {
+                        profile: crate::project::HalfpipeProfile::CircularArc {
+                            radius_mm: 20.0,
+                        },
+                    },
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "halfpipe_tool_reach_exceeded"),
+            "expected halfpipe_tool_reach_exceeded warning; got {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
+        );
+        // Every G1 line must have Z >= -5 (no deeper than flute reach).
+        for l in resp.gcode.lines().filter(|l| l.starts_with("G1 ")) {
+            for tok in l.split_whitespace() {
+                if let Some(rest) = tok.strip_prefix('Z') {
+                    if let Ok(z) = rest.parse::<f64>() {
+                        assert!(
+                            z >= -5.0 - 1e-6,
+                            "Z {z} exceeds tool flute reach (-5.0 mm) on line: {l}",
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// `PocketStrategy::Halfpipe` serde round-trip (rt1.19) covers both

@@ -32,7 +32,9 @@ use crate::project::HalfpipeProfile;
 
 /// Compute the Z depth for one medial-axis vertex `v` under `profile`,
 /// then clamp to `z_cap` (the op's max depth, absolute value;
-/// `Some(d)` ⇒ result ≥ `-|d|`).
+/// `Some(d)` ⇒ result ≥ `-|d|`) and to `tool_reach_z` (898l — the
+/// tool's flute length: a ball-nose's shank starts engaging stock past
+/// the flutes, so we cap to keep the shank above z=0).
 ///
 /// `at_corner` (mchy): true when `v` sits near a re-entrant boundary
 /// corner (the two nearest boundary footings are on different segments,
@@ -44,16 +46,20 @@ use crate::project::HalfpipeProfile;
 /// behaviour (use `r` for depth everywhere) produced a wrong Z at
 /// corners.
 ///
-/// Returns `(z, depth_limited)` — `depth_limited` is true iff either
-/// the profile cap (`CircularArc` with `r > R`) OR `z_cap` clipped the
-/// result.
+/// Returns `(z, depth_limited, tool_reach_limited)`. `depth_limited`
+/// is true iff the profile cap (`CircularArc` with `r > R`) OR
+/// `z_cap` clipped the result. `tool_reach_limited` is true iff
+/// `tool_reach_z` clipped the result — surfaced separately so the
+/// pipeline can emit a distinct `halfpipe_tool_reach_exceeded`
+/// warning (898l).
 #[must_use]
 pub fn depth_at(
     v: &VPoint,
     profile: HalfpipeProfile,
     z_cap: Option<f64>,
+    tool_reach_z: Option<f64>,
     at_corner: bool,
-) -> (f64, bool) {
+) -> (f64, bool, bool) {
     let r = v.r.max(0.0);
     let (mut z, mut limited) = match profile {
         HalfpipeProfile::CircularArc { radius_mm } => {
@@ -96,14 +102,22 @@ pub fn depth_at(
             limited = true;
         }
     }
-    (z, limited)
+    let mut tool_reach_limited = false;
+    if let Some(reach) = tool_reach_z {
+        let cap = -reach.abs();
+        if z < cap {
+            z = cap;
+            tool_reach_limited = true;
+        }
+    }
+    (z, limited, tool_reach_limited)
 }
 
 /// Convert a medial-axis polyline to an XYZ polyline using the
 /// halfpipe profile. The output tuple is `(x, y, z, r_inscribed)` so
 /// downstream emitters that want the radius for sim / tabbing get it
 /// (mirrors `cam/vcarve.rs::polyline_to_z`'s shape). Returns
-/// `(points, depth_limited_anywhere)`.
+/// `(points, depth_limited_anywhere, tool_reach_limited_anywhere)`.
 ///
 /// `boundary` is the flattened set of boundary edges (outer ring + any
 /// hole rings concatenated as `(start, end)` segments). Used by mchy
@@ -111,24 +125,33 @@ pub fn depth_at(
 /// on different segments subtending a sharp angle is treated as a
 /// re-entrant corner. Pass `None` to disable corner detection (back-
 /// compat for tests / non-corner-aware callers).
+///
+/// `tool_reach_z` (898l) is the ball-nose tool's flute length — the
+/// maximum |z| the cutting flutes can engage stock before the shank
+/// starts dragging. Passes `None` to skip the cap (test compat).
 #[must_use]
 pub fn polyline_to_z(
     axis: &[VPoint],
     profile: HalfpipeProfile,
     z_cap: Option<f64>,
+    tool_reach_z: Option<f64>,
     boundary: Option<&[(Point2, Point2)]>,
-) -> (Vec<(f64, f64, f64, f64)>, bool) {
+) -> (Vec<(f64, f64, f64, f64)>, bool, bool) {
     let mut any_limited = false;
+    let mut any_reach_limited = false;
     let mut out = Vec::with_capacity(axis.len());
     for v in axis {
         let at_corner = boundary.is_some_and(|segs| is_at_reentrant_corner(v, segs));
-        let (z, limited) = depth_at(v, profile, z_cap, at_corner);
+        let (z, limited, reach_limited) = depth_at(v, profile, z_cap, tool_reach_z, at_corner);
         if limited {
             any_limited = true;
         }
+        if reach_limited {
+            any_reach_limited = true;
+        }
         out.push((v.x, v.y, z, v.r));
     }
-    (out, any_limited)
+    (out, any_limited, any_reach_limited)
 }
 
 /// mchy: a medial-axis vertex sits at a re-entrant corner iff its two
@@ -216,9 +239,9 @@ mod tests {
     #[test]
     fn circular_arc_profile_depth_curve() {
         let p = HalfpipeProfile::CircularArc { radius_mm: 5.0 };
-        let (z0, _) = depth_at(&vp(0.0, 0.0, 0.0), p, None, false);
+        let (z0, _, _) = depth_at(&vp(0.0, 0.0, 0.0), p, None, None, false);
         assert!(z0.abs() < 1e-9, "got {z0}");
-        let (z_full, lim) = depth_at(&vp(0.0, 0.0, 5.0), p, None, false);
+        let (z_full, lim, _) = depth_at(&vp(0.0, 0.0, 5.0), p, None, None, false);
         // At r >= R, the slot is at-or-wider than the pipe; depth
         // caps at -R and we mark depth_limited so the warning fires.
         assert!((z_full - (-5.0)).abs() < 1e-9, "got {z_full}");
@@ -227,11 +250,12 @@ mod tests {
             "r>=R must report depth_limited (slot is at/beyond the pipe envelope)"
         );
         // r > R clamps to -R + depth_limited
-        let (z_over, lim) = depth_at(&vp(0.0, 0.0, 7.0), p, None, false);
+        let (z_over, lim, _) = depth_at(&vp(0.0, 0.0, 7.0), p, None, None, false);
         assert!((z_over - (-5.0)).abs() < 1e-9, "got {z_over}");
         assert!(lim, "r > R must report depth_limited");
         // r = R/√2 ≈ 3.5355: z = -(R - √(R² - r²)) = -(5 - √(25 - 12.5)) ≈ -1.464.
-        let (z_mid, lim) = depth_at(&vp(0.0, 0.0, 5.0_f64 / std::f64::consts::SQRT_2), p, None, false);
+        let (z_mid, lim, _) =
+            depth_at(&vp(0.0, 0.0, 5.0_f64 / std::f64::consts::SQRT_2), p, None, None, false);
         assert!(
             (z_mid - (-1.464_466_094_067_261_9)).abs() < 1e-9,
             "got {z_mid}"
@@ -246,7 +270,7 @@ mod tests {
         let p = HalfpipeProfile::VBottom {
             included_angle_deg: 60.0,
         };
-        let (z, lim) = depth_at(&vp(0.0, 0.0, 1.0), p, None, false);
+        let (z, lim, _) = depth_at(&vp(0.0, 0.0, 1.0), p, None, None, false);
         assert!((z - (-1.732_050_8)).abs() < 1e-6, "got {z}");
         assert!(!lim);
     }
@@ -256,7 +280,7 @@ mod tests {
     #[test]
     fn z_cap_clips_both_profiles() {
         let p = HalfpipeProfile::CircularArc { radius_mm: 5.0 };
-        let (z, lim) = depth_at(&vp(0.0, 0.0, 5.0), p, Some(2.0), false);
+        let (z, lim, _) = depth_at(&vp(0.0, 0.0, 5.0), p, Some(2.0), None, false);
         assert!((z - (-2.0)).abs() < 1e-9, "got {z}");
         assert!(lim);
     }
@@ -266,10 +290,44 @@ mod tests {
     fn polyline_propagates_depth_limited_flag() {
         let axis = vec![vp(0.0, 0.0, 1.0), vp(1.0, 0.0, 8.0), vp(2.0, 0.0, 0.5)];
         let p = HalfpipeProfile::CircularArc { radius_mm: 5.0 };
-        let (pts, lim) = polyline_to_z(&axis, p, None, None);
+        let (pts, lim, _reach) = polyline_to_z(&axis, p, None, None, None);
         assert_eq!(pts.len(), 3);
         // Middle vertex r=8 > R=5 → depth_limited=true overall.
         assert!(lim);
+    }
+
+    /// 898l: a ball-nose tool with a 5mm flute length cutting a
+    /// profile R=20 must clip Z to -5mm and report `tool_reach_limited`
+    /// at the deepest medial-axis vertex.
+    #[test]
+    fn tool_reach_caps_circular_arc_depth() {
+        let p = HalfpipeProfile::CircularArc { radius_mm: 20.0 };
+        // At r=20 (slot width = 40mm), natural z = -20. With a 5mm
+        // flute the cap should fire and clamp to z=-5.
+        let (z, _, reach_lim) = depth_at(&vp(0.0, 0.0, 20.0), p, None, Some(5.0), false);
+        assert!((z - (-5.0)).abs() < 1e-9, "expected z=-5, got {z}");
+        assert!(reach_lim, "expected tool_reach_limited=true");
+    }
+
+    /// 898l: when the profile depth is shallower than the tool flute,
+    /// the cap doesn't fire.
+    #[test]
+    fn tool_reach_cap_does_not_fire_when_deeper_flute_available() {
+        let p = HalfpipeProfile::CircularArc { radius_mm: 3.0 };
+        // At r=3 (slot width = 6mm), natural z = -3. With a 10mm flute
+        // the tool can easily reach the floor.
+        let (z, _, reach_lim) = depth_at(&vp(0.0, 0.0, 3.0), p, None, Some(10.0), false);
+        assert!((z - (-3.0)).abs() < 1e-9, "expected z=-3, got {z}");
+        assert!(!reach_lim);
+    }
+
+    /// 898l: `polyline_to_z` propagates the tool-reach flag.
+    #[test]
+    fn polyline_propagates_tool_reach_flag() {
+        let axis = vec![vp(0.0, 0.0, 1.0), vp(1.0, 0.0, 20.0), vp(2.0, 0.0, 0.5)];
+        let p = HalfpipeProfile::CircularArc { radius_mm: 20.0 };
+        let (_pts, _lim, reach_lim) = polyline_to_z(&axis, p, None, Some(5.0), None);
+        assert!(reach_lim);
     }
 
     /// mchy: at a re-entrant corner the ball-nose floor depth must be
@@ -283,8 +341,8 @@ mod tests {
         // z = -(5 - sqrt(25 - 1)) ≈ -0.101. With corner detection:
         // z = -5 (the full ball radius).
         let v = vp(0.0, 0.0, 1.0);
-        let (z_no_corner, _) = depth_at(&v, p, None, false);
-        let (z_corner, _) = depth_at(&v, p, None, true);
+        let (z_no_corner, _, _) = depth_at(&v, p, None, None, false);
+        let (z_corner, _, _) = depth_at(&v, p, None, None, true);
         assert!(
             (z_no_corner - (-0.101_020_5)).abs() < 1e-4,
             "non-corner depth changed: got {z_no_corner}",

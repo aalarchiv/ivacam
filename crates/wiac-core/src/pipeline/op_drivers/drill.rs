@@ -88,6 +88,7 @@ fn emit_stufenfase<P: PostProcessor>(
     }
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut found = 0usize;
+    let mut non_circle_skipped = 0usize;
     for (idx, obj) in objects.iter().enumerate() {
         if !op_includes_object(op, obj, idx) {
             continue;
@@ -99,6 +100,12 @@ fn emit_stufenfase<P: PostProcessor>(
             continue;
         };
         if !matches!(first.kind, SegmentKind::Circle) {
+            // s43q: stufenfase only chamfers true Circle objects today.
+            // Closed contours that are arcs / lines / polygons get
+            // dropped without complaint, leaving the user wondering why
+            // their square holes got no rim chamfer. Warn explicitly so
+            // the silent skip becomes visible.
+            non_circle_skipped += 1;
             continue;
         }
         let Some(center) = first.center else {
@@ -121,6 +128,16 @@ fn emit_stufenfase<P: PostProcessor>(
         }
         polylines.push(flat);
         found += 1;
+    }
+    if non_circle_skipped > 0 {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "stufenfase_non_circle_skipped".into(),
+            message: format!(
+                "drill op '{}': stufenfase rim chamfer only fires on closed Circle objects; {non_circle_skipped} closed contour(s) (arc-chains, polygons, etc.) were skipped without a chamfer.",
+                op.name
+            ),
+        });
     }
     if found == 0 {
         return Ok(());

@@ -52,21 +52,35 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
             }
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
-                // Per-tab radius for crossing detection. Walks all tabs
-                // and uses the MAX lift Z of any that touches this arc
-                // (audit 3wv: per-tab overrides). The midpoint-of-chord
-                // heuristic stays — exact arc-intersection math here
-                // would be heavier and the chord-mid check has been the
-                // shipped behavior since rt1.10.
+                // l5vy: proper arc-vs-tab-footprint intersection.
+                // The pre-l5vy chord-midpoint heuristic missed two
+                // common failure modes — long arcs whose chord
+                // midpoint is on the opposite side of the arc from
+                // the tab, and arcs that graze the tab's BOW outside
+                // the chord. It also lifted the entire arc when a
+                // short chord's midpoint happened to land inside a
+                // tab. Here we walk every tab, check whether the
+                // tab's disc actually intersects the arc's sweep
+                // (within its angular span), and pick the MAX lift
+                // (audit 3wv: per-tab overrides). The rt1.10
+                // chord-midpoint behavior survives as the deferred
+                // "ramping along curved path" v2 fallback inside
+                // emit_arc_chord_with_tabs (which already chord-
+                // tessellates the arc and reuses line-tab math).
                 let fallback_width = tab_radius * 2.0;
                 let fallback_lift = (tabs_z - cut_z).abs();
-                let mid_x = (seg.start.x + seg.end.x) * 0.5;
-                let mid_y = (seg.start.y + seg.end.y) * 0.5;
+                let center = seg
+                    .center
+                    .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+                let arc_radius = (seg.start.x - center.x).hypot(seg.start.y - center.y);
                 let arc_tab_z = tabs
                     .iter()
                     .filter_map(|t| {
                         let r = t.radius(fallback_width);
-                        if (mid_x - t.x).hypot(mid_y - t.y) < r {
+                        if r <= 0.0 {
+                            return None;
+                        }
+                        if arc_intersects_tab(seg, center, arc_radius, t.x, t.y, r) {
                             Some(cut_z + t.lift(fallback_lift))
                         } else {
                             None
@@ -74,9 +88,6 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
                     })
                     .fold(f64::NEG_INFINITY, f64::max);
                 let crosses = arc_tab_z.is_finite();
-                let center = seg
-                    .center
-                    .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
                 let i = center.x - seg.start.x;
                 let j = center.y - seg.start.y;
                 if !crosses {
@@ -231,6 +242,118 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
         seg.start.x + t * (seg.end.x - seg.start.x),
         seg.start.y + t * (seg.end.y - seg.start.y),
     )
+}
+
+/// l5vy: true arc-vs-tab-disc intersection test. The arc lives on a
+/// circle of radius `arc_radius` around `center` swept from
+/// `seg.start` to `seg.end` (signed sweep = 4·atan(bulge)); the tab
+/// is a disc of radius `tab_radius` around `(tab_x, tab_y)`.
+/// Returns true when any point of the arc's sweep lies inside the
+/// disc.
+///
+/// Strategy:
+/// 1. Cheap reject: if `dist(center, tab) > arc_radius + tab_radius`
+///    or `< |arc_radius - tab_radius|`, the two circles miss entirely
+///    (no two-circle intersection).
+/// 2. If the tab disc fully contains the arc circle (or vice versa)
+///    we're definitely inside.
+/// 3. Otherwise compute the two intersection angles between the arc
+///    circle and the tab circle, then check whether either lands
+///    inside the arc's angular sweep — OR whether either of the
+///    arc's endpoints sits inside the disc (tangential graze case).
+fn arc_intersects_tab(
+    seg: &Segment,
+    center: Point2,
+    arc_radius: f64,
+    tab_x: f64,
+    tab_y: f64,
+    tab_radius: f64,
+) -> bool {
+    // Endpoint-in-disc shortcut: catches tangential grazes where the
+    // arc lifts entirely into the tab.
+    let start_in_disc = (seg.start.x - tab_x).hypot(seg.start.y - tab_y) <= tab_radius;
+    if start_in_disc {
+        return true;
+    }
+    let end_in_disc = (seg.end.x - tab_x).hypot(seg.end.y - tab_y) <= tab_radius;
+    if end_in_disc {
+        return true;
+    }
+    if arc_radius < 1e-9 || tab_radius < 1e-9 {
+        return false;
+    }
+    let cdx = tab_x - center.x;
+    let cdy = tab_y - center.y;
+    let d = cdx.hypot(cdy);
+    // Two circles miss entirely.
+    if d > arc_radius + tab_radius + 1e-9 {
+        return false;
+    }
+    // One contains the other with NO intersection ring — the arc
+    // either sits fully outside or fully inside the disc. Endpoint
+    // checks above handle the "fully inside" case; the "fully
+    // contains the arc circle but center far away" case is impossible
+    // when both endpoints are outside.
+    if d + arc_radius < tab_radius - 1e-9 {
+        // Arc circle fully inside tab disc — every arc point is in.
+        return true;
+    }
+    if d + tab_radius < arc_radius - 1e-9 {
+        // Tab disc fully inside arc circle, on the side away from
+        // every point of the arc (since endpoints were both outside).
+        // In that case the arc never visits the tab disc.
+        return false;
+    }
+    // Two intersection points of the arc circle and the tab circle.
+    // Place the tab center along the +X axis from arc center
+    // (rotation by phi = atan2(cdy, cdx)) — angle of the two
+    // intersection points relative to arc center is phi ± alpha
+    // where alpha = acos((d² + arc_radius² - tab_radius²) / (2·d·arc_radius)).
+    let cos_alpha =
+        (d * d + arc_radius * arc_radius - tab_radius * tab_radius) / (2.0 * d * arc_radius);
+    // Clamp for FP safety (near-tangent cases land just past ±1).
+    let cos_alpha = cos_alpha.clamp(-1.0, 1.0);
+    let alpha = cos_alpha.acos();
+    let phi = cdy.atan2(cdx);
+    let theta_a = phi + alpha;
+    let theta_b = phi - alpha;
+    let theta_start = (seg.start.y - center.y).atan2(seg.start.x - center.x);
+    // Signed sweep (positive = CCW); matches bulge convention.
+    let sweep = 4.0 * seg.bulge.atan();
+    arc_contains_angle(theta_start, sweep, theta_a) || arc_contains_angle(theta_start, sweep, theta_b)
+}
+
+/// Returns true when `theta` lies within the directed arc sweep from
+/// `theta_start` by `sweep` radians (signed: CCW positive, CW
+/// negative). Wraps cleanly across ±π discontinuities. A full
+/// revolution (|sweep| >= 2π) always contains every angle.
+fn arc_contains_angle(theta_start: f64, sweep: f64, theta: f64) -> bool {
+    let two_pi = std::f64::consts::TAU;
+    if sweep.abs() >= two_pi - 1e-9 {
+        return true;
+    }
+    // Walk forward by sweep direction; normalize (theta - theta_start) into the
+    // sweep direction's sign so the comparison reduces to 0 ≤ delta ≤ |sweep|.
+    let mut delta = theta - theta_start;
+    if sweep >= 0.0 {
+        // CCW: normalize delta into [0, 2π).
+        while delta < -1e-12 {
+            delta += two_pi;
+        }
+        while delta >= two_pi - 1e-12 {
+            delta -= two_pi;
+        }
+        delta <= sweep + 1e-9
+    } else {
+        // CW: normalize delta into (-2π, 0].
+        while delta > 1e-12 {
+            delta -= two_pi;
+        }
+        while delta <= -two_pi + 1e-12 {
+            delta += two_pi;
+        }
+        delta >= sweep - 1e-9
+    }
 }
 
 /// Emit a tab-crossing arc by discretizing it into short chord

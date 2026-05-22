@@ -41,6 +41,34 @@ impl Post {
         fmt_num(v, self.state.decimal_separator)
     }
 
+    /// nxn0: render a dwell value in the active post's time unit.
+    /// Pipeline always passes seconds; LinuxCNC/Smoothie keep them as
+    /// seconds, Mach3/Mach4/Centroid (and any profile that opts in)
+    /// emit milliseconds = seconds * 1000. Integer-rendered when the
+    /// scaled value lands on an integer so the typical "500 ms"
+    /// doesn't read "500.0000" on the line.
+    fn fmt_dwell_p(&self, seconds: f64) -> String {
+        use crate::gcode::post_profile::DwellUnit;
+        let unit = self
+            .state
+            .profile
+            .as_ref()
+            .and_then(|p| p.dwell_unit)
+            .unwrap_or(DwellUnit::Seconds);
+        let v = match unit {
+            DwellUnit::Seconds => seconds,
+            DwellUnit::Milliseconds => seconds * 1000.0,
+        };
+        // Integer-friendly render when the value is whole; matches
+        // the way most posts emit "P500" rather than "P500.0000".
+        if (v.round() - v).abs() < 1e-9 && unit == DwellUnit::Milliseconds {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let n = v.round() as i64;
+            return n.to_string();
+        }
+        self.fmt(v)
+    }
+
     /// Same as `fmt` but converts mm → emit units (w9hd). Used for
     /// every value that represents a length / position in pipeline
     /// (mm) coordinates — X/Y/Z/I/J/R/Q + machine_offsets + Z-shift.
@@ -478,9 +506,12 @@ impl PostProcessor for Post {
         // G81 otherwise, so machinists who watch the canned cycle code see what
         // they expect.
         // w9hd: R is a length (retract plane in pipeline mm) — `fmt_len`
-        // applies the inch scale. Dwell stays in seconds (no unit conversion).
+        // applies the inch scale.
+        // nxn0: Dwell is in seconds at the pipeline boundary; the post
+        // converts to milliseconds when the active profile asks for it
+        // (Mach3/Mach4/Centroid). LinuxCNC default keeps seconds.
         let dwell = if dwell_sec > 0.0 {
-            format!(" P{}", self.fmt(dwell_sec))
+            format!(" P{}", self.fmt_dwell_p(dwell_sec))
         } else {
             String::new()
         };
@@ -494,8 +525,9 @@ impl PostProcessor for Post {
     }
     fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
         // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
+        // nxn0: P (dwell) follows the profile's dwell_unit.
         let dwell = if dwell_sec > 0.0 {
-            format!(" P{}", self.fmt(dwell_sec))
+            format!(" P{}", self.fmt_dwell_p(dwell_sec))
         } else {
             String::new()
         };
@@ -509,8 +541,9 @@ impl PostProcessor for Post {
     }
     fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
         // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
+        // nxn0: P (dwell) follows the profile's dwell_unit.
         let dwell = if dwell_sec > 0.0 {
-            format!(" P{}", self.fmt(dwell_sec))
+            format!(" P{}", self.fmt_dwell_p(dwell_sec))
         } else {
             String::new()
         };
@@ -590,7 +623,10 @@ impl PostProcessor for Post {
         if seconds <= 0.0 {
             return;
         }
-        let s = self.fmt(seconds);
+        // nxn0: honor profile's dwell_unit for G4 P as well — same
+        // controller will read the dwell word with the same unit
+        // semantics whether it sits on a G4 line or a canned cycle.
+        let s = self.fmt_dwell_p(seconds);
         self.write(format!("G4 P{s}"));
     }
     fn plane_xy(&mut self) {

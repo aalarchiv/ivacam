@@ -67,6 +67,26 @@ pub struct PostProfile {
     /// with per-axis enable so disabled axes drop out entirely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axes: Option<AxesConfig>,
+    /// nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P.
+    /// LinuxCNC reads `P` in SECONDS; Mach3 / Mach4 / Centroid /
+    /// many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time
+    /// scaling lives at the post boundary so the pipeline keeps
+    /// passing seconds and the post multiplies by 1000 for ms posts.
+    /// `None` ⇒ Seconds (LinuxCNC default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dwell_unit: Option<DwellUnit>,
+}
+
+/// nxn0: which time unit the post emits for `P<value>` dwell words.
+/// LinuxCNC and Smoothieware read P in seconds; Mach3/Mach4/Centroid/
+/// most Fanuc-derived controllers read P in milliseconds. Defaulting
+/// to Seconds keeps the existing LinuxCNC golden snapshots stable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DwellUnit {
+    #[default]
+    Seconds,
+    Milliseconds,
 }
 
 /// Per-axis output configuration. `enabled=false` means "drop this
@@ -300,7 +320,8 @@ impl PostProfile {
     }
 
     /// Mach3 metric bundle — `%` brackets, `.tap` extension, CRLF
-    /// line endings.
+    /// line endings. nxn0: Mach3 reads dwell `P` in milliseconds,
+    /// not seconds.
     #[must_use]
     pub fn mach3_metric() -> Self {
         Self {
@@ -309,6 +330,7 @@ impl PostProfile {
             line_ending: Some("\r\n".into()),
             program_start: Some("%\nN10 G21 G90 (wiac <version>)".into()),
             program_end: Some("M30\n%".into()),
+            dwell_unit: Some(DwellUnit::Milliseconds),
             ..Default::default()
         }
     }

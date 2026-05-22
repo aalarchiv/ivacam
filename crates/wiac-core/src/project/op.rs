@@ -267,6 +267,14 @@ pub enum OpKind {
         /// helix at radius = lerp(start_radius_frac → 1.0, i/N).
         #[serde(default = "default_thread_radial_passes")]
         radial_passes: u32,
+        /// 6uns: starting angle of the helix in radians, measured CCW
+        /// from the +X axis. Default 0 (helix starts at
+        /// `(center.x + radius, center.y)`) — the pre-6uns behavior.
+        /// Override to re-cut partial threads where the previous run
+        /// stopped mid-helix; the new run can pick up where the
+        /// last one left off.
+        #[serde(default)]
+        start_angle_rad: f64,
     },
     /// V-bit edge break (rt1.18). The cutter walks the source path
     /// itself at a single Z computed from the bit's cone angle and the

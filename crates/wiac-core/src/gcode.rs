@@ -24,6 +24,7 @@ use crate::geometry::{Point2, Segment, SegmentKind};
 
 pub mod arc_fit;
 mod entry;
+pub mod face_mill_overlay;
 pub mod grbl;
 pub mod hpgl;
 pub(crate) mod leads;
@@ -127,12 +128,17 @@ pub trait PostProcessor {
             if current_z <= z + 1e-9 {
                 break;
             }
-            // Re-enter to just above the previous peck depth at rapid, then
-            // continue feeding. We approximate that with a rapid back to
-            // current_z (the just-cut depth) — a real machine would step
-            // off a hair to avoid rubbing, but the manual fallback's job is
-            // just to be functionally equivalent.
-            self.move_to(None, None, Some(current_z));
+            // co8b: re-enter to a small clearance ABOVE the previous
+            // peck depth at rapid, then feed the last 0.5 mm down at
+            // plunge feed. Rapidding all the way down to the just-cut
+            // depth lets the cutter slam straight into chip-clogged
+            // material — fine on a slow Z servo, but it chips tips on
+            // a fast Z. The pipeline already sets feedrate(rate_v) for
+            // drill blocks, so the G1 step uses the plunge feed.
+            const RE_ENTRY_CLEARANCE_MM: f64 = 0.5;
+            let re_entry_z = current_z + RE_ENTRY_CLEARANCE_MM;
+            self.move_to(None, None, Some(re_entry_z));
+            self.linear(None, None, Some(current_z));
         }
     }
 

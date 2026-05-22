@@ -31,6 +31,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
         internal,
         climb,
         radial_passes,
+        start_angle_rad,
     } = op.kind
     else {
         return Ok(());
@@ -103,6 +104,27 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
             }
             _ => continue,
         };
+        // al30: guard against zero / near-zero bore radius. The
+        // pre-al30 code only checked `helix_radius <= 0.05` which
+        // caught internal-tool-too-large but missed corrupt source
+        // data (zero-radius circle from a CAD import) on the EXTERNAL
+        // branch — there the helix_radius came out to `tool_radius`
+        // and the emitter happily wrote a tiny helical scratch around
+        // the source XY where the user expected a real thread. Warn
+        // + skip whenever the source circle is degenerate, regardless
+        // of internal/external.
+        const MIN_BORE_RADIUS_MM: f64 = 0.1;
+        if bore_radius < MIN_BORE_RADIUS_MM {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "thread_zero_bore".into(),
+                message: format!(
+                    "Thread op '{}': source circle has radius {:.4} mm (< {MIN_BORE_RADIUS_MM:.2} mm) — looks like corrupt CAD import. Skipping; the helix would otherwise emit a scratch at the source XY.",
+                    op.name, bore_radius
+                ),
+            });
+            continue;
+        }
         let helix_radius = if internal {
             bore_radius - tool_radius
         } else {
@@ -159,6 +181,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
                 climb,
                 internal,
                 tool_radius,
+                start_angle_rad,
             );
             if path.len() >= 2 {
                 polylines.push(path);
@@ -278,6 +301,7 @@ mod tests {
                     internal: true,
                     climb: true,
                     radial_passes: 1,
+                    start_angle_rad: 0.0,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -328,6 +352,7 @@ mod tests {
                     internal: true,
                     climb: true,
                     radial_passes: 1,
+                    start_angle_rad: 0.0,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -373,6 +398,7 @@ mod tests {
                     internal: true,
                     climb: true,
                     radial_passes: 1,
+                    start_angle_rad: 0.0,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -423,6 +449,7 @@ mod tests {
                     internal: true,
                     climb: true,
                     radial_passes: 3,
+                    start_angle_rad: 0.0,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -485,6 +512,7 @@ mod tests {
                     internal: true,
                     climb: true,
                     radial_passes: 1,
+                    start_angle_rad: 0.0,
                 },
                 tool_id: 1,
                 finish_tool_id: None,

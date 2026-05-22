@@ -85,18 +85,19 @@ const DEFAULT_STEPS_PER_REV: usize = 64;
 const EXTERNAL_RETRACT_SAFETY_MM: f64 = 0.5;
 
 /// Emit the helical thread path as a list of (x, y, z) waypoints.
-/// The first waypoint sits on the start angle (0 rad from +X) at
-/// `top_z`; the last helix waypoint sits on the same angle (or near it,
-/// depending on the revolution count) at `bottom_z`. A final retract
-/// waypoint at `bottom_z` is appended so the caller's vertical G0 lift
-/// doesn't scrape the just-cut thread (see the module docs for the
-/// retract geometry). Empty when the inputs collapse to a no-op
-/// (radius <= 0, pitch <= 0, no Z range).
+/// The first waypoint sits at `start_angle_rad` (radians CCW from
+/// +X — 6uns) at `top_z`; the last helix waypoint sits at the same
+/// angular offset advanced by the helix winding at `bottom_z`. A
+/// final retract waypoint at `bottom_z` is appended so the caller's
+/// vertical G0 lift doesn't scrape the just-cut thread (see the
+/// module docs for the retract geometry). Empty when the inputs
+/// collapse to a no-op (radius <= 0, pitch <= 0, no Z range).
 ///
 /// `internal=true` means the cutter walks inside a bore; `false` means
 /// it walks around a stud. The direction is chosen so the cut is true
 /// climb (or true conventional) on a right-hand spindle regardless of
 /// orientation — see the module-level truth table.
+#[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn helix_waypoints(
     center: Point2,
@@ -107,6 +108,7 @@ pub fn helix_waypoints(
     climb: bool,
     internal: bool,
     tool_radius: f64,
+    start_angle_rad: f64,
 ) -> Vec<(f64, f64, f64)> {
     helix_waypoints_with_density(
         center,
@@ -118,6 +120,7 @@ pub fn helix_waypoints(
         internal,
         tool_radius,
         DEFAULT_STEPS_PER_REV,
+        start_angle_rad,
     )
 }
 
@@ -136,6 +139,7 @@ pub fn helix_waypoints_with_density(
     internal: bool,
     tool_radius: f64,
     steps_per_rev: usize,
+    start_angle_rad: f64,
 ) -> Vec<(f64, f64, f64)> {
     if radius <= 0.0 || pitch_mm <= 0.0 || steps_per_rev < 4 {
         return Vec::new();
@@ -163,7 +167,10 @@ pub fn helix_waypoints_with_density(
     let dir: f64 = if ccw { 1.0 } else { -1.0 };
     for i in 0..=total_steps {
         let t = i as f64 / total_steps as f64;
-        let theta = dir * t * revolutions * two_pi;
+        // 6uns: anchor at `start_angle_rad` so the cutter enters at
+        // the caller-chosen angular position. Default 0 reproduces
+        // the pre-6uns behavior (first waypoint at +X axis).
+        let theta = start_angle_rad + dir * t * revolutions * two_pi;
         let x = center.x + radius * theta.cos();
         let y = center.y + radius * theta.sin();
         let z = top_z + t * dz;
@@ -209,7 +216,7 @@ mod tests {
     /// radial retract (internal → bore center) at the same Z.
     #[test]
     fn single_revolution_at_pitch_descends_z_by_pitch() {
-        let wps = helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, true, 0.5);
+        let wps = helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, true, 0.5, 0.0);
         assert!(wps.len() >= 3);
         // Helix endpoint is the second-to-last waypoint; retract sits
         // on top of it at the same Z.
@@ -231,7 +238,7 @@ mod tests {
     /// on the helix circle.
     #[test]
     fn every_waypoint_is_on_the_circle() {
-        let wps = helix_waypoints(p(10.0, 20.0), 3.0, 0.0, -3.0, 1.0, true, true, 0.5);
+        let wps = helix_waypoints(p(10.0, 20.0), 3.0, 0.0, -3.0, 1.0, true, true, 0.5, 0.0);
         assert!(wps.len() >= 2);
         // Drop the final retract waypoint; it intentionally leaves the
         // circle to clear the just-cut thread.
@@ -248,7 +255,7 @@ mod tests {
     #[test]
     fn internal_conventional_winds_clockwise() {
         let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, false, true, 0.5, 64);
+            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, false, true, 0.5, 64, 0.0);
         let (_, y1, _) = wps[1];
         assert!(
             y1 < 0.0,
@@ -261,7 +268,7 @@ mod tests {
     #[test]
     fn internal_climb_winds_counterclockwise() {
         let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, true, 0.5, 64);
+            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, true, 0.5, 64, 0.0);
         let (_, y1, _) = wps[1];
         assert!(
             y1 > 0.0,
@@ -275,7 +282,7 @@ mod tests {
     #[test]
     fn external_climb_winds_cw() {
         let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, false, 0.5, 64);
+            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, false, 0.5, 64, 0.0);
         let (_, y1, _) = wps[1];
         assert!(
             y1 < 0.0,
@@ -288,7 +295,7 @@ mod tests {
     #[test]
     fn external_conventional_winds_ccw() {
         let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, false, false, 0.5, 64);
+            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, false, false, 0.5, 64, 0.0);
         let (_, y1, _) = wps[1];
         assert!(
             y1 > 0.0,
@@ -301,7 +308,7 @@ mod tests {
     /// retract waypoint sit at bottom_z.
     #[test]
     fn multi_revolution_descent_reaches_bottom() {
-        let wps = helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -4.0, 1.0, true, true, 0.5);
+        let wps = helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -4.0, 1.0, true, true, 0.5, 0.0);
         let helix_end = wps[wps.len() - 2];
         assert!((helix_end.2 - (-4.0)).abs() < 1e-9, "got {}", helix_end.2);
         let (_, _, retract_z) = *wps.last().unwrap();
@@ -312,7 +319,7 @@ mod tests {
     /// the post-helix G0 lift travels through cleared air (7388).
     #[test]
     fn internal_retract_pulls_cutter_to_bore_center() {
-        let wps = helix_waypoints(p(10.0, 20.0), 4.5, 0.0, -3.0, 1.0, true, true, 0.5);
+        let wps = helix_waypoints(p(10.0, 20.0), 4.5, 0.0, -3.0, 1.0, true, true, 0.5, 0.0);
         let (lx, ly, _) = *wps.last().unwrap();
         assert!(
             (lx - 10.0).abs() < 1e-9 && (ly - 20.0).abs() < 1e-9,
@@ -328,7 +335,7 @@ mod tests {
         let center = p(0.0, 0.0);
         let helix_radius = 5.0;
         let tool_radius = 1.0;
-        let wps = helix_waypoints(center, helix_radius, 0.0, -1.0, 1.0, true, false, tool_radius);
+        let wps = helix_waypoints(center, helix_radius, 0.0, -1.0, 1.0, true, false, tool_radius, 0.0);
         let (lx, ly, _) = *wps.last().unwrap();
         let r = (lx * lx + ly * ly).sqrt();
         // Clear radius is helix_radius + tool_diameter + safety;
@@ -343,8 +350,8 @@ mod tests {
     /// equal top/bottom Z.
     #[test]
     fn degenerate_inputs_return_empty() {
-        assert!(helix_waypoints(p(0.0, 0.0), 0.0, 0.0, -1.0, 1.0, true, true, 0.5).is_empty());
-        assert!(helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -1.0, 0.0, true, true, 0.5).is_empty());
-        assert!(helix_waypoints(p(0.0, 0.0), 5.0, 0.0, 0.0, 1.0, true, true, 0.5).is_empty());
+        assert!(helix_waypoints(p(0.0, 0.0), 0.0, 0.0, -1.0, 1.0, true, true, 0.5, 0.0).is_empty());
+        assert!(helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -1.0, 0.0, true, true, 0.5, 0.0).is_empty());
+        assert!(helix_waypoints(p(0.0, 0.0), 5.0, 0.0, 0.0, 1.0, true, true, 0.5, 0.0).is_empty());
     }
 }

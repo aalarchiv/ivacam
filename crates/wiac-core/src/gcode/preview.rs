@@ -269,10 +269,15 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                     sweep -= TAU;
                 }
             }
-            // ~10° per chord — chord error r·(1-cos(5°)) ≈ 0.004·r,
-            // i.e. <0.04 mm error on a 10 mm arc. With a 4-chord
-            // minimum a quarter-circle gets at least 4 chords.
-            let n = (sweep.abs() / (10f64.to_radians())).ceil().max(4.0) as usize;
+            // ~2° per chord — chord error r·(1-cos(1°)) ≈ 0.00015·r,
+            // i.e. <0.0015 mm error on a 10 mm arc. The previous 10°
+            // setting left visible scallop "teeth" in ball-nose
+            // finishing-pass heightmaps (audit biot — 0.04 mm on a 10
+            // mm arc). 2° is fine enough to vanish into normal sim
+            // cell_size choice yet only ~5× the chord count of 10°.
+            // With a 4-chord minimum a quarter-circle gets at least
+            // max(45, 4) = 45 chords.
+            let n = (sweep.abs() / (2f64.to_radians())).ceil().max(4.0) as usize;
             let dtheta = sweep / (n as f64);
             let dz = to.z - from.z;
             let mut prev = from;

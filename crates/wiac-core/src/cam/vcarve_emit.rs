@@ -44,11 +44,18 @@ const LEAD_IN_ANGLE_DEG: f64 = 10.0;
 /// depth at that point and `r` is the inscribed-circle radius (kept
 /// only for diagnostics). `depth_per_pass` is the per-level step
 /// magnitude (always positive — the cutter goes negative). The result
-/// is a single polyline whose Z monotonically respects the ratchet:
-/// every segment starts at the cut-Z reached by the previous segment
-/// and never violates the polyline's actual `z`.
+/// is a list of sub-polylines whose Z monotonically respects the
+/// ratchet: every segment starts at the cut-Z reached by the previous
+/// segment and never violates the polyline's actual `z`. **kagr**: the
+/// emitter splits its output into multiple sub-polylines so the
+/// caller (V-Carve / Halfpipe drivers) can rapid (G0) between them
+/// over uncut stock instead of dragging the bit along the surface at
+/// feed rate. Before kagr the emitter returned a single continuous
+/// polyline that contained intermediate `z=0` waypoints across uncut
+/// medial-axis points; the gcode emitter then dragged the non-flat
+/// V-bit tip across the workpiece surface, marring it.
 ///
-/// **pmpk:** the emitted polyline begins with an angled lead-in ramp
+/// **pmpk:** the first sub-polyline begins with an angled lead-in ramp
 /// that walks along the chain's spine while Z descends from 0 to the
 /// first-cut depth (`-dpp` or the chain's shallowest target, whichever
 /// is shallower). This avoids the V-bit-snapping vertical plunge that
@@ -60,7 +67,7 @@ const LEAD_IN_ANGLE_DEG: f64 = 10.0;
 // progressive-deepening sweep into one state machine — extraction
 // would split tightly-coupled cut_z/path state across helpers.
 #[allow(clippy::too_many_lines)]
-pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPolyline {
+pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<ZPolyline> {
     if axis.len() < 2 {
         return Vec::new();
     }
@@ -159,6 +166,20 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPoly
         (-tan_angle * total_arc, total_arc)
     };
 
+    // kagr: output is now a list of sub-polylines so the caller can
+    // rapid (G0) between them over uncut stock rather than dragging
+    // the cutter at feed across the workpiece surface. We accumulate
+    // into `out` and use `push_path` to flush whenever a segment of
+    // the sweep would otherwise have walked at z ≥ 0.
+    let mut out: Vec<ZPolyline> = Vec::new();
+    let push_path = |out: &mut Vec<ZPolyline>, path: &mut Vec<(f64, f64, f64)>| {
+        if path.len() >= 2 {
+            out.push(std::mem::take(path));
+        } else {
+            path.clear();
+        }
+    };
+
     // Emit the ramped first sweep. For each compact[i]:
     //   * before ramp end: z = -tan(angle) * arc[i] (clamped to
     //     ramp_end_z and to target_z[i]),
@@ -168,35 +189,63 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPoly
     //   * after ramp end: z = max(ramp_end_z, target_z[i]) — the same
     //     thing the standard forward sweep at current_level=-dpp would
     //     have emitted.
-    path.push((compact[0].0, compact[0].1, 0.0));
+    //
+    // kagr: when target_z[i] = 0 (a R≈0 boundary point — the chain
+    // has nothing to cut here), the natural z_i collapses to 0 too.
+    // We MUST NOT emit a position move at z=0 across uncut stock —
+    // the non-flat V-bit tip would scrape the surface at feed rate.
+    // We break the sub-polyline at those points so the caller rapid
+    // (G0) lifts over the uncut stretch.
+    let surface_eps = -1e-9;
     cut_z[0] = 0.0;
     let mut ramp_finished = false;
+    // Defer pushing compact[0] — it's at z=0 by definition; only
+    // start the path once the first segment dives below the surface.
     for i in 1..n {
         if !ramp_finished && arc[i] > ramp_target_len + 1e-9 {
             // Cross the ramp boundary mid-segment — emit the exact
-            // ramp-end waypoint first.
+            // ramp-end waypoint first (it's by construction at
+            // ramp_end_z < 0, so it's safe).
             let prev_arc = arc[i - 1];
             let seg_len = arc[i] - prev_arc;
             if seg_len > 1e-9 && prev_arc < ramp_target_len - 1e-9 {
                 let t = (ramp_target_len - prev_arc) / seg_len;
                 let rx = compact[i - 1].0 + t * (compact[i].0 - compact[i - 1].0);
                 let ry = compact[i - 1].1 + t * (compact[i].1 - compact[i - 1].1);
+                if path.is_empty() {
+                    // First descent into stock — push the segment
+                    // start at z=0 then the ramp-end point. The
+                    // entry is a single dive segment, not a long
+                    // surface walk.
+                    path.push((compact[i - 1].0, compact[i - 1].1, 0.0));
+                }
                 path.push((rx, ry, ramp_end_z));
             }
             ramp_finished = true;
         }
         let z_i = if ramp_finished {
-            // Past the ramp — same as the standard forward sweep at
-            // -dpp would emit: max(current_level, target_z[i]).
             ramp_end_z.max(target_z[i])
         } else {
-            // Still inside the ramp — z follows the slope, but never
-            // dives below the polyline's geometric target.
             (-tan_angle * arc[i]).max(target_z[i])
         };
-        path.push((compact[i].0, compact[i].1, z_i));
         cut_z[i] = z_i;
+        if z_i < surface_eps {
+            // Cutting: emit. If the path is empty, prepend an entry
+            // waypoint at compact[i-1] at z=0 so the gcode emitter
+            // has a starting XY (the actual descent happens between
+            // this and the next waypoint at feed; the caller's lead-
+            // in plunge handles the Z drop to start_depth before).
+            if path.is_empty() {
+                path.push((compact[i - 1].0, compact[i - 1].1, 0.0));
+            }
+            path.push((compact[i].0, compact[i].1, z_i));
+        } else {
+            // Above surface (target says don't cut here) — break the
+            // sub-polyline so the caller G0-rapids to the next cut.
+            push_path(&mut out, &mut path);
+        }
     }
+    push_path(&mut out, &mut path);
 
     // The lead-in ramp already played the role of the first forward
     // sweep at current_level = -dpp.
@@ -210,17 +259,29 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPoly
     // pipeline-level depth-limited warning surfaces the under-cut to
     // the user (see acceptance criteria option (a)).
     if (ramp_end_z - first_cut_z).abs() > 1e-9 {
-        return path;
+        return out;
     }
     let mut current_level = -2.0 * dpp;
+    // kagr: subsequent forward/reverse sweeps emit a position move
+    // ONLY when cut_z[i] < 0 (real cut has already happened at this
+    // point). Above the surface, we flush the in-progress sub-polyline
+    // and the caller will rapid (G0) to the next cut site.
+    let mut path: Vec<(f64, f64, f64)> = Vec::new();
     // Emit the reverse-sweep backstroke so the next forward sweep
-    // starts from compact[0] at z=0 (mirroring the standard ratchet
-    // ordering).
+    // starts from compact[0] (mirroring the standard ratchet ordering).
     for i in (0..n).rev() {
-        path.push((compact[i].0, compact[i].1, cut_z[i]));
+        if cut_z[i] < surface_eps {
+            path.push((compact[i].0, compact[i].1, cut_z[i]));
+        } else {
+            // Above surface — break the polyline so the caller G0-
+            // lifts here instead of scraping at feed.
+            push_path(&mut out, &mut path);
+        }
     }
+    push_path(&mut out, &mut path);
     loop {
         let mut progressed = false;
+        let mut path: Vec<(f64, f64, f64)> = Vec::new();
         // Forward sweep at current_level: cut every point to
         // max(target_z[i], current_level), but only when that's deeper
         // than cut_z[i].
@@ -233,13 +294,20 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPoly
                 cut_z[i] = next_z;
                 path.push((compact[i].0, compact[i].1, next_z));
                 progressed = true;
-            } else if i > 0 {
-                // No new material at this point on this level; emit a
-                // travel move at the current cut depth so the polyline
-                // stays continuous.
+            } else if i > 0 && cut_z[i] < surface_eps {
+                // No new material at this point on this level but a
+                // prior pass DID cut here — emit a travel move at the
+                // current cut depth so the polyline stays continuous
+                // INSIDE the kerf.
                 path.push((compact[i].0, compact[i].1, cut_z[i]));
+            } else {
+                // Above surface — break the polyline so the caller
+                // G0-lifts over uncut stock at fast_z instead of
+                // dragging the V-bit tip across the workpiece (kagr).
+                push_path(&mut out, &mut path);
             }
         }
+        push_path(&mut out, &mut path);
         if !progressed {
             break;
         }
@@ -247,17 +315,23 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPoly
         // (already-reached) depth, so the bit ends up at the start
         // ready for the next deeper level. This is the "ratchet"
         // backstroke. We don't lower Z further on this reverse pass —
-        // it's a position move, not a cut.
+        // it's a position move, not a cut. Same surface-skip rule.
+        let mut path: Vec<(f64, f64, f64)> = Vec::new();
         for i in (0..n).rev() {
-            path.push((compact[i].0, compact[i].1, cut_z[i]));
+            if cut_z[i] < surface_eps {
+                path.push((compact[i].0, compact[i].1, cut_z[i]));
+            } else {
+                push_path(&mut out, &mut path);
+            }
         }
+        push_path(&mut out, &mut path);
         current_level -= dpp;
         if current_level < target_z.iter().fold(0.0_f64, |a, &b| a.min(b)) - dpp {
             break;
         }
     }
 
-    path
+    out
 }
 
 #[cfg(test)]
@@ -275,9 +349,13 @@ mod tests {
         // Polyline whose deepest point is shallower than DPP — should
         // cut to the target on the first level and stop.
         let axis = vec![(0.0, 0.0, -0.5, 0.25), (5.0, 0.0, -0.5, 0.25)];
-        let path = ratchet_emit(&axis, 1.0);
-        assert!(!path.is_empty());
-        let z_min = path.iter().map(|t| t.2).fold(0.0_f64, f64::min);
+        let polylines = ratchet_emit(&axis, 1.0);
+        assert!(!polylines.is_empty());
+        let z_min = polylines
+            .iter()
+            .flatten()
+            .map(|t| t.2)
+            .fold(0.0_f64, f64::min);
         assert!((z_min + 0.5).abs() < 1e-6, "z_min = {z_min}");
     }
 
@@ -301,8 +379,8 @@ mod tests {
             axis.push((x, 0.0, z, 1.5));
         }
         let dpp = 1.0;
-        let path = ratchet_emit(&axis, dpp);
-        assert!(!path.is_empty(), "path should be non-empty");
+        let polylines = ratchet_emit(&axis, dpp);
+        assert!(!polylines.is_empty(), "path should be non-empty");
         // Steepness check: no plunging segment may have horizontal
         // projection < (vertical_drop / tan(45°)) — i.e. no near-
         // vertical descent into solid stock. We focus on the FIRST
@@ -311,22 +389,24 @@ mod tests {
         // are permitted there.
         let threshold = 0.05_f64; // mm vertical
         let mut cut_z = 0.0_f64; // tracks deepest Z reached so far
-        for w in path.windows(2) {
-            let (ax, ay, az) = w[0];
-            let (bx, by, bz) = w[1];
-            // Only check segments that go DEEPER than anything yet —
-            // i.e. the very first plunge into uncarved stock.
-            if bz < cut_z - 1e-9 {
-                let h = (bx - ax).hypot(by - ay);
-                let v = az - bz; // positive on plunge
-                if v > threshold {
-                    assert!(
-                        h > v * 0.5,
-                        "first-plunge segment too steep: h={h:.4} mm, v={v:.4} mm \
-                         (from ({ax:.3},{ay:.3},{az:.3}) to ({bx:.3},{by:.3},{bz:.3}))",
-                    );
+        for poly in &polylines {
+            for w in poly.windows(2) {
+                let (ax, ay, az) = w[0];
+                let (bx, by, bz) = w[1];
+                // Only check segments that go DEEPER than anything yet —
+                // i.e. the very first plunge into uncarved stock.
+                if bz < cut_z - 1e-9 {
+                    let h = (bx - ax).hypot(by - ay);
+                    let v = az - bz; // positive on plunge
+                    if v > threshold {
+                        assert!(
+                            h > v * 0.5,
+                            "first-plunge segment too steep: h={h:.4} mm, v={v:.4} mm \
+                             (from ({ax:.3},{ay:.3},{az:.3}) to ({bx:.3},{by:.3},{bz:.3}))",
+                        );
+                    }
+                    cut_z = cut_z.min(bz);
                 }
-                cut_z = cut_z.min(bz);
             }
         }
     }
@@ -340,13 +420,55 @@ mod tests {
             (5.0, 0.0, -3.0, 1.5),
             (10.0, 0.0, -3.0, 1.5),
         ];
-        let path = ratchet_emit(&axis, 1.0);
-        let mut levels: Vec<f64> = path.iter().map(|t| t.2).collect();
+        let polylines = ratchet_emit(&axis, 1.0);
+        let mut levels: Vec<f64> = polylines.iter().flatten().map(|t| t.2).collect();
         levels.sort_by(|a, b| a.partial_cmp(b).unwrap());
         levels.dedup_by(|a, b| (*a - *b).abs() < 0.05);
         assert!(
             levels.len() >= 3,
             "expected ≥3 distinct Z levels, got {levels:?}"
         );
+    }
+
+    /// kagr: when the medial-axis chain has uncut sections (target_z
+    /// stays at 0 across long stretches because the slot is shallower
+    /// than DPP at those points), the ratchet must NOT emit position
+    /// moves at z=0 that walk across the workpiece surface at feed
+    /// rate. Instead it splits the toolpath into sub-polylines so the
+    /// caller can rapid (G0) between them at safe Z.
+    ///
+    /// Synthesize a chain that's deep at the middle and shallow
+    /// (target_z=0) at the ends — with DPP > end-depth, only the
+    /// middle is cut. The reverse / second-pass sweeps must skip the
+    /// uncut ends. Each sub-polyline is allowed to BEGIN with a
+    /// single z=0 waypoint (the lead-in ramp entry / re-entry XY);
+    /// every other waypoint must sit below the work surface.
+    #[test]
+    fn no_position_moves_above_surface() {
+        // 20mm-long medial axis. Middle 6mm is target_z=-1, ends are 0.
+        let mut axis: Vec<(f64, f64, f64, f64)> = Vec::new();
+        for i in 0..=20 {
+            let x = i as f64;
+            // Shallow trough centered on x=10: target_z=-1 for 7<=x<=13, else 0.
+            let z = if (7.0..=13.0).contains(&x) { -1.0 } else { 0.0 };
+            axis.push((x, 0.0, z, 0.5));
+        }
+        // DPP = 2.0 so we cut the whole trough in the first pass; the
+        // bug surface area is the SUBSEQUENT reverse sweep which used
+        // to emit z=cut_z[i]=0 at the uncut ends.
+        let polylines = ratchet_emit(&axis, 2.0);
+        assert!(!polylines.is_empty(), "expected at least one sub-polyline");
+        // Each sub-polyline may BEGIN with a single z=0 waypoint
+        // (re-entry XY after the caller's G0-lift / plunge). Any
+        // additional z=0 waypoint is a bug — it'd drag the cutter
+        // across uncut stock at feed.
+        for (poly_idx, poly) in polylines.iter().enumerate() {
+            let surface_count = poly.iter().filter(|t| t.2 >= -1e-9).count();
+            assert!(
+                surface_count <= 1,
+                "polyline #{poly_idx} has {surface_count} surface waypoints (>1 = kagr bug); \
+                 poly = {poly:?}",
+            );
+        }
     }
 }

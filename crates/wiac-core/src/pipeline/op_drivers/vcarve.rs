@@ -198,9 +198,18 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                     any_skipped_below_tip = true;
                     continue;
                 }
-                let path = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
-                if path.len() >= 2 {
-                    polylines.push(path);
+                // kagr: ratchet_emit returns a list of sub-polylines
+                // so the caller can rapid (G0) between them rather
+                // than dragging the bit across uncut stock at feed.
+                let paths = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
+                let mut added_any = false;
+                for p in paths {
+                    if p.len() >= 2 {
+                        polylines.push(p);
+                        added_any = true;
+                    }
+                }
+                if added_any {
                     any_non_zero_emitted = true;
                 }
             }

@@ -88,8 +88,7 @@ fn frame_preview_regions(
 mod tests {
     use super::*;
     use crate::cam::source_combine::FrameShape;
-    use crate::geometry::Point2;
-    use crate::pipeline::test_helpers::{closed_circle, endmill, project_with_segments};
+    use crate::pipeline::test_helpers::{closed_square, endmill, project_with_segments};
     use crate::project::{
         ContourParams, Op, OpKind, OpParams, OpSource, PocketParams, PocketStrategy,
     };
@@ -122,11 +121,12 @@ mod tests {
     #[test]
     fn rectangle_frame_preview_carries_selection_as_hole() {
         let project = project_with_segments(
-            closed_circle(Point2::new(0.0, 0.0), 5.0),
+            closed_square(10.0),
             vec![pocket_outside_op(FrameShape::Rectangle)],
             vec![endmill(1, 3.0)],
         );
-        let objects = crate::cam::chaining::segments_to_objects(&project.segments);
+        let mut objects = crate::cam::chaining::segments_to_objects(&project.segments);
+        crate::cam::chaining::classify_containment(&mut objects);
         let regions = build_region_previews(&project, &objects);
         assert_eq!(regions.len(), 1, "expected exactly one region");
         let r = &regions[0];
@@ -143,11 +143,12 @@ mod tests {
     #[test]
     fn rounded_rectangle_frame_preview_carries_selection_as_hole() {
         let project = project_with_segments(
-            closed_circle(Point2::new(0.0, 0.0), 5.0),
+            closed_square(10.0),
             vec![pocket_outside_op(FrameShape::RoundedRectangle)],
             vec![endmill(1, 3.0)],
         );
-        let objects = crate::cam::chaining::segments_to_objects(&project.segments);
+        let mut objects = crate::cam::chaining::segments_to_objects(&project.segments);
+        crate::cam::chaining::classify_containment(&mut objects);
         let regions = build_region_previews(&project, &objects);
         assert_eq!(regions.len(), 1, "expected exactly one region");
         let r = &regions[0];

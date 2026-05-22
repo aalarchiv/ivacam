@@ -83,11 +83,37 @@ impl Heightmap {
         let idx = (iy as usize) * (self.cols as usize) + (ix as usize);
         if z < self.data[idx] {
             self.data[idx] = z;
-            self.dirty = Some(match self.dirty {
-                None => (ix, iy, ix + 1, iy + 1),
-                Some((x0, y0, x1, y1)) => (x0.min(ix), y0.min(iy), x1.max(ix + 1), y1.max(iy + 1)),
-            });
+            self.mark_dirty(ix, iy);
         }
+    }
+
+    /// Mark the dirty AABB to include cell `(ix, iy)` without writing to
+    /// the height data. Internal helper extracted so the lower /
+    /// lower-or-record paths share the AABB update math.
+    #[inline]
+    fn mark_dirty(&mut self, ix: u32, iy: u32) {
+        self.dirty = Some(match self.dirty {
+            None => (ix, iy, ix + 1, iy + 1),
+            Some((x0, y0, x1, y1)) => (x0.min(ix), y0.min(iy), x1.max(ix + 1), y1.max(iy + 1)),
+        });
+    }
+
+    /// ikh8: visit-tracking write — same as `lower_at` for the data side
+    /// (only lowers when `z` is strictly less than the current value),
+    /// but ALSO marks the cell dirty even when no value change happens.
+    /// Lets downstream coverage / visit heatmaps see "the cutter was
+    /// here" cells that are already at or below `z`. Bounds-checked; a
+    /// no-op for cells outside the heightmap.
+    pub fn lower_at_or_record(&mut self, ix: u32, iy: u32, z: f32) {
+        if ix >= self.cols || iy >= self.rows {
+            return;
+        }
+        let idx = (iy as usize) * (self.cols as usize) + (ix as usize);
+        if z < self.data[idx] {
+            self.data[idx] = z;
+        }
+        // Always mark dirty — that's the point of the visit-tracking path.
+        self.mark_dirty(ix, iy);
     }
 
     /// Bilinear sample at world XY. Cell `(i, j)`'s center is at
@@ -486,6 +512,41 @@ mod tests {
         hm.lower_at(10, 0, -1.0);
         hm.lower_at(0, 10, -1.0);
         assert!(hm.data.iter().all(|&v| approx(v, 0.0)));
+        assert_eq!(hm.dirty_aabb(), None);
+    }
+
+    #[test]
+    fn lower_at_or_record_marks_dirty_even_without_value_change() {
+        // ikh8: visit-tracking write — same cell visited twice with the
+        // same depth should record TWO dirty events. The strict `<`
+        // write only records the first; `lower_at_or_record` always
+        // does even when the value doesn't change.
+        let mut hm = Heightmap::new(Point2::new(0.0, 0.0), 1.0, 4, 4, 0.0);
+        hm.lower_at(2, 2, -1.0);
+        let first = hm.dirty_aabb();
+        assert!(first.is_some());
+        hm.clear_dirty();
+        assert_eq!(hm.dirty_aabb(), None);
+        // Same cell, same depth → strict lower_at would NOT mark dirty.
+        hm.lower_at(2, 2, -1.0);
+        assert_eq!(hm.dirty_aabb(), None, "lower_at must skip same-Z write");
+        // lower_at_or_record DOES mark the visit even though z didn't
+        // change.
+        hm.lower_at_or_record(2, 2, -1.0);
+        assert_eq!(hm.dirty_aabb(), Some((2, 2, 3, 3)));
+        // And it still lowers when given a strictly lower value.
+        hm.lower_at_or_record(2, 2, -2.0);
+        let idx = 2_usize * 4 + 2;
+        assert!(approx(hm.data[idx], -2.0));
+    }
+
+    #[test]
+    fn lower_at_or_record_out_of_bounds_is_noop() {
+        // ikh8: bounds-check still applies — never panic on stray
+        // indices and never mark dirty for cells outside the grid.
+        let mut hm = Heightmap::new(Point2::new(0.0, 0.0), 1.0, 4, 4, 0.0);
+        hm.lower_at_or_record(10, 0, -1.0);
+        hm.lower_at_or_record(0, 10, -1.0);
         assert_eq!(hm.dirty_aabb(), None);
     }
 

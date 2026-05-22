@@ -832,11 +832,14 @@
             |_, _, _| {},
         )
         .unwrap();
-        // Cone depth: 1 / tan(30°) ≈ 1.7320508; the gcode rounds to
-        // 4 decimals so we look for Z-1.732.
+        // e63q: cone depth with the vbit's 0.1mm tip flat is
+        // (1 - 0.05) / tan(30°) ≈ 1.6454; the gcode rounds to 4
+        // decimals so we look for Z-1.6454. Pre-e63q the formula
+        // ignored the tip flat and the test expected -1.732, which
+        // over-cut by 0.087 mm.
         assert!(
-            resp.gcode.contains("Z-1.732"),
-            "expected chamfer depth Z-1.732 in gcode:\n{}",
+            resp.gcode.contains("Z-1.6454") || resp.gcode.contains("Z-1.645"),
+            "expected chamfer depth Z-1.6454 in gcode (e63q tip-flat correction):\n{}",
             resp.gcode
         );
     }
@@ -958,14 +961,17 @@
             |_, _, _| {},
         )
         .unwrap();
-        // Final Z from 2.5 / tan(30°) ≈ -4.3301.
+        // e63q: final Z = -(2.5 - 0.05) / tan(30°) ≈ -4.2435 (the
+        // vbit's 0.1mm tip flat subtracts tip_radius=0.05 before the
+        // tan-division). Pre-e63q the formula gave -4.3301 — that
+        // over-cut a 60° V-bit chamfer by 0.05/tan(30°) ≈ 0.087 mm.
         assert!(
-            resp.gcode.contains("Z-4.330"),
-            "expected final chamfer depth Z-4.330 in gcode:\n{}",
+            resp.gcode.contains("Z-4.2435") || resp.gcode.contains("Z-4.243"),
+            "expected final chamfer depth Z-4.2435 in gcode (e63q tip-flat correction):\n{}",
             resp.gcode
         );
         // With DPP = -1.0 the schedule should include intermediate
-        // stepdowns at Z-1, Z-2, Z-3 before the final Z-4.330 lap.
+        // stepdowns at Z-1, Z-2, Z-3 before the final Z-4.24 lap.
         // Counting the distinct intermediate Zs guards against a
         // regression to single-pass.
         for z in ["Z-1\n", "Z-2\n", "Z-3\n"] {
@@ -1022,10 +1028,12 @@
             "expected chamfer_width_clamped_to_reach warning, got: {:?}",
             resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>()
         );
-        // Clamped final Z: 3.125 / tan(30°) ≈ -5.4126.
+        // e63q: clamped final Z = -(3.125 - 0.05) / tan(30°) ≈ -5.326
+        // (the vbit's 0.1mm tip flat subtracts tip_radius=0.05). Pre-
+        // e63q the value was -5.4126 (raw 3.125 / tan(30°)).
         assert!(
-            resp.gcode.contains("Z-5.412"),
-            "expected clamped final depth Z-5.412 in gcode:\n{}",
+            resp.gcode.contains("Z-5.326") || resp.gcode.contains("Z-5.3261"),
+            "expected clamped final depth Z-5.326 in gcode (e63q tip-flat correction):\n{}",
             resp.gcode
         );
         // The unclamped depth (10 / tan(30°) ≈ -17.32) must NOT

@@ -75,7 +75,14 @@ fn emit_stufenfase<P: PostProcessor>(
         .iter()
         .find(|t| t.id == cutter_id)
         .ok_or(PipelineError::UnknownTool(op.id, cutter_id))?;
-    let chamfer_z = crate::cam::chamfer::chamfer_depth(width_mm, cutter.tip_angle_deg);
+    // e63q: pass tip_diameter so the cone math accounts for the
+    // bit's nose-flat (engraver-style V-bits have a small flat that
+    // shifts the cone's z=0 width).
+    let chamfer_z = crate::cam::chamfer::chamfer_depth(
+        width_mm,
+        cutter.tip_angle_deg,
+        cutter.tip_diameter.unwrap_or(0.0),
+    );
     if chamfer_z.abs() < 1e-9 {
         return Ok(());
     }
@@ -572,9 +579,12 @@ mod tests {
             "expected drill cycle (G81/G82):\n{}",
             resp.gcode
         );
+        // e63q: with the vbit's 0.1mm tip flat, chamfer revolution Z
+        // = -(1 - 0.05) / tan(45°) = -0.95 (not -1; the pre-e63q
+        // formula ignored the tip flat).
         assert!(
-            resp.gcode.contains("Z-1"),
-            "expected chamfer revolution at Z-1 (90° tip + 1mm width):\n{}",
+            resp.gcode.contains("Z-0.95"),
+            "expected chamfer revolution at Z-0.95 (90° tip + 1mm width, e63q tip-flat correction):\n{}",
             resp.gcode
         );
     }

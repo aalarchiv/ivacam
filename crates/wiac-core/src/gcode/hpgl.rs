@@ -15,6 +15,10 @@ pub struct Post {
     pen_down: bool,
     last_x: Option<i64>,
     last_y: Option<i64>,
+    /// p9ji: last emitted plotter velocity (`VS<v>;`) in cm/s. Tracked
+    /// so we only re-emit when the value changes; the plotter remembers
+    /// the last VS until it sees a new one or `IN;` resets it.
+    last_vs: Option<u32>,
 }
 
 impl Post {
@@ -119,7 +123,27 @@ impl PostProcessor for Post {
     fn unit(&mut self, _unit: UnitSystem) {
         // HPGL is plotter-units (40 per mm); units handled by fmt_xy.
     }
-    fn feedrate(&mut self, _rate: u32) {}
+    fn feedrate(&mut self, rate: u32) {
+        // p9ji: HPGL exposes plotter velocity via `VS<v>;` (cm/s).
+        // Without an explicit VS, the plotter falls back to its boot
+        // default — wrong for drag-knife setups where a slow first cut
+        // prevents the marker from dragging through the workpiece.
+        // Map our mm/min feed → cm/s (divide by 600), clamp ≥1, and
+        // de-dup against the last emitted velocity. `rate==0` means
+        // "don't care" — leave the plotter's previous velocity.
+        if rate == 0 {
+            return;
+        }
+        // mm/min ÷ 600 = cm/s, rounded to the nearest integer (HPGL VS
+        // is integer cm/s on every plotter we've seen). Clamp ≥ 1 so a
+        // tiny mm/min input doesn't emit VS0 (which means "default").
+        let vs = ((f64::from(rate) / 600.0).round() as u32).max(1);
+        if self.last_vs == Some(vs) {
+            return;
+        }
+        self.write(format!("VS{vs};"));
+        self.last_vs = Some(vs);
+    }
     fn program_start(&mut self) {
         self.write("IN;SP1;");
     }
@@ -234,6 +258,58 @@ mod tests {
         assert!(
             pa_count >= 30,
             "full circle should tessellate to ≥30 PA tokens (got {pa_count}): {out}",
+        );
+    }
+
+    #[test]
+    fn p9ji_feedrate_emits_vs() {
+        // Drag-knife setup: the first feedrate call must emit VS<n>
+        // so the plotter doesn't traverse at its boot-default speed.
+        let mut post = Post::new();
+        post.program_start();
+        post.feedrate(600); // 600 mm/min → VS1
+        post.move_to(Some(10.0), Some(10.0), None);
+        let out = post.finish();
+        assert!(
+            out.contains("VS1;"),
+            "expected VS1; in HPGL output for feedrate=600 mm/min, got: {out}",
+        );
+    }
+
+    #[test]
+    fn p9ji_repeat_feedrate_deduped() {
+        // Repeated same-velocity feedrate calls should emit VS exactly
+        // once (the plotter keeps the last value until IN; resets).
+        let mut post = Post::new();
+        post.feedrate(600);
+        post.feedrate(600);
+        post.feedrate(600);
+        let out = post.finish();
+        let vs_count = out.matches("VS").count();
+        assert_eq!(vs_count, 1, "expected one VS emission, got {vs_count}: {out}");
+    }
+
+    #[test]
+    fn p9ji_feedrate_change_emits_new_vs() {
+        // Slower cut after a fast jog: must emit VS again at the new
+        // velocity so drag-knife / plotter changes show up.
+        let mut post = Post::new();
+        post.feedrate(6000); // 10 cm/s
+        post.feedrate(600); // 1 cm/s
+        let out = post.finish();
+        assert!(out.contains("VS10;"), "missing VS10 from initial fast feed: {out}");
+        assert!(out.contains("VS1;"), "missing VS1 from slow cut: {out}");
+    }
+
+    #[test]
+    fn p9ji_feedrate_zero_is_noop() {
+        // rate=0 means "don't care" — leaves prior VS intact.
+        let mut post = Post::new();
+        post.feedrate(0);
+        let out = post.finish();
+        assert!(
+            !out.contains("VS"),
+            "rate=0 should not emit VS; got: {out}",
         );
     }
 

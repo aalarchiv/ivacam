@@ -507,13 +507,32 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
 }
 
 fn program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
+    // syol: lift to fast_move_z FIRST so any park-XY move happens
+    // safely above the workpiece (the previous code emitted only the
+    // Z lift before M5/M30, leaving the head parked over the part).
     post.move_to(None, None, Some(setup.mill.fast_move_z));
+    // syol: emit a safe XY parking move BEFORE the spindle stops.
+    //   1. explicit `park_xy` in the work coordinate system, or
+    //   2. machine-home via G53 G0 X0 Y0 when `park_at_home == true`
+    //      (most hobby + pro controllers accept G53 since LinuxCNC
+    //      2.x / Mach3 / GRBL 1.1), or
+    //   3. work-zero (G0 X0 Y0) as the defensible default — both
+    //      sim and operator know where the head is at end-of-program.
+    if let Some((px, py)) = setup.machine.park_xy {
+        post.move_to(Some(px), Some(py), None);
+    } else if setup.machine.park_at_home {
+        // G53 modifies the next motion line to be in machine
+        // coordinates regardless of the active WCS. Emit raw so
+        // posts that don't model G53 (HPGL) silently drop it.
+        post.raw("G53 G0 X0 Y0");
+    } else {
+        post.move_to(Some(0.0), Some(0.0), None);
+    }
     post.spindle_off();
     if setup.tool.flood || setup.tool.mist {
         post.coolant_off();
     }
     post.program_end();
-    let _ = setup;
 }
 
 /// Emit a single polyline offset (one cut pass per multi-pass step).
@@ -1668,6 +1687,89 @@ mod tests {
         assert!(
             !first_g1.contains("Z0") || first_g1.contains("Z-2"),
             "lead-in must NOT plunge to literal Z0; first G1: {first_g1}"
+        );
+    }
+
+    #[test]
+    fn syol_program_end_parks_at_work_zero_by_default() {
+        // syol: program_end must lift Z to fast_move_z, traverse to a
+        // safe XY, THEN shut off the spindle. Default (no park config)
+        // = G0 X0 Y0 in WCS — the operator's reference zero, away
+        // from the part for most setups.
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -2.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        // The tail of the program must lift to Z5, traverse to (0,0),
+        // THEN turn the spindle off.
+        let lines: Vec<&str> = g.lines().collect();
+        let m5_idx = lines.iter().position(|l| l.contains("M5")).expect("M5 expected");
+        // At least one of the lines before M5 must contain X0 Y0 (the work zero).
+        let parks_before_m5 = lines[..m5_idx]
+            .iter()
+            .any(|l| l.contains("X0") && l.contains("Y0"));
+        assert!(
+            parks_before_m5,
+            "expected an X0 Y0 park before M5; gcode:\n{g}",
+        );
+    }
+
+    #[test]
+    fn syol_program_end_uses_g53_when_park_at_home() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -2.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+        setup.machine.park_at_home = true;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        assert!(
+            g.contains("G53 G0 X0 Y0"),
+            "park_at_home should emit G53 G0 X0 Y0; got:\n{g}",
+        );
+    }
+
+    #[test]
+    fn syol_program_end_explicit_park_xy() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -2.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+        setup.machine.park_xy = Some((150.0, 200.0));
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        assert!(
+            g.contains("X150") && g.contains("Y200"),
+            "explicit park_xy should drive the parking move; got:\n{g}",
         );
     }
 

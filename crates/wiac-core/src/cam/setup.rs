@@ -549,6 +549,22 @@ pub struct MachineConfig {
     /// `None` disables the ceiling (default, back-compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm_max: Option<u32>,
+    /// syol: when true, the program_end footer adds a `G53 G0 X0 Y0`
+    /// retract-to-machine-home before the spindle-off + M30 sequence.
+    /// Most hobby controllers (LinuxCNC, Mach3) honor G53; GRBL accepts
+    /// it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in
+    /// the current WCS (the work zero) — still safer than leaving the
+    /// spindle parked over the part. Both modes lift to `fast_move_z`
+    /// first.
+    #[serde(default, skip_serializing_if = "is_false_bool")]
+    pub park_at_home: bool,
+    /// syol: optional explicit park XY (mm, in WCS coordinates). When
+    /// `Some`, the program_end footer routes the head to this point
+    /// after the safe-Z lift, overriding the machine-home / work-zero
+    /// fallback. Useful for a known tool-station / load-station that
+    /// isn't (0, 0) in either frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub park_xy: Option<(f64, f64)>,
 }
 
 impl MachineConfig {
@@ -653,6 +669,8 @@ impl Default for MachineConfig {
             capabilities: Vec::new(),
             spindle_rpm_min: None,
             spindle_rpm_max: None,
+            park_at_home: false,
+            park_xy: None,
         }
     }
 }

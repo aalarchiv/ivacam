@@ -204,13 +204,32 @@ fn full_circle_midpoint(
 /// the default axis letter the post wants to emit. Returns a clone
 /// because the call sites hold `&self.state` and we need to release
 /// it before calling `self.fmt(v)`.
+///
+/// r164: I/J offsets are tied to the X/Y plane respectively. When the
+/// user renames X (e.g. X → A for a rotary-as-linear setup) and leaves
+/// the I axis at its built-in default name "I", auto-track the X
+/// rename so the offset letter follows the coordinate letter — most
+/// controllers expect them consistent. The user can still override the
+/// I/J name explicitly to opt out of the auto-track.
 fn axis_for(letter: char, axes: &crate::gcode::post_profile::AxesConfig) -> AxisFormat {
     match letter {
         'X' => axes.x.clone(),
         'Y' => axes.y.clone(),
         'Z' => axes.z.clone(),
-        'I' => axes.i.clone(),
-        'J' => axes.j.clone(),
+        'I' => {
+            let mut af = axes.i.clone();
+            if af.name == "I" && axes.x.name != "X" {
+                af.name.clone_from(&axes.x.name);
+            }
+            af
+        }
+        'J' => {
+            let mut af = axes.j.clone();
+            if af.name == "J" && axes.y.name != "Y" {
+                af.name.clone_from(&axes.y.name);
+            }
+            af
+        }
         _ => AxisFormat::coord(&letter.to_string()),
     }
 }
@@ -594,5 +613,64 @@ impl PostProcessor for Post {
     }
     fn set_token_ctx(&mut self, ctx: &TokenCtx) {
         self.state.token_ctx = ctx.clone();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gcode::post_profile::{AxesConfig, AxisFormat, PostProfile};
+
+    #[test]
+    fn r164_i_letter_auto_tracks_x_rename() {
+        // When X is renamed (X → A) but I is left at its default
+        // letter, the post must auto-track so the offset word uses
+        // the SAME letter as the coordinate it references. Otherwise
+        // the arc emits `A1.000 I-1.000` and a controller that
+        // expects `A1.000 I-1.000` per spec is fine, but most users
+        // who rename X expect the offset to come along (FANUC-style
+        // controllers with arbitrary axis remapping).
+        let mut post = Post::new();
+        let mut profile = PostProfile::linuxcnc_default();
+        let mut axes = AxesConfig::default();
+        axes.x.name = "A".into();
+        // Leave axes.i at the default letter — auto-track should fire.
+        profile.axes = Some(axes);
+        post.set_post_profile(Some(&profile));
+        // Seed last_x/y so the arc body emits the offset word.
+        post.state.last_x = Some(0.0);
+        post.state.last_y = Some(0.0);
+        post.arc_ccw(Some(1.0), Some(0.0), None, Some(0.5), Some(0.0));
+        let out = post.finish();
+        assert!(
+            out.contains(" A0.500"),
+            "I should auto-track X rename — expected `A0.500` for I offset, got: {out}",
+        );
+    }
+
+    #[test]
+    fn r164_i_letter_explicit_override_preserved() {
+        // If the user explicitly renames I, that overrides the
+        // X-tracking — we don't second-guess them.
+        let mut post = Post::new();
+        let mut profile = PostProfile::linuxcnc_default();
+        let mut axes = AxesConfig::default();
+        axes.x.name = "A".into();
+        axes.i = AxisFormat {
+            enabled: true,
+            name: "II".into(),
+            format: "%.3f".into(),
+            scale: 1.0,
+        };
+        profile.axes = Some(axes);
+        post.set_post_profile(Some(&profile));
+        post.state.last_x = Some(0.0);
+        post.state.last_y = Some(0.0);
+        post.arc_ccw(Some(1.0), Some(0.0), None, Some(0.5), Some(0.0));
+        let out = post.finish();
+        assert!(
+            out.contains(" II0.500"),
+            "explicit I rename should win — expected `II0.500`, got: {out}",
+        );
     }
 }

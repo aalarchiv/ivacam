@@ -100,7 +100,11 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
     // Initial 3-point fit must itself stay within tolerance (cheap sanity
     // check — the 3 points are ON the circle by construction, but radius
     // ≈ 0 or huge would already fail above).
-    let ccw = direction_ccw(center, p0, p1);
+    // knm0: pick the CCW/CW direction from the SIGNED enclosed area of
+    // the run-so-far, not just one chord. A noisy polyline can have a
+    // single chord that crosses the chord direction without the overall
+    // run reversing direction; majority-by-area is the robust signal.
+    let ccw = run_direction_ccw(&points[..3], center);
     if max_deviation(&points[..3], center, radius) > tolerance_mm {
         return (0, None);
     }
@@ -129,15 +133,22 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
         if max_deviation(&points[..=j], nc, nr) > tolerance_mm {
             break;
         }
-        // Direction stability — the new chord (prev → next) must
-        // preserve the CCW/CW orientation of the arc.
-        let new_ccw = direction_ccw(nc, p0, points[j - 1]);
+        // Direction stability — the OVERALL signed area of the chord
+        // run around the new center must preserve the CCW/CW
+        // orientation of the arc. knm0: inspecting only the last chord
+        // misclassifies noisy inputs where a single chord direction
+        // briefly flips even though the run remains monotonic.
+        let new_ccw = run_direction_ccw(&points[..=j], nc);
         if new_ccw != ccw {
             break;
         }
-        // Cap total sweep at π. A bigger sweep would need a second arc
-        // and many controllers refuse > 180° in a single G2/G3.
-        if arc_sweep(nc, p0, next, ccw) > std::f64::consts::PI + 1e-9 {
+        // 85mj: cap total sweep STRICTLY below π. Single-arc emission
+        // of an exact 180° sweep has ambiguous direction — both G2 and
+        // G3 with the same I/J trace the same chord/center pair on a
+        // 180° arc but opposite tool paths. Force such arcs to split
+        // into two ~90° halves by lowering the cap to π·0.999 (about
+        // 179.82°). The previous `> π + 1e-9` admitted exact π.
+        if arc_sweep(nc, p0, next, ccw) > std::f64::consts::PI * 0.999 {
             break;
         }
         current_center = nc;
@@ -150,6 +161,27 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
         best_count = j + 1;
     }
     (best_count, Some(best))
+}
+
+/// Majority orientation over a chord chain: sum the signed area of
+/// each chord (p_k → p_{k+1}) around `center`. Positive ⇒ CCW.
+///
+/// Falls back to the single-chord (`direction_ccw(center, p0, p1)`)
+/// signal when the chain is degenerate (≤ 1 chord) or the accumulated
+/// signed area is exactly 0 (alternating chords cancel).
+fn run_direction_ccw(points: &[Point2], center: Point2) -> bool {
+    if points.len() < 2 {
+        return false;
+    }
+    let mut accum = 0.0_f64;
+    for w in points.windows(2) {
+        accum += math::cross_2d(center, w[0], w[1]);
+    }
+    if accum.abs() < 1e-12 {
+        // Tie-break with the first chord — the legacy heuristic.
+        return direction_ccw(center, points[0], points[1]);
+    }
+    accum > 0.0
 }
 
 /// Standard 3-point circumcircle. Returns None when the three points are
@@ -381,6 +413,76 @@ mod tests {
         match out {
             FitOutput::Lines(ps) => assert_eq!(ps, pts),
             FitOutput::Arcs(_) => panic!("2-point run must fall through to Lines"),
+        }
+    }
+
+    #[test]
+    fn knm0_noisy_arc_direction_from_overall_area() {
+        // 30-point CCW quarter-arc with a single chord whose midpoint
+        // perturbation flips that chord's signed direction. The OVERALL
+        // run is still CCW; majority-by-area must pick that, even
+        // though the *last* chord briefly looks CW.
+        let mut pts: Vec<Point2> = (0..30)
+            .map(|i| {
+                let t = f64::from(i) * FRAC_PI_2 / 29.0;
+                Point2::new(t.cos(), t.sin())
+            })
+            .collect();
+        // Perturb the FINAL inter-point chord so it crosses the
+        // immediate-prior direction: copy point n-1 onto point n's
+        // position rotated slightly inward, then put n back. The exact
+        // perturbation isn't critical — the test just needs the last
+        // chord to misbehave compared with the rest of the run.
+        let n = pts.len();
+        let last = pts[n - 1];
+        let prev = pts[n - 2];
+        let dx = prev.x - last.x;
+        let dy = prev.y - last.y;
+        // Replace the prev point with a small step PAST the last point
+        // along the chord — this makes the (prev → last) chord cross
+        // sign on the cross product. The end point is left alone.
+        pts[n - 2] = Point2::new(last.x - 0.001 * dx, last.y - 0.001 * dy);
+        let out = fit_arc_run(&pts, 0.05);
+        match out {
+            FitOutput::Arcs(arcs) => {
+                // The dominant arc must be CCW — the overall sweep
+                // direction of the input. Even if the fitter has to
+                // break into multiple arcs on the disturbed chord,
+                // each arc that fits must agree with the overall run
+                // orientation.
+                let first = arcs[0];
+                assert!(
+                    first.ccw,
+                    "noisy CCW arc must be tagged CCW despite a single noisy chord — got CW",
+                );
+            }
+            FitOutput::Lines(_) => {
+                // Acceptable fallback — but the moment we DO fit, the
+                // direction must still be the overall-run signal.
+            }
+        }
+    }
+
+    #[test]
+    fn mj85_exact_180_splits_into_two_arcs() {
+        // Sample exactly π of a unit circle. Single-arc emission of a
+        // 180° sweep has ambiguous direction (chord midpoint coincides
+        // with the center), so the fitter must split it into two
+        // sub-arcs.
+        let pts: Vec<Point2> = (0..=40)
+            .map(|i| {
+                let t = f64::from(i) * PI / 40.0;
+                Point2::new(t.cos(), t.sin())
+            })
+            .collect();
+        let out = fit_arc_run(&pts, 0.001);
+        match out {
+            FitOutput::Arcs(arcs) => assert!(
+                arcs.len() >= 2,
+                "exactly-180° run must split (got {} arc(s))",
+                arcs.len()
+            ),
+            FitOutput::Lines(_) => panic!("semicircle should still fit as arcs"),
         }
     }
 }

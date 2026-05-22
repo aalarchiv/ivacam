@@ -175,14 +175,136 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
                 first.start.x + radius * (px - tx),
                 first.start.y + radius * (py - ty),
             );
-            LeadGeometry::Arc {
-                entry_or_exit: arc_start,
-                center,
-                ccw: free_left,
+            // 62pd: validate that the arc envelope fits — the swept
+            // quarter-disk of radius `radius` around `center` must not
+            // overlap any non-adjacent contour wall, otherwise the
+            // roll-on cuts into the part. If it doesn't fit, fall back
+            // to a straight lead-in of the same length (still safer
+            // than no lead-in, and shorter than carving the part).
+            if arc_lead_fits(segments, center, radius, true) {
+                LeadGeometry::Arc {
+                    entry_or_exit: arc_start,
+                    center,
+                    ccw: free_left,
+                }
+            } else {
+                LeadGeometry::Straight {
+                    from: Point2::new(first.start.x + len * px, first.start.y + len * py),
+                }
             }
         }
         LeadKind::Off => LeadGeometry::None,
     }
+}
+
+/// 62pd: does the arc-lead's swept disk overlap any contour wall that
+/// isn't immediately adjacent to the entry / exit point?
+///
+/// Returns true when the disk of radius `radius` around `center`
+/// touches NONE of the contour's chord segments past the adjacency
+/// window — i.e. the arc has room. Adjacency window is the first /
+/// last segment depending on `is_lead_in`: the lead naturally lands
+/// tangent to that segment so a small overlap there is expected and
+/// harmless.
+fn arc_lead_fits(segments: &[Segment], center: Point2, radius: f64, is_lead_in: bool) -> bool {
+    if segments.is_empty() || radius <= 0.0 {
+        return true;
+    }
+    // Allow 1 % radius slack so a chord that brushes the envelope
+    // doesn't trigger a fallback. We're guarding against real
+    // collisions, not infinitesimal contact at the tangent point.
+    let r_clear = radius * 0.99;
+    let skip_idx = if is_lead_in { 0 } else { segments.len() - 1 };
+    for (i, seg) in segments.iter().enumerate() {
+        if i == skip_idx {
+            continue;
+        }
+        let d = segment_distance_to_point(seg, center);
+        if d < r_clear {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cam::setup::{LeadKind, ToolOffset};
+
+    fn p(x: f64, y: f64) -> Point2 {
+        Point2::new(x, y)
+    }
+
+    fn segline(a: Point2, b: Point2) -> Segment {
+        Segment::line(a, b, "0", 7)
+    }
+
+    #[test]
+    fn p62d_arc_lead_falls_back_to_straight_when_no_room() {
+        // Narrow pocket (inside profile): 1.5 mm clearance between
+        // the floor (Y=1) and the ceiling (Y=2). An arc lead-in of
+        // 5 mm radius would sweep into the ceiling. The free side is
+        // the interior of the rectangle (Inside offset), so the arc
+        // wants to roll-on inward where the ceiling lives.
+        // Expect a Straight fallback.
+        let mut setup = Setup::default();
+        setup.mill.offset = ToolOffset::Inside; // pocket — free = interior
+        setup.leads.r#in = LeadKind::Arc;
+        setup.leads.in_lenght = 5.0;
+        // CCW rectangle: floor → right wall → ceiling → left wall.
+        let segments = vec![
+            segline(p(0.0, 1.0), p(20.0, 1.0)),
+            segline(p(20.0, 1.0), p(20.0, 2.0)),
+            segline(p(20.0, 2.0), p(0.0, 2.0)),
+            segline(p(0.0, 2.0), p(0.0, 1.0)),
+        ];
+        let g = lead_in_geometry(&setup, &segments);
+        assert!(
+            matches!(g, LeadGeometry::Straight { .. }),
+            "expected Straight fallback when arc envelope collides, got {g:?}",
+        );
+    }
+
+    #[test]
+    fn p62d_arc_lead_kept_when_room_available() {
+        // Plenty of room on the free side: a tiny 0.5 mm arc lead-in
+        // on a 20 mm-wide-free-space contour should remain an Arc.
+        let mut setup = Setup::default();
+        setup.mill.offset = ToolOffset::Outside;
+        setup.leads.r#in = LeadKind::Arc;
+        setup.leads.in_lenght = 0.5;
+        // A long single edge with no other walls nearby.
+        let segments = vec![segline(p(0.0, 0.0), p(50.0, 0.0))];
+        let g = lead_in_geometry(&setup, &segments);
+        assert!(
+            matches!(g, LeadGeometry::Arc { .. }),
+            "expected Arc lead-in when there's room, got {g:?}",
+        );
+    }
+}
+
+/// Shortest distance from `center` to the chord of `seg` (start→end).
+/// Arc segments are checked against their CHORD; the arc itself sits
+/// on the inner side of the chord by at most the sagitta, so chord
+/// distance over-estimates safety by sagitta — acceptable for the
+/// "fits in available room" sanity test.
+fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
+    let ax = seg.start.x;
+    let ay = seg.start.y;
+    let bx = seg.end.x;
+    let by = seg.end.y;
+    let dx = bx - ax;
+    let dy = by - ay;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq < 1e-18 {
+        // Degenerate — distance to the start point.
+        return ((center.x - ax).hypot(center.y - ay)).abs();
+    }
+    let t = (((center.x - ax) * dx + (center.y - ay) * dy) / len_sq).clamp(0.0, 1.0);
+    let px = ax + t * dx;
+    let py = ay + t * dy;
+    (center.x - px).hypot(center.y - py)
 }
 
 pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeometry {
@@ -214,10 +336,20 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
                 last.end.x + radius * (px + tx),
                 last.end.y + radius * (py + ty),
             );
-            LeadGeometry::Arc {
-                entry_or_exit: arc_end,
-                center,
-                ccw: free_left,
+            // 62pd: same fit check as lead-in — if the swept disk
+            // overlaps a non-adjacent contour wall, fall back to a
+            // straight lead-out so the cutter doesn't carve into the
+            // already-cut profile while rolling off.
+            if arc_lead_fits(segments, center, radius, false) {
+                LeadGeometry::Arc {
+                    entry_or_exit: arc_end,
+                    center,
+                    ccw: free_left,
+                }
+            } else {
+                LeadGeometry::Straight {
+                    from: Point2::new(last.end.x + len * px, last.end.y + len * py),
+                }
             }
         }
         LeadKind::Off => LeadGeometry::None,

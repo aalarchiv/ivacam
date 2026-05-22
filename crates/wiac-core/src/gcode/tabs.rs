@@ -19,6 +19,7 @@ use crate::math;
 ///
 /// Arcs through tabs are tab-skipped with a straight Z lift even when
 /// Ramp is requested — ramping along a curved path is a v2 follow-up.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn emit_path_with_tabs<P: PostProcessor>(
     segments: &[Segment],
     tabs: &[crate::cam::offsets::TabPoint],
@@ -26,12 +27,28 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
     cut_z: f64,
     tab_radius: f64,
     ramp_angle_deg: Option<f64>,
+    // y9ho: drop from tabs_z back down to cut_z at PLUNGE feedrate
+    // (rate_v), not cut feedrate (rate_h). The active feed when this
+    // is called is rate_h; we swap to rate_v for the Z-down and
+    // restore rate_h before the next horizontal cut.
+    rate_v: u32,
+    rate_h: u32,
     post: &mut P,
 ) {
     for seg in segments {
         match seg.kind {
             SegmentKind::Line => {
-                emit_line_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, ramp_angle_deg, post);
+                emit_line_with_tabs(
+                    seg,
+                    tabs,
+                    tabs_z,
+                    cut_z,
+                    tab_radius,
+                    ramp_angle_deg,
+                    rate_v,
+                    rate_h,
+                    post,
+                );
             }
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
@@ -69,7 +86,9 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
                         post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
                     }
                 } else if let Some(ramp) = ramp_angle_deg {
-                    emit_arc_chord_with_tabs(seg, tabs, tabs_z, cut_z, tab_radius, ramp, post);
+                    emit_arc_chord_with_tabs(
+                        seg, tabs, tabs_z, cut_z, tab_radius, ramp, rate_v, rate_h, post,
+                    );
                 } else {
                     post.linear(None, None, Some(arc_tab_z));
                     if seg.bulge > 0.0 {
@@ -77,13 +96,17 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
                     } else {
                         post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
                     }
+                    // y9ho: drop at plunge feed, restore cut feed.
+                    post.feedrate(rate_v);
                     post.linear(None, None, Some(cut_z));
+                    post.feedrate(rate_h);
                 }
             }
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_line_with_tabs<P: PostProcessor>(
     seg: &Segment,
     tabs: &[crate::cam::offsets::TabPoint],
@@ -91,6 +114,8 @@ fn emit_line_with_tabs<P: PostProcessor>(
     cut_z: f64,
     tab_radius: f64,
     ramp_angle_deg: Option<f64>,
+    rate_v: u32,
+    rate_h: u32,
     post: &mut P,
 ) {
     let dx = seg.end.x - seg.start.x;
@@ -182,10 +207,16 @@ fn emit_line_with_tabs<P: PostProcessor>(
                 }
             }
             _ => {
+                // y9ho: lift to tabs_z at the active cut feed (rate_h
+                // is already set), traverse across the tab footprint
+                // at cut feed, then drop back to cut_z at PLUNGE feed
+                // (rate_v). Restore cut feed before the next cut move.
                 post.linear(None, None, Some(interval_z));
                 let p_out = lerp(seg, t_out);
                 post.linear(Some(p_out.0), Some(p_out.1), None);
+                post.feedrate(rate_v);
                 post.linear(None, None, Some(cut_z));
+                post.feedrate(rate_h);
             }
         }
         cursor = t_out;
@@ -207,6 +238,7 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
 /// chain replaces the original G2/G3 with G1 moves that can carry the
 /// trapezoid Z profile. Used only when an arc actually crosses a tab
 /// and the tab type is Ramp.
+#[allow(clippy::too_many_arguments)]
 fn emit_arc_chord_with_tabs<P: PostProcessor>(
     seg: &Segment,
     tabs: &[crate::cam::offsets::TabPoint],
@@ -214,6 +246,8 @@ fn emit_arc_chord_with_tabs<P: PostProcessor>(
     cut_z: f64,
     tab_radius: f64,
     ramp_angle_deg: f64,
+    rate_v: u32,
+    rate_h: u32,
     post: &mut P,
 ) {
     let center = seg
@@ -230,6 +264,8 @@ fn emit_arc_chord_with_tabs<P: PostProcessor>(
             cut_z,
             tab_radius,
             Some(ramp_angle_deg),
+            rate_v,
+            rate_h,
             post,
         );
         return;
@@ -274,6 +310,8 @@ fn emit_arc_chord_with_tabs<P: PostProcessor>(
             cut_z,
             tab_radius,
             Some(ramp_angle_deg),
+            rate_v,
+            rate_h,
             post,
         );
         prev_theta = next_theta;

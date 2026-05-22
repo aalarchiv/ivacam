@@ -809,6 +809,8 @@ fn multi_pass<P: PostProcessor>(
                     z,
                     tab_radius,
                     tab_ramp_angle_deg,
+                    rate_v,
+                    rate_h,
                     post,
                 );
             } else {

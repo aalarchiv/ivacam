@@ -1627,3 +1627,108 @@
             resp.gcode
         );
     }
+    /// y9ho: rectangle tabs must drop from `tabs_z` back to `cut_z` at
+    /// the PLUNGE feedrate (`rate_v`), not the cut feedrate (`rate_h`).
+    /// Pre-fix the drop happened at `rate_h` — way too fast for safe
+    /// Z descent into residual stock.
+    #[test]
+    fn rectangle_tab_drop_uses_plunge_feedrate() {
+        let mut tool = endmill(1, 3.0);
+        // Make the rates distinguishable so a feed swap is visible in
+        // the output. Cut feed >> plunge feed (the bug's failure mode).
+        tool.feed_rate = 2000;
+        tool.plunge_rate = 400;
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.step = Some(-1.5);
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        let contour = crate::project::ContourParams {
+            tabs: crate::cam::setup::TabsConfig {
+                active: true,
+                width: 5.0,
+                height: 1.0,
+                tab_type: crate::cam::setup::TabType::Rectangle,
+                ramp_angle_deg: 30.0,
+            },
+            tab_mode: crate::project::TabPlacementMode::Auto { count: 1 },
+            ..crate::project::ContourParams::default()
+        };
+        let op = Op {
+            id: 1,
+            name: "Profile with tab".into(),
+            enabled: true,
+            kind: OpKind::Profile {
+                offset: ToolOffset::Outside,
+                contour,
+                profile: crate::project::ProfileParams::default(),
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params,
+        };
+        let project = Project {
+            segments: closed_square_offset(40.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![tool],
+            operations: vec![op],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // A tab block looks like:
+        //   F2000  (cut feed in effect)
+        //   G1 ... Z1            ; lift to tabs_z
+        //   G1 X.. Y..           ; traverse
+        //   F400  (plunge feed)  <-- y9ho fix
+        //   G1 ... Z-1.5         ; drop back
+        //   F2000                ; restore cut feed
+        let lines: Vec<&str> = resp.gcode.lines().collect();
+        // Find a line that lifts UP to a tab Z (positive Z post a cut
+        // pass) — depth list ends at -3.0 so tab Z = -3 + 1 = -2 or
+        // the tab Z for the first pass (-1.5 + 1 = -0.5). Just look
+        // for the F400 → Z-drop pattern.
+        let mut found_drop_at_plunge = false;
+        for (i, l) in lines.iter().enumerate() {
+            if !l.starts_with("F400") {
+                continue;
+            }
+            // Next non-empty line should be a Z-drop (no X / Y).
+            for next in lines.iter().skip(i + 1) {
+                if next.is_empty() {
+                    continue;
+                }
+                let is_z_drop = next.starts_with("G1")
+                    && next.contains('Z')
+                    && !next.contains('X')
+                    && !next.contains('Y');
+                if is_z_drop {
+                    found_drop_at_plunge = true;
+                }
+                break;
+            }
+            if found_drop_at_plunge {
+                break;
+            }
+        }
+        assert!(
+            found_drop_at_plunge,
+            "expected F400 (plunge feed) immediately before a Z-only G1 drop (tabs_z→cut_z); gcode:\n{}",
+            resp.gcode
+        );
+        // After the drop, feedrate should be restored to the cut
+        // value (F2000) before the next cut move.
+        assert!(
+            resp.gcode.matches("F2000").count() >= 2,
+            "expected F2000 to appear at least twice (initial set + tab restore); gcode:\n{}",
+            resp.gcode
+        );
+    }

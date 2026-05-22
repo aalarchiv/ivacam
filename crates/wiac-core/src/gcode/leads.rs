@@ -11,6 +11,23 @@ use crate::cam::setup::{LeadKind, Setup, ToolOffset};
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
 
+/// xmwy: open-contour test — the lead-in / lead-out helpers below
+/// downgrade Arc → Straight when the path is open (start != end). On
+/// an open slot the cutter enters and exits in free space already; a
+/// tangent roll-on arc adds tool-path length and a 90° sweep that
+/// the operator has no reason to want, and on small parts the arc's
+/// swept disk often collides with stock left of the entry point
+/// (which the arc_lead_fits check can't see — it only inspects the
+/// contour itself, not unmilled stock around it).
+fn is_closed_contour(segments: &[Segment]) -> bool {
+    if segments.len() < 2 {
+        return false;
+    }
+    let first = segments.first().unwrap().start;
+    let last = segments.last().unwrap().end;
+    (first.x - last.x).hypot(first.y - last.y) < 1e-3
+}
+
 /// Geometry of a lead-in or lead-out move.
 ///
 /// `Straight` keeps the legacy "perpendicular hop" lead — the approach
@@ -158,7 +175,20 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
     };
     let free_left = lead_free_side_left(setup, segments);
     let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
-    match setup.leads.r#in {
+    // xmwy: arc lead-in only makes geometric sense on a closed
+    // contour where the cutter has to ease tangent to a continuous
+    // wall. On an open slot the first segment ends in free space; the
+    // arc adds path length + a 90° sweep with no quality benefit, and
+    // on small slots the swept disk often grazes unmilled stock
+    // beyond the contour (which arc_lead_fits can't detect). Demote
+    // to a straight lead so the operator still gets a non-vertical
+    // entry but without the redundant sweep.
+    let kind = if matches!(setup.leads.r#in, LeadKind::Arc) && !is_closed_contour(segments) {
+        LeadKind::Straight
+    } else {
+        setup.leads.r#in
+    };
+    match kind {
         LeadKind::Straight => LeadGeometry::Straight {
             from: Point2::new(first.start.x + len * px, first.start.y + len * py),
         },
@@ -279,6 +309,55 @@ mod tests {
     }
 
     #[test]
+    fn xmwy_open_contour_arc_lead_demotes_to_straight() {
+        // An open slot (start != end) configured with `LeadKind::Arc`
+        // must yield a Straight lead — the tangent roll-on serves no
+        // geometric purpose when the cutter enters in free space, and
+        // can graze stock around the open contour that arc_lead_fits
+        // can't see.
+        let mut setup = Setup::default();
+        setup.mill.offset = ToolOffset::Outside;
+        setup.leads.r#in = LeadKind::Arc;
+        setup.leads.in_lenght = 5.0;
+        setup.leads.out = LeadKind::Arc;
+        setup.leads.out_lenght = 5.0;
+        // 20 mm open slot along +X.
+        let segments = vec![segline(p(0.0, 0.0), p(20.0, 0.0))];
+        let g_in = lead_in_geometry(&setup, &segments);
+        assert!(
+            matches!(g_in, LeadGeometry::Straight { .. }),
+            "open contour with Arc lead-in must demote to Straight, got {g_in:?}",
+        );
+        let g_out = lead_out_geometry(&setup, &segments);
+        assert!(
+            matches!(g_out, LeadGeometry::Straight { .. }),
+            "open contour with Arc lead-out must demote to Straight, got {g_out:?}",
+        );
+    }
+
+    #[test]
+    fn xmwy_closed_contour_arc_lead_still_emits_arc() {
+        // Sanity: the demotion only fires for OPEN contours. A closed
+        // square with room for the arc still gets an Arc lead.
+        let mut setup = Setup::default();
+        setup.mill.offset = ToolOffset::Inside;
+        setup.leads.r#in = LeadKind::Arc;
+        setup.leads.in_lenght = 1.0;
+        // 20 × 20 closed square, CCW.
+        let segments = vec![
+            segline(p(0.0, 0.0), p(20.0, 0.0)),
+            segline(p(20.0, 0.0), p(20.0, 20.0)),
+            segline(p(20.0, 20.0), p(0.0, 20.0)),
+            segline(p(0.0, 20.0), p(0.0, 0.0)),
+        ];
+        let g = lead_in_geometry(&setup, &segments);
+        assert!(
+            matches!(g, LeadGeometry::Arc { .. }),
+            "closed contour should still get Arc lead, got {g:?}",
+        );
+    }
+
+    #[test]
     fn p62d_arc_lead_falls_back_to_straight_when_no_room() {
         // Integration test through lead_in_geometry: a constrained
         // outside-profile contour where the arc lead lands inside the
@@ -345,7 +424,14 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
     };
     let free_left = lead_free_side_left(setup, segments);
     let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
-    match setup.leads.out {
+    // xmwy: same closed-contour gate as lead_in_geometry — open
+    // contours roll off into free space; the arc sweep adds nothing.
+    let kind = if matches!(setup.leads.out, LeadKind::Arc) && !is_closed_contour(segments) {
+        LeadKind::Straight
+    } else {
+        setup.leads.out
+    };
+    match kind {
         LeadKind::Straight => LeadGeometry::Straight {
             from: Point2::new(last.end.x + len * px, last.end.y + len * py),
         },

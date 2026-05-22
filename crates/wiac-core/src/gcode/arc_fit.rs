@@ -72,15 +72,20 @@ pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     if arcs.is_empty() {
         return FitOutput::Lines(points.to_vec());
     }
-    // Last arc must end on the run's final point. Allow up to the
-    // same tolerance the fit itself uses — the prior 1e-9 threshold
-    // here was inconsistent with the fit tolerance and forced
-    // perfectly-fitted chains off by 1e-8 to fall back to all-Lines,
-    // wiping out the arc-fit optimization for slightly-noisy input.
+    // Last arc must end on the run's final point. nxmq: the snap
+    // threshold here used to be `tolerance_mm` itself — i.e. each arc
+    // chain could drift by up to one `tol` per emitted arc, and N
+    // chained chains drift up to N·tol cumulatively. Use a quarter of
+    // `tol` so the per-chain clamp is tight enough that several
+    // chains in a row stay within the operator's expected envelope.
+    // Still loose enough that a perfectly-fitted chain off by 1e-8
+    // doesn't fall back to all-Lines (the historical regression that
+    // motivated raising the threshold above 1e-9 in the first place).
+    let snap_tol = (tolerance_mm * 0.25).max(1e-9);
     let last_arc_end = arcs.last().map(|a| a.end);
     let last_pt = points.last().copied();
     match (last_arc_end, last_pt) {
-        (Some(a), Some(p)) if (a.x - p.x).hypot(a.y - p.y) <= tolerance_mm => FitOutput::Arcs(arcs),
+        (Some(a), Some(p)) if (a.x - p.x).hypot(a.y - p.y) <= snap_tol => FitOutput::Arcs(arcs),
         _ => FitOutput::Lines(points.to_vec()),
     }
 }
@@ -479,6 +484,54 @@ mod tests {
             FitOutput::Lines(_) => {
                 // Acceptable fallback — but the moment we DO fit, the
                 // direction must still be the overall-run signal.
+            }
+        }
+    }
+
+    #[test]
+    fn nxmq_last_arc_end_snap_is_tighter_than_tol() {
+        // Synthesize a polyline whose arc-fitted chain ends ~0.6×tol
+        // away from the last point. Under the old (snap == tol)
+        // clamp, this would be accepted as an arc fit; under the
+        // new (snap == tol/4) clamp it must fall back to Lines so
+        // downstream arcs in a chain don't drift by `tol` each.
+        //
+        // We build it by sampling a quarter-arc cleanly and then
+        // appending a stray final point that's ~0.6×tol off-circle.
+        let tol = 0.01;
+        let mut pts: Vec<Point2> = (0..24)
+            .map(|i| {
+                let t = f64::from(i) * FRAC_PI_2 / 24.0;
+                Point2::new(t.cos(), t.sin())
+            })
+            .collect();
+        // Final stray point: at theta = π/2 with a radial offset of
+        // 0.6×tol. This lands inside the OLD per-arc tolerance check
+        // (max_deviation will see 0.6×tol ≤ tol so the arc grows to
+        // include it), but the resulting arc's `end` snaps to the
+        // CIRCLE at that angle — `points[last]` is 0.6×tol off the
+        // circle, so the snap-to-end gap is ~0.6×tol. New threshold
+        // (tol/4 = 0.0025) rejects; old threshold (tol = 0.01)
+        // accepted.
+        pts.push(Point2::new(0.0, 1.0 + 0.6 * tol));
+        let out = fit_arc_run(&pts, tol);
+        match out {
+            FitOutput::Lines(_) => {
+                // Expected: snap-tight clamp triggers Lines fallback.
+            }
+            FitOutput::Arcs(arcs) => {
+                // If the fit still produces arcs (because max_deviation
+                // or the run-extension caught the stray point earlier),
+                // the LAST arc's end must agree with the last polyline
+                // point within tol/4 — that's the new guarantee.
+                let a = arcs.last().unwrap().end;
+                let p = pts.last().copied().unwrap();
+                let drift = (a.x - p.x).hypot(a.y - p.y);
+                assert!(
+                    drift <= tol * 0.25 + 1e-9,
+                    "last-arc-end drift {drift} must be ≤ tol/4 ({}), got arcs: {arcs:?}",
+                    tol * 0.25,
+                );
             }
         }
     }

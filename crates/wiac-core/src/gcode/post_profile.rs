@@ -445,12 +445,94 @@ pub fn substitute(template: &str, ctx: &TokenCtx) -> String {
 /// Split a multi-line substituted template into individual gcode
 /// lines so the existing `PostProcessor::raw` / `write` paths see
 /// one line at a time (line numbering / comment passes assume that).
+///
+/// qwhz: each split line is scanned for `<token>`-shaped placeholders
+/// that the substitution pass didn't recognize (i.e. survived
+/// untouched). Lines carrying an unknown token are skipped (with a
+/// `(WARN: unknown token …)` comment inserted in their place) so the
+/// output never carries a literal `<typo>` straight to the
+/// controller — operators tend to notice the warn-comment in
+/// CAM-review and fix the profile rather than blame the machine
+/// when an unknown command shows up at runtime.
 #[must_use]
 pub fn template_lines(template: &str, ctx: &TokenCtx) -> Vec<String> {
     substitute(template, ctx)
         .split('\n')
-        .map(std::string::ToString::to_string)
+        .flat_map(|line| {
+            let unknown = find_unknown_tokens(line);
+            if unknown.is_empty() {
+                vec![line.to_string()]
+            } else {
+                // Emit one warning comment per affected line, then
+                // skip the line itself. The comment uses the
+                // dialect-portable paren form; GRBL's post rewrites
+                // `()` to `;` before emit, so this is safe across
+                // dialects.
+                let names = unknown.join(",");
+                vec![format!(
+                    "(WARN: post-profile line skipped — unknown token(s) {names})",
+                )]
+            }
+        })
         .collect()
+}
+
+/// Scan `line` for `<…>`-shaped placeholders that look like template
+/// tokens but aren't in our recognized set. Returns the list of
+/// unknown token strings (including the brackets), de-duplicated and
+/// in input order. Empty when every angle-bracketed run is either a
+/// known token or doesn't actually look like a token (e.g. an angle
+/// bracket inside an XML / HTML payload in a comment).
+fn find_unknown_tokens(line: &str) -> Vec<String> {
+    // Known token strings, lowercased (matches the case-insensitive
+    // substitution path). Keep this list in sync with `substitute`.
+    const KNOWN: &[&str] = &[
+        "<version>", "<unit>", "<t>", "<n>", "<d>", "<f>", "<s>", "<op>", "<tools>", "<project>",
+        "<nl>",
+    ];
+    let bytes = line.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        // Find the matching '>'; bail if none on the same line.
+        let mut j = i + 1;
+        while j < bytes.len() && bytes[j] != b'>' {
+            // Reject runs with embedded whitespace — those are
+            // overwhelmingly NOT meant to be template tokens (e.g.
+            // "use values < 5 mm"). Skip past this '<'.
+            if bytes[j].is_ascii_whitespace() {
+                break;
+            }
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b'>' {
+            i += 1;
+            continue;
+        }
+        // Tokens are short (<10 chars). Anything longer is almost
+        // certainly not a typo of a known token; treat as literal.
+        let tok = &line[i..=j];
+        if tok.len() > 16 {
+            i = j + 1;
+            continue;
+        }
+        // Skip empty `<>` brackets — definitely not a token typo.
+        if tok.len() <= 2 {
+            i = j + 1;
+            continue;
+        }
+        let tok_lower = tok.to_ascii_lowercase();
+        let known = KNOWN.iter().any(|k| *k == tok_lower);
+        if !known && !out.contains(&tok.to_string()) {
+            out.push(tok.to_string());
+        }
+        i = j + 1;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -513,6 +595,55 @@ mod tests {
         let ctx = TokenCtx::default();
         let v = template_lines("a\nb\nc", &ctx);
         assert_eq!(v, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn qwhz_template_lines_skips_unknown_token_lines() {
+        // A misspelled token (typo) on a template line must NOT leak
+        // through as a literal `<typo>` to the gcode output —
+        // operators rightly blame the post when the controller chokes
+        // on `<typo>` and we look amateur. Instead, the line is
+        // replaced with a `(WARN: …)` comment so CAM-review surfaces
+        // the misconfiguration.
+        let ctx = TokenCtx {
+            tool_number: 7,
+            ..TokenCtx::default()
+        };
+        let v = template_lines("T<t>\nT<typo>\n(<n>)", &ctx);
+        assert_eq!(v.len(), 3);
+        assert_eq!(v[0], "T7", "valid line should expand normally");
+        assert!(
+            v[1].starts_with("(WARN:") && v[1].contains("<typo>"),
+            "unknown-token line must become a WARN comment, got: {}",
+            v[1],
+        );
+        // Empty `<n>` value still passes through — that's substitution
+        // happily emitting the empty string for a defined-but-empty
+        // ctx field; not an unknown token.
+        assert_eq!(v[2], "()");
+    }
+
+    #[test]
+    fn qwhz_template_lines_known_tokens_still_expand() {
+        // Sanity: nothing in the validation pass interferes with the
+        // normal substitution for known tokens.
+        let ctx = TokenCtx {
+            tool_number: 5,
+            feed: 800,
+            ..TokenCtx::default()
+        };
+        let v = template_lines("T<t> F<f>", &ctx);
+        assert_eq!(v, vec!["T5 F800"]);
+    }
+
+    #[test]
+    fn qwhz_template_lines_xml_with_whitespace_left_alone() {
+        // A literal "< 5 mm" inside a comment must not trigger the
+        // unknown-token path — angle brackets with whitespace inside
+        // are not template tokens.
+        let ctx = TokenCtx::default();
+        let v = template_lines("(stock < 5 mm)", &ctx);
+        assert_eq!(v, vec!["(stock < 5 mm)"]);
     }
 
     #[test]

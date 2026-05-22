@@ -291,16 +291,26 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
 /// the axis-aligned zigzag, then rotates the emitted segments back by
 /// `+angle_deg`. Identity short-circuits when `angle_deg.abs() < 1e-9`
 /// so the 0° case has no additional cost.
+///
+/// gp2a: `islands` are closed contours pre-inflated by `tool_radius`
+/// (matches the `pocket_cascade_with_islands` contract). Every scanline
+/// is split at island crossings so the cutter lifts over raised
+/// features instead of ploughing straight through them. Returns
+/// `Vec<Vec<Segment>>` — one inner Vec per connected sub-chain. The
+/// caller wraps each in its own `PolylineOffset` so the gcode emitter
+/// inserts a real lift / rapid / re-plunge between island-split
+/// sub-chains.
 #[must_use]
 pub fn pocket_zigzag_angled(
     boundary: &[Point2],
+    islands: &[Vec<Point2>],
     stride: f64,
     tool_diameter: f64,
     angle_deg: f64,
-) -> Vec<Segment> {
+) -> Vec<Vec<Segment>> {
     let a = angle_deg.rem_euclid(180.0);
     if a.abs() < 1e-9 {
-        return pocket_zigzag(boundary, stride, tool_diameter);
+        return pocket_zigzag(boundary, islands, stride, tool_diameter);
     }
     // Pivot: bbox centre of the input boundary.
     let (min_x, max_x, min_y, max_y) = boundary.iter().fold(
@@ -325,16 +335,41 @@ pub fn pocket_zigzag_angled(
         )
     };
     let rotated: Vec<Point2> = boundary.iter().map(|p| rotate(*p, -1.0)).collect();
-    let mut segs = pocket_zigzag(&rotated, stride, tool_diameter);
-    for s in &mut segs {
-        s.start = rotate(s.start, 1.0);
-        s.end = rotate(s.end, 1.0);
+    let rotated_islands: Vec<Vec<Point2>> = islands
+        .iter()
+        .map(|isl| isl.iter().map(|p| rotate(*p, -1.0)).collect())
+        .collect();
+    let mut chains = pocket_zigzag(&rotated, &rotated_islands, stride, tool_diameter);
+    for chain in &mut chains {
+        for s in chain.iter_mut() {
+            s.start = rotate(s.start, 1.0);
+            s.end = rotate(s.end, 1.0);
+        }
     }
-    segs
+    chains
 }
 
+/// Generate a zigzag (raster) pocket fill within `boundary`, splitting
+/// each scanline stroke at every `island` crossing so raised features
+/// are left uncut.
+///
+/// gp2a: prior to this fix the function ignored islands entirely and
+/// the cutter ploughed straight through any island that fell across a
+/// scanline (a P1 correctness bug — the user's "leave this raised"
+/// feature was silently gouged out). Each scanline's even-odd crossings
+/// against the outer boundary are intersected with each island's
+/// crossings to produce "in-pocket but outside-every-island"
+/// sub-strokes. Whenever the cutter would have to skip across an
+/// island to reach the next stroke, the current chain ends and a new
+/// chain begins — the caller emits each chain as its own
+/// `PolylineOffset` so the gcode lifts to clearance between them.
 #[must_use]
-pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Vec<Segment> {
+pub fn pocket_zigzag(
+    boundary: &[Point2],
+    islands: &[Vec<Point2>],
+    stride: f64,
+    tool_diameter: f64,
+) -> Vec<Vec<Segment>> {
     if boundary.len() < 3 || stride <= 0.0 {
         return Vec::new();
     }
@@ -350,16 +385,40 @@ pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Ve
             (lo.min(p.x), hi.max(p.x))
         });
 
-    let mut out = Vec::new();
+    let mut chains: Vec<Vec<Segment>> = Vec::new();
+    let mut current: Vec<Segment> = Vec::new();
     let mut prev_end: Option<Point2> = None;
     let mut flip = false;
-    let mut y = min_y + tool_diameter * 0.5;
-    while y <= max_y - tool_diameter * 0.5 + 1e-9 {
-        let crossings = horizontal_crossings(boundary, y, min_x, max_x);
-        // Group into entry/exit pairs (even-odd rule).
-        let mut iter = crossings.chunks_exact(2);
+    let tool_r = tool_diameter * 0.5;
+    let mut y = min_y + tool_r;
+    while y <= max_y - tool_r + 1e-9 {
+        let outer = horizontal_crossings(boundary, y, min_x, max_x);
+        // Per-island crossings at this Y. Each island's crossings come
+        // in even-odd pairs (entry/exit of the island interior). We
+        // subtract those interior intervals from the outer-boundary
+        // intervals below.
+        let mut island_intervals: Vec<(f64, f64)> = Vec::new();
+        for isl in islands {
+            if isl.len() < 3 {
+                continue;
+            }
+            let xs = horizontal_crossings(isl, y, f64::NEG_INFINITY, f64::INFINITY);
+            for pair in xs.chunks_exact(2) {
+                let lo = pair[0].min(pair[1]);
+                let hi = pair[0].max(pair[1]);
+                if hi > lo + 1e-9 {
+                    island_intervals.push((lo, hi));
+                }
+            }
+        }
+
+        // Group outer crossings into entry/exit pairs (even-odd rule);
+        // each pair is a candidate stroke trimmed to the pocket's
+        // interior. We then subtract island intervals from each
+        // candidate to get the final cut sub-strokes.
         let mut strokes: Vec<(Point2, Point2)> = Vec::new();
-        for pair in iter.by_ref() {
+        let mut split_marks: Vec<bool> = Vec::new(); // true ⇒ this stroke was preceded by an island gap on this row
+        for pair in outer.chunks_exact(2) {
             let (a, b) = (pair[0], pair[1]);
             // Inset both ends by half a tool diameter so we don't carve
             // outside the polygon interior at the row endpoints. The
@@ -368,33 +427,151 @@ pub fn pocket_zigzag(boundary: &[Point2], stride: f64, tool_diameter: f64) -> Ve
             // negative.
             let lo = a.min(b);
             let hi = a.max(b);
-            let inset = (tool_diameter * 0.5).min((hi - lo) * 0.5);
+            let inset = tool_r.min((hi - lo) * 0.5);
             let new_a = lo + inset;
             let new_b = hi - inset;
             if new_b <= new_a + 1e-6 {
                 continue;
             }
-            strokes.push((Point2::new(new_a, y), Point2::new(new_b, y)));
+            // Subtract every island clearance band from [new_a, new_b].
+            // The islands handed in here are already pre-inflated by
+            // the tool radius (matches the cascade contract), so we use
+            // their crossings as-is — re-applying tool_r would
+            // double-inflate.
+            let mut sub: Vec<(f64, f64)> = vec![(new_a, new_b)];
+            for (ilo, ihi) in &island_intervals {
+                let cut_lo = *ilo;
+                let cut_hi = *ihi;
+                let mut next: Vec<(f64, f64)> = Vec::with_capacity(sub.len() + 1);
+                for &(sa, sb) in &sub {
+                    if cut_hi <= sa + 1e-9 || cut_lo >= sb - 1e-9 {
+                        next.push((sa, sb));
+                        continue;
+                    }
+                    if cut_lo > sa + 1e-6 {
+                        next.push((sa, cut_lo));
+                    }
+                    if cut_hi < sb - 1e-6 {
+                        next.push((cut_hi, sb));
+                    }
+                    // Otherwise the entire [sa, sb] is swallowed by
+                    // the island's clearance band — emit nothing.
+                }
+                sub = next;
+                if sub.is_empty() {
+                    break;
+                }
+            }
+            // First sub-stroke from this outer-pair extends the previous
+            // chain; subsequent sub-strokes (created by island splits)
+            // start a new chain.
+            for (i, (sa, sb)) in sub.iter().enumerate() {
+                if *sb > *sa + 1e-6 {
+                    strokes.push((Point2::new(*sa, y), Point2::new(*sb, y)));
+                    split_marks.push(i > 0);
+                }
+            }
         }
         if flip {
             strokes.reverse();
+            split_marks.reverse();
             for s in &mut strokes {
                 std::mem::swap(&mut s.0, &mut s.1);
             }
         }
         flip = !flip;
-        for (a, b) in strokes {
-            if let Some(prev) = prev_end {
-                if prev.distance(a) > 1e-6 {
-                    out.push(Segment::line(prev, a, "0", 7));
+        for ((a, b), force_break) in strokes.into_iter().zip(split_marks.into_iter()) {
+            let mut needs_break = force_break;
+            // Cross-row bridge sanity: when prev_end is on one side of
+            // an island and `a` is on the other side, joining them with
+            // a straight cut would cross the island. Break instead.
+            if !needs_break {
+                if let Some(prev) = prev_end {
+                    if prev.distance(a) > 1e-6
+                        && !islands.is_empty()
+                        && segment_crosses_any_polygon(prev, a, islands)
+                    {
+                        needs_break = true;
+                    }
                 }
             }
-            out.push(Segment::line(a, b, "0", 7));
+            if needs_break {
+                if !current.is_empty() {
+                    chains.push(std::mem::take(&mut current));
+                }
+                prev_end = None;
+            }
+            if let Some(prev) = prev_end {
+                if prev.distance(a) > 1e-6 {
+                    current.push(Segment::line(prev, a, "0", 7));
+                }
+            }
+            current.push(Segment::line(a, b, "0", 7));
             prev_end = Some(b);
         }
         y += stride;
     }
-    out
+    if !current.is_empty() {
+        chains.push(current);
+    }
+    chains
+}
+
+/// True iff the open segment (a, b) crosses the boundary of ANY of the
+/// polygons (or has its midpoint inside one). Used by the islands-aware
+/// zigzag to detect cross-row bridges that would gouge a raised island.
+fn segment_crosses_any_polygon(a: Point2, b: Point2, polys: &[Vec<Point2>]) -> bool {
+    for poly in polys {
+        if poly.len() < 3 {
+            continue;
+        }
+        // Sample the open segment; if any interior sample lies inside
+        // the polygon, the bridge crosses it.
+        let samples = 8;
+        for i in 1..samples {
+            let t = f64::from(i) / f64::from(samples);
+            let px = a.x + (b.x - a.x) * t;
+            let py = a.y + (b.y - a.y) * t;
+            if point_in_polygon_pts(poly, px, py) {
+                return true;
+            }
+        }
+        // Edge-to-edge intersection: a bridge can clip a corner of the
+        // island even when no sample lands inside (skinny island).
+        if segment_intersects_polygon_edges(a, b, poly) {
+            return true;
+        }
+    }
+    false
+}
+
+fn segment_intersects_polygon_edges(a: Point2, b: Point2, poly: &[Point2]) -> bool {
+    let n = poly.len();
+    for i in 0..n {
+        let c = poly[i];
+        let d = poly[(i + 1) % n];
+        if segments_intersect(a, b, c, d) {
+            return true;
+        }
+    }
+    false
+}
+
+fn segments_intersect(p1: Point2, p2: Point2, p3: Point2, p4: Point2) -> bool {
+    let d1 = orient(p3, p4, p1);
+    let d2 = orient(p3, p4, p2);
+    let d3 = orient(p1, p2, p3);
+    let d4 = orient(p1, p2, p4);
+    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0))
+        && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
+    {
+        return true;
+    }
+    false
+}
+
+fn orient(a: Point2, b: Point2, c: Point2) -> f64 {
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
 }
 
 fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<f64> {
@@ -844,13 +1021,23 @@ pub fn pocket_for_object(
                 // pocket_zigzag, then rotating the output back. Pivot is
                 // the boundary's bbox centre — keeps the result on the
                 // same canvas.
-                let strokes = pocket_zigzag_angled(
+                // gp2a: pocket_zigzag now respects islands and returns
+                // one chain per connected sub-region (a chain ends
+                // wherever a row gets chopped by an island). Each chain
+                // becomes a separate PolylineOffset so the gcode emitter
+                // lifts to clearance and re-plunges between sub-chains
+                // — instead of cutting straight through the island.
+                let chains = pocket_zigzag_angled(
                     &pts,
+                    islands,
                     step.max(0.1),
                     tool_radius * 2.0,
                     angle_deg,
                 );
-                if !strokes.is_empty() {
+                for strokes in chains {
+                    if strokes.is_empty() {
+                        continue;
+                    }
                     out.push(PolylineOffset {
                         segments: strokes,
                         closed: false,
@@ -885,7 +1072,7 @@ pub fn pocket_for_object(
                 // every bridge must stay inside it. If any bridge fails
                 // the test we abandon spiral and let the caller fall back
                 // to cascade emission, which doesn't cut bridges.
-                match stitch_rings_to_spiral(&rings, &offset.layer, offset.color) {
+                match stitch_rings_to_spiral(&rings, islands, &offset.layer, offset.color) {
                     Some(segs) if !segs.is_empty() => {
                         out.push(PolylineOffset {
                             segments: segs,
@@ -902,7 +1089,7 @@ pub fn pocket_for_object(
                     }
                     _ => {
                         tracing::debug!(
-                            "spiral pocket: bridge crosses pocket boundary in non-convex shape, falling back to cascade"
+                            "spiral pocket: bridge crosses pocket boundary or island, falling back to cascade (no bridges)"
                         );
                         // Fall through to cascade emission below using
                         // the rings we already computed.
@@ -1003,11 +1190,18 @@ pub fn pocket_for_object(
 /// inward by ~one `xy_step`).
 ///
 /// Returns None when a bridge between rings would cross the pocket
-/// boundary — happens on non-convex shapes (L / U / +) where a
-/// straight bridge can leave the safe interior. The caller should fall
-/// back to cascade emission (separate closed rings, no bridges).
-fn stitch_rings_to_spiral(rings: &[Vec<Point2>], layer: &str, color: i32) -> Option<Vec<Segment>> {
-    let pts = stitch_rings_to_polyline(rings)?;
+/// boundary or any island — happens on non-convex shapes (L / U / +)
+/// where a straight bridge can leave the safe interior, or on pockets
+/// containing islands where a bridge can plough straight through a
+/// raised feature. The caller should fall back to cascade emission
+/// (separate closed rings, no bridges).
+fn stitch_rings_to_spiral(
+    rings: &[Vec<Point2>],
+    islands: &[Vec<Point2>],
+    layer: &str,
+    color: i32,
+) -> Option<Vec<Segment>> {
+    let pts = stitch_rings_to_polyline(rings, islands)?;
     let mut out: Vec<Segment> = Vec::with_capacity(pts.len().saturating_sub(1));
     for w in pts.windows(2) {
         if w[0].distance(w[1]) > 1e-9 {
@@ -1020,11 +1214,20 @@ fn stitch_rings_to_spiral(rings: &[Vec<Point2>], layer: &str, color: i32) -> Opt
 /// Stitch cascade rings into one continuous polyline of points (the
 /// shared core of `stitch_rings_to_spiral` and the trochoidal
 /// centerline). Rotates each ring's start vertex to be nearest the
-/// previous ring's end so bridges between rings are short. Returns
-/// None when any bridge would cross the outer ring (the inset pocket
-/// boundary) — same containment guard that protects the spiral
-/// strategy on non-convex shapes.
-pub(crate) fn stitch_rings_to_polyline(rings: &[Vec<Point2>]) -> Option<Vec<Point2>> {
+/// previous ring's end so bridges between rings are short.
+///
+/// Bridge containment is the safety guard: a bridge must (a) stay
+/// inside the outer ring (the inset pocket boundary), and (b) NOT
+/// cross any island. Returns None on any violation; the caller falls
+/// back to cascade emission (separate closed rings, no bridges).
+///
+/// kqsl: prior to this fix islands were ignored — a bridge could carve
+/// straight through a raised feature on pockets-with-islands. The
+/// per-bridge check now considers every island polygon too.
+pub(crate) fn stitch_rings_to_polyline(
+    rings: &[Vec<Point2>],
+    islands: &[Vec<Point2>],
+) -> Option<Vec<Point2>> {
     if rings.is_empty() {
         return Some(Vec::new());
     }
@@ -1054,6 +1257,9 @@ pub(crate) fn stitch_rings_to_polyline(rings: &[Vec<Point2>]) -> Option<Vec<Poin
         if let Some(end) = last_end {
             if end.distance(first) > 1e-6 {
                 if !bridge_stays_inside_polygon(end, first, outer) {
+                    return None;
+                }
+                if bridge_crosses_any_island(end, first, islands) {
                     return None;
                 }
                 out.push(first);
@@ -1097,6 +1303,38 @@ pub(crate) fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point
         }
     }
     true
+}
+
+/// kqsl: true iff the open segment (a, b) crosses the interior of ANY
+/// island, i.e. a sample on the interior of the segment lies inside an
+/// island polygon, or the segment intersects an island edge. Endpoints
+/// are excluded (they may legitimately sit on an inflated island ring).
+pub(crate) fn bridge_crosses_any_island(
+    a: Point2,
+    b: Point2,
+    islands: &[Vec<Point2>],
+) -> bool {
+    if islands.is_empty() {
+        return false;
+    }
+    for isl in islands {
+        if isl.len() < 3 {
+            continue;
+        }
+        let samples = 8;
+        for i in 1..samples {
+            let t = f64::from(i) / f64::from(samples);
+            let px = a.x + (b.x - a.x) * t;
+            let py = a.y + (b.y - a.y) * t;
+            if point_in_polygon_pts(isl, px, py) {
+                return true;
+            }
+        }
+        if segment_intersects_polygon_edges(a, b, isl) {
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) fn point_in_polygon_pts(verts: &[Point2], x: f64, y: f64) -> bool {
@@ -1469,7 +1707,10 @@ mod tests {
     #[test]
     fn zigzag_pocket_fills_a_square() {
         let boundary = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];
-        let segs = pocket_zigzag(&boundary, 1.8, 2.0);
+        let chains = pocket_zigzag(&boundary, &[], 1.8, 2.0);
+        // No islands → single chain.
+        assert_eq!(chains.len(), 1, "no islands ⇒ one chain");
+        let segs = &chains[0];
         assert!(
             segs.len() > 5,
             "20x20 square at tool diameter 2 should produce many strokes; got {}",
@@ -1481,12 +1722,70 @@ mod tests {
             assert!(gap < 6.0, "stroke gap too large: {gap}");
         }
         // All endpoints should be inside the boundary's relaxed inset.
-        for s in &segs {
+        for s in segs {
             for pt in [s.start, s.end] {
                 assert!(pt.x >= -0.01 && pt.x <= 20.01);
                 assert!(pt.y >= -0.01 && pt.y <= 20.01);
             }
         }
+    }
+
+    /// kqsl: a spiral pocket with an island in the bridge path must
+    /// NOT carve through the island. The bridge-containment guard
+    /// rejects bridges that cross any island; on rejection the caller
+    /// falls back to cascade emission (separate closed rings, no
+    /// bridges). We verify by calling `stitch_rings_to_polyline`
+    /// directly with rings whose bridge between consecutive ring start
+    /// vertices crosses an island — must return None.
+    #[test]
+    fn spiral_bridge_rejected_when_crossing_island() {
+        // Two concentric rings on a 50×50 pocket; ring 0 = inset outer,
+        // ring 1 = next step inward. The island is in the middle —
+        // pretend that ring 1's start vertex sits on the FAR side of
+        // the island from ring 0's end so the candidate bridge would
+        // cross the island.
+        // Build rings manually so the bridge is forced through the
+        // island.
+        let outer = vec![p(0.0, 0.0), p(50.0, 0.0), p(50.0, 50.0), p(0.0, 50.0)];
+        let inner = vec![p(5.0, 25.0), p(20.0, 25.0), p(20.0, 5.0), p(5.0, 5.0)];
+        let rings = vec![outer.clone(), inner];
+        let island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
+        // No islands → polyline stitches without complaint (sanity).
+        assert!(stitch_rings_to_polyline(&rings, &[]).is_some());
+        // With an island that lies on the bridge path between rings —
+        // ring 0 ends near (0,0), ring 1 starts at (5,25). Move ring 1
+        // start so the bridge MUST cross the island.
+        let inner2 = vec![p(45.0, 45.0), p(45.0, 5.0), p(5.0, 5.0), p(5.0, 45.0)];
+        let rings2 = vec![outer, inner2];
+        // The bridge from outer-last to inner2[0]=(45,45) doesn't cross
+        // the island (island is in centre). Let's add a third ring whose
+        // start forces a bridge through the island.
+        let inner3 = vec![p(40.0, 25.0), p(40.0, 5.0), p(10.0, 5.0), p(10.0, 25.0)];
+        let rings3 = vec![rings2[0].clone(), rings2[1].clone(), inner3];
+        // Bridge crosses the centre island, so stitch must reject.
+        assert!(
+            stitch_rings_to_polyline(&rings3, &[island.clone()]).is_none(),
+            "stitch must reject a bridge that crosses an island",
+        );
+    }
+
+    /// kqsl helper: `bridge_crosses_any_island` detects a bridge that
+    /// goes straight through an island, and accepts one that goes
+    /// around.
+    #[test]
+    fn bridge_crosses_any_island_detects_gouge() {
+        let island = vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0), p(10.0, 20.0)];
+        assert!(bridge_crosses_any_island(
+            p(0.0, 15.0),
+            p(30.0, 15.0),
+            &[island.clone()],
+        ));
+        // Bridge clear of the island.
+        assert!(!bridge_crosses_any_island(
+            p(0.0, 5.0),
+            p(30.0, 5.0),
+            &[island],
+        ));
     }
 
     #[test]
@@ -1688,7 +1987,9 @@ mod tests {
             Point2::new(20.0, 20.0),
             Point2::new(0.0, 20.0),
         ];
-        let segs = pocket_zigzag(&boundary, 2.0, 3.0);
+        let chains = pocket_zigzag(&boundary, &[], 2.0, 3.0);
+        assert_eq!(chains.len(), 1);
+        let segs = &chains[0];
         // Pull out the horizontal cuts (the strokes — they share y).
         let strokes: Vec<&Segment> = segs
             .iter()
@@ -1722,13 +2023,15 @@ mod tests {
             Point2::new(0.0, 20.0),
         ];
         // 0° behaviour matches axis-aligned pocket_zigzag.
-        let base = pocket_zigzag(&boundary, 2.0, 3.0);
-        let zero = pocket_zigzag_angled(&boundary, 2.0, 3.0, 0.0);
+        let base = pocket_zigzag(&boundary, &[], 2.0, 3.0);
+        let zero = pocket_zigzag_angled(&boundary, &[], 2.0, 3.0, 0.0);
         assert_eq!(base.len(), zero.len(), "0° should equal axis-aligned");
+        assert_eq!(base[0].len(), zero[0].len());
         // 90° rotation produces vertical strokes inside the same bbox.
-        let vert = pocket_zigzag_angled(&boundary, 2.0, 3.0, 90.0);
+        let vert = pocket_zigzag_angled(&boundary, &[], 2.0, 3.0, 90.0);
         assert!(!vert.is_empty(), "expected strokes for 90°");
-        let strokes: Vec<_> = vert
+        let vsegs = &vert[0];
+        let strokes: Vec<_> = vsegs
             .iter()
             .filter(|s| (s.start.x - s.end.x).abs() < 1e-6)
             .collect();
@@ -1745,8 +2048,58 @@ mod tests {
             );
         }
         // 45° rotation: strokes are diagonal — no exact-axis match.
-        let diag = pocket_zigzag_angled(&boundary, 2.0, 3.0, 45.0);
+        let diag = pocket_zigzag_angled(&boundary, &[], 2.0, 3.0, 45.0);
         assert!(!diag.is_empty(), "expected strokes for 45°");
+    }
+
+    /// gp2a: a 50×50 pocket with a 10×10 island in the centre — the
+    /// zigzag must NOT carve a single continuous polyline through the
+    /// island. We expect at least one row whose stroke is split into
+    /// left + right sub-strokes by the island band.
+    #[test]
+    fn pocket_zigzag_respects_islands() {
+        let outer = vec![p(0.0, 0.0), p(50.0, 0.0), p(50.0, 50.0), p(0.0, 50.0)];
+        // Island centered at (25, 25), 10×10. CCW or CW doesn't matter
+        // — horizontal_crossings returns interior intervals either way.
+        let island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
+        let chains = pocket_zigzag(&outer, &[island.clone()], 2.0, 2.0);
+        // With an island in the middle the zigzag is no longer a single
+        // continuous chain. The cutter must lift between sub-chains;
+        // that's encoded as ≥2 chains being returned.
+        assert!(
+            chains.len() >= 2,
+            "expected ≥2 chains across an island split; got {}",
+            chains.len(),
+        );
+        // No stroke endpoint may land strictly inside the island.
+        for chain in &chains {
+            for s in chain {
+                for pt in [s.start, s.end] {
+                    let inside = pt.x > 20.01 && pt.x < 29.99 && pt.y > 20.01 && pt.y < 29.99;
+                    assert!(
+                        !inside,
+                        "zigzag stroke endpoint inside island: {pt:?}",
+                    );
+                }
+            }
+        }
+        // No single stroke crosses the island bbox horizontally.
+        for chain in &chains {
+            for s in chain {
+                if (s.start.y - s.end.y).abs() < 1e-6
+                    && s.start.y > 20.0
+                    && s.start.y < 30.0
+                {
+                    let lo = s.start.x.min(s.end.x);
+                    let hi = s.start.x.max(s.end.x);
+                    assert!(
+                        !(lo < 20.0 && hi > 30.0),
+                        "stroke at y={} runs from {lo} to {hi}, crossing the island",
+                        s.start.y,
+                    );
+                }
+            }
+        }
     }
 
     /// Regression for C5 (audit): a CW-encoded full circle (two

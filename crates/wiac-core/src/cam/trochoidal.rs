@@ -97,7 +97,7 @@ pub fn pocket_trochoidal_cancellable(
     if rings.is_empty() {
         return Some(Vec::new());
     }
-    let centerline = stitch_rings_to_polyline(&rings)?;
+    let centerline = stitch_rings_to_polyline(&rings, islands)?;
     if centerline.len() < 2 {
         return Some(Vec::new());
     }

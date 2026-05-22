@@ -1125,16 +1125,12 @@ mod tests {
     }
 
     /// w8q7: drag-knife with a positive dragoff carves the segment
-    /// offset BEHIND the spindle in the direction of travel. A 5 mm
-    /// X-axis cut with dragoff=2 should carve cells from x=-2 to
-    /// x=3 (i.e. the chord shifted -2 along +X), not x=0 to x=5.
+    /// offset BEHIND the spindle in the direction of travel. A
+    /// horizontal X-axis cut from x=10 to x=20 with dragoff=2 should
+    /// carve cells from x≈8 (start cap) to x≈19 (end cap clamps at
+    /// the trailing blade endpoint x=18), NOT the spindle's [9..21].
     #[test]
     fn dragknife_dragoff_shifts_carved_chord_behind_spindle() {
-        let mut map = fresh_map(40, 40);
-        let mut d = diag();
-        // Spindle path: (10, 20) → (20, 20) along +X. Dragoff = 2 mm
-        // so blade trails behind by 2 mm — carves cells along the
-        // chord (8, 20) → (18, 20).
         let profile = ToolProfile::DragKnife {
             r: 1.0,
             dragoff: 2.0,
@@ -1144,20 +1140,53 @@ mod tests {
             pose(10.0, 20.0, -1.0),
             pose(20.0, 20.0, -1.0),
         );
+        let mut map = fresh_map(40, 40);
+        let mut d = diag();
         sweep_segment(&mut map, &s, &profile, 0, &[], None, &mut d);
-        // A cell near x=9 (inside the shifted chord) should be carved.
-        // The original UN-shifted chord wouldn't reach x=9 with r=1.
-        let carved_left = cell(&map, 9, 20);
-        assert!(
-            carved_left < 0.0,
-            "cell at x=9 should be carved by the dragoff-shifted chord, got {carved_left}",
+        // Compare to the same move WITHOUT dragoff — that's the
+        // "old" behavior the user used to see. Their carve footprints
+        // should differ: dragoff shifts the carved chord by -2 along
+        // +X so cells at x=7..=8 (only reachable from the shifted
+        // chord) come up carved, while cells at x=20..=21 (only
+        // reachable from the un-shifted spindle chord) stay un-carved.
+        let mut control = fresh_map(40, 40);
+        let mut dc = diag();
+        sweep_segment(
+            &mut control,
+            &s,
+            &ToolProfile::DragKnife {
+                r: 1.0,
+                dragoff: 0.0,
+            },
+            0,
+            &[],
+            None,
+            &mut dc,
         );
-        // A cell near x=19 (off the END of the shifted chord, but
-        // inside the spindle chord) should be UN-carved.
-        let untouched_right = cell(&map, 19, 20);
+        // Dragoff carves left of the spindle start: cell at ix=7 is
+        // inside r=1 of (8,20) (shifted endpoint) so should be carved.
+        let dragoff_left = cell(&map, 7, 20);
+        let control_left = cell(&control, 7, 20);
         assert!(
-            (untouched_right - 0.0).abs() < 1e-5,
-            "cell at x=19 should be untouched (past the trailing blade), got {untouched_right}",
+            dragoff_left < 0.0,
+            "cell ix=7 should be carved by dragoff-shifted chord, got {dragoff_left}",
+        );
+        assert!(
+            (control_left - 0.0).abs() < 1e-5,
+            "cell ix=7 should NOT be carved without dragoff, got {control_left}",
+        );
+        // Dragoff doesn't reach past x=19: cell at ix=20 is inside
+        // r=1 of (20,20) WITHOUT dragoff but outside (18,20) WITH
+        // dragoff.
+        let dragoff_right = cell(&map, 20, 20);
+        let control_right = cell(&control, 20, 20);
+        assert!(
+            (dragoff_right - 0.0).abs() < 1e-5,
+            "cell ix=20 should NOT be carved with dragoff (trailing blade ends at x=18), got {dragoff_right}",
+        );
+        assert!(
+            control_right < 0.0,
+            "cell ix=20 should be carved by un-shifted chord, got {control_right}",
         );
     }
 

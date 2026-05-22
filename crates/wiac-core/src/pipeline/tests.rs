@@ -581,8 +581,12 @@
     #[test]
     fn non_laser_tool_ignores_pierce_field() {
         let mut tool = endmill(1, 3.0);
-        // Endmill kind, but pierce field set (shouldn't fire).
-        tool.laser_pierce_sec = Some(0.5);
+        // Endmill kind, but pierce field set (shouldn't fire). Use a
+        // distinctive value (0.7s) that won't collide with the
+        // toolchange envelope's spindle stop/start dwells (default
+        // 0.5s) — we're asserting the pierce dwell specifically
+        // doesn't appear, not anything else.
+        tool.laser_pierce_sec = Some(0.7);
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),
             machine: MachineConfig::default(),
@@ -600,7 +604,7 @@
         )
         .unwrap();
         assert!(
-            !resp.gcode.contains("G4 P0.5"),
+            !resp.gcode.contains("G4 P0.7"),
             "endmill should ignore laser_pierce_sec:\n{}",
             resp.gcode
         );

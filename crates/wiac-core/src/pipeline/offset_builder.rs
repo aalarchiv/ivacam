@@ -230,7 +230,15 @@ pub(super) fn build_op_offsets(
     //  sets directly. Removing this loop was the unblock to taking `objects`
     //  by shared reference.)
 
-    let radius = setup.tool.diameter * 0.5;
+    // 1mlv: stock_to_leave_mm shifts the cutter centerline farther from
+    // the geometric wall on EVERY offset-cascade op (Profile + Pocket).
+    // For Profile-Inside the cutter walks `tool_radius + stock_to_leave`
+    // inside the boundary; for Pocket the inset wall sits at the same
+    // distance. The effect is identical to bumping every offset by the
+    // configured amount, so we fold it into `radius` once and let the
+    // existing cascade code see the augmented value.
+    let stock_to_leave = effective_op.params.stock_to_leave_mm.max(0.0);
+    let radius = setup.tool.diameter * 0.5 + stock_to_leave;
     // Lateral step between consecutive Pocket cuts. Default 0.5
     // overlap = step is half the tool diameter (≈ tool radius). The
     // explicit param lets the user dial it tighter for cleaner fill or
@@ -3076,6 +3084,67 @@ mod tests {
         .unwrap();
         assert!(resp.gcode.contains("F1500"), "rough feed missing");
         assert!(resp.gcode.contains("F400"), "finish feed missing");
+    }
+
+    /// 1mlv: `OpParamsCommon.stock_to_leave_mm` enlarges the effective
+    /// cutter radius on Profile/Pocket offset cascades. Verify a Pocket
+    /// with 1.0 mm stock-to-leave produces an inset boundary that sits
+    /// further from the geometric wall than a baseline pocket without
+    /// stock-to-leave.
+    #[test]
+    fn stock_to_leave_increases_effective_offset_radius() {
+        // 20×20 box, 2 mm tool. Baseline offset = 1 mm; with
+        // stock_to_leave = 1 mm the cutter centre walks at 2 mm from
+        // the wall (radius 1 + stock 1 = 2). We verify by checking the
+        // emitted toolpath's nearest-to-wall distance.
+        let mut params = OpParams::mill_default();
+        params.stock_to_leave_mm = 1.0;
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 2.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: crate::cam::setup::ToolOffset::Inside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The 20x20 wall lies at x ∈ {0, 20}, y ∈ {0, 20}. With
+        // tool_radius=1 + stock_to_leave=1 the cutter centerline
+        // sits at min/max coordinates {2, 18}. We pick the minimum
+        // X across cut moves and verify it's ≥ 1.8 (with a small
+        // float slack) — pre-1mlv it would have been ~1.0.
+        let min_cut_x = resp
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .map(|s| s.from.x.min(s.to.x))
+            .filter(|x| (0.0..=20.0).contains(x))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            min_cut_x >= 1.8,
+            "expected cutter centerline ≥ 1.8 mm from wall (radius 1 + stock 1); got min_cut_x = {min_cut_x}",
+        );
     }
 
     // ─── Spiral / trochoidal / approach-point / corner-feed ────────────

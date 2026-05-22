@@ -314,8 +314,35 @@ fn combine_difference(
         &mut tree,
         CLIPPER_PRECISION,
     );
+    // 5tgk: difference is order-sensitive ("first minus the rest"), so
+    // attributing the result to the FIRST selected object's layer / color
+    // is the right semantic choice — even if the first is degenerate the
+    // user's intent is "carve from THAT shape's layer".
     let template = &objects[*first];
     polytree_to_regions(&tree, *first, &template.layer, template.color)
+}
+
+/// 5tgk: pick the first selected object whose tessellated boundary has
+/// at least 3 points. Boolean-op modes (Intersection / Xor) re-attribute
+/// the result to this object's layer/color so the gcode emitter doesn't
+/// inherit a degenerate first selection's metadata (e.g. an
+/// accidentally-included open polyline with layer "Tabs" but no area).
+/// Falls back to `selected[0]` when every input is degenerate — at that
+/// point the boolean op will return empty anyway, but we keep the
+/// signature stable.
+fn first_non_degenerate(
+    objects: &[VcObject],
+    selected: &[usize],
+    cache: &mut TessCache,
+) -> usize {
+    for &idx in selected {
+        if let Some(obj) = objects.get(idx) {
+            if obj.closed && cache.get(idx, obj).len() >= 3 {
+                return idx;
+            }
+        }
+    }
+    selected[0]
 }
 
 /// Union of N subjects in one shot. Uses `boolean_op_tree_d` with empty
@@ -339,8 +366,10 @@ fn combine_union(
         &mut tree,
         CLIPPER_PRECISION,
     );
-    let template = &objects[selected[0]];
-    polytree_to_regions(&tree, selected[0], &template.layer, template.color)
+    // 5tgk: union is order-insensitive — inherit from first non-degenerate.
+    let tmpl_idx = first_non_degenerate(objects, selected, cache);
+    let template = &objects[tmpl_idx];
+    polytree_to_regions(&tree, tmpl_idx, &template.layer, template.color)
 }
 
 /// N-way intersection by folding 2-way intersections. Clipper's
@@ -373,8 +402,14 @@ fn combine_intersection(
         &mut tree,
         CLIPPER_PRECISION,
     );
-    let template = &objects[selected[0]];
-    polytree_to_regions(&tree, selected[0], &template.layer, template.color)
+    // 5tgk: inherit layer/color from the first NON-degenerate selected
+    // object — otherwise a degenerate-first (open polyline, < 3 pts)
+    // selection silently propagates the wrong metadata into the boolean
+    // result. Intersection / Xor are order-INSENSITIVE so picking a
+    // non-degenerate is a safe semantic improvement.
+    let tmpl_idx = first_non_degenerate(objects, selected, cache);
+    let template = &objects[tmpl_idx];
+    polytree_to_regions(&tree, tmpl_idx, &template.layer, template.color)
 }
 
 /// N-way symmetric difference, folded similarly.
@@ -401,8 +436,10 @@ fn combine_xor(
         &mut tree,
         CLIPPER_PRECISION,
     );
-    let template = &objects[selected[0]];
-    polytree_to_regions(&tree, selected[0], &template.layer, template.color)
+    // 5tgk: same rationale as combine_intersection — Xor is symmetric.
+    let tmpl_idx = first_non_degenerate(objects, selected, cache);
+    let template = &objects[tmpl_idx];
+    polytree_to_regions(&tree, tmpl_idx, &template.layer, template.color)
 }
 
 fn paths_for(indices: &[usize], objects: &[VcObject], cache: &mut TessCache) -> PathsD {
@@ -672,6 +709,45 @@ mod tests {
         let area = polygon_area(&regions[0].boundary);
         // 10×30 strip in the middle.
         assert!((area - 300.0).abs() < 5.0, "expected ~300, got {area}");
+    }
+
+    /// 5tgk: when the first selected object is degenerate (e.g. an
+    /// open polyline that got mis-included), boolean ops still produce
+    /// a sensible region from the remaining inputs, but the result
+    /// must inherit the layer/color of the first NON-degenerate
+    /// selected object. Otherwise the cutter inherits a stale layer
+    /// from an object that contributed nothing.
+    #[test]
+    fn boolean_inherits_layer_from_first_non_degenerate() {
+        // Two valid closed squares, both on layer "Body". Intentionally
+        // tag them differently so we can verify which one's metadata
+        // surfaced.
+        let outer = closed_box(30.0, 0.0, 0.0);
+        let inner = closed_box(30.0, 20.0, 0.0);
+        let mut objs = build_objects(vec![outer, inner]);
+        // Re-tag both objects so we can spot which template was used.
+        objs[0].layer = std::sync::Arc::from("ShouldNotAppear");
+        objs[0].color = 99;
+        objs[1].layer = std::sync::Arc::from("ExpectedLayer");
+        objs[1].color = 42;
+        // Force objs[0] to be degenerate by clearing its segments;
+        // segments_to_points() then returns < 3 pts, which paths_for
+        // skips. The boolean result inherits from objs[1].
+        objs[0].segments.clear();
+        let selected: Vec<usize> = (0..objs.len()).collect();
+        let regions = combine_source_regions(&objs, &selected, SourceCombine::Intersection);
+        // Intersection of (degenerate) with (square) collapses to empty
+        // — but at construction time the template attribution path is
+        // exercised. We test union which actually returns a region.
+        let _ = regions; // intersection may be empty; that's fine
+        let regions = combine_source_regions(&objs, &selected, SourceCombine::Union);
+        assert!(!regions.is_empty(), "union of valid square should produce a region");
+        assert_eq!(
+            regions[0].layer.as_ref(),
+            "ExpectedLayer",
+            "union should inherit layer from first non-degenerate input",
+        );
+        assert_eq!(regions[0].color, 42);
     }
 
     /// uksn regression: depth-2 nested polygons (outer with a hole that

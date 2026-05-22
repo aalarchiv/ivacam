@@ -261,6 +261,17 @@ pub struct OpParamsCommon {
     /// minor stock thickness variation. 0.0 = no extension.
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub through_depth: f64,
+    /// 1mlv: leave this much XY stock unmachined on every wall (Profile
+    /// inside/outside cascade, Pocket cascade). Positive number — the
+    /// cutter stays this far away from the geometric wall, so a later
+    /// finishing pass (different tool / op) can clean it up. Differs
+    /// from `PocketParams.finish_xy_allowance_mm` which is Pocket-only
+    /// and triggers an extra contour pass; `stock_to_leave_mm` applies
+    /// to ALL offset-cascade ops and is the universal "rough leaves
+    /// material" knob. 0.0 = cutter walks the geometric wall (the
+    /// default, matching prior wiac behaviour).
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub stock_to_leave_mm: f64,
     /// Explicit list of Z depths for each pass, overriding the
     /// `step+finish_step` schedule. Useful for non-linear schedules
     /// (shallower at start for tough material, deeper later, slow
@@ -304,6 +315,7 @@ impl OpParamsCommon {
             finish_step: None,
             through_depth: 0.0,
             depth_list: Vec::new(),
+            stock_to_leave_mm: 0.0,
         }
     }
 }

@@ -1468,9 +1468,22 @@ pub(crate) fn stitch_rings_to_polyline(
     let outer = &rings[0];
     let mut out: Vec<Point2> = Vec::new();
     let mut last_end: Option<Point2> = None;
-    for ring in rings {
+    for (idx, ring) in rings.iter().enumerate() {
         if ring.len() < 3 {
-            continue;
+            // hx74: a ring with fewer than 3 points can't be traversed
+            // meaningfully. Pre-fix we silently `continue`d past it,
+            // leaving a bridge gap (the next ring's first vertex was
+            // stitched to the PREVIOUS ring's last vertex across the
+            // dropped ring, often jumping far enough to cross islands
+            // / leave the pocket). Now: if it's the first ring we
+            // can't establish a starting vertex — fail. If it's a
+            // later ring, the cascade emitted a degenerate result
+            // (likely clipper2 collapsed a sliver) — also fail, the
+            // caller falls back to ring-cascade emission (no bridges).
+            if idx == 0 {
+                return None;
+            }
+            return None;
         }
         let start_idx = if let Some(end) = last_end {
             let mut best = 0usize;
@@ -2022,6 +2035,26 @@ mod tests {
                 assert!(pt.y >= -0.01 && pt.y <= 20.01);
             }
         }
+    }
+
+    /// hx74: a short (< 3 pts) ring inside the cascade was previously
+    /// silently dropped, leaving the bridge from the previous ring's
+    /// last_end to the next ring's first vertex unverified — it could
+    /// span the gap of the dropped ring and exit the pocket. The fix
+    /// is to bail (return None) and let the caller fall back to
+    /// non-bridged cascade emission. Verify by passing in a 3-ring
+    /// cascade whose middle ring has only 2 points.
+    #[test]
+    fn short_ring_mid_cascade_returns_none() {
+        let ring0 = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];
+        // Degenerate middle ring — clipper2 collapses a sliver to 2 pts.
+        let ring1 = vec![p(5.0, 5.0), p(15.0, 5.0)];
+        let ring2 = vec![p(10.0, 10.0), p(12.0, 10.0), p(12.0, 12.0), p(10.0, 12.0)];
+        let rings = vec![ring0, ring1, ring2];
+        assert!(
+            stitch_rings_to_polyline(&rings, &[]).is_none(),
+            "stitch must bail when a mid-cascade ring is degenerate (< 3 pts)",
+        );
     }
 
     /// kqsl: a spiral pocket with an island in the bridge path must

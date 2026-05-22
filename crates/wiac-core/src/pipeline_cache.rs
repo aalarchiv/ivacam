@@ -474,11 +474,14 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             pitch_mm,
             internal,
             climb,
+            ..
         } => {
             h.write_u8(4);
             hash_f64(*pitch_mm, h);
             internal.hash(h);
             climb.hash(h);
+            // radial_passes (sqnh): not hashed yet — parent bumps the
+            // cache version when wiring it in.
         }
         OpKind::Chamfer {
             width_mm,

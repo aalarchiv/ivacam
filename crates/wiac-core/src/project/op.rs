@@ -259,6 +259,14 @@ pub enum OpKind {
         /// almost always favors conventional even for threading.
         #[serde(default)]
         climb: bool,
+        /// sqnh: number of radial roughing passes from
+        /// `start_radius` → final thread radius. Single helix at full
+        /// engagement is too aggressive for hard materials; multi-
+        /// pass schedules let the chipload soften. Default 1
+        /// (single-pass; backward-compatible). Each pass cuts a deeper
+        /// helix at radius = lerp(start_radius_frac → 1.0, i/N).
+        #[serde(default = "default_thread_radial_passes")]
+        radial_passes: u32,
     },
     /// V-bit edge break (rt1.18). The cutter walks the source path
     /// itself at a single Z computed from the bit's cone angle and the
@@ -330,6 +338,10 @@ fn default_thread_pitch() -> f64 {
 
 fn default_thread_internal() -> bool {
     true
+}
+
+fn default_thread_radial_passes() -> u32 {
+    1
 }
 
 /// Drill-cycle picker for [`OpKind::Drill`]. Mirrors the canned

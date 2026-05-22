@@ -186,6 +186,23 @@ pub enum ToolProfile {
         /// `corner_r == r` reduces to a ball-nose.
         corner_r: f32,
     },
+    /// 3oly: T-slot / undercut cutter with a wide flat-bottom head at
+    /// the tip and a narrower neck above. The heightmap only models the
+    /// cut surface (the head's flat bottom), but the neck above is
+    /// represented here so the holder/collision check can see that
+    /// above `head_z_top` the cutter is narrower (`neck_r` instead of
+    /// `head_r`) — the slot kerf the head leaves is wider than the
+    /// neck, so the neck clears it when the cutter retracts.
+    TSlot {
+        /// Cutting head radius (= tool diameter / 2). This is what
+        /// the heightmap carves with.
+        head_r: f32,
+        /// Z height (above the tip) at the top of the head. Above
+        /// this, the cutter has radius `neck_r` instead of `head_r`.
+        head_z_top: f32,
+        /// Neck radius above the head — narrower than `head_r`.
+        neck_r: f32,
+    },
 }
 
 impl ToolProfile {
@@ -199,13 +216,19 @@ impl ToolProfile {
             | ToolProfile::VBit { r, .. }
             | ToolProfile::DragKnife { r, .. }
             | ToolProfile::BullNose { r, .. } => r,
+            // 3oly: the head defines the XY footprint the cutter
+            // actually carves (the neck is narrower and sits above
+            // the head). The shank/holder check sees the neck via
+            // `HolderProfile`.
+            ToolProfile::TSlot { head_r, .. } => head_r,
         }
     }
 
     /// True for flat-bottomed profiles (Endmill / Drill / Laser /
-    /// `DragKnife`) — every cell within the cutter radius carves to
-    /// the same `cutter_pz`, no per-r profile offset. The sweep can
-    /// then skip both the sqrt and the `eval()` branch (audit-xnmp).
+    /// `DragKnife` / `TSlot`) — every cell within the cutter radius
+    /// carves to the same `cutter_pz`, no per-r profile offset. The
+    /// sweep can then skip both the sqrt and the `eval()` branch
+    /// (audit-xnmp). 3oly: `TSlot`'s head bottom is flat too.
     #[must_use]
     pub fn is_flat_bottom(&self) -> bool {
         matches!(
@@ -214,6 +237,7 @@ impl ToolProfile {
                 | ToolProfile::Drill { .. }
                 | ToolProfile::LaserBeam { .. }
                 | ToolProfile::DragKnife { .. }
+                | ToolProfile::TSlot { .. }
         )
     }
 
@@ -263,6 +287,11 @@ impl ToolProfile {
                     Some(cr - inside.max(0.0).sqrt())
                 }
             }
+            // 3oly: head's flat bottom carves the slot floor; the
+            // heightmap eval returns 0 for every r ≤ head_r (no
+            // vertical profile inside the head). The neck above the
+            // head is non-cutting and handled by `HolderProfile`.
+            ToolProfile::TSlot { head_r, .. } => (r <= head_r).then_some(0.0),
         }
     }
 
@@ -321,12 +350,52 @@ impl ToolProfile {
             }
             // Compression: identical floor profile to Endmill (the
             // up-cut / down-cut flute split affects chip evacuation,
-            // not the cross-section). TSlot: the head profile is flat
-            // like an Endmill; the neck above only matters for shank /
-            // holder collision (sim/holder.rs), not the heightmap.
-            // FormProfile: needs user-supplied geometry which has no
-            // UI yet — defer once that's filed.
-            ToolKind::Compression | ToolKind::TSlot | ToolKind::FormProfile => {
+            // not the cross-section). Track-issue follow-up
+            // (wiaconstructor-tcmp): model up-cut/down-cut split for
+            // edge-quality diagnostics.
+            ToolKind::Compression => ToolProfile::Endmill { r },
+            // 3oly: T-slot / undercut cutter — wide head, narrow neck
+            // above. Heightmap carves with the head radius; the neck
+            // is encoded in HolderProfile so the collision pass sees
+            // it. When neck geometry is missing, fall back to a flat
+            // endmill at head_r (same observable cross-section, no
+            // false-negative regression vs the old code path).
+            ToolKind::TSlot => {
+                let neck_r = tool
+                    .tslot_neck_diameter_mm
+                    .map_or(f64::from(r), |d| (d * 0.5).max(0.0))
+                    as f32;
+                // Flute length doubles as head thickness when set;
+                // otherwise the head is a thin disk at the tip
+                // (head_z_top = 0) and we keep the old Endmill model.
+                let head_z_top = tool.tslot_neck_length_mm.map_or(0.0, |_| {
+                    tool.flute_length_mm.unwrap_or(0.0).max(0.0)
+                }) as f32;
+                if neck_r < r && head_z_top > 0.0 {
+                    ToolProfile::TSlot {
+                        head_r: r,
+                        head_z_top,
+                        neck_r,
+                    }
+                } else {
+                    // No neck info — same as old behaviour (flat
+                    // endmill at head_r). Holder check still sees the
+                    // shank/holder above the flutes if those are set.
+                    ToolProfile::Endmill { r }
+                }
+            }
+            // FormProfile: needs user-supplied profile geometry which
+            // has no UI yet. Until 3oly's TSlot work is generalised
+            // (track-issue wiaconstructor-tfrm), collapse to a flat
+            // endmill at the head radius — same as before — but emit
+            // an eprintln in debug so the user / dev notices the
+            // missing model.
+            ToolKind::FormProfile => {
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "ToolKind::FormProfile sim model is unimplemented (3oly follow-up); \
+                     falling back to flat endmill at head diameter."
+                );
                 ToolProfile::Endmill { r }
             }
         }

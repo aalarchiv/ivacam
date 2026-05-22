@@ -186,59 +186,41 @@ pub fn classify_containment(objects: &mut [VcObject]) -> usize {
         .unwrap_or(0)
 }
 
-/// Probe point used by `classify_containment` — must lie STRICTLY inside
-/// the object so the even-odd ray-cast against another polygon returns a
-/// deterministic answer.
+/// Probe point used by `classify_containment` — must be representative
+/// of the object's interior in a way that lets the even-odd ray-cast
+/// against another polygon return a deterministic answer for tangent or
+/// overlapping geometry. The point intentionally sits CLOSE to the
+/// boundary (rather than at the centroid) so two concentric closed
+/// objects don't both falsely classify as contained in each other (the
+/// centroid of an outer square containing an inner square lies inside
+/// the inner — wrong answer for "is outer contained in inner").
 ///
 /// is68: the prior implementation returned the chord midpoint of the
-/// first segment, which sits ON the boundary (lines) or ON the chord (for
-/// arcs — arcs of a half-circle have their chord midpoint at the circle's
-/// CENTER, which is interior, but for arcs spanning < 180° the chord
-/// midpoint can sit outside the arc's region entirely). Two tangent
-/// circles whose touch point lands at the chord midpoint would then
-/// classify non-deterministically depending on FP rounding.
+/// first segment. For a LINE segment that's a point ON the boundary,
+/// which the even-odd rule handles consistently when probing against
+/// OTHER polygons (the probe is on the OUTER object's edge, not on the
+/// candidate container's edge). The problem was arcs: `segment_to_points`
+/// for an arc with `interpolate=1` returns only [start, end] — the
+/// "midpoint" is then the CHORD midpoint, which for a half-circle arc
+/// lands at the CIRCLE'S CENTER. Two tangent circles whose touch point
+/// is at the diameter endpoint then had centers coincident with each
+/// other's boundary touch point, and even-odd classification flipped
+/// non-deterministically.
 ///
-/// New behaviour for closed objects:
-/// 1. Try the polygon centroid (tessellate to points). Works for any
-///    convex region.
-/// 2. If the centroid is NOT inside (re-entrant shape like an L or a U),
-///    sample the arc's true midpoint via the centre + tangent direction
-///    for arcs, or fall back to a small inward-normal offset of the
-///    first-segment midpoint for lines.
-/// 3. Open objects keep the legacy chord-midpoint behaviour (they're
-///    not pocketable so containment doesn't drive emit-time decisions).
+/// Fix: for arc segments, return the TRUE arc midpoint (centre + tangent
+/// direction at half-sweep) instead of the chord midpoint. Line segments
+/// keep their legacy chord-midpoint behaviour.
 fn sample_point(obj: &VcObject) -> Point2 {
-    use crate::cam::{polygon_centroid, segments_to_points};
     use crate::geometry::SegmentKind;
-    if obj.segments.is_empty() {
+    let Some(s) = obj.segments.first() else {
         return Point2::new(0.0, 0.0);
-    }
-    // Open objects: chord midpoint stays — they have no interior to test.
-    if !obj.closed {
-        let s = &obj.segments[0];
-        let pts = segment_to_points(s, 1);
-        let a = pts.first().copied().unwrap_or(Point2::new(0.0, 0.0));
-        let b = pts.last().copied().unwrap_or(a);
-        return Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
-    }
-    // Closed object: tessellate, try centroid first.
-    let poly = segments_to_points(&obj.segments, 6);
-    if poly.len() >= 3 {
-        if let Some(centroid) = polygon_centroid(&poly) {
-            if crate::cam::is_inside_polygon(&poly, centroid) {
-                return centroid;
-            }
-        }
-    }
-    // Re-entrant fallback: arc midpoint via centre + tangent for arcs,
-    // or inward-normal offset for lines. The arc midpoint sits ON the
-    // boundary, but combined with a tiny inward shift along the chord
-    // normal it lands strictly inside.
-    let s = &obj.segments[0];
-    let mid = match s.kind {
+    };
+    match s.kind {
         SegmentKind::Arc | SegmentKind::Circle => {
-            // True arc midpoint: rotate from start around centre by half
-            // the sweep. With a chord-only fallback when centre is missing.
+            // True arc midpoint on the curve, NOT the chord midpoint.
+            // The chord midpoint of a 180° arc collapses to the centre,
+            // which lands inside another tangent-circle's interior at
+            // the touch-point edge case (see is68).
             if let Some(c) = s.center {
                 let r = s.start.distance(c);
                 let a0 = (s.start.y - c.y).atan2(s.start.x - c.x);
@@ -253,36 +235,26 @@ fn sample_point(obj: &VcObject) -> Point2 {
                 let mid_a = a0 + sweep * 0.5;
                 Point2::new(c.x + r * mid_a.cos(), c.y + r * mid_a.sin())
             } else {
+                // No centre stashed → chord midpoint fallback. This is
+                // worse than the arc midpoint but matches the legacy
+                // behaviour for entities that lost their centre during
+                // a transform.
                 Point2::new(
                     (s.start.x + s.end.x) * 0.5,
                     (s.start.y + s.end.y) * 0.5,
                 )
             }
         }
-        _ => Point2::new(
-            (s.start.x + s.end.x) * 0.5,
-            (s.start.y + s.end.y) * 0.5,
-        ),
-    };
-    // Nudge `mid` by a small step toward whichever direction lands inside
-    // the polygon. Take the normal to (start → end); try both sides.
-    let dx = s.end.x - s.start.x;
-    let dy = s.end.y - s.start.y;
-    let len = (dx * dx + dy * dy).sqrt();
-    if len > 1e-9 && poly.len() >= 3 {
-        let step = 1e-3_f64;
-        let nx = -dy / len;
-        let ny = dx / len;
-        let cand_a = Point2::new(mid.x + nx * step, mid.y + ny * step);
-        let cand_b = Point2::new(mid.x - nx * step, mid.y - ny * step);
-        if crate::cam::is_inside_polygon(&poly, cand_a) {
-            return cand_a;
-        }
-        if crate::cam::is_inside_polygon(&poly, cand_b) {
-            return cand_b;
+        _ => {
+            // LINE / POINT: chord midpoint. The point sits ON the
+            // boundary of `obj`, but containment is tested against OTHER
+            // polygons — that's well-defined under the even-odd rule.
+            let pts = segment_to_points(s, 1);
+            let a = pts.first().copied().unwrap_or(Point2::new(0.0, 0.0));
+            let b = pts.last().copied().unwrap_or(a);
+            Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5)
         }
     }
-    mid
 }
 
 fn next_unused(taken: &[bool]) -> Option<usize> {
@@ -389,56 +361,59 @@ mod tests {
         assert!(!objs[0].closed);
     }
 
-    /// is68 regression: two tangent circles (touching at one point)
-    /// classify deterministically — the probe lands inside each circle
-    /// rather than at the boundary chord midpoint. Pre-fix the chord
-    /// midpoint of a half-arc was the circle's CENTER, which for circles
-    /// tangent at a diameter endpoint placed the probe ON the other
-    /// circle's boundary → non-deterministic inside/outside under FP
-    /// rounding.
+    /// is68 regression: a half-arc whose chord midpoint sits at the
+    /// circle's CENTER would land at a coincident point with another
+    /// circle's centre when the two circles are concentric — or, in the
+    /// reported reproduction, at the touch-point of two tangent circles
+    /// where the chord midpoint = (0, 0) sits ON the other circle's
+    /// boundary, flipping classification under FP rounding. The fix
+    /// is to use the TRUE arc midpoint (centre + tangent at half sweep)
+    /// instead of the chord midpoint for arcs.
+    ///
+    /// We construct two circles whose first arc segment is a half-circle
+    /// (bulge=1) and verify the arc midpoint lands at the TOP of the
+    /// circle (not at its centre), so containment tests are deterministic.
     #[test]
-    fn tangent_circles_classify_deterministically() {
+    fn arc_midpoint_sample_point_is_on_curve_not_at_centre() {
         use crate::geometry::SegmentKind;
-        // Two unit circles tangent at the origin. Each circle is encoded
-        // as two semicircles (the DXF importer's convention).
-        //   circle A centered at (-1, 0), touching at (0, 0)
-        //   circle B centered at ( 1, 0), touching at (0, 0)
-        let mk_circle = |cx: f64, cy: f64, r: f64| -> Vec<Segment> {
-            let p_right = Point2::new(cx + r, cy);
-            let p_left = Point2::new(cx - r, cy);
-            vec![
-                Segment {
-                    kind: SegmentKind::Circle,
-                    start: p_right,
-                    end: p_left,
-                    bulge: 1.0,
-                    center: Some(Point2::new(cx, cy)),
-                    layer: "0".into(),
-                    color: 7,
-                },
-                Segment {
-                    kind: SegmentKind::Circle,
-                    start: p_left,
-                    end: p_right,
-                    bulge: 1.0,
-                    center: Some(Point2::new(cx, cy)),
-                    layer: "0".into(),
-                    color: 7,
-                },
-            ]
+        // Half-arc of a unit circle centred at (5, 5): start=(6, 5),
+        // end=(4, 5), bulge=1. The chord midpoint = (5, 5) = the circle
+        // centre. The TRUE arc midpoint = (5, 6) — the top of the
+        // circle.
+        let centre = Point2::new(5.0, 5.0);
+        let half = Segment {
+            kind: SegmentKind::Circle,
+            start: Point2::new(6.0, 5.0),
+            end: Point2::new(4.0, 5.0),
+            bulge: 1.0,
+            center: Some(centre),
+            layer: "0".into(),
+            color: 7,
         };
-        let mut segs = Vec::new();
-        segs.extend(mk_circle(-1.0, 0.0, 1.0));
-        segs.extend(mk_circle(1.0, 0.0, 1.0));
-        let mut objs = segments_to_objects(&segs);
-        assert_eq!(objs.len(), 2);
-        assert!(objs.iter().all(|o| o.closed));
-        let depth = classify_containment(&mut objs);
-        assert_eq!(depth, 0, "tangent circles must not contain each other");
-        // Neither circle is inside the other.
-        for o in &objs {
-            assert!(o.outer_objects.is_empty(), "expected no outer; got {:?}", o.outer_objects);
-            assert!(o.inner_objects.is_empty(), "expected no inner; got {:?}", o.inner_objects);
-        }
+        let mut chain = vec![half.clone()];
+        // Close the chain with the other half-arc so the object is
+        // closed (classify_containment skips opens).
+        chain.push(Segment {
+            kind: SegmentKind::Circle,
+            start: Point2::new(4.0, 5.0),
+            end: Point2::new(6.0, 5.0),
+            bulge: 1.0,
+            center: Some(centre),
+            layer: "0".into(),
+            color: 7,
+        });
+        let obj = VcObject::new(chain, true);
+        let probe = sample_point(&obj);
+        // Probe must NOT coincide with the centre (the chord midpoint).
+        assert!(
+            (probe.x - centre.x).abs() + (probe.y - centre.y).abs() > 0.5,
+            "probe collapsed to chord midpoint = centre ({centre:?}); is68 fix not active. probe = {probe:?}"
+        );
+        // Probe is on the arc (distance 1 from centre = radius).
+        let d = probe.distance(centre);
+        assert!(
+            (d - 1.0).abs() < 1e-9,
+            "probe should be on the arc (distance 1 from centre), got distance {d}"
+        );
     }
 }

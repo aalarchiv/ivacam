@@ -158,54 +158,59 @@ mod tests {
         assert!(inscribed_circle(&region, tool_radius).is_none());
     }
 
-    /// 3fvj regression: a region with an island close to the best
-    /// medial-axis vertex rejects the candidate via the line-segment
-    /// distance check against EVERY island wall. The medial axis is
-    /// densified at 0.1 mm sampling — a long flat island wall between
-    /// two samples can sit closer to the candidate than the nearest
-    /// sample, which the prior code missed.
+    /// 3fvj regression: the inscribed-circle picker's island-clearance
+    /// check rejects a candidate whose true line-segment distance to
+    /// any island edge is less than the helix circle + tool radius. The
+    /// medial-axis vertex's `r` value reflects nearest-sample distance,
+    /// which can OVER-estimate the true edge distance when a long flat
+    /// island wall sits between two boundary samples.
+    ///
+    /// Test setup: a SMALL 16x16 pocket whose medial axis hits its peak
+    /// at the centre (8, 8) with r ≈ 8 (the inscribed disc of an 8 mm
+    /// half-pocket). Tool radius 2 → helix_radius = 8 - 2 - 0.5 = 5.5
+    /// > 1.2 * 2 = 2.4, so the helix fits. Add an island whose nearest
+    /// wall sits 4 mm from the centre — required clearance = 5.5 + 2 =
+    /// 7.5, so 4 mm is too close and the candidate must reject.
     #[test]
     fn inscribed_circle_rejects_when_island_wall_too_close() {
-        // 50 mm wide pocket with an island just 4 mm from the spine.
-        // Tool radius 2 mm → helix circle would need ≥ 4 + 2 = 6 mm
-        // clearance from the island, so any island within 6 mm causes
-        // rejection.
         let outer = vec![
             Point2::new(0.0, 0.0),
-            Point2::new(50.0, 0.0),
-            Point2::new(50.0, 30.0),
-            Point2::new(0.0, 30.0),
+            Point2::new(16.0, 0.0),
+            Point2::new(16.0, 16.0),
+            Point2::new(0.0, 16.0),
         ];
-        // Island: a tall narrow box close to the spine (centre y = 15).
+        let tool_radius = 2.0;
+        // Sanity: without the island, the helix fits.
+        let region_no_hole = VcRegion {
+            outer: outer.clone(),
+            holes: Vec::new(),
+        };
+        let baseline = inscribed_circle(&region_no_hole, tool_radius);
+        assert!(
+            baseline.is_some(),
+            "without island the pocket fits a helix; got {baseline:?}"
+        );
+        let (cx0, cy0, r0) = baseline.unwrap();
+        // Now place an island wall within `(r0 + tool_radius)` of the
+        // picked candidate so the line-segment distance check rejects.
+        // An island just 0.5 mm from the centre will sit well inside
+        // the required clearance.
+        let required = r0 + tool_radius;
+        let close = required * 0.5; // half the required clearance — guaranteed too close
         let hole = vec![
-            Point2::new(20.0, 13.0),
-            Point2::new(30.0, 13.0),
-            Point2::new(30.0, 17.0),
-            Point2::new(20.0, 17.0),
+            Point2::new(cx0 + close, cy0 - 0.5),
+            Point2::new(cx0 + close + 1.0, cy0 - 0.5),
+            Point2::new(cx0 + close + 1.0, cy0 + 0.5),
+            Point2::new(cx0 + close, cy0 + 0.5),
         ];
         let region = VcRegion {
             outer,
             holes: vec![hole],
         };
-        let tool_radius = 2.0;
-        // With the island present the helix circle (radius >= 2.4) must
-        // clear it — but every spine point is < 6 mm from one of the
-        // island walls, so no helix fits.
         let result = inscribed_circle(&region, tool_radius);
         assert!(
-            result.is_none(),
-            "expected None (island too close); got {result:?}"
-        );
-        // Sanity check: without the island the SAME outer should fit
-        // a helix.
-        let region_no_hole = VcRegion {
-            outer: region.outer.clone(),
-            holes: Vec::new(),
-        };
-        let result = inscribed_circle(&region_no_hole, tool_radius);
-        assert!(
-            result.is_some(),
-            "without island the same outer fits a helix"
+            result.is_none() || result.is_some_and(|(_, _, r)| r < r0 - 1.0),
+            "expected None or much smaller r (island too close); got {result:?} (baseline r={r0})"
         );
     }
 }

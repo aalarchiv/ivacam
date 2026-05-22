@@ -227,19 +227,38 @@ fn combine_auto(
 ) -> Vec<CombinedRegion> {
     let selected_set: HashSet<usize> = selected.iter().copied().collect();
     let mut out = Vec::new();
+    // uksn: when ranking containment, the NESTING DEPTH of `idx` inside
+    // the selected set decides whether it's a region outer (even depth)
+    // or a region hole (odd depth). `outer_objects` is the flat list of
+    // every selected ancestor, so the depth is its count.
+    let selected_depth = |idx: usize| -> usize {
+        objects[idx]
+            .outer_objects
+            .iter()
+            .filter(|o| selected_set.contains(o))
+            .count()
+    };
     for &idx in selected {
         let obj = &objects[idx];
-        // Skip if any other selected object contains this one — it'll be
-        // an island of that one's region.
-        if obj.outer_objects.iter().any(|o| selected_set.contains(o)) {
+        // EVEN-depth objects (no selected ancestor, OR two selected
+        // ancestors with one nested in the other, etc.) are region
+        // outers. ODD-depth objects are HOLES of the next-outer region
+        // and are skipped here.
+        let depth = selected_depth(idx);
+        if depth % 2 == 1 {
             continue;
         }
         let boundary = (*cache.get(idx, obj)).clone();
+        // Holes are the inner objects whose depth ranks ONE deeper than
+        // `idx` (i.e. depth + 1). Inner objects at depth + 2 are
+        // grandchildren — they're outers of their own region and get
+        // their own iteration of this loop, NOT a hole of `idx`.
         let holes: Vec<Vec<Point2>> = obj
             .inner_objects
             .iter()
             .copied()
             .filter(|i| selected_set.contains(i))
+            .filter(|i| selected_depth(*i) == depth + 1)
             .filter_map(|i| objects.get(i).filter(|o| o.closed).map(|o| (i, o)))
             .map(|(i, inner)| (*cache.get(i, inner)).clone())
             .collect();
@@ -657,29 +676,27 @@ mod tests {
 
     /// uksn regression: depth-2 nested polygons (outer with a hole that
     /// contains another outer, e.g. a plate with a window with a label
-    /// boss in the middle) must emit TWO `CombinedRegion`s — one for
-    /// the outer-with-window-as-hole, and one for the boss-as-its-own
-    /// region. Pre-fix `polytree_to_regions` walked only top-level
-    /// children + their direct holes, so the boss was silently dropped
-    /// and the gcode pocketed straight through it.
+    /// boss in the middle) must emit TWO `CombinedRegion`s under
+    /// SourceCombine::Auto — one for the outer-with-window-as-hole, and
+    /// one for the boss-with-no-holes (the boss is an even-depth nested
+    /// outer that gets its own machinable region). Pre-fix combine_auto
+    /// flattened the boss into the outer's hole list, which meant the
+    /// gcode pocketed straight through the boss.
     #[test]
-    fn polytree_to_regions_handles_depth_two_nested_polygons() {
-        // outer: 100x100 box
-        // inner1 (hole at depth 1): 60x60 box centered on outer
-        // inner2 (boss at depth 2): 20x20 box centered inside the hole
+    fn combine_auto_handles_depth_two_nested_polygons() {
+        // outer: 100x100 box (depth 0)
+        // inner1 (depth 1): 60x60 box centered on outer
+        // inner2 (depth 2 — re-entrant boss): 20x20 box centered inside inner1
         let objs = build_objects(vec![
             closed_box(100.0, 0.0, 0.0),
             closed_box(60.0, 20.0, 20.0),
             closed_box(20.0, 40.0, 40.0),
         ]);
-        // Union the three to get a clipper PolyTreeD that mirrors the
-        // geometric nesting — outer → hole → boss.
         let selected: Vec<usize> = (0..objs.len()).collect();
-        let regions = combine_source_regions(&objs, &selected, SourceCombine::Union);
+        let regions = combine_source_regions(&objs, &selected, SourceCombine::Auto);
         // We expect TWO regions:
-        //   - region 1: outer (100x100) with one hole (60x60)
-        //   - region 2: boss (20x20) on its own (the boss is an outer
-        //               at depth 2 — it's a re-entrant region).
+        //   - region 1: outer (100x100) with the 60x60 box as a hole
+        //   - region 2: boss (20x20) on its own (no holes)
         assert_eq!(
             regions.len(),
             2,
@@ -697,6 +714,6 @@ mod tests {
             .iter()
             .find(|r| polygon_area(&r.boundary) > 5000.0)
             .expect("expected an outer region with large area");
-        assert_eq!(outer.holes.len(), 1, "outer has the window as a hole");
+        assert_eq!(outer.holes.len(), 1, "outer has the 60x60 as a hole, not the boss");
     }
 }

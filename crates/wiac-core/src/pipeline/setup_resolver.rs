@@ -582,7 +582,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
 /// `header_setup_for` — the equivalent warning has already been
 /// emitted at synth time when that op ran through the per-op path,
 /// so the header path only needs the value adjustment.
-fn clamp_rpm_silent(rpm: u32, machine: &MachineConfig) -> u32 {
+pub(super) fn clamp_rpm_silent(rpm: u32, machine: &MachineConfig) -> u32 {
     let mut clamped = rpm;
     if let Some(max) = machine.spindle_rpm_max {
         if clamped > max {

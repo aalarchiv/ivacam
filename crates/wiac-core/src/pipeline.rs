@@ -1007,7 +1007,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
         // `emit_polylines_block`'s lazy `spindle_cw(speed, pause)`
         // elides cleanly.
         if let Some(t) = new_tool {
-            post.spindle_cw(t.speed, 0);
+            post.spindle_cw(setup_resolver::clamp_rpm_silent(t.speed, machine), 0);
             let start_dwell = machine.effective_spindle_start_dwell_sec();
             if start_dwell > 0.0 {
                 post.dwell(start_dwell);
@@ -1050,7 +1050,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             post.reset_state();
             // Explicit spindle-up so the next cut starts with the
             // spindle at commanded RPM — don't rely on lazy emit.
-            post.spindle_cw(t.speed, 0);
+            post.spindle_cw(setup_resolver::clamp_rpm_silent(t.speed, machine), 0);
             let start_dwell = machine.effective_spindle_start_dwell_sec();
             if start_dwell > 0.0 {
                 post.dwell(start_dwell);

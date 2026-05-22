@@ -107,6 +107,13 @@ pub struct ToolConfig {
     /// 0 — no auto-extend needed.
     #[serde(default)]
     pub tip_diameter_mm: f64,
+    /// z1y0: spindle direction for this tool (`Cw` → M3, `Ccw` → M4).
+    /// Mirrored from `ToolEntry.spindle_direction` at synth time so
+    /// the gcode emitter can route between `post.spindle_cw` /
+    /// `post.spindle_ccw` without reaching back into the tool
+    /// library. Default `Cw` keeps legacy projects unchanged.
+    #[serde(default)]
+    pub spindle_direction: crate::project::tool::SpindleDirection,
 }
 
 fn default_tip_angle_deg() -> f64 {
@@ -151,6 +158,7 @@ impl Default for ToolConfig {
             // synthesis path overrides to 0 (sharp point) when the
             // tool's kind warrants it.
             tip_diameter_mm: 3.0,
+            spindle_direction: crate::project::tool::SpindleDirection::Cw,
             speed: 18000,
             name: String::new(),
             pause: 1,

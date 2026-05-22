@@ -170,6 +170,17 @@ pub struct ToolEntry {
         skip_serializing_if = "is_default_tool_pause"
     )]
     pub pause: u32,
+    /// z1y0: spindle direction the post should command when this tool
+    /// is selected. Most cutters are right-hand and want `Cw` (M3);
+    /// left-hand cutters, reverse-threading, and a few specialty
+    /// holders want `Ccw` (M4). Defaults to `Cw` so legacy projects
+    /// round-trip unchanged. The default is skipped on serialize so
+    /// the JSON stays small.
+    #[serde(
+        default,
+        skip_serializing_if = "is_default_spindle_direction"
+    )]
+    pub spindle_direction: SpindleDirection,
     /// Length of cutting flutes (mm). None = treat entire tool as cutting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flute_length_mm: Option<f64>,
@@ -221,6 +232,23 @@ fn is_default_tool_pause(v: &u32) -> bool {
     *v == 1
 }
 
+/// z1y0: per-tool spindle direction — right-hand (`Cw`, M3) for the
+/// 99% of cutters, left-hand (`Ccw`, M4) for reverse-thread / mirror
+/// /-helix tooling. Mirrored into `ToolConfig.spindle_direction` at
+/// synth time so the gcode emitter can route between `spindle_cw`
+/// and `spindle_ccw` without reaching back into the tool library.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SpindleDirection {
+    #[default]
+    Cw,
+    Ccw,
+}
+
+fn is_default_spindle_direction(d: &SpindleDirection) -> bool {
+    matches!(d, SpindleDirection::Cw)
+}
+
 impl Default for ToolEntry {
     fn default() -> Self {
         Self {
@@ -258,6 +286,7 @@ impl Default for ToolEntry {
             wirbeln_extra_width_mm: None,
             wirbeln_osc_mm: None,
             pause: default_tool_pause(),
+            spindle_direction: SpindleDirection::default(),
             flute_length_mm: None,
             shank_diameter_mm: None,
             stickout_length_mm: None,

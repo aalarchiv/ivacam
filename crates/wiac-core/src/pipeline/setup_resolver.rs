@@ -241,6 +241,7 @@ pub(super) fn synthesize_op_setup(
         default_xy_overlap: tool.default_xy_overlap,
         tip_angle_deg: tool.tip_angle_deg,
         tip_diameter_mm: effective_tip_diameter_mm(tool),
+        spindle_direction: tool.spindle_direction,
     };
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
@@ -583,6 +584,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 default_xy_overlap: None,
                 tip_angle_deg: tool.tip_angle_deg,
                 tip_diameter_mm: effective_tip_diameter_mm(tool),
+                spindle_direction: tool.spindle_direction,
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
@@ -620,6 +622,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             default_xy_overlap: tool.default_xy_overlap,
             tip_angle_deg: tool.tip_angle_deg,
             tip_diameter_mm: effective_tip_diameter_mm(tool),
+            spindle_direction: tool.spindle_direction,
         };
     }
     setup

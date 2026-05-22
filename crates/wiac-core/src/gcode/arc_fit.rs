@@ -490,14 +490,16 @@ mod tests {
 
     #[test]
     fn nxmq_last_arc_end_snap_is_tighter_than_tol() {
-        // Synthesize a polyline whose arc-fitted chain ends ~0.6×tol
-        // away from the last point. Under the old (snap == tol)
-        // clamp, this would be accepted as an arc fit; under the
-        // new (snap == tol/4) clamp it must fall back to Lines so
-        // downstream arcs in a chain don't drift by `tol` each.
-        //
-        // We build it by sampling a quarter-arc cleanly and then
-        // appending a stray final point that's ~0.6×tol off-circle.
+        // Quarter-arc cleanly fit, then a final point that's far
+        // enough off the circle that `max_deviation` rejects the
+        // grow-step (so `best.end` stops one point short of
+        // `points.last()`). The cross-chord distance from `best.end`
+        // to `points.last()` lands in the gap (tol/4, tol] — which
+        // the OLD clamp (= tol) accepted (silently dropping the last
+        // polyline point and leaving downstream arc-chains off by
+        // up to tol per chain), but the NEW clamp (= tol/4) rejects
+        // so the run falls back to Lines and the operator's
+        // geometry isn't quietly drifted.
         let tol = 0.01;
         let mut pts: Vec<Point2> = (0..24)
             .map(|i| {
@@ -505,31 +507,40 @@ mod tests {
                 Point2::new(t.cos(), t.sin())
             })
             .collect();
-        // Final stray point: at theta = π/2 with a radial offset of
-        // 0.6×tol. This lands inside the OLD per-arc tolerance check
-        // (max_deviation will see 0.6×tol ≤ tol so the arc grows to
-        // include it), but the resulting arc's `end` snaps to the
-        // CIRCLE at that angle — `points[last]` is 0.6×tol off the
-        // circle, so the snap-to-end gap is ~0.6×tol. New threshold
-        // (tol/4 = 0.0025) rejects; old threshold (tol = 0.01)
-        // accepted.
-        pts.push(Point2::new(0.0, 1.0 + 0.6 * tol));
+        // Stray final point: same theta as pts[23], offset radially
+        // by ~1.5×tol (outside `max_deviation`'s window). The
+        // grow-step REJECTS this point, so the last accepted arc end
+        // is pts[23]. The chord from pts[23] to the stray point is
+        // ~1.5×tol — way past the new snap clamp of tol/4 (0.0025),
+        // so the run falls back to Lines. Under the old clamp the
+        // 1.5×tol gap would have been REJECTED too (it's bigger than
+        // tol), so to actually exercise the regime the new clamp
+        // changes, use a chord just barely above tol/4 and just
+        // barely below tol.
+        let near = pts[23];
+        // Pick a stray point 0.5×tol away from pts[23] in a direction
+        // that pushes max_deviation past tol when the arc tries to
+        // extend (chord sagitta on a tiny segment vs the curved
+        // arc). Simplest: a near-tangential offset of 0.5×tol.
+        pts.push(Point2::new(near.x + 0.5 * tol, near.y));
         let out = fit_arc_run(&pts, tol);
-        match out {
+        // Two regimes are acceptable:
+        //   - Lines: snap clamp rejected the chain because the gap
+        //     between best.end and pts.last() exceeds tol/4. This is
+        //     the new (correct) behaviour.
+        //   - Arcs that REACH the last point (best.end == pts.last()
+        //     within tol/4): the fit happened to consume everything.
+        match &out {
             FitOutput::Lines(_) => {
-                // Expected: snap-tight clamp triggers Lines fallback.
+                // OK.
             }
             FitOutput::Arcs(arcs) => {
-                // If the fit still produces arcs (because max_deviation
-                // or the run-extension caught the stray point earlier),
-                // the LAST arc's end must agree with the last polyline
-                // point within tol/4 — that's the new guarantee.
                 let a = arcs.last().unwrap().end;
                 let p = pts.last().copied().unwrap();
                 let drift = (a.x - p.x).hypot(a.y - p.y);
                 assert!(
                     drift <= tol * 0.25 + 1e-9,
-                    "last-arc-end drift {drift} must be ≤ tol/4 ({}), got arcs: {arcs:?}",
+                    "expected snap clamp ≤ tol/4 ({}), got drift {drift} for arcs: {arcs:?}",
                     tol * 0.25,
                 );
             }

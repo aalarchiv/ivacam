@@ -1739,32 +1739,25 @@ mod tests {
     /// vertices crosses an island — must return None.
     #[test]
     fn spiral_bridge_rejected_when_crossing_island() {
-        // Two concentric rings on a 50×50 pocket; ring 0 = inset outer,
-        // ring 1 = next step inward. The island is in the middle —
-        // pretend that ring 1's start vertex sits on the FAR side of
-        // the island from ring 0's end so the candidate bridge would
-        // cross the island.
-        // Build rings manually so the bridge is forced through the
-        // island.
-        let outer = vec![p(0.0, 0.0), p(50.0, 0.0), p(50.0, 50.0), p(0.0, 50.0)];
-        let inner = vec![p(5.0, 25.0), p(20.0, 25.0), p(20.0, 5.0), p(5.0, 5.0)];
-        let rings = vec![outer.clone(), inner];
+        // 50×50 pocket; an island in the middle at [20..30] × [20..30].
+        // Construct two rings so the spiral bridge from ring 0's
+        // chosen-start to ring 1's chosen-start MUST cross the island.
+        // The stitcher picks each ring's start vertex as the closest
+        // to the previous ring's last_end (= that ring's start), so
+        // we constrain ring vertices to engineer the bridge path:
+        // - ring 0 first vertex at (5, 25)  → last_end = (5, 25)
+        // - ring 1 vertices only on the right of the island; nearest
+        //   to (5, 25) is (40, 25) → bridge runs along y=25 from x=5
+        //   to x=40, slicing straight through the centre of the island.
+        let ring0 = vec![p(5.0, 25.0), p(5.0, 5.0), p(45.0, 5.0), p(45.0, 45.0), p(5.0, 45.0)];
+        let ring1 = vec![p(40.0, 25.0), p(40.0, 10.0), p(40.0, 5.0), p(40.0, 45.0)];
+        let rings = vec![ring0, ring1];
         let island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
         // No islands → polyline stitches without complaint (sanity).
         assert!(stitch_rings_to_polyline(&rings, &[]).is_some());
-        // With an island that lies on the bridge path between rings —
-        // ring 0 ends near (0,0), ring 1 starts at (5,25). Move ring 1
-        // start so the bridge MUST cross the island.
-        let inner2 = vec![p(45.0, 45.0), p(45.0, 5.0), p(5.0, 5.0), p(5.0, 45.0)];
-        let rings2 = vec![outer, inner2];
-        // The bridge from outer-last to inner2[0]=(45,45) doesn't cross
-        // the island (island is in centre). Let's add a third ring whose
-        // start forces a bridge through the island.
-        let inner3 = vec![p(40.0, 25.0), p(40.0, 5.0), p(10.0, 5.0), p(10.0, 25.0)];
-        let rings3 = vec![rings2[0].clone(), rings2[1].clone(), inner3];
-        // Bridge crosses the centre island, so stitch must reject.
+        // With the island present the y=25 bridge crosses it → reject.
         assert!(
-            stitch_rings_to_polyline(&rings3, &[island.clone()]).is_none(),
+            stitch_rings_to_polyline(&rings, &[island.clone()]).is_none(),
             "stitch must reject a bridge that crosses an island",
         );
     }

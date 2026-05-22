@@ -535,6 +535,20 @@ pub struct MachineConfig {
     /// `[mode]` (back-compat default for old project files).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<MachineMode>,
+    /// 3nnj: lower bound on the spindle RPM the controller will
+    /// accept. Tool / op RPMs below this clamp UP to the min and
+    /// emit a `spindle_speed_clamped_below_min` warning. `None`
+    /// disables the floor (default, back-compat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm_min: Option<u32>,
+    /// 3nnj: upper bound on the spindle RPM the controller will
+    /// accept. Tool / op RPMs above this clamp DOWN to the max
+    /// and emit a `spindle_speed_clamped_above_max` warning.
+    /// Without this clamp some controllers refuse the command
+    /// mid-program; others silently cap and produce wrong chipload.
+    /// `None` disables the ceiling (default, back-compat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm_max: Option<u32>,
 }
 
 impl MachineConfig {
@@ -637,6 +651,8 @@ impl Default for MachineConfig {
             work_area: default_work_area(),
             name: String::new(),
             capabilities: Vec::new(),
+            spindle_rpm_min: None,
+            spindle_rpm_max: None,
         }
     }
 }

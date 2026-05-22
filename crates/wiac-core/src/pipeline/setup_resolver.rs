@@ -10,14 +10,59 @@
 // adding a new kind forces a deliberate choice.
 #![allow(clippy::match_same_arms)]
 
-use crate::cam::setup::Setup;
+use crate::cam::setup::{MachineConfig, Setup};
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::VcObject;
-use crate::project::{Op, OpKind, PocketStrategy, Project};
+use crate::project::{Op, OpKind, PassKind, PocketStrategy, Project};
 
 use super::{
     effective_step, ordered_selection, source_combine_mode, PipelineError, PipelineWarning,
 };
+
+/// 3nnj: clamp a single resolved RPM into the machine's
+/// `[spindle_rpm_min, spindle_rpm_max]` window. Either bound may be
+/// `None` (unset = no clamp on that side). Emits a warning per
+/// clamp event tagged with which side fired + which pass it came
+/// from so the user knows finish vs rough vs drill was affected.
+fn clamp_spindle_rpm(
+    rpm: u32,
+    machine: &MachineConfig,
+    op: &Op,
+    pass: PassKind,
+    warnings: &mut Vec<PipelineWarning>,
+) -> u32 {
+    let mut clamped = rpm;
+    if let Some(max) = machine.spindle_rpm_max {
+        if rpm > max {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "spindle_speed_clamped_above_max".into(),
+                message: format!(
+                    "op '{}' ({:?} pass): tool RPM {} exceeds machine spindle_rpm_max {}; clamped to {}.",
+                    op.name, pass, rpm, max, max
+                ),
+            });
+            clamped = max;
+        }
+    }
+    if let Some(min) = machine.spindle_rpm_min {
+        // Some controllers refuse to start the spindle below their
+        // minimum (and you'd be at risk of stalling anyway). Clamp UP
+        // and warn so the user reviews the chipload at the new RPM.
+        if clamped < min {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "spindle_speed_clamped_below_min".into(),
+                message: format!(
+                    "op '{}' ({:?} pass): tool RPM {} is below machine spindle_rpm_min {}; clamped to {}.",
+                    op.name, pass, clamped, min, min
+                ),
+            });
+            clamped = min;
+        }
+    }
+    clamped
+}
 
 pub(super) fn dual_tool_finish_radius(op: &Op, project: &Project) -> Option<f64> {
     if !matches!(op.kind, OpKind::Pocket { .. }) {
@@ -111,15 +156,32 @@ pub(super) fn synthesize_op_setup(
     } else {
         crate::project::PassKind::Rough
     };
-    let (rough_speed, rough_plunge, rough_feed) =
+    let (rough_speed_raw, rough_plunge, rough_feed) =
         crate::project::resolve_tool_rates(tool, main_pass);
-    let (finish_speed, finish_plunge, finish_feed) = if matches!(op.kind, OpKind::Drill { .. }) {
+    let (finish_speed_raw, finish_plunge, finish_feed) = if matches!(op.kind, OpKind::Drill { .. })
+    {
         // Drill never emits a finish pass — keep the finish triplet
         // equal to the drill triplet so a caller that reads either side
         // sees consistent values.
-        (rough_speed, rough_plunge, rough_feed)
+        (rough_speed_raw, rough_plunge, rough_feed)
     } else {
         crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
+    };
+    // 3nnj: clamp each pass's resolved RPM into the machine's
+    // [spindle_rpm_min, spindle_rpm_max] window so an emitted S<x>
+    // is always physically reachable. Clamp + warn rather than fail
+    // hard — the user keeps the program but sees the substitution.
+    let rough_speed = clamp_spindle_rpm(rough_speed_raw, &project.machine, op, main_pass, warnings);
+    let finish_speed = if matches!(op.kind, OpKind::Drill { .. }) {
+        rough_speed
+    } else {
+        clamp_spindle_rpm(
+            finish_speed_raw,
+            &project.machine,
+            op,
+            PassKind::Finish,
+            warnings,
+        )
     };
     // rt1.29: laser tools get their per-tool pierce-time threaded
     // into ToolConfig so emit_offset can emit a G4 P<sec> dwell
@@ -422,11 +484,22 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             } else {
                 crate::project::PassKind::Rough
             };
-            let (rs, rp, rf) = crate::project::resolve_tool_rates(tool, main_pass);
-            let (fs, fp, ff) = if matches!(op.kind, OpKind::Drill { .. }) {
-                (rs, rp, rf)
+            let (rs_raw, rp, rf) = crate::project::resolve_tool_rates(tool, main_pass);
+            let (fs_raw, fp, ff) = if matches!(op.kind, OpKind::Drill { .. }) {
+                (rs_raw, rp, rf)
             } else {
                 crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
+            };
+            // 3nnj: keep the header S<x> consistent with the per-op
+            // clamp. The synth path already pushed the warning when
+            // this op ran through synthesize_op_setup; silently clamp
+            // here so the header doesn't ship a different (unreachable)
+            // RPM in its M3 command.
+            let rs = clamp_rpm_silent(rs_raw, &project.machine);
+            let fs = if matches!(op.kind, OpKind::Drill { .. }) {
+                rs
+            } else {
+                clamp_rpm_silent(fs_raw, &project.machine)
             };
             let pierce_sec = if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
                 tool.laser_pierce_sec.unwrap_or(0.0).max(0.0)
@@ -467,10 +540,12 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
     } else if let Some(tool) = project.tools.first() {
-        let (rs, rp, rf) =
+        let (rs_raw, rp, rf) =
             crate::project::resolve_tool_rates(tool, crate::project::PassKind::Rough);
-        let (fs, fp, ff) =
+        let (fs_raw, fp, ff) =
             crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish);
+        let rs = clamp_rpm_silent(rs_raw, &project.machine);
+        let fs = clamp_rpm_silent(fs_raw, &project.machine);
         let pierce_sec = if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
             tool.laser_pierce_sec.unwrap_or(0.0).max(0.0)
         } else {
@@ -501,6 +576,25 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
         };
     }
     setup
+}
+
+/// Same as `clamp_spindle_rpm` but silent (no warnings). Used by
+/// `header_setup_for` — the equivalent warning has already been
+/// emitted at synth time when that op ran through the per-op path,
+/// so the header path only needs the value adjustment.
+fn clamp_rpm_silent(rpm: u32, machine: &MachineConfig) -> u32 {
+    let mut clamped = rpm;
+    if let Some(max) = machine.spindle_rpm_max {
+        if clamped > max {
+            clamped = max;
+        }
+    }
+    if let Some(min) = machine.spindle_rpm_min {
+        if clamped < min {
+            clamped = min;
+        }
+    }
+    clamped
 }
 
 /// Resolve the effective `tip_diameter_mm` for a tool. Flat-bottom
@@ -609,5 +703,46 @@ mod tests {
         assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
         assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (12_000, 100, 400));
         assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (8_000, 50, 200));
+    }
+
+    /// 3nnj: tool RPM above the machine spindle ceiling clamps to the
+    /// ceiling and emits a `spindle_speed_clamped_above_max` warning.
+    /// The emitted `M3 S<n>` reflects the clamped value, not the raw
+    /// tool speed.
+    #[test]
+    fn rpm_above_machine_max_clamps_and_warns() {
+        let mut tool = endmill(1, 3.0);
+        tool.speed = 24_000; // way above hobby spindle range
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-1.0);
+        op.params.depth = -1.0;
+        let mut project = project_with(vec![op], vec![tool]);
+        project.machine.spindle_rpm_max = Some(12_000);
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "spindle_speed_clamped_above_max"),
+            "expected clamp warning, got {:?}",
+            resp.warnings
+        );
+        // The emitted gcode shouldn't ever say S24000 — the clamp must
+        // bite at the output boundary, not just in the warning.
+        assert!(
+            !resp.gcode.contains("S24000"),
+            "raw 24000 RPM leaked into gcode despite clamp"
+        );
+        assert!(
+            resp.gcode.contains("S12000"),
+            "expected clamped S12000, got {}",
+            resp.gcode
+        );
     }
 }

@@ -219,23 +219,54 @@ fn walk_chord(
     }
     let ux = dx / len;
     let uy = dy / len;
-    // Distance along the chord at which we should stamp the next
-    // stride step — picks up the residual from the previous chord so
-    // the spacing stays uniform across segment boundaries.
+    // 89n5: phase MUST carry continuously across chord boundaries.
+    // The previous code reset `consumed_since_last_step` to 0 at the
+    // chord endpoint and unconditionally bumped `winkel` by
+    // `schritt_rad` there — losing the stride residual and producing
+    // visible flat spots at corners as the spiral phase jumped by one
+    // full step regardless of how far the cutter actually advanced.
+    //
+    // Treat `consumed_since_last_step` as the arc-length-since-last-
+    // stamp accumulator. Walk the chord stamping a stride every time
+    // we cross another `stride` of arc-length; carry whatever's left
+    // (≤ stride) into the next chord. The endpoint waypoint stamps at
+    // the partial phase it actually reached (so the cascade ring's
+    // geometry is reachable without a phase glitch).
     let mut next_stamp_at = stride - *consumed_since_last_step;
-    while next_stamp_at < len {
+    while next_stamp_at <= len + 1e-12 {
         let x = p0.x + ux * next_stamp_at;
         let y = p0.y + uy * next_stamp_at;
         *winkel += schritt_rad;
         out.push(stamp(x, y, cut_z, *winkel, dir, radius, osc));
         next_stamp_at += stride;
     }
-    *consumed_since_last_step = len - (next_stamp_at - stride);
+    // Residual: how much of the chord we walked past the last stride
+    // stamp. `next_stamp_at - stride` was the last stride position
+    // (or `stride - prev_residual` when none were stamped). The
+    // remaining chord length (`len - last_stamp_pos`) carries into
+    // the next chord so the next chord's first stamp lands at the
+    // right cumulative arc-length.
+    let last_stamp_pos = next_stamp_at - stride;
+    let residual = (len - last_stamp_pos).max(0.0);
+    *consumed_since_last_step = residual;
     // Always stamp the chord endpoint so the cascade ring's geometry
-    // is reachable even when the stride doesn't divide the chord length.
-    *winkel += schritt_rad;
-    out.push(stamp(p1.x, p1.y, cut_z, *winkel, dir, radius, osc));
-    *consumed_since_last_step = 0.0;
+    // is reachable even when the stride doesn't divide the chord
+    // length — but advance phase only by the FRACTIONAL stride
+    // corresponding to the residual distance from the last stride
+    // stamp to the endpoint. This is the fix for the per-segment
+    // flat-spot pattern.
+    if residual > 1e-9 {
+        // Partial-stride advance proportional to residual / stride.
+        // The next chord's accumulator already tracks
+        // `consumed_since_last_step = residual`; its first stride
+        // stamp will bump `winkel` by a full schritt_rad at the
+        // correct cumulative arc-length. Stamping the endpoint with
+        // a partial phase (no commit to `winkel`) keeps the cascade
+        // ring's geometry reachable without double-counting.
+        let partial = (residual / stride) * schritt_rad;
+        let endpoint_phase = *winkel + partial;
+        out.push(stamp(p1.x, p1.y, cut_z, endpoint_phase, dir, radius, osc));
+    }
 }
 
 /// Chord-flatten an arc / circle segment to a polyline. 24 chords per
@@ -388,6 +419,72 @@ mod tests {
         assert!(
             min_z < -1.15,
             "expected at least one wobble dip near -1.2, got min {min_z}"
+        );
+    }
+
+    #[test]
+    fn walk_chord_phase_is_continuous_across_boundaries() {
+        // 89n5: walk_chord carries the stride residual across chord
+        // boundaries — the spiral phase after N unit chords must
+        // equal N · (schritt_rad / stride) · stride within FP
+        // tolerance, independent of how the total length is split.
+        let radius = 1.0;
+        let stride = 2.0;
+        let schritte = schritte_for_radius(radius);
+        let schritt_rad = std::f64::consts::TAU / f64::from(schritte);
+
+        // Walk 10 unit chords laid head-to-tail. Track the resulting
+        // winkel by replaying walk_chord against a fresh state, then
+        // compare against ONE 10-unit chord.
+        let mut winkel_split = 0.0_f64;
+        let mut consumed = 0.0_f64;
+        let mut out_split: Vec<(f64, f64, f64)> = Vec::new();
+        for k in 0..10 {
+            let p0 = Point2::new(k as f64, 0.0);
+            let p1 = Point2::new((k + 1) as f64, 0.0);
+            walk_chord(
+                p0,
+                p1,
+                stride,
+                schritt_rad,
+                0.0,
+                1.0,
+                radius,
+                0.0,
+                &mut winkel_split,
+                &mut consumed,
+                &mut out_split,
+            );
+        }
+
+        let mut winkel_single = 0.0_f64;
+        let mut consumed_single = 0.0_f64;
+        let mut out_single: Vec<(f64, f64, f64)> = Vec::new();
+        walk_chord(
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 0.0),
+            stride,
+            schritt_rad,
+            0.0,
+            1.0,
+            radius,
+            0.0,
+            &mut winkel_single,
+            &mut consumed_single,
+            &mut out_single,
+        );
+
+        assert!(
+            (winkel_split - winkel_single).abs() < 1e-9,
+            "phase mismatch: split path winkel={winkel_split}, single chord winkel={winkel_single}",
+        );
+        // Total arclen 10 / stride 2 = 5 stride stamps; both paths
+        // accumulated the same total phase.
+        assert!(
+            (winkel_split - 5.0 * schritt_rad).abs() < 1e-9,
+            "expected winkel = 5 · schritt_rad ({}), got {}",
+            5.0 * schritt_rad,
+            winkel_split,
         );
     }
 

@@ -14,6 +14,7 @@
   import { exportGeneratedGcode } from '../state/file_ops';
   import { computeFootprint } from '../sim/driver';
   import type { SimWarning, TimeEstimate } from '../api/types';
+  import { countCriticalPipelineWarnings } from '../api/pipeline-warnings';
   import GenerateProgress from './GenerateProgress.svelte';
   import { workspace } from '../state/workspace.svelte';
 
@@ -116,8 +117,24 @@
   });
 
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);
-  let criticalCount = $derived(warnings.filter((w) => simWarningSeverity(w) === 'critical').length);
-  let isClean = $derived(warnings.length === 0);
+  // 94sf: critical-count now spans BOTH sim warnings AND pipeline-level
+  // warnings (tool_too_large, op_order_suspect, frame_padding_below_tool_radius,
+  // spindle_speed_clamped_above_max, stock_origin_outside_geometry_bbox, …).
+  // Before, the safety gate ignored everything the pipeline emitted at
+  // planning time — only sim post-mortem warnings could block the
+  // Generate button. The audit caught that pattern (a Pocket whose tool
+  // didn't fit emitted zero toolpath, raised `tool_too_large`, and the
+  // user's "block on critical" setting did NOT prevent the broken gcode
+  // from shipping).
+  let pipelineCriticalCount = $derived(
+    countCriticalPipelineWarnings(
+      (project.generated as { warnings?: import('../api/pipeline-warnings').PipelineWarning[] } | null)?.warnings,
+    ),
+  );
+  let criticalCount = $derived(
+    warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,
+  );
+  let isClean = $derived(warnings.length === 0 && pipelineCriticalCount === 0);
 
   /// Post-Generate bounds scan — counts cut/plunge/arc segments whose
   /// endpoints fall outside the stock OR outside the machine work area.
@@ -243,6 +260,18 @@
   }
 
   async function downloadGcode() {
+    // 94sf: if the most recent generate raised critical pipeline
+    // warnings (tool_too_large, op_order_suspect, …) and the user
+    // hasn't disabled the safety gate, refuse to write the file.
+    // The toolpath we'd ship is the one the pipeline flagged as
+    // substantively wrong — saving it to disk just gives the user
+    // a broken .ngc that ends up on a machine.
+    if (project.settings.blockOnCriticalSimWarnings && pipelineCriticalCount > 0) {
+      project.setError(
+        `Pipeline raised ${pipelineCriticalCount} critical warning${pipelineCriticalCount === 1 ? '' : 's'} on the last Generate — fix or disable the safety check in Settings`,
+      );
+      return;
+    }
     await exportGeneratedGcode(post);
   }
 

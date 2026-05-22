@@ -72,6 +72,68 @@ pub struct Project {
     /// pipeline; cache keys include `text_layers` content.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_layers: Vec<TextLayer>,
+
+    /// i5g4 (MVP): explicit work-offset between the geometry frame
+    /// (where the DXF / SVG was drawn) and the gcode WCS origin
+    /// (where the user zeros the spindle on the real machine). All
+    /// zeros (default) means "geometry origin = WCS origin". Full
+    /// G54..G59 + per-fixture origins are a future feature; this
+    /// field gives a single offset the sim and the WCS warning
+    /// consult. Persisted into project files; legacy files lacking
+    /// the field default to zeros and behave exactly as before.
+    #[serde(default, skip_serializing_if = "WorkOffset::is_default")]
+    pub work_offset: WorkOffset,
+}
+
+/// i5g4: program-level work-coordinate offset. Defaults to all
+/// zeros — geometry origin == WCS origin. When the user zeros the
+/// machine somewhere different from the geometry origin, set this
+/// so the sim can align the heightmap to the WCS frame. The full
+/// per-fixture / G54..G59 selector is a follow-up feature.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkOffset {
+    /// X offset (mm) from geometry origin to WCS origin.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub x_mm: f64,
+    /// Y offset (mm) from geometry origin to WCS origin.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub y_mm: f64,
+    /// Z offset (mm) from geometry origin to WCS origin.
+    /// Positive means the WCS Z=0 is ABOVE the geometry's z=0.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub z_mm: f64,
+    /// Which work coordinate system this offset applies to. The
+    /// gcode emitter doesn't (yet) flip between G54..G59 — this is
+    /// a labelling field for the UI + future expansion.
+    #[serde(default, skip_serializing_if = "Wcs::is_default")]
+    pub wcs: Wcs,
+}
+
+impl WorkOffset {
+    fn is_default(v: &Self) -> bool {
+        is_zero_f64(&v.x_mm)
+            && is_zero_f64(&v.y_mm)
+            && is_zero_f64(&v.z_mm)
+            && Wcs::is_default(&v.wcs)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Wcs {
+    #[default]
+    G54,
+    G55,
+    G56,
+    G57,
+    G58,
+    G59,
+}
+
+impl Wcs {
+    fn is_default(v: &Self) -> bool {
+        matches!(v, Self::G54)
+    }
 }
 
 #[cfg(test)]

@@ -347,6 +347,7 @@ mod tests {
             operations: vec![op],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -405,6 +406,7 @@ mod tests {
             operations: vec![op],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -468,6 +470,7 @@ mod tests {
             operations: vec![op],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -537,6 +540,7 @@ mod tests {
             operations: vec![op],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -630,6 +634,7 @@ mod tests {
                 operations: vec![op],
                 fixtures: Vec::default(),
                 text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
             };
             run_pipeline(
                 PipelineRequest {

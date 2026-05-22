@@ -415,6 +415,19 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         .count()
         .max(1);
     let mut warnings: Vec<PipelineWarning> = Vec::new();
+    // tnxu: scan the op sequence for obviously wrong orderings (Profile
+    // that cuts the part free preceding drill / finish on the same
+    // source). Warnings only — no auto-reorder, because the user may
+    // have a real reason for the declared order (jig, manual reset). The
+    // 94sf safety gate downgrades the program when an `op_order_suspect`
+    // surfaces, so the user has to acknowledge before the gcode ships.
+    warnings::push_op_order_warnings(&project, &mut warnings);
+    // i5g4 MVP: warn when geometry bbox doesn't contain (0,0). Full
+    // WCS / G54..G59 support is a feature on the roadmap; this loud
+    // warning closes the silent-misalignment case the audit caught
+    // (part-center DXF + corner-zero G54 → sim shows cuts in the
+    // wrong place, user trusts the sim, runs the program).
+    warnings::push_wcs_origin_warning(&project, &mut warnings);
 
     let post_tag: u8 = match post_kind {
         PostProcessorKind::Linuxcnc => 0,

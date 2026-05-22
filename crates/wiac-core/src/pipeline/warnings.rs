@@ -7,11 +7,191 @@
 //! emitted offset list.
 
 use crate::cam::offsets::PolylineOffset;
-use crate::cam::setup::Setup;
+use crate::cam::setup::{Setup, ToolOffset};
 use crate::cam::VcObject;
-use crate::project::{Op, OpKind, PocketStrategy, Project};
+use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project};
 
 use super::{op_includes_object, PipelineWarning};
+
+/// i5g4 (MVP): surface a warning when the imported geometry's
+/// bounding box does NOT contain the gcode origin (0,0). The full
+/// WCS / G54..G59 / per-fixture-origin fix is a feature (see the
+/// follow-up issue) — but the silent-misalignment case the audit
+/// caught is the user who drew a part centered around (0,0) in
+/// their DXF and then zeroed the machine to a stock CORNER. The
+/// sim heightmap shows cuts where the gcode origin lands; if that
+/// origin is far from where the user actually zeroed the spindle,
+/// the sim looks normal but the real machine cuts in the wrong
+/// place. The fix is small and loud: warn whenever the geometry
+/// bbox doesn't include (0,0).
+///
+/// We accept a 0.001 mm slack so paths drawn EXACTLY to the origin
+/// edge don't warn (very common — "draw a square from 0,0 to 100,100").
+pub(super) fn push_wcs_origin_warning(
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    if project.segments.is_empty() {
+        return;
+    }
+    let bbox = crate::geometry::BBox::from_segments(&project.segments);
+    if !bbox.is_finite() {
+        return;
+    }
+    // The "gcode origin" in geometry coordinates is the WCS origin
+    // expressed in the geometry frame: project.work_offset gives the
+    // offset from geometry origin to WCS origin, so the WCS-zero
+    // lives at (work_offset.x_mm, work_offset.y_mm) in geometry-space.
+    // We check whether that point falls within (or essentially on)
+    // the geometry footprint — if not, the sim heightmap and the
+    // emitted cuts will diverge.
+    let slack = 1e-3_f64;
+    let gx = project.work_offset.x_mm;
+    let gy = project.work_offset.y_mm;
+    let contains_wcs = bbox.min_x - slack <= gx
+        && gx <= bbox.max_x + slack
+        && bbox.min_y - slack <= gy
+        && gy <= bbox.max_y + slack;
+    if !contains_wcs {
+        warnings.push(PipelineWarning {
+            op_id: None,
+            kind: "stock_origin_outside_geometry_bbox".into(),
+            message: format!(
+                "Geometry bbox ({:.2}, {:.2}) → ({:.2}, {:.2}) does NOT contain the WCS origin ({:.2}, {:.2}) in geometry coordinates. The simulator aligns its heightmap to the geometry footprint while the controller cuts at the WCS / G54 origin — if you zeroed the machine somewhere else (e.g. a stock corner) the cuts will land in the wrong place. Translate the geometry, or set Project.work_offset so the WCS origin matches the spot you zeroed against.",
+                bbox.min_x, bbox.min_y, bbox.max_x, bbox.max_y, gx, gy
+            ),
+        });
+    }
+}
+
+/// tnxu: scan the enabled-op sequence for obviously wrong orderings —
+/// the classic "Profile cuts the part free → Drill on the loose part
+/// fails" sequence. We don't auto-reorder (the user may have a real
+/// reason for the order, e.g. a jig + manual reset), but we surface
+/// a per-offender `op_order_suspect` warning so the
+/// `block_on_critical` gate (94sf) can refuse to ship gcode that's
+/// almost certainly going to misbehave. Two patterns:
+///
+/// * `Drill` appearing AFTER a `Profile` (Outside / Inside or
+///   through-cut) on the same source — the part is loose by the
+///   time the drill runs, so the drill positions never register.
+/// * Finish-before-rough — two contour-style ops on the same
+///   source where the FIRST uses a SMALLER tool than the second.
+///   The finish pass belongs after the rough that opens up
+///   clearance; smaller-tool-first is almost never intentional.
+///
+/// Same-tool-back-to-back Profile or Pocket ops are NOT flagged —
+/// that's a common pattern for layered passes and the user
+/// frequently does it on purpose.
+pub(super) fn push_op_order_warnings(
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    let enabled: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
+    if enabled.len() < 2 {
+        return;
+    }
+    // Profile that cuts the part free: either an explicit through_depth > 0
+    // OR an outside / inside profile with depth deep enough that we'd
+    // expect it to part the stock. We don't have stock thickness here so
+    // the through_depth signal is the canonical one; outside-profile is
+    // also strong evidence (typically the user is cutting the outline).
+    let cuts_part_free = |op: &Op| -> bool {
+        match &op.kind {
+            OpKind::Profile { offset, .. } => {
+                op.params.through_depth > 1e-9
+                    || matches!(offset, ToolOffset::Outside | ToolOffset::Inside)
+            }
+            _ => false,
+        }
+    };
+    for (i, op_a) in enabled.iter().enumerate() {
+        if !cuts_part_free(op_a) {
+            continue;
+        }
+        for op_b in &enabled[i + 1..] {
+            if !ops_share_source(op_a, op_b) {
+                continue;
+            }
+            // Only Drill is firmly broken here. Other op kinds can
+            // legitimately follow a profile (chamfer the edge AFTER
+            // the profile is cut; engrave a code on remaining stock).
+            // Drill positions depend on a held part — the user
+            // almost never wants this order.
+            if !matches!(op_b.kind, OpKind::Drill { .. }) {
+                continue;
+            }
+            warnings.push(PipelineWarning {
+                op_id: Some(op_b.id),
+                kind: "op_order_suspect".into(),
+                message: format!(
+                    "Operation '{}' (drill_after_profile) runs AFTER profile op '{}' which cuts the part free. Drilling acts on a loose / flown piece. Reorder so the drill precedes the part-freeing profile.",
+                    op_b.name, op_a.name
+                ),
+            });
+        }
+    }
+    // Finish-before-rough: two ops on the same source where the first
+    // uses a smaller tool than the second. "Same source" + smaller-tool-first
+    // is rarely intentional — finish passes belong AFTER the rough that
+    // opens up clearance.
+    for (i, op_a) in enabled.iter().enumerate() {
+        for op_b in &enabled[i + 1..] {
+            if !ops_share_source(op_a, op_b) {
+                continue;
+            }
+            let (Some(tool_a), Some(tool_b)) = (
+                project.tools.iter().find(|t| t.id == op_a.tool_id),
+                project.tools.iter().find(|t| t.id == op_b.tool_id),
+            ) else {
+                continue;
+            };
+            // Smaller tool first, on contour-style ops only — leaving
+            // a drill or chamfer specifically out (their tool sizes
+            // don't follow the rough/finish convention).
+            let contour_kind = |op: &Op| {
+                matches!(
+                    op.kind,
+                    OpKind::Profile { .. } | OpKind::Pocket { .. } | OpKind::Engrave { .. }
+                )
+            };
+            if !contour_kind(op_a) || !contour_kind(op_b) {
+                continue;
+            }
+            if tool_a.diameter + 1e-9 < tool_b.diameter {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op_a.id),
+                    kind: "op_order_suspect".into(),
+                    message: format!(
+                        "Operation '{}' (tool dia {:.2}) runs BEFORE '{}' (tool dia {:.2}) on the same source — likely a finish-before-rough order. Move the larger tool first so the finish pass has clearance.",
+                        op_a.name, tool_a.diameter, op_b.name, tool_b.diameter
+                    ),
+                });
+            }
+        }
+    }
+}
+
+/// Two ops "share source" when one's OpSource overlaps the other's:
+/// either both `All`, intersecting `Layers` lists, or intersecting
+/// `Objects` id sets. `Objects` vs `Layers` cross-comparison is
+/// conservatively true (we don't know the chain→layer mapping without
+/// re-running selection) — the warning is an order check, not an
+/// emit-time error, so a few extra warnings are cheaper than a missed
+/// real one.
+fn ops_share_source(a: &Op, b: &Op) -> bool {
+    match (&a.source, &b.source) {
+        (OpSource::All, _) | (_, OpSource::All) => true,
+        (OpSource::Layers { layers: la, .. }, OpSource::Layers { layers: lb, .. }) => {
+            la.iter().any(|x| lb.iter().any(|y| x == y))
+        }
+        (OpSource::Objects { ids: ia, .. }, OpSource::Objects { ids: ib, .. }) => {
+            ia.iter().any(|x| ib.contains(x))
+        }
+        // Mixed Layers/Objects: conservative true (see fn comment).
+        _ => true,
+    }
+}
 
 /// Surface the v1 limitation that the ramp-pass emitter treats
 /// boundary-crossing arcs as regular segments (instant Z descent at
@@ -191,5 +371,127 @@ pub(super) fn push_tool_fit_size_warning(
                 setup.tool.diameter, op.name,
             ),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cam::setup::ToolOffset;
+    use crate::pipeline::test_helpers::{
+        closed_square, closed_square_offset, drill_op, endmill, pocket_op, profile_op,
+        project_with, project_with_segments,
+    };
+    use crate::project::{DrillCycle, OpSource};
+
+    /// tnxu: a Profile op cutting the outline followed by a Drill op
+    /// on the same source emits an `op_order_suspect` warning tagged
+    /// `drill_after_profile`. The downstream Drill would be acting
+    /// on a freed part — almost never intentional.
+    #[test]
+    fn op_order_drill_after_profile_emits_warning() {
+        let tool = endmill(1, 3.0);
+        // Profile op cuts the outside contour (parts the stock).
+        let mut profile = profile_op(1, 1, ToolOffset::Outside);
+        profile.params.step = Some(-1.0);
+        profile.params.depth = -2.0;
+        // Drill op on the same All source — would land on the loose part.
+        let drill = drill_op(2, 1, DrillCycle::Simple { dwell_sec: 0.0 });
+        let project = project_with(vec![profile, drill], vec![tool]);
+        let mut warnings = Vec::new();
+        push_op_order_warnings(&project, &mut warnings);
+        let hit = warnings
+            .iter()
+            .find(|w| w.kind == "op_order_suspect")
+            .expect("expected op_order_suspect");
+        assert_eq!(hit.op_id, Some(2));
+        assert!(
+            hit.message.contains("drill_after_profile"),
+            "expected drill_after_profile tag, got {}",
+            hit.message
+        );
+    }
+
+    /// Reverse order — Drill then Profile — is the SAFE order, so no
+    /// warning. Same source, same tools, just swapped.
+    #[test]
+    fn op_order_drill_before_profile_no_warning() {
+        let tool = endmill(1, 3.0);
+        let drill = drill_op(1, 1, DrillCycle::Simple { dwell_sec: 0.0 });
+        let mut profile = profile_op(2, 1, ToolOffset::Outside);
+        profile.params.step = Some(-1.0);
+        profile.params.depth = -2.0;
+        let project = project_with(vec![drill, profile], vec![tool]);
+        let mut warnings = Vec::new();
+        push_op_order_warnings(&project, &mut warnings);
+        assert!(
+            warnings.iter().all(|w| w.kind != "op_order_suspect"),
+            "no op_order_suspect expected in safe order, got {:?}",
+            warnings
+        );
+    }
+
+    /// Pocket-then-Pocket where the second op uses a LARGER tool than
+    /// the first triggers the finish-before-rough heuristic. Same source.
+    #[test]
+    fn op_order_finish_before_rough_emits_warning() {
+        let tool_small = endmill(1, 1.0);
+        let tool_big = endmill(2, 6.0);
+        let pocket_small = pocket_op(1, 1, OpSource::All);
+        let pocket_big = pocket_op(2, 2, OpSource::All);
+        let project = project_with(vec![pocket_small, pocket_big], vec![tool_small, tool_big]);
+        let mut warnings = Vec::new();
+        push_op_order_warnings(&project, &mut warnings);
+        let hit = warnings
+            .iter()
+            .find(|w| w.kind == "op_order_suspect" && w.op_id == Some(1))
+            .expect("expected op_order_suspect for the smaller-tool first op");
+        assert!(
+            hit.message.contains("finish-before-rough"),
+            "message should mention finish-before-rough: {}",
+            hit.message
+        );
+    }
+
+    /// i5g4 MVP: geometry bbox that does NOT include the WCS origin
+    /// (default 0,0) emits a `stock_origin_outside_geometry_bbox`
+    /// warning. The canonical case is a DXF drawn off-origin —
+    /// (100..200, 100..200) — with the machine zeroed at (0,0).
+    #[test]
+    fn stock_bbox_not_containing_origin_emits_warning() {
+        let segs = closed_square_offset(100.0, 100.0, 100.0);
+        let tool = endmill(1, 3.0);
+        let mut profile = profile_op(1, 1, ToolOffset::Outside);
+        profile.params.step = Some(-1.0);
+        profile.params.depth = -1.0;
+        let project = project_with_segments(segs, vec![profile], vec![tool]);
+        let mut warnings = Vec::new();
+        push_wcs_origin_warning(&project, &mut warnings);
+        let hit = warnings
+            .iter()
+            .find(|w| w.kind == "stock_origin_outside_geometry_bbox")
+            .expect("expected WCS origin warning when geometry doesn't include (0,0)");
+        assert_eq!(hit.op_id, None, "WCS warning is project-wide, not per-op");
+    }
+
+    /// Origin-containing geometry produces NO WCS warning. (0..20 square
+    /// includes (0,0) at the corner, the slack accepts it.)
+    #[test]
+    fn stock_bbox_containing_origin_no_warning() {
+        let segs = closed_square(20.0);
+        let tool = endmill(1, 3.0);
+        let mut profile = profile_op(1, 1, ToolOffset::Outside);
+        profile.params.step = Some(-1.0);
+        profile.params.depth = -1.0;
+        let project = project_with_segments(segs, vec![profile], vec![tool]);
+        let mut warnings = Vec::new();
+        push_wcs_origin_warning(&project, &mut warnings);
+        assert!(
+            warnings
+                .iter()
+                .all(|w| w.kind != "stock_origin_outside_geometry_bbox"),
+            "no WCS warning expected, got {:?}",
+            warnings
+        );
     }
 }

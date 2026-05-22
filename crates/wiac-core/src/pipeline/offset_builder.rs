@@ -644,6 +644,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -720,6 +721,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -776,6 +778,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -850,6 +853,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -919,6 +923,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -981,6 +986,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1100,6 +1106,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1151,6 +1158,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1185,6 +1193,7 @@ mod tests {
             operations: vec![profile_leads_op(ToolOffset::Outside, LeadKind::Arc, 2.0)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1215,6 +1224,7 @@ mod tests {
             operations: vec![profile_leads_op(ToolOffset::Outside, LeadKind::Off, 0.0)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1253,6 +1263,7 @@ mod tests {
             )],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1321,6 +1332,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1362,6 +1374,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1404,6 +1417,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1443,6 +1457,7 @@ mod tests {
                 operations: vec![profile_op(1, 1, offset)],
                 fixtures: Vec::default(),
                 text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
             };
             let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
                 toolpath
@@ -1512,6 +1527,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1654,6 +1670,7 @@ mod tests {
             operations: vec![profile_op(1, 1, offset)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         for offset in [ToolOffset::Outside, ToolOffset::Inside] {
             let resp = run_pipeline(
@@ -1695,6 +1712,7 @@ mod tests {
             operations: vec![profile_op(1, 1, offset)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -1781,6 +1799,7 @@ mod tests {
             )],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let annulus_project = Project {
             segments,
@@ -1796,6 +1815,7 @@ mod tests {
             )],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let baseline = run_pipeline(
             PipelineRequest {
@@ -1873,6 +1893,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1944,6 +1965,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2030,6 +2052,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2128,6 +2151,7 @@ mod tests {
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2210,6 +2234,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2315,6 +2340,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2400,6 +2426,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2441,6 +2468,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2506,6 +2534,7 @@ mod tests {
                 }],
                 fixtures: Vec::default(),
                 text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
             };
             run_pipeline(
                 PipelineRequest {
@@ -2557,6 +2586,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2628,6 +2658,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2685,6 +2716,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2740,6 +2772,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2780,6 +2813,7 @@ mod tests {
             operations: vec![pocket_op(1, 1, OpSource::All)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2826,6 +2860,7 @@ mod tests {
             operations: vec![pocket_op(1, 1, OpSource::All)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2937,6 +2972,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2989,6 +3025,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3063,6 +3100,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3110,6 +3148,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let mut spiral_project = cascade_project.clone();
         spiral_project.operations[0].kind = OpKind::Pocket {
@@ -3192,6 +3231,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let gcode = run_pipeline(
             PipelineRequest {
@@ -3273,6 +3313,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let strategies = [
             PocketStrategy::Cascade,
@@ -3361,6 +3402,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let cut_total = |toolpath: &[preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -3451,6 +3493,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3500,6 +3543,7 @@ mod tests {
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {

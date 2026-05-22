@@ -271,6 +271,7 @@ pub(in crate::pipeline) fn project_with_segments(
         operations: ops,
         fixtures: Vec::default(),
         text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
     }
 }
 

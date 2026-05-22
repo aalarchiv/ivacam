@@ -55,6 +55,7 @@
             operations: vec![engrave],
             fixtures: Vec::default(),
             text_layers: vec![text_layer],
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -189,6 +190,7 @@
             operations: vec![profile_op(1, 7, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -256,6 +258,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -332,6 +335,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -377,6 +381,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp_a = run_pipeline(
             PipelineRequest {
@@ -470,6 +475,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -560,6 +566,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -594,6 +601,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -624,6 +632,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -650,6 +659,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -681,6 +691,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -724,6 +735,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -763,6 +775,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -809,6 +822,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -855,6 +869,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -891,6 +906,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -932,6 +948,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -988,6 +1005,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1104,6 +1122,7 @@
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let cancel = CancelToken::new();
         let mut events: Vec<PipelineEvent> = Vec::new();
@@ -1152,6 +1171,7 @@
             operations: vec![profile_op(1, 1, ToolOffset::Outside)],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let cancel = CancelToken::new();
         let mut last: Option<PipelineEvent> = None;
@@ -1218,6 +1238,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let cancel = CancelToken::new();
         let cancel_clone = cancel.clone();
@@ -1299,6 +1320,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         clear_pipeline_cache();
         let first = collect_cached_flags(project.clone());
@@ -1338,6 +1360,7 @@
             operations: ops,
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         clear_pipeline_cache();
         let first = collect_cached_flags(project.clone());
@@ -1380,6 +1403,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         clear_pipeline_cache();
         let req = || PipelineRequest {
@@ -1506,6 +1530,7 @@
             operations: vec![profile, pause],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             crate::pipeline::PipelineRequest {
@@ -1555,6 +1580,7 @@
             operations: vec![pause],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             crate::pipeline::PipelineRequest {
@@ -1653,6 +1679,7 @@
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1699,6 +1726,7 @@
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1735,6 +1763,7 @@
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1798,6 +1827,7 @@
             operations: vec![op],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1886,6 +1916,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1948,6 +1979,7 @@
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2009,6 +2041,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2088,6 +2121,7 @@
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2130,6 +2164,7 @@
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2171,6 +2206,7 @@
             ],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2197,5 +2233,65 @@
         assert!(
             m5 < swap && swap < m0,
             "expected order M5 → pause comment → M0; got M5={m5} swap={swap} M0={m0}:\n{between}"
+        );
+    }
+
+    /// w9hd: a project with `machine.unit = Inch` MUST scale every
+    /// emitted X/Y/Z by 1/25.4. The pipeline math runs in mm; the
+    /// post applies the boundary conversion. We assert that:
+    ///   * `G20` (inch pragma) is present
+    ///   * the 20 mm square's emitted X coords land near 0.787 in
+    ///   * the depth Z of -1 mm lands near -0.039 in
+    /// The previous behaviour was a silent 25.4× over-cut.
+    #[test]
+    fn inch_units_emit_scaled_numbers() {
+        let machine = MachineConfig {
+            unit: crate::cam::setup::UnitSystem::Inch,
+            ..MachineConfig::default()
+        };
+        let mut profile = profile_op(1, 1, ToolOffset::Outside);
+        profile.params.step = Some(-1.0);
+        profile.params.depth = -1.0;
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("G20"), "expected G20 (inch), got:\n{}", resp.gcode);
+        assert!(!resp.gcode.contains("G21"));
+        // 20 mm / 25.4 ≈ 0.7874 — appears formatted with up to 4 decimals.
+        // Any line that contains an X value in the ballpark of 0.78 is a hit
+        // (the offset cascade may emit slightly different numbers per pass,
+        // but the LITERAL "20" mm value MUST NOT appear as an X word).
+        assert!(
+            !resp.gcode.lines().any(|l| l.contains("X20") || l.contains("X20.0")),
+            "raw 20 mm leaked into gcode despite Inch unit:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.lines().any(|l| {
+                (l.starts_with("G0") || l.starts_with("G1"))
+                    && (l.contains("X0.78") || l.contains("X0.79"))
+            }),
+            "expected an X value near 0.787 (20 mm in inches), got:\n{}",
+            resp.gcode
+        );
+        // Z = -1 mm → -0.039 in. Confirm the depth got scaled.
+        assert!(
+            resp.gcode.lines().any(|l| l.contains("Z-0.03")),
+            "expected a Z near -0.039 (-1 mm in inches), got:\n{}",
+            resp.gcode
         );
     }

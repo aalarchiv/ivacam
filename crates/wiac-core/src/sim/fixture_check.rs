@@ -29,6 +29,7 @@ use crate::cam::lines_intersect;
 use crate::gcode::preview::ToolpathSegment;
 use crate::geometry::Point2;
 use crate::project::{Fixture, FixtureKind};
+use crate::sim::holder::HolderProfile;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FixtureCheck {
@@ -40,10 +41,17 @@ pub enum FixtureCheck {
     },
 }
 
+// WHY: w84n — the Z gate used to look only at the tip Z range, so a
+// clamp/jaw sitting *above* the tip Z but inside the path of the shank
+// or holder was invisible. The tool body (tip → flutes → shank → holder
+// top) extends upward by `holder.total_length()`, and the XY inflation
+// above the flutes must use `holder.max_radius()`, not just the cutting
+// radius — a wide ER nut close to a clamp must still be tested.
 #[must_use]
 pub fn check_segment_against_fixtures(
     segment: &ToolpathSegment,
     tool_radius: f64,
+    holder: Option<&HolderProfile>,
     fixtures: &[Fixture],
 ) -> Vec<FixtureCheck> {
     if fixtures.is_empty() || tool_radius <= 0.0 {
@@ -52,22 +60,52 @@ pub fn check_segment_against_fixtures(
     let mut out = Vec::with_capacity(fixtures.len());
     let seg_z_min = segment.from.z.min(segment.to.z);
     let seg_z_max = segment.from.z.max(segment.to.z);
+    // w84n: the tool body extends `holder.total_length()` above the tip;
+    // anything above the flutes sweeps a wider envelope (the holder /
+    // shank radius). Fixtures *above* the tip Z but inside that band
+    // were previously invisible.
+    let body_top_offset = holder.map_or(0.0, HolderProfile::total_length);
+    let body_z_top = seg_z_max + body_top_offset;
+    let body_radius = holder
+        .map_or(tool_radius, |h| tool_radius.max(h.max_radius()));
 
     for f in fixtures {
-        // Z-range gate: cutter and fixture height bands disjoint → safe.
-        if seg_z_max < f.z_bottom || seg_z_min > f.z_top {
+        // Z-range gate: the tool body sweeps [seg_z_min, seg_z_max +
+        // body_top_offset]. If that band doesn't overlap the fixture's
+        // [z_bottom, z_top] the tool never visits the fixture's height
+        // band — safe.
+        if body_z_top < f.z_bottom || seg_z_min > f.z_top {
             out.push(FixtureCheck::Clear);
             continue;
         }
+        // XY inflation: cells *at* the cutting tip Z use the cutting
+        // radius; cells above the flutes (where the holder lives) need
+        // the holder's max radius. As a conservative bound that lets a
+        // single XY test cover both bands, use whichever inflation
+        // applies inside the fixture's height window.
+        let xy_r = if f.z_bottom > seg_z_max {
+            body_radius
+        } else {
+            // Fixture band reaches at or below the tip — the tip itself
+            // could hit it, so the cutting radius governs. (If the
+            // fixture extends both below and above the flutes we still
+            // need the holder radius for the upper part, so take the
+            // max.)
+            if f.z_top > seg_z_max {
+                tool_radius.max(body_radius)
+            } else {
+                tool_radius
+            }
+        };
         let collides = match &f.kind {
             FixtureKind::Box { width, depth } => {
-                stadium_hits_box(segment, tool_radius, f.origin, *width, *depth)
+                stadium_hits_box(segment, xy_r, f.origin, *width, *depth)
             }
             FixtureKind::Cylinder { radius } => {
-                stadium_hits_cylinder(segment, tool_radius, f.origin, *radius)
+                stadium_hits_cylinder(segment, xy_r, f.origin, *radius)
             }
             FixtureKind::Polygon { vertices } => {
-                stadium_hits_polygon(segment, tool_radius, f.origin, vertices)
+                stadium_hits_polygon(segment, xy_r, f.origin, vertices)
             }
         };
         if collides {
@@ -362,7 +400,7 @@ mod tests {
         // (R=3) cuts horizontally through the middle at Z=5.
         let s = seg((-50.0, 0.0, 5.0), (50.0, 0.0, 5.0));
         let fix = box_fixture(7, (0.0, 0.0), 30.0, 50.0, 0.0, 10.0);
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert_eq!(res.len(), 1);
         match res[0] {
             FixtureCheck::Collision {
@@ -384,7 +422,7 @@ mod tests {
         // Same Box but z_bottom=10 so Z=5 segment never reaches it.
         let s = seg((-50.0, 0.0, 5.0), (50.0, 0.0, 5.0));
         let fix = box_fixture(7, (0.0, 0.0), 30.0, 50.0, 10.0, 20.0);
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert!(matches!(res[0], FixtureCheck::Clear));
     }
 
@@ -392,7 +430,7 @@ mod tests {
     fn box_clear_far_in_xy() {
         let s = seg((-50.0, 100.0, 5.0), (50.0, 100.0, 5.0));
         let fix = box_fixture(7, (0.0, 0.0), 30.0, 50.0, 0.0, 10.0);
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert!(
             matches!(res[0], FixtureCheck::Clear),
             "stadium far above box should be clear"
@@ -406,7 +444,7 @@ mod tests {
         // R+r = 13: collision.
         let s = seg((40.0, 50.0, 5.0), (40.0, 60.0, 5.0));
         let fix = cyl_fixture(2, (50.0, 50.0), 10.0, 0.0, 20.0);
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         match res[0] {
             FixtureCheck::Collision {
                 fixture_id,
@@ -427,7 +465,7 @@ mod tests {
         // Same cylinder, segment 5 mm further left: distance 15 > R+r=13.
         let s = seg((35.0, 50.0, 5.0), (35.0, 60.0, 5.0));
         let fix = cyl_fixture(2, (50.0, 50.0), 10.0, 0.0, 20.0);
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert!(matches!(res[0], FixtureCheck::Clear));
     }
 
@@ -436,7 +474,7 @@ mod tests {
         // Cylinder occupies z [10, 20]; segment at z=5. No overlap.
         let s = seg((40.0, 50.0, 5.0), (40.0, 60.0, 5.0));
         let fix = cyl_fixture(2, (50.0, 50.0), 10.0, 10.0, 20.0);
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert!(matches!(res[0], FixtureCheck::Clear));
     }
 
@@ -452,7 +490,7 @@ mod tests {
             0.0,
             10.0,
         );
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert!(matches!(
             res[0],
             FixtureCheck::Collision { fixture_id: 9, .. }
@@ -470,14 +508,14 @@ mod tests {
             0.0,
             10.0,
         );
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert!(matches!(res[0], FixtureCheck::Clear));
     }
 
     #[test]
     fn empty_fixtures_returns_empty() {
         let s = seg((0.0, 0.0, 0.0), (10.0, 0.0, 0.0));
-        let res = check_segment_against_fixtures(&s, 3.0, &[]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[]);
         assert!(res.is_empty());
     }
 
@@ -489,7 +527,7 @@ mod tests {
             box_fixture(1, (-100.0, -100.0), 5.0, 5.0, 0.0, 10.0),
             cyl_fixture(2, (50.0, 50.0), 10.0, 0.0, 20.0),
         ];
-        let res = check_segment_against_fixtures(&s, 3.0, &fixes);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &fixes);
         assert_eq!(res.len(), 2);
         assert!(matches!(res[0], FixtureCheck::Clear));
         assert!(matches!(
@@ -505,10 +543,98 @@ mod tests {
         // disk-vs-AABB special case.
         let s = seg((0.0, 0.0, 5.0), (0.0, 0.0, -3.0));
         let fix = box_fixture(7, (0.0, 0.0), 30.0, 50.0, 0.0, 10.0);
-        let res = check_segment_against_fixtures(&s, 3.0, &[fix]);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
         assert!(matches!(
             res[0],
             FixtureCheck::Collision { fixture_id: 7, .. }
         ));
+    }
+
+    fn build_holder_60mm() -> HolderProfile {
+        // 6 mm endmill, 25 mm flutes, 6 mm shank, 20 mm-dia × 35 mm
+        // cylinder holder → total length above tip = flute_len (25) +
+        // holder (35) = 60 mm.
+        use crate::project::{Coolant, HolderShape, ToolEntry, ToolKind};
+        let t = ToolEntry {
+            id: 1,
+            name: "t".into(),
+            kind: ToolKind::Endmill,
+            diameter: 6.0,
+            tip_diameter: None,
+            tip_angle_deg: 60.0,
+            dragoff: None,
+            flutes: 2,
+            speed: 18_000,
+            plunge_rate: 100,
+            feed_rate: 800,
+            coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
+            default_step: None,
+            default_xy_overlap: None,
+            comment: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
+            pause: 1,
+            flute_length_mm: Some(25.0),
+            shank_diameter_mm: Some(6.0),
+            holder: Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 35.0,
+            }),
+        };
+        HolderProfile::from_tool(&t).expect("holder set")
+    }
+
+    #[test]
+    fn shank_strikes_fixture_above_tip() {
+        // w84n: clamp box at z_top=30 sitting above the un-cut stock.
+        // Tool tip is at z=-10 cutting through the stock; flute+shank+
+        // holder extend ~60 mm above the tip — so the body sweeps
+        // [-10, 50] in Z and hits the clamp at z=0..30. Also confirm
+        // XY inflation honors holder.max_radius() (10 mm) by placing
+        // the box centerline 6 mm from the tip XY, well inside R_holder.
+        let holder = build_holder_60mm();
+        let s = seg((0.0, 0.0, -10.0), (10.0, 0.0, -10.0));
+        // Clamp box 5x5 mm with center at y=10, z 0..30. Cutting tip
+        // at y=0 — 10 mm away in Y. With R_tool=3 the old check said
+        // Clear (10 > 3 + half_depth=2.5). With R_holder=10 the
+        // stadium covers the box. AND the Z gate must trigger: seg_z =
+        // -10 is below z_bottom=0, but the body extends up to z=50.
+        let fix = box_fixture(11, (0.0, 10.0), 5.0, 5.0, 0.0, 30.0);
+        let res = check_segment_against_fixtures(&s, 3.0, Some(&holder), &[fix]);
+        match res[0] {
+            FixtureCheck::Collision { fixture_id, .. } => {
+                assert_eq!(fixture_id, 11);
+            }
+            FixtureCheck::Clear => {
+                panic!(
+                    "expected shank/holder above tip to collide with high clamp, got Clear"
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn no_holder_keeps_tip_only_z_gate() {
+        // Sanity: with no holder, the old tip-Z-only behavior is
+        // preserved — a clamp far above the tip's Z range is Clear.
+        let s = seg((0.0, 0.0, -10.0), (10.0, 0.0, -10.0));
+        let fix = box_fixture(11, (0.0, 0.0), 5.0, 5.0, 0.0, 30.0);
+        let res = check_segment_against_fixtures(&s, 3.0, None, &[fix]);
+        assert!(matches!(res[0], FixtureCheck::Clear));
     }
 }

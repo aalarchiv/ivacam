@@ -49,6 +49,22 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             ),
         });
     }
+    // 7rt2: a tool whose configured tip_angle lies outside the cone-math
+    // valid range [1°, 179°] gets silently clamped by `chamfer_depth` and
+    // by `polyline_to_z`'s tan-half lookup. Surface the clamp so the user
+    // realizes their bit configuration is producing different geometry
+    // than they typed.
+    if !(1.0..=179.0).contains(&tool.tip_angle_deg) {
+        let clamped = tool.tip_angle_deg.clamp(1.0, 179.0);
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "tool_tip_angle_clamped".into(),
+            message: format!(
+                "V-Carve op '{}' tool '{}': configured tip angle {:.2}° is outside the supported [1°, 179°] range and was clamped to {:.2}° for cone-math. Update the tool's tip_angle_deg to silence this warning.",
+                op.name, tool.name, tool.tip_angle_deg, clamped,
+            ),
+        });
+    }
     let tip_angle_deg = tool.tip_angle_deg.clamp(1.0, 179.0);
     let tip_angle_rad = tip_angle_deg.to_radians();
     let tip_radius_mm = tool.tip_diameter.unwrap_or(0.0).max(0.0) * 0.5;

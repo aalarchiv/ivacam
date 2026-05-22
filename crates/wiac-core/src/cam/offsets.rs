@@ -357,6 +357,41 @@ pub fn take_parallel_offset_panics() -> Vec<ParallelOffsetPanic> {
     PARALLEL_OFFSET_PANICS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
+/// mdpo: `pocket_cascade_with_islands` hits a hard ring cap (see
+/// [`POCKET_CASCADE_RING_CAP`]) to keep adversarial / very-large pockets
+/// from blowing the budget. When the cap fires, the cascade stops short
+/// of carving out the entire pocket — the user sees a hollow ring near
+/// the centre. We record the event in this thread-local so the per-op
+/// driver can drain it via [`take_pocket_cascade_truncations`] and
+/// surface a `pocket_cascade_truncated` warning attributed to the
+/// triggering op.
+#[derive(Debug, Clone)]
+pub struct PocketCascadeTruncation {
+    pub rings_emitted: usize,
+    pub ring_cap: usize,
+    pub delta: f64,
+}
+
+thread_local! {
+    static POCKET_CASCADE_TRUNCATIONS: std::cell::RefCell<Vec<PocketCascadeTruncation>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Drain (and clear) any cascade-truncation records stashed by
+/// `pocket_cascade_with_islands` on this thread.
+#[must_use]
+pub fn take_pocket_cascade_truncations() -> Vec<PocketCascadeTruncation> {
+    POCKET_CASCADE_TRUNCATIONS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+/// Hard cap on the number of rings the cascade can emit before bailing
+/// (mdpo). Was 1024 — raised to 4096 to cover larger pockets at fine
+/// steps (e.g. a 400×400 mm sign cascaded at 0.5 mm step needs ~800
+/// rings, easily fitting the new budget; the old 1024 cap silently
+/// truncated some real projects). The cap exists as a runaway / OOM
+/// guard, NOT a project setting.
+pub const POCKET_CASCADE_RING_CAP: usize = 4096;
+
 /// Generate a zigzag (raster) pocket fill within `boundary`. The fill is
 /// a series of horizontal sweep lines at the given Y `stride`, each
 /// segment trimmed to the polygon's interior. Adjacent strokes are
@@ -820,7 +855,21 @@ pub fn pocket_cascade_with_islands(
             }
         }
         current = next;
-        if rings.len() > 1024 {
+        if rings.len() > POCKET_CASCADE_RING_CAP {
+            // mdpo: cap the cascade and stash a thread-local record so
+            // the per-op driver can attribute the event to the user's op
+            // (drained via `take_pocket_cascade_truncations`). Large
+            // pockets at fine steps used to silently lose interior rings
+            // here — leaving a hollow doughnut that looked machined but
+            // wasn't. The cap was 1024 pre-mdpo; we raise to 4096 (an
+            // OOM/runaway guard, not a project setting).
+            POCKET_CASCADE_TRUNCATIONS.with(|s| {
+                s.borrow_mut().push(PocketCascadeTruncation {
+                    rings_emitted: rings.len(),
+                    ring_cap: POCKET_CASCADE_RING_CAP,
+                    delta,
+                });
+            });
             break;
         }
     }
@@ -948,17 +997,53 @@ pub fn enforce_winding(
     }
 }
 
+/// kzz9: any closed offset whose nearest segment-start lands more than
+/// [`APPROACH_POINT_WARN_MM`] from the user-picked approach point gets
+/// rotated anyway (preserving the prior behaviour), but the distance is
+/// recorded in this thread-local so the per-op driver can surface a
+/// `rotate_offsets_far_from_approach` warning. Typical cause: stale
+/// approach point left over after the user moved the source contour.
+#[derive(Debug, Clone)]
+pub struct ApproachPointFarRotation {
+    pub distance_mm: f64,
+    pub approach: (f64, f64),
+}
+
+thread_local! {
+    static APPROACH_POINT_FAR: std::cell::RefCell<Vec<ApproachPointFarRotation>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Drain (and clear) any far-approach-point records stashed by
+/// [`rotate_offsets_to_approach_point`] on this thread.
+#[must_use]
+pub fn take_approach_point_far_rotations() -> Vec<ApproachPointFarRotation> {
+    APPROACH_POINT_FAR.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+/// kzz9: distance threshold (mm) above which [`rotate_offsets_to_approach_point`]
+/// records a far-rotation event. The chosen value is a rule-of-thumb
+/// — most users place the approach point right on the boundary, so any
+/// hit > 10 mm is almost certainly stale geometry (the user moved the
+/// shape after picking the approach point).
+pub const APPROACH_POINT_WARN_MM: f64 = 10.0;
+
 /// Rotate each CLOSED offset's segment list so the first segment's
 /// start is closest to `ap` (rt1.26 / Estlcam Anfahrpunkt). Open
 /// offsets (zigzag / spiral / trochoidal strokes) are left alone —
 /// their winding has no rotational symmetry to exploit. The cutter's
 /// plunge / lead-in then happens at the user-picked entry XY.
 ///
-/// When the chosen `ap` is far from every closed offset, the function
-/// still rotates (picks the nearest vertex regardless of distance);
-/// the caller can validate or warn separately.
+/// kzz9: when the chosen `ap` ends up farther than
+/// [`APPROACH_POINT_WARN_MM`] from EVERY closed offset's nearest vertex
+/// the rotation still picks the nearest start (preserving the prior
+/// behaviour for back-compat with existing tests), but a record is
+/// stashed in the thread-local drained by
+/// [`take_approach_point_far_rotations`]. The pipeline turns that into
+/// a `rotate_offsets_far_from_approach` warning attributed to the op.
 pub fn rotate_offsets_to_approach_point(offsets: &mut [PolylineOffset], ap: (f64, f64)) {
     let ap_pt = Point2::new(ap.0, ap.1);
+    let mut min_d_overall = f64::INFINITY;
     for offset in offsets.iter_mut() {
         if !offset.closed || offset.segments.len() < 2 {
             continue;
@@ -970,11 +1055,22 @@ pub fn rotate_offsets_to_approach_point(offsets: &mut [PolylineOffset], ap: (f64
                 best = Some((i, d));
             }
         }
-        if let Some((i, _)) = best {
+        if let Some((i, d)) = best {
+            if d < min_d_overall {
+                min_d_overall = d;
+            }
             if i > 0 {
                 offset.segments.rotate_left(i);
             }
         }
+    }
+    if min_d_overall.is_finite() && min_d_overall > APPROACH_POINT_WARN_MM {
+        APPROACH_POINT_FAR.with(|s| {
+            s.borrow_mut().push(ApproachPointFarRotation {
+                distance_mm: min_d_overall,
+                approach: ap,
+            });
+        });
     }
 }
 

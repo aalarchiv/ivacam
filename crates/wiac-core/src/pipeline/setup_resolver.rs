@@ -374,6 +374,22 @@ pub(super) fn synthesize_op_setup(
     }
     if let OpKind::Chamfer { width_mm, .. } = op.kind {
         let tip_diameter_mm = tool.tip_diameter.unwrap_or(0.0);
+        // 7rt2: surface a `tool_tip_angle_clamped` warning when the user's
+        // configured tip angle lies outside [1°, 179°] and the cone math
+        // silently clamped it. Mirrors the V-Carve driver — the same
+        // chamfer_depth() call clamps internally, but the user never sees
+        // it unless we say so here.
+        if !(1.0..=179.0).contains(&tool.tip_angle_deg) {
+            let clamped = tool.tip_angle_deg.clamp(1.0, 179.0);
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "tool_tip_angle_clamped".into(),
+                message: format!(
+                    "Chamfer op '{}' tool '{}': configured tip angle {:.2}° is outside the supported [1°, 179°] range and was clamped to {:.2}° for cone-math. Update the tool's tip_angle_deg to silence this warning.",
+                    op.name, tool.name, tool.tip_angle_deg, clamped,
+                ),
+            });
+        }
         let sol = crate::cam::chamfer::chamfer_depth_capped(
             width_mm,
             tool.tip_angle_deg,

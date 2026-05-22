@@ -327,6 +327,8 @@ pub(super) fn build_op_offsets(
             }
             push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
             drain_parallel_offset_panics(effective_op, warnings);
+            drain_pocket_cascade_truncations(effective_op, warnings);
+            drain_approach_point_far_rotations(effective_op, warnings);
             return Ok((offsets, closed));
         }
     }
@@ -594,7 +596,44 @@ pub(super) fn build_op_offsets(
     }
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
     drain_parallel_offset_panics(effective_op, warnings);
+    drain_pocket_cascade_truncations(effective_op, warnings);
+    drain_approach_point_far_rotations(effective_op, warnings);
     Ok((offsets, closed))
+}
+
+/// mdpo: drain any cascade-truncation events stashed by
+/// `pocket_cascade_with_islands` for the current op and surface them as
+/// `pocket_cascade_truncated` warnings. Truncation means the inside-most
+/// rings of a very large pocket weren't carved — the user sees a hollow
+/// doughnut otherwise.
+fn drain_pocket_cascade_truncations(op: &Op, warnings: &mut Vec<PipelineWarning>) {
+    for ev in crate::cam::offsets::take_pocket_cascade_truncations() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "pocket_cascade_truncated".into(),
+            message: format!(
+                "op '{}': pocket cascade emitted {} rings at step {:.3} mm, hitting the {} ring cap. Inner rings were truncated — the centre of the pocket may not be fully carved. Consider increasing the per-pass step (less ring count) or running multiple smaller pockets.",
+                op.name, ev.rings_emitted, ev.delta, ev.ring_cap,
+            ),
+        });
+    }
+}
+
+/// kzz9: drain any far-approach-point records stashed by
+/// `rotate_offsets_to_approach_point` and surface them as
+/// `rotate_offsets_far_from_approach` warnings. Typical cause: the user
+/// moved the source contour after picking the approach point.
+fn drain_approach_point_far_rotations(op: &Op, warnings: &mut Vec<PipelineWarning>) {
+    for ev in crate::cam::offsets::take_approach_point_far_rotations() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "rotate_offsets_far_from_approach".into(),
+            message: format!(
+                "op '{}': approach point ({:.2}, {:.2}) is {:.2} mm from the nearest closed-offset vertex (threshold {:.0} mm). The cut still starts at the nearest vertex, but check that the source contour didn't move after the approach point was set.",
+                op.name, ev.approach.0, ev.approach.1, ev.distance_mm, crate::cam::offsets::APPROACH_POINT_WARN_MM,
+            ),
+        });
+    }
 }
 
 /// z4t6: drain any `cavalier_contours` panics trapped by

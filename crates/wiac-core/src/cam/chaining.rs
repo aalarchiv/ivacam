@@ -14,38 +14,82 @@ use std::collections::HashMap;
 use crate::cam::{is_inside_polygon, segment_to_points, segments_to_points, VcObject};
 use crate::geometry::{Point2, Segment};
 
-/// Distance below which two endpoints are treated as the same vertex.
-const FUZZY: f64 = 1e-3;
-/// Spatial-hash cell size — endpoints inside the same cell (or one of
-/// the 8 neighbours) are candidates for `find_neighbor`. Must be ≥
-/// FUZZY so a same-vertex pair never lands in non-neighbour cells.
-const CELL_SIZE: f64 = FUZZY * 4.0;
+/// Minimum endpoint-distance below which two segment endpoints are
+/// treated as the same vertex. sj4t: a flat 1e-3 mm tolerance is too
+/// loose for sub-mm imports (a 0.5 mm cabochon would have its edges
+/// chained into the neighbouring contour). [`fuzzy_for_segments`]
+/// returns a bbox-scaled tolerance so callers adapt to the working
+/// scale; this constant remains as the lower bound and as a fallback
+/// for callers that don't yet take a tolerance.
+const FUZZY_MIN: f64 = 1e-3;
+/// Scale factor applied to the diagonal of the segments' bbox to derive
+/// an adaptive endpoint-merge tolerance (sj4t). A 200 mm-diagonal sheet
+/// gets ~2e-2 mm, a 5 mm cabochon gets the floor at 1e-3 mm.
+const FUZZY_BBOX_FRACTION: f64 = 1e-4;
+
+/// Adaptive endpoint-merge tolerance for `segments`: max of
+/// [`FUZZY_MIN`] and `FUZZY_BBOX_FRACTION * bbox_diagonal`. This is the
+/// chaining + closure tolerance — too loose chains across thin
+/// neighbours; too tight refuses to close hand-traced contours.
+fn fuzzy_for_segments(segments: &[Segment]) -> f64 {
+    if segments.is_empty() {
+        return FUZZY_MIN;
+    }
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for s in segments {
+        for p in [s.start, s.end] {
+            if p.x < min_x {
+                min_x = p.x;
+            }
+            if p.y < min_y {
+                min_y = p.y;
+            }
+            if p.x > max_x {
+                max_x = p.x;
+            }
+            if p.y > max_y {
+                max_y = p.y;
+            }
+        }
+    }
+    if !min_x.is_finite() || !min_y.is_finite() || !max_x.is_finite() || !max_y.is_finite() {
+        return FUZZY_MIN;
+    }
+    let diag = (max_x - min_x).hypot(max_y - min_y);
+    (diag * FUZZY_BBOX_FRACTION).max(FUZZY_MIN)
+}
 
 /// Group `segments` into [`VcObject`]s (chains) by walking neighbor endpoints.
 /// Closed chains (last endpoint matches first) get `closed = true`.
 #[must_use]
 pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
+    let fuzzy = fuzzy_for_segments(segments);
+    let cell_size = fuzzy * 4.0;
     let mut taken = vec![false; segments.len()];
     let mut out = Vec::new();
     // Spatial hash over endpoints — each segment contributes both its
     // start and end so `find_neighbor` can probe nearby cells in O(1)
     // amortized instead of the legacy O(n) full scan. A 5000-segment
     // DXF goes from 25 M probes to ~10 k.
-    let mut grid = build_endpoint_index(segments);
+    let mut grid = build_endpoint_index(segments, cell_size);
 
     while let Some(seed) = next_unused(&taken) {
         taken[seed] = true;
-        consume_endpoints(&mut grid, seed, &segments[seed]);
+        consume_endpoints(&mut grid, seed, &segments[seed], cell_size);
         let mut chain = vec![segments[seed].clone()];
         loop {
             let tail = chain.last().unwrap().end;
-            let Some(next_idx) = find_neighbor(segments, &taken, &grid, tail) else {
+            let Some(next_idx) = find_neighbor(segments, &taken, &grid, tail, fuzzy, cell_size)
+            else {
                 break;
             };
             taken[next_idx] = true;
-            consume_endpoints(&mut grid, next_idx, &segments[next_idx]);
+            consume_endpoints(&mut grid, next_idx, &segments[next_idx], cell_size);
             let mut s = segments[next_idx].clone();
-            if !points_equal(s.start, tail) && points_equal(s.end, tail) {
+            if !points_equal(s.start, tail, fuzzy) && points_equal(s.end, tail, fuzzy) {
                 std::mem::swap(&mut s.start, &mut s.end);
                 s.bulge = -s.bulge;
             }
@@ -53,13 +97,14 @@ pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
         }
         loop {
             let head = chain.first().unwrap().start;
-            let Some(prev_idx) = find_neighbor(segments, &taken, &grid, head) else {
+            let Some(prev_idx) = find_neighbor(segments, &taken, &grid, head, fuzzy, cell_size)
+            else {
                 break;
             };
             taken[prev_idx] = true;
-            consume_endpoints(&mut grid, prev_idx, &segments[prev_idx]);
+            consume_endpoints(&mut grid, prev_idx, &segments[prev_idx], cell_size);
             let mut s = segments[prev_idx].clone();
-            if !points_equal(s.end, head) && points_equal(s.start, head) {
+            if !points_equal(s.end, head, fuzzy) && points_equal(s.start, head, fuzzy) {
                 std::mem::swap(&mut s.start, &mut s.end);
                 s.bulge = -s.bulge;
             }
@@ -70,7 +115,7 @@ pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
             .unwrap()
             .start
             .distance(chain.last().unwrap().end)
-            < FUZZY;
+            < fuzzy;
         out.push(VcObject::new(chain, closed));
     }
 
@@ -82,31 +127,31 @@ pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
 /// cell so an endpoint probe can find them from either side.
 type EndpointGrid = HashMap<(i64, i64), Vec<usize>>;
 
-fn cell_of(p: Point2) -> (i64, i64) {
+fn cell_of(p: Point2, cell_size: f64) -> (i64, i64) {
     // Project a CAM-scale coordinate (mm, bounded by stock dimensions
     // ≪ i64 range) into a grid cell. `.floor() as i64` is the standard
     // pattern and the value cannot truncate within the supported scale.
     #[allow(clippy::cast_possible_truncation)]
     (
-        (p.x / CELL_SIZE).floor() as i64,
-        (p.y / CELL_SIZE).floor() as i64,
+        (p.x / cell_size).floor() as i64,
+        (p.y / cell_size).floor() as i64,
     )
 }
 
-fn build_endpoint_index(segments: &[Segment]) -> EndpointGrid {
+fn build_endpoint_index(segments: &[Segment], cell_size: f64) -> EndpointGrid {
     let mut grid: EndpointGrid = HashMap::with_capacity(segments.len() * 2);
     for (i, s) in segments.iter().enumerate() {
-        grid.entry(cell_of(s.start)).or_default().push(i);
-        let end_cell = cell_of(s.end);
-        if end_cell != cell_of(s.start) {
+        grid.entry(cell_of(s.start, cell_size)).or_default().push(i);
+        let end_cell = cell_of(s.end, cell_size);
+        if end_cell != cell_of(s.start, cell_size) {
             grid.entry(end_cell).or_default().push(i);
         }
     }
     grid
 }
 
-fn consume_endpoints(grid: &mut EndpointGrid, idx: usize, seg: &Segment) {
-    for cell in [cell_of(seg.start), cell_of(seg.end)] {
+fn consume_endpoints(grid: &mut EndpointGrid, idx: usize, seg: &Segment, cell_size: f64) {
+    for cell in [cell_of(seg.start, cell_size), cell_of(seg.end, cell_size)] {
         if let Some(list) = grid.get_mut(&cell) {
             list.retain(|&v| v != idx);
         }
@@ -266,11 +311,13 @@ fn find_neighbor(
     taken: &[bool],
     grid: &EndpointGrid,
     point: Point2,
+    fuzzy: f64,
+    cell_size: f64,
 ) -> Option<usize> {
-    // Probe the 3×3 cell neighbourhood around `point`. Because CELL_SIZE
-    // ≥ FUZZY, any segment whose endpoint is within FUZZY of `point`
+    // Probe the 3×3 cell neighbourhood around `point`. Because cell_size
+    // ≥ fuzzy, any segment whose endpoint is within fuzzy of `point`
     // must land in one of these 9 cells — so we never miss a candidate.
-    let (cx, cy) = cell_of(point);
+    let (cx, cy) = cell_of(point, cell_size);
     let mut best: Option<(usize, f64)> = None;
     for dy in -1..=1 {
         for dx in -1..=1 {
@@ -283,7 +330,7 @@ fn find_neighbor(
                 }
                 let seg = &segments[i];
                 let candidate_distance = seg.start.distance(point).min(seg.end.distance(point));
-                if candidate_distance < FUZZY && best.map_or(true, |(_, d)| candidate_distance < d)
+                if candidate_distance < fuzzy && best.map_or(true, |(_, d)| candidate_distance < d)
                 {
                     best = Some((i, candidate_distance));
                 }
@@ -293,8 +340,8 @@ fn find_neighbor(
     best.map(|(i, _)| i)
 }
 
-fn points_equal(a: Point2, b: Point2) -> bool {
-    a.distance(b) < FUZZY
+fn points_equal(a: Point2, b: Point2, fuzzy: f64) -> bool {
+    a.distance(b) < fuzzy
 }
 
 #[cfg(test)]
@@ -359,6 +406,50 @@ mod tests {
         let objs = segments_to_objects(&segs);
         assert_eq!(objs.len(), 1);
         assert!(!objs[0].closed);
+    }
+
+    /// sj4t: a large-bbox project (200 mm sheet) gets a looser endpoint-
+    /// merge tolerance than a sub-mm project (a 0.5 mm cabochon). The
+    /// adaptive tolerance is `max(1e-3 mm, 1e-4 * bbox_diag)`.
+    #[test]
+    fn fuzzy_scales_with_bbox_diag() {
+        // Tiny: 1 mm diagonal → fuzzy floor 1e-3 mm.
+        let tiny = vec![Segment::line(p(0.0, 0.0), p(0.707, 0.707), "0", 7)];
+        let tol = fuzzy_for_segments(&tiny);
+        assert!(
+            (tol - FUZZY_MIN).abs() < 1e-12,
+            "tiny bbox should hit the FUZZY_MIN floor, got {tol}",
+        );
+        // Large: 200 mm diagonal → 2e-2 mm.
+        let big = vec![Segment::line(p(0.0, 0.0), p(141.42, 141.42), "0", 7)];
+        let tol = fuzzy_for_segments(&big);
+        assert!(
+            tol > FUZZY_MIN * 10.0 && tol < 1.0,
+            "large bbox tolerance should be bbox-scaled, got {tol}",
+        );
+    }
+
+    /// sj4t regression: two sub-mm contours sitting 0.5 mm apart must NOT
+    /// chain together. Previously the flat 1e-3 mm tolerance was so
+    /// loose (relative to the geometry's working scale) that any
+    /// rounding in the upstream importer could pull the two contours
+    /// into a single chain. The adaptive tolerance now scales with
+    /// the bbox diagonal so the chain detector "sees" only true
+    /// endpoint joins.
+    #[test]
+    fn sub_mm_contours_dont_falsely_chain() {
+        // Two short open chains 0.5 mm apart on the X axis.
+        let segs = vec![
+            Segment::line(p(0.0, 0.0), p(0.2, 0.0), "0", 7),
+            Segment::line(p(0.7, 0.0), p(0.9, 0.0), "0", 7),
+        ];
+        let objs = segments_to_objects(&segs);
+        assert_eq!(
+            objs.len(),
+            2,
+            "two contours 0.5 mm apart should stay separate, got {} objects",
+            objs.len(),
+        );
     }
 
     /// is68 regression: a half-arc whose chord midpoint sits at the

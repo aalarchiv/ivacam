@@ -94,6 +94,24 @@ fn densify_ring(ring: &[Point2], step: f64) -> Vec<Point2> {
     out
 }
 
+/// l3uk: a chord (p0, p1) "stays in the region" iff every interior
+/// sample along the chord is in the region. 8 strictly-interior samples
+/// (t ∈ {1/8, …, 7/8}) catches a chord that dips out of the region for
+/// any non-trivial arc-length without paying for arbitrary precision.
+/// Endpoints are excluded (they're circumcenters guaranteed-in-region
+/// by `inside[]`).
+fn chord_stays_in_region(region: &VcRegion, p0: Point2, p1: Point2) -> bool {
+    let samples = 8;
+    for i in 1..samples {
+        let t = f64::from(i) / f64::from(samples);
+        let s = Point2::new(p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t);
+        if !point_in_region(region, s) {
+            return false;
+        }
+    }
+    true
+}
+
 /// Even-odd region test honoring holes — point is inside iff it's
 /// inside the outer ring AND outside every hole.
 fn point_in_region(region: &VcRegion, p: Point2) -> bool {
@@ -217,14 +235,17 @@ pub fn medial_axis_cancellable(
         let t0 = e / 3;
         let t1 = twin / 3;
         if inside[t0] && inside[t1] {
-            // Reject the edge between the two triangles' circumcenters
-            // if any midpoint along that segment exits the region —
-            // protects against thin "narrow neck" cases where the
-            // two endpoints sit inside but the chord cuts a hole.
+            // l3uk: reject the chord between the two circumcenters when
+            // it leaves the region. The pre-l3uk single-midpoint test
+            // missed thin axis-aligned chords across a slot whose
+            // midpoint happened to land inside but whose 25%/75%
+            // points lay outside — and rejected legitimate chords in
+            // the opposite configuration. The replacement samples 8
+            // strictly-interior points along the chord; the chord is
+            // accepted iff every sample lies inside the region.
             let p0 = Point2::new(vpts[t0].x, vpts[t0].y);
             let p1 = Point2::new(vpts[t1].x, vpts[t1].y);
-            let mid = Point2::new(0.5 * (p0.x + p1.x), 0.5 * (p0.y + p1.y));
-            if !point_in_region(region, mid) {
+            if !chord_stays_in_region(region, p0, p1) {
                 continue;
             }
             adj[t0].push(t1);
@@ -260,7 +281,13 @@ pub fn medial_axis_cancellable(
         let mut prev = start;
         let mut cur = nb;
         loop {
-            visited_edge.insert(edge_key(prev, cur));
+            // wgim: `insert` returns false when the edge was already in
+            // the set — guarantee at-most-once segment emission per
+            // edge across all chains.
+            if !visited_edge.insert(edge_key(prev, cur)) {
+                chain.push(vpts[cur]);
+                break;
+            }
             chain.push(vpts[cur]);
             // Pick the next neighbor that isn't `prev` and whose edge
             // isn't visited; if there's a branch, end this chain at the
@@ -284,6 +311,17 @@ pub fn medial_axis_cancellable(
 
     // Cycles + leftover branches: any remaining unvisited edge starts a
     // new chain.
+    //
+    // wgim: the walk's loop bound is purely edge-visited (`visited_edge`)
+    // — every iteration consumes at least one fresh edge, so the walk
+    // terminates in O(E) total across all chains. We additionally bound
+    // each chain by `n_tri` iterations as a belt-and-braces guard against
+    // pathological graphs (self-loops, multi-edges) that voronator might
+    // theoretically emit on degenerate input. Without that guard a stuck
+    // walk would spin instead of erroring; with it, we bail and the chain
+    // is dropped (the early-exit cap is way above any realistic chain
+    // length).
+    let max_chain_len = n_tri + 1;
     for start in 0..n_tri {
         if is_cancelled() {
             return polylines;
@@ -299,8 +337,26 @@ pub fn medial_axis_cancellable(
             chain.push(vpts[start]);
             let mut prev = start;
             let mut cur = nb;
+            let mut steps = 0usize;
             loop {
-                visited_edge.insert(edge_key(prev, cur));
+                if steps > max_chain_len {
+                    // wgim: defensive bail — should never trip on
+                    // well-formed Voronoi graphs; protects against
+                    // pathological multi-edge / self-loop input.
+                    break;
+                }
+                steps += 1;
+                let edge = edge_key(prev, cur);
+                if !visited_edge.insert(edge) {
+                    // wgim: this edge was already walked by a prior
+                    // chain — stop now so we don't emit a duplicate
+                    // segment. Prior to wgim the `nexts` filter handled
+                    // this by excluding visited edges, but if a re-
+                    // entrant chain start landed us on an already-
+                    // walked edge we'd silently emit it twice.
+                    chain.push(vpts[cur]);
+                    break;
+                }
                 chain.push(vpts[cur]);
                 let nexts: Vec<usize> = adj[cur]
                     .iter()

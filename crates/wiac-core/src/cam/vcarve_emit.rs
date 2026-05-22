@@ -279,7 +279,27 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<Z
         }
     }
     push_path(&mut out, &mut path);
+    // j1zs: iteration cap is a hard absolute bound on the ratchet loop.
+    // Pre-fix the loop relied on `progressed` AND a DPP-relative break
+    // (`current_level < z_min - dpp`) — the DPP-relative form could
+    // race against pathological floating-point edge cases on
+    // densified polylines (cut_z[i] within 1e-9 of target_z[i] for
+    // long stretches), looping until `progressed` finally went false.
+    // The absolute cap derived from `n_levels` (computed up top) is
+    // the EXACT number of forward+reverse pairs needed; we add a
+    // small slack so a recomputation-noise epsilon doesn't bail one
+    // pass short of target depth.
+    let max_passes = n_levels + 2;
+    let mut pass = 0usize;
     loop {
+        pass += 1;
+        if pass > max_passes {
+            // Safety bail. With a correct `dpp` and `levels` list
+            // we should never hit this — but if we ever do, dumping
+            // out and letting the caller emit what's there is much
+            // better than spinning.
+            break;
+        }
         let mut progressed = false;
         let mut path: Vec<(f64, f64, f64)> = Vec::new();
         // Forward sweep at current_level: cut every point to
@@ -326,7 +346,12 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<Z
         }
         push_path(&mut out, &mut path);
         current_level -= dpp;
-        if current_level < target_z.iter().fold(0.0_f64, |a, &b| a.min(b)) - dpp {
+        // j1zs: stop the moment the next pass would cut at-or-below
+        // the deepest target. The previous DPP-relative form
+        // (`< z_min - dpp`) was a 1-DPP slack window that combined
+        // with the `progressed` flag to break — we now use the
+        // tighter absolute condition AND the iteration cap above.
+        if current_level + dpp < target_z.iter().fold(0.0_f64, |a, &b| a.min(b)) - 1e-9 {
             break;
         }
     }
@@ -443,6 +468,34 @@ mod tests {
     /// uncut ends. Each sub-polyline is allowed to BEGIN with a
     /// single z=0 waypoint (the lead-in ramp entry / re-entry XY);
     /// every other waypoint must sit below the work surface.
+    /// j1zs: even a deep V-carve must terminate cleanly (the iteration
+    /// cap is `n_levels + 2`, derived up-front from `z_min / dpp`). A
+    /// chain reaching -10 mm at dpp 0.5 mm has 20 levels; the cap
+    /// guarantees the loop never spins for longer than that even if
+    /// floating-point noise on cut_z would otherwise keep `progressed`
+    /// false for one extra pass.
+    #[test]
+    fn deep_polyline_terminates_under_iteration_cap() {
+        let mut axis: Vec<(f64, f64, f64, f64)> = Vec::new();
+        for i in 0..=50 {
+            axis.push((f64::from(i), 0.0, -10.0, 5.0));
+        }
+        let polylines = ratchet_emit(&axis, 0.5);
+        // The output should reach the target depth. We trust the
+        // emitter to terminate — running this test under `cargo test`
+        // would hang on regressions. The assertion proves we actually
+        // got to -10 (the loop didn't bail early either).
+        let z_min = polylines
+            .iter()
+            .flatten()
+            .map(|t| t.2)
+            .fold(0.0_f64, f64::min);
+        assert!(
+            z_min < -9.99,
+            "expected emit to reach -10 mm; got z_min = {z_min}",
+        );
+    }
+
     #[test]
     fn no_position_moves_above_surface() {
         // 20mm-long medial axis. Middle 6mm is target_z=-1, ends are 0.

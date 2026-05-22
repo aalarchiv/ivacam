@@ -180,6 +180,22 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             if cancelled(cancel) {
                 return Err(PipelineError::Cancelled);
             }
+            // 17q4: a degenerate medial axis (e.g. a single straight slot
+            // whose Voronoi vertices all sit on the boundary) returns
+            // empty. Surface a `vcarve_no_medial_axis` warning so the
+            // user understands why full-medial-axis mode produced no
+            // toolpath — the geometry has no interior locus to walk.
+            if axes_raw.is_empty() {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "vcarve_no_medial_axis".into(),
+                    message: format!(
+                        "V-Carve op '{}' (full medial axis): the source region's medial axis is empty — typical for very thin / straight slots whose Voronoi vertices all collapse onto the boundary. Either disable full_medial_axis (Estlcam-style perimeter pass), or thicken the source region.",
+                        op.name,
+                    ),
+                });
+                continue;
+            }
             // iqbu: prune spurious branches (boundary-sampling spurs +
             // chains that can never engage past the tip plateau). Without
             // this the cutter spends most of its time ratcheting into

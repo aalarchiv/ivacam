@@ -11,6 +11,21 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+fn default_rapid_subkind() -> RapidCollisionSubkind {
+    RapidCollisionSubkind::Tip
+}
+
+/// 50eq: which part of the tool struck stock during a rapid — the
+/// flutes/tip (the typical "rapid past retract plane" failure) or
+/// the shank/holder (broken-collet scenario: cutter tip is in air
+/// but the shank drags through tall walls).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RapidCollisionSubkind {
+    Tip,
+    Shank,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SimWarning {
@@ -20,6 +35,11 @@ pub enum SimWarning {
         worst_y: f64,
         worst_cell_z: f32,
         rapid_pz: f64,
+        /// 50eq: defaults to `Tip` so older serialized warnings
+        /// deserialize cleanly. `Shank` flags shank/holder hits — the
+        /// broken-collet G0-through-stock pattern.
+        #[serde(default = "default_rapid_subkind")]
+        subkind: RapidCollisionSubkind,
     },
     FixtureCollision {
         segment_idx: usize,
@@ -123,6 +143,7 @@ mod tests {
                 worst_y: 2.0,
                 worst_cell_z: -0.5,
                 rapid_pz: 5.0,
+                subkind: RapidCollisionSubkind::Tip,
             });
         }
         d.push(SimWarning::FixtureCollision {
@@ -146,6 +167,7 @@ mod tests {
             worst_y: 8.0,
             worst_cell_z: -0.3,
             rapid_pz: 5.0,
+            subkind: RapidCollisionSubkind::Tip,
         });
         d.push(SimWarning::FixtureCollision {
             segment_idx: 2,
@@ -199,6 +221,7 @@ mod tests {
                 worst_y: 0.0,
                 worst_cell_z: 0.0,
                 rapid_pz: 0.0,
+                subkind: RapidCollisionSubkind::Tip,
             }),
             Severity::Critical,
         );

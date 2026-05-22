@@ -138,7 +138,7 @@ fn run_segment_warnings(
     diagnostics: &mut SimDiagnostics,
 ) {
     let r_tool = profile.radius() as f64;
-    for fc in check_segment_against_fixtures(segment, r_tool, fixtures) {
+    for fc in check_segment_against_fixtures(segment, r_tool, holder, fixtures) {
         if let FixtureCheck::Collision {
             fixture_id,
             nearest_x,
@@ -176,14 +176,25 @@ fn run_segment_warnings(
             worst_y,
             worst_cell_z,
             rapid_pz,
-        } = check_rapid_against_stock(heightmap, segment, profile)
+            subkind,
+        } = check_rapid_against_stock(heightmap, segment, profile, holder)
         {
+            // 50eq: map the rapid_check subkind (Tip vs Shank) onto the
+            // serialized warning so the user knows whether to lower
+            // the cut depth or raise the rapid Z / use a longer tool.
+            use crate::sim::diagnostics::RapidCollisionSubkind as DSub;
+            use crate::sim::rapid_check::RapidCollisionSubkind as RSub;
+            let warn_subkind = match subkind {
+                RSub::Tip => DSub::Tip,
+                RSub::Shank => DSub::Shank,
+            };
             diagnostics.push(SimWarning::RapidThroughMaterial {
                 segment_idx,
                 worst_x,
                 worst_y,
                 worst_cell_z,
                 rapid_pz,
+                subkind: warn_subkind,
             });
         }
     }

@@ -30,6 +30,89 @@ impl Post {
     fn write(&mut self, s: impl Into<String>) {
         self.out.push(s.into());
     }
+
+    /// Tessellate a G2/G3 arc into pen-down chord polyline at ~5° per
+    /// chord (audit 1pcz). HPGL has an `AA` (arc absolute) opcode but
+    /// support varies between controllers; tessellation is universal
+    /// and visually indistinguishable on the 40 plu/mm grid at 5°
+    /// (chord error r·(1-cos(2.5°)) ≈ 0.001·r ≈ 0.04 mm on a 40 mm
+    /// arc, well under the plotter's resolution of 0.025 mm).
+    ///
+    /// The old code linearized to a single chord — a full DXF circle
+    /// emitted as a zero-length move (start == end), a quarter-arc
+    /// from (10, 0) to (0, 10) became a straight diagonal. Drag knives
+    /// cut a triangle where the operator drew a curve.
+    fn tessellated_arc(
+        &mut self,
+        x: Option<f64>,
+        y: Option<f64>,
+        i: Option<f64>,
+        j: Option<f64>,
+        cw: bool,
+    ) {
+        // We need a start point. Use the last emitted position if the
+        // arc is partial in either coordinate. Fall back to linearize
+        // when we can't recover both (no last position) — same shape
+        // as the old single-chord behavior, but only for the
+        // unreachable edge case.
+        let (Some(sx), Some(sy)) = (
+            self.last_x.map(|v| v as f64 / 40.0),
+            self.last_y.map(|v| v as f64 / 40.0),
+        ) else {
+            self.linear(x, y, None);
+            return;
+        };
+        let ex = x.unwrap_or(sx);
+        let ey = y.unwrap_or(sy);
+        let ii = i.unwrap_or(0.0);
+        let jj = j.unwrap_or(0.0);
+        let cx = sx + ii;
+        let cy = sy + jj;
+        let r = ((sx - cx).powi(2) + (sy - cy).powi(2)).sqrt();
+        if r < 1e-9 {
+            self.linear(x, y, None);
+            return;
+        }
+        let theta_start = (sy - cy).atan2(sx - cx);
+        let theta_end = (ey - cy).atan2(ex - cx);
+        const TAU: f64 = std::f64::consts::TAU;
+        let mut sweep = theta_end - theta_start;
+        let coincident = (sx - ex).abs() < 1e-9 && (sy - ey).abs() < 1e-9;
+        if cw {
+            // G2 = CW = decreasing theta
+            if coincident {
+                sweep = -TAU;
+            } else if sweep >= -1e-9 {
+                sweep -= TAU;
+            }
+        } else {
+            // G3 = CCW = increasing theta
+            if coincident {
+                sweep = TAU;
+            } else if sweep <= 1e-9 {
+                sweep += TAU;
+            }
+        }
+        // ~5° per chord; min 8 chords (so even tiny arcs draw curved).
+        let step = 5f64.to_radians();
+        let n = (sweep.abs() / step).ceil().max(8.0) as usize;
+        if !self.pen_down {
+            self.write("PD;");
+            self.pen_down = true;
+        }
+        for k in 1..=n {
+            let theta = theta_start + sweep * (k as f64) / (n as f64);
+            let (px, py) = if k == n {
+                (ex, ey)
+            } else {
+                (cx + r * theta.cos(), cy + r * theta.sin())
+            };
+            let (xi, yi) = Self::fmt_xy(px, py);
+            self.write(format!("PA{xi},{yi};"));
+            self.last_x = Some(xi);
+            self.last_y = Some(yi);
+        }
+    }
 }
 
 impl PostProcessor for Post {
@@ -77,21 +160,20 @@ impl PostProcessor for Post {
         x: Option<f64>,
         y: Option<f64>,
         _z: Option<f64>,
-        _i: Option<f64>,
-        _j: Option<f64>,
+        i: Option<f64>,
+        j: Option<f64>,
     ) {
-        // Linearize — HPGL has AA (arc absolute) but we keep this simple.
-        self.linear(x, y, None);
+        self.tessellated_arc(x, y, i, j, true);
     }
     fn arc_ccw(
         &mut self,
         x: Option<f64>,
         y: Option<f64>,
         _z: Option<f64>,
-        _i: Option<f64>,
-        _j: Option<f64>,
+        i: Option<f64>,
+        j: Option<f64>,
     ) {
-        self.linear(x, y, None);
+        self.tessellated_arc(x, y, i, j, false);
     }
     fn tool_offsets(&mut self, _offset: ToolOffset) {}
     fn finish(&self) -> String {
@@ -129,5 +211,59 @@ impl PostProcessor for Post {
     fn restore_state(&mut self, s: &CapturedPostState) {
         self.last_x = s.last_x.map(|v| (v * 40.0).round() as i64);
         self.last_y = s.last_y.map(|v| (v * 40.0).round() as i64);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hpgl_circle_renders_as_polygon() {
+        // 1pcz: A full circle (start == end with I/J center offset)
+        // must produce a curved polyline, not a zero-length move.
+        let mut post = Post::new();
+        post.program_start();
+        // Pen up move to start: (10, 0)
+        post.move_to(Some(10.0), Some(0.0), None);
+        // Full CCW circle: start = end = (10, 0), I = -10, J = 0 → center (0, 0).
+        post.arc_ccw(Some(10.0), Some(0.0), None, Some(-10.0), Some(0.0));
+        let out = post.finish();
+        // Count `PA<x>,<y>;` tokens.
+        let pa_count = out.matches("PA").count();
+        assert!(
+            pa_count >= 30,
+            "full circle should tessellate to ≥30 PA tokens (got {pa_count}): {out}",
+        );
+    }
+
+    #[test]
+    fn hpgl_quarter_arc_renders_as_curve() {
+        // 1pcz: A quarter-arc from (10, 0) to (0, 10) must draw as a
+        // tessellated curve, not a single diagonal chord.
+        let mut post = Post::new();
+        post.program_start();
+        post.move_to(Some(10.0), Some(0.0), None);
+        // CCW arc: I=-10, J=0 → center (0,0). Endpoint (0,10).
+        post.arc_ccw(Some(0.0), Some(10.0), None, Some(-10.0), Some(0.0));
+        let out = post.finish();
+        let pa_count = out.matches("PA").count();
+        // 90° at 5° per chord = 18 chords, with min 8.
+        assert!(
+            pa_count >= 8,
+            "quarter-arc should tessellate to ≥8 chords (got {pa_count}): {out}",
+        );
+        // Sanity: at least one waypoint near (7.07, 7.07) — i.e. the
+        // 45° midpoint of the arc — should be present. PA units are
+        // mm × 40 → ~283.
+        let approx_45 = "PA283,283;";
+        let approx_45_alt = "PA282,283;";
+        let approx_45_alt2 = "PA283,282;";
+        assert!(
+            out.contains(approx_45)
+                || out.contains(approx_45_alt)
+                || out.contains(approx_45_alt2),
+            "expected a 45° midpoint waypoint near PA283,283; in: {out}",
+        );
     }
 }

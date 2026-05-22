@@ -54,7 +54,7 @@ use crate::sim::rapid_check::{check_rapid_against_stock, RapidCheck};
 pub fn sweep_segment(
     heightmap: &mut Heightmap,
     segment: &ToolpathSegment,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     segment_idx: usize,
     fixtures: &[Fixture],
     holder: Option<&HolderProfile>,
@@ -87,7 +87,7 @@ pub fn sweep_segment(
 pub fn sweep_segment_partial(
     heightmap: &mut Heightmap,
     segment: &ToolpathSegment,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     segment_idx: usize,
     fixtures: &[Fixture],
     holder: Option<&HolderProfile>,
@@ -140,7 +140,7 @@ pub fn sweep_segment_partial(
 fn run_segment_warnings(
     heightmap: &Heightmap,
     segment: &ToolpathSegment,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     segment_idx: usize,
     fixtures: &[Fixture],
     holder: Option<&HolderProfile>,
@@ -168,6 +168,7 @@ fn run_segment_warnings(
             worst_y,
             wall_z,
             required_clearance_mm,
+            cells,
         } = check_segment_holder_against_walls(heightmap, segment, holder)
         {
             diagnostics.push(SimWarning::HolderCollision {
@@ -176,6 +177,7 @@ fn run_segment_warnings(
                 worst_y,
                 wall_z,
                 required_clearance_mm,
+                cells,
             });
         }
     }
@@ -214,7 +216,7 @@ fn run_segment_warnings(
 fn sweep_chord_carve(
     heightmap: &mut Heightmap,
     segment: &ToolpathSegment,
-    profile: ToolProfile,
+    profile: &ToolProfile,
 ) -> u32 {
     if matches!(segment.kind, MoveKind::Rapid) {
         return 0;
@@ -254,7 +256,7 @@ fn sweep_chord_carve(
 fn sweep_chord_carve_partial(
     heightmap: &mut Heightmap,
     segment: &ToolpathSegment,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     t_start: f64,
     t_end: f64,
 ) -> u32 {
@@ -403,7 +405,7 @@ impl HeightmapLayout {
 pub(super) fn for_each_swept_cell<F>(
     layout: &HeightmapLayout,
     segment: &ToolpathSegment,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     mut body: F,
 ) where
     F: FnMut(u32, u32, f32, f64, f32),
@@ -488,7 +490,7 @@ pub fn sweep_range(
     segments: &[ToolpathSegment],
     from_idx: usize,
     to_idx: usize,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     fixtures: &[Fixture],
     holder: Option<&HolderProfile>,
     diagnostics: &mut SimDiagnostics,
@@ -516,7 +518,7 @@ pub fn sweep_range_cancellable(
     segments: &[ToolpathSegment],
     from_idx: usize,
     to_idx: usize,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     fixtures: &[Fixture],
     holder: Option<&HolderProfile>,
     diagnostics: &mut SimDiagnostics,
@@ -624,7 +626,7 @@ mod tests {
         let touched = sweep_segment(
             &mut map,
             &s,
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             0,
             &[],
             None,
@@ -646,7 +648,7 @@ mod tests {
         let touched = sweep_segment(
             &mut map,
             &s,
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             0,
             &[],
             None,
@@ -668,7 +670,7 @@ mod tests {
         sweep_segment(
             &mut map,
             &s,
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             0,
             &[],
             None,
@@ -695,7 +697,7 @@ mod tests {
         sweep_segment(
             &mut map,
             &s,
-            ToolProfile::Endmill { r },
+            &ToolProfile::Endmill { r },
             0,
             &[],
             None,
@@ -735,7 +737,7 @@ mod tests {
             pose(10.5, 10.5, 0.0),
             pose(10.5, 10.5, -2.0),
         );
-        sweep_segment(&mut map, &s, profile, 0, &[], None, &mut d);
+        sweep_segment(&mut map, &s, &profile, 0, &[], None, &mut d);
         let apex = cell(&map, 10, 10);
         let mid = cell(&map, 11, 10);
         // Apex sits at the plunge depth (-2). Cell at r=1 sits higher
@@ -761,7 +763,7 @@ mod tests {
         sweep_segment(
             &mut map,
             &plunge,
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             0,
             &[],
             None,
@@ -772,7 +774,7 @@ mod tests {
         sweep_segment(
             &mut map,
             &shallow,
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             1,
             &[],
             None,
@@ -807,7 +809,7 @@ mod tests {
             &segments,
             0,
             segments.len(),
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             &[],
             None,
             &mut d,
@@ -837,7 +839,7 @@ mod tests {
         let touched = sweep_segment(
             &mut map,
             &s,
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             0,
             &[],
             None,
@@ -861,7 +863,7 @@ mod tests {
         sweep_segment(
             &mut map,
             &s,
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             0,
             &[],
             None,
@@ -907,7 +909,7 @@ mod tests {
             &segments,
             0,
             segments.len(),
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             &fixtures,
             None,
             &mut d,
@@ -964,7 +966,7 @@ mod tests {
             sweep_segment(
                 &mut map,
                 s,
-                ToolProfile::BallNose { r: 1.0 },
+                &ToolProfile::BallNose { r: 1.0 },
                 i,
                 &[],
                 None,
@@ -1022,11 +1024,11 @@ mod tests {
         );
         let mut full = fresh_map(40, 40);
         let mut df = diag();
-        sweep_segment(&mut full, &s, profile, 0, &[], None, &mut df);
+        sweep_segment(&mut full, &s, &profile, 0, &[], None, &mut df);
         let mut split = fresh_map(40, 40);
         let mut ds = diag();
-        sweep_segment_partial(&mut split, &s, profile, 0, &[], None, &mut ds, 0.0, 0.5);
-        sweep_segment_partial(&mut split, &s, profile, 0, &[], None, &mut ds, 0.5, 1.0);
+        sweep_segment_partial(&mut split, &s, &profile, 0, &[], None, &mut ds, 0.0, 0.5);
+        sweep_segment_partial(&mut split, &s, &profile, 0, &[], None, &mut ds, 0.5, 1.0);
         for iy in 0..full.rows {
             for ix in 0..full.cols {
                 let a = cell(&full, ix, iy);
@@ -1042,13 +1044,13 @@ mod tests {
         let endmill = ToolProfile::Endmill { r: 3.0 };
         let mut full_e = fresh_map(40, 40);
         let mut df_e = diag();
-        sweep_segment(&mut full_e, &s, endmill, 0, &[], None, &mut df_e);
+        sweep_segment(&mut full_e, &s, &endmill, 0, &[], None, &mut df_e);
         let mut split_e = fresh_map(40, 40);
         let mut ds_e = diag();
         sweep_segment_partial(
             &mut split_e,
             &s,
-            endmill,
+            &endmill,
             0,
             &[],
             None,
@@ -1059,7 +1061,7 @@ mod tests {
         sweep_segment_partial(
             &mut split_e,
             &s,
-            endmill,
+            &endmill,
             0,
             &[],
             None,
@@ -1109,7 +1111,7 @@ mod tests {
             &segments,
             0,
             segments.len(),
-            ToolProfile::Endmill { r: 2.0 },
+            &ToolProfile::Endmill { r: 2.0 },
             &fixtures,
             None,
             &mut d,

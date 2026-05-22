@@ -166,6 +166,14 @@ pub struct ToolEntry {
     /// Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shank_diameter_mm: Option<f64>,
+    /// q0kc: free shank length between the top of the cutting flutes and
+    /// the bottom of the holder/collet (mm). Models the real-world case
+    /// where the collet doesn't grip right above the flutes — common for
+    /// reach-extension tooling. Defaults to 0 (legacy behavior — collet
+    /// sits directly on the flutes), so old projects round-trip
+    /// unchanged. None = same as `Some(0.0)` for the sim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stickout_length_mm: Option<f64>,
     /// Holder geometry above the shank. None = no holder check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder: Option<HolderShape>,
@@ -241,6 +249,7 @@ impl Default for ToolEntry {
             pause: default_tool_pause(),
             flute_length_mm: None,
             shank_diameter_mm: None,
+            stickout_length_mm: None,
             holder: None,
         }
     }

@@ -89,14 +89,23 @@ impl HolderProfile {
         // that walk it.
         points.push((z_cursor, shank_r));
 
+        // q0kc: explicit shank length (stickout) between top of flutes
+        // and bottom of the holder. Defaults to 0 (legacy) so the
+        // holder sits on the flutes directly. The shank segment is
+        // emitted at `shank_r` from `z_cursor` to `z_cursor + stickout`
+        // so callers walking the profile see the full free-shank
+        // segment between flutes-top and holder-bottom.
+        let stickout = tool.stickout_length_mm.unwrap_or(0.0).max(0.0);
+        if stickout > 0.0 {
+            z_cursor += stickout;
+            points.push((z_cursor, shank_r));
+        }
+
         let mut last_r = shank_r;
 
-        // Some holder shapes describe a "shank length" implicitly by
-        // their distance from the cutting tip — we model the holder as
-        // sitting directly on top of the flutes (no explicit shank
-        // length on the tool entry today). The shank radius is the gap
-        // between flutes-top and holder-bottom; even if `flute_length`
-        // was unspecified the bottom-of-holder still lands at z = 0.
+        // Holder bottom now sits at `z_cursor` (flute_top + neck +
+        // stickout). Old code assumed stickout = 0, which silently
+        // pulled the holder envelope down onto the flutes — see q0kc.
         if let Some(holder) = tool.holder {
             match holder {
                 HolderShape::Cylinder {
@@ -253,6 +262,7 @@ mod tests {
             pause: 1,
             flute_length_mm: flute,
             shank_diameter_mm: shank,
+            stickout_length_mm: None,
             holder,
         }
     }
@@ -318,6 +328,62 @@ mod tests {
         let p = HolderProfile::from_tool(&t).expect("shank-only profile is valid");
         // Without an explicit holder the envelope tops out at the shank.
         assert!((p.max_radius() - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stickout_pushes_holder_up_above_flutes() {
+        // q0kc: a 6 mm endmill with 15 mm flutes + 20 mm stickout +
+        // 30 mm cylinder holder. Without stickout the holder bottom
+        // sat at z=15; with stickout=20 it now sits at z=35.
+        let mut t = tool_with(
+            Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            }),
+            Some(6.0),
+            Some(15.0),
+        );
+        t.stickout_length_mm = Some(20.0);
+        let p = HolderProfile::from_tool(&t).expect("holder set");
+        // Top of profile: flute_len (15) + stickout (20) + holder (30) = 65.
+        assert!(
+            (p.total_length() - 65.0).abs() < 1e-9,
+            "expected total length 65, got {}",
+            p.total_length()
+        );
+        // At z = 30 (10 mm above flutes-top, 10 mm into the stickout
+        // segment) the envelope is just the shank radius (3 mm), NOT
+        // the holder radius. Pre-fix it was already inside the holder
+        // here — that's the silent bug.
+        let r = p.radius_at(30.0).expect("inside profile");
+        assert!(
+            (r - 3.0).abs() < 1e-9,
+            "10 mm into stickout should be shank radius 3, got {r}",
+        );
+        // At z = 40 (5 mm into the holder cylinder) the radius is 10.
+        let r = p.radius_at(40.0).expect("inside profile");
+        assert!(
+            (r - 10.0).abs() < 1e-9,
+            "5 mm into holder should be holder radius 10, got {r}",
+        );
+    }
+
+    #[test]
+    fn no_stickout_field_is_legacy_zero() {
+        // q0kc back-compat: a tool with `stickout_length_mm = None`
+        // produces the same envelope as before — holder right above
+        // the flutes.
+        let t = tool_with(
+            Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            }),
+            Some(6.0),
+            Some(15.0),
+        );
+        let p = HolderProfile::from_tool(&t).expect("holder set");
+        // total = flute (15) + holder (30) = 45 (no stickout).
+        assert!((p.total_length() - 45.0).abs() < 1e-9);
     }
 
     fn tslot_tool(

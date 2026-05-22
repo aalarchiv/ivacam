@@ -67,7 +67,7 @@ pub enum RapidCollisionSubkind {
 pub fn check_rapid_against_stock(
     heightmap: &Heightmap,
     segment: &ToolpathSegment,
-    profile: ToolProfile,
+    profile: &ToolProfile,
     holder: Option<&HolderProfile>,
 ) -> RapidCheck {
     debug_assert!(matches!(segment.kind, MoveKind::Rapid));
@@ -290,7 +290,7 @@ mod tests {
         let map = fresh_map(20, 20, 0.0);
         let s = rapid(pose(0.0, 0.0, 5.0), pose(10.0, 0.0, 5.0));
         assert_eq!(
-            check_rapid_against_stock(&map, &s, endmill(), None),
+            check_rapid_against_stock(&map, &s, &endmill(), None),
             RapidCheck::Clear
         );
     }
@@ -299,7 +299,7 @@ mod tests {
     fn collision_through_uncut_stock() {
         let map = fresh_map(20, 20, 0.0);
         let s = rapid(pose(0.0, 0.0, -2.0), pose(10.0, 0.0, -2.0));
-        match check_rapid_against_stock(&map, &s, endmill(), None) {
+        match check_rapid_against_stock(&map, &s, &endmill(), None) {
             RapidCheck::Collision {
                 worst_cell_z,
                 rapid_pz,
@@ -332,7 +332,7 @@ mod tests {
             check_rapid_against_stock(
                 &map,
                 &rapid(pose(0.0, 0.0, 5.0), pose(10.0, 0.0, -2.0)),
-                endmill(),
+                &endmill(),
                 None,
             ),
             RapidCheck::Clear,
@@ -344,7 +344,7 @@ mod tests {
         let map = fresh_map(20, 20, 0.0);
         // from.x == to.x, from.y == to.y, descending into uncut stock.
         let s = rapid(pose(5.0, 5.0, 1.0), pose(5.0, 5.0, -1.0));
-        match check_rapid_against_stock(&map, &s, endmill(), None) {
+        match check_rapid_against_stock(&map, &s, &endmill(), None) {
             RapidCheck::Collision { .. } => {}
             other @ RapidCheck::Clear => panic!("expected Collision, got {other:?}"),
         }
@@ -358,7 +358,7 @@ mod tests {
         let map = fresh_map(20, 20, 0.0);
         let s = rapid(pose(0.0, 0.0, 0.0), pose(10.0, 0.0, 0.0));
         assert_eq!(
-            check_rapid_against_stock(&map, &s, endmill(), None),
+            check_rapid_against_stock(&map, &s, &endmill(), None),
             RapidCheck::Clear
         );
     }
@@ -369,7 +369,7 @@ mod tests {
         let map = fresh_map(20, 20, 0.0);
         let s = rapid(pose(50.0, 50.0, -5.0), pose(60.0, 50.0, -5.0));
         assert_eq!(
-            check_rapid_against_stock(&map, &s, endmill(), None),
+            check_rapid_against_stock(&map, &s, &endmill(), None),
             RapidCheck::Clear
         );
     }
@@ -410,7 +410,7 @@ mod tests {
             &segments,
             0,
             segments.len(),
-            endmill(),
+            &endmill(),
             &[],
             None,
             &mut d,
@@ -471,6 +471,7 @@ mod tests {
             pause: 1,
             flute_length_mm: Some(25.0),
             shank_diameter_mm: Some(6.0),
+            stickout_length_mm: None,
             holder: Some(HolderShape::Cylinder {
                 diameter_mm: 20.0,
                 length_mm: 30.0,
@@ -506,7 +507,7 @@ mod tests {
         // itself clears in XY.
         let small_endmill = ToolProfile::Endmill { r: 2.0 };
         let s = rapid(pose(5.0, 25.0, 10.0), pose(45.0, 25.0, 10.0));
-        match check_rapid_against_stock(&map, &s, small_endmill, Some(&holder)) {
+        match check_rapid_against_stock(&map, &s, &small_endmill, Some(&holder)) {
             RapidCheck::Collision { subkind, .. } => {
                 assert_eq!(
                     subkind,
@@ -534,7 +535,7 @@ mod tests {
         let small_endmill = ToolProfile::Endmill { r: 2.0 };
         let s = rapid(pose(5.0, 30.0, 10.0), pose(55.0, 30.0, 10.0));
         assert_eq!(
-            check_rapid_against_stock(&map, &s, small_endmill, Some(&holder)),
+            check_rapid_against_stock(&map, &s, &small_endmill, Some(&holder)),
             RapidCheck::Clear,
         );
     }

@@ -591,6 +591,7 @@ mod tests {
             pause: 1,
             flute_length_mm: Some(25.0),
             shank_diameter_mm: Some(6.0),
+            stickout_length_mm: None,
             holder: Some(HolderShape::Cylinder {
                 diameter_mm: 20.0,
                 length_mm: 35.0,

@@ -41,6 +41,13 @@ pub struct TimeEstimate {
     pub arc_s: f64,
     pub toolchange_s: f64,
     pub spindle_warmup_s: f64,
+    /// kg13: total time spent in explicit G4 P-seconds / X-seconds
+    /// pauses (drill dwell, finishing dwell, etc.). Distinct from
+    /// `toolchange_s` (M6 timing) and `spindle_warmup_s` (per-tool
+    /// pause). Older serialized estimates without this field
+    /// deserialize as `0.0`.
+    #[serde(default)]
+    pub dwell_s: f64,
 }
 
 const DEFAULT_ACCEL_MM_S2: f64 = 250.0;
@@ -52,6 +59,10 @@ const DIR_EPS: f64 = 1e-6;
 /// `tool_changes` is the count of tool-changes M6 events (produces
 /// `n * machine.toolchange_s`); `spindle_warmup_s` is summed across all
 /// `tool.pause` per used tool.
+///
+/// kg13: also scans the gcode for explicit `G4 P<sec>` / `G4 X<sec>`
+/// dwell commands and adds them to the total cycle time. Drill dwell,
+/// post-finish dwell, and any other G4 P pause go through here.
 #[must_use]
 pub fn estimate_from_gcode(
     gcode: &str,
@@ -61,7 +72,83 @@ pub fn estimate_from_gcode(
     spindle_warmup_s: f64,
 ) -> TimeEstimate {
     let feeds = feeds_per_segment(gcode, segments);
-    estimate(segments, &feeds, machine, tool_changes, spindle_warmup_s)
+    let dwell_s = sum_g4_dwell_seconds(gcode);
+    let mut est = estimate(segments, &feeds, machine, tool_changes, spindle_warmup_s);
+    est.dwell_s += dwell_s;
+    est.total_s += dwell_s;
+    est
+}
+
+/// kg13: per-tool-change spindle dwell envelope. Each M6 toolchange in
+/// real gcode triggers `M5 → spindle_stop_dwell → tool swap → M3 →
+/// spindle_start_dwell`. Multiply this sum by `tool_changes` to get the
+/// total envelope time. Use alongside the per-tool `ToolEntry.pause`
+/// (the per-tool warmup top-up) in `estimate_*` calls.
+#[must_use]
+pub fn spindle_dwell_per_toolchange_s(machine: &MachineConfig) -> f64 {
+    machine.effective_spindle_stop_dwell_sec() + machine.effective_spindle_start_dwell_sec()
+}
+
+/// wy4a: total spindle-warmup time = `tool_changes` × per-toolchange
+/// dwell envelope + sum of per-tool `pause` warmups for each USED tool.
+/// `per_tool_warmup_sec` is one entry per used tool (e.g. derived from
+/// `tool.pause` for the tools that actually run in the program). The
+/// total replaces the previous flat-constant `spindle_warmup_s` arg —
+/// callers that have only a flat sum pre-computed should still pass
+/// it via `spindle_warmup_s` to `estimate(...)` directly.
+#[must_use]
+pub fn spindle_warmup_total_s(
+    machine: &MachineConfig,
+    tool_changes: u32,
+    per_tool_warmup_sec: &[f64],
+) -> f64 {
+    let envelope = spindle_dwell_per_toolchange_s(machine);
+    let toolchange_dwell = f64::from(tool_changes) * envelope;
+    let per_tool: f64 = per_tool_warmup_sec.iter().filter(|v| **v > 0.0).sum();
+    toolchange_dwell + per_tool
+}
+
+/// kg13: walk the gcode and sum every `G4 P<sec>` / `G4 X<sec>` dwell
+/// command. `P` is the canonical seconds form (`LinuxCNC`, `GRBL`);
+/// `X` is honored as an alias because some posts emit it. Negative /
+/// non-finite arguments are ignored.
+fn sum_g4_dwell_seconds(gcode: &str) -> f64 {
+    let mut total = 0.0_f64;
+    for raw in gcode.lines() {
+        let line = strip_comment(raw);
+        let mut tokens = line.split_whitespace().peekable();
+        // The G4 token must be present in the line for a dwell to fire.
+        let mut has_g4 = false;
+        for tok in tokens.by_ref() {
+            if matches!(tok, "G4" | "g4") {
+                has_g4 = true;
+                break;
+            }
+            // Some posts write "G04"; accept that form too.
+            if matches!(tok, "G04" | "g04") {
+                has_g4 = true;
+                break;
+            }
+        }
+        if !has_g4 {
+            continue;
+        }
+        // Look for the P / X argument anywhere in the remainder.
+        for tok in line.split_whitespace() {
+            let (head, rest) = match tok.split_at_checked(1) {
+                Some(s) => s,
+                None => continue,
+            };
+            if matches!(head, "P" | "p" | "X" | "x") {
+                if let Ok(v) = rest.parse::<f64>() {
+                    if v.is_finite() && v > 0.0 {
+                        total += v;
+                    }
+                }
+            }
+        }
+    }
+    total
 }
 
 /// Per-op plunge / feed limits sourced from the project's tool library
@@ -277,6 +364,7 @@ fn estimate_trapezoidal(
         retract_s,
         arc_s,
         toolchange_s,
+        dwell_s: 0.0,
         spindle_warmup_s,
     }
 }
@@ -320,6 +408,7 @@ fn estimate_naive(
         retract_s,
         arc_s,
         toolchange_s,
+        dwell_s: 0.0,
         spindle_warmup_s,
     }
 }
@@ -757,6 +846,73 @@ mod tests {
         }];
         let clamped = clamp_feeds_by_kind(&segs, &feeds, &other);
         assert_eq!(clamped, feeds, "seg op_id=0 doesn't match 999");
+    }
+
+    #[test]
+    fn g4_dwell_sums_into_total() {
+        // kg13: explicit G4 P-seconds dwell commands should add to the
+        // total cycle time AND show up in the new `dwell_s` field.
+        // Three dwells: 1.5 s (drill), 0.25 s (finish dwell), 2.0 s
+        // (program-end pause). Total = 3.75 s.
+        let gcode = concat!(
+            "G21\n",
+            "G0 X0 Y0 Z5\n",
+            "G1 Z-1 F100\n",
+            "G4 P1.5\n",
+            "G1 X10 F800\n",
+            "G4 P0.25\n",
+            "G1 Z5\n",
+            "G04 X2.0\n", // X-form + G04 spelling
+        );
+        let (segs, _) = crate::gcode::preview::interpret_with_index(gcode);
+        let est = estimate_from_gcode(gcode, &segs, &machine(), 0, 0.0);
+        assert!(
+            (est.dwell_s - 3.75).abs() < 1e-9,
+            "dwell_s should sum 1.5 + 0.25 + 2.0 = 3.75, got {}",
+            est.dwell_s,
+        );
+        // total_s now includes dwell.
+        let without_dwell = estimate(&segs, &feeds_per_segment(gcode, &segs), &machine(), 0, 0.0);
+        assert!(
+            (est.total_s - without_dwell.total_s - 3.75).abs() < 1e-6,
+            "total_s should grow by the dwell sum",
+        );
+    }
+
+    #[test]
+    fn g4_dwell_ignores_negative_and_non_dwell_p() {
+        // kg13: a stray P-prefixed value on a non-G4 line (e.g. canned
+        // cycle P-count) MUST NOT be summed as a dwell. Only lines
+        // containing G4 / G04 contribute.
+        let gcode = "G81 X10 Y0 Z-3 P2.0\nG4 P0.5\n";
+        let dwell = sum_g4_dwell_seconds(gcode);
+        // Only the second line's P0.5 counts.
+        assert!((dwell - 0.5).abs() < 1e-9, "expected 0.5, got {dwell}");
+        // Negative / zero P ignored.
+        let neg = sum_g4_dwell_seconds("G4 P-1.0\nG4 P0\n");
+        assert!(neg.abs() < 1e-9, "expected 0, got {neg}");
+    }
+
+    #[test]
+    fn spindle_warmup_total_scales_with_toolchanges_and_per_tool() {
+        // wy4a: total spindle warmup should equal
+        //   tool_changes * (start_dwell + stop_dwell) + Σ per-tool pause.
+        // With start=stop=0.5 and 3 toolchanges + 3 tools at 1s pause:
+        // total = 3*1.0 + 3*1.0 = 6.0 s.
+        let m = MachineConfig {
+            spindle_start_dwell_sec: Some(0.5),
+            spindle_stop_dwell_sec: Some(0.5),
+            ..MachineConfig::default()
+        };
+        let per_tool = vec![1.0, 1.0, 1.0];
+        let total = spindle_warmup_total_s(&m, 3, &per_tool);
+        assert!((total - 6.0).abs() < 1e-9, "got {total}, expected 6.0");
+        // Per-tool envelope alone (no tool changes) = sum of pauses.
+        let only_tools = spindle_warmup_total_s(&m, 0, &per_tool);
+        assert!((only_tools - 3.0).abs() < 1e-9);
+        // Only tool changes (no per-tool pause) = n * envelope.
+        let only_tc = spindle_warmup_total_s(&m, 4, &[]);
+        assert!((only_tc - 4.0).abs() < 1e-9, "got {only_tc}, expected 4.0");
     }
 
     #[test]

@@ -57,6 +57,11 @@ pub struct Simulator {
     /// (audit-9l52). Refreshed via `set_toolpath(...)` whenever a
     /// new toolpath replaces the previous one.
     toolpath: Vec<ToolpathSegment>,
+    /// wpzm: sticky setup-time warnings (e.g. cell_size coarsening)
+    /// that survive across `advance()` resets of `last_diagnostics`.
+    /// Merged into `last_diagnostics` on every advance so the JS
+    /// driver's `take_diagnostics()` keeps seeing them.
+    sticky_warnings: Vec<wiac_core::sim::diagnostics::SimWarning>,
 }
 
 #[wasm_bindgen]
@@ -72,6 +77,7 @@ impl Simulator {
             last_diagnostics: SimDiagnostics::new(),
             fixtures: Vec::new(),
             toolpath: Vec::new(),
+            sticky_warnings: Vec::new(),
         }
     }
 
@@ -108,6 +114,33 @@ impl Simulator {
         self.toolpath.len() as u32
     }
 
+    /// wpzm: record that the driver coarsened cell_size to fit the
+    /// user's `maxSimulationCells` budget. The driver should call this
+    /// once at `Simulator::new`-time when it coarsens, passing the
+    /// originally-requested cell size and the coarsened one. The
+    /// warning rides out via `take_diagnostics()` like any other sim
+    /// warning. Stored on the simulator (NOT cleared by `advance()`)
+    /// so the UI keeps seeing it across playhead changes.
+    pub fn push_cell_size_coarsened(
+        &mut self,
+        original_cell_size_mm: f64,
+        coarsened_cell_size_mm: f64,
+        reason: String,
+    ) {
+        use wiac_core::sim::diagnostics::SimWarning;
+        // Replace any existing sticky CellSizeCoarsened — only the most
+        // recent coarsening matters (a rebuild with different cell
+        // counts overrides the prior decision).
+        self.sticky_warnings.retain(|w| !matches!(w, SimWarning::CellSizeCoarsened { .. }));
+        let warn = SimWarning::CellSizeCoarsened {
+            original_cell_size_mm,
+            coarsened_cell_size_mm,
+            reason,
+        };
+        self.last_diagnostics.push(warn.clone());
+        self.sticky_warnings.push(warn);
+    }
+
     /// Replace the simulator's fixture set. Pass the project's fixtures
     /// array (serialized as `Vec<Fixture>`) so subsequent `advance()`
     /// calls can emit `FixtureCollision` warnings. Pass an empty array
@@ -121,8 +154,13 @@ impl Simulator {
 
     /// Pull and clear the diagnostics collected by the most recent
     /// `advance()` call. Returns a JSON-shaped `SimDiagnostics`.
+    /// wpzm: sticky warnings (cell-size coarsening) are merged in so
+    /// the UI keeps seeing them across playhead movements.
     pub fn take_diagnostics(&mut self) -> Result<JsValue, JsValue> {
-        let taken = std::mem::take(&mut self.last_diagnostics);
+        let mut taken = std::mem::take(&mut self.last_diagnostics);
+        for w in &self.sticky_warnings {
+            taken.push(w.clone());
+        }
         serde_wasm_bindgen::to_value(&taken).map_err(into_js_error)
     }
 
@@ -154,7 +192,7 @@ impl Simulator {
             &self.toolpath,
             from_idx as usize,
             to_idx as usize,
-            profile,
+            &profile,
             &self.fixtures,
             holder.as_ref(),
             &mut self.last_diagnostics,
@@ -195,7 +233,7 @@ impl Simulator {
         let _touched = sweep_segment_partial(
             &mut self.heightmap,
             &self.toolpath[idx],
-            profile,
+            &profile,
             idx,
             &self.fixtures,
             holder.as_ref(),
@@ -282,7 +320,7 @@ impl Simulator {
             segments,
             from_idx as usize,
             to_idx as usize,
-            profile,
+            &profile,
             &self.fixtures,
             holder.as_ref(),
             &mut self.last_diagnostics,
@@ -314,7 +352,7 @@ impl Simulator {
             let _touched = sweep_segment_partial(
                 &mut self.heightmap,
                 &segments[idx],
-                profile,
+                &profile,
                 idx,
                 &self.fixtures,
                 holder.as_ref(),
@@ -389,6 +427,7 @@ mod tests {
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
+            stickout_length_mm: None,
             holder: None,
         }
     }

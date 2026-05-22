@@ -109,6 +109,7 @@ pub(in crate::pipeline) fn endmill(id: u32, diameter: f64) -> ToolEntry {
         pause: 1,
         flute_length_mm: None,
         shank_diameter_mm: None,
+        stickout_length_mm: None,
         holder: None,
     }
 }
@@ -150,6 +151,7 @@ pub(in crate::pipeline) fn vbit() -> ToolEntry {
         pause: 1,
         flute_length_mm: None,
         shank_diameter_mm: None,
+        stickout_length_mm: None,
         holder: None,
     }
 }

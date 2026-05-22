@@ -31,7 +31,7 @@ use crate::sim::holder::HolderProfile;
     clippy::cast_precision_loss,
     clippy::cast_sign_loss
 )]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HolderCheck {
     Clear,
     Collision {
@@ -39,7 +39,26 @@ pub enum HolderCheck {
         worst_y: f64,
         wall_z: f32,
         required_clearance_mm: f32,
+        /// 24ht: every cell that exceeds the holder envelope, not just the
+        /// worst-excess one. Sorted by `required_clearance_mm` descending
+        /// so element 0 mirrors `worst_x/worst_y/wall_z/required_clearance_mm`
+        /// for back-compat. Without this list, mid-range collisions stayed
+        /// hidden behind the worst cell — the user couldn't see the
+        /// breadth of the obstacle.
+        cells: Vec<HolderCollisionCell>,
     },
+}
+
+/// 24ht: per-cell holder-wall overlap record. `required_clearance_mm` is
+/// how much extra clearance the holder would need at this cell for the
+/// envelope to fit; `wall_z` is the cell's current heightmap value (the
+/// top of the wall the holder is hitting).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct HolderCollisionCell {
+    pub cell_x: f64,
+    pub cell_y: f64,
+    pub wall_z: f32,
+    pub required_clearance_mm: f32,
 }
 
 // WHY: hrex — the cutter envelope (r <= cutting_radius) is the cutter's
@@ -117,7 +136,12 @@ pub fn check_segment_holder_against_walls(
     let cutting_r_sq = cutting_r * cutting_r;
     let cols = heightmap.cols as usize;
 
-    let mut worst: Option<(f32, u32, u32, f32)> = None;
+    // 24ht: collect EVERY offending cell, not just the worst-excess one.
+    // The previous code kept a single (max-required) tuple — mid-range
+    // collisions were silently dropped, and the UI had no way to surface
+    // the breadth of the obstacle. We push all offenders here and let
+    // the caller decide how to render them.
+    let mut offenders: Vec<HolderCollisionCell> = Vec::new();
 
     for iy in iy0..=iy1 {
         for ix in ix0..=ix1 {
@@ -160,25 +184,32 @@ pub fn check_segment_holder_against_walls(
                 continue;
             }
             let required = (wall_height - holder_lower_z) as f32;
-            match worst {
-                Some((best, _, _, _)) if required <= best => {}
-                _ => worst = Some((required, ix, iy, cell_z)),
-            }
+            offenders.push(HolderCollisionCell {
+                cell_x: heightmap.origin.x + (ix as f64 + 0.5) * cell,
+                cell_y: heightmap.origin.y + (iy as f64 + 0.5) * cell,
+                wall_z: cell_z,
+                required_clearance_mm: required,
+            });
         }
     }
 
-    match worst {
-        None => HolderCheck::Clear,
-        Some((required, ix, iy, wall_z)) => {
-            let worst_x = heightmap.origin.x + (ix as f64 + 0.5) * cell;
-            let worst_y = heightmap.origin.y + (iy as f64 + 0.5) * cell;
-            HolderCheck::Collision {
-                worst_x,
-                worst_y,
-                wall_z,
-                required_clearance_mm: required,
-            }
-        }
+    if offenders.is_empty() {
+        return HolderCheck::Clear;
+    }
+    // Sort worst-first so element 0 keeps the "worst cell" semantics for
+    // back-compat callers (24ht).
+    offenders.sort_by(|a, b| {
+        b.required_clearance_mm
+            .partial_cmp(&a.required_clearance_mm)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let worst = offenders[0];
+    HolderCheck::Collision {
+        worst_x: worst.cell_x,
+        worst_y: worst.cell_y,
+        wall_z: worst.wall_z,
+        required_clearance_mm: worst.required_clearance_mm,
+        cells: offenders,
     }
 }
 
@@ -267,6 +298,7 @@ mod tests {
             pause: 1,
             flute_length_mm: flute_len,
             shank_diameter_mm: shank,
+            stickout_length_mm: None,
             holder,
         }
     }
@@ -422,6 +454,56 @@ mod tests {
     }
 
     #[test]
+    fn deep_slot_emits_full_cell_list_not_just_worst() {
+        // 24ht: a deep narrow pocket should now report EVERY cell where
+        // the holder envelope hits the wall, not just the worst one.
+        // The 6 mm endmill with 20 mm holder above sweeps a half-width
+        // band [3..10] mm around the path centerline on both sides; in
+        // a 60 mm-long channel that's ~60 * 14 cells of holder vs wall
+        // contact. We assert there are >> 1 cells reported and that
+        // they're sorted worst-first.
+        let t = tool(
+            6.0,
+            Some(15.0),
+            Some(6.0),
+            Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            }),
+        );
+        let holder = HolderProfile::from_tool(&t).expect("holder set");
+        let hm = build_pocket(60, 60, -30.0, 5.0);
+        let s = seg((5.0, 30.0, -25.0), (55.0, 30.0, -25.0));
+        match check_segment_holder_against_walls(&hm, &s, &holder) {
+            HolderCheck::Collision { cells, .. } => {
+                assert!(
+                    cells.len() > 10,
+                    "expected many offending cells, got {}",
+                    cells.len()
+                );
+                // Sorted worst-first.
+                for w in cells.windows(2) {
+                    assert!(
+                        w[0].required_clearance_mm >= w[1].required_clearance_mm,
+                        "cells must be sorted worst-first, got {:?} then {:?}",
+                        w[0],
+                        w[1],
+                    );
+                }
+                // Every cell has positive required clearance (since they
+                // all passed the wall-vs-envelope test).
+                for c in &cells {
+                    assert!(
+                        c.required_clearance_mm > 0.0,
+                        "cell has zero required clearance: {c:?}",
+                    );
+                }
+            }
+            other => panic!("expected Collision, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn fresh_plunge_pipeline_zero_holder_warnings() {
         // hrex (end-to-end through sweep_range): plunging into uncut
         // stock with a holder must emit zero `holder_collision`
@@ -449,7 +531,7 @@ mod tests {
             &segments,
             0,
             segments.len(),
-            ToolProfile::Endmill { r: 3.0 },
+            &ToolProfile::Endmill { r: 3.0 },
             &[],
             Some(&holder),
             &mut d,

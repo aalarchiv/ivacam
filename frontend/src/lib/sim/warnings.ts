@@ -16,14 +16,21 @@ export function simWarningSeverity(w: SimWarning): SimSeverity {
     case 'engagement_overload':
     case 'dragging_rapids':
       return 'warning';
+    // wpzm: cell_size coarsening is informational — sim still works,
+    // just at coarser resolution. Render in the "info" lane.
+    case 'cell_size_coarsened':
+      return 'info';
   }
 }
 
 /// Segment index a warning attaches to. `dragging_rapids` reports a
 /// run; we anchor it at the first segment in the run for marker
+/// placement. `cell_size_coarsened` is setup-time and not attached
+/// to any segment — return -1 so the caller can skip marker
 /// placement.
 export function simWarningSegmentIdx(w: SimWarning): number {
   if (w.kind === 'dragging_rapids') return w.first_segment_idx;
+  if (w.kind === 'cell_size_coarsened') return -1;
   return w.segment_idx;
 }
 
@@ -40,5 +47,7 @@ export function simWarningSummary(w: SimWarning): string {
       return `Engagement ${w.engagement_pct.toFixed(0)}% at segment ${w.segment_idx}`;
     case 'dragging_rapids':
       return `Dragging rapids: ${w.count} consecutive rapids from segment ${w.first_segment_idx}`;
+    case 'cell_size_coarsened':
+      return `Sim cell size coarsened ${w.original_cell_size_mm.toFixed(3)} mm → ${w.coarsened_cell_size_mm.toFixed(3)} mm (${w.reason})`;
   }
 }

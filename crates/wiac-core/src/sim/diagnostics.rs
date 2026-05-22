@@ -53,6 +53,14 @@ pub enum SimWarning {
         worst_y: f64,
         wall_z: f32,
         required_clearance_mm: f32,
+        /// 24ht: every cell that exceeded the holder envelope on this
+        /// segment, sorted worst-first. Element 0 mirrors
+        /// `worst_x/worst_y/wall_z/required_clearance_mm` for back-compat
+        /// callers that only need the worst cell. Older serialized
+        /// warnings without this field deserialize to an empty vec via
+        /// `serde(default)`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        cells: Vec<crate::sim::holder_check::HolderCollisionCell>,
     },
     EngagementOverload {
         segment_idx: usize,
@@ -61,6 +69,20 @@ pub enum SimWarning {
     DraggingRapids {
         first_segment_idx: usize,
         count: usize,
+    },
+    /// wpzm: the simulator coarsened cell_size to fit the user's
+    /// `maxSimulationCells` budget. Without this surfaced, tool-engagement
+    /// issues and small features get silently smoothed away — the user has
+    /// no signal that the sim accuracy dropped. The warning carries both
+    /// the requested cell size and the actual one so the UI can hint at
+    /// "increase Max simulation cells to see this at full resolution".
+    CellSizeCoarsened {
+        original_cell_size_mm: f64,
+        coarsened_cell_size_mm: f64,
+        /// Why the coarsening fired — `max_simulation_cells` for the
+        /// budget cap (the canonical case), other strings reserved
+        /// for future paths.
+        reason: String,
     },
 }
 
@@ -81,6 +103,10 @@ pub fn severity(w: &SimWarning) -> Severity {
         SimWarning::EngagementOverload { .. } | SimWarning::DraggingRapids { .. } => {
             Severity::Warning
         }
+        // wpzm: coarsening is purely informational — the sim still runs,
+        // just at coarser resolution. Surface it so the user knows what
+        // happened, but don't escalate to warning/critical.
+        SimWarning::CellSizeCoarsened { .. } => Severity::Info,
     }
 }
 
@@ -92,6 +118,7 @@ pub fn kind_str(w: &SimWarning) -> &'static str {
         SimWarning::HolderCollision { .. } => "holder_collision",
         SimWarning::EngagementOverload { .. } => "engagement_overload",
         SimWarning::DraggingRapids { .. } => "dragging_rapids",
+        SimWarning::CellSizeCoarsened { .. } => "cell_size_coarsened",
     }
 }
 
@@ -181,6 +208,7 @@ mod tests {
             worst_y: 0.25,
             wall_z: -2.0,
             required_clearance_mm: 1.5,
+            cells: vec![],
         });
         d.push(SimWarning::EngagementOverload {
             segment_idx: 4,

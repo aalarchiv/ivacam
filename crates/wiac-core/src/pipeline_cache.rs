@@ -944,6 +944,7 @@ mod tests {
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
+            stickout_length_mm: None,
             holder: None,
         }
     }

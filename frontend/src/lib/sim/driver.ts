@@ -33,6 +33,15 @@ interface SimulatorWasm {
     topZ: number,
   ): SimulatorWasm;
   reset(): void;
+  /// wpzm: record that the JS driver coarsened cell_size to fit the
+  /// user's maxSimulationCells budget. The warning rides out via
+  /// take_diagnostics() so the UI surfaces it like any other sim
+  /// warning instead of silently smoothing out small features.
+  push_cell_size_coarsened(
+    original_cell_size_mm: number,
+    coarsened_cell_size_mm: number,
+    reason: string,
+  ): void;
   advance(tool: unknown, from_idx: number, to_idx: number): Uint32Array;
   /// Carve only chunk `[t_start, t_end]` of segment `seg_idx`. Used per
   /// render frame so the heightfield destruction follows the cutter
@@ -300,9 +309,11 @@ export class HeightfieldDriver {
     // longer forces a coarse mesh.
     const simCellCap = Math.max(1, input.settings.maxSimulationCells);
     let effectiveCellSize = cellSize;
+    let coarsened = false;
     if (cellCount > simCellCap) {
       const scale = Math.sqrt(cellCount / simCellCap);
       effectiveCellSize = cellSize * scale;
+      coarsened = true;
     }
     const topZ = 0; // stock surface is z=0; carving descends to negative Z
     // Stepped voxel renderer needs a finite floor — match the physical
@@ -312,6 +323,12 @@ export class HeightfieldDriver {
     const stockThickness = input.stock.thickness > 0 ? input.stock.thickness : 10.0;
     this.dispose();
     this.sim = new this.wasm.Simulator(fp.minX, fp.minY, fp.maxX, fp.maxY, effectiveCellSize, topZ);
+    // wpzm: surface the coarsening as a sim warning so it shows up in
+    // the diagnostics panel — silently coarsening the grid hid
+    // tool-engagement and small-feature issues from the user.
+    if (coarsened && typeof this.sim.push_cell_size_coarsened === 'function') {
+      this.sim.push_cell_size_coarsened(cellSize, effectiveCellSize, 'max_simulation_cells');
+    }
     // 9tba: pick the lowest LOD level whose mesh fits the user's
     // `maxRenderTriangles` budget. Skip building finer (heavier)
     // levels so total GPU memory stays predictable.

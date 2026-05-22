@@ -178,7 +178,11 @@ impl Heightmap {
 /// Tool Z-profile: for radial offset `r` from the cutter axis, returns
 /// how much above the tip Z the cutter surface sits, or `None` if `r` is
 /// outside the cutting radius.
-#[derive(Debug, Clone, Copy)]
+// pxv8 / legj: ToolProfile no longer derives Copy because FormProfile
+// carries a Vec of sample points. All sim entry points take `&ToolProfile`
+// now; the profile is built once per advance() and walked many times,
+// so the ref pattern is cheaper than cloning per segment.
+#[derive(Debug, Clone)]
 pub enum ToolProfile {
     Endmill {
         r: f32,
@@ -229,32 +233,83 @@ pub enum ToolProfile {
         /// Neck radius above the head — narrower than `head_r`.
         neck_r: f32,
     },
+    /// pxv8: compression / up-down spiral endmill. Cross-section is
+    /// uniform at `r` so the carved heightmap is visually identical to
+    /// `Endmill { r }`. Distinguished from Endmill so the simulator can
+    /// tag warnings that the up-cut / down-cut flute split (which
+    /// affects chip evacuation direction but NOT cross-section) is not
+    /// modeled. Follow-up: per-edge top/bottom finish tracking.
+    Compression {
+        r: f32,
+    },
+    /// pxv8: form / profile cutter with a non-uniform cross-section.
+    /// `segments` is a sorted sample list `(z_above_tip_mm, r_mm)` that
+    /// describes the cutter outline; the sweep carves at the appropriate
+    /// radius for each Z slice. Empty / single-sample list collapses to
+    /// a flat endmill at `r=segments[0].r`. Sample list assumed monotone
+    /// in `z_above_tip` so the linear interp is well-defined.
+    FormProfile {
+        /// Sample list, low Z (tip) → high Z. `(z_above_tip_mm,
+        /// radius_mm)` pairs.
+        segments: Vec<(f32, f32)>,
+    },
+    /// legj: tip-only engraver — narrow flat at the tip with a wide
+    /// cone above. Distinguished from `VBit` because only the tip flat
+    /// is the cutting edge: extending farther up the cone is the
+    /// non-cutting tapered shoulder, not a cutting surface. We expose
+    /// the engagement depth so the heightmap can refuse to carve past
+    /// the cutter's reach.
+    Engraver {
+        /// Tip flat radius (mm) — the cutting edge.
+        tip_r: f32,
+        /// Half-angle of the cone above the tip (radians) — encodes
+        /// the conical body of the engraver.
+        cone_half_angle: f32,
+        /// Maximum engagement depth (mm) — the cutter's reach into
+        /// stock from the tip plane. The sim refuses to carve past
+        /// this depth even if the toolpath drives the tip lower
+        /// (the operator would snap the bit in reality).
+        max_engagement_depth: f32,
+    },
 }
 
 impl ToolProfile {
     #[must_use]
     pub fn radius(&self) -> f32 {
-        match *self {
+        match self {
             ToolProfile::Endmill { r }
             | ToolProfile::BallNose { r }
             | ToolProfile::Drill { r }
             | ToolProfile::LaserBeam { r }
             | ToolProfile::VBit { r, .. }
             | ToolProfile::DragKnife { r, .. }
-            | ToolProfile::BullNose { r, .. } => r,
+            | ToolProfile::BullNose { r, .. }
+            | ToolProfile::Compression { r } => *r,
             // 3oly: the head defines the XY footprint the cutter
             // actually carves (the neck is narrower and sits above
             // the head). The shank/holder check sees the neck via
             // `HolderProfile`.
-            ToolProfile::TSlot { head_r, .. } => head_r,
+            ToolProfile::TSlot { head_r, .. } => *head_r,
+            // pxv8: form cutter — XY footprint is the largest sample
+            // radius (conservative; the sweep AABB must cover the
+            // whole cross-section).
+            ToolProfile::FormProfile { segments } => segments
+                .iter()
+                .map(|(_, r)| *r)
+                .fold(0.0_f32, f32::max),
+            // legj: engraver — the XY footprint that actually carves
+            // is the tip flat. The cone above is non-cutting.
+            ToolProfile::Engraver { tip_r, .. } => *tip_r,
         }
     }
 
     /// True for flat-bottomed profiles (Endmill / Drill / Laser /
-    /// `DragKnife` / `TSlot`) — every cell within the cutter radius
-    /// carves to the same `cutter_pz`, no per-r profile offset. The
-    /// sweep can then skip both the sqrt and the `eval()` branch
-    /// (audit-xnmp). 3oly: `TSlot`'s head bottom is flat too.
+    /// `DragKnife` / `TSlot` / `Compression`) — every cell within the
+    /// cutter radius carves to the same `cutter_pz`, no per-r profile
+    /// offset. The sweep can then skip both the sqrt and the `eval()`
+    /// branch (audit-xnmp). 3oly: `TSlot`'s head bottom is flat too.
+    /// pxv8: Compression's cross-section is identical to Endmill.
+    /// FormProfile / Engraver are NOT flat-bottom (per-r profile).
     #[must_use]
     pub fn is_flat_bottom(&self) -> bool {
         matches!(
@@ -264,17 +319,22 @@ impl ToolProfile {
                 | ToolProfile::LaserBeam { .. }
                 | ToolProfile::DragKnife { .. }
                 | ToolProfile::TSlot { .. }
+                | ToolProfile::Compression { .. }
         )
     }
 
     #[must_use]
     pub fn eval(&self, r: f32) -> Option<f32> {
-        match *self {
+        match self {
             ToolProfile::Endmill { r: rr }
             | ToolProfile::Drill { r: rr }
             | ToolProfile::LaserBeam { r: rr }
-            | ToolProfile::DragKnife { r: rr, .. } => (r <= rr).then_some(0.0),
+            | ToolProfile::DragKnife { r: rr, .. } => (r <= *rr).then_some(0.0),
+            // pxv8: Compression has the same flat-bottom cross-section
+            // as Endmill — see ToolKind::Compression for the rationale.
+            ToolProfile::Compression { r: rr } => (r <= *rr).then_some(0.0),
             ToolProfile::BallNose { r: rr } => {
+                let rr = *rr;
                 if r > rr {
                     None
                 } else {
@@ -287,6 +347,9 @@ impl ToolProfile {
                 tip_r,
                 half_angle_rad,
             } => {
+                let rr = *rr;
+                let tip_r = *tip_r;
+                let half_angle_rad = *half_angle_rad;
                 if r <= tip_r {
                     Some(0.0)
                 } else if r <= rr {
@@ -296,6 +359,8 @@ impl ToolProfile {
                 }
             }
             ToolProfile::BullNose { r: rr, corner_r } => {
+                let rr = *rr;
+                let corner_r = *corner_r;
                 if r > rr {
                     return None;
                 }
@@ -317,7 +382,59 @@ impl ToolProfile {
             // heightmap eval returns 0 for every r ≤ head_r (no
             // vertical profile inside the head). The neck above the
             // head is non-cutting and handled by `HolderProfile`.
-            ToolProfile::TSlot { head_r, .. } => (r <= head_r).then_some(0.0),
+            ToolProfile::TSlot { head_r, .. } => (r <= *head_r).then_some(0.0),
+            // pxv8: FormProfile — linear-interp the (z, r) sample list
+            // by RADIUS to recover the depth offset above the tip. The
+            // sample list is monotone in z_above_tip from tip up; the
+            // INVERSE mapping (largest z whose r >= query_r minus the
+            // lowest z whose r >= query_r) describes a non-monotone
+            // r(z) curve in general. For sim correctness we evaluate
+            // by walking the segments and finding the lowest z whose
+            // r reaches the query: that's the depth offset (`dz`) the
+            // cell sees above the tip. Cells outside any sample
+            // radius return None (cutter doesn't reach them).
+            ToolProfile::FormProfile { segments } => {
+                if segments.is_empty() {
+                    return (r <= 0.0).then_some(0.0);
+                }
+                // Largest radius along the profile.
+                let max_r = segments
+                    .iter()
+                    .map(|(_, rr)| *rr)
+                    .fold(0.0_f32, f32::max);
+                if r > max_r {
+                    return None;
+                }
+                // Find the lowest `z_above_tip` (= depth offset above
+                // tip) where the profile's radius reaches `r`. Walks
+                // the sample list from the tip up.
+                if segments[0].1 >= r {
+                    return Some(segments[0].0);
+                }
+                for w in segments.windows(2) {
+                    let (z0, r0) = w[0];
+                    let (z1, r1) = w[1];
+                    if r1 >= r && r0 < r {
+                        if (r1 - r0).abs() < 1e-6 {
+                            return Some(z0.min(z1));
+                        }
+                        let t = (r - r0) / (r1 - r0);
+                        return Some(z0 + t * (z1 - z0));
+                    }
+                    if r0 >= r {
+                        return Some(z0);
+                    }
+                }
+                None
+            }
+            // legj: engraver — only the tip flat is the cutting edge.
+            // Inside `tip_r` the cutter carves flat (dz = 0). Beyond
+            // `tip_r` we're on the non-cutting cone shoulder; the sim
+            // refuses to carve there and returns None so the sweep
+            // skips the cell (it's not contact with material via a
+            // cutting edge — at best it's a rubbing shoulder, which
+            // breaks bits in real life).
+            ToolProfile::Engraver { tip_r, .. } => (r <= *tip_r).then_some(0.0),
         }
     }
 
@@ -339,7 +456,30 @@ impl ToolProfile {
         match tool.kind {
             ToolKind::Endmill => ToolProfile::Endmill { r },
             ToolKind::BallNose => ToolProfile::BallNose { r },
-            ToolKind::VBit | ToolKind::Engraver => {
+            // legj: Engraver mapped to VBit at full bit diameter was
+            // wrong — the engraver's cutting edge is the tip flat
+            // only; the cone above is non-cutting shoulder. Distinct
+            // ToolProfile arm.
+            ToolKind::Engraver => {
+                let tip_r = (tool.tip_diameter.unwrap_or(0.0) * 0.5).max(0.0) as f32;
+                let included = if tool.tip_angle_deg > 0.0 && tool.tip_angle_deg < 180.0 {
+                    tool.tip_angle_deg
+                } else {
+                    60.0
+                };
+                let cone_half_angle = ((included * 0.5).to_radians()) as f32;
+                // Reach into stock is bounded by flute length when set;
+                // otherwise default to a generous 5 mm — better to
+                // refuse very deep cuts than rubber-stamp them.
+                let max_engagement_depth =
+                    tool.flute_length_mm.map_or(5.0, |v| v.max(0.0)) as f32;
+                ToolProfile::Engraver {
+                    tip_r,
+                    cone_half_angle,
+                    max_engagement_depth,
+                }
+            }
+            ToolKind::VBit => {
                 let tip_r = (tool.tip_diameter.unwrap_or(0.0) * 0.5) as f32;
                 let included = if tool.tip_angle_deg > 0.0 && tool.tip_angle_deg < 180.0 {
                     tool.tip_angle_deg
@@ -374,12 +514,13 @@ impl ToolProfile {
                     ToolProfile::Endmill { r }
                 }
             }
-            // Compression: identical floor profile to Endmill (the
-            // up-cut / down-cut flute split affects chip evacuation,
-            // not the cross-section). Track-issue follow-up
-            // (wiaconstructor-tcmp): model up-cut/down-cut split for
-            // edge-quality diagnostics.
-            ToolKind::Compression => ToolProfile::Endmill { r },
+            // pxv8: Compression — distinct ToolProfile arm with the
+            // SAME cross-section as Endmill. Up/down flute split
+            // affects chip evacuation direction, not the carved
+            // surface; the simulator still flags the missing split
+            // model in the warnings stream. Follow-up:
+            // wiaconstructor-tcmp.
+            ToolKind::Compression => ToolProfile::Compression { r },
             // 3oly: T-slot / undercut cutter — wide head, narrow neck
             // above. Heightmap carves with the head radius; the neck
             // is encoded in HolderProfile so the collision pass sees
@@ -410,19 +551,31 @@ impl ToolProfile {
                     ToolProfile::Endmill { r }
                 }
             }
-            // FormProfile: needs user-supplied profile geometry which
-            // has no UI yet. Until 3oly's TSlot work is generalised
-            // (track-issue wiaconstructor-tfrm), collapse to a flat
-            // endmill at the head radius — same as before — but emit
-            // an eprintln in debug so the user / dev notices the
-            // missing model.
+            // pxv8: FormProfile — non-uniform cross-section. When the
+            // tool entry doesn't carry a sample list, fall back to a
+            // single-point profile (flat endmill at head radius) and
+            // emit a debug eprintln; otherwise carve at the appropriate
+            // radius for each Z slice via the `segments` sample list.
+            // The UI for entering form profiles is a follow-up
+            // (wiaconstructor-tfrm); the sim path is ready for it.
             ToolKind::FormProfile => {
                 #[cfg(debug_assertions)]
                 eprintln!(
-                    "ToolKind::FormProfile sim model is unimplemented (3oly follow-up); \
-                     falling back to flat endmill at head diameter."
+                    "ToolKind::FormProfile sim model uses tip_diameter+diameter \
+                     2-segment fallback (full FormProfile sample list is a UI \
+                     follow-up — wiaconstructor-tfrm)."
                 );
-                ToolProfile::Endmill { r }
+                // Fallback: derive a minimal 2-sample profile from
+                // (tip_diameter, diameter, flute_length_mm). Tip flat at
+                // tip_r at z=0 up to (flute_top, r). This carves a
+                // truncated cone at the right base radius — strictly
+                // more accurate than Endmill { r } for form bits where
+                // the diameters differ.
+                let tip_r = (tool.tip_diameter.unwrap_or(tool.diameter) * 0.5).max(0.0) as f32;
+                let flute_top = tool.flute_length_mm.unwrap_or(0.0).max(0.0) as f32;
+                ToolProfile::FormProfile {
+                    segments: vec![(0.0_f32, tip_r), (flute_top, r)],
+                }
             }
         }
     }
@@ -476,6 +629,7 @@ mod tests {
             pause: 1,
             flute_length_mm: None,
             shank_diameter_mm: None,
+            stickout_length_mm: None,
             holder: None,
         }
     }

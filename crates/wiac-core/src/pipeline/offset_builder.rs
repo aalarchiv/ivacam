@@ -96,7 +96,8 @@ pub(super) fn build_op_offsets(
     // `tab_placements` drive Manual / Auto / Mixed; Off ⇒ no tabs.
     // Resolves to a (object_idx → Vec<TabPoint>) map the existing
     // attach_tabs_to_offsets consumes verbatim.
-    let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> = build_op_tabs_by_object(op, objects);
+    let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> =
+        build_op_tabs_by_object(op, objects, warnings);
 
     // Pattern repetition (5fz): when the op carries a PatternConfig, expand
     // the source set into N transformed clones BEFORE the per-object loops

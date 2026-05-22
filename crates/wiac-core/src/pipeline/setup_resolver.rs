@@ -559,7 +559,13 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 name: tool.name.clone(),
                 diameter: tool.diameter,
                 speed: rs,
-                pause: 1,
+                // lay8: read the tool's actual spindle-warmup pause
+                // rather than hard-coding 1 s. The header_setup_for path
+                // is currently a structural inert (header gcode emission
+                // routes through the per-op envelopes), but consumers
+                // that inspect `ToolConfig.pause` (sim warmup totals,
+                // future header dwell emit) need the right value.
+                pause: tool.pause,
                 mist: matches!(tool.coolant, crate::project::Coolant::Mist),
                 flood: matches!(tool.coolant, crate::project::Coolant::Flood),
                 dragoff: tool.dragoff,
@@ -605,7 +611,8 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             name: tool.name.clone(),
             diameter: tool.diameter,
             speed: rs,
-            pause: 1,
+            // lay8: same as above — read tool.pause rather than 1.
+            pause: tool.pause,
             mist: matches!(tool.coolant, crate::project::Coolant::Mist),
             flood: matches!(tool.coolant, crate::project::Coolant::Flood),
             dragoff: tool.dragoff,
@@ -840,6 +847,37 @@ mod tests {
         );
         assert_eq!(header.tool.rate_h, 1234, "header feed should be tool 2's");
         assert_eq!(header.tool.speed, 9876, "header spindle should be tool 2's");
+    }
+
+    /// lay8: `header_setup_for` reads the first cutting tool's `pause`
+    /// instead of hard-coding 1. A tool with `pause = 7` should round-trip
+    /// into `header.tool.pause`.
+    #[test]
+    fn header_setup_reads_tool_pause() {
+        let mut tool = endmill(1, 3.0);
+        tool.pause = 7;
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-1.0);
+        op.params.depth = -1.0;
+        let project = project_with(vec![op], vec![tool]);
+        let header = header_setup_for(&project);
+        assert_eq!(
+            header.tool.pause, 7,
+            "header_setup_for must propagate tool.pause, got {}",
+            header.tool.pause
+        );
+    }
+
+    /// lay8: the no-op fallback branch (no enabled cutting ops) also
+    /// reads `tool.pause` from the first tool rather than hard-coding 1.
+    #[test]
+    fn header_setup_fallback_branch_reads_tool_pause() {
+        let mut tool = endmill(1, 3.0);
+        tool.pause = 4;
+        // No ops at all → fallback branch picks project.tools.first().
+        let project = project_with(vec![], vec![tool]);
+        let header = header_setup_for(&project);
+        assert_eq!(header.tool.pause, 4);
     }
 
     /// 3nnj: tool RPM above the machine spindle ceiling clamps to the

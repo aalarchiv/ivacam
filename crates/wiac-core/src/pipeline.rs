@@ -69,7 +69,7 @@ use regions::build_region_previews;
 pub use setup_resolver::fit_helix_radius_for_selection;
 use setup_resolver::{header_setup_for, resolve_auto_helix_radius, synthesize_op_setup};
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -491,16 +491,21 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     }
     let (toolpath, gcode_index) = preview::interpret_with_index(&gcode);
     let regions = build_region_previews(&project, &objects);
-    let tool_changes = count_tool_changes(&gcode);
+    let tool_changes = count_tool_changes(&project);
     let spindle_warmup_s = spindle_warmup_seconds(&project);
     // v7f5: build per-op tool-rate lookup so the estimator clamps
     // Plunge segments to the tool's plunge_rate even when the post
     // emitted a single F<feed> line.
+    //
+    // rnw6: route through the per-pipeline `tool_index` HashMap so the
+    // per-op tool fetch is O(1) — was O(tools) per op via the prior
+    // `iter().find(...)` chain.
+    let tool_index = build_tool_index(&project.tools);
     let op_rates: Vec<crate::sim::timing::OpRates> = project
         .operations
         .iter()
         .filter_map(|op| {
-            let tool = project.tools.iter().find(|t| t.id == op.tool_id)?;
+            let tool = tool_index.get(&op.tool_id)?;
             Some(crate::sim::timing::OpRates {
                 op_id: op.id,
                 plunge_rate_mm_min: tool.plunge_rate,
@@ -537,13 +542,51 @@ pub(super) fn cancelled(cancel: Option<&CancelToken>) -> bool {
     cancel.is_some_and(CancelToken::is_cancelled)
 }
 
-fn count_tool_changes(gcode: &str) -> u32 {
+/// rnw6: per-pipeline tool-id index built once at pipeline entry. The
+/// hot-path lookups (every op's primary tool, every op's finish tool
+/// for the cache key, per-op feed rate seeding for the time estimator)
+/// previously did `project.tools.iter().find(...)` — O(tools) per
+/// hit, called O(ops) times. For projects with dozens of tools and
+/// dozens of ops that's a measurable cost. A HashMap collapses each
+/// lookup to O(1) at the cost of one allocation per Generate.
+fn build_tool_index(tools: &[ToolEntry]) -> HashMap<u32, &ToolEntry> {
+    tools.iter().map(|t| (t.id, t)).collect()
+}
+
+/// ye4b: count tool changes by walking the project's enabled op list
+/// in pipeline state, mirroring `run_per_op`'s `prev_tool_id` boundary
+/// logic. The previous implementation grepped the emitted gcode for
+/// literal "M6", which broke under custom post profiles whose
+/// toolchange template emits something else (e.g. "TC1").
+///
+/// Counting rules:
+///   * The first cutting op (non-Pause) always counts — the program
+///     enters the spindle with whatever was loaded, so wiac always
+///     emits an explicit toolchange at the first op.
+///   * Each subsequent op whose `tool_id` differs from the previous
+///     cutting op's effective end-of-op tool counts.
+///   * Pause ops don't touch the spindle and don't change
+///     `prev_tool_id` (they skip the toolchange envelope entirely).
+///   * Dual-tool ops (`finish_tool_id` distinct from `tool_id`)
+///     bias the end-of-op tool to the finish id, matching the
+///     `run_per_op` invariant — back-to-back same-finish-tool ops
+///     emit at most one extra change.
+fn count_tool_changes(project: &Project) -> u32 {
     let mut n = 0u32;
-    for line in gcode.lines() {
-        let stripped = line.split(';').next().unwrap_or("");
-        for tok in stripped.split_whitespace() {
-            if tok.eq_ignore_ascii_case("M6") {
+    let mut prev_tool_id: Option<u32> = None;
+    for op in project.operations.iter().filter(|o| o.enabled) {
+        if matches!(op.kind, OpKind::Pause { .. }) {
+            continue;
+        }
+        if prev_tool_id != Some(op.tool_id) {
+            n += 1;
+            prev_tool_id = Some(op.tool_id);
+        }
+        if let Some(finish_id) = op.finish_tool_id {
+            if finish_id != op.tool_id {
+                // Internal dual-tool change inside this op.
                 n += 1;
+                prev_tool_id = Some(finish_id);
             }
         }
     }
@@ -606,6 +649,10 @@ where
     let mut emitted_ops = 0usize;
     let enabled_ops: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
     let total_ops = enabled_ops.len();
+    // rnw6: per-pipeline tool-id index used by the per-op loop below so
+    // the M6 envelope decision (`op.tool_id`), the cache-key tool lookup,
+    // and the finish-tool lookup all run in O(1) instead of O(tools).
+    let tool_index = build_tool_index(&project.tools);
     // k2ew: track the tool number last asserted via post.tool() so we
     // can emit T<n> M6 + Z-shift at every op boundary where the
     // primary tool changes — and at the FIRST op so the program never
@@ -643,7 +690,7 @@ where
         if !matches!(op.kind, OpKind::Pause { .. }) {
             let tool_changes = prev_tool_id != Some(op.tool_id);
             if tool_changes {
-                if let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) {
+                if let Some(tool) = tool_index.get(&op.tool_id).copied() {
                     // Setup synthesis maps ToolEntry.id → ToolConfig.number
                     // 1:1 (setup_resolver), so tool.id is the spindle
                     // tool number we want here.
@@ -712,7 +759,7 @@ where
 
         // Cache lookup. We skip caching when no cache is provided.
         let cache_key = cache.and_then(|_| {
-            let tool = project.tools.iter().find(|t| t.id == op.tool_id)?;
+            let tool = tool_index.get(&op.tool_id).copied()?;
             // For dual-tool Pocket ops (rt1.33), fold the finish tool's
             // properties into the key so changing its diameter / feeds
             // / RPMs invalidates cached output. Single-tool ops pass
@@ -721,7 +768,7 @@ where
             let finish_tool = op
                 .finish_tool_id
                 .filter(|id| *id != op.tool_id)
-                .and_then(|id| project.tools.iter().find(|t| t.id == id));
+                .and_then(|id| tool_index.get(&id).copied());
             Some(op_cache_key_with_finish(
                 op,
                 tool,

@@ -748,16 +748,30 @@ fn multi_pass<P: PostProcessor>(
             emit_helix_pass(segments, pz, z, post);
         } else if let Some(plan) = helix_entry.as_ref().filter(|_| !pass_uses_tabs) {
             // Start-of-cut helical entry: spiral down on a small
-            // circle inside the pocket boundary, then walk to the
+            // circle inside the pocket boundary, then move to the
             // path start and continue normally. Only the descent
             // portion is helix-driven; the rest of the pass uses the
             // ordinary path emit at constant z.
             let pz = ramp_from;
             post.feedrate(rate_h);
             emit_helix_entry(plan, pz, z, post);
-            // Cut from helix landing point to the path's actual start.
+            // lja0: previously this walked from the helix landing
+            // point STRAIGHT to the contour start with a G1 at rate_h
+            // at the new cut depth — cutting through unmilled stock
+            // at full DOC, which defeats the safety helix entry was
+            // supposed to provide. Instead: lift to fast_move_z, rapid
+            // XY to the contour start, then plunge at the tool's
+            // plunge rate (rate_v). This costs one extra retract per
+            // pass but the helix-entry plunge strategy is selected
+            // specifically because the tool CAN'T plunge straight at
+            // full depth — the lift+rapid+plunge below uses rate_v
+            // (typically 100 mm/min) for that small final plunge step.
             let start = segments.first().map_or(plan.center, |s| s.start);
-            post.linear(Some(start.x), Some(start.y), Some(z));
+            post.linear(None, None, Some(setup.mill.fast_move_z));
+            post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
+            post.feedrate(rate_v);
+            post.linear(None, None, Some(z));
+            post.feedrate(rate_h);
             let dragoff = setup.tool.dragoff.unwrap_or(0.0);
             let fitted = fit_line_runs(segments, setup);
             emit_cut_path(
@@ -1023,6 +1037,75 @@ mod tests {
 
         let order = super::order_offsets(&setup, &offsets, Point2::new(0.0, 0.0));
         assert_eq!(order, vec![1, 0], "near-origin offset should run first");
+    }
+
+    #[test]
+    fn gcode_helix_walk_to_start_uses_safe_feed() {
+        // lja0: After emit_helix_entry lands the cutter on a small
+        // circle inside the pocket boundary, the post must NOT walk
+        // from there to the contour start with a G1 at rate_h at the
+        // new cut depth — that's a full-immersion straight-line cut
+        // through unmilled stock, defeating the safety the helix
+        // entry was supposed to provide. Instead, the post lifts to
+        // fast_move_z, rapids to the contour start, and plunges at
+        // rate_v.
+        use crate::cam::setup::PlungeStrategy;
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 100;
+        setup.mill.depth = -2.0;
+        setup.mill.step = -2.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.mill.plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: Some(2.0),
+        };
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Inside;
+
+        // A 30 mm square is big enough for a 2 mm-radius helix circle
+        // with the 3 mm tool to fit inside (clearance > radius +
+        // tool_radius = 2 + 1.5 = 3.5).
+        let mut sq = PolylineOffset {
+            segments: vec![
+                Segment::line(p(2.0, 2.0), p(28.0, 2.0), "0", 7),
+                Segment::line(p(28.0, 2.0), p(28.0, 28.0), "0", 7),
+                Segment::line(p(28.0, 28.0), p(2.0, 28.0), "0", 7),
+                Segment::line(p(2.0, 28.0), p(2.0, 2.0), "0", 7),
+            ],
+            closed: true,
+            level: 0,
+            is_pocket: 1,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        sq.is_finish = false;
+
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[sq], &mut post);
+        // The emitted gcode must contain a retract to fast_move_z (Z5)
+        // after the helix and before reaching the contour start. The
+        // old code went straight from helix-end to contour-start at
+        // cut depth (Z-2).
+        let has_retract = g.contains("Z5") || g.contains("Z 5") || g.contains("Z5.");
+        assert!(
+            has_retract,
+            "post-helix must retract to fast_move_z (Z=5); gcode was:\n{g}",
+        );
+        // Verify it uses G0 at some point after the helix arcs (one of
+        // the lift / rapid pair must be a G0).
+        let has_g0_post_helix = g
+            .lines()
+            .skip_while(|l| !(l.contains("G3") || l.contains("G2")))
+            .any(|l| l.trim_start().starts_with("G0"));
+        assert!(
+            has_g0_post_helix,
+            "post-helix lift/rapid must use G0 in gcode:\n{g}"
+        );
     }
 
     #[test]

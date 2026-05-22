@@ -301,6 +301,7 @@ mod tests {
             shank_diameter_mm: shank,
             stickout_length_mm: None,
             holder,
+            spindle_direction: crate::project::SpindleDirection::default(),
         }
     }
 

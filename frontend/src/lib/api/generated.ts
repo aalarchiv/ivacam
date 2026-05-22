@@ -275,6 +275,11 @@ export interface components {
             /** Format: double */
             peck_step_mm: number;
         };
+        /**
+         * @description nxn0: which time unit the post emits for `P<value>` dwell words. LinuxCNC and Smoothieware read P in seconds; Mach3/Mach4/Centroid/ most Fanuc-derived controllers read P in milliseconds. Defaulting to Seconds keeps the existing LinuxCNC golden snapshots stable.
+         * @enum {string}
+         */
+        DwellUnit: "seconds" | "milliseconds";
         Error: {
             details?: unknown;
             error: string;
@@ -740,6 +745,12 @@ export interface components {
              * @default 1
              */
             radial_passes: number;
+            /**
+             * Format: double
+             * @description 6uns: starting angle of the helix in radians, measured CCW from the +X axis. Default 0 (helix starts at `(center.x + radius, center.y)`) — the pre-6uns behavior. Override to re-cut partial threads where the previous run stopped mid-helix; the new run can pick up where the last one left off.
+             * @default 0
+             */
+            start_angle_rad: number;
             /** @enum {string} */
             type: "thread";
         } | {
@@ -872,6 +883,11 @@ export interface components {
             step?: number | null;
             /**
              * Format: double
+             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior wiac behaviour).
+             */
+            stock_to_leave_mm?: number;
+            /**
+             * Format: double
              * @description Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
              */
             through_depth?: number;
@@ -928,6 +944,11 @@ export interface components {
              * @description Per-pass step (negative ⇒ down). None = inherit from `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to mean "unset"; the deserializer maps that to None.
              */
             step?: number | null;
+            /**
+             * Format: double
+             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior wiac behaviour).
+             */
+            stock_to_leave_mm?: number;
             /**
              * Format: double
              * @description Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
@@ -1150,6 +1171,8 @@ export interface components {
             coolant_mist_off?: string | null;
             /** @description `COOLANT_MIST` ON / OFF templates. Replace `M7` / `M9`. */
             coolant_mist_on?: string | null;
+            /** @description nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P. LinuxCNC reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (LinuxCNC default). */
+            dwell_unit?: components["schemas"]["DwellUnit"] | null;
             /** @description File extension for save-to-disk (no leading dot). Default `"nc"`. Mach3 commonly uses `"tap"`, GRBL stays `"nc"`. */
             file_extension?: string | null;
             /** @description Line separator on save. None ⇒ `"\n"`. Set to `"\r\n"` for FANUC / vintage Windows-y controllers. */
@@ -1354,6 +1377,11 @@ export interface components {
             /** Format: uint32 */
             line: number;
         };
+        /**
+         * @description z1y0: per-tool spindle direction — right-hand (`Cw`, M3) for the 99% of cutters, left-hand (`Ccw`, M4) for reverse-thread / mirror /-helix tooling. Mirrored into `ToolConfig.spindle_direction` at synth time so the gcode emitter can route between `spindle_cw` and `spindle_ccw` without reaching back into the tool library.
+         * @enum {string}
+         */
+        SpindleDirection: "cw" | "ccw";
         /** @description A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OpSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms. */
         TabPlacement: {
             /**
@@ -1563,6 +1591,11 @@ export interface components {
              */
             speed_finish: number;
             /**
+             * @description z1y0: spindle direction for this tool (`Cw` → M3, `Ccw` → M4). Mirrored from `ToolEntry.spindle_direction` at synth time so the gcode emitter can route between `post.spindle_cw` / `post.spindle_ccw` without reaching back into the tool library. Default `Cw` keeps legacy projects unchanged.
+             * @default cw
+             */
+            spindle_direction: components["schemas"]["SpindleDirection"];
+            /**
              * Format: double
              * @description Full apex angle of the tool tip cone, in degrees. Default 60° (V-bit shape). The drill emitter uses this together with `tip_diameter_mm` to compute `tip_cone_length()` — the extra depth to extend a through-drill cycle so the FULL bore diameter reaches the bottom of the stock.
              * @default 60
@@ -1655,6 +1688,11 @@ export interface components {
             holder?: components["schemas"]["HolderShape"] | null;
             /** Format: uint32 */
             id: number;
+            /**
+             * Format: double
+             * @description mmu8: laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Honored only when `kind == LaserBeam`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the legacy 0.15 mm default (old projects round-trip unchanged). The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
+             */
+            kerf_mm?: number | null;
             kind: components["schemas"]["ToolKind"];
             /**
              * Format: double
@@ -1704,6 +1742,8 @@ export interface components {
              * @description Spindle RPM override for the finishing pass (the wall-defining level=0 ring of a Pocket). None = inherit `speed`. Hard-material finish quality usually wants a slower RPM than roughing.
              */
             speed_finish?: number | null;
+            /** @description z1y0: spindle direction the post should command when this tool is selected. Most cutters are right-hand and want `Cw` (M3); left-hand cutters, reverse-threading, and a few specialty holders want `Ccw` (M4). Defaults to `Cw` so legacy projects round-trip unchanged. The default is skipped on serialize so the JSON stays small. */
+            spindle_direction?: components["schemas"]["SpindleDirection"];
             /**
              * Format: double
              * @description q0kc: free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models the real-world case where the collet doesn't grip right above the flutes — common for reach-extension tooling. Defaults to 0 (legacy behavior — collet sits directly on the flutes), so old projects round-trip unchanged. None = same as `Some(0.0)` for the sim.

@@ -1242,9 +1242,12 @@ mod tests {
             g.contains("M4 S12000") || g.contains("M4S12000"),
             "expected M4 (CCW) for left-hand cutter, got: {g}",
         );
+        // Exclude "M30" (program end) from the M3 prohibition — the
+        // substring match would otherwise alias on it. We only forbid
+        // M3 followed by a space or S (the spindle-on word).
         assert!(
-            !g.contains("M3"),
-            "must not emit M3 when spindle_direction = Ccw: {g}",
+            !g.lines().any(|l| l.starts_with("M3 ") || l == "M3" || l.starts_with("M3S")),
+            "must not emit M3 (spindle CW) when spindle_direction = Ccw: {g}",
         );
     }
 

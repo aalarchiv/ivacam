@@ -112,6 +112,7 @@ pub(in crate::pipeline) fn endmill(id: u32, diameter: f64) -> ToolEntry {
         shank_diameter_mm: None,
         stickout_length_mm: None,
         holder: None,
+        spindle_direction: crate::project::SpindleDirection::default(),
     }
 }
 
@@ -155,6 +156,7 @@ pub(in crate::pipeline) fn vbit() -> ToolEntry {
         shank_diameter_mm: None,
         stickout_length_mm: None,
         holder: None,
+        spindle_direction: crate::project::SpindleDirection::default(),
     }
 }
 

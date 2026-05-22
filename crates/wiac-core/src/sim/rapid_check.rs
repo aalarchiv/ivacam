@@ -477,6 +477,7 @@ mod tests {
                 diameter_mm: 20.0,
                 length_mm: 30.0,
             }),
+            spindle_direction: crate::project::SpindleDirection::default(),
         };
         HolderProfile::from_tool(&t).expect("holder set")
     }

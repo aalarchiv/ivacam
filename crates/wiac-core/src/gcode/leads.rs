@@ -244,9 +244,24 @@ fn arc_lead_fits(segments: &[Segment], center: Point2, radius: f64, is_lead_in: 
     // doesn't trigger a fallback. We're guarding against real
     // collisions, not infinitesimal contact at the tangent point.
     let r_clear = radius * 0.99;
-    let skip_idx = if is_lead_in { 0 } else { segments.len() - 1 };
+    // For a closed contour, the first AND last segments both share the
+    // entry/exit vertex. Skip BOTH so a 1 mm arc-lead at the corner of
+    // a closed square doesn't fail on the segment running back to the
+    // start (which is geometrically adjacent and naturally close to
+    // the arc envelope).
+    let closed = is_closed_contour(segments);
+    let last_idx = segments.len() - 1;
+    let skip_anchor = if is_lead_in { 0 } else { last_idx };
+    let skip_companion = if closed {
+        Some(if is_lead_in { last_idx } else { 0 })
+    } else {
+        None
+    };
     for (i, seg) in segments.iter().enumerate() {
-        if i == skip_idx {
+        if i == skip_anchor {
+            continue;
+        }
+        if Some(i) == skip_companion {
             continue;
         }
         let d = segment_distance_to_point(seg, center);
@@ -343,12 +358,14 @@ mod tests {
         setup.mill.offset = ToolOffset::Inside;
         setup.leads.r#in = LeadKind::Arc;
         setup.leads.in_lenght = 1.0;
-        // 20 × 20 closed square, CCW.
+        // 50 × 50 closed square, CCW — large enough that the 1 mm
+        // arc lead envelope clears the adjacent walls (62pd fit-check
+        // passes alongside the xmwy closed-contour gate).
         let segments = vec![
-            segline(p(0.0, 0.0), p(20.0, 0.0)),
-            segline(p(20.0, 0.0), p(20.0, 20.0)),
-            segline(p(20.0, 20.0), p(0.0, 20.0)),
-            segline(p(0.0, 20.0), p(0.0, 0.0)),
+            segline(p(0.0, 0.0), p(50.0, 0.0)),
+            segline(p(50.0, 0.0), p(50.0, 50.0)),
+            segline(p(50.0, 50.0), p(0.0, 50.0)),
+            segline(p(0.0, 50.0), p(0.0, 0.0)),
         ];
         let g = lead_in_geometry(&setup, &segments);
         assert!(

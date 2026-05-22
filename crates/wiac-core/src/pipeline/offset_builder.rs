@@ -2513,6 +2513,7 @@ mod tests {
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
+            spindle_direction: crate::project::SpindleDirection::default(),
         };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),

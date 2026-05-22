@@ -51,7 +51,7 @@ use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::{
     ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
     OpKind, OpParams, OpSource, PatternConfig, PocketParams, PocketStrategy, ProfileParams,
-    SourceCombine, ToolEntry, ToolKind, VCarveParams,
+    SourceCombine, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind, VCarveParams,
 };
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
@@ -136,6 +136,12 @@ impl PipelineCache {
 /// inputs, so they must key separately. `tabs` carries the project's
 /// segment-keyed tab placements — changing tab positions changes the
 /// per-op output, so they must be part of the key.
+///
+/// Legacy callers that don't fold text-layer content into the key get an
+/// empty `text_layers` slice (back-compat — same hash as before for
+/// projects without text). Callers that DO consume text_layers should
+/// route through [`op_cache_key_with_finish`] directly so font / size /
+/// content / placement changes invalidate the cached gcode.
 #[must_use]
 pub fn op_cache_key(
     op: &Op,
@@ -152,6 +158,7 @@ pub fn op_cache_key(
         machine,
         selected_segments,
         fixtures,
+        &[],
         post_processor_tag,
     )
 }
@@ -170,6 +177,7 @@ pub fn op_cache_key_with_finish(
     machine: &MachineConfig,
     selected_segments: &[Segment],
     fixtures: &[Fixture],
+    text_layers: &[TextLayer],
     post_processor_tag: u8,
 ) -> OpCacheKey {
     let mut h = SeaHasher::new();
@@ -192,6 +200,18 @@ pub fn op_cache_key_with_finish(
     h.write_usize(fixtures.len());
     for fx in fixtures {
         hash_fixture(fx, &mut h);
+    }
+    // sqa3: fold the consumed text layers into the key. Edits to font /
+    // content / size / placement / alignment must invalidate the cache
+    // (otherwise the user changes the engraving text and Generate
+    // happily serves the old gcode). Conservative — we hash every
+    // text_layer rather than try to narrow to the layers this op
+    // actually consumes via `OpSource::Layers { __text_<id> }`. The
+    // extra discrimination is cheap and avoids miss-and-stale hits when
+    // a layer renames between runs.
+    h.write_usize(text_layers.len());
+    for tl in text_layers {
+        hash_text_layer(tl, &mut h);
     }
     OpCacheKey(h.finish())
 }
@@ -370,6 +390,25 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     m.comments.hash(h);
     m.arcs.hash(h);
     m.supports_toolchange.hash(h);
+    // ul60: name + work_area + capabilities. `name` rides into emitted
+    // comments on some posts. `work_area` is consulted by the soft-limit
+    // sim and the auto-stock fallback; tweaking it after a cache hit
+    // would skip the warning re-check. `capabilities` gates the
+    // frontend's op picker but ALSO future-proofs the cache against a
+    // machine being repurposed (laser → mill) without changing `mode`.
+    m.name.hash(h);
+    hash_f64(m.work_area.x, h);
+    hash_f64(m.work_area.y, h);
+    hash_f64(m.work_area.z, h);
+    h.write_usize(m.capabilities.len());
+    for cap in &m.capabilities {
+        let cap_disc: u8 = match cap {
+            MachineMode::Mill => 0,
+            MachineMode::Laser => 1,
+            MachineMode::Drag => 2,
+        };
+        h.write_u8(cap_disc);
+    }
     // accel / jerk / toolchange_s / rapid_speed / use_kinematic_time_estimate
     // are intentionally NOT hashed: these fields drive the post-toolpath
     // time estimator (sim/timing.rs) only, not the emitted G-code body.
@@ -795,6 +834,42 @@ fn lead_kind_disc(k: LeadKind) -> u8 {
 
 // ─── tabs map (helper for callers caching the project-level tabs for an op) ───
 
+// ─── text layers ──────────────────────────────────────────────────────
+
+/// sqa3: stable hash of a `TextLayer` so font / content / placement
+/// edits invalidate the per-op cache. Every persisted field is folded
+/// in — adding a new TextLayer field is a `PIPELINE_VERSION` bump and
+/// an entry here.
+fn hash_text_layer<H: Hasher>(t: &TextLayer, h: &mut H) {
+    t.id.hash(h);
+    let kind: u8 = match t.kind {
+        TextLayerKind::Text => 0,
+        TextLayerKind::Mtext => 1,
+    };
+    h.write_u8(kind);
+    t.name.hash(h);
+    t.text.hash(h);
+    // font_bytes can be megabytes for a fancy TTF — hash the LENGTH +
+    // a per-byte fold so renaming a font file with the same bytes still
+    // produces the same hash, while substituting a different font (even
+    // same name) changes it. Hash impl on &[u8] does this in one call.
+    h.write_usize(t.font_bytes.len());
+    t.font_bytes.hash(h);
+    hash_f64(t.size_mm, h);
+    hash_f64(t.origin.0, h);
+    hash_f64(t.origin.1, h);
+    hash_f64(t.rotation_deg, h);
+    hash_f64(t.letter_spacing_mm, h);
+    hash_f64(t.line_spacing_mm, h);
+    let align: u8 = match t.alignment {
+        TextAlignment::Left => 0,
+        TextAlignment::Center => 1,
+        TextAlignment::Right => 2,
+    };
+    h.write_u8(align);
+    hash_f64(t.width_scale, h);
+}
+
 // ─── fixtures ─────────────────────────────────────────────────────────
 
 fn hash_fixture<H: Hasher>(f: &Fixture, h: &mut H) {
@@ -1131,7 +1206,8 @@ mod tests {
         for s in &segs {
             hash_segment(s, &mut h);
         }
-        h.write_usize(0);
+        h.write_usize(0); // no fixtures
+        h.write_usize(0); // no text_layers (sqa3)
         let bumped = OpCacheKey(h.finish());
         assert_ne!(real, bumped);
     }
@@ -1182,6 +1258,84 @@ mod tests {
         assert_eq!(got.gcode_body, v.gcode_body);
         assert_eq!(got.closed_count, v.closed_count);
         assert_eq!(got.offset_count, v.offset_count);
+    }
+
+    /// sqa3: editing a TextLayer (font, size, content) invalidates the
+    /// per-op cache. The op_cache_key wrapper passes an empty
+    /// text_layers slice; this test exercises the wider entry point
+    /// directly to assert that two different text_layers slices
+    /// produce two different keys.
+    #[test]
+    fn text_layer_change_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let tl1 = TextLayer {
+            id: 1,
+            kind: TextLayerKind::Text,
+            name: "label".into(),
+            text: "HELLO".into(),
+            font_bytes: vec![1, 2, 3],
+            size_mm: 10.0,
+            origin: (0.0, 0.0),
+            rotation_deg: 0.0,
+            letter_spacing_mm: 0.0,
+            line_spacing_mm: 0.0,
+            alignment: TextAlignment::Left,
+            width_scale: 1.0,
+        };
+        let mut tl2 = tl1.clone();
+        tl2.text = "WORLD".into();
+        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl1], 0);
+        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl2], 0);
+        assert_ne!(k1, k2, "text content change must invalidate the cache key");
+    }
+
+    /// ul60: changing `machine.name` / `work_area` / `capabilities`
+    /// invalidates the per-op cache. These were missing from
+    /// hash_machine before the audit fix.
+    #[test]
+    fn machine_name_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut renamed = base.clone();
+        renamed.name = "Shop CNC".into();
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &renamed, &segs, &[], 0);
+        assert_ne!(k1, k2, "machine.name should invalidate the cache");
+    }
+
+    #[test]
+    fn machine_work_area_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut bigger = base.clone();
+        bigger.work_area = crate::cam::setup::AxisLimits {
+            x: bigger.work_area.x + 100.0,
+            y: bigger.work_area.y,
+            z: bigger.work_area.z,
+        };
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &bigger, &segs, &[], 0);
+        assert_ne!(k1, k2, "machine.work_area should invalidate the cache");
+    }
+
+    #[test]
+    fn machine_capabilities_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut with_laser = base.clone();
+        with_laser.capabilities = vec![MachineMode::Mill, MachineMode::Laser];
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &with_laser, &segs, &[], 0);
+        assert_ne!(k1, k2, "machine.capabilities should invalidate the cache");
     }
 
     /// rt1.10: changing `op.tab_mode` invalidates the cache (`tab_mode`

@@ -352,6 +352,26 @@ pub(super) fn synthesize_op_setup(
     // physical reach (`(diameter - tip_diameter) / 2`). Without the
     // clamp a width > diameter/2 produces a Z that drives the shank
     // into stock — see uo1t and the vcarve driver's tool_reach_r.
+    // 8xan: if any resolved rate is exactly zero, emit a critical warning.
+    // F0 / S0 is silently legal gcode but is never the user's intent —
+    // it means the tool library + op overrides combined left the field
+    // unset. Don't clamp to a default here (that hides the misconfig);
+    // surface it loudly so the 94sf critical-warning gate blocks Generate.
+    {
+        let feed = setup.tool.rate_h;
+        let plunge = setup.tool.rate_v;
+        let speed = setup.tool.speed;
+        if feed == 0 || plunge == 0 || speed == 0 {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "zero_rate_emitted".into(),
+                message: format!(
+                    "op '{}': resolved tool rates contain a zero value (feed={} mm/min, plunge={} mm/min, spindle={} RPM). Emitting F0 / S0 / plunge=0 will stall the cut or refuse to start. Set the missing rate on the tool library entry or as a per-op override.",
+                    op.name, feed, plunge, speed
+                ),
+            });
+        }
+    }
     if let OpKind::Chamfer { width_mm, .. } = op.kind {
         let tip_diameter_mm = tool.tip_diameter.unwrap_or(0.0);
         let sol = crate::cam::chamfer::chamfer_depth_capped(
@@ -477,7 +497,18 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
         machine: project.machine.clone(),
         ..Setup::default()
     };
-    if let Some(op) = project.operations.iter().find(|o| o.enabled) {
+    // lo7b: pick the first enabled op THAT ACTUALLY CUTS. Pause ops have
+    // no tool / source / setup of their own and don't emit any header-
+    // relevant tool-setup gcode, so falling back to them produces a
+    // header that advertises whatever tool happened to live on the
+    // adjacent ToolEntry (often the previous op's tool, or a random one).
+    // Skipping Pause ops here makes the header's S<rpm> / F<feed> reflect
+    // the first ACTUAL cut.
+    if let Some(op) = project
+        .operations
+        .iter()
+        .find(|o| o.enabled && !matches!(o.kind, OpKind::Pause { .. }))
+    {
         if let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) {
             let main_pass = if matches!(op.kind, OpKind::Drill { .. }) {
                 crate::project::PassKind::Drill
@@ -703,6 +734,93 @@ mod tests {
         assert_eq!(resolve_tool_rates(&t, PassKind::Rough), (18_000, 100, 800));
         assert_eq!(resolve_tool_rates(&t, PassKind::Finish), (12_000, 100, 400));
         assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (8_000, 50, 200));
+    }
+
+    /// 8xan: when the resolved tool rates contain a zero — feed, plunge,
+    /// or spindle — the pipeline emits a `zero_rate_emitted` warning so
+    /// the 94sf critical gate blocks F0 / S0 from shipping silently.
+    #[test]
+    fn zero_feed_rate_emits_warning() {
+        let mut tool = endmill(1, 3.0);
+        tool.feed_rate = 0; // misconfig: user forgot the feed
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-1.0);
+        op.params.depth = -1.0;
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: project_with(vec![op], vec![tool]),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "zero_rate_emitted"),
+            "expected zero_rate_emitted warning, got {:?}",
+            resp.warnings
+        );
+    }
+
+    /// 8xan: a zero spindle speed also triggers the warning.
+    #[test]
+    fn zero_spindle_speed_emits_warning() {
+        let mut tool = endmill(1, 3.0);
+        tool.speed = 0;
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-1.0);
+        op.params.depth = -1.0;
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: project_with(vec![op], vec![tool]),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "zero_rate_emitted"),
+            "expected zero_rate_emitted warning for S0, got {:?}",
+            resp.warnings
+        );
+    }
+
+    /// lo7b: header_setup_for skips a leading Pause op so the header's
+    /// S<rpm> / F<feed> reflects the first ACTUAL cut. The Pause op
+    /// has no tool / source of its own; falling back to it produced a
+    /// header that advertised whichever ToolEntry happened to share its
+    /// id (often the previous op's tool, or a random one).
+    #[test]
+    fn header_setup_skips_leading_pause_op() {
+        // Tool 1 is the small endmill the Pause "carries" (but doesn't
+        // actually use); tool 2 is what the real cut uses with a
+        // distinct speed/feed so we can assert the header picked it.
+        let tool1 = endmill(1, 3.0);
+        let mut tool2 = endmill(2, 6.0);
+        tool2.feed_rate = 1234;
+        tool2.speed = 9876;
+        let pause = crate::project::Op {
+            id: 1,
+            name: "pause".into(),
+            enabled: true,
+            kind: crate::project::OpKind::Pause {
+                message: "swap stock".into(),
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: crate::project::OpSource::All,
+            params: crate::project::OpParams::mill_default(),
+        };
+        let mut cut = profile_op(2, 2, ToolOffset::Outside);
+        cut.params.step = Some(-1.0);
+        cut.params.depth = -1.0;
+        let project = project_with(vec![pause, cut], vec![tool1, tool2]);
+        let header = header_setup_for(&project);
+        assert_eq!(
+            header.tool.number, 2,
+            "header should advertise tool 2, not the pause op's tool 1"
+        );
+        assert_eq!(header.tool.rate_h, 1234, "header feed should be tool 2's");
+        assert_eq!(header.tool.speed, 9876, "header spindle should be tool 2's");
     }
 
     /// 3nnj: tool RPM above the machine spindle ceiling clamps to the

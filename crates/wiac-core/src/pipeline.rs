@@ -58,6 +58,7 @@ mod warnings;
 // pub(in crate::pipeline) declarations in selection.rs.
 pub(in crate::pipeline) use selection::{
     op_includes_object, ordered_selection, resolve_op_segments, source_combine_mode,
+    validate_op_source_objects,
 };
 
 #[cfg(test)]
@@ -703,6 +704,12 @@ where
             continue;
         }
 
+        // 7l0a: validate OpSource::Objects references against the
+        // current chained-object set BEFORE the cache lookup so the
+        // warnings ride along even when the gcode body is served from
+        // cache.
+        validate_op_source_objects(op, objects, warnings);
+
         // Cache lookup. We skip caching when no cache is provided.
         let cache_key = cache.and_then(|_| {
             let tool = project.tools.iter().find(|t| t.id == op.tool_id)?;
@@ -722,6 +729,7 @@ where
                 &project.machine,
                 &resolve_op_segments(op, &project.segments, objects),
                 &project.fixtures,
+                &project.text_layers,
                 post_tag,
             ))
         });

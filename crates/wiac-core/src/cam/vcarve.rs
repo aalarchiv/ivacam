@@ -52,6 +52,15 @@ pub struct VcRegion {
 /// Smaller = better axis fidelity, more triangles.
 const BOUNDARY_SAMPLE_MM: f64 = 0.1;
 
+/// Default minimum branch length (a fraction of `tool_radius`) below
+/// which a terminal medial-axis chain is considered a spur and pruned.
+/// iqbu: the 0.1 mm boundary sampling produces ~10× too many vertices
+/// on curves; without pruning the medial axis is fuzzy with micro
+/// branches pointing at every densified-curve sample. 0.5 × tool_radius
+/// is a defensible default — anything shorter than half the cutter's
+/// engaged width is dominated by sampling noise.
+pub const PRUNE_MIN_BRANCH_FACTOR: f64 = 0.5;
+
 /// Densify a closed ring to a list of points spaced ≤ `step` apart.
 /// The first point is always emitted; the last point is dropped so the
 /// ring is "open" (Voronoi sees a cycle of unique sample points).
@@ -318,6 +327,56 @@ pub fn medial_axis_cancellable(
     polylines
 }
 
+/// iqbu: prune spurious medial-axis branches that are short / never
+/// engage the bit past its flat-tip plateau. Without this step the
+/// 0.1 mm boundary sampling produces a fuzzy axis with dozens of
+/// micro-branches pointing at every curved boundary vertex — the
+/// cutter wastes time ratcheting into tiny non-features.
+///
+/// A chain is dropped when EITHER:
+///
+/// 1. Its arc-length < `tool_radius * PRUNE_MIN_BRANCH_FACTOR`
+///    (default 0.5 — anything shorter than half the cutter's engaged
+///    width is dominated by boundary-sampling noise; the cutter
+///    physically can't make use of it).
+/// 2. Its max inscribed radius across the chain ≤ `tip_radius_mm`
+///    (the chain would only produce z=0 cuts — `polyline_to_z` would
+///    emit an all-zero-Z toolpath that walks the surface without
+///    engaging).
+///
+/// Chains with fewer than 2 vertices are always dropped. Chains that
+/// survive the filter are returned in input order.
+#[must_use]
+pub fn prune_medial_axis(
+    chains: Vec<Vec<VPoint>>,
+    tool_radius_mm: f64,
+    tip_radius_mm: f64,
+) -> Vec<Vec<VPoint>> {
+    let tool_r = tool_radius_mm.max(0.0);
+    let tip_r = tip_radius_mm.max(0.0);
+    let min_branch_len = (tool_r * PRUNE_MIN_BRANCH_FACTOR).max(1e-6);
+    chains
+        .into_iter()
+        .filter(|chain| {
+            if chain.len() < 2 {
+                return false;
+            }
+            let mut len = 0.0;
+            for w in chain.windows(2) {
+                len += (w[0].x - w[1].x).hypot(w[0].y - w[1].y);
+            }
+            if len < min_branch_len {
+                return false;
+            }
+            let r_max = chain.iter().map(|v| v.r).fold(0.0_f64, f64::max);
+            if r_max <= tip_r + 1e-9 {
+                return false;
+            }
+            true
+        })
+        .collect()
+}
+
 /// Convenience builder: turn a closed-VcObject + optional holes into a
 /// `VcRegion`. Open objects aren't supported for V-Carve — they have no
 /// interior — so they're rejected at the call site (pipeline emits a
@@ -360,8 +419,16 @@ pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegi
 /// - `z_cap` clips `|z|` from below (the `OpParams.depth` parameter —
 ///   itself a negative number; we treat its absolute value as the limit).
 ///
-/// Returns `(polyline, depth_limited)` where `depth_limited` is true
-/// when at least one point hit either cap.
+/// Returns `(polyline, depth_limited, all_zero)`:
+/// - `depth_limited` — at least one point hit either cap.
+/// - `all_zero` (idne) — every emitted Z is zero, i.e. the chain
+///   walks the surface without cutting anything. Happens when the
+///   effective r-cap drops at-or-below the V-bit's flat tip
+///   (`effective_r_cap ≤ tip_radius_mm`), or when every medial-axis
+///   point's inscribed radius is below the tip plateau. Callers
+///   should skip the chain and surface a `vcarve_below_tip_radius`
+///   warning rather than emitting a useless Z=0 traversal that
+///   silently looks like a successful cut.
 #[must_use]
 pub fn polyline_to_z(
     axis: &[VPoint],
@@ -369,10 +436,11 @@ pub fn polyline_to_z(
     tip_radius_mm: f64,
     r_cap: Option<f64>,
     z_cap: Option<f64>,
-) -> (Vec<(f64, f64, f64, f64)>, bool) {
+) -> (Vec<(f64, f64, f64, f64)>, bool, bool) {
     let tan_half = (tip_angle_rad * 0.5).tan().max(1e-9);
     let tip_r = tip_radius_mm.max(0.0);
     let mut depth_limited = false;
+    let mut all_zero = true;
     let mut out = Vec::with_capacity(axis.len());
     for v in axis {
         let mut r = v.r;
@@ -396,9 +464,15 @@ pub fn polyline_to_z(
                 depth_limited = true;
             }
         }
+        if z.abs() > 1e-9 {
+            all_zero = false;
+        }
         out.push((v.x, v.y, z, r));
     }
-    (out, depth_limited)
+    if out.is_empty() {
+        all_zero = false;
+    }
+    (out, depth_limited, all_zero)
 }
 
 /// Flatten the region's outer ring + every hole into one list of
@@ -526,14 +600,14 @@ mod tests {
         );
 
         let tip = (60.0_f64).to_radians();
-        let (z_poly, _) = polyline_to_z(&polylines[0], tip, 0.0, None, None);
+        let (z_poly, _, _) = polyline_to_z(&polylines[0], tip, 0.0, None, None);
         let z_min = z_poly.iter().map(|t| t.2).fold(0.0_f64, f64::min);
         // The deepest point along ANY of the three axis segments
         // converges on the incenter; verify the deepest one across
         // all polylines.
         let mut z_min_all = 0.0_f64;
         for poly in &polylines {
-            let (zp, _) = polyline_to_z(poly, tip, 0.0, None, None);
+            let (zp, _, _) = polyline_to_z(poly, tip, 0.0, None, None);
             for t in &zp {
                 if t.2 < z_min_all {
                     z_min_all = t.2;
@@ -609,6 +683,81 @@ mod tests {
             r_max <= r_bound,
             "R_max = {r_max} on plus, expected ≤ {r_bound} (= w·√2 + slack)",
         );
+    }
+
+    /// iqbu: a rounded rectangle (20×10 with 2 mm corner radius)
+    /// produces a fuzzy medial axis from voronator — many micro-spurs
+    /// pointing at every densified-corner sample. After pruning with
+    /// `tool_radius = 2 mm` (so min branch length = 1 mm) we expect
+    /// the chain count to collapse to a small number — ideally 1 main
+    /// spine, definitely not the dozens that pre-pruning emits.
+    #[test]
+    fn rounded_rect_medial_axis_prunes_corner_spurs() {
+        // Approximate a rounded rectangle: 20×10 outer with 2mm
+        // quarter-arc corners sampled at ~10 points each.
+        let mut outer: Vec<Point2> = Vec::new();
+        let r = 2.0_f64;
+        let push_corner = |outer: &mut Vec<Point2>, cx: f64, cy: f64, t0: f64| {
+            // Quarter arc starting at angle t0, sweeping +PI/2 CCW.
+            for i in 0..=10 {
+                let t = t0 + (std::f64::consts::PI * 0.5) * (i as f64) / 10.0;
+                outer.push(Point2::new(cx + r * t.cos(), cy + r * t.sin()));
+            }
+        };
+        // Bottom-right corner, then top-right, top-left, bottom-left.
+        push_corner(&mut outer, 20.0 - r, r, -std::f64::consts::PI * 0.5);
+        push_corner(&mut outer, 20.0 - r, 10.0 - r, 0.0);
+        push_corner(&mut outer, r, 10.0 - r, std::f64::consts::PI * 0.5);
+        push_corner(&mut outer, r, r, std::f64::consts::PI);
+        let region = VcRegion {
+            outer,
+            holes: Vec::new(),
+        };
+        let chains_raw = medial_axis(&region);
+        // Voronator on this many boundary points yields many chains.
+        // Pre-pruning, the count is unsurprisingly large (depends on
+        // voronator's internal numerical noise).
+        // Post-pruning with tool_radius = 2 (min branch length = 1 mm),
+        // we expect the count to fall to a handful — definitely <= 4
+        // (allowing for some end-cap geometry near the rounded corners).
+        let chains = prune_medial_axis(chains_raw, 2.0, 0.0);
+        assert!(
+            !chains.is_empty(),
+            "pruning should leave at least the main spine",
+        );
+        assert!(
+            chains.len() <= 4,
+            "rounded rect should prune to ≤4 chains, got {}",
+            chains.len(),
+        );
+    }
+
+    /// iqbu: a chain shorter than `tool_radius * PRUNE_MIN_BRANCH_FACTOR`
+    /// is dropped.
+    #[test]
+    fn prune_drops_short_chain() {
+        let chain = vec![
+            VPoint { x: 0.0, y: 0.0, r: 0.5 },
+            VPoint { x: 0.1, y: 0.0, r: 0.5 },
+        ];
+        let pruned = prune_medial_axis(vec![chain], 5.0, 0.0);
+        assert!(pruned.is_empty(), "0.1 mm branch should be pruned");
+    }
+
+    /// iqbu: a chain whose max inscribed radius never exceeds the
+    /// V-bit's flat tip is dropped (would emit an all-zero-Z toolpath).
+    #[test]
+    fn prune_drops_chain_below_tip_radius() {
+        let mut chain: Vec<VPoint> = Vec::new();
+        for i in 0..=20 {
+            chain.push(VPoint {
+                x: f64::from(i),
+                y: 0.0,
+                r: 0.4, // shallower than tip 0.5
+            });
+        }
+        let pruned = prune_medial_axis(vec![chain], 1.0, 0.5);
+        assert!(pruned.is_empty(), "all-shallow chain should be pruned");
     }
 
     #[test]

@@ -160,12 +160,27 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                 outer: boundary.to_vec(),
                 holes: holes.to_vec(),
             };
-            let axes = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
+            let axes_raw = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
             if cancelled(cancel) {
                 return Err(PipelineError::Cancelled);
             }
+            // iqbu: prune spurious branches (boundary-sampling spurs +
+            // chains that can never engage past the tip plateau). Without
+            // this the cutter spends most of its time ratcheting into
+            // micro-features that the bit physically can't carve.
+            let axes = crate::cam::vcarve::prune_medial_axis(
+                axes_raw,
+                tool_reach_r,
+                tip_radius_mm,
+            );
+            // idne: track whether at least one chain produced a useful
+            // (non-all-zero) toolpath. When every chain bottoms out at
+            // z=0 the user is silently getting a no-op carve — surface
+            // a warning instead.
+            let mut any_non_zero_emitted = false;
+            let mut any_skipped_below_tip = false;
             for axis in &axes {
-                let (z_axis, depth_limited) = crate::cam::vcarve::polyline_to_z(
+                let (z_axis, depth_limited, all_zero) = crate::cam::vcarve::polyline_to_z(
                     axis,
                     tip_angle_rad,
                     tip_radius_mm,
@@ -175,10 +190,38 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                 if depth_limited {
                     any_depth_limited = true;
                 }
+                if all_zero {
+                    // idne: full-medial-axis path used to silently emit
+                    // a z=0 walk along this chain — cutter scrubs the
+                    // surface, removes nothing, user thinks they cut.
+                    // Skip the chain; report below.
+                    any_skipped_below_tip = true;
+                    continue;
+                }
                 let path = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
                 if path.len() >= 2 {
                     polylines.push(path);
+                    any_non_zero_emitted = true;
                 }
+            }
+            if any_skipped_below_tip && !any_non_zero_emitted {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "vcarve_below_tip_radius".into(),
+                    message: format!(
+                        "V-Carve op '{}' (full medial axis): every medial-axis chain's largest inscribed circle is at or below the V-bit's flat tip ({:.3} mm). The bit's nose would ride the surface without engaging — no toolpath emitted. Pick a sharper bit or raise carve_max_width_mm.",
+                        op.name, tip_radius_mm,
+                    ),
+                });
+            } else if any_skipped_below_tip {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "vcarve_below_tip_radius".into(),
+                    message: format!(
+                        "V-Carve op '{}' (full medial axis): some medial-axis chains never exceed the V-bit's flat tip ({:.3} mm) and were skipped to avoid emitting a no-cut Z=0 traversal.",
+                        op.name, tip_radius_mm,
+                    ),
+                });
             }
         } else {
             // Default Estlcam-style perimeter pass: inset the boundary
@@ -609,6 +652,81 @@ mod tests {
         assert!(
             (pmax - qmax - 1.0).abs() < 0.2,
             "plug x_max {qmax:.3} should be ~1mm inside pocket x_max {pmax:.3}",
+        );
+    }
+
+    /// idne: full-medial-axis V-Carve where the effective r-cap drops
+    /// at or below the V-bit's flat tip used to silently emit a Z=0
+    /// toolpath (the cutter walked the medial axis without engaging,
+    /// removing nothing — looked like a successful cut). Verify a
+    /// `vcarve_below_tip_radius` warning fires and NO cutting moves
+    /// are emitted.
+    #[test]
+    fn vcarve_full_medial_axis_warns_when_below_tip_radius() {
+        // Custom V-bit with a deliberately fat flat tip — tip_diameter
+        // 1.0 mm ⇒ tip_radius 0.5 mm.
+        let mut fat_tip = crate::pipeline::test_helpers::vbit();
+        fat_tip.tip_diameter = Some(1.0);
+        let op = Op {
+            id: 7,
+            name: "Carve".into(),
+            enabled: true,
+            kind: OpKind::VCarve {
+                carve: crate::project::VCarveParams {
+                    // r-cap 0.4 < tip_radius 0.5 → every chain's Z
+                    // collapses to 0.
+                    carve_max_width_mm: Some(0.4),
+                    full_medial_axis: true,
+                    ..Default::default()
+                },
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams {
+                depth: -3.0,
+                start_depth: 0.0,
+                step: Some(-1.0),
+                fast_move_z: 5.0,
+                ..OpParams::default()
+            },
+        };
+        let project = Project {
+            segments: vec![
+                Segment::line(Point2::new(0.0, 0.0), Point2::new(30.0, 0.0), "0", 7),
+                Segment::line(Point2::new(30.0, 0.0), Point2::new(30.0, 30.0), "0", 7),
+                Segment::line(Point2::new(30.0, 30.0), Point2::new(0.0, 30.0), "0", 7),
+                Segment::line(Point2::new(0.0, 30.0), Point2::new(0.0, 0.0), "0", 7),
+            ],
+            machine: MachineConfig::default(),
+            tools: vec![fat_tip],
+            operations: vec![op],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline ran");
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "vcarve_below_tip_radius"),
+            "expected vcarve_below_tip_radius warning; got {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
+        );
+        // No deep cuts should have been emitted — only rapids and
+        // surface (z=0) moves at most.
+        let has_deep_cut = resp.toolpath.iter().any(|s| {
+            s.to.z < -0.01 && !matches!(s.kind, crate::gcode::preview::MoveKind::Rapid)
+        });
+        assert!(
+            !has_deep_cut,
+            "idne: full-medial-axis silently emitted Z<0 cuts despite r-cap below tip",
         );
     }
 

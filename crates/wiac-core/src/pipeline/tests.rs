@@ -1732,3 +1732,68 @@
             resp.gcode
         );
     }
+
+    /// gd2x: laser pierce dwell must fire AFTER the plunge to z=0,
+    /// not before. Pre-fix the sequence was G0 X Y Z(fast) → G4 P →
+    /// G1 Z0 — the beam was defocused above stock during the dwell.
+    #[test]
+    fn laser_pierce_dwells_at_cut_z() {
+        let mut tool = endmill(1, 0.1);
+        tool.kind = ToolKind::LaserBeam;
+        tool.laser_pierce_sec = Some(0.4);
+        let machine = MachineConfig {
+            mode: crate::cam::setup::MachineMode::Laser,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Laser cut".into(),
+                enabled: true,
+                kind: OpKind::Engrave {
+                    contour: crate::project::ContourParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Locate the FIRST G1 Z0 (the plunge to cut height) and the
+        // FIRST G4 P0.4 (the pierce dwell). The plunge must come
+        // first; the dwell follows.
+        let lines: Vec<&str> = resp.gcode.lines().collect();
+        let plunge_idx = lines
+            .iter()
+            .position(|l| l.contains("G1") && l.contains("Z0"))
+            .expect(&format!(
+                "expected a G1 ... Z0 plunge line in:\n{}",
+                resp.gcode
+            ));
+        let dwell_idx = lines
+            .iter()
+            .position(|l| l.contains("G4") && l.contains("P0.4"))
+            .expect(&format!(
+                "expected a G4 P0.4 pierce dwell in:\n{}",
+                resp.gcode
+            ));
+        assert!(
+            plunge_idx < dwell_idx,
+            "G1 Z0 (idx {plunge_idx}) must precede G4 P0.4 (idx {dwell_idx}):\n{}",
+            resp.gcode
+        );
+    }
+

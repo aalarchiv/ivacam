@@ -521,17 +521,20 @@ fn emit_offset<P: PostProcessor>(
     // tangent — no dwell at the start point. multi_pass then plunges
     // from z=0 to the first pass depth at segments[0].start.
     let lead_in = lead_in_geometry(setup, &offset.segments);
-    // rt1.29: laser pierce — once we've rapid'd to the entry point at
-    // safe Z, dwell with the laser ON so it burns through stock
-    // before any cutting motion starts.
+    // rt1.29 / gd2x: laser pierce — rapid XY at safe Z (no Z change
+    // away from fast_move_z), plunge to cut Z, THEN dwell at the cut
+    // height so the beam burns through focused stock before motion
+    // begins. Dwelling at fast_move_z (the old order) left the head
+    // defocused, never pierced, and the first cut yanked unmelted
+    // material. Order matches Lightburn / T2Laser / Estlcam laser.
     let pierce_sec = setup.tool.pierce_sec;
     match lead_in {
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            post.linear(None, None, Some(0.0));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
-            post.linear(None, None, Some(0.0));
         }
         LeadGeometry::Arc {
             entry_or_exit: from,
@@ -539,10 +542,10 @@ fn emit_offset<P: PostProcessor>(
             ccw,
         } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            post.linear(None, None, Some(0.0));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
-            post.linear(None, None, Some(0.0));
             // I/J are the offset from the arc's start (current XY) to
             // its center — same convention as ezdxf / ngc / linuxcnc.
             let i = center.x - from.x;
@@ -555,10 +558,10 @@ fn emit_offset<P: PostProcessor>(
         }
         LeadGeometry::None => {
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
+            post.linear(None, None, Some(0.0));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
-            post.linear(None, None, Some(0.0));
         }
     }
 

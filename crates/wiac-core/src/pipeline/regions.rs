@@ -83,10 +83,6 @@ fn frame_preview_regions(
         .collect()
 }
 
-/// Build a synthetic [`VcObject`] from a [`CombinedRegion`]'s boundary
-/// so it can be fed into `pocket_for_object` (which is shaped around
-/// `VcObjects`). The region's holes are passed alongside as islands;
-/// only the outer boundary lives in this object.
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -171,6 +167,10 @@ mod tests {
     }
 }
 
+/// Build a synthetic [`VcObject`] from a [`CombinedRegion`]'s boundary
+/// so it can be fed into `pocket_for_object` (which is shaped around
+/// `VcObjects`). The region's holes are passed alongside as islands;
+/// only the outer boundary lives in this object.
 pub(super) fn synthesize_region_object(region: &CombinedRegion) -> VcObject {
     let pts = &region.boundary;
     let mut segments = Vec::with_capacity(pts.len());

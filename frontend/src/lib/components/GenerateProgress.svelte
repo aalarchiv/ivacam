@@ -5,7 +5,6 @@
   // events through `client.generateStreaming`.
 
   import { project } from '../state/project.svelte';
-  import { _ } from 'svelte-i18n';
 
   let { onCancel }: { onCancel: () => void } = $props();
 
@@ -41,14 +40,14 @@
     <div class="bar-fill" style="width: {percent}%"></div>
     <span class="progress-text">
       {#if cancelling}
-        {$_('generate.cancelling') || 'Cancelling…'}
+        Cancelling…
       {:else}
-        {label || $_('generate.starting')}<span class="cached-hint">{cachedHint}</span>
+        {label || 'starting…'}<span class="cached-hint">{cachedHint}</span>
       {/if}
     </span>
   </div>
   <button class="cancel" type="button" onclick={onCancel} disabled={cancelling}>
-    {cancelling ? $_('generate.cancelling') || 'Cancelling…' : $_('generate.cancel') || 'Cancel'}
+    {cancelling ? 'Cancelling…' : 'Cancel'}
   </button>
 </div>
 

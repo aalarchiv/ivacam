@@ -9,7 +9,6 @@
   /// disconnected-tab clear-up affordance.
   ///
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
-  import { _ } from 'svelte-i18n';
   import {
     project,
     type OpField,
@@ -26,6 +25,12 @@
     patch: <K extends OpField>(field: K, value: OpFieldValue<K>) => void;
   }
   let { op, patch }: Props = $props();
+
+  const TAB_TYPE_HELP: Record<string, string> = {
+    rectangle:
+      'Rectangular tab: cutter steps up to tab Z, walks the tab span at constant height, steps back down. Standard hold-down.',
+    ramp: 'Triangular ramp tab: cutter ramps up to tab Z, then back down — no constant-Z section. Easier to clean off than rectangles.',
+  };
 
   /// Count tab placements whose object id is no longer reachable from
   /// this op's source. "Reachable" means the import still carries an
@@ -179,7 +184,7 @@
       <span class="unit">mm</span>
     </div>
   </label>
-  <label class="row" title={$_('op.help.tab_type.' + (op.tabType ?? 'rectangle'))}>
+  <label class="row" title={TAB_TYPE_HELP[op.tabType ?? 'rectangle']}>
     <span>Type</span>
     <select
       value={op.tabType ?? 'rectangle'}
@@ -191,13 +196,13 @@
         }
       }}
     >
-      <option value="rectangle" title={$_('op.help.tab_type.rectangle')}>rectangle</option>
-      <option value="ramp" title={$_('op.help.tab_type.ramp')}>ramp</option>
+      <option value="rectangle" title={TAB_TYPE_HELP.rectangle}>rectangle</option>
+      <option value="ramp" title={TAB_TYPE_HELP.ramp}>ramp</option>
     </select>
   </label>
   {#if op.tabType === 'ramp'}
     <details class="subsection" open>
-      <summary>{$_('op.section.tab_ramp')}</summary>
+      <summary>Ramp</summary>
       <label
         class="row"
         title="Ramp angle in degrees. 30° (default) gives a 1:√3 slope. Smaller = gentler, longer ramps; larger = steeper, more like a Rectangle tab. Horizontal ramp length = tabs.height / tan(angle)."

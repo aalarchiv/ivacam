@@ -13,7 +13,6 @@
   } from '../../state/project.svelte';
   // `project` import kept for the inlay-plug Duplicate-as-plug button
   // below (line 99). The toolMismatch chip moved to OpPropertiesPanel.
-  import { _ } from 'svelte-i18n';
 
   interface Props {
     op: VCarveOp;
@@ -59,7 +58,7 @@
     </div>
   </div>
   <details class="subsection" open>
-    <summary>{$_('op.section.vcarve_advanced')}</summary>
+    <summary>Advanced</summary>
     <label
       class="row"
       title="Optional cap on the inscribed-circle radius (mm). Leave empty for no cap. Useful when a wide region would otherwise drive the V deeper than the bit's usable shoulder."

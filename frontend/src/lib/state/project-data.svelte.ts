@@ -26,11 +26,9 @@ import { DEFAULT_OSNAP_SETTINGS, type OSnapSettings } from '../canvas/osnap';
 
 const SETTINGS_KEY = 'wiac.settings';
 const LEGACY_THEME_KEY = 'wiac.theme';
-const LEGACY_LOCALE_KEY = 'wiac.locale';
 
 export interface AppSettings {
   theme: 'auto' | 'light' | 'dark';
-  language: 'en' | 'de';
   previewMode: 'wireframe' | 'solid' | 'both';
   solidColor: string;
   solidOpacity: number;
@@ -73,7 +71,6 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
-  language: 'en',
   previewMode: 'wireframe',
   solidColor: '#c8b48a',
   solidOpacity: 0.5,
@@ -103,8 +100,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 /// Load persisted settings, deep-merging stored values over defaults so
 /// adding new keys later doesn't break old payloads. Falls back to the
-/// legacy `wiac.theme` / `wiac.locale` keys when no `wiac.settings` blob
-/// exists yet (first run after the dialog ships).
+/// legacy `wiac.theme` key when no `wiac.settings` blob exists yet
+/// (first run after the dialog ships).
 function loadSettings(): AppSettings {
   if (typeof window === 'undefined') return { ...DEFAULT_SETTINGS };
   let merged: AppSettings = { ...DEFAULT_SETTINGS };
@@ -128,10 +125,6 @@ function loadSettings(): AppSettings {
     const legacyTheme = window.localStorage.getItem(LEGACY_THEME_KEY);
     if (legacyTheme === 'auto' || legacyTheme === 'light' || legacyTheme === 'dark') {
       merged.theme = legacyTheme;
-    }
-    const legacyLocale = window.localStorage.getItem(LEGACY_LOCALE_KEY);
-    if (legacyLocale === 'en' || legacyLocale === 'de') {
-      merged.language = legacyLocale;
     }
   } catch {
     // localStorage unavailable / quota / parse failure → defaults are fine.
@@ -237,8 +230,8 @@ export class ProjectDataState {
 
   /// Per-installation user preferences. Persisted to localStorage under
   /// `wiac.settings`; not part of .vc-project (those are per-project).
-  /// The SettingsDialog owns the UX; consumers (theme application, i18n
-  /// init, future cutting-preview rendering) read from here.
+  /// The SettingsDialog owns the UX; consumers (theme application,
+  /// preview-mode toggles, performance caps) read from here.
   settings = $state<AppSettings>(loadSettings());
 
   /// Per-layer visibility. Mutated as a single Set replacement so Svelte

@@ -128,12 +128,6 @@
       role: 'frontend dev server + production bundler',
       home: 'https://vitejs.dev/',
     },
-    {
-      name: 'svelte-i18n',
-      license: 'MIT',
-      role: 'EN/DE UI translations',
-      home: 'https://github.com/kaisermann/svelte-i18n',
-    },
   ];
 </script>
 

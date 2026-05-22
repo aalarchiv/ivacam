@@ -21,7 +21,6 @@
   } from '../state/project.svelte';
   import { defaultClient } from '../api/http';
   import type { HelixRadiusResponse } from '../api/types';
-  import { _ } from 'svelte-i18n';
   import { prettyOpKind } from '../state/project-types';
   import { formatExpectedToolKinds, isToolKindAcceptable } from '../state/op_tool_constraint';
   import VCarveSection from './op_properties/VCarveSection.svelte';
@@ -40,6 +39,33 @@
 
   const apiClient = defaultClient();
   const HELIX_PREVIEW_DEBOUNCE_MS = 300;
+
+  /// Help text for the per-op dropdowns. Used to live in
+  /// `lib/locales/{en,de}.json` driven by svelte-i18n; the dictionary
+  /// was sparse and the language switch never reached most of the UI,
+  /// so we tore i18n out and hardcoded English. Keep these grouped
+  /// near the top so future translators have one obvious target.
+  const COMBINE_HELP: Record<string, string> = {
+    auto: 'Containment-aware: nested closed objects become holes (outer + inner = annulus). Default.',
+    union: 'Boolean union of all selected closed contours.',
+    difference: 'First selected minus the union of the rest.',
+    intersection: 'Boolean intersection of all selected closed contours.',
+    xor: 'Symmetric difference (xor) of all selected closed contours.',
+    none: 'No combination — one boundary per selected object, no holes.',
+  };
+  const CUT_DIRECTION_HELP: Record<string, string> = {
+    conventional:
+      'Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.',
+    climb:
+      'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
+  };
+  const PLUNGE_HELP: Record<string, string> = {
+    direct:
+      'Straight Z plunge into material. Safe for center-cutting endmills on shallow steps; risky on harder materials.',
+    ramp: 'Ramped descent: cutter walks forward along the path while Z descends, taking a chip in both directions. Required for non-center-cutting bits.',
+    helix:
+      'Helical entry: cutter spirals down on a small circle inside the closed pocket boundary, then walks to the path start. Standard for non-center-cutting endmills and harder materials. Falls back to ramp on open paths or when the helix circle does not fit.',
+  };
 
   interface Props {
     /// True when rendered inline under an OperationsList row (drops the
@@ -325,21 +351,21 @@
            matter what. Hide the Combine selector for Drill to stop
            promising a knob that does nothing. -->
       {#if op.kind !== 'drill' && ((op.sourceObjects?.length ?? 0) > 1 || (op.sourceLayers !== null && op.sourceLayers.length > 0))}
-        <label class="row" title={$_('op.help.combine.' + (op.sourceCombine ?? 'auto'))}>
+        <label class="row" title={COMBINE_HELP[op.sourceCombine ?? 'auto']}>
           <span>Combine</span>
           <select
             value={op.sourceCombine ?? 'auto'}
             onchange={(e) =>
               patch('sourceCombine', (e.currentTarget as HTMLSelectElement).value as SourceCombine)}
           >
-            <option value="auto" title={$_('op.help.combine.auto')}>auto (containment)</option>
-            <option value="union" title={$_('op.help.combine.union')}>union</option>
-            <option value="difference" title={$_('op.help.combine.difference')}>difference</option>
-            <option value="intersection" title={$_('op.help.combine.intersection')}
+            <option value="auto" title={COMBINE_HELP.auto}>auto (containment)</option>
+            <option value="union" title={COMBINE_HELP.union}>union</option>
+            <option value="difference" title={COMBINE_HELP.difference}>difference</option>
+            <option value="intersection" title={COMBINE_HELP.intersection}
               >intersection</option
             >
-            <option value="xor" title={$_('op.help.combine.xor')}>xor</option>
-            <option value="none" title={$_('op.help.combine.none')}>none (per object)</option>
+            <option value="xor" title={COMBINE_HELP.xor}>xor</option>
+            <option value="none" title={COMBINE_HELP.none}>none (per object)</option>
           </select>
         </label>
       {/if}
@@ -587,7 +613,7 @@
       {#if op.kind === 'profile' || op.kind === 'pocket'}
         <label
           class="row"
-          title={$_('op.help.cut_direction.' + (op.cutDirection ?? 'conventional'))}
+          title={CUT_DIRECTION_HELP[op.cutDirection ?? 'conventional']}
         >
           <span>Direction</span>
           <select
@@ -595,15 +621,15 @@
             onchange={(e) =>
               patch('cutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
           >
-            <option value="conventional" title={$_('op.help.cut_direction.conventional')}
+            <option value="conventional" title={CUT_DIRECTION_HELP.conventional}
               >conventional</option
             >
-            <option value="climb" title={$_('op.help.cut_direction.climb')}>climb</option>
+            <option value="climb" title={CUT_DIRECTION_HELP.climb}>climb</option>
           </select>
         </label>
         <label
           class="row"
-          title={$_('op.help.cut_direction.' + (op.finishCutDirection ?? 'conventional'))}
+          title={CUT_DIRECTION_HELP[op.finishCutDirection ?? 'conventional']}
         >
           <span>Finish dir</span>
           <select
@@ -614,13 +640,13 @@
                 (e.currentTarget as HTMLSelectElement).value as CutDirection,
               )}
           >
-            <option value="conventional" title={$_('op.help.cut_direction.conventional')}
+            <option value="conventional" title={CUT_DIRECTION_HELP.conventional}
               >conventional</option
             >
-            <option value="climb" title={$_('op.help.cut_direction.climb')}>climb</option>
+            <option value="climb" title={CUT_DIRECTION_HELP.climb}>climb</option>
           </select>
         </label>
-        <label class="row" title={$_('op.help.plunge.' + (op.plunge?.kind ?? 'direct'))}>
+        <label class="row" title={PLUNGE_HELP[op.plunge?.kind ?? 'direct']}>
           <span>Plunge</span>
           <select
             value={op.plunge?.kind ?? 'direct'}
@@ -646,9 +672,9 @@
               }
             }}
           >
-            <option value="direct" title={$_('op.help.plunge.direct')}>direct</option>
-            <option value="ramp" title={$_('op.help.plunge.ramp')}>ramp</option>
-            <option value="helix" title={$_('op.help.plunge.helix')}>helix</option>
+            <option value="direct" title={PLUNGE_HELP.direct}>direct</option>
+            <option value="ramp" title={PLUNGE_HELP.ramp}>ramp</option>
+            <option value="helix" title={PLUNGE_HELP.helix}>helix</option>
           </select>
         </label>
         {#if op.plunge && op.plunge.kind === 'ramp'}
@@ -675,7 +701,7 @@
           </label>
         {:else if op.plunge && op.plunge.kind === 'helix'}
           <details class="subsection" open>
-            <summary>{$_('op.section.helix')}</summary>
+            <summary>Helix</summary>
             <label
               class="row"
               title="Helix descent angle in degrees. 1°–5° is gentle, 10°+ is aggressive. Each revolution drops Z by 2π·radius·tan(angle)."

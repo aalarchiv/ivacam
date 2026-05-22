@@ -4,7 +4,6 @@
   /// Owns the drill-cycle picker (G81 / G83 / G73), peck-step + dwell
   /// inputs, and the Stufenfase chamfer-after-width field.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
-  import { _ } from 'svelte-i18n';
   import {
     type DrillCycle,
     type DrillOp,
@@ -72,7 +71,7 @@
   </label>
   {#if op.drillCycle && (op.drillCycle.kind === 'peck' || op.drillCycle.kind === 'chip_break')}
     <details class="subsection" open>
-      <summary>{$_('op.section.drill_cycle')}</summary>
+      <summary>Cycle options</summary>
       <label class="row">
         <span>Peck step</span>
         <div class="num-cell">

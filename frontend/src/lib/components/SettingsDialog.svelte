@@ -8,7 +8,6 @@
   /// to apply immediately, and there's no "Cancel" button — Escape or the
   /// close button just dismisses the dialog.
   import { project, type AppSettings } from '../state/project.svelte';
-  import { setLocale } from '../i18n';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -19,12 +18,6 @@
 
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     project.updateSettings({ [key]: value } as Partial<AppSettings>);
-  }
-
-  function pickLanguage(code: 'en' | 'de') {
-    update('language', code);
-    // Drive the live svelte-i18n locale too so labels switch immediately.
-    setLocale(code);
   }
 
   // Coerce a number input: keep current value if the user typed garbage.
@@ -70,21 +63,6 @@
             </div>
           </label>
 
-          <label
-            >Language
-            <div class="seg" role="group" aria-label="Language">
-              <button
-                class:active={project.settings.language === 'en'}
-                onclick={() => pickLanguage('en')}
-                type="button">EN</button
-              >
-              <button
-                class:active={project.settings.language === 'de'}
-                onclick={() => pickLanguage('de')}
-                type="button">DE</button
-              >
-            </div>
-          </label>
         </div>
       </section>
 

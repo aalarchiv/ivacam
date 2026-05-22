@@ -20,7 +20,6 @@
 
   import { project, playheadToSegment } from '../state/project.svelte';
   import { parseGcodeChapters, NO_SEGMENT } from '../state/gcode_chapters';
-  import { _ } from 'svelte-i18n';
 
   // Split the gcode lazily — only when the project's generated output
   // changes — so scrolling a 5000-line program doesn't redo work.
@@ -125,7 +124,7 @@
     class:stale={project.dirty}
     bind:this={host}
     role="region"
-    aria-label={$_('gcode.title') ?? 'G-code'}
+    aria-label="G-code"
   >
     {#if project.dirty}
       <div

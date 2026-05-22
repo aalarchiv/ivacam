@@ -4,7 +4,6 @@
   /// picker + per-strategy subsections (halfpipe profile, trochoidal
   /// engagement, xy_overlap). Shown only when op.kind === 'pocket'.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
-  import { _ } from 'svelte-i18n';
   import {
     project,
     type FrameShape,
@@ -49,7 +48,7 @@
   <fieldset>
     <legend>Frame</legend>
     <details class="subsection" open>
-      <summary>{$_('op.section.frame')}</summary>
+      <summary>Frame</summary>
       <label
         class="row"
         title="Shape of the synthetic frame the pipeline derives from your selection at generate time."
@@ -269,7 +268,7 @@
   {/if}
   {#if op.pocketStrategy === 'trochoidal'}
     <details class="subsection" open>
-      <summary>{$_('op.section.trochoidal')}</summary>
+      <summary>Trochoidal</summary>
       <label
         class="row"
         title="Engagement arc angle in degrees. Lower = lighter cut, more loops; higher = aggressive. Drives centerline pitch."

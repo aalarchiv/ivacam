@@ -110,8 +110,6 @@
     SAMPLES,
   } from './lib/state/file_ops';
   import { onMount } from 'svelte';
-  import { _ } from 'svelte-i18n';
-  import { locale } from './lib/i18n';
   import {
     isDesktop,
     wireSourceWatch as wireDesktopSourceWatch,
@@ -168,21 +166,6 @@
     const z = Math.max(0, cfg.thickness);
     const f = (n: number) => (Number.isFinite(n) ? n.toFixed(0) : '0');
     return `${f(x)} × ${f(y)} × ${f(z)} mm`;
-  });
-
-  // Keep the i18n locale in sync with the persisted setting on first
-  // load. Subsequent changes go through SettingsDialog which calls
-  // setLocale itself.
-  $effect(() => {
-    const cur = $locale;
-    if ((cur === 'en' || cur === 'de') && cur !== project.settings.language) {
-      // Defer the settings write off the effect flush so the localStorage
-      // round-trip + dependent $state mutation don't run inside the
-      // reactivity scheduler. Bad practice to mutate $state synchronously
-      // from inside another effect — Svelte 5 silently aborts the
-      // scheduler on the next throw if it happens during a flush.
-      queueMicrotask(() => project.updateSettings({ language: cur }));
-    }
   });
 
   onMount(() => {
@@ -772,7 +755,7 @@
   /// count so the user still sees the drawing's extent.
   const statusInfoText = $derived.by<string>(() => {
     const imp = project.transformedImport;
-    if (!imp) return $_('footer.ready');
+    if (!imp) return 'Ready';
     const meta = imp.object_meta ?? [];
     const sel = project.selectedObjects;
     if (sel.size > 0 && meta.length > 0) {
@@ -799,16 +782,11 @@
         return `${tag} · center=(${cx.toFixed(2)}, ${cy.toFixed(2)}) · ${w.toFixed(2)} × ${h.toFixed(2)} mm`;
       }
     }
-    return $_('footer.bbox', {
-      values: {
-        minX: imp.bbox.min_x.toFixed(2),
-        minY: imp.bbox.min_y.toFixed(2),
-        maxX: imp.bbox.max_x.toFixed(2),
-        maxY: imp.bbox.max_y.toFixed(2),
-        count: imp.segments.length,
-        unit: imp.unit_scale,
-      },
-    });
+    const minX = imp.bbox.min_x.toFixed(2);
+    const minY = imp.bbox.min_y.toFixed(2);
+    const maxX = imp.bbox.max_x.toFixed(2);
+    const maxY = imp.bbox.max_y.toFixed(2);
+    return `bbox=(${minX},${minY})–(${maxX},${maxY}) · ${imp.segments.length} segments · unit_scale=${imp.unit_scale}`;
   });
   const statusShortcutHints = $derived.by<string | null>(() => {
     if (!project.transformedImport) return null;
@@ -1158,7 +1136,7 @@
         role="tab"
         aria-selected={activePane === '2d'}
         class:active={activePane === '2d'}
-        onclick={() => (activePane = '2d')}>{$_('header.pane.2d')}</button
+        onclick={() => (activePane = '2d')}>2D</button
       >
       <button
         type="button"
@@ -1204,7 +1182,7 @@
             title="Show / hide the G-code text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
           >
             {gcodeOpen ? '▼' : '▶'}
-            {$_('bottom.gcode') ?? 'G-code'}
+            G-code
             <span class="hint">{project.generated.gcode.split('\n').length} lines</span>
           </button>
         </div>

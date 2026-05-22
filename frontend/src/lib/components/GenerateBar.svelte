@@ -14,7 +14,6 @@
   import { exportGeneratedGcode } from '../state/file_ops';
   import { computeFootprint } from '../sim/driver';
   import type { SimWarning, TimeEstimate } from '../api/types';
-  import { _ } from 'svelte-i18n';
   import GenerateProgress from './GenerateProgress.svelte';
   import { workspace } from '../state/workspace.svelte';
 
@@ -297,10 +296,10 @@
 </script>
 
 <div class="bar">
-  <span class="title">{$_('generate.title')}</span>
+  <span class="title">Generate:</span>
   <label
     title="Output dialect. LinuxCNC: standard RS-274 G-code. GRBL: hobby-CNC subset with manual tool-change prompts. HPGL: vinyl-cutter / plotter language (drag-knife mode)."
-    >{$_('generate.post')}
+    >post
     <select bind:value={post}>
       <option value="linuxcnc">LinuxCNC</option>
       <option value="grbl">GRBL</option>
@@ -315,7 +314,7 @@
       disabled={!project.transformedImport || project.generating}
       title="Run the CAM pipeline and produce a toolpath. Reads the current ops, tools, stock, and machine — output is cached so unchanged ops re-emit instantly."
     >
-      {project.generating ? $_('generate.running') : $_('generate.run')}
+      {project.generating ? 'Generating G-code…' : 'Generate G-code'}
     </button>
   {/if}
   {#if project.generated}
@@ -324,16 +323,10 @@
       class="download"
       title="Save the generated toolpath to disk in the selected dialect's file extension."
     >
-      {post === 'hpgl' ? $_('generate.download_plt') : $_('generate.download_ngc')}
+      {post === 'hpgl' ? 'Download .plt' : 'Download .ngc'}
     </button>
     <span class="stats">
-      {$_('generate.stats', {
-        values: {
-          objects: project.generated.stats.object_count,
-          offsets: project.generated.stats.offset_count,
-          moves: project.generated.toolpath.length,
-        },
-      })}
+      {project.generated.stats.object_count} obj · {project.generated.stats.offset_count} offsets · {project.generated.toolpath.length} moves
       {#if project.lastGenerateCachedCount > 0}
         <span class="cached-tag"
           >· {project.lastGenerateCachedCount} of {project.lastGenerateOpCount} cached</span

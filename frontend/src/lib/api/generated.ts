@@ -382,6 +382,17 @@ export interface components {
              */
             radius_mm?: number | null;
         };
+        /** @description 24ht: per-cell holder-wall overlap record. `required_clearance_mm` is how much extra clearance the holder would need at this cell for the envelope to fit; `wall_z` is the cell's current heightmap value (the top of the wall the holder is hitting). */
+        HolderCollisionCell: {
+            /** Format: double */
+            cell_x: number;
+            /** Format: double */
+            cell_y: number;
+            /** Format: float */
+            required_clearance_mm: number;
+            /** Format: float */
+            wall_z: number;
+        };
         /** @description Geometry of the tool holder above the shank. The holder is treated as cylindrically symmetric around the tool axis (Z), so set-screw flats / asymmetric ER nuts get approximated by their bounding cylinder/cone — good enough to flag clear collisions, conservative on tight cases. */
         HolderShape: {
             /** Format: double */
@@ -513,6 +524,13 @@ export interface components {
             mode: components["schemas"]["MachineMode"];
             /** @description h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.wiac-machine.json` save/load files. */
             name?: string;
+            /** @description syol: when true, the program_end footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (LinuxCNC, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first. */
+            park_at_home?: boolean;
+            /** @description syol: optional explicit park XY (mm, in WCS coordinates). When `Some`, the program_end footer routes the head to this point after the safe-Z lift, overriding the machine-home / work-zero fallback. Useful for a known tool-station / load-station that isn't (0, 0) in either frame. */
+            park_xy?: [
+                number,
+                number
+            ] | null;
             /** @description Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op's cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op's `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers. */
             plot_mode_z?: boolean;
             /** @description User-configurable post-processor profile (rt1.15). When `Some`, the built-in posts (linuxcnc / grbl) read its templates instead of emitting their hard-coded `program_start` / `program_end` / `tool_change` / coolant lines. `None` = hard-coded defaults. */
@@ -522,6 +540,26 @@ export interface components {
              * @description Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
              */
             rapid_speed?: number | null;
+            /**
+             * Format: uint32
+             * @description 3nnj: upper bound on the spindle RPM the controller will accept. Tool / op RPMs above this clamp DOWN to the max and emit a `spindle_speed_clamped_above_max` warning. Without this clamp some controllers refuse the command mid-program; others silently cap and produce wrong chipload. `None` disables the ceiling (default, back-compat).
+             */
+            spindle_rpm_max?: number | null;
+            /**
+             * Format: uint32
+             * @description 3nnj: lower bound on the spindle RPM the controller will accept. Tool / op RPMs below this clamp UP to the min and emit a `spindle_speed_clamped_below_min` warning. `None` disables the floor (default, back-compat).
+             */
+            spindle_rpm_min?: number | null;
+            /**
+             * Format: double
+             * @description Spindle-start dwell (seconds) inserted into the M6 toolchange envelope after `M3 S<rpm>`. Lets the new tool come up to commanded RPM before the next cut. Stacks with the per-tool `ToolEntry.pause` (the per-tool warm-up); think of this as the machine-wide floor and `tool.pause` as the per-tool top-up. `None` ⇒ 0.5 s default.
+             */
+            spindle_start_dwell_sec?: number | null;
+            /**
+             * Format: double
+             * @description Spindle-stop dwell (seconds) inserted into the M6 toolchange envelope between `M5` and the actual `T<n> M6`. Gives the spindle time to spin down before the chuck is touched. `None` (and the default `0.5 s`) covers most VFD-driven spindles; high-inertia big-iron may want 1–2 s. Set to `Some(0.0)` to skip entirely. See bd issues eaeq / m8sq / rwv8 / rfow.
+             */
+            spindle_stop_dwell_sec?: number | null;
             supports_toolchange: boolean;
             /**
              * Format: double
@@ -696,6 +734,12 @@ export interface components {
              * @default 1
              */
             pitch_mm: number;
+            /**
+             * Format: uint32
+             * @description sqnh: number of radial roughing passes from `start_radius` → final thread radius. Single helix at full engagement is too aggressive for hard materials; multi- pass schedules let the chipload soften. Default 1 (single-pass; backward-compatible). Each pass cuts a deeper helix at radius = lerp(start_radius_frac → 1.0, i/N).
+             * @default 1
+             */
+            radial_passes: number;
             /** @enum {string} */
             type: "thread";
         } | {
@@ -1150,7 +1194,14 @@ export interface components {
             /** @description First-class editable text entities — content / font / size / position / rotation / spacing. The pipeline pre-pass renders each `TextLayer` to segments before any op runs so the existing `Engrave` (and friends) op can target the rendered geometry by layer name `__text_<id>`. Edits to a `TextLayer` re-run the pipeline; cache keys include `text_layers` content. */
             text_layers?: components["schemas"]["TextLayer"][];
             tools: components["schemas"]["ToolEntry"][];
+            /** @description i5g4 (MVP): explicit work-offset between the geometry frame (where the DXF / SVG was drawn) and the gcode WCS origin (where the user zeros the spindle on the real machine). All zeros (default) means "geometry origin = WCS origin". Full G54..G59 + per-fixture origins are a future feature; this field gives a single offset the sim and the WCS warning consult. Persisted into project files; legacy files lacking the field default to zeros and behave exactly as before. */
+            work_offset?: components["schemas"]["WorkOffset"];
         };
+        /**
+         * @description 50eq: which part of the tool struck stock during a rapid — the flutes/tip (the typical "rapid past retract plane" failure) or the shank/holder (broken-collet scenario: cutter tip is in air but the shank drags through tall walls).
+         * @enum {string}
+         */
+        RapidCollisionSubkind: "tip" | "shank";
         /** @description One filled region attached to a specific operation. `outer` is the outer boundary; `holes` are the islands the cutter must avoid. Both in project units (typically mm). */
         RegionPreview: {
             holes?: components["schemas"]["Point2"][][];
@@ -1233,6 +1284,11 @@ export interface components {
             rapid_pz: number;
             /** Format: uint */
             segment_idx: number;
+            /**
+             * @description 50eq: defaults to `Tip` so older serialized warnings deserialize cleanly. `Shank` flags shank/holder hits — the broken-collet G0-through-stock pattern.
+             * @default tip
+             */
+            subkind: components["schemas"]["RapidCollisionSubkind"];
             /** Format: float */
             worst_cell_z: number;
             /** Format: double */
@@ -1251,6 +1307,8 @@ export interface components {
             /** Format: uint */
             segment_idx: number;
         } | {
+            /** @description 24ht: every cell that exceeded the holder envelope on this segment, sorted worst-first. Element 0 mirrors `worst_x/worst_y/wall_z/required_clearance_mm` for back-compat callers that only need the worst cell. Older serialized warnings without this field deserialize to an empty vec via `serde(default)`. */
+            cells?: components["schemas"]["HolderCollisionCell"][];
             /** @enum {string} */
             kind: "holder_collision";
             /** Format: float */
@@ -1277,6 +1335,15 @@ export interface components {
             first_segment_idx: number;
             /** @enum {string} */
             kind: "dragging_rapids";
+        } | {
+            /** Format: double */
+            coarsened_cell_size_mm: number;
+            /** @enum {string} */
+            kind: "cell_size_coarsened";
+            /** Format: double */
+            original_cell_size_mm: number;
+            /** @description Why the coarsening fired — `max_simulation_cells` for the budget cap (the canonical case), other strings reserved for future paths. */
+            reason: string;
         };
         /** @description How a multi-object source selection is combined into the region(s) the operation actually consumes. Default is `Auto` — containment-based, which gives the user "outer + inner = annulus" behavior with no extra thought. The other modes are clipper2-driven boolean ops; `None` keeps each selected object as its own boundary (the pre-combine behavior, surfaced for callers who really want it). */
         SourceCombine: "auto" | "union" | "difference" | "intersection" | "xor" | "none";
@@ -1413,6 +1480,12 @@ export interface components {
             arc_s: number;
             /** Format: double */
             cut_s: number;
+            /**
+             * Format: double
+             * @description kg13: total time spent in explicit G4 P-seconds / X-seconds pauses (drill dwell, finishing dwell, etc.). Distinct from `toolchange_s` (M6 timing) and `spindle_warmup_s` (per-tool pause). Older serialized estimates without this field deserialize as `0.0`.
+             * @default 0
+             */
+            dwell_s: number;
             /** Format: double */
             plunge_s: number;
             /** Format: double */
@@ -1489,6 +1562,18 @@ export interface components {
              * @default 0
              */
             speed_finish: number;
+            /**
+             * Format: double
+             * @description Full apex angle of the tool tip cone, in degrees. Default 60° (V-bit shape). The drill emitter uses this together with `tip_diameter_mm` to compute `tip_cone_length()` — the extra depth to extend a through-drill cycle so the FULL bore diameter reaches the bottom of the stock.
+             * @default 60
+             */
+            tip_angle_deg: number;
+            /**
+             * Format: double
+             * @description Diameter at the tip of the cone in mm. 0 = sharp point (drill, V-bit). > 0 = flat tip (engraver). For flat-bottom tools (endmill / ball-nose / bull-nose / compression / t-slot / form-profile / drag-knife / laser) the synth step sets this equal to `diameter` so `tip_cone_length()` returns 0 — no auto-extend needed.
+             * @default 0
+             */
+            tip_diameter_mm: number;
             /**
              * @description Wirbeln spiral rotation direction (climb = `true`, conventional = `false`). Resolved from the op's contour cut direction — matches Estlcam's `Einstellungen.Gleichlauf` flag.
              * @default true
@@ -1621,6 +1706,11 @@ export interface components {
             speed_finish?: number | null;
             /**
              * Format: double
+             * @description q0kc: free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models the real-world case where the collet doesn't grip right above the flutes — common for reach-extension tooling. Defaults to 0 (legacy behavior — collet sits directly on the flutes), so old projects round-trip unchanged. None = same as `Some(0.0)` for the sim.
+             */
+            stickout_length_mm?: number | null;
+            /**
+             * Format: double
              * @description V-bit full included tip angle in degrees (apex angle of the cone). Drives the V-Carve depth-from-width relationship `z = -R / tan(tip_angle / 2)`. Validated to (0, 180); defaults to 60° for the most common engraving V-bit.
              * @default 60
              */
@@ -1738,6 +1828,8 @@ export interface components {
             transport: components["schemas"]["TransportKind"];
             version: string;
         };
+        /** @enum {string} */
+        Wcs: "G54" | "G55" | "G56" | "G57" | "G58" | "G59";
         WiacAutoFix: {
             /** @enum {string} */
             kind: "assign_tool";
@@ -1777,6 +1869,26 @@ export interface components {
             file: string;
             /** Format: uint32 */
             line: number;
+        };
+        /** @description i5g4: program-level work-coordinate offset. Defaults to all zeros — geometry origin == WCS origin. When the user zeros the machine somewhere different from the geometry origin, set this so the sim can align the heightmap to the WCS frame. The full per-fixture / G54..G59 selector is a follow-up feature. */
+        WorkOffset: {
+            /** @description Which work coordinate system this offset applies to. The gcode emitter doesn't (yet) flip between G54..G59 — this is a labelling field for the UI + future expansion. */
+            wcs?: components["schemas"]["Wcs"];
+            /**
+             * Format: double
+             * @description X offset (mm) from geometry origin to WCS origin.
+             */
+            x_mm?: number;
+            /**
+             * Format: double
+             * @description Y offset (mm) from geometry origin to WCS origin.
+             */
+            y_mm?: number;
+            /**
+             * Format: double
+             * @description Z offset (mm) from geometry origin to WCS origin. Positive means the WCS Z=0 is ABOVE the geometry's z=0.
+             */
+            z_mm?: number;
         };
     };
     responses: {

@@ -568,15 +568,6 @@ where
     const GCODE_PROGRESS_SPAN: f64 = 0.55;
 
     emit_program_begin(header_setup, post);
-    // rt1.30: apply the first enabled op's tool's Z shift right after
-    // program_begin so even single-tool programs honor the offset.
-    if let Some(first) = project.operations.iter().find(|o| o.enabled) {
-        if let Some(tool) = project.tools.iter().find(|t| t.id == first.tool_id) {
-            if let Some(shift) = tool.z_shift_mm {
-                post.tool_z_shift(shift);
-            }
-        }
-    }
     let gcode_progress = |emitted: usize, total: usize| -> f64 {
         let denom = total.max(1) as f64;
         GCODE_PROGRESS_START + GCODE_PROGRESS_SPAN * (emitted as f64 / denom)
@@ -585,6 +576,14 @@ where
     let mut emitted_ops = 0usize;
     let enabled_ops: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
     let total_ops = enabled_ops.len();
+    // k2ew: track the tool number last asserted via post.tool() so we
+    // can emit T<n> M6 + Z-shift at every op boundary where the
+    // primary tool changes — and at the FIRST op so the program never
+    // silently uses whatever was in the spindle. Pause ops don't have
+    // a tool and don't reset this state. We track by ToolEntry.id
+    // (the project-level tool key), not by tool.number (which can be
+    // shared across entries on some configs).
+    let mut prev_tool_id: Option<u32> = None;
     for (idx, op) in enabled_ops.iter().enumerate() {
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);
@@ -603,6 +602,39 @@ where
         // difference is whether the body comes from re-emission or
         // from the cache. Exit state is captured/restored separately.
         post.reset_state();
+
+        // k2ew: emit M6 toolchange BEFORE body_marker so the M6 is
+        // NOT captured into the per-op cache body — the M6 decision
+        // depends on prev_tool_id which is runtime state, not op
+        // state. On cache hit we still get this block; on cache miss
+        // the body that follows starts at body_marker. Skip Pause ops
+        // entirely (no tool, no toolchange — and they don't reset
+        // prev_tool_id either).
+        if !matches!(op.kind, OpKind::Pause { .. }) {
+            let tool_changes = prev_tool_id != Some(op.tool_id);
+            if tool_changes {
+                if let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) {
+                    // Setup synthesis maps ToolEntry.id → ToolConfig.number
+                    // 1:1 (setup_resolver), so tool.id is the spindle
+                    // tool number we want here.
+                    if project.machine.supports_toolchange {
+                        post.comment(&format!(
+                            "toolchange: T{} ({}) for op {} ({})",
+                            tool.id, tool.name, op.id, op.name
+                        ));
+                        post.tool(tool.id);
+                    }
+                    // rt1.30: apply the tool's Z shift after every
+                    // (re-)assertion so the work-Z=0 line matches the
+                    // newly-loaded tool. Fires on the first op too,
+                    // replacing the pre-loop tool_z_shift block.
+                    if let Some(shift) = tool.z_shift_mm {
+                        post.tool_z_shift(shift);
+                    }
+                }
+                prev_tool_id = Some(op.tool_id);
+            }
+        }
         let body_marker = post.out_lines_count();
 
         // rt1.34: Pause op — emit M5 → optional-stop → M3 and skip the
@@ -670,6 +702,14 @@ where
                     let mut s = stats.borrow_mut();
                     s.0 += cached.closed_count;
                     s.1 += cached.offset_count;
+                }
+                // k2ew: same end-of-op prev_tool_id update as the
+                // non-cached path — cached bodies for dual_tool ops
+                // include the internal toolchange.
+                if let Some(finish_id) = op.finish_tool_id {
+                    if finish_id != op.tool_id {
+                        prev_tool_id = Some(finish_id);
+                    }
                 }
                 emitted_ops += 1;
                 progress(
@@ -764,6 +804,21 @@ where
                     exit_xy: (last_pos.x, last_pos.y),
                 },
             );
+        }
+        // k2ew: if this op declared a distinct finish tool (dual_tool
+        // Pocket or Stufenfase drill chamfer), the op's internal
+        // driver may have switched to it mid-op. We pessimistically
+        // record that as the end-of-op tool so the next op's M6
+        // decision is safety-biased: if the driver actually swapped,
+        // the next op gets a correct M6 decision; if it didn't swap
+        // (e.g. no finish offsets produced), the next op may emit an
+        // extra T<rough> M6 — wasteful, but safe. Same-tool ops
+        // (no finish or finish == rough) keep prev_tool_id == op.tool_id
+        // so back-to-back same-tool ops still emit at most one M6.
+        if let Some(finish_id) = op.finish_tool_id {
+            if finish_id != op.tool_id {
+                prev_tool_id = Some(finish_id);
+            }
         }
         emitted_ops += 1;
         progress(

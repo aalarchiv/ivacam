@@ -1507,3 +1507,123 @@
             other => panic!("expected Pause, got {other:?}"),
         }
     }
+
+    // ---- k2ew / y9ho / gd2x regression tests ----
+
+    /// k2ew: a two-op project with two different tools must emit T1
+    /// M6 for the first op and T2 M6 between ops on a toolchange-
+    /// capable machine. Pre-fix the program never asserted a tool —
+    /// only dual_tool / Stufenfase internal toolchanges fired M6.
+    #[test]
+    fn multi_op_different_tools_emit_m6_at_each_boundary() {
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let t1_pos = resp.gcode.find("T1 M6").expect(&format!(
+            "expected T1 M6 for first op (k2ew first-op M6):\n{}",
+            resp.gcode
+        ));
+        let t2_pos = resp.gcode.find("T2 M6").expect(&format!(
+            "expected T2 M6 at op boundary (k2ew):\n{}",
+            resp.gcode
+        ));
+        assert!(t1_pos < t2_pos, "T1 M6 must precede T2 M6");
+        let op1_pos = resp.gcode.find("; OP 1").expect("OP 1 marker");
+        let op2_pos = resp.gcode.find("; OP 2").expect("OP 2 marker");
+        assert!(t1_pos < op1_pos, "T1 M6 must precede OP 1 body");
+        assert!(
+            t2_pos > op1_pos && t2_pos < op2_pos,
+            "T2 M6 must sit between OP 1 and OP 2"
+        );
+    }
+
+    /// k2ew: two ops with the SAME tool — at most one M6 (the
+    /// program-start assertion). Pre-fix nothing fired; post-fix only
+    /// the first-op boundary fires.
+    #[test]
+    fn multi_op_same_tool_emits_at_most_one_m6() {
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 1, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let count = resp.gcode.matches(" M6").count();
+        assert_eq!(
+            count, 1,
+            "expected exactly one M6 for same-tool two-op project, got {count}:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// k2ew: machine.supports_toolchange == false suppresses M6
+    /// emission entirely. The Z shift still applies (it's a work-Z
+    /// origin, not a toolchange artifact).
+    #[test]
+    fn no_toolchange_machine_omits_m6() {
+        let machine = MachineConfig {
+            supports_toolchange: false,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.contains(" M6"),
+            "machines with supports_toolchange=false must not emit M6:\n{}",
+            resp.gcode
+        );
+    }

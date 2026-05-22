@@ -111,12 +111,12 @@ pub(super) fn synthesize_pocket_outside_objects(
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
+    use crate::cam::setup::{LeadKind, LeadsConfig, TabsConfig};
     use crate::cam::source_combine::FrameShape;
     use crate::cam::VcObject;
     use crate::geometry::{Point2, Segment};
     use crate::project::{
-        ContourParams, LeadKind, LeadsConfig, Op, OpKind, OpParams, OpSource, PocketParams,
-        PocketStrategy, TabsConfig,
+        ContourParams, Op, OpKind, OpParams, OpSource, PocketParams, PocketStrategy,
     };
 
     fn closed_square_obj(side: f64) -> VcObject {

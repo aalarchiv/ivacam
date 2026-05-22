@@ -3645,4 +3645,97 @@ mod tests {
         assert!(resp_a.warnings.iter().all(|w| w.kind != "step_unspecified"));
         assert!(resp_b.warnings.iter().all(|w| w.kind != "step_unspecified"));
     }
+
+    /// 473k regression: under OpSource::All, two nested closed contours
+    /// (outer rectangle + inner circle) should auto-build an annular
+    /// (donut) pocket — the inner closed contour becomes an island
+    /// without the user needing to flip `pocket_islands`. Pre-fix the
+    /// pipeline pocketed straight through the inner circle by default.
+    ///
+    /// We assert this by comparing the toolpath against a baseline
+    /// where the inner circle is explicitly treated as an island
+    /// (pocket_islands=true) — the two should produce the same number
+    /// of cut segments because the auto-annular detection now matches
+    /// the legacy pocket_islands behaviour.
+    #[test]
+    fn pocket_all_with_nested_closed_contours_builds_donut_by_default() {
+        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PocketStrategy;
+        let outer = closed_square_offset(60.0, 0.0, 0.0);
+        let inner = closed_circle(Point2::new(30.0, 30.0), 8.0);
+        let segments: Vec<Segment> = outer.iter().cloned().chain(inner.iter().cloned()).collect();
+        let mk = |pocket_islands: bool| Project {
+            segments: segments.clone(),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams {
+                        pocket_islands,
+                        ..crate::project::PocketParams::default()
+                    },
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams {
+                    plunge: PlungeStrategy::Direct,
+                    ..OpParams::mill_default()
+                },
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let auto = run_pipeline(
+            PipelineRequest {
+                project: mk(false),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let explicit = run_pipeline(
+            PipelineRequest {
+                project: mk(true),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The auto-detect path must produce the SAME toolpath length
+        // as explicitly flipping pocket_islands=true — the donut shape
+        // is identical in both cases.
+        assert_eq!(
+            auto.toolpath.len(),
+            explicit.toolpath.len(),
+            "auto-annular (pocket_islands=false, default) must produce the same toolpath as pocket_islands=true under source=All"
+        );
+        // Sanity check that the toolpath actually leaves the inner
+        // circle uncut: no cut segment should pass through the centre.
+        let cut_segments: Vec<&crate::gcode::preview::ToolpathSegment> = auto
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .collect();
+        // The cutter offsets inward by tool_radius (1.5 mm) from the
+        // 8 mm circle and from the outer wall. No segment should pass
+        // through the center (30, 30) within radius (8 - 1.5 - eps).
+        for seg in &cut_segments {
+            let mid_x = (seg.from.x + seg.to.x) * 0.5;
+            let mid_y = (seg.from.y + seg.to.y) * 0.5;
+            let dx = mid_x - 30.0;
+            let dy = mid_y - 30.0;
+            let d = (dx * dx + dy * dy).sqrt();
+            assert!(
+                d > 5.0,
+                "cut segment midpoint ({mid_x:.2}, {mid_y:.2}) is inside the auto-annular island region (distance {d:.2} from centre)"
+            );
+        }
+    }
 }

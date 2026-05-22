@@ -654,4 +654,49 @@ mod tests {
         // 10×30 strip in the middle.
         assert!((area - 300.0).abs() < 5.0, "expected ~300, got {area}");
     }
+
+    /// uksn regression: depth-2 nested polygons (outer with a hole that
+    /// contains another outer, e.g. a plate with a window with a label
+    /// boss in the middle) must emit TWO `CombinedRegion`s — one for
+    /// the outer-with-window-as-hole, and one for the boss-as-its-own
+    /// region. Pre-fix `polytree_to_regions` walked only top-level
+    /// children + their direct holes, so the boss was silently dropped
+    /// and the gcode pocketed straight through it.
+    #[test]
+    fn polytree_to_regions_handles_depth_two_nested_polygons() {
+        // outer: 100x100 box
+        // inner1 (hole at depth 1): 60x60 box centered on outer
+        // inner2 (boss at depth 2): 20x20 box centered inside the hole
+        let objs = build_objects(vec![
+            closed_box(100.0, 0.0, 0.0),
+            closed_box(60.0, 20.0, 20.0),
+            closed_box(20.0, 40.0, 40.0),
+        ]);
+        // Union the three to get a clipper PolyTreeD that mirrors the
+        // geometric nesting — outer → hole → boss.
+        let selected: Vec<usize> = (0..objs.len()).collect();
+        let regions = combine_source_regions(&objs, &selected, SourceCombine::Union);
+        // We expect TWO regions:
+        //   - region 1: outer (100x100) with one hole (60x60)
+        //   - region 2: boss (20x20) on its own (the boss is an outer
+        //               at depth 2 — it's a re-entrant region).
+        assert_eq!(
+            regions.len(),
+            2,
+            "expected 2 regions (outer-with-hole + boss); got {}",
+            regions.len()
+        );
+        // Identify the boss region by its small boundary area.
+        let boss = regions
+            .iter()
+            .find(|r| polygon_area(&r.boundary) < 1000.0)
+            .expect("expected a boss region with small area");
+        assert!(boss.holes.is_empty(), "boss has no inner holes");
+        // Identify the outer-with-hole region.
+        let outer = regions
+            .iter()
+            .find(|r| polygon_area(&r.boundary) > 5000.0)
+            .expect("expected an outer region with large area");
+        assert_eq!(outer.holes.len(), 1, "outer has the window as a hole");
+    }
 }

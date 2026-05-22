@@ -157,4 +157,55 @@ mod tests {
         let tool_radius = 3.0;
         assert!(inscribed_circle(&region, tool_radius).is_none());
     }
+
+    /// 3fvj regression: a region with an island close to the best
+    /// medial-axis vertex rejects the candidate via the line-segment
+    /// distance check against EVERY island wall. The medial axis is
+    /// densified at 0.1 mm sampling — a long flat island wall between
+    /// two samples can sit closer to the candidate than the nearest
+    /// sample, which the prior code missed.
+    #[test]
+    fn inscribed_circle_rejects_when_island_wall_too_close() {
+        // 50 mm wide pocket with an island just 4 mm from the spine.
+        // Tool radius 2 mm → helix circle would need ≥ 4 + 2 = 6 mm
+        // clearance from the island, so any island within 6 mm causes
+        // rejection.
+        let outer = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(50.0, 0.0),
+            Point2::new(50.0, 30.0),
+            Point2::new(0.0, 30.0),
+        ];
+        // Island: a tall narrow box close to the spine (centre y = 15).
+        let hole = vec![
+            Point2::new(20.0, 13.0),
+            Point2::new(30.0, 13.0),
+            Point2::new(30.0, 17.0),
+            Point2::new(20.0, 17.0),
+        ];
+        let region = VcRegion {
+            outer,
+            holes: vec![hole],
+        };
+        let tool_radius = 2.0;
+        // With the island present the helix circle (radius >= 2.4) must
+        // clear it — but every spine point is < 6 mm from one of the
+        // island walls, so no helix fits.
+        let result = inscribed_circle(&region, tool_radius);
+        assert!(
+            result.is_none(),
+            "expected None (island too close); got {result:?}"
+        );
+        // Sanity check: without the island the SAME outer should fit
+        // a helix.
+        let region_no_hole = VcRegion {
+            outer: region.outer.clone(),
+            holes: Vec::new(),
+        };
+        let result = inscribed_circle(&region_no_hole, tool_radius);
+        assert!(
+            result.is_some(),
+            "without island the same outer fits a helix"
+        );
+    }
 }

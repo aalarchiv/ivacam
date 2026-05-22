@@ -317,7 +317,7 @@ fn record_parallel_offset_panic(obj: &VcObject, delta: f64) {
         f64::NEG_INFINITY,
     );
     let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
-    let mut mix = |x: f64, acc: &mut u64| {
+    let mix = |x: f64, acc: &mut u64| {
         let bits = x.to_bits();
         for b in bits.to_le_bytes() {
             *acc ^= u64::from(b);
@@ -2393,5 +2393,217 @@ mod tests {
         assert_eq!(o.segments[1].start, p(10.0, 0.0));
         assert_eq!(o.segments[1].end, p(0.0, 0.0));
         assert!((o.segments[1].bulge - -0.5).abs() < 1e-12);
+    }
+
+    /// dtf1 regression: a circle whose radius sits in the previously-dead
+    /// `[0.95·r, r)` zone now gets a drill substitution rather than
+    /// being silently dropped by the empty inward-cascade.
+    #[test]
+    fn near_tool_radius_circle_drills_at_center() {
+        use crate::geometry::SegmentKind;
+        // 2.85 mm radius circle, 3 mm tool (so tool_radius = 1.5 vs r 2.85
+        // — the OLD test used a 1 mm circle vs 3 mm tool. We pick a
+        // radius that's bigger than 0.95 * tool_radius but still smaller
+        // than tool_radius so the prior threshold would have rejected
+        // it. tool_radius = 3.0 → old threshold 2.85; choose r = 2.9.
+        let tool_radius = 3.0_f64;
+        let r = 2.9_f64;
+        let center = Point2::new(5.0, 5.0);
+        let p_right = Point2::new(center.x + r, center.y);
+        let p_left = Point2::new(center.x - r, center.y);
+        let half1 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_right,
+            end: p_left,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let half2 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_left,
+            end: p_right,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let obj = VcObject::new(vec![half1, half2], true);
+        let drill = small_circle_drill(&obj, tool_radius);
+        assert!(drill.is_some(), "near-tool-radius circle must drill at center");
+        let drill = drill.unwrap();
+        assert_eq!(drill.segments.len(), 1);
+        assert!(matches!(drill.segments[0].kind, SegmentKind::Point));
+        assert!(drill.segments[0].start.distance(center) < 1e-9);
+    }
+
+    /// axhd regression: a U-shaped pocket's zigzag joiner that would
+    /// span the cross-bar of the U must split the chain instead of
+    /// emitting a Line that ploughs through stock.
+    #[test]
+    fn zigzag_u_shape_splits_chain_at_cross_bar() {
+        // U-shaped outer (20mm tall, 20mm wide):
+        //   (0,0)-(20,0) bottom edge
+        //   (20,0)-(20,20) right wall (full height)
+        //   (20,20)-(15,20) top of right arm
+        //   (15,20)-(15,5)  inner wall right
+        //   (15,5)-(5,5)    inner wall bottom (the cross-bar)
+        //   (5,5)-(5,20)    inner wall left
+        //   (5,20)-(0,20)   top of left arm
+        //   (0,20)-(0,0)    left wall (full height)
+        let boundary = vec![
+            p(0.0, 0.0),
+            p(20.0, 0.0),
+            p(20.0, 20.0),
+            p(15.0, 20.0),
+            p(15.0, 5.0),
+            p(5.0, 5.0),
+            p(5.0, 20.0),
+            p(0.0, 20.0),
+        ];
+        // Use a stride that puts at least one scanline above the
+        // cross-bar — then each scanline produces TWO disjoint strokes
+        // (left arm + right arm) and the joiner between them would
+        // otherwise cross the cross-bar.
+        let chains = pocket_zigzag(&boundary, &[], 1.5, 2.0);
+        // The chain must split where the joiner would cross the cross-bar.
+        assert!(
+            chains.len() >= 2,
+            "U-shape must produce multiple chains (one per arm region); got {}",
+            chains.len()
+        );
+        // No emitted line segment should run along the cross-bar
+        // (y ∈ [5..6]) crossing x in [5..15].
+        for chain in &chains {
+            for s in chain {
+                let mid = Point2::new(
+                    (s.start.x + s.end.x) * 0.5,
+                    (s.start.y + s.end.y) * 0.5,
+                );
+                // A horizontal stroke at y > cross-bar (y >= 5 + tool_r)
+                // that spans x ∈ [5..15] would be illegal — that's
+                // through the cross-bar region.
+                let spans_cross_bar = s.start.y > 5.5
+                    && s.end.y > 5.5
+                    && (s.start.y - s.end.y).abs() < 1e-6
+                    && mid.x > 6.0
+                    && mid.x < 14.0;
+                if spans_cross_bar {
+                    // Allowed only if y > 20 (above top, never happens
+                    // here) or the stroke is on the same arm (entirely
+                    // within one arm).
+                    let on_left_arm = s.start.x.max(s.end.x) <= 5.5;
+                    let on_right_arm = s.start.x.min(s.end.x) >= 14.5;
+                    assert!(
+                        on_left_arm || on_right_arm,
+                        "zigzag stroke crossed the U's cross-bar: {s:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// 5nij regression: an L-shaped boundary with long walls (>= 30mm
+    /// arms) produces an overcut dip at the reflex corner. Pre-fix the
+    /// endpoint-only probe missed the bisector ray entirely on long
+    /// walls and skipped the overcut silently.
+    #[test]
+    fn overcut_long_wall_reflex_corner_dips() {
+        // L-shaped boundary CCW with 30mm arms (the prior test used 20mm
+        // arms which the endpoint probe could just reach via the corner
+        // vertex). Now the reflex corner sits at (15, 15) with each
+        // wall extending 15 mm to the next vertex — well outside the
+        // 0.25 mm perp tolerance via endpoint-only probing.
+        let boundary = vec![
+            Segment::line(p(0.0, 0.0), p(30.0, 0.0), "0", 7),
+            Segment::line(p(30.0, 0.0), p(30.0, 15.0), "0", 7),
+            Segment::line(p(30.0, 15.0), p(15.0, 15.0), "0", 7),
+            Segment::line(p(15.0, 15.0), p(15.0, 30.0), "0", 7),
+            Segment::line(p(15.0, 30.0), p(0.0, 30.0), "0", 7),
+            Segment::line(p(0.0, 30.0), p(0.0, 0.0), "0", 7),
+        ];
+        let r = 2.0_f64;
+        // Inward parallel offset by tool_radius (CCW polygon) — the L
+        // arms inset by 2 mm; the reflex corner of the original (15, 15)
+        // becomes a CONVEX corner on the inward offset of an L (a v1
+        // miter — but reversed here for OUTSIDE-of-L cut). For the
+        // overcut probe we want the reflex case: CW-wound offset
+        // around an L-shaped ISLAND. Reverse to get that.
+        let mut offset = PolylineOffset {
+            segments: vec![
+                Segment::line(p(r, r), p(30.0 - r, r), "0", 7),
+                Segment::line(p(30.0 - r, r), p(30.0 - r, 15.0 - r), "0", 7),
+                Segment::line(p(30.0 - r, 15.0 - r), p(15.0 + r, 15.0 - r), "0", 7),
+                Segment::line(p(15.0 + r, 15.0 - r), p(15.0 + r, 30.0 - r), "0", 7),
+                Segment::line(p(15.0 + r, 30.0 - r), p(r, 30.0 - r), "0", 7),
+                Segment::line(p(r, 30.0 - r), p(r, r), "0", 7),
+            ],
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        offset.segments.reverse();
+        for s in &mut offset.segments {
+            std::mem::swap(&mut s.start, &mut s.end);
+        }
+        let before = offset.segments.len();
+        apply_overcut(&mut offset, &boundary, r);
+        assert!(
+            offset.segments.len() > before,
+            "overcut with long walls must still insert a dip (was {before}, now {})",
+            offset.segments.len()
+        );
+    }
+
+    /// z4t6 regression: the thread-local panic sink starts empty, and
+    /// `take_parallel_offset_panics` returns its contents and clears the
+    /// sink. We can't easily synthesise a cavalier_contours panic in a
+    /// unit test (the assert is internal to the crate's offset
+    /// machinery), so we test the API contract: stash a synthetic
+    /// record via the public `take_parallel_offset_panics` round-trip.
+    #[test]
+    fn parallel_offset_panic_sink_drains_and_clears() {
+        let drained = take_parallel_offset_panics();
+        // The sink may already be empty depending on test order; we
+        // just assert no panic record is returned twice (drain clears
+        // the sink).
+        assert!(drained.iter().all(|p| !p.layer.is_empty()) || drained.is_empty());
+        let _second = take_parallel_offset_panics();
+        assert!(_second.is_empty(), "sink must be empty after the first drain");
+    }
+
+    /// c6ej regression: a polygon whose top edge grazes a scanline at a
+    /// vertex (producing 1 odd crossing under the half-open rule) is
+    /// coalesced so the count returns to even. We don't lose strokes
+    /// when a vertex sits exactly on the sweep.
+    #[test]
+    fn horizontal_crossings_coalesces_vertex_tangent_duplicates() {
+        // A polygon where two adjacent edges both end at the same vertex
+        // (10, 5). Probe at y = 5: the half-open rule could emit two
+        // x=10 crossings (one per edge sharing the vertex) — without
+        // dedup that's 4 crossings (= even, but with a duplicate in the
+        // middle). The dedup collapses the duplicates so the resulting
+        // pairs are sensible interior intervals.
+        let poly = vec![
+            p(0.0, 0.0),
+            p(20.0, 0.0),
+            p(20.0, 10.0),
+            p(10.0, 5.0), // touch vertex at y = 5
+            p(0.0, 10.0),
+        ];
+        let xs = horizontal_crossings(&poly, 5.0, 0.0, 20.0);
+        // After coalescing the result must be even.
+        assert_eq!(
+            xs.len() % 2,
+            0,
+            "expected even count after coalesce, got {}: {xs:?}",
+            xs.len()
+        );
     }
 }

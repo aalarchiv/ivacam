@@ -388,4 +388,57 @@ mod tests {
         assert_eq!(objs.len(), 1);
         assert!(!objs[0].closed);
     }
+
+    /// is68 regression: two tangent circles (touching at one point)
+    /// classify deterministically — the probe lands inside each circle
+    /// rather than at the boundary chord midpoint. Pre-fix the chord
+    /// midpoint of a half-arc was the circle's CENTER, which for circles
+    /// tangent at a diameter endpoint placed the probe ON the other
+    /// circle's boundary → non-deterministic inside/outside under FP
+    /// rounding.
+    #[test]
+    fn tangent_circles_classify_deterministically() {
+        use crate::geometry::SegmentKind;
+        // Two unit circles tangent at the origin. Each circle is encoded
+        // as two semicircles (the DXF importer's convention).
+        //   circle A centered at (-1, 0), touching at (0, 0)
+        //   circle B centered at ( 1, 0), touching at (0, 0)
+        let mk_circle = |cx: f64, cy: f64, r: f64| -> Vec<Segment> {
+            let p_right = Point2::new(cx + r, cy);
+            let p_left = Point2::new(cx - r, cy);
+            vec![
+                Segment {
+                    kind: SegmentKind::Circle,
+                    start: p_right,
+                    end: p_left,
+                    bulge: 1.0,
+                    center: Some(Point2::new(cx, cy)),
+                    layer: "0".into(),
+                    color: 7,
+                },
+                Segment {
+                    kind: SegmentKind::Circle,
+                    start: p_left,
+                    end: p_right,
+                    bulge: 1.0,
+                    center: Some(Point2::new(cx, cy)),
+                    layer: "0".into(),
+                    color: 7,
+                },
+            ]
+        };
+        let mut segs = Vec::new();
+        segs.extend(mk_circle(-1.0, 0.0, 1.0));
+        segs.extend(mk_circle(1.0, 0.0, 1.0));
+        let mut objs = segments_to_objects(&segs);
+        assert_eq!(objs.len(), 2);
+        assert!(objs.iter().all(|o| o.closed));
+        let depth = classify_containment(&mut objs);
+        assert_eq!(depth, 0, "tangent circles must not contain each other");
+        // Neither circle is inside the other.
+        for o in &objs {
+            assert!(o.outer_objects.is_empty(), "expected no outer; got {:?}", o.outer_objects);
+            assert!(o.inner_objects.is_empty(), "expected no inner; got {:?}", o.inner_objects);
+        }
+    }
 }

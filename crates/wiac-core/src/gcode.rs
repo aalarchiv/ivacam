@@ -21,6 +21,18 @@ use serde::{Deserialize, Serialize};
 use crate::cam::offsets::PolylineOffset;
 use crate::cam::setup::{MachineMode, Setup, ToolOffset, UnitSystem};
 use crate::geometry::{Point2, Segment, SegmentKind};
+use crate::project::tool::SpindleDirection;
+
+/// z1y0: route the post's spindle-direction call based on the tool's
+/// `spindle_direction`. Centralized so every cut-emission site
+/// (`emit_offset`, `emit_drill_block`, `emit_vcarve_block`) picks the
+/// same path without each caller open-coding the match.
+fn spindle_on<P: PostProcessor>(post: &mut P, dir: SpindleDirection, speed: u32, pause: u32) {
+    match dir {
+        SpindleDirection::Cw => post.spindle_cw(speed, pause),
+        SpindleDirection::Ccw => post.spindle_ccw(speed, pause),
+    }
+}
 
 pub mod arc_fit;
 mod entry;
@@ -358,7 +370,12 @@ pub fn emit_vcarve_block<P: PostProcessor>(
     }
     let fast_z = setup.mill.fast_move_z;
     if setup.machine.mode == MachineMode::Mill {
-        post.spindle_cw(setup.tool.speed, setup.tool.pause);
+        spindle_on(
+            post,
+            setup.tool.spindle_direction,
+            setup.tool.speed,
+            setup.tool.pause,
+        );
     }
     if setup.tool.flood {
         post.coolant_flood();
@@ -419,7 +436,12 @@ pub fn emit_drill_block<P: PostProcessor>(
     let r = setup.mill.start_depth;
     let fast_z = setup.mill.fast_move_z;
     if setup.machine.mode == MachineMode::Mill {
-        post.spindle_cw(setup.tool.speed, setup.tool.pause);
+        spindle_on(
+            post,
+            setup.tool.spindle_direction,
+            setup.tool.speed,
+            setup.tool.pause,
+        );
     }
     if setup.tool.flood {
         post.coolant_flood();
@@ -508,7 +530,13 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     post.plane_xy();
     post.cutter_comp_off();
     post.feed_per_minute();
-    post.feedrate(setup.tool.rate_h);
+    // l3o6: don't emit F<rate> here — the next motion is a G0 rapid
+    // (move_to fast_move_z) and G0 ignores the modal feedrate. The
+    // first G1/G2/G3 that actually needs F is in the per-offset block
+    // below (`post.feedrate(use_rate_h)` before any cut), so deferring
+    // here means F appears on the line that actually consumes it,
+    // matching what controllers expect (and what most CAM systems
+    // emit). The cost is zero: posts dedupe identical-rate F-emits.
     post.move_to(None, None, Some(setup.mill.fast_move_z));
 }
 
@@ -580,7 +608,12 @@ fn emit_offset<P: PostProcessor>(
         (setup.tool.speed, setup.tool.rate_v, setup.tool.rate_h)
     };
     if setup.machine.mode == MachineMode::Mill {
-        post.spindle_cw(use_speed, setup.tool.pause);
+        spindle_on(
+            post,
+            setup.tool.spindle_direction,
+            use_speed,
+            setup.tool.pause,
+        );
     }
     if setup.tool.flood {
         post.coolant_flood();
@@ -631,6 +664,15 @@ fn emit_offset<P: PostProcessor>(
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
+            // 3o3n: re-emit the cutting feedrate immediately before
+            // the arc lead-in. The roll-on is the first ACTUAL cut
+            // motion in the program (G2/G3 honors F); relying on a
+            // modal set further upstream means the listing's first
+            // arc has no F line nearby — defensive on FANUC / vintage
+            // controllers that re-evaluate F at each motion-mode
+            // change. Posts dedupe identical-rate emits so this is
+            // free when the modal already matches.
+            post.feedrate(use_rate_h);
             // I/J are the offset from the arc's start (current XY) to
             // its center — same convention as ezdxf / ngc / linuxcnc.
             let i = center.x - from.x;
@@ -750,11 +792,24 @@ fn multi_pass<P: PostProcessor>(
     } else {
         setup.mill.step
     };
+    // 580k: normalize finish_step at the call boundary — reject
+    // negative / zero / non-finite values so z_schedule sees a clean
+    // positive magnitude. The schedule builder also abs()-then-filters
+    // internally, but normalizing here makes the contract explicit and
+    // lets the next reader spot a sign-bug without reading three
+    // files.
+    let finish_step = setup.mill.finish_step.and_then(|f| {
+        if f.is_finite() && f.abs() > 1e-9 {
+            Some(f.abs())
+        } else {
+            None
+        }
+    });
     let z_schedule = build_z_schedule(
         setup.mill.start_depth,
         total_depth,
         step_raw,
-        setup.mill.finish_step,
+        finish_step,
         &setup.mill.depth_list,
     );
     let tabs_z = total_depth + setup.tabs.height.abs();
@@ -1001,6 +1056,27 @@ pub struct PostState {
     /// by `configure_post_state` from `MachineConfig::unit`.
     #[serde(default = "default_unit_scale")]
     pub unit_scale: f64,
+    /// f78z: last commanded coolant state. Dedupe target so M7 / M8 /
+    /// M9 lines only emit on state changes — the old code re-emitted
+    /// the SAME M7 / M8 on every offset because the cut-block helpers
+    /// unconditionally call `coolant_mist` / `coolant_flood` before
+    /// each cut. `Unknown` is the initial state; `OffEmitted` is the
+    /// state right after `coolant_off` so a re-enable after off still
+    /// gets through.
+    #[serde(default, skip)]
+    pub last_coolant: CoolantState,
+}
+
+/// f78z: tracked coolant state for dedup. Mirrors the M-code we last
+/// commanded (or `Unknown` at program start, before any M7 / M8 / M9
+/// has been emitted).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CoolantState {
+    #[default]
+    Unknown,
+    Mist,
+    Flood,
+    Off,
 }
 
 fn default_unit_scale() -> f64 {
@@ -1025,6 +1101,7 @@ impl Default for PostState {
             profile: None,
             token_ctx: crate::gcode::post_profile::TokenCtx::default(),
             unit_scale: 1.0,
+            last_coolant: CoolantState::Unknown,
         }
     }
 }
@@ -1059,8 +1136,21 @@ pub fn configure_post_state(
 /// Format a floating-point number using the post-state's decimal
 /// separator. Matches the upstream's formatting otherwise: 4 decimal
 /// places, strip trailing zeros, never end with `.`.
+///
+/// e0hq: snap values whose magnitude is below half-an-ULP of the
+/// emitted precision to a positive literal `0` so we never render
+/// `-0.000` / `-0` — some controllers (Heidenhain, vintage FANUC)
+/// reject a leading minus on a zero coordinate, and operators reading
+/// the listing rightly find `Z-0` confusing.
 #[must_use]
 pub fn fmt_num(v: f64, sep: char) -> String {
+    // Suppress signed-zero: any value with magnitude < 0.5 * 10^-4
+    // (half-ULP of the 4-decimal output) would round to "0" anyway —
+    // including `-0.000049…`, which currently rendered as `-0`. Snap
+    // those to a clean positive zero before formatting so the leading
+    // `-` never appears.
+    const ZERO_EPS: f64 = 0.5e-4;
+    let v = if v.abs() < ZERO_EPS { 0.0 } else { v };
     let s = format!("{v:.4}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
     let base = if trimmed.is_empty() {
@@ -1096,6 +1186,132 @@ mod tests {
 
     fn p(x: f64, y: f64) -> Point2 {
         Point2::new(x, y)
+    }
+
+    #[test]
+    fn f78z_coolant_emits_once_across_multiple_offsets() {
+        // Two offsets with flood-on tooling: the M8 line must appear
+        // exactly once. The old code re-emitted M8 before every cut,
+        // which a few controllers (older Mach3) interpret as a
+        // request to re-prime the pump — at best a noisy listing, at
+        // worst a relay-life issue.
+        let mut setup = Setup::default();
+        setup.tool.diameter = 1.0;
+        setup.tool.flood = true;
+        setup.tool.speed = 12000;
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+        let mut sq2 = square_offset();
+        for s in &mut sq2.segments {
+            s.start.x += 50.0;
+            s.end.x += 50.0;
+        }
+        sq2.source_object_idx = 1;
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[square_offset(), sq2], &mut post);
+        let m8_count = g.lines().filter(|l| l.trim() == "M8").count();
+        assert_eq!(
+            m8_count, 1,
+            "expected exactly one M8 across two offsets, got {m8_count}:\n{g}",
+        );
+    }
+
+    #[test]
+    fn z1y0_spindle_ccw_routes_through_post_spindle_ccw() {
+        // A left-hand cutter (SpindleDirection::Ccw) must emit M4
+        // instead of M3 — left-hand tools chip-load in the reverse
+        // direction, so commanding M3 spins them backwards and the
+        // cutter tries to climb up the workpiece. Routing through
+        // `spindle_ccw` (M4) is the difference between "works" and
+        // "cuts the operator's hand".
+        let mut setup = Setup::default();
+        setup.tool.diameter = 1.0;
+        setup.tool.speed = 12000;
+        setup.tool.spindle_direction = SpindleDirection::Ccw;
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[square_offset()], &mut post);
+        assert!(
+            g.contains("M4 S12000") || g.contains("M4S12000"),
+            "expected M4 (CCW) for left-hand cutter, got: {g}",
+        );
+        assert!(
+            !g.contains("M3"),
+            "must not emit M3 when spindle_direction = Ccw: {g}",
+        );
+    }
+
+    #[test]
+    fn z1y0_default_spindle_direction_still_cw() {
+        // Default behavior (Cw) must keep emitting M3 — z1y0 only
+        // adds the CCW path; existing projects round-trip unchanged.
+        let mut setup = Setup::default();
+        setup.tool.diameter = 1.0;
+        setup.tool.speed = 12000;
+        // spindle_direction defaults to Cw via Default impl.
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[square_offset()], &mut post);
+        assert!(g.contains("M3"), "default direction (Cw) must emit M3: {g}");
+        assert!(!g.contains("M4"), "default must not emit M4: {g}");
+    }
+
+    #[test]
+    fn l3o6_first_f_emits_after_initial_g0() {
+        // Before this fix, program_begin emitted F<rate> BEFORE the
+        // initial rapid lift to fast_move_z — and G0 doesn't consume
+        // the feedrate modal. The visible effect is a stray F line
+        // that confuses linenumber-driven dry-run tracing on FANUC /
+        // Mach3; the real cost is that the F applied to the rapid is
+        // misinterpreted by some sims as a slow cutting move.
+        let mut setup = Setup::default();
+        setup.tool.diameter = 1.0;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[square_offset()], &mut post);
+        // Locate the first G0 (initial rapid) and the first F<rate>;
+        // F must appear AFTER the G0, not before.
+        let first_g0 = g.lines().position(|l| l.trim_start().starts_with("G0"));
+        let first_f = g.lines().position(|l| l.trim_start().starts_with('F'));
+        let (g0, f) = (first_g0.expect("expected a G0"), first_f.expect("expected an F"));
+        assert!(
+            f > g0,
+            "expected F to appear AFTER initial G0 (G0 ignores F); got F at line {f}, G0 at line {g0}\n{g}",
+        );
+    }
+
+    #[test]
+    fn e0hq_fmt_num_suppresses_negative_zero() {
+        // -0.0 must never round-trip as "-0"; same for any value
+        // whose magnitude is below half an ULP of the 4-decimal
+        // output (those would all render as "0" anyway and the
+        // leading minus is pure noise — and breaks Heidenhain /
+        // vintage FANUC controllers that reject `-0`).
+        assert_eq!(fmt_num(-0.0, '.'), "0");
+        assert_eq!(fmt_num(-0.000_001, '.'), "0");
+        assert_eq!(fmt_num(-4.9e-5, '.'), "0");
+        // Just above the snap threshold still renders signed.
+        assert_eq!(fmt_num(-0.0001, '.'), "-0.0001");
+        // Sanity: positive zero is unchanged.
+        assert_eq!(fmt_num(0.0, '.'), "0");
+        // Comma locale: same suppression rule.
+        assert_eq!(fmt_num(-0.0, ','), "0");
     }
 
     fn square_offset() -> PolylineOffset {

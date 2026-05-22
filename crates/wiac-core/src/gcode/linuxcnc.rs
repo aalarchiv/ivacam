@@ -9,7 +9,8 @@
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::post_profile::{template_lines, AxisFormat, PostProfile, TokenCtx};
 use crate::gcode::{
-    configure_post_state, fmt_num, line_number_prefix, CapturedPostState, PostProcessor, PostState,
+    configure_post_state, fmt_num, line_number_prefix, CapturedPostState, CoolantState,
+    PostProcessor, PostState,
 };
 
 #[derive(Debug, Default)]
@@ -384,6 +385,13 @@ impl PostProcessor for Post {
         ));
     }
     fn coolant_mist(&mut self) {
+        // f78z: dedupe — the per-offset cut-block calls coolant_mist
+        // unconditionally before each cut, but the controller only
+        // wants the M7 on a state CHANGE. Suppress when we already
+        // commanded Mist.
+        if self.state.last_coolant == CoolantState::Mist {
+            return;
+        }
         if let Some(template) = self
             .state
             .profile
@@ -396,8 +404,14 @@ impl PostProcessor for Post {
         } else {
             self.write("M7");
         }
+        self.state.last_coolant = CoolantState::Mist;
     }
     fn coolant_flood(&mut self) {
+        // f78z: same dedupe as coolant_mist — only emit M8 on a state
+        // change.
+        if self.state.last_coolant == CoolantState::Flood {
+            return;
+        }
         if let Some(template) = self
             .state
             .profile
@@ -410,8 +424,17 @@ impl PostProcessor for Post {
         } else {
             self.write("M8");
         }
+        self.state.last_coolant = CoolantState::Flood;
     }
     fn coolant_off(&mut self) {
+        // f78z: skip when coolant is already off. The Unknown initial
+        // state still emits — a defensive M9 at program-end ensures
+        // the spindle/pump shuts down even if no on-line was emitted
+        // (e.g. tool with coolant=Off followed by an explicit
+        // shutdown).
+        if self.state.last_coolant == CoolantState::Off {
+            return;
+        }
         // Pick the off template based on which coolant variant we
         // think is still on (state.last_speed is unreliable here).
         // For v1: prefer flood-off if either is set, else mist-off.
@@ -427,6 +450,7 @@ impl PostProcessor for Post {
         } else {
             self.write("M9");
         }
+        self.state.last_coolant = CoolantState::Off;
     }
     fn spindle_off(&mut self) {
         self.write("M5");

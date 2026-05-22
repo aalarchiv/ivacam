@@ -943,9 +943,11 @@ pub(super) fn synthesize_finish_setup(
 /// When `machine.supports_toolchange == false` the function emits a
 /// manual-swap pause envelope instead: M5 + dwell + a `; pause: swap to
 /// tool <n>` comment + M0, so the operator hand-changes the bit. Resume
-/// requires pressing Cycle Start. No M3 is emitted after M0 because the
-/// post-resume code path will re-issue spindle_cw at the new tool's RPM
-/// lazily on the next cut.
+/// requires pressing Cycle Start. After resume the helper emits an
+/// explicit M3 at the new tool's RPM (going through
+/// [`PostProcessor::spindle_cw`]) so the next cut starts with the
+/// spindle already at commanded speed — we can't trust the
+/// delta-encoder's `last_speed` after a hand-swap.
 pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     post: &mut P,
     machine: &crate::cam::setup::MachineConfig,

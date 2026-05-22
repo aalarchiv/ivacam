@@ -6,6 +6,7 @@
 //! grazing the pocket walls.
 
 use crate::cam::vcarve::{medial_axis, VcRegion};
+use crate::geometry::Point2;
 
 const WALL_CLEARANCE_MM: f64 = 0.5;
 const MIN_HELIX_RADIUS_FACTOR: f64 = 1.2;
@@ -18,6 +19,15 @@ const MIN_HELIX_RADIUS_FACTOR: f64 = 1.2;
 ///
 /// Tie-break for multiple equal-radius vertices (long pill shapes etc.):
 /// first hit wins by medial-axis traversal order.
+///
+/// 3fvj: the candidate medial-axis vertex is additionally validated
+/// against EVERY island boundary — `best.r` is the distance to the
+/// nearest densified-boundary SAMPLE (so islands contribute), but the
+/// 0.1 mm sampling can miss long flat island walls whose nearest sample
+/// sits further than the true edge distance. After picking the best
+/// vertex we measure the true line-segment distance to each island edge;
+/// if any island wall is closer than the helix circle + tool radius, the
+/// candidate is rejected so the caller falls back to Ramp.
 #[must_use]
 pub fn inscribed_circle(region: &VcRegion, tool_radius: f64) -> Option<(f64, f64, f64)> {
     // First-hit tie-break (matters for long-pill shapes where the spine
@@ -38,7 +48,51 @@ pub fn inscribed_circle(region: &VcRegion, tool_radius: f64) -> Option<(f64, f64
     if helix_radius < tool_radius * MIN_HELIX_RADIUS_FACTOR {
         return None;
     }
+    // True-distance check against every island wall. medial_axis already
+    // densifies and samples the island boundaries (so `best.r` reflects
+    // them), but a long flat island edge can sit between two sample
+    // points whose distance to the vertex is greater than the true
+    // line-segment distance. Re-test segment-to-point to guard the
+    // helix-fit decision.
+    let candidate = Point2::new(best.x, best.y);
+    let required = helix_radius + tool_radius;
+    for hole in &region.holes {
+        if min_distance_to_polyline(&candidate, hole) <= required {
+            return None;
+        }
+    }
     Some((best.x, best.y, helix_radius))
+}
+
+/// Minimum line-segment distance from `p` to the closed polyline
+/// `verts`. Used by the island-clearance check above; segment distance
+/// (not vertex distance) is essential for long flat island walls.
+fn min_distance_to_polyline(p: &Point2, verts: &[Point2]) -> f64 {
+    let n = verts.len();
+    if n < 2 {
+        return f64::INFINITY;
+    }
+    let mut best = f64::INFINITY;
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        let ex = b.x - a.x;
+        let ey = b.y - a.y;
+        let len_sq = ex * ex + ey * ey;
+        let d = if len_sq < 1e-18 {
+            ((p.x - a.x).powi(2) + (p.y - a.y).powi(2)).sqrt()
+        } else {
+            let t = ((p.x - a.x) * ex + (p.y - a.y) * ey) / len_sq;
+            let t = t.clamp(0.0, 1.0);
+            let px = a.x + t * ex;
+            let py = a.y + t * ey;
+            ((p.x - px).powi(2) + (p.y - py).powi(2)).sqrt()
+        };
+        if d < best {
+            best = d;
+        }
+    }
+    best
 }
 
 #[cfg(test)]

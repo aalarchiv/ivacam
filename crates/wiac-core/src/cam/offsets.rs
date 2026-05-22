@@ -250,14 +250,18 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
     // the assert. Catch the panic and skip the offset rather than
     // taking down the whole pipeline — the user gets a partial result
     // plus a warning instead of a 500.
-    let layer = obj.layer.clone();
+    //
+    // z4t6: previously the catch_unwind path only emitted a `tracing::warn`,
+    // which is invisible to the UI — the operation silently produced
+    // empty offsets and the user shipped gcode missing the contour. We
+    // now stash a structured `ParallelOffsetPanic` record into a
+    // thread-local sink that the pipeline drains into `PipelineWarning`
+    // entries (see `take_parallel_offset_panics`). The panic itself is
+    // still caught — the pipeline stays alive.
     let Ok(offsets) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         pline.parallel_offset(delta)
     })) else {
-        tracing::warn!(
-            "parallel_offset on layer '{}' panicked in cavalier_contours; skipping",
-            layer
-        );
+        record_parallel_offset_panic(obj, delta);
         return Vec::new();
     };
     offsets
@@ -274,6 +278,83 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
             is_finish: false,
         })
         .collect()
+}
+
+/// Structured record produced when `parallel_offset_object` traps a
+/// `cavalier_contours` panic. The pipeline drains the thread-local sink
+/// after each op and converts these into `PipelineWarning`s tagged
+/// `parallel_offset_panicked` so the UI surfaces them.
+#[derive(Debug, Clone)]
+pub struct ParallelOffsetPanic {
+    pub layer: std::sync::Arc<str>,
+    pub color: i32,
+    pub bbox_min_x: f64,
+    pub bbox_min_y: f64,
+    pub bbox_max_x: f64,
+    pub bbox_max_y: f64,
+    /// Stable hash of the input segment endpoints (low 64 bits of a
+    /// FNV-1a walk) so the same offending geometry reports the same
+    /// digest across runs — useful for cross-referencing user bug
+    /// reports with stored DXFs.
+    pub input_digest: u64,
+    pub delta: f64,
+}
+
+thread_local! {
+    static PARALLEL_OFFSET_PANICS: std::cell::RefCell<Vec<ParallelOffsetPanic>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn record_parallel_offset_panic(obj: &VcObject, delta: f64) {
+    tracing::warn!(
+        "parallel_offset on layer '{}' panicked in cavalier_contours; skipping",
+        obj.layer
+    );
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
+    let mut mix = |x: f64, acc: &mut u64| {
+        let bits = x.to_bits();
+        for b in bits.to_le_bytes() {
+            *acc ^= u64::from(b);
+            *acc = acc.wrapping_mul(0x100_0000_01b3);
+        }
+    };
+    for s in &obj.segments {
+        for p in [s.start, s.end] {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+            mix(p.x, &mut h);
+            mix(p.y, &mut h);
+        }
+        mix(s.bulge, &mut h);
+    }
+    mix(delta, &mut h);
+    let rec = ParallelOffsetPanic {
+        layer: obj.layer.clone(),
+        color: obj.color,
+        bbox_min_x: min_x,
+        bbox_min_y: min_y,
+        bbox_max_x: max_x,
+        bbox_max_y: max_y,
+        input_digest: h,
+        delta,
+    };
+    PARALLEL_OFFSET_PANICS.with(|s| s.borrow_mut().push(rec));
+}
+
+/// Drain (and clear) any `ParallelOffsetPanic` entries stashed by
+/// `parallel_offset_object` on this thread. The pipeline calls this once
+/// per op so panics get attributed to the op that triggered them.
+#[must_use]
+pub fn take_parallel_offset_panics() -> Vec<ParallelOffsetPanic> {
+    PARALLEL_OFFSET_PANICS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
 /// Generate a zigzag (raster) pocket fill within `boundary`. The fill is
@@ -490,13 +571,20 @@ pub fn pocket_zigzag(
             // Cross-row bridge sanity: when prev_end is on one side of
             // an island and `a` is on the other side, joining them with
             // a straight cut would cross the island. Break instead.
+            // axhd: also break when the joiner LEAVES the outer pocket
+            // boundary — non-convex outer shapes (U, +, donut) can put
+            // two strokes on the same scanline that belong to disjoint
+            // arms; a straight line between them ploughs across uncut
+            // stock (the cross-bar of the U, the corner of the L).
             if !needs_break {
                 if let Some(prev) = prev_end {
-                    if prev.distance(a) > 1e-6
-                        && !islands.is_empty()
-                        && segment_crosses_any_polygon(prev, a, islands)
-                    {
-                        needs_break = true;
+                    if prev.distance(a) > 1e-6 {
+                        let crosses_island = !islands.is_empty()
+                            && segment_crosses_any_polygon(prev, a, islands);
+                        let leaves_outer = !bridge_stays_inside_polygon(prev, a, boundary);
+                        if crosses_island || leaves_outer {
+                            needs_break = true;
+                        }
                     }
                 }
             }
@@ -602,6 +690,51 @@ fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<
         }
     }
     xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    // c6ej: collapse duplicate crossings whose x values are within a
+    // FUZZY-equivalent tolerance. A scanline that just grazes a vertex
+    // produces TWO crossings at the same x (one for each adjacent edge)
+    // when both edges happen to satisfy the half-open `y >= hi.y - 1e-12`
+    // rule at the same vertex — that's the classic odd-count source the
+    // downstream `chunks_exact(2)` silently dropped. Snapping coincident
+    // crossings together restores even parity for the common
+    // vertex-tangent case; a remaining odd remainder is a genuinely
+    // degenerate input that we now log instead of dropping silently.
+    if xs.len() >= 2 {
+        let snap_tol = 1e-3_f64;
+        let mut dedup = Vec::with_capacity(xs.len());
+        let mut last = f64::NEG_INFINITY;
+        let mut pending: Option<f64> = None;
+        for &x in &xs {
+            if (x - last).abs() <= snap_tol && pending.is_none() {
+                // Coincident pair (vertex-tangent): swallow the duplicate
+                // so the entry-exit count stays even.
+                pending = Some(last);
+                continue;
+            }
+            if let Some(p) = pending.take() {
+                // Drop the swallowed duplicate; emit the new crossing
+                // fresh. (We keep one of the two coincident hits in
+                // `dedup` already.)
+                let _ = p;
+            }
+            dedup.push(x);
+            last = x;
+        }
+        xs = dedup;
+    }
+    if xs.len() % 2 == 1 {
+        // The snap pass couldn't bring the count to even (genuinely
+        // degenerate input — e.g. an open contour or self-intersecting
+        // ring). Surface a warning so the user sees uncut stock instead
+        // of shipping silently. Pocket emitters skip the trailing
+        // unpaired crossing for THIS scanline only.
+        tracing::warn!(
+            "horizontal_crossings: odd crossing count {} at y = {:.3}; trailing crossing dropped (degenerate polygon? open contour?)",
+            xs.len(),
+            y
+        );
+        xs.pop();
+    }
     xs
 }
 
@@ -1429,6 +1562,16 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
 /// If `obj` is a single closed CIRCLE smaller than the tool, return a
 /// drill-only offset whose single segment is a zero-length POINT at the
 /// circle's center. The gcode emitter handles this as plunge + retract.
+///
+/// dtf1: the prior threshold `r < 0.95 * tool_radius` left a dead zone
+/// for circles whose radius sat in `[0.95·r, r)` — too narrow for the
+/// inward-offset cascade (which collapsed to empty geometry) but too wide
+/// to drill under the strict bound. Result: such holes were silently
+/// dropped. The threshold is now extended to `r < 0.999 * tool_radius` so
+/// any circle that won't pocket gets a drill substitution at its centre.
+/// The tiny remaining sliver `[0.999·r, r)` is genuinely a manufacturing
+/// boundary (the tool exactly fills the hole) — it's left to the cascade
+/// + the `pocket_fill_incomplete` / `tool_too_large` warnings.
 #[must_use]
 pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
     use crate::geometry::SegmentKind;
@@ -1441,7 +1584,7 @@ pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOf
     }
     let center = obj.segments[0].center?;
     let radius = obj.segments[0].start.distance(center);
-    if radius >= tool_radius * 0.95 {
+    if radius >= tool_radius * 0.999 {
         return None;
     }
     Some(PolylineOffset {
@@ -1551,9 +1694,32 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
         }
         let out = (-bx / blen, -by / blen);
 
-        // Probe boundary endpoints along the outward ray.
+        // Probe boundary segments along the outward ray.
+        // 5nij: prior implementation only tested vertex ENDPOINTS — fine
+        // for tiny test geometries where every wall is short enough that
+        // a vertex lands near the bisector ray, but real CAD parts have
+        // long flat walls whose endpoints sit far from the ray. We now
+        // intersect each boundary segment as a line-segment-vs-ray test
+        // so long-wall reflex corners get their dip too.
+        //
+        // perp_tol stays at 0.25 mm — that's the existing endpoint-mode
+        // tolerance, retained so the endpoint hits this loop still picks
+        // (a long wall whose closest point on the ray IS its endpoint
+        // resolves identically). Vertex-endpoint hits are picked up by
+        // the segment-distance path with a non-negative `t` clamp.
+        let perp_tol = 0.25_f64;
         let mut nearest: Option<f64> = None;
+        let mut consider = |along: f64| {
+            if along <= 1e-6 {
+                return;
+            }
+            if nearest.map_or(true, |c| along < c) {
+                nearest = Some(along);
+            }
+        };
         for seg in boundary_segments {
+            // 1) Endpoint hits (unchanged behaviour — short segments hit
+            //    here exactly like before).
             for p1 in [seg.start, seg.end] {
                 let dx = p1.x - cur.x;
                 let dy = p1.y - cur.y;
@@ -1562,12 +1728,39 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
                     continue;
                 }
                 let perp = (dx * out.1 - dy * out.0).abs();
-                if perp > 0.25 {
-                    continue;
+                if perp <= perp_tol {
+                    consider(along);
                 }
-                if nearest.map_or(true, |c| along < c) {
-                    nearest = Some(along);
-                }
+            }
+            // 2) Mid-edge hits: solve the ray (origin = cur, dir = out)
+            //    against the segment (a -> b). The ray hits the line
+            //    extending the segment when the two are not parallel; we
+            //    additionally require the hit point to lie inside the
+            //    segment AND in front of the ray (along > 0).
+            let (a, b) = (seg.start, seg.end);
+            let ex = b.x - a.x;
+            let ey = b.y - a.y;
+            // Solve cur + t * out = a + u * (b - a) for (t, u).
+            //    out.x * t - ex * u = a.x - cur.x
+            //    out.y * t - ey * u = a.y - cur.y
+            // Cramer's:
+            let det = out.0 * (-ey) - out.1 * (-ex);
+            if det.abs() < 1e-12 {
+                // Parallel / coincident — fall back to a perpendicular
+                // foot probe: closest point on segment to the ray's
+                // projection. We don't overcut into a wall the cutter is
+                // walking parallel to; skip.
+                continue;
+            }
+            let rhs0 = a.x - cur.x;
+            let rhs1 = a.y - cur.y;
+            let t = (rhs0 * (-ey) - rhs1 * (-ex)) / det;
+            let u = (out.0 * rhs1 - out.1 * rhs0) / det;
+            // u in [0, 1] keeps the hit inside the segment; the
+            // perp_tol slack also rescues hits that lie just past
+            // either endpoint (matching the endpoint loop's slack).
+            if (-1e-3..=1.0 + 1e-3).contains(&u) {
+                consider(t);
             }
         }
         let Some(dist) = nearest else {

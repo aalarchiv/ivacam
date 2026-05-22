@@ -406,9 +406,18 @@ fn paths_for(indices: &[usize], objects: &[VcObject], cache: &mut TessCache) -> 
     paths
 }
 
-/// Walk the `PolyTreeD` root and emit one `CombinedRegion` per top-level
-/// outer path. Holes are the direct children of each top-level node
-/// (`PolyTree` alternates outer/hole/outer/... per nesting level).
+/// Walk the `PolyTreeD` and emit one `CombinedRegion` per outer ring at
+/// every odd nesting level. `PolyTree` alternates outer/hole/outer/... so
+/// the root's children are outers, their children are holes, their
+/// grandchildren are outers again (an island inside a hole inside an
+/// outer — i.e. a re-entrant boss the cutter must leave standing).
+///
+/// uksn: previously this only walked top-level outers and their direct
+/// hole-children. Grandchildren (re-entrant outers nested inside a hole)
+/// were silently dropped — auto-combine with a frame-plus-window-plus-boss
+/// DXF produced a single annulus that machined straight through the boss.
+/// We now recurse so each outer at any depth becomes its own region with
+/// its direct children as holes.
 fn polytree_to_regions(
     tree: &PolyTreeD,
     source_idx: usize,
@@ -416,24 +425,38 @@ fn polytree_to_regions(
     color: i32,
 ) -> Vec<CombinedRegion> {
     let mut out = Vec::new();
-    // An empty result tree (e.g. difference of A from A) has no nodes;
-    // bail out cleanly instead of indexing into an empty Vec and
-    // panicking the whole pipeline.
     let Some(root) = tree.nodes.first() else {
         return out;
     };
-    for &top_idx in root.children() {
-        let top = &tree.nodes[top_idx];
-        let boundary = pathd_to_points(top.polygon());
+    // Stack-based recursion across odd-level outers.
+    let mut stack: Vec<usize> = root.children().to_vec();
+    while let Some(outer_idx) = stack.pop() {
+        let outer_node = &tree.nodes[outer_idx];
+        let boundary = pathd_to_points(outer_node.polygon());
         if boundary.len() < 3 {
+            // Skip degenerate outer; still descend into grandchildren
+            // (they're attached to a hole, and the hole's children are
+            // outers — we want them visible even if this rung is empty).
+            for &hi in outer_node.children() {
+                for &gi in tree.nodes[hi].children() {
+                    stack.push(gi);
+                }
+            }
             continue;
         }
-        let holes: Vec<Vec<Point2>> = top
-            .children()
-            .iter()
-            .map(|&hi| pathd_to_points(tree.nodes[hi].polygon()))
-            .filter(|pts| pts.len() >= 3)
-            .collect();
+        let mut holes: Vec<Vec<Point2>> = Vec::new();
+        for &hi in outer_node.children() {
+            let hole_node = &tree.nodes[hi];
+            let hole_pts = pathd_to_points(hole_node.polygon());
+            if hole_pts.len() >= 3 {
+                holes.push(hole_pts);
+            }
+            // Each hole's children are outers one rung deeper — queue
+            // them so a depth-2 nested outer becomes its own region.
+            for &gi in hole_node.children() {
+                stack.push(gi);
+            }
+        }
         out.push(CombinedRegion {
             boundary,
             holes,

@@ -82,6 +82,10 @@ pub(super) fn build_op_offsets(
     if cancelled(cancel) {
         return Err(PipelineError::Cancelled);
     }
+    // Discard any stale panic records left over by a prior op on this
+    // thread (defensive — every op-completion path also drains, so this
+    // should be empty in normal operation).
+    let _ = crate::cam::offsets::take_parallel_offset_panics();
     // Up-front sanity checks that don't depend on whether the cascade
     // succeeds. push_tool_fit_kind_warnings populates `warnings` for
     // tool-kind / op-kind mismatches and impossible tool geometry.
@@ -321,6 +325,7 @@ pub(super) fn build_op_offsets(
                 crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
             }
             push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
+            drain_parallel_offset_panics(effective_op, warnings);
             return Ok((offsets, closed));
         }
     }
@@ -377,12 +382,27 @@ pub(super) fn build_op_offsets(
                 // user expectation under "Selected" mode is that ONLY
                 // what's selected matters — match that here for every
                 // pocket strategy.
-                if islands.is_empty()
-                    && effective_op
-                        .pocket_params()
-                        .is_some_and(|p| p.pocket_islands)
-                    && matches!(effective_op.source, OpSource::All)
-                {
+                //
+                // 473k: when source=All AND every nested inner object is
+                // closed, auto-detect the donut/annular intent without
+                // requiring the user to flip `pocket_islands`. The
+                // canonical case: a frame plate with a center hole +
+                // default Pocket op. Most users expect this to cut a
+                // donut, not pocket through the inner closed contour.
+                // The legacy `pocket_islands=true` path is preserved
+                // (still triggers when no inners are auto-detected, but
+                // we hit it via the same fallback now).
+                let auto_annular = matches!(effective_op.source, OpSource::All)
+                    && !obj.inner_objects.is_empty()
+                    && obj
+                        .inner_objects
+                        .iter()
+                        .all(|i| objects.get(*i).is_some_and(|o| o.closed));
+                let legacy_pocket_islands_flag = effective_op
+                    .pocket_params()
+                    .is_some_and(|p| p.pocket_islands)
+                    && matches!(effective_op.source, OpSource::All);
+                if islands.is_empty() && (auto_annular || legacy_pocket_islands_flag) {
                     islands = obj
                         .inner_objects
                         .iter()
@@ -572,7 +592,38 @@ pub(super) fn build_op_offsets(
         crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
     }
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
+    drain_parallel_offset_panics(effective_op, warnings);
     Ok((offsets, closed))
+}
+
+/// z4t6: drain any `cavalier_contours` panics trapped by
+/// `parallel_offset_object` during the current op and surface them as
+/// `parallel_offset_panicked` `PipelineWarning`s. The panic itself was
+/// already caught (the pipeline kept running); this is where we make it
+/// VISIBLE to the user via the warnings sidebar instead of only the
+/// stderr log.
+fn drain_parallel_offset_panics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
+    for panic in crate::cam::offsets::take_parallel_offset_panics() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "parallel_offset_panicked".into(),
+            message: format!(
+                "op '{}': parallel-offset on layer '{}' (bbox ({:.2}, {:.2}) → ({:.2}, {:.2}), digest {:#018x}, delta {:.3}) tripped a cavalier_contours assert and produced no toolpath. Try simplifying or re-tessellating the contour (e.g. remove self-touching vertices in HATCH boundaries / ELLIPSE flattening).",
+                op.name,
+                panic.layer,
+                panic.bbox_min_x,
+                panic.bbox_min_y,
+                panic.bbox_max_x,
+                panic.bbox_max_y,
+                panic.input_digest,
+                panic.delta,
+            ),
+        });
+        // Color is captured but we don't include it in the human message
+        // — it's exposed in the structured PipelineWarning kind tag for
+        // tests that want to assert on it deterministically.
+        let _ = panic.color;
+    }
 }
 
 /// Map a frontend pocket strategy choice onto the offsets-layer

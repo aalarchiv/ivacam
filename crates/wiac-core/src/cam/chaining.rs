@@ -186,16 +186,103 @@ pub fn classify_containment(objects: &mut [VcObject]) -> usize {
         .unwrap_or(0)
 }
 
+/// Probe point used by `classify_containment` — must lie STRICTLY inside
+/// the object so the even-odd ray-cast against another polygon returns a
+/// deterministic answer.
+///
+/// is68: the prior implementation returned the chord midpoint of the
+/// first segment, which sits ON the boundary (lines) or ON the chord (for
+/// arcs — arcs of a half-circle have their chord midpoint at the circle's
+/// CENTER, which is interior, but for arcs spanning < 180° the chord
+/// midpoint can sit outside the arc's region entirely). Two tangent
+/// circles whose touch point lands at the chord midpoint would then
+/// classify non-deterministically depending on FP rounding.
+///
+/// New behaviour for closed objects:
+/// 1. Try the polygon centroid (tessellate to points). Works for any
+///    convex region.
+/// 2. If the centroid is NOT inside (re-entrant shape like an L or a U),
+///    sample the arc's true midpoint via the centre + tangent direction
+///    for arcs, or fall back to a small inward-normal offset of the
+///    first-segment midpoint for lines.
+/// 3. Open objects keep the legacy chord-midpoint behaviour (they're
+///    not pocketable so containment doesn't drive emit-time decisions).
 fn sample_point(obj: &VcObject) -> Point2 {
-    if let Some(s) = obj.segments.first() {
+    use crate::cam::{polygon_centroid, segments_to_points};
+    use crate::geometry::SegmentKind;
+    if obj.segments.is_empty() {
+        return Point2::new(0.0, 0.0);
+    }
+    // Open objects: chord midpoint stays — they have no interior to test.
+    if !obj.closed {
+        let s = &obj.segments[0];
         let pts = segment_to_points(s, 1);
-        // Midpoint of the first segment is a good unambiguous probe.
         let a = pts.first().copied().unwrap_or(Point2::new(0.0, 0.0));
         let b = pts.last().copied().unwrap_or(a);
-        Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5)
-    } else {
-        Point2::new(0.0, 0.0)
+        return Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
     }
+    // Closed object: tessellate, try centroid first.
+    let poly = segments_to_points(&obj.segments, 6);
+    if poly.len() >= 3 {
+        if let Some(centroid) = polygon_centroid(&poly) {
+            if crate::cam::is_inside_polygon(&poly, centroid) {
+                return centroid;
+            }
+        }
+    }
+    // Re-entrant fallback: arc midpoint via centre + tangent for arcs,
+    // or inward-normal offset for lines. The arc midpoint sits ON the
+    // boundary, but combined with a tiny inward shift along the chord
+    // normal it lands strictly inside.
+    let s = &obj.segments[0];
+    let mid = match s.kind {
+        SegmentKind::Arc | SegmentKind::Circle => {
+            // True arc midpoint: rotate from start around centre by half
+            // the sweep. With a chord-only fallback when centre is missing.
+            if let Some(c) = s.center {
+                let r = s.start.distance(c);
+                let a0 = (s.start.y - c.y).atan2(s.start.x - c.x);
+                let a1 = (s.end.y - c.y).atan2(s.end.x - c.x);
+                let mut sweep = a1 - a0;
+                if s.bulge > 0.0 && sweep < 0.0 {
+                    sweep += std::f64::consts::TAU;
+                }
+                if s.bulge < 0.0 && sweep > 0.0 {
+                    sweep -= std::f64::consts::TAU;
+                }
+                let mid_a = a0 + sweep * 0.5;
+                Point2::new(c.x + r * mid_a.cos(), c.y + r * mid_a.sin())
+            } else {
+                Point2::new(
+                    (s.start.x + s.end.x) * 0.5,
+                    (s.start.y + s.end.y) * 0.5,
+                )
+            }
+        }
+        _ => Point2::new(
+            (s.start.x + s.end.x) * 0.5,
+            (s.start.y + s.end.y) * 0.5,
+        ),
+    };
+    // Nudge `mid` by a small step toward whichever direction lands inside
+    // the polygon. Take the normal to (start → end); try both sides.
+    let dx = s.end.x - s.start.x;
+    let dy = s.end.y - s.start.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len > 1e-9 && poly.len() >= 3 {
+        let step = 1e-3_f64;
+        let nx = -dy / len;
+        let ny = dx / len;
+        let cand_a = Point2::new(mid.x + nx * step, mid.y + ny * step);
+        let cand_b = Point2::new(mid.x - nx * step, mid.y - ny * step);
+        if crate::cam::is_inside_polygon(&poly, cand_a) {
+            return cand_a;
+        }
+        if crate::cam::is_inside_polygon(&poly, cand_b) {
+            return cand_b;
+        }
+    }
+    mid
 }
 
 fn next_unused(taken: &[bool]) -> Option<usize> {

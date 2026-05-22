@@ -92,6 +92,16 @@ pub struct ToolEntry {
     /// laser-on before each plunge. None = no pierce dwell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub laser_pierce_sec: Option<f64>,
+    /// mmu8: laser kerf width (mm) — the heightmap-side spot radius the
+    /// sim carves at. Honored only when `kind == LaserBeam`. Lets the
+    /// preview show actual cut width for fine-engraving (0.05 mm
+    /// fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of
+    /// a uniform 0.15 mm stand-in. None = the legacy 0.15 mm default
+    /// (old projects round-trip unchanged). The sim floors the
+    /// effective radius at 0.05 mm so a zero / missing value still
+    /// registers some carve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kerf_mm: Option<f64>,
     /// Laser lead-in distance (rt1.29 / Estlcam `T_Lead_In)`: mm of
     /// approach travel the head takes along the entry tangent before
     /// the cut starts, to reduce edge entry burn. Honored only when
@@ -239,6 +249,7 @@ impl Default for ToolEntry {
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,
+            kerf_mm: None,
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,

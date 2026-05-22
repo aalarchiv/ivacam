@@ -225,6 +225,11 @@ fn sweep_chord_carve(
     if r_tool <= 0.0 {
         return 0;
     }
+    // w8q7: drag-knife blade trails the spindle by `dragoff` in the
+    // direction of travel, so the actual cut happens at
+    // `spindle - dragoff * unit_dir`. Shift the chord before carving.
+    let shifted = apply_dragoff_offset(segment, profile);
+    let segment = shifted.as_ref().unwrap_or(segment);
     let from = &segment.from;
     let to = &segment.to;
     // Skip moves that stay above the stock — the cutter is in air.
@@ -244,6 +249,36 @@ fn sweep_chord_carve(
         touched += 1;
     });
     touched
+}
+
+/// w8q7: shift a drag-knife segment by `-dragoff * unit_dir` so the
+/// carved chord tracks the trailing blade tip instead of the spindle
+/// axis. Returns `None` for non-DragKnife profiles, a profile with
+/// `dragoff <= 0`, or a pure-plunge segment (zero XY travel — no
+/// direction to offset along).
+fn apply_dragoff_offset(
+    segment: &ToolpathSegment,
+    profile: &ToolProfile,
+) -> Option<ToolpathSegment> {
+    let dragoff = match profile {
+        ToolProfile::DragKnife { dragoff, .. } if *dragoff > 0.0 => f64::from(*dragoff),
+        _ => return None,
+    };
+    let dx = segment.to.x - segment.from.x;
+    let dy = segment.to.y - segment.from.y;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq < 1e-12 {
+        return None;
+    }
+    let inv_len = 1.0 / len_sq.sqrt();
+    let off_x = -dragoff * dx * inv_len;
+    let off_y = -dragoff * dy * inv_len;
+    let mut shifted = segment.clone();
+    shifted.from.x += off_x;
+    shifted.from.y += off_y;
+    shifted.to.x += off_x;
+    shifted.to.y += off_y;
+    Some(shifted)
 }
 
 /// Partial carve for non-flat profiles (xf5m): walk the same cells the
@@ -267,6 +302,11 @@ fn sweep_chord_carve_partial(
     if r_tool <= 0.0 {
         return 0;
     }
+    // w8q7: same dragoff-shift as `sweep_chord_carve`. The partial
+    // version must use the same shifted geometry so split slices
+    // line up bit-for-bit with the full sweep.
+    let shifted = apply_dragoff_offset(segment, profile);
+    let segment = shifted.as_ref().unwrap_or(segment);
     let from = &segment.from;
     let to = &segment.to;
     let top_z = heightmap.top_z as f64;
@@ -1082,6 +1122,114 @@ mod tests {
                 "endmill drift at ({ix}, {iy}): full={a} split={b}",
             );
         }
+    }
+
+    /// w8q7: drag-knife with a positive dragoff carves the segment
+    /// offset BEHIND the spindle in the direction of travel. A 5 mm
+    /// X-axis cut with dragoff=2 should carve cells from x=-2 to
+    /// x=3 (i.e. the chord shifted -2 along +X), not x=0 to x=5.
+    #[test]
+    fn dragknife_dragoff_shifts_carved_chord_behind_spindle() {
+        let mut map = fresh_map(40, 40);
+        let mut d = diag();
+        // Spindle path: (10, 20) → (20, 20) along +X. Dragoff = 2 mm
+        // so blade trails behind by 2 mm — carves cells along the
+        // chord (8, 20) → (18, 20).
+        let profile = ToolProfile::DragKnife {
+            r: 1.0,
+            dragoff: 2.0,
+        };
+        let s = seg(
+            MoveKind::Cut,
+            pose(10.0, 20.0, -1.0),
+            pose(20.0, 20.0, -1.0),
+        );
+        sweep_segment(&mut map, &s, &profile, 0, &[], None, &mut d);
+        // A cell near x=9 (inside the shifted chord) should be carved.
+        // The original UN-shifted chord wouldn't reach x=9 with r=1.
+        let carved_left = cell(&map, 9, 20);
+        assert!(
+            carved_left < 0.0,
+            "cell at x=9 should be carved by the dragoff-shifted chord, got {carved_left}",
+        );
+        // A cell near x=19 (off the END of the shifted chord, but
+        // inside the spindle chord) should be UN-carved.
+        let untouched_right = cell(&map, 19, 20);
+        assert!(
+            (untouched_right - 0.0).abs() < 1e-5,
+            "cell at x=19 should be untouched (past the trailing blade), got {untouched_right}",
+        );
+    }
+
+    /// w8q7: dragoff = 0 collapses to the legacy endmill carve.
+    /// Zero / missing dragoff must NOT shift the chord.
+    #[test]
+    fn dragknife_dragoff_zero_matches_endmill_carve() {
+        let mut map_dk = fresh_map(40, 40);
+        let mut d_dk = diag();
+        let mut map_em = fresh_map(40, 40);
+        let mut d_em = diag();
+        let s = seg(
+            MoveKind::Cut,
+            pose(10.0, 20.0, -1.0),
+            pose(20.0, 20.0, -1.0),
+        );
+        sweep_segment(
+            &mut map_dk,
+            &s,
+            &ToolProfile::DragKnife {
+                r: 1.0,
+                dragoff: 0.0,
+            },
+            0,
+            &[],
+            None,
+            &mut d_dk,
+        );
+        sweep_segment(
+            &mut map_em,
+            &s,
+            &ToolProfile::Endmill { r: 1.0 },
+            0,
+            &[],
+            None,
+            &mut d_em,
+        );
+        for (i, (a, b)) in map_dk.data.iter().zip(map_em.data.iter()).enumerate() {
+            assert!(
+                (a - b).abs() < 1e-5,
+                "DragKnife(dragoff=0) must match Endmill at cell {i}: {a} vs {b}",
+            );
+        }
+    }
+
+    /// w8q7: pure plunge (zero XY length) on a drag-knife has no
+    /// direction of travel — the dragoff offset is undefined, so the
+    /// sim falls back to the spindle position. Cells under the
+    /// plunge point are carved as if dragoff = 0.
+    #[test]
+    fn dragknife_pure_plunge_unaffected_by_dragoff() {
+        let mut map = fresh_map(40, 40);
+        let mut d = diag();
+        let s = seg(
+            MoveKind::Plunge,
+            pose(20.0, 20.0, 0.0),
+            pose(20.0, 20.0, -1.0),
+        );
+        sweep_segment(
+            &mut map,
+            &s,
+            &ToolProfile::DragKnife {
+                r: 1.0,
+                dragoff: 2.0,
+            },
+            0,
+            &[],
+            None,
+            &mut d,
+        );
+        // Cell directly under (20, 20) should be carved to -1.
+        assert!((cell(&map, 20, 20) - -1.0).abs() < 1e-5);
     }
 
     #[test]

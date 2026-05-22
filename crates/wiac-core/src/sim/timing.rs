@@ -476,6 +476,13 @@ fn trapezoidal_time(s: f64, v0: f64, v1: f64, vf: f64, a: f64) -> f64 {
 /// Walk gcode in lockstep with `interpret_with_index`'s segment output to
 /// recover the F value modal at each segment. Segments produced by the
 /// arc tessellator share the F of the originating G2/G3 line.
+///
+/// wox2: the scanner walks the raw character stream (not just
+/// whitespace-split tokens) so an `F` glued to other words — e.g.
+/// `G1F800X10`, common in compact post output — is still found. Modal
+/// F is carried across lines so a standalone `F500` followed by a bare
+/// `G1 X10` applies the right feed. Multi-line modal F: every
+/// subsequent line inherits the last seen F until a new F is observed.
 fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
     // gcode lines are 1..n contiguous, so a dense Vec<f64> indexed by
     // line_no is one allocation and O(1) lookup — no hashing cost.
@@ -485,14 +492,8 @@ fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
     let mut current: f64 = 0.0;
     for (idx0, raw) in gcode.lines().enumerate() {
         let line = strip_comment(raw);
-        for tok in line.split_whitespace() {
-            if let Some(rest) = tok.strip_prefix(['F', 'f']) {
-                if let Ok(v) = rest.parse::<f64>() {
-                    if v > 0.0 {
-                        current = v;
-                    }
-                }
-            }
+        if let Some(v) = scan_modal_f(&line) {
+            current = v;
         }
         feed_by_line[idx0 + 1] = current;
     }
@@ -507,6 +508,46 @@ fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
             }
         })
         .collect()
+}
+
+/// wox2: scan a single gcode line (comments already stripped) for an
+/// `F<number>` word, returning the LAST positive feed found. Handles
+/// the standard whitespace-separated `F800` form AND the glued
+/// `G1F800X10` form some compact post processors emit. Negative /
+/// zero / non-finite values are ignored (matches the prior behaviour
+/// — F is a positive modal rate).
+fn scan_modal_f(line: &str) -> Option<f64> {
+    let bytes = line.as_bytes();
+    let mut last: Option<f64> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c == b'F' || c == b'f' {
+            // Parse the contiguous number that follows: optional sign,
+            // digits, optional decimal point + digits. Don't accept an
+            // exponent — gcode doesn't emit them and treating `E` as
+            // part of the number would swallow an `E`-word.
+            let mut j = i + 1;
+            if j < bytes.len() && (bytes[j] == b'+' || bytes[j] == b'-') {
+                j += 1;
+            }
+            let num_start = j;
+            while j < bytes.len() && (bytes[j].is_ascii_digit() || bytes[j] == b'.') {
+                j += 1;
+            }
+            if j > num_start {
+                if let Ok(v) = line[i + 1..j].parse::<f64>() {
+                    if v.is_finite() && v > 0.0 {
+                        last = Some(v);
+                    }
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    last
 }
 
 fn strip_comment(line: &str) -> String {
@@ -924,5 +965,62 @@ mod tests {
         assert!((est.toolchange_s - 10.0).abs() < 1e-9);
         assert!((est.spindle_warmup_s - 3.0).abs() < 1e-9);
         assert!((est.total_s - 13.0).abs() < 1e-9);
+    }
+
+    /// wox2: glued-token F values like `G1F800X10` must be picked up.
+    /// Compact post output drops whitespace between G/F/X/Y/Z words;
+    /// previously `tok.strip_prefix('F')` only matched whitespace-
+    /// separated tokens, so `G1F800X10` silently fell back to the
+    /// previous modal F (often 0 → estimator over-times the move).
+    #[test]
+    fn feeds_recovered_from_glued_gcode_tokens() {
+        // Each line has F glued mid-token. Modal F must propagate from
+        // line to line so every subsequent move sees the right feed.
+        let gcode = concat!(
+            "G21\n",
+            "G0X1Y0\n",
+            "G1X10Y0F800\n", // F glued after G1+X
+            "G1X20Y0\n",     // no F here — must inherit 800 from line above
+            "G1F1200X30Y0\n", // F in the middle of the token stream
+        );
+        let (segs, _) = crate::gcode::preview::interpret_with_index(gcode);
+        let feeds = feeds_per_segment(gcode, &segs);
+        assert_eq!(feeds.len(), 4);
+        assert_eq!(feeds[0], 0.0, "G0 line has no F yet");
+        assert_eq!(feeds[1], 800.0, "F800 glued to G1X10");
+        assert_eq!(
+            feeds[2], 800.0,
+            "no F on line 4 → must inherit modal 800 from line 3",
+        );
+        assert_eq!(feeds[3], 1200.0, "F1200 glued mid-line");
+    }
+
+    /// wox2: modal F set on a standalone F-only line must apply to
+    /// subsequent moves even when the move's own line has no F word.
+    /// This is the canonical "set rate once, then a block of moves"
+    /// pattern.
+    #[test]
+    fn feeds_modal_f_persists_across_subsequent_lines() {
+        let gcode = "G21\nF600\nG1 X10\nG1 X20\nG1 X30 F900\nG1 X40\n";
+        let (segs, _) = crate::gcode::preview::interpret_with_index(gcode);
+        let feeds = feeds_per_segment(gcode, &segs);
+        assert_eq!(feeds.len(), 4, "four G1 moves");
+        assert_eq!(feeds[0], 600.0, "first move inherits modal F=600");
+        assert_eq!(feeds[1], 600.0, "second move still F=600");
+        assert_eq!(feeds[2], 900.0, "F changes mid-stream");
+        assert_eq!(feeds[3], 900.0, "modal F=900 carries past the F change");
+    }
+
+    /// wox2: scan_modal_f must ignore negative / non-finite F values
+    /// (defensive — gcode shouldn't emit them but a corrupted file
+    /// shouldn't poison the modal state).
+    #[test]
+    fn scan_modal_f_ignores_invalid_values() {
+        assert_eq!(scan_modal_f("G1 X10 F-100"), None);
+        assert_eq!(scan_modal_f("G1 X10 F0"), None);
+        // Mixed: a valid F later in the line wins over the invalid one.
+        assert_eq!(scan_modal_f("G1 F-1 F500 X20"), Some(500.0));
+        // Glued: 'F500' embedded in another token is found.
+        assert_eq!(scan_modal_f("G1F500X10"), Some(500.0));
     }
 }

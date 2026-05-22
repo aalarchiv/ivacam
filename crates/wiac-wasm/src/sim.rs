@@ -28,7 +28,7 @@ use wasm_bindgen::prelude::*;
 
 use wiac_core::gcode::preview::ToolpathSegment;
 use wiac_core::project::{Fixture, ToolEntry};
-use wiac_core::sim::diagnostics::SimDiagnostics;
+use wiac_core::sim::diagnostics::{SimDiagnostics, SimRunSummary};
 use wiac_core::sim::heightmap::{Heightmap, ToolProfile};
 use wiac_core::sim::holder::HolderProfile;
 use wiac_core::sim::sweep::{sweep_range, sweep_segment_partial};
@@ -187,7 +187,7 @@ impl Simulator {
         self.last_diagnostics = SimDiagnostics::new();
         let profile = ToolProfile::from_tool(&tool_entry);
         let holder = HolderProfile::from_tool(&tool_entry);
-        let _touched = sweep_range(
+        let touched = sweep_range(
             &mut self.heightmap,
             &self.toolpath,
             from_idx as usize,
@@ -197,6 +197,13 @@ impl Simulator {
             holder.as_ref(),
             &mut self.last_diagnostics,
         );
+        // 03zx: emit a single tracing::info line per advance so the
+        // frontend (and post-mortem tooling) have a stable telemetry
+        // record of cells_carved, max_engagement, per-kind warning
+        // counts. `total_seconds` is left 0 here because advance()
+        // doesn't wall-clock itself — the JS driver can pair this
+        // with a Performance.now() delta when persisting.
+        SimRunSummary::from_diagnostics(&self.last_diagnostics, u64::from(touched), 0.0).log();
         Ok(match self.heightmap.dirty_aabb() {
             Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
             None => Vec::new(),
@@ -417,6 +424,7 @@ mod tests {
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,
+            kerf_mm: None,
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,

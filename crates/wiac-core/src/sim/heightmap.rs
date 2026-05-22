@@ -62,8 +62,19 @@ impl Heightmap {
             max_x > min_x && max_y > min_y,
             "Heightmap bbox must be non-empty"
         );
-        let cols = ((max_x - min_x) / cell).ceil().max(1.0) as u32;
-        let rows = ((max_y - min_y) / cell).ceil().max(1.0) as u32;
+        // vc6i: bilinear `sample()` returns `top_z` whenever the query
+        // point's fractional cell index `fx = (x - origin)/cell - 0.5`
+        // exceeds `cols - 1` — i.e. the upper half of the last column
+        // is "off the grid" for sampling purposes. With a tight ceil()
+        // sizing the bbox max-corner lands at `fx = cols - 0.5`, which
+        // is outside that bound, so probes at the +x/+y stock edge
+        // read `top_z` even after carving. Pad by one extra cell on
+        // each axis so the max-corner lies safely inside the
+        // sampleable region (cell-center grid math is unchanged; we
+        // just guarantee at least a half-cell of slack past the
+        // bbox max).
+        let cols = (((max_x - min_x) / cell).ceil() as u32).saturating_add(1).max(1);
+        let rows = (((max_y - min_y) / cell).ceil() as u32).saturating_add(1).max(1);
         Self::new(Point2::new(min_x, min_y), cell, cols, rows, top_z)
     }
 
@@ -373,9 +384,16 @@ impl ToolProfile {
                 if r <= plateau || cr <= 0.0 {
                     Some(0.0)
                 } else {
-                    let dx = r - plateau;
-                    let inside = cr.mul_add(cr, -(dx * dx));
-                    Some(cr - inside.max(0.0).sqrt())
+                    // 6i9r: do the corner-radius math in f64 then snap to
+                    // f32. f32 mul_add near the rim leaves a residual of
+                    // ~3e-4 mm at the rim (cr - sqrt(cr² - dx²) where
+                    // dx≈cr). Promoting to f64 puts the rim lip within
+                    // 1e-7 mm of the analytic value, eliminating speckle
+                    // around the rim in close-up surface renderings.
+                    let dx = f64::from(r - plateau);
+                    let cr64 = f64::from(cr);
+                    let inside = cr64.mul_add(cr64, -(dx * dx)).max(0.0);
+                    Some((cr64 - inside.sqrt()) as f32)
                 }
             }
             // 3oly: head's flat bottom carves the slot floor; the
@@ -498,9 +516,19 @@ impl ToolProfile {
                 dragoff: tool.dragoff.unwrap_or(0.0) as f32,
             },
             ToolKind::Drill => ToolProfile::Drill { r },
-            // Laser kerf is effectively zero; give it a small finite radius
-            // so the heightmap can still register etching.
-            ToolKind::LaserBeam => ToolProfile::LaserBeam { r: 0.15 },
+            // mmu8: laser kerf comes from the configured
+            // `tool.kerf_mm` (legacy default = 0.15 mm — matches the
+            // historical hard-coded radius). Floor at 0.05 mm so a
+            // zero / negative entry still registers some carve
+            // instead of a degenerate zero-radius cutter the sweep
+            // would skip. The field is the spot-radius (half-kerf)
+            // — matching the prior `r: 0.15` semantics so old
+            // projects round-trip unchanged.
+            ToolKind::LaserBeam => {
+                let kerf = tool.kerf_mm.unwrap_or(0.15).max(0.05);
+                let r = kerf as f32;
+                ToolProfile::LaserBeam { r }
+            }
             // rbl: BullNose uses the per-tool corner_radius_mm for an
             // accurate fillet floor; the sim now models the rounded
             // corner instead of pretending it's a square endmill.
@@ -619,6 +647,7 @@ mod tests {
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,
+            kerf_mm: None,
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
@@ -864,11 +893,12 @@ mod tests {
                     0.0,
                 ));
                 // r at the rim (r = rr) → lip has risen by corner_r.
-                // f32 precision near the boundary leaves a residual of
-                // ~3e-4 mm; the heightmap grid step is orders of
-                // magnitude coarser than that so the slack is harmless.
+                // 6i9r: the BullNose eval now does the corner-radius
+                // math in f64 before snapping to f32, so the residual
+                // at the rim is well under 1e-5 mm instead of the old
+                // ~3e-4 mm. Tighten the tolerance to lock that in.
                 let lip = ToolProfile::BullNose { r, corner_r }.eval(3.0).unwrap();
-                assert!((lip - 0.8).abs() < 1e-3, "lip = {lip}, expected ≈ 0.8");
+                assert!((lip - 0.8).abs() < 1e-5, "lip = {lip}, expected ≈ 0.8");
                 // r > rr → outside the cutter
                 assert!(ToolProfile::BullNose { r, corner_r }.eval(3.5).is_none());
             }
@@ -883,5 +913,105 @@ mod tests {
             ToolProfile::from_tool(&t),
             ToolProfile::Endmill { .. }
         ));
+    }
+
+    /// 6i9r: sample the BullNose profile at a fine grid of rims close
+    /// to the cutter edge. The lip height must be uniform within 1e-5
+    /// mm across every neighboring rim sample — previously f32 jitter
+    /// at the boundary produced ~3e-4 mm speckle in close-up surface
+    /// renderings.
+    #[test]
+    fn bullnose_rim_lip_consistent_across_neighboring_cells() {
+        let r = 3.0_f32;
+        let corner_r = 0.8_f32;
+        let p = ToolProfile::BullNose { r, corner_r };
+        // Sample 21 points along the corner-fillet arc, including the
+        // exact rim at r = 3.0.
+        let mut samples = Vec::with_capacity(21);
+        for k in 0..=20 {
+            let probe = r - corner_r + (corner_r * (k as f32) / 20.0);
+            samples.push(p.eval(probe).expect("inside rim"));
+        }
+        // The lip values should rise monotonically from 0 at the
+        // plateau-edge to corner_r at the rim — with no speckle
+        // (adjacent samples differ by less than the analytic step).
+        let analytic_rim = corner_r;
+        let observed_rim = *samples.last().unwrap();
+        assert!(
+            (observed_rim - analytic_rim).abs() < 1e-5,
+            "rim residual {observed_rim} vs analytic {analytic_rim}",
+        );
+        // Check monotonicity (no jitter that flips a sample below its
+        // predecessor).
+        for w in samples.windows(2) {
+            assert!(
+                w[1] >= w[0] - 1e-6,
+                "non-monotone bullnose rim samples: {} → {}",
+                w[0],
+                w[1],
+            );
+        }
+    }
+
+    /// vc6i: bilinear `sample()` at the bbox max-corner must return
+    /// the carved cell value, not `top_z`. The previous tight `ceil()`
+    /// sizing left the max-corner half a cell off the sampleable
+    /// region; the +1-cell pad guarantees the corner is reachable.
+    #[test]
+    fn sample_at_max_corner_returns_cell_value_not_top_z() {
+        // 10×10 mm bbox at 1mm cell. With the +1-cell pad cols = 11.
+        let mut hm = Heightmap::from_bbox(0.0, 0.0, 10.0, 10.0, 1.0, 0.0);
+        // Carve every cell to z = -3 so any in-range sample returns -3.
+        for v in &mut hm.data {
+            *v = -3.0;
+        }
+        // The max-corner (10.0, 10.0) must read -3.0, not top_z = 0.0.
+        let probed = hm.sample(10.0, 10.0);
+        assert!(
+            (probed - -3.0).abs() < 1e-5,
+            "max-corner sample returned {probed}, expected -3.0 (vc6i regression)",
+        );
+        // Also probe just inside the max-corner — same expectation.
+        let probed_inside = hm.sample(9.99, 9.99);
+        assert!((probed_inside - -3.0).abs() < 1e-5);
+    }
+
+    /// mmu8: laser kerf radius reads from `tool.kerf_mm` instead of
+    /// being hard-coded to 0.15. Tools with different kerf widths
+    /// produce different sim radii; missing kerf_mm collapses to the
+    /// legacy 0.15 mm default; near-zero kerf is floored at 0.05 mm
+    /// so the sweep doesn't bail on a degenerate zero-radius cutter.
+    #[test]
+    fn laser_kerf_uses_configured_diameter() {
+        let mut fine = make_tool(ToolKind::LaserBeam, 0.0);
+        fine.kerf_mm = Some(0.05);
+        let mut wide = make_tool(ToolKind::LaserBeam, 0.0);
+        wide.kerf_mm = Some(0.4);
+        let default = make_tool(ToolKind::LaserBeam, 0.0); // kerf_mm = None
+        let mut zero = make_tool(ToolKind::LaserBeam, 0.0);
+        zero.kerf_mm = Some(0.0);
+        match ToolProfile::from_tool(&fine) {
+            ToolProfile::LaserBeam { r } => assert!((r - 0.05).abs() < 1e-5, "got {r}"),
+            other => panic!("expected LaserBeam, got {other:?}"),
+        }
+        match ToolProfile::from_tool(&wide) {
+            ToolProfile::LaserBeam { r } => assert!((r - 0.4).abs() < 1e-5, "got {r}"),
+            other => panic!("expected LaserBeam, got {other:?}"),
+        }
+        match ToolProfile::from_tool(&default) {
+            ToolProfile::LaserBeam { r } => assert!(
+                (r - 0.15).abs() < 1e-5,
+                "default kerf must match legacy 0.15, got {r}",
+            ),
+            other => panic!("expected LaserBeam, got {other:?}"),
+        }
+        // 0 kerf is floored at the 0.05 mm safety floor.
+        match ToolProfile::from_tool(&zero) {
+            ToolProfile::LaserBeam { r } => assert!(
+                (r - 0.05).abs() < 1e-5,
+                "zero kerf should floor at 0.05, got {r}",
+            ),
+            other => panic!("expected LaserBeam, got {other:?}"),
+        }
     }
 }

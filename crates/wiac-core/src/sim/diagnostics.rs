@@ -122,6 +122,91 @@ pub fn kind_str(w: &SimWarning) -> &'static str {
     }
 }
 
+/// 03zx: end-of-run telemetry for a single sim invocation. Captured at
+/// the close of each sim run (driver hook) and logged via
+/// `tracing::info`. The frontend can later persist these alongside
+/// the actual machine-side time so the user has a quantitative basis
+/// for trusting the next prediction (the audit's "sim agrees with
+/// reality" gap).
+///
+/// The shape is deliberately minimal — counts and one scalar — so it
+/// survives JSON round-trip without dragging in the heightmap data.
+/// `warnings_by_kind_count` is a flat (kind_str -> count) map so the
+/// caller can compare counts without reflection over the discriminant.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SimRunSummary {
+    /// Cells whose Z was lowered at least once during the run
+    /// (heightmap.dirty_aabb cardinality at the end of the run is a
+    /// usable upper bound; the caller may pass the exact lowered-count
+    /// from sweep_range when tracked).
+    pub cells_carved: u64,
+    /// Worst engagement percentage observed across the run — peak
+    /// of `EngagementOverload.engagement_pct`. 0.0 when no engagement
+    /// signal was emitted.
+    pub max_engagement: f32,
+    /// Per-warning-kind counts (kind_str -> count). Stable kind keys
+    /// match `kind_str(&SimWarning)` so downstream consumers can
+    /// dispatch by kind.
+    pub warnings_by_kind_count: std::collections::BTreeMap<String, u32>,
+    /// Wall-clock seconds the run took (set by the driver). 0.0 when
+    /// the driver doesn't time the run.
+    pub total_seconds: f64,
+}
+
+impl SimRunSummary {
+    /// Compose a summary from a `SimDiagnostics` snapshot plus the
+    /// per-run aggregates the caller tracks externally (cells_carved
+    /// from the sweep loop, total_seconds from a wall clock).
+    #[must_use]
+    pub fn from_diagnostics(
+        diagnostics: &SimDiagnostics,
+        cells_carved: u64,
+        total_seconds: f64,
+    ) -> Self {
+        let mut counts: std::collections::BTreeMap<String, u32> =
+            std::collections::BTreeMap::new();
+        let mut max_engagement: f32 = 0.0;
+        for w in &diagnostics.warnings {
+            *counts.entry(kind_str(w).to_string()).or_insert(0) += 1;
+            if let SimWarning::EngagementOverload { engagement_pct, .. } = w {
+                if *engagement_pct > max_engagement {
+                    max_engagement = *engagement_pct;
+                }
+            }
+        }
+        Self {
+            cells_carved,
+            max_engagement,
+            warnings_by_kind_count: counts,
+            total_seconds,
+        }
+    }
+
+    /// Emit the summary via `tracing::info` so the run gets a single
+    /// telemetry line per sim invocation. Keys map to the struct fields
+    /// 1:1. The caller is responsible for setting up a tracing
+    /// subscriber (the WASM bridge and the CLI both have one).
+    pub fn log(&self) {
+        // Format the warnings map up front — tracing's structured
+        // fields don't natively render BTreeMap, and we want a stable
+        // string ordering for log diffing.
+        let warnings_str: String = self
+            .warnings_by_kind_count
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        tracing::info!(
+            target: "wiac_core::sim::summary",
+            cells_carved = self.cells_carved,
+            max_engagement = self.max_engagement,
+            total_seconds = self.total_seconds,
+            warnings = %warnings_str,
+            "sim run complete",
+        );
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SimDiagnostics {
     pub warnings: Vec<SimWarning>,
@@ -260,5 +345,72 @@ mod tests {
             }),
             Severity::Warning,
         );
+    }
+
+    /// 03zx: sim-run summary aggregates from a `SimDiagnostics`
+    /// snapshot. Counts every kind correctly, captures the worst
+    /// engagement_pct, and passes through cells_carved + total_seconds
+    /// from the caller-tracked aggregates.
+    #[test]
+    fn sim_run_summary_aggregates_diagnostics() {
+        let mut d = SimDiagnostics::new();
+        d.push(SimWarning::RapidThroughMaterial {
+            segment_idx: 0,
+            worst_x: 0.0,
+            worst_y: 0.0,
+            worst_cell_z: 0.0,
+            rapid_pz: 0.0,
+            subkind: RapidCollisionSubkind::Tip,
+        });
+        d.push(SimWarning::EngagementOverload {
+            segment_idx: 1,
+            engagement_pct: 75.0,
+        });
+        d.push(SimWarning::EngagementOverload {
+            segment_idx: 2,
+            engagement_pct: 93.5,
+        });
+        d.push(SimWarning::FixtureCollision {
+            segment_idx: 3,
+            fixture_id: 1,
+            nearest_x: 0.0,
+            nearest_y: 0.0,
+        });
+        let summary = SimRunSummary::from_diagnostics(&d, 4_200, 12.5);
+        assert_eq!(summary.cells_carved, 4_200);
+        assert!((summary.total_seconds - 12.5).abs() < 1e-9);
+        // Max engagement reflects the worst observed pct.
+        assert!((summary.max_engagement - 93.5).abs() < 1e-5);
+        // BTreeMap counts mirror the kind_str dispatch.
+        assert_eq!(
+            summary.warnings_by_kind_count.get("rapid_through_material"),
+            Some(&1)
+        );
+        assert_eq!(
+            summary.warnings_by_kind_count.get("engagement_overload"),
+            Some(&2)
+        );
+        assert_eq!(
+            summary.warnings_by_kind_count.get("fixture_collision"),
+            Some(&1)
+        );
+        // Round-trip through JSON survives.
+        let json = serde_json::to_string(&summary).unwrap();
+        let back: SimRunSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, summary);
+    }
+
+    #[test]
+    fn sim_run_summary_clean_run_has_zero_max_engagement() {
+        // Empty diagnostics → no warnings, max_engagement = 0,
+        // warnings_by_kind_count empty. The single info-level log call
+        // should still fire safely.
+        let d = SimDiagnostics::new();
+        let s = SimRunSummary::from_diagnostics(&d, 0, 0.0);
+        assert_eq!(s.cells_carved, 0);
+        assert!(s.warnings_by_kind_count.is_empty());
+        assert!(s.max_engagement.abs() < 1e-9);
+        // log() must not panic on the empty path.
+        s.log();
     }
 }

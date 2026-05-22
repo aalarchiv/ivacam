@@ -288,6 +288,7 @@ mod tests {
             z_shift_mm: None,
             laser_pierce_sec: None,
             laser_lead_in_mm: None,
+            kerf_mm: None,
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,

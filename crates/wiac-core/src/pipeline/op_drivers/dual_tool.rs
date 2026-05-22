@@ -16,7 +16,7 @@ use crate::cam::offsets::PolylineOffset;
 use crate::cam::setup::Setup;
 use crate::gcode::{emit_polylines_block, PostProcessor};
 use crate::geometry::Point2;
-use crate::pipeline::{synthesize_finish_setup, PipelineError, PipelineWarning};
+use crate::pipeline::{emit_toolchange_envelope, synthesize_finish_setup, PipelineError, PipelineWarning};
 use crate::project::{Op, Project};
 
 #[allow(clippy::too_many_arguments)]
@@ -61,17 +61,23 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
         "; toolchange: finish pass with tool {}",
         finish_setup.tool.number
     ));
-    post.tool(finish_setup.tool.number);
-    // rt1.30: re-apply Z shift for the finish tool after the M6.
-    // Each tool's shift is absolute (set such that the work-Z=0 line
-    // matches the reference tool); we just emit the new value.
-    if let Some(ft_id) = op.finish_tool_id {
-        if let Some(ft) = project.tools.iter().find(|t| t.id == ft_id) {
-            if let Some(shift) = ft.z_shift_mm {
-                post.tool_z_shift(shift);
-            }
-        }
-    }
+    // bd eaeq/m8sq: wrap the rough→finish M6 in the safety envelope
+    // (safe-Z → M5+dwell → M6 → z-shift → M3+dwell). The helper picks
+    // up the finish tool's Z shift, spindle speed, and warm-up pause
+    // automatically — the previous code emitted only `T<n> M6`
+    // followed by an optional G92 Z shift, leaving the spindle still
+    // running through the change.
+    let finish_tool = op
+        .finish_tool_id
+        .and_then(|id| project.tools.iter().find(|t| t.id == id));
+    emit_toolchange_envelope(
+        post,
+        &project.machine,
+        setup,
+        finish_tool,
+        finish_setup.tool.number,
+        false,
+    );
     if !finish_offsets.is_empty() {
         emit_polylines_block(&finish_setup, &finish_offsets, post, last_pos);
     }

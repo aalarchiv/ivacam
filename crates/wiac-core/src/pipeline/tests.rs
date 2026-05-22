@@ -1916,3 +1916,282 @@
         );
     }
 
+    // ---- bd eaeq / m8sq / rwv8 / rfow: toolchange safety envelope ----
+
+    /// Helper: find the byte index of a substring, returning a clear
+    /// panic message when missing so the test failure shows the gcode.
+    fn must_find(haystack: &str, needle: &str) -> usize {
+        haystack
+            .find(needle)
+            .unwrap_or_else(|| panic!("expected `{needle}` in:\n{haystack}"))
+    }
+
+    /// Inter-op toolchange: the gcode between two different-tool ops
+    /// must emit the full M5 → safe-Z → M6 → M3 envelope, in order.
+    #[test]
+    fn multi_op_toolchange_envelope_has_m5_before_m6_and_m3_after() {
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Slice out the gcode between OP 1 and OP 2 — that's where
+        // the inter-op envelope lives.
+        let op1_pos = must_find(&resp.gcode, "; OP 1");
+        let op2_pos = must_find(&resp.gcode, "; OP 2");
+        let between = &resp.gcode[op1_pos..op2_pos];
+        let m5_pos = must_find(between, "\nM5");
+        let m6_pos = must_find(between, "T2 M6");
+        // M3 for the second tool's RPM (18000 — endmill default).
+        let m3_pos = must_find(between, "M3 S");
+        assert!(
+            m5_pos < m6_pos,
+            "M5 must precede T2 M6 in inter-op envelope; got M5={m5_pos} M6={m6_pos}:\n{between}"
+        );
+        assert!(
+            m6_pos < m3_pos,
+            "M3 S<rpm> must follow T2 M6; got M6={m6_pos} M3={m3_pos}:\n{between}"
+        );
+    }
+
+    /// Within-op dual-tool toolchange (rough → finish) must use the
+    /// full envelope, not just a bare T<n> M6.
+    #[test]
+    fn dual_tool_internal_change_uses_full_envelope() {
+        let mut rough_tool = endmill(1, 6.0);
+        rough_tool.speed = 20_000;
+        let mut finish_tool = endmill(2, 3.0);
+        finish_tool.speed = 24_000;
+
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine,
+            tools: vec![rough_tool, finish_tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Pocket".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: Some(2),
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Locate the T2 M6 line and inspect the surrounding gcode.
+        let m6_pos = must_find(&resp.gcode, "T2 M6");
+        let before = &resp.gcode[..m6_pos];
+        let after = &resp.gcode[m6_pos..];
+        // M5 must appear in the "before" slice (the immediate
+        // pre-M6 sequence), AND it must be the last M5 before the M6.
+        let pre_m5 = before
+            .rfind("\nM5")
+            .unwrap_or_else(|| panic!("expected M5 before T2 M6:\n{}", resp.gcode));
+        // Spindle-up at the finish tool's RPM must come after M6.
+        assert!(
+            after.contains("M3 S24000"),
+            "expected M3 S24000 (finish tool spindle) after T2 M6:\n{}",
+            resp.gcode
+        );
+        // Sanity: pre_m5 sits within the rough-pass tail (after a
+        // safe-Z rapid retract). The G0 Z<fast> lift should come
+        // BEFORE the M5.
+        let lift_pos = before
+            .rfind("G0 Z")
+            .unwrap_or_else(|| panic!("expected G0 Z<fast> lift before M5:\n{}", resp.gcode));
+        assert!(
+            lift_pos < pre_m5,
+            "safe-Z lift must precede M5 in envelope; lift={lift_pos} M5={pre_m5}"
+        );
+    }
+
+    /// Drill → Stufenfase chamfer toolchange must use the full
+    /// envelope. Pre-fix it emitted `T<n> M6` immediately after the
+    /// drill block with the spindle still running.
+    #[test]
+    fn drill_stufenfase_change_uses_full_envelope() {
+        let mut drill_bit = vbit();
+        drill_bit.kind = ToolKind::Drill;
+        drill_bit.diameter = 3.0;
+        drill_bit.id = 1;
+        drill_bit.speed = 8_000;
+        let mut vbit_finish = vbit();
+        vbit_finish.id = 2;
+        vbit_finish.diameter = 6.35;
+        vbit_finish.tip_angle_deg = 90.0;
+        vbit_finish.speed = 22_000;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let center = crate::geometry::Point2::new(5.0, 7.0);
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        let project = Project {
+            segments: closed_circle(center, 0.5),
+            machine,
+            tools: vec![drill_bit, vbit_finish],
+            operations: vec![Op {
+                id: 1,
+                name: "Drill+stufenfase".into(),
+                enabled: true,
+                kind: OpKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    chamfer_after_width_mm: Some(0.5),
+                    pattern: None,
+                },
+                tool_id: 1,
+                finish_tool_id: Some(2),
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let m6_pos = must_find(&resp.gcode, "T2 M6");
+        let before = &resp.gcode[..m6_pos];
+        let after = &resp.gcode[m6_pos..];
+        assert!(
+            before.rfind("\nM5").is_some(),
+            "expected M5 before drill→chamfer T2 M6:\n{}",
+            resp.gcode
+        );
+        assert!(
+            after.contains("M3 S22000"),
+            "expected M3 S22000 (chamfer tool spindle) after T2 M6:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// Same-tool back-to-back ops must skip the envelope entirely
+    /// between them — no M5/M6/M3 between OP 1 and OP 2.
+    #[test]
+    fn same_tool_consecutive_ops_skip_envelope_entirely() {
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 1, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let op1 = must_find(&resp.gcode, "; OP 1");
+        let op2 = must_find(&resp.gcode, "; OP 2");
+        let between = &resp.gcode[op1..op2];
+        assert!(
+            !between.contains(" M6"),
+            "expected no M6 between same-tool ops:\n{between}"
+        );
+        assert!(
+            !between.contains("\nM5"),
+            "expected no M5 between same-tool ops (the spindle keeps running):\n{between}"
+        );
+    }
+
+    /// `machine.supports_toolchange == false` (hobby benchtop CNC):
+    /// instead of M6, emit M5 + program-pause (M0) + comment so the
+    /// operator hand-swaps the bit before pressing Cycle Start.
+    #[test]
+    fn non_toolchange_machine_pauses_for_manual_swap() {
+        let machine = MachineConfig {
+            supports_toolchange: false,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // No M6 (machine doesn't support it).
+        assert!(
+            !resp.gcode.contains(" M6"),
+            "expected no M6 when supports_toolchange=false:\n{}",
+            resp.gcode
+        );
+        // The inter-op section must have M5, the `pause: swap to tool 2`
+        // comment, and an M0 program pause — IN THAT ORDER.
+        let op1 = must_find(&resp.gcode, "; OP 1");
+        let op2 = must_find(&resp.gcode, "; OP 2");
+        let between = &resp.gcode[op1..op2];
+        let m5 = must_find(between, "\nM5");
+        let swap = must_find(between, "pause: swap to tool 2");
+        let m0 = must_find(between, "\nM0");
+        assert!(
+            m5 < swap && swap < m0,
+            "expected order M5 → pause comment → M0; got M5={m5} swap={swap} M0={m0}:\n{between}"
+        );
+    }

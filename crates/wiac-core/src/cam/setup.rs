@@ -449,6 +449,21 @@ pub struct MachineConfig {
         skip_serializing_if = "is_default_toolchange_s"
     )]
     pub toolchange_s: f64,
+    /// Spindle-stop dwell (seconds) inserted into the M6 toolchange
+    /// envelope between `M5` and the actual `T<n> M6`. Gives the spindle
+    /// time to spin down before the chuck is touched. `None` (and the
+    /// default `0.5 s`) covers most VFD-driven spindles; high-inertia
+    /// big-iron may want 1–2 s. Set to `Some(0.0)` to skip entirely.
+    /// See bd issues eaeq / m8sq / rwv8 / rfow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_stop_dwell_sec: Option<f64>,
+    /// Spindle-start dwell (seconds) inserted into the M6 toolchange
+    /// envelope after `M3 S<rpm>`. Lets the new tool come up to commanded
+    /// RPM before the next cut. Stacks with the per-tool `ToolEntry.pause`
+    /// (the per-tool warm-up); think of this as the machine-wide floor and
+    /// `tool.pause` as the per-tool top-up. `None` ⇒ 0.5 s default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_start_dwell_sec: Option<f64>,
     /// Rapid (G0) traverse speed in mm/min. None ⇒ 5000 mm/min default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rapid_speed: Option<f64>,
@@ -529,6 +544,22 @@ impl MachineConfig {
         self.arc_fit_tolerance_mm.unwrap_or(0.01).max(0.0)
     }
 
+    /// Effective spindle-stop dwell (seconds) for the toolchange
+    /// envelope. Defaults to 0.5 s. Clamped to ≥0 so a stray negative
+    /// value can't underflow the dwell-format helper.
+    #[must_use]
+    pub fn effective_spindle_stop_dwell_sec(&self) -> f64 {
+        self.spindle_stop_dwell_sec.unwrap_or(0.5).max(0.0)
+    }
+
+    /// Effective spindle-start dwell (seconds) for the toolchange
+    /// envelope. Defaults to 0.5 s. Stacks with the per-tool
+    /// `ToolEntry.pause` warm-up.
+    #[must_use]
+    pub fn effective_spindle_start_dwell_sec(&self) -> f64 {
+        self.spindle_start_dwell_sec.unwrap_or(0.5).max(0.0)
+    }
+
     /// Effective op-kind capability set (h0tx). Falls back to a vec
     /// containing the primary `mode` so projects that predate the
     /// `capabilities` field still pass through cleanly.
@@ -594,6 +625,8 @@ impl Default for MachineConfig {
             accel: None,
             jerk: None,
             toolchange_s: default_toolchange_s(),
+            spindle_stop_dwell_sec: None,
+            spindle_start_dwell_sec: None,
             rapid_speed: None,
             use_kinematic_time_estimate: default_use_kinematic(),
             arc_fit_tolerance_mm: None,

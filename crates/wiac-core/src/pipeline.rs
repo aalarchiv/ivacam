@@ -633,20 +633,29 @@ where
                     // Setup synthesis maps ToolEntry.id → ToolConfig.number
                     // 1:1 (setup_resolver), so tool.id is the spindle
                     // tool number we want here.
+                    //
+                    // bd eaeq/m8sq/rwv8/rfow: wrap the toolchange in the
+                    // safety envelope (safe-Z → M5+dwell → M6 → z-shift
+                    // → M3+dwell). The helper handles both the
+                    // toolchange-capable and manual-swap branches; the
+                    // tool's Z shift is applied as part of the envelope
+                    // so the work-Z=0 line still matches the newly-
+                    // loaded tool.
+                    let is_first_tool = prev_tool_id.is_none();
                     if project.machine.supports_toolchange {
                         post.comment(&format!(
                             "toolchange: T{} ({}) for op {} ({})",
                             tool.id, tool.name, op.id, op.name
                         ));
-                        post.tool(tool.id);
                     }
-                    // rt1.30: apply the tool's Z shift after every
-                    // (re-)assertion so the work-Z=0 line matches the
-                    // newly-loaded tool. Fires on the first op too,
-                    // replacing the pre-loop tool_z_shift block.
-                    if let Some(shift) = tool.z_shift_mm {
-                        post.tool_z_shift(shift);
-                    }
+                    emit_toolchange_envelope(
+                        post,
+                        &project.machine,
+                        header_setup,
+                        Some(tool),
+                        tool.id,
+                        is_first_tool,
+                    );
                 }
                 prev_tool_id = Some(op.tool_id);
             }
@@ -913,6 +922,129 @@ pub(super) fn synthesize_finish_setup(
     setup.tool.rate_v = setup.tool.rate_v_finish;
     setup.tool.speed = setup.tool.speed_finish;
     Ok(Some(setup))
+}
+
+/// Wrap a `post.tool(new_tool_id)` call in the standard safety envelope:
+/// safe-Z retract → spindle stop + dwell → toolchange → tool Z-shift →
+/// spindle start (at the NEW tool's RPM) + dwell.
+///
+/// Fixes bd issues `eaeq` / `m8sq` / `rwv8` / `rfow`: every M6 wiac emits
+/// now lifts the cutter clear, stops the spindle, performs the change,
+/// and spins back up at the new tool's commanded speed BEFORE the next
+/// cut move. Without this envelope the previous behavior emitted a bare
+/// `T<n> M6` with the spindle still running and the cutter potentially
+/// still engaged — a real safety hazard on every multi-tool program.
+///
+/// Routed through from three sites:
+/// * `run_per_op` — inter-op tool boundary (k2ew + this fix together).
+/// * `op_drivers/dual_tool.rs` — within-op rough → finish split.
+/// * `op_drivers/drill.rs::emit_stufenfase` — drill → chamfer split.
+///
+/// When `machine.supports_toolchange == false` the function emits a
+/// manual-swap pause envelope instead: M5 + dwell + a `; pause: swap to
+/// tool <n>` comment + M0, so the operator hand-changes the bit. Resume
+/// requires pressing Cycle Start. No M3 is emitted after M0 because the
+/// post-resume code path will re-issue spindle_cw at the new tool's RPM
+/// lazily on the next cut.
+pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
+    post: &mut P,
+    machine: &crate::cam::setup::MachineConfig,
+    header_setup: &Setup,
+    new_tool: Option<&ToolEntry>,
+    new_tool_id: u32,
+    is_first_tool: bool,
+) {
+    // Conservative: always lift to the program-wide safe Z before
+    // touching the spindle. The post delta-encodes Z so this collapses
+    // to nothing on the FIRST op (program_begin already moved there).
+    // Skipping a needed lift is more dangerous than an extra rapid.
+    let fast_z = header_setup.mill.fast_move_z;
+    post.move_to(None, None, Some(fast_z));
+
+    // Stop the spindle BEFORE the change. On the first op the spindle
+    // isn't running yet — M5 is a harmless idempotent assertion and
+    // costs one line. Skip the stop dwell when we know there's no
+    // motion to wait for (first tool) so initial-state programs stay
+    // identical to pre-fix output minus the M5 line.
+    if !is_first_tool {
+        post.spindle_off();
+        let stop_dwell = machine.effective_spindle_stop_dwell_sec();
+        if stop_dwell > 0.0 {
+            post.dwell(stop_dwell);
+        }
+    }
+
+    if machine.supports_toolchange {
+        // Auto-changer / macro-driven manual-with-prompt. The post's
+        // tool() emits T<n> M6 (or the user's profile template).
+        post.tool(new_tool_id);
+        if let Some(t) = new_tool {
+            if let Some(shift) = t.z_shift_mm {
+                post.tool_z_shift(shift);
+            }
+        }
+        // Spin back up at the NEW tool's RPM. Pass pause=0 so the post
+        // emits M3 S<rpm> without an integer-second dwell tail; we
+        // follow with an explicit `dwell(...)` so the machine-wide
+        // spin-up (sub-second supported) AND the per-tool warm-up both
+        // fire in the right order. Goes through `spindle_cw` so the
+        // post's `last_speed` delta-encoder stays in sync — the next
+        // `emit_polylines_block`'s lazy `spindle_cw(speed, pause)`
+        // elides cleanly.
+        if let Some(t) = new_tool {
+            post.spindle_cw(t.speed, 0);
+            let start_dwell = machine.effective_spindle_start_dwell_sec();
+            if start_dwell > 0.0 {
+                post.dwell(start_dwell);
+            }
+            if t.pause > 0 {
+                post.dwell(f64::from(t.pause));
+            }
+        }
+    } else {
+        // Manual hand-swap on a hobby controller. We can't trust the
+        // controller to halt for an M6 — emit an explicit M0 program
+        // pause so the operator confirms the bit swap with Cycle Start.
+        // Tool Z-shift is applied AFTER the pause so the operator can
+        // jog the new bit to the surface before the work-Z=0 line is
+        // moved by G92.
+        if let Some(t) = new_tool {
+            post.comment(&format!(
+                "pause: swap to tool {} ({})",
+                new_tool_id, t.name
+            ));
+        } else {
+            post.comment(&format!("pause: swap to tool {new_tool_id}"));
+        }
+        if !is_first_tool {
+            // M0: program-pause. Operator presses Cycle Start to
+            // resume. Skip on first-tool because the spindle isn't
+            // running yet — the program-start state is already
+            // tool-swap-equivalent (operator loaded a bit before
+            // hitting Cycle Start).
+            post.raw("M0");
+        }
+        if let Some(t) = new_tool {
+            if let Some(shift) = t.z_shift_mm {
+                post.tool_z_shift(shift);
+            }
+            // Force the next M3 to actually emit (the operator may
+            // have hand-spun the spindle off during the pause; we
+            // can't trust the delta-encoder's last_speed snapshot
+            // anymore).
+            post.reset_state();
+            // Explicit spindle-up so the next cut starts with the
+            // spindle at commanded RPM — don't rely on lazy emit.
+            post.spindle_cw(t.speed, 0);
+            let start_dwell = machine.effective_spindle_start_dwell_sec();
+            if start_dwell > 0.0 {
+                post.dwell(start_dwell);
+            }
+            if t.pause > 0 {
+                post.dwell(f64::from(t.pause));
+            }
+        }
+    }
 }
 
 // 56a: pipeline integration tests live in `pipeline/tests.rs` so this

@@ -18,7 +18,8 @@ use crate::gcode::{emit_drill_block, emit_vcarve_block, PostProcessor};
 use crate::geometry::{Point2, SegmentKind};
 use crate::pipeline::setup_resolver::resolve_peck_step;
 use crate::pipeline::{
-    op_includes_object, synthesize_finish_setup, PipelineError, PipelineWarning,
+    emit_toolchange_envelope, op_includes_object, synthesize_finish_setup, PipelineError,
+    PipelineWarning,
 };
 use crate::project::{DrillCycle, Op, Project};
 
@@ -134,10 +135,19 @@ fn emit_stufenfase<P: PostProcessor>(
                 "; stufenfase: toolchange to {} for hole-rim chamfer",
                 finish_setup.tool.number
             ));
-            post.tool(finish_setup.tool.number);
-            if let Some(shift) = cutter.z_shift_mm {
-                post.tool_z_shift(shift);
-            }
+            // bd rwv8: wrap the drill→chamfer M6 in the safety envelope
+            // (safe-Z → M5+dwell → M6 → z-shift → M3+dwell). The
+            // previous code emitted `T<n> M6` immediately after the
+            // drill block ended, with the spindle still spinning and
+            // the cutter potentially still in the hole.
+            emit_toolchange_envelope(
+                post,
+                &project.machine,
+                drill_setup,
+                Some(cutter),
+                finish_setup.tool.number,
+                false,
+            );
             chamfer_setup = finish_setup;
         }
     }

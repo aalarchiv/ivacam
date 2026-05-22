@@ -363,6 +363,17 @@
 
   async function clickRecent(path: string) {
     closeAllMenus();
+    // Dirty-check once for the Recent click so we don't double-prompt
+    // when loadFromPath / loadProjectPath also vet it. `openFile` /
+    // `openProject` do their own check; the path variants don't,
+    // because the OS file-association launch + reopen banner cases
+    // intentionally skip the prompt.
+    if (project.dirty) {
+      const ok = window.confirm(
+        'Your project has unsaved changes. Continue and load the recent project? (Your unsaved work will be lost.)',
+      );
+      if (!ok) return;
+    }
     const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
     if (isProjectFile) await loadProjectPath(path);
     else await loadFromPath(path);

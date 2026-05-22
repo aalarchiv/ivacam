@@ -67,6 +67,7 @@ function hiddenProjectInput(): HTMLInputElement | null {
 /// hidden `<input type=file>` rendered by FileUpload so the picker
 /// fires inside the user-gesture window.
 export async function openFile() {
+  if (!(await confirmDiscardIfDirty('open another drawing'))) return;
   if (isTauri()) {
     const { open } = await import('@tauri-apps/plugin-dialog');
     const selected = await open({
@@ -79,9 +80,24 @@ export async function openFile() {
   hiddenFileInput()?.click();
 }
 
+/// If the project has unsaved changes, prompt the user before a
+/// destructive load (open file, open project, recent). Returns
+/// `true` to proceed, `false` to bail. Uses window.confirm because
+/// it's synchronous and trivially blocks the load until the user
+/// decides — a styled modal would be nicer but isn't worth the
+/// wiring for a one-button question.
+async function confirmDiscardIfDirty(action: string): Promise<boolean> {
+  if (!project.dirty) return true;
+  if (typeof window === 'undefined') return true;
+  return window.confirm(
+    `Your project has unsaved changes. Continue and ${action}? (Your unsaved work will be lost.)`,
+  );
+}
+
 /// Desktop: native open dialog for `.wiac-project.json`. Browser: same
 /// hidden-input trick as openFile, but for project files.
 export async function openProject() {
+  if (!(await confirmDiscardIfDirty('open another project'))) return;
   if (isTauri()) {
     const { open } = await import('@tauri-apps/plugin-dialog');
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
@@ -100,11 +116,13 @@ export async function openProject() {
     project.error = null;
     try {
       const text = await readTextFile(selected);
+      project.clearProject();
       project.restore(JSON.parse(text));
       const filename = selected.split(/[\\/]/).pop() ?? selected;
       await pushRecent({ path: selected, filename, lastOpened: new Date().toISOString() });
       workspace.addRecentProject(selected, filename);
       project.setActiveProjectPath(selected);
+      project.dirty = false;
     } catch (e) {
       project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -118,6 +136,11 @@ export async function openProject() {
 
 /// Tauri-only path-based load — used by the menu, the reopen banner,
 /// the recent-projects submenu, and OS file-association launches.
+/// REPLACE semantics: clears the project (ops, fixtures, textLayers,
+/// stock) before importing the new drawing so leftover ops from a
+/// prior project don't silently re-target unrelated objects.
+/// Callers that want ADD semantics (overlay a second drawing on the
+/// current project) should use `addDrawingPath` instead.
 export async function loadFromPath(path: string) {
   project.loading = true;
   project.loadingMessage = pathToLoadingMessage(path);
@@ -125,13 +148,37 @@ export async function loadFromPath(path: string) {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const result = await invoke<ImportResponse>('import_path', { path });
-    // ADD (not REPLACE) — drawings stack onto the current workspace.
-    project.addImported(result, path);
+    project.clearProject();
+    project.setImported(result, path);
     await project.convertImportedTextEntities();
     const filename = path.split(/[\\/]/).pop() ?? path;
     await pushRecent({ path, filename, lastOpened: new Date().toISOString() });
     workspace.addRecentProject(path, filename);
     project.setActiveProjectPath(path);
+    // setImported flips dirty=true; reset because the freshly-loaded
+    // file matches what's on disk and the user hasn't edited yet.
+    project.dirty = false;
+  } catch (e) {
+    reportError(e);
+  } finally {
+    project.loading = false;
+    project.loadingMessage = null;
+  }
+}
+
+/// Desktop-only ADD path — overlays another drawing onto the
+/// current project without resetting ops/fixtures/etc. Used by the
+/// "+ Add drawing" affordance for genuine multi-drawing workflows.
+/// Not exposed in a menu today; reserved for future UI.
+export async function addDrawingPath(path: string) {
+  project.loading = true;
+  project.loadingMessage = pathToLoadingMessage(path);
+  project.error = null;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const result = await invoke<ImportResponse>('import_path', { path });
+    project.addImported(result, path);
+    await project.convertImportedTextEntities();
   } catch (e) {
     reportError(e);
   } finally {
@@ -141,7 +188,9 @@ export async function loadFromPath(path: string) {
 }
 
 /// Tauri-only path-based project load — same flow as `loadFromPath`
-/// but dispatches to the project-restore path.
+/// but dispatches to the project-restore path. Callers (Recent
+/// menu, OS file-association launch) should have already vetted
+/// the dirty state via `confirmDiscardIfDirty`.
 export async function loadProjectPath(path: string) {
   project.loading = true;
   project.loadingMessage = 'Loading project…';
@@ -149,11 +198,13 @@ export async function loadProjectPath(path: string) {
   try {
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
     const text = await readTextFile(path);
+    project.clearProject();
     project.restore(JSON.parse(text));
     const filename = path.split(/[\\/]/).pop() ?? path;
     await pushRecent({ path, filename, lastOpened: new Date().toISOString() });
     workspace.addRecentProject(path, filename);
     project.setActiveProjectPath(path);
+    project.dirty = false;
   } catch (e) {
     project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
@@ -164,7 +215,8 @@ export async function loadProjectPath(path: string) {
 
 /// Browser-path import via the FastAPI-shaped /import endpoint (or its
 /// WASM equivalent in Tauri). Used by drag-and-drop + the hidden
-/// `<input type=file>` change handler.
+/// `<input type=file>` change handler. REPLACE semantics — see
+/// `loadFromPath` for the desktop counterpart.
 export async function loadFile(file: File) {
   const client = defaultClient();
   project.loading = true;
@@ -172,9 +224,10 @@ export async function loadFile(file: File) {
   project.error = null;
   try {
     const result = await client.importFile(file);
-    // ADD (not REPLACE) — drawings stack onto the current workspace.
-    project.addImported(result);
+    project.clearProject();
+    project.setImported(result);
     await project.convertImportedTextEntities();
+    project.dirty = false;
   } catch (e) {
     reportError(e);
   } finally {
@@ -184,13 +237,16 @@ export async function loadFile(file: File) {
 }
 
 /// Browser project load — paired with the hidden project input.
+/// REPLACE semantics, mirroring the desktop `loadProjectPath`.
 export async function loadProjectFile(file: File) {
   project.loading = true;
   project.loadingMessage = 'Loading project…';
   project.error = null;
   try {
     const text = await file.text();
+    project.clearProject();
     project.restore(JSON.parse(text));
+    project.dirty = false;
   } catch (e) {
     project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
@@ -236,7 +292,10 @@ export async function saveProject() {
 }
 
 /// Fetch + import one of the bundled `public/samples/<x>.json` files.
+/// REPLACE semantics: loading a sample drops the current project to
+/// start fresh.
 export async function loadSample(url: string) {
+  if (!(await confirmDiscardIfDirty('load a sample'))) return;
   project.loading = true;
   project.loadingMessage = 'Loading sample…';
   project.error = null;
@@ -244,7 +303,9 @@ export async function loadSample(url: string) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`fetch ${url}: ${res.status}`);
     const data = (await res.json()) as ImportResponse;
+    project.clearProject();
     project.setImported(data);
+    project.dirty = false;
   } catch (e) {
     project.setError(e instanceof Error ? e.message : String(e));
   } finally {

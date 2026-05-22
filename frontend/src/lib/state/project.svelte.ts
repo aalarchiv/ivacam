@@ -509,6 +509,39 @@ class ProjectState {
     });
   }
 
+  /// Reset every project-scoped field to its empty / default state.
+  /// Preserves `tools` (per-user library) and `machine` (per-shop
+  /// config) — those persist across project boundaries by design.
+  /// Drops imports, ops, fixtures, textLayers, stock, generated
+  /// state, selections, dirty flag, history.
+  ///
+  /// Called by the open-file / open-recent flows before loading a
+  /// new drawing so leftover ops from the previous project don't
+  /// silently re-target unrelated objects in the new geometry.
+  clearProject() {
+    this.data.imports = [];
+    this.operations = [];
+    this.fixtures = [];
+    this.textLayers = [];
+    this.stock = { ...this.stock };
+    this.generated = null;
+    this.toolpathCumLen = null;
+    this.toolpathTotalLen = 0;
+    this.selectedEntities = new Set();
+    this.selectedObjects = new Set();
+    this.selectedOpId = null;
+    this.selectedFixtureId = null;
+    this.selectedTextLayerId = null;
+    this.hoverSegment = null;
+    this.visibleLayers = new Set();
+    this.activeProjectPath = null;
+    this.sourceFileStaleNotice = null;
+    this.error = null;
+    this.dirty = false;
+    resetPreviewCache();
+    this.history.clear();
+  }
+
   /// Switch the active project path and apply the persisted per-project
   /// workspace state (visible_layers / selected_op_id / playhead). Call
   /// AFTER `setImported` / `restore` so the layer set is already populated

@@ -59,13 +59,23 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
                 });
             }
             let tool_r = tool.diameter * 0.5;
-            if (tool_r - radius_mm).abs() > 0.5 * radius_mm.max(1.0) {
+            // srxi: the previous threshold was 50 % of the profile R,
+            // which let large mismatches through silently (a 6 mm tool
+            // on a 5 mm profile is a 20 % mismatch and used to pass —
+            // the resulting floor isn't even close to the requested
+            // half-pipe shape). The user-facing acceptance criterion is
+            // a 10 % tolerance: anything looser produces visibly wrong
+            // gcode. Made effectively constant here; if a future op
+            // needs to override, add a per-op tolerance knob.
+            let tolerance_factor = 0.10_f64;
+            let allowed = tolerance_factor * radius_mm.max(1e-9);
+            if (tool_r - radius_mm).abs() > allowed {
                 warnings.push(PipelineWarning {
                     op_id: Some(op.id),
                     kind: "halfpipe_radius_mismatch".into(),
                     message: format!(
-                        "Halfpipe op '{}': tool radius {:.3} mm doesn't match the configured profile radius {:.3} mm — the cut won't trace the desired pipe.",
-                        op.name, tool_r, radius_mm
+                        "Halfpipe op '{}': tool radius {:.3} mm doesn't match the configured profile radius {:.3} mm (tolerance ±{:.1} % ≈ ±{:.3} mm). The cut won't trace the desired pipe — pick a ball-nose tool whose diameter equals 2 × the profile radius.",
+                        op.name, tool_r, radius_mm, tolerance_factor * 100.0, allowed,
                     ),
                 });
             }
@@ -104,6 +114,7 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut any_depth_limited = false;
 
+    let tool_r_for_prune = tool.diameter * 0.5;
     for region in &regions {
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);
@@ -115,13 +126,43 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
             outer: region.boundary.clone(),
             holes: region.holes.clone(),
         };
-        let axes = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
+        let axes_raw = crate::cam::geometry_cache::medial_axis_cached(&vc_region, cancel);
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);
         }
+        // iqbu: prune medial-axis spurs (same hairy-boundary problem
+        // as V-carve). For halfpipe the tip-radius is 0 (the cutter's
+        // tip is the deepest point of the ball / V apex, not a flat
+        // plateau), so only the short-branch rule fires.
+        let axes = crate::cam::vcarve::prune_medial_axis(axes_raw, tool_r_for_prune, 0.0);
+        // mchy: build the flat boundary segment list so polyline_to_z
+        // can detect re-entrant corners. The outer ring plus any
+        // hole rings — same convention as the V-Carve medial-axis
+        // builder.
+        let mut boundary_segs: Vec<(Point2, Point2)> = Vec::new();
+        let push_ring = |ring: &[Point2], out: &mut Vec<(Point2, Point2)>| {
+            if ring.len() < 2 {
+                return;
+            }
+            for i in 0..ring.len() {
+                let a = ring[i];
+                let b = ring[(i + 1) % ring.len()];
+                if a.distance(b) > 1e-12 {
+                    out.push((a, b));
+                }
+            }
+        };
+        push_ring(&region.boundary, &mut boundary_segs);
+        for h in &region.holes {
+            push_ring(h, &mut boundary_segs);
+        }
         for axis in &axes {
-            let (z_axis, depth_limited) =
-                crate::cam::halfpipe::polyline_to_z(axis, strategy, z_cap);
+            let (z_axis, depth_limited) = crate::cam::halfpipe::polyline_to_z(
+                axis,
+                strategy,
+                z_cap,
+                Some(&boundary_segs),
+            );
             if depth_limited {
                 any_depth_limited = true;
             }
@@ -316,6 +357,67 @@ mod tests {
             any_deep_cut,
             "expected at least one G1 line with Z below -1 mm:\n{}",
             resp.gcode
+        );
+    }
+
+    /// srxi: a 20 % tool/profile-R mismatch — 6 mm tool on a 5 mm
+    /// profile — used to pass silently under the loose 50 % threshold.
+    /// The tightened 10 % gate now fires `halfpipe_radius_mismatch`.
+    #[test]
+    fn halfpipe_warns_when_tool_radius_mismatch_exceeds_10pct() {
+        let mut segments_8w: Vec<Segment> = Vec::new();
+        let p = |x: f64, y: f64| Point2::new(x, y);
+        segments_8w.push(Segment::line(p(0.0, 0.0), p(40.0, 0.0), "0", 7));
+        segments_8w.push(Segment::line(p(40.0, 0.0), p(40.0, 8.0), "0", 7));
+        segments_8w.push(Segment::line(p(40.0, 8.0), p(0.0, 8.0), "0", 7));
+        segments_8w.push(Segment::line(p(0.0, 8.0), p(0.0, 0.0), "0", 7));
+
+        // 12-mm diameter ball ⇒ tool radius 6.0 mm. Profile R = 5.0 mm.
+        // Mismatch = 1.0 mm = 20 % of R. Old threshold (50 %) ignored
+        // this; new threshold (10 %) catches it.
+        let mut ball = endmill(1, 12.0);
+        ball.kind = ToolKind::BallNose;
+        let mut params = OpParams::mill_default();
+        params.depth = -10.0;
+        params.start_depth = 0.0;
+        params.step = Some(-2.0);
+        let project = Project {
+            segments: segments_8w,
+            machine: MachineConfig::default(),
+            tools: vec![ball],
+            operations: vec![Op {
+                id: 1,
+                name: "Halfpipe".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: crate::project::PocketStrategy::Halfpipe {
+                        profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 5.0 },
+                    },
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "halfpipe_radius_mismatch"),
+            "expected halfpipe_radius_mismatch warning; got {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
     }
 

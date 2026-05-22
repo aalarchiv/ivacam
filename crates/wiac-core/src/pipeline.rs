@@ -1122,3 +1122,90 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
 // lines of test cases dominated the view).
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod count_tool_changes_tests {
+    use super::count_tool_changes;
+    use crate::pipeline::test_helpers::{endmill, profile_op, project_with};
+    use crate::project::{Op, OpKind, OpParams, OpSource};
+
+    fn pause_op(id: u32) -> Op {
+        Op {
+            id,
+            name: format!("Pause {id}"),
+            enabled: true,
+            kind: OpKind::Pause {
+                message: "swap".into(),
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        }
+    }
+
+    /// ye4b: a single-op program counts one tool change — the spindle
+    /// enters the program empty, so the first op always emits a load.
+    #[test]
+    fn single_op_counts_one_change() {
+        let project = project_with(
+            vec![profile_op(1, 1, crate::cam::setup::ToolOffset::Outside)],
+            vec![endmill(1, 3.0)],
+        );
+        assert_eq!(count_tool_changes(&project), 1);
+    }
+
+    /// ye4b: back-to-back same-tool ops collapse to one change.
+    #[test]
+    fn back_to_back_same_tool_counts_one() {
+        let project = project_with(
+            vec![
+                profile_op(1, 1, crate::cam::setup::ToolOffset::Outside),
+                profile_op(2, 1, crate::cam::setup::ToolOffset::Outside),
+            ],
+            vec![endmill(1, 3.0)],
+        );
+        assert_eq!(count_tool_changes(&project), 1);
+    }
+
+    /// ye4b: switching tools counts the boundary.
+    #[test]
+    fn two_distinct_tools_count_two() {
+        let project = project_with(
+            vec![
+                profile_op(1, 1, crate::cam::setup::ToolOffset::Outside),
+                profile_op(2, 2, crate::cam::setup::ToolOffset::Outside),
+            ],
+            vec![endmill(1, 3.0), endmill(2, 6.0)],
+        );
+        assert_eq!(count_tool_changes(&project), 2);
+    }
+
+    /// ye4b: Pause ops don't touch the spindle and don't affect the
+    /// next op's boundary decision — three same-tool cuts with a Pause
+    /// in between still count as one change.
+    #[test]
+    fn pause_op_does_not_break_same_tool_run() {
+        let project = project_with(
+            vec![
+                profile_op(1, 1, crate::cam::setup::ToolOffset::Outside),
+                pause_op(2),
+                profile_op(3, 1, crate::cam::setup::ToolOffset::Outside),
+            ],
+            vec![endmill(1, 3.0)],
+        );
+        assert_eq!(count_tool_changes(&project), 1);
+    }
+
+    /// ye4b: disabled ops are skipped.
+    #[test]
+    fn disabled_ops_are_skipped() {
+        let mut a = profile_op(1, 1, crate::cam::setup::ToolOffset::Outside);
+        a.enabled = false;
+        let project = project_with(
+            vec![a, profile_op(2, 2, crate::cam::setup::ToolOffset::Outside)],
+            vec![endmill(1, 3.0), endmill(2, 6.0)],
+        );
+        assert_eq!(count_tool_changes(&project), 1);
+    }
+}

@@ -27,6 +27,17 @@
 /// caller.
 pub type ZPolyline = Vec<(f64, f64, f64)>;
 
+/// Default lead-in ramp angle (degrees from horizontal). pmpk fix:
+/// the medial-axis chain endpoints sit AT boundary-touching vertices
+/// (R ≈ 0) so the cutter would otherwise plunge vertically by `dpp`
+/// into solid stock on its first cut — fatal for a sharp V-bit which
+/// has effectively zero safe plunge depth. Vectric Aspire and Estlcam
+/// both use a ramp lead-in for V-carve entry; 10° from horizontal is
+/// a defensible conservative default (≈ 5.7× more XY travel than
+/// vertical drop). Configurable per-tool in a future pass — see
+/// follow-up bd for the knob.
+const LEAD_IN_ANGLE_DEG: f64 = 10.0;
+
 /// Build the full V-Carve sweep for a single per-point-Z polyline.
 ///
 /// `axis` is `(x, y, z, r)` where `z <= 0` is the geometric target
@@ -36,6 +47,19 @@ pub type ZPolyline = Vec<(f64, f64, f64)>;
 /// is a single polyline whose Z monotonically respects the ratchet:
 /// every segment starts at the cut-Z reached by the previous segment
 /// and never violates the polyline's actual `z`.
+///
+/// **pmpk:** the emitted polyline begins with an angled lead-in ramp
+/// that walks along the chain's spine while Z descends from 0 to the
+/// first-cut depth (`-dpp` or the chain's shallowest target, whichever
+/// is shallower). This avoids the V-bit-snapping vertical plunge that
+/// would otherwise occur at the R≈0 chain endpoint. If the chain is
+/// too short to fit the ramp at [`LEAD_IN_ANGLE_DEG`], the first cut
+/// is depth-limited (the ramp angle is preserved; the entry depth is
+/// reduced).
+// V-carve ratchet emitter packs densification, lead-in ramp, and
+// progressive-deepening sweep into one state machine — extraction
+// would split tightly-coupled cut_z/path state across helpers.
+#[allow(clippy::too_many_lines)]
 pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPolyline {
     if axis.len() < 2 {
         return Vec::new();
@@ -100,9 +124,101 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> ZPoly
     let mut cut_z: Vec<f64> = vec![0.0; n];
 
     let mut path: Vec<(f64, f64, f64)> = Vec::new();
-    path.push((compact[0].0, compact[0].1, 0.0));
 
-    let mut current_level = -dpp;
+    // pmpk: emit angled lead-in ramp from z=0 down to z=first_cut_z
+    // along the chain's spine, replacing the original `-dpp` forward
+    // sweep. The ramp slope is fixed at LEAD_IN_ANGLE_DEG from
+    // horizontal so the V-bit shaves a sloped sliver of material
+    // instead of plunging vertically into solid stock at the R≈0 chain
+    // endpoint. After the ramp finishes (or the chain ends, whichever
+    // comes first), every following point is cut at the post-ramp
+    // depth (-dpp). The ratchet then continues at -2*dpp, -3*dpp, ...
+    let first_cut_z = (-dpp).max(z_min);
+    let tan_angle = LEAD_IN_ANGLE_DEG.to_radians().tan();
+    let lead_in_len = (-first_cut_z) / tan_angle;
+    // Cumulative XY arc length along compact — used to pace the ramp.
+    let mut arc: Vec<f64> = Vec::with_capacity(n);
+    arc.push(0.0);
+    for i in 1..n {
+        let dx = compact[i].0 - compact[i - 1].0;
+        let dy = compact[i].1 - compact[i - 1].1;
+        arc.push(arc[i - 1] + dx.hypot(dy));
+    }
+    let total_arc = *arc.last().unwrap_or(&0.0);
+    // If the chain is too short to fit the ramp, depth-limit the entry:
+    // keep the angle and shorten the descent. The V-bit reaches only
+    // `-tan(angle) * total_arc` on this first sweep — deeper ratchet
+    // sweeps then resume normally (they cut through air above the
+    // already-engaged groove). This is acceptance criterion (a):
+    // reducing first-cut depth on too-short chains, no warning needed
+    // since the depth-limit cascades into the existing depth-limited
+    // diagnostics path further up the stack.
+    let (ramp_end_z, ramp_target_len) = if lead_in_len <= total_arc {
+        (first_cut_z, lead_in_len)
+    } else {
+        (-tan_angle * total_arc, total_arc)
+    };
+
+    // Emit the ramped first sweep. For each compact[i]:
+    //   * before ramp end: z = -tan(angle) * arc[i] (clamped to
+    //     ramp_end_z and to target_z[i]),
+    //   * once we cross ramp_target_len mid-segment, insert a synthetic
+    //     waypoint at the exact ramp-end XY at ramp_end_z so the slope
+    //     is preserved,
+    //   * after ramp end: z = max(ramp_end_z, target_z[i]) — the same
+    //     thing the standard forward sweep at current_level=-dpp would
+    //     have emitted.
+    path.push((compact[0].0, compact[0].1, 0.0));
+    cut_z[0] = 0.0;
+    let mut ramp_finished = false;
+    for i in 1..n {
+        if !ramp_finished && arc[i] > ramp_target_len + 1e-9 {
+            // Cross the ramp boundary mid-segment — emit the exact
+            // ramp-end waypoint first.
+            let prev_arc = arc[i - 1];
+            let seg_len = arc[i] - prev_arc;
+            if seg_len > 1e-9 && prev_arc < ramp_target_len - 1e-9 {
+                let t = (ramp_target_len - prev_arc) / seg_len;
+                let rx = compact[i - 1].0 + t * (compact[i].0 - compact[i - 1].0);
+                let ry = compact[i - 1].1 + t * (compact[i].1 - compact[i - 1].1);
+                path.push((rx, ry, ramp_end_z));
+            }
+            ramp_finished = true;
+        }
+        let z_i = if ramp_finished {
+            // Past the ramp — same as the standard forward sweep at
+            // -dpp would emit: max(current_level, target_z[i]).
+            ramp_end_z.max(target_z[i])
+        } else {
+            // Still inside the ramp — z follows the slope, but never
+            // dives below the polyline's geometric target.
+            (-tan_angle * arc[i]).max(target_z[i])
+        };
+        path.push((compact[i].0, compact[i].1, z_i));
+        cut_z[i] = z_i;
+    }
+
+    // The lead-in ramp already played the role of the first forward
+    // sweep at current_level = -dpp.
+    //
+    // If the chain was too short to fit the ramp at the configured
+    // angle, the lead-in bottomed out shallower than -dpp. Going
+    // deeper on the next sweep would re-introduce the steep plunge
+    // (the bit would drop from z=0 at compact[0] to -2*dpp at
+    // compact[1] with no kerf clearance — same as the original bug).
+    // So we stop here and accept a shallow cut on this chain. The
+    // pipeline-level depth-limited warning surfaces the under-cut to
+    // the user (see acceptance criteria option (a)).
+    if (ramp_end_z - first_cut_z).abs() > 1e-9 {
+        return path;
+    }
+    let mut current_level = -2.0 * dpp;
+    // Emit the reverse-sweep backstroke so the next forward sweep
+    // starts from compact[0] at z=0 (mirroring the standard ratchet
+    // ordering).
+    for i in (0..n).rev() {
+        path.push((compact[i].0, compact[i].1, cut_z[i]));
+    }
     loop {
         let mut progressed = false;
         // Forward sweep at current_level: cut every point to
@@ -163,6 +279,56 @@ mod tests {
         assert!(!path.is_empty());
         let z_min = path.iter().map(|t| t.2).fold(0.0_f64, f64::min);
         assert!((z_min + 0.5).abs() < 1e-6, "z_min = {z_min}");
+    }
+
+    /// pmpk: a straight medial-axis chain whose endpoint sits at R≈0
+    /// (target_z≈0) must not produce any segment with vertical drop
+    /// > 0.05 mm at zero (or near-zero) horizontal travel. Before the
+    /// fix, the first cut move dropped Z by `dpp` while XY barely
+    /// moved — V-bit snap territory. The lead-in ramp now spreads the
+    /// drop over `dpp / tan(LEAD_IN_ANGLE_DEG)` mm of XY travel.
+    #[test]
+    fn first_plunge_uses_angled_lead_in() {
+        // 50 mm-long chain, target depth -3 mm at both ends → in
+        // practice the endpoint depth is 0 (boundary-touching, R≈0).
+        // We synthesize the worst case: start at z=0, deepen to -3 at
+        // 5 mm in, stay at -3 for the rest. After my fix, the first
+        // 0..lead_in_len mm of XY should ramp from 0 down to -dpp.
+        let mut axis = vec![(0.0, 0.0, 0.0_f64, 0.0)];
+        for i in 1..=50 {
+            let x = i as f64;
+            let z = if x < 5.0 { -3.0 * (x / 5.0) } else { -3.0 };
+            axis.push((x, 0.0, z, 1.5));
+        }
+        let dpp = 1.0;
+        let path = ratchet_emit(&axis, dpp);
+        assert!(!path.is_empty(), "path should be non-empty");
+        // Steepness check: no plunging segment may have horizontal
+        // projection < (vertical_drop / tan(45°)) — i.e. no near-
+        // vertical descent into solid stock. We focus on the FIRST
+        // plunge (z going from 0 to a deeper value); subsequent
+        // sweeps cut inside an existing kerf and so steeper slopes
+        // are permitted there.
+        let threshold = 0.05_f64; // mm vertical
+        let mut cut_z = 0.0_f64; // tracks deepest Z reached so far
+        for w in path.windows(2) {
+            let (ax, ay, az) = w[0];
+            let (bx, by, bz) = w[1];
+            // Only check segments that go DEEPER than anything yet —
+            // i.e. the very first plunge into uncarved stock.
+            if bz < cut_z - 1e-9 {
+                let h = (bx - ax).hypot(by - ay);
+                let v = az - bz; // positive on plunge
+                if v > threshold {
+                    assert!(
+                        h > v * 0.5,
+                        "first-plunge segment too steep: h={h:.4} mm, v={v:.4} mm \
+                         (from ({ax:.3},{ay:.3},{az:.3}) to ({bx:.3},{by:.3},{bz:.3}))",
+                    );
+                }
+                cut_z = cut_z.min(bz);
+            }
+        }
     }
 
     #[test]

@@ -368,6 +368,59 @@
           doesn't show up within a few seconds.
         </p>
       </section>
+
+      <section>
+        <h3>Snap to</h3>
+        <div class="grid">
+          {#each [
+            { key: 'endpoint', label: 'Endpoint', help: 'Snap to segment endpoints.' },
+            { key: 'midpoint', label: 'Midpoint', help: 'Snap to the midpoint of each segment.' },
+            { key: 'intersection', label: 'Intersection', help: 'Snap to line / arc crossings.' },
+            { key: 'center', label: 'Center', help: 'Snap to circle / arc centers.' },
+            { key: 'grid', label: 'Grid', help: 'Snap to integer multiples of the grid step below.' },
+          ] as o (o.key)}
+            <label class="check" title={o.help}>
+              <input
+                type="checkbox"
+                checked={!!project.settings.osnap?.[o.key as 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid']}
+                onchange={(e) =>
+                  update('osnap', {
+                    ...project.settings.osnap,
+                    [o.key]: (e.currentTarget as HTMLInputElement).checked,
+                  })}
+              />
+              <span>{o.label}</span>
+            </label>
+          {/each}
+          <label
+            title="Grid step (mm) when 'Grid' snap is on. Cursor latches to integer multiples of this offset from the project origin."
+            >Grid step
+            <input
+              type="number"
+              min="0.1"
+              step="0.1"
+              value={project.settings.osnap?.gridStepMm ?? 5}
+              oninput={(e) =>
+                update('osnap', {
+                  ...project.settings.osnap,
+                  gridStepMm: Math.max(
+                    0.1,
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.osnap?.gridStepMm ?? 5,
+                      0.1,
+                    ),
+                  ),
+                })}
+            />
+          </label>
+        </div>
+        <p class="hint">
+          Object snap on the 2D canvas. Endpoint / midpoint / intersection / center latch the cursor
+          to existing geometry features; Grid latches to abstract grid spots independent of the
+          drawing.
+        </p>
+      </section>
     </div>
 
     <footer>

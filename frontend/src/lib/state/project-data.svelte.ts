@@ -22,6 +22,7 @@ import {
   type ToolEntry,
 } from './project-types';
 import type { OpEntry } from './op_types';
+import { DEFAULT_OSNAP_SETTINGS, type OSnapSettings } from '../canvas/osnap';
 
 const SETTINGS_KEY = 'wiac.settings';
 const LEGACY_THEME_KEY = 'wiac.theme';
@@ -64,6 +65,10 @@ export interface AppSettings {
   /// times (not only when the sim heightfield is active). Combined with
   /// the per-project `stock.visible` toggle.
   showStockBox: boolean;
+  /// li0m: 2D-canvas object-snap toggles. Per-kind booleans + grid
+  /// step. Persisted in localStorage so the user's snap preferences
+  /// survive across sessions / projects.
+  osnap: OSnapSettings;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -93,6 +98,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoRunSimOnSave: true,
   autoReloadSources: true,
   showStockBox: true,
+  osnap: { ...DEFAULT_OSNAP_SETTINGS },
 };
 
 /// Load persisted settings, deep-merging stored values over defaults so
@@ -108,6 +114,13 @@ function loadSettings(): AppSettings {
       const parsed = JSON.parse(raw) as Partial<AppSettings> | null;
       if (parsed && typeof parsed === 'object') {
         merged = { ...merged, ...parsed };
+        // Deep-merge `osnap` so a future-added knob falls back to its
+        // DEFAULT instead of being undefined when the user's stored
+        // blob predates the new key (li0m). Same care needed for any
+        // future nested object setting.
+        if (parsed.osnap && typeof parsed.osnap === 'object') {
+          merged.osnap = { ...DEFAULT_OSNAP_SETTINGS, ...parsed.osnap };
+        }
       }
       return merged;
     }

@@ -5,7 +5,6 @@
     buildObjectPolylines,
     polylineAtT,
     polylineProject,
-    vertexAndMidpointTs,
     type ObjectPolyline,
   } from '../cam/tabs';
   import type { Segment } from '../api/types';
@@ -268,10 +267,10 @@
       : { endpoints: [], midpoints: [], intersections: [], centers: [] },
   );
 
-  /// OSnap settings. TODO: thread through `project.settings` so users
-  /// can toggle per-kind from the Settings dialog. Today the defaults
-  /// (all CAD-feature kinds on, grid off) match what most users want.
-  const osnapSettings = DEFAULT_OSNAP_SETTINGS;
+  /// OSnap settings come from `project.settings.osnap` (li0m). Falls
+  /// back to the hardcoded defaults for the brief window between
+  /// component mount and the settings hydration completing.
+  const osnapSettings = $derived(project.settings.osnap ?? DEFAULT_OSNAP_SETTINGS);
 
   // Mouse → segment hit testing. We project each segment to canvas space
   // and pick the nearest one within `HIT_PIXEL_TOL`.
@@ -689,44 +688,80 @@
       // CAD-style escape hatch: bare contour projection only.
       return best;
     }
-    // Promote to vertex / midpoint when the cursor is close enough.
-    const obj = getObjectPolylines().find((o) => o.objectId === best!.objectId);
-    if (obj) {
-      let promoted: {
-        t: number;
-        x: number;
-        y: number;
-        snap: 'vertex' | 'midpoint' | 'existing';
-        d2: number;
-      } | null = null;
-      for (const cand of vertexAndMidpointTs(obj.pts, obj.closed)) {
-        const dx = cand.point.x - dataX;
-        const dy = cand.point.y - dataY;
-        const d2 = dx * dx + dy * dy;
-        if (d2 > snapTolData * snapTolData) continue;
-        if (promoted && d2 >= promoted.d2) continue;
-        promoted = { t: cand.t, x: cand.point.x, y: cand.point.y, snap: cand.kind, d2 };
+    // Promote to vertex / midpoint / intersection via the shared OSnap
+    // engine so the tab path respects the user's per-kind toggles
+    // (li0m) and ALSO supports intersection snaps that the old
+    // vertexAndMidpointTs scanning never produced (ffhp). The OSnap
+    // result is in whole-drawing coordinates; project it back to
+    // (objectId, t) so the tab can stay attached to a specific
+    // contour through transforms.
+    const osnap = findOSnap(osnapTargets, dataX, dataY, snapTolData, osnapSettings);
+    let promoted: {
+      t: number;
+      x: number;
+      y: number;
+      snap: 'vertex' | 'midpoint' | 'existing';
+      d2: number;
+      objectId: number;
+    } | null = null;
+    if (osnap && osnap.kind !== 'grid') {
+      let proj: { objectId: number; t: number; x: number; y: number; d2: number } | null = null;
+      for (const o of getObjectPolylines()) {
+        if (!allow(o.objectId)) continue;
+        const { t, snap, d2 } = polylineProject(o.pts, osnap, o.closed);
+        if (proj && d2 >= proj.d2) continue;
+        proj = { objectId: o.objectId, t, x: snap.x, y: snap.y, d2 };
       }
-      // Existing-tab snap on the SAME op + object, within 2mm data-space.
+      // The OSnap point has to actually lie on (or very near) an
+      // op-source contour for the tab to make sense — discard the
+      // snap when the user is hovering over a vertex that belongs
+      // to some other geometry the op doesn't touch.
+      if (proj && proj.d2 <= snapTolData * snapTolData) {
+        // 'intersection' collapses to 'vertex' in the tab snap-kind
+        // enum since both are discrete points (no separate visual).
+        const snapKind: 'vertex' | 'midpoint' =
+          osnap.kind === 'midpoint' ? 'midpoint' : 'vertex';
+        promoted = {
+          t: proj.t,
+          x: osnap.x,
+          y: osnap.y,
+          snap: snapKind,
+          d2: 0,
+          objectId: proj.objectId,
+        };
+      }
+    }
+    // Existing-tab snap on the SAME op + object, within 2 mm data-space.
+    // Kept as a separate scan because tab placements aren't OSnap
+    // targets (they live on the op, not the imported geometry).
+    const targetObj = getObjectPolylines().find((o) => o.objectId === best!.objectId);
+    if (targetObj) {
       for (const tp of op.tabPlacements ?? []) {
         if (tp.objectId !== best.objectId) continue;
-        const wp = polylineAtT(obj.pts, tp.t, obj.closed).point;
+        const wp = polylineAtT(targetObj.pts, tp.t, targetObj.closed).point;
         const dx = wp.x - dataX;
         const dy = wp.y - dataY;
         const d2 = dx * dx + dy * dy;
         if (d2 > existingTabTolMm * existingTabTolMm) continue;
         if (promoted && d2 >= promoted.d2) continue;
-        promoted = { t: tp.t, x: wp.x, y: wp.y, snap: 'existing', d2 };
-      }
-      if (promoted) {
-        return {
-          x: promoted.x,
-          y: promoted.y,
+        promoted = {
+          t: tp.t,
+          x: wp.x,
+          y: wp.y,
+          snap: 'existing',
+          d2,
           objectId: best.objectId,
-          t: promoted.t,
-          snap: promoted.snap,
         };
       }
+    }
+    if (promoted) {
+      return {
+        x: promoted.x,
+        y: promoted.y,
+        objectId: promoted.objectId,
+        t: promoted.t,
+        snap: promoted.snap,
+      };
     }
     return best;
   }

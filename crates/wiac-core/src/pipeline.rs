@@ -479,12 +479,28 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     let regions = build_region_previews(&project, &objects);
     let tool_changes = count_tool_changes(&gcode);
     let spindle_warmup_s = spindle_warmup_seconds(&project);
-    let time_estimate = crate::sim::timing::estimate_from_gcode(
+    // v7f5: build per-op tool-rate lookup so the estimator clamps
+    // Plunge segments to the tool's plunge_rate even when the post
+    // emitted a single F<feed> line.
+    let op_rates: Vec<crate::sim::timing::OpRates> = project
+        .operations
+        .iter()
+        .filter_map(|op| {
+            let tool = project.tools.iter().find(|t| t.id == op.tool_id)?;
+            Some(crate::sim::timing::OpRates {
+                op_id: op.id,
+                plunge_rate_mm_min: tool.plunge_rate,
+                feed_rate_mm_min: tool.feed_rate,
+            })
+        })
+        .collect();
+    let time_estimate = crate::sim::timing::estimate_from_gcode_with_rates(
         &gcode,
         &toolpath,
         &project.machine,
         tool_changes,
         spindle_warmup_s,
+        &op_rates,
     );
     progress("done", 1.0, "complete");
     Ok(PipelineResponse {

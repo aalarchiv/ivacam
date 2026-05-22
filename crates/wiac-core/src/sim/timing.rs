@@ -64,6 +64,87 @@ pub fn estimate_from_gcode(
     estimate(segments, &feeds, machine, tool_changes, spindle_warmup_s)
 }
 
+/// Per-op plunge / feed limits sourced from the project's tool library
+/// (v7f5). The timing estimator caps each segment's feedrate to the
+/// declared `plunge_rate` for [`MoveKind::Plunge`] segments and to
+/// `feed_rate` for [`MoveKind::Cut`] / [`MoveKind::Arc`] segments — both
+/// from below modal F (so a post that emits a single `F<feed>` line at
+/// the start of an op still uses the slower plunge rate for the plunge
+/// segment, instead of crediting the plunge with the cutting feed).
+///
+/// `op_id == 0` matches segments emitted before any `; OP <n>` marker;
+/// pre-marker geometry is rare in practice but the lookup falls back to
+/// the modal-F value when no entry is found.
+#[derive(Debug, Clone, Copy)]
+pub struct OpRates {
+    pub op_id: u32,
+    /// Plunge feedrate (rate_v) for this op's tool, mm/min. 0 = use modal F.
+    pub plunge_rate_mm_min: u32,
+    /// Cutting feedrate (rate_h) for this op's tool, mm/min. 0 = use modal F.
+    pub feed_rate_mm_min: u32,
+}
+
+/// Like [`estimate_from_gcode`] but also clamps per-segment feeds to
+/// the tool's declared plunge/cut rates (v7f5). `op_rates` is a small
+/// lookup of `op_id → (plunge_rate, feed_rate)`; segments whose `op_id`
+/// isn't present fall through to the modal-F behavior.
+#[must_use]
+pub fn estimate_from_gcode_with_rates(
+    gcode: &str,
+    segments: &[ToolpathSegment],
+    machine: &MachineConfig,
+    tool_changes: u32,
+    spindle_warmup_s: f64,
+    op_rates: &[OpRates],
+) -> TimeEstimate {
+    let feeds = feeds_per_segment(gcode, segments);
+    let clamped = clamp_feeds_by_kind(segments, &feeds, op_rates);
+    estimate(segments, &clamped, machine, tool_changes, spindle_warmup_s)
+}
+
+/// Clamp per-segment modal feeds against the tool's declared rates so a
+/// post that wrote a single F at the start of the op (typical for short
+/// hand-written gcode) doesn't credit the plunge with the cutting feed.
+fn clamp_feeds_by_kind(
+    segments: &[ToolpathSegment],
+    feeds_mm_min: &[f64],
+    op_rates: &[OpRates],
+) -> Vec<f64> {
+    if op_rates.is_empty() {
+        return feeds_mm_min.to_vec();
+    }
+    segments
+        .iter()
+        .enumerate()
+        .map(|(i, seg)| {
+            let modal = feeds_mm_min.get(i).copied().unwrap_or(0.0);
+            let Some(rates) = op_rates.iter().find(|r| r.op_id == seg.op_id) else {
+                return modal;
+            };
+            let cap_mm_min = match seg.kind {
+                MoveKind::Plunge => rates.plunge_rate_mm_min,
+                MoveKind::Cut | MoveKind::Arc => rates.feed_rate_mm_min,
+                MoveKind::Rapid | MoveKind::Retract => 0,
+            };
+            if cap_mm_min == 0 {
+                return modal;
+            }
+            let cap = f64::from(cap_mm_min);
+            // The cap is the tool's authoritative rate for this kind.
+            // When modal F was set HIGHER (post wrote F<cut_feed> and the
+            // plunge inherited it), the tool's rate wins. When modal F
+            // was set LOWER (operator override / canned-cycle plunge with
+            // its own F), the modal value wins. Floor of 0 on modal
+            // makes "no F set yet" use the cap.
+            if modal <= 0.0 {
+                cap
+            } else {
+                modal.min(cap)
+            }
+        })
+        .collect()
+}
+
 /// Core entry point: takes pre-resolved per-segment feedrates (mm/min)
 /// and produces a `TimeEstimate`. `tool_changes` and `spindle_warmup_s`
 /// are added on top of motion time.
@@ -576,6 +657,106 @@ mod tests {
             "got {} expected ~1.1",
             est.total_s
         );
+    }
+
+    #[test]
+    fn plunge_segment_uses_plunge_rate_when_modal_f_is_cutting_feed() {
+        // v7f5: A post that emits a single F<feed> at the start of
+        // the op leaves the plunge G1 inheriting the cutting feed.
+        // The estimator must clamp the plunge segment to the tool's
+        // plunge_rate so the time prediction is realistic.
+        //
+        // Hand-computed reference: a 5 mm plunge at plunge_rate=200
+        // mm/min (3.33 mm/s) + a 50 mm cut at feed=1200 mm/min (20
+        // mm/s). Naive estimate = (5/3.33 + 50/20) = 4.00 s.
+        // (Ignoring accel for simplicity — both segs are long enough
+        // to cruise; the trapezoidal estimator gets within ~10%.)
+        let segs = vec![
+            ToolpathSegment {
+                from: Pose3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                to: Pose3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -5.0,
+                },
+                kind: MoveKind::Plunge,
+                gcode_line: 0,
+                op_id: 7,
+            },
+            ToolpathSegment {
+                from: Pose3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -5.0,
+                },
+                to: Pose3 {
+                    x: 50.0,
+                    y: 0.0,
+                    z: -5.0,
+                },
+                kind: MoveKind::Cut,
+                gcode_line: 0,
+                op_id: 7,
+            },
+        ];
+        // The post wrote ONE F1200 line — modal F = 1200 on both.
+        let modal_feeds = vec![1200.0, 1200.0];
+        let op_rates = vec![OpRates {
+            op_id: 7,
+            plunge_rate_mm_min: 200,
+            feed_rate_mm_min: 1200,
+        }];
+        let clamped = clamp_feeds_by_kind(&segs, &modal_feeds, &op_rates);
+        // The plunge feed should be capped at 200; the cut stays at 1200.
+        assert!(
+            (clamped[0] - 200.0).abs() < 1e-9,
+            "plunge feed should be clamped to plunge_rate (200), got {}",
+            clamped[0]
+        );
+        assert!(
+            (clamped[1] - 1200.0).abs() < 1e-9,
+            "cut feed should remain at modal F (1200), got {}",
+            clamped[1]
+        );
+        // Without the clamp the naive run-time would be (5 / 20 + 50 /
+        // 20) = 2.75 s (≈ 6× too fast on the plunge). With the clamp
+        // we're around 4 s + accel/decel; assert the run-time is in the
+        // 3.5 .. 6 s window (well above 2.75).
+        let est_clamped =
+            estimate(&segs, &clamped, &machine(), 0, 0.0);
+        let est_unclamped = estimate(&segs, &modal_feeds, &machine(), 0, 0.0);
+        assert!(
+            est_clamped.total_s > est_unclamped.total_s * 1.3,
+            "clamped total {} should be > 1.3× unclamped {}",
+            est_clamped.total_s,
+            est_unclamped.total_s,
+        );
+        assert!(
+            est_clamped.total_s > 3.0 && est_clamped.total_s < 6.0,
+            "clamped estimate {} outside 3..6 s window",
+            est_clamped.total_s,
+        );
+    }
+
+    #[test]
+    fn empty_op_rates_preserves_modal_feeds() {
+        // Backstop: when no op-rate entry matches, the modal F values
+        // pass through unchanged (legacy single-arg behavior).
+        let segs = vec![cut_seg((0.0, 0.0, 0.0), (10.0, 0.0, 0.0))];
+        let feeds = vec![800.0];
+        let clamped = clamp_feeds_by_kind(&segs, &feeds, &[]);
+        assert_eq!(clamped, feeds);
+        let other = vec![OpRates {
+            op_id: 999,
+            plunge_rate_mm_min: 100,
+            feed_rate_mm_min: 500,
+        }];
+        let clamped = clamp_feeds_by_kind(&segs, &feeds, &other);
+        assert_eq!(clamped, feeds, "seg op_id=0 doesn't match 999");
     }
 
     #[test]

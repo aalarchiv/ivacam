@@ -777,9 +777,12 @@
         }
     }
 
-    /// Chamfer op (rt1.18): walks the source contour at constant Z,
-    /// computed from the V-bit cone math. A 60° V-bit + 1mm width
-    /// gives ~1.732 mm depth; the gcode must contain Z-1.732.
+    /// Chamfer op (rt1.18): walks the source contour at the computed
+    /// final Z from the V-bit cone math. A 60° V-bit + 1mm width
+    /// gives ~1.732 mm depth; the final lap of gcode must contain
+    /// Z-1.732. With default DPP -1.0 (mill_default), the descent
+    /// also passes through an intermediate stepdown — see
+    /// `chamfer_deep_chamfer_uses_multi_pass_stepdown` (00ia).
     #[test]
     fn chamfer_op_emits_constant_z_pass_at_computed_depth() {
         let vbit = vbit();
@@ -894,6 +897,122 @@
         )
         .unwrap();
         assert!(resp.warnings.iter().any(|w| w.kind == "chamfer_non_vbit"));
+    }
+
+    /// 00ia: a chamfer whose final Z magnitude exceeds the per-pass
+    /// stepdown (DPP) must descend in multiple passes — the cutter
+    /// walks the source contour at each stepdown Z, deepening on each
+    /// lap. The pre-fix behavior forced a single full-depth plunge and
+    /// snapped V-bits. 60° V-bit + 2.5 mm width → Z ≈ -4.33 mm; with
+    /// default DPP -1.0 we expect intermediate Z-1, Z-2, Z-3 passes
+    /// plus a final Z-4.33 lap.
+    #[test]
+    fn chamfer_deep_chamfer_uses_multi_pass_stepdown() {
+        let vbit = vbit();
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![vbit],
+            operations: vec![Op {
+                id: 1,
+                name: "Chamfer".into(),
+                enabled: true,
+                kind: OpKind::Chamfer {
+                    width_mm: 2.5,
+                    finish_pass: false,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Final Z from 2.5 / tan(30°) ≈ -4.3301.
+        assert!(
+            resp.gcode.contains("Z-4.330"),
+            "expected final chamfer depth Z-4.330 in gcode:\n{}",
+            resp.gcode
+        );
+        // With DPP = -1.0 the schedule should include intermediate
+        // stepdowns at Z-1, Z-2, Z-3 before the final Z-4.330 lap.
+        // Counting the distinct intermediate Zs guards against a
+        // regression to single-pass.
+        for z in ["Z-1.0", "Z-2.0", "Z-3.0"] {
+            assert!(
+                resp.gcode.contains(z),
+                "expected intermediate stepdown {z} in gcode:\n{}",
+                resp.gcode
+            );
+        }
+    }
+
+    /// uo1t: a chamfer width that exceeds the V-bit's cone span gets
+    /// clamped to (diameter - tip_diameter) / 2 so the shank never
+    /// engages stock. A 6.35 mm V-bit with 0.1 mm tip has cap 3.125
+    /// mm; requesting 10 mm should warn and emit Z computed from the
+    /// 3.125 mm clamp (3.125 / tan(30°) ≈ -5.413), not the raw
+    /// (catastrophic) -17.32 mm.
+    #[test]
+    fn chamfer_oversize_width_clamped_to_tool_reach() {
+        let vbit = vbit();
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![vbit],
+            operations: vec![Op {
+                id: 1,
+                name: "Chamfer".into(),
+                enabled: true,
+                kind: OpKind::Chamfer {
+                    width_mm: 10.0,
+                    finish_pass: false,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "chamfer_width_clamped_to_reach"),
+            "expected chamfer_width_clamped_to_reach warning, got: {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>()
+        );
+        // Clamped final Z: 3.125 / tan(30°) ≈ -5.4126.
+        assert!(
+            resp.gcode.contains("Z-5.412"),
+            "expected clamped final depth Z-5.412 in gcode:\n{}",
+            resp.gcode
+        );
+        // The unclamped depth (10 / tan(30°) ≈ -17.32) must NOT
+        // appear — that's the catastrophic value uo1t was about.
+        assert!(
+            !resp.gcode.contains("Z-17."),
+            "unclamped catastrophic depth leaked into gcode:\n{}",
+            resp.gcode
+        );
     }
 
     /// `Op.finish_tool_id` round-trips through serde and is

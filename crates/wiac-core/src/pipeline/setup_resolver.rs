@@ -276,19 +276,46 @@ pub(super) fn synthesize_op_setup(
     if matches!(op.kind, OpKind::DragKnife { .. }) {
         setup.machine.mode = MachineMode::Drag;
     }
-    // Chamfer ops (rt1.18) carve at a single depth computed from the
-    // V-bit cone math — override the schedule fields after the main
-    // synth so no user-set depth / step / finish_step / through_depth
-    // sneaks through. The chamfer is a constant-Z pass; the cone-tip
-    // sits at `-width / tan(tip_angle / 2)` while the centerline rides
-    // the source path. Tabs / leads / objectorder still honor the op.
+    // Chamfer ops (rt1.18) carve at a final depth computed from the
+    // V-bit cone math. The contour is constant-Z (the cutter walks
+    // the source path at the pinned final Z), but the descent FROM
+    // start_depth TO that final Z must follow the normal stepdown
+    // schedule (`setup.mill.step` + `finish_step`) — otherwise the
+    // V-bit plunges in one shot into solid stock on deep chamfers
+    // and snaps (00ia). depth / start_depth / through_depth / the
+    // explicit depth_list get pinned here so a stale user value
+    // doesn't sneak through; step + finish_step pass through.
+    //
+    // The requested chamfer width is also clamped to the V-bit's
+    // physical reach (`(diameter - tip_diameter) / 2`). Without the
+    // clamp a width > diameter/2 produces a Z that drives the shank
+    // into stock — see uo1t and the vcarve driver's tool_reach_r.
     if let OpKind::Chamfer { width_mm, .. } = op.kind {
-        let z = crate::cam::chamfer::chamfer_depth(width_mm, tool.tip_angle_deg);
-        setup.mill.depth = z;
+        let tip_diameter_mm = tool.tip_diameter.unwrap_or(0.0);
+        let sol = crate::cam::chamfer::chamfer_depth_capped(
+            width_mm,
+            tool.tip_angle_deg,
+            tool.diameter,
+            tip_diameter_mm,
+        );
+        if sol.clamped_to_reach {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "chamfer_width_clamped_to_reach".into(),
+                message: format!(
+                    "Chamfer op '{}': requested width {:.3} mm exceeds V-bit '{}' physical reach ({:.3} mm = (diameter {:.3} - tip {:.3}) / 2). Clamped to {:.3} mm so the cone — not the shank — does the cutting.",
+                    op.name,
+                    width_mm,
+                    tool.name,
+                    sol.width_cap_mm,
+                    tool.diameter,
+                    tip_diameter_mm,
+                    sol.effective_width_mm,
+                ),
+            });
+        }
+        setup.mill.depth = sol.z;
         setup.mill.start_depth = 0.0;
-        // step == depth -> build_z_schedule emits a single pass.
-        setup.mill.step = z;
-        setup.mill.finish_step = None;
         setup.mill.through_depth = 0.0;
         setup.mill.depth_list = Vec::new();
         if !matches!(tool.kind, crate::project::ToolKind::VBit) {

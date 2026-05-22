@@ -142,8 +142,13 @@ impl PostProcessor for Post {
     fn restore_state(&mut self, s: &CapturedPostState) {
         self.inner.restore_state(s);
     }
-    fn configure(&mut self, decimal_separator: char, line_number_start: Option<u32>) {
-        self.inner.configure(decimal_separator, line_number_start);
+    fn configure(
+        &mut self,
+        decimal_separator: char,
+        line_number_start: Option<u32>,
+        unit: UnitSystem,
+    ) {
+        self.inner.configure(decimal_separator, line_number_start, unit);
     }
     fn tool_z_shift(&mut self, shift_mm: f64) {
         // GRBL accepts G92 albeit with caveats (some firmware revisions

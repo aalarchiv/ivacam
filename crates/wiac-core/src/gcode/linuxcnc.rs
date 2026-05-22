@@ -41,11 +41,25 @@ impl Post {
         fmt_num(v, self.state.decimal_separator)
     }
 
+    /// Same as `fmt` but converts mm → emit units (w9hd). Used for
+    /// every value that represents a length / position in pipeline
+    /// (mm) coordinates — X/Y/Z/I/J/R/Q + machine_offsets + Z-shift.
+    /// Coordinates already in emit units (e.g. dwell seconds) keep
+    /// using `fmt` directly.
+    fn fmt_len(&self, v_mm: f64) -> String {
+        fmt_num(v_mm * self.state.unit_scale, self.state.decimal_separator)
+    }
+
     /// Format a single axis word. Consults the profile's per-axis
     /// config (hev) when set: disabled axes return None so the caller
     /// drops the word; renamed / reformatted / scaled axes are rendered
     /// per the user's spec, with the configured decimal separator
     /// applied last so `,`-locales keep working.
+    ///
+    /// w9hd: the input `v` is in mm (pipeline units). When
+    /// `state.unit_scale != 1.0` (Inch project), the multiplication
+    /// happens here at the boundary so the number that lands in the
+    /// gcode text matches the G20 pragma.
     fn fmt_axis(&self, default: char, v: f64) -> Option<String> {
         let af = self
             .state
@@ -53,9 +67,10 @@ impl Post {
             .as_ref()
             .and_then(|p| p.axes.as_ref())
             .map(|a| axis_for(default, a));
+        let v_emit = v * self.state.unit_scale;
         let rendered = match af {
-            Some(af) => af.render(v)?,
-            None => format!("{default}{}", self.fmt(v)),
+            Some(af) => af.render(v_emit)?,
+            None => format!("{default}{}", fmt_num(v_emit, self.state.decimal_separator)),
         };
         if self.state.decimal_separator == '.' {
             Some(rendered)
@@ -227,6 +242,10 @@ impl PostProcessor for Post {
     }
     fn feedrate(&mut self, rate: u32) {
         if self.state.last_rate != Some(rate) {
+            // w9hd: feedrate is mm/min in pipeline; emit-units = mm/min × unit_scale.
+            // For Inch projects that's in/min — matches G20 mode (controllers
+            // interpret F in the current unit system).
+            let rate_emit = f64::from(rate) * self.state.unit_scale;
             let af = self
                 .state
                 .profile
@@ -235,11 +254,23 @@ impl PostProcessor for Post {
                 .map(|a| a.feed.clone());
             match af {
                 Some(af) => {
-                    if let Some(s) = af.render(f64::from(rate)) {
+                    if let Some(s) = af.render(rate_emit) {
                         self.write(s);
                     }
                 }
-                None => self.write(format!("F{rate}")),
+                None => {
+                    // Preserve integer F<rate> in the default-mm case; switch to
+                    // a fractional render only when the scale actually applies,
+                    // so the linuxcnc/grbl golden snapshots in mm don't drift.
+                    if (self.state.unit_scale - 1.0).abs() < 1e-12 {
+                        self.write(format!("F{rate}"));
+                    } else {
+                        self.write(format!(
+                            "F{}",
+                            fmt_num(rate_emit, self.state.decimal_separator)
+                        ));
+                    }
+                }
             }
             self.state.last_rate = Some(rate);
         }
@@ -300,9 +331,9 @@ impl PostProcessor for Post {
     fn machine_offsets(&mut self, offsets: (f64, f64, f64), _soft: bool) {
         self.write(format!(
             "G92 X{} Y{} Z{}",
-            self.fmt(offsets.0),
-            self.fmt(offsets.1),
-            self.fmt(offsets.2)
+            self.fmt_len(offsets.0),
+            self.fmt_len(offsets.1),
+            self.fmt_len(offsets.2)
         ));
     }
     fn coolant_mist(&mut self) {
@@ -427,6 +458,8 @@ impl PostProcessor for Post {
         // LinuxCNC G81 / G82 (G82 is the dwell variant). Use G82 when dwell > 0,
         // G81 otherwise, so machinists who watch the canned cycle code see what
         // they expect.
+        // w9hd: R is a length (retract plane in pipeline mm) — `fmt_len`
+        // applies the inch scale. Dwell stays in seconds (no unit conversion).
         let dwell = if dwell_sec > 0.0 {
             format!(" P{}", self.fmt(dwell_sec))
         } else {
@@ -434,13 +467,14 @@ impl PostProcessor for Post {
         };
         let g = if dwell_sec > 0.0 { "G82" } else { "G81" };
         let body = self.coords(Some(x), Some(y), Some(z));
-        self.write(format!("{g} {body} R{}{dwell}", self.fmt(r)));
+        self.write(format!("{g} {body} R{}{dwell}", self.fmt_len(r)));
         // Canned cycles leave Z at R after each cycle, but the post state
         // already records Z=z above. Sync it so subsequent moves don't
         // emit redundant Z words.
         self.state.last_z = Some(r);
     }
     fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+        // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
         let dwell = if dwell_sec > 0.0 {
             format!(" P{}", self.fmt(dwell_sec))
         } else {
@@ -449,12 +483,13 @@ impl PostProcessor for Post {
         let body = self.coords(Some(x), Some(y), Some(z));
         self.write(format!(
             "G83 {body} R{} Q{}{dwell}",
-            self.fmt(r),
-            self.fmt(q.abs())
+            self.fmt_len(r),
+            self.fmt_len(q.abs())
         ));
         self.state.last_z = Some(r);
     }
     fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+        // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
         let dwell = if dwell_sec > 0.0 {
             format!(" P{}", self.fmt(dwell_sec))
         } else {
@@ -463,8 +498,8 @@ impl PostProcessor for Post {
         let body = self.coords(Some(x), Some(y), Some(z));
         self.write(format!(
             "G73 {body} R{} Q{}{dwell}",
-            self.fmt(r),
-            self.fmt(q.abs())
+            self.fmt_len(r),
+            self.fmt_len(q.abs())
         ));
         self.state.last_z = Some(r);
     }
@@ -507,8 +542,13 @@ impl PostProcessor for Post {
         self.state.last_rate = s.last_rate;
         self.state.last_speed = s.last_speed;
     }
-    fn configure(&mut self, decimal_separator: char, line_number_start: Option<u32>) {
-        configure_post_state(&mut self.state, decimal_separator, line_number_start);
+    fn configure(
+        &mut self,
+        decimal_separator: char,
+        line_number_start: Option<u32>,
+        unit: UnitSystem,
+    ) {
+        configure_post_state(&mut self.state, decimal_separator, line_number_start, unit);
     }
     fn tool_z_shift(&mut self, shift_mm: f64) {
         if shift_mm.abs() < 1e-9 {
@@ -518,7 +558,8 @@ impl PostProcessor for Post {
         // to the configured shift so the new tool's tip lines up with
         // the reference tool's Z=0. The `;` comment is bracketed so
         // grep'ing for the offset is easy in CAM-review.
-        let s = self.fmt(shift_mm);
+        // w9hd: shift comes in as mm; emit in machine units (inch on G20).
+        let s = self.fmt_len(shift_mm);
         self.write(format!("(z-shift: {s})"));
         self.write(format!("G92 Z{s}"));
         // The G92 leaves the controller's internal "last_z" unknown

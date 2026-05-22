@@ -206,11 +206,19 @@ pub trait PostProcessor {
     fn restore_state(&mut self, _state: &CapturedPostState) {}
 
     /// Configure the program-wide number formatter (rt1.36): decimal
-    /// separator and optional N-line-numbering start. Called once at
-    /// `program_begin` from `MachineConfig`. Default impl is a no-op —
-    /// posts that emit numeric coordinates (linuxcnc, grbl) override
-    /// it; HPGL / pen plotters ignore it.
-    fn configure(&mut self, _decimal_separator: char, _line_number_start: Option<u32>) {}
+    /// separator and optional N-line-numbering start, plus the project
+    /// unit (w9hd) so the emit-time mm→inch scale applies to every
+    /// X/Y/Z/I/J/R/F number. Called once at `program_begin` from
+    /// `MachineConfig`. Default impl is a no-op — posts that emit
+    /// numeric coordinates (linuxcnc, grbl) override it; HPGL / pen
+    /// plotters use their own integer plotter units and ignore.
+    fn configure(
+        &mut self,
+        _decimal_separator: char,
+        _line_number_start: Option<u32>,
+        _unit: UnitSystem,
+    ) {
+    }
 
     /// rt1.15: attach a user-configurable post-processor profile.
     /// Called once at `program_begin` from `MachineConfig`. Default
@@ -467,6 +475,7 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     post.configure(
         setup.machine.decimal_separator,
         setup.machine.line_number_start,
+        setup.machine.unit,
     );
     // rt1.15: thread the user-configurable post profile + initial
     // token-substitution context. Profile templates can reference
@@ -958,6 +967,19 @@ pub struct PostState {
     /// Refreshed at `program_begin` and at each op boundary.
     #[serde(default, skip)]
     pub token_ctx: crate::gcode::post_profile::TokenCtx,
+    /// w9hd: emit-time length scale from project units (mm) to gcode
+    /// units. 1.0 for `UnitSystem::Mm`, 1/25.4 for `UnitSystem::Inch`.
+    /// Multiplied into every X/Y/Z/I/J/R/Q coordinate AND into the
+    /// feedrate F word at emission time. The pipeline math keeps
+    /// running in mm; only the rendered numbers convert at the gcode
+    /// boundary so G20 + 100mm authored emits ~3.937, not 100. Set
+    /// by `configure_post_state` from `MachineConfig::unit`.
+    #[serde(default = "default_unit_scale")]
+    pub unit_scale: f64,
+}
+
+fn default_unit_scale() -> f64 {
+    1.0
 }
 
 fn default_decimal_separator() -> char {
@@ -977,17 +999,20 @@ impl Default for PostState {
             line_counter: None,
             profile: None,
             token_ctx: crate::gcode::post_profile::TokenCtx::default(),
+            unit_scale: 1.0,
         }
     }
 }
 
 /// Apply the post-processor numbering / separator settings derived
-/// from `MachineConfig` (rt1.36). Drains down into `PostState` so the
-/// per-post `write` / `fmt` helpers consult them on every line.
+/// from `MachineConfig` (rt1.36) and the program-wide unit scale
+/// (w9hd). Drains down into `PostState` so the per-post `write` /
+/// `fmt` helpers consult them on every line.
 pub fn configure_post_state(
     state: &mut PostState,
     decimal_separator: char,
     line_number_start: Option<u32>,
+    unit: UnitSystem,
 ) {
     // Only '.' and ',' are supported; anything else silently falls
     // back to '.' so the gcode stays parseable.
@@ -996,6 +1021,14 @@ pub fn configure_post_state(
         _ => '.',
     };
     state.line_counter = line_number_start;
+    // w9hd: pipeline math runs in mm. When the machine is unit=Inch
+    // the G20 pragma flips and every emitted X/Y/Z/I/J/R + F must be
+    // divided by 25.4 to convert mm -> inches AT THE OUTPUT BOUNDARY.
+    // Without this the controller mis-scales by 25.4× (catastrophic).
+    state.unit_scale = match unit {
+        UnitSystem::Mm => 1.0,
+        UnitSystem::Inch => 1.0 / 25.4,
+    };
 }
 
 /// Format a floating-point number using the post-state's decimal

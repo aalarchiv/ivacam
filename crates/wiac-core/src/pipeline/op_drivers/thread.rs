@@ -117,6 +117,8 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
             bottom_z,
             pitch_mm,
             climb,
+            internal,
+            tool_radius,
         );
         if path.len() >= 2 {
             polylines.push(path);

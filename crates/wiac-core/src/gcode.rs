@@ -344,6 +344,10 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         }
         let (lx, ly, _) = *poly.last().unwrap();
         *last_pos = Point2::new(lx, ly);
+        // The polyline emitter (e.g. thread::helix_waypoints) is
+        // responsible for ending on a safe XY before the G0 lift below
+        // (7388 — thread helices end with a radial retract so the lift
+        // doesn't scrape the just-cut crest).
     }
     post.move_to(None, None, Some(fast_z));
 }

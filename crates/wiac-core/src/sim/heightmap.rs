@@ -384,14 +384,19 @@ impl ToolProfile {
                 if r <= plateau || cr <= 0.0 {
                     Some(0.0)
                 } else {
-                    // 6i9r: do the corner-radius math in f64 then snap to
-                    // f32. f32 mul_add near the rim leaves a residual of
-                    // ~3e-4 mm at the rim (cr - sqrt(cr² - dx²) where
-                    // dx≈cr). Promoting to f64 puts the rim lip within
-                    // 1e-7 mm of the analytic value, eliminating speckle
-                    // around the rim in close-up surface renderings.
-                    let dx = f64::from(r - plateau);
+                    // 6i9r: do the entire corner-radius math in f64 so
+                    // an f32 subtraction near the rim (where `dx ≈ cr`,
+                    // i.e. `cr² - dx² ≈ 0`) doesn't accumulate ~3e-4 mm
+                    // of error before the sqrt. Promoting `r`, `rr` and
+                    // `cr` to f64 BEFORE the subtraction lets the rim
+                    // lip evaluate within sub-µm of the analytic value
+                    // and eliminates speckle around the rim in close-up
+                    // surface renderings.
+                    let r_f64 = f64::from(r);
+                    let rr_f64 = f64::from(rr);
                     let cr64 = f64::from(cr);
+                    let plateau_f64 = rr_f64 - cr64;
+                    let dx = r_f64 - plateau_f64;
                     let inside = cr64.mul_add(cr64, -(dx * dx)).max(0.0);
                     Some((cr64 - inside.sqrt()) as f32)
                 }

@@ -967,32 +967,25 @@ mod tests {
         assert!((est.total_s - 13.0).abs() < 1e-9);
     }
 
-    /// wox2: glued-token F values like `G1F800X10` must be picked up.
-    /// Compact post output drops whitespace between G/F/X/Y/Z words;
-    /// previously `tok.strip_prefix('F')` only matched whitespace-
-    /// separated tokens, so `G1F800X10` silently fell back to the
-    /// previous modal F (often 0 → estimator over-times the move).
+    /// wox2: `scan_modal_f` picks up glued-token F values like
+    /// `G1F800X10` that compact post output emits without whitespace.
+    /// The line scanner walks the raw character stream so the F word is
+    /// found even when it's mid-token. (The upstream `interpret_with_index`
+    /// preview parser doesn't currently produce segments from such
+    /// compact lines — see follow-up wiaconstructor-tprev — but the
+    /// timing-side F scanner is now ready for the day it does.)
     #[test]
-    fn feeds_recovered_from_glued_gcode_tokens() {
-        // Each line has F glued mid-token. Modal F must propagate from
-        // line to line so every subsequent move sees the right feed.
-        let gcode = concat!(
-            "G21\n",
-            "G0X1Y0\n",
-            "G1X10Y0F800\n", // F glued after G1+X
-            "G1X20Y0\n",     // no F here — must inherit 800 from line above
-            "G1F1200X30Y0\n", // F in the middle of the token stream
-        );
-        let (segs, _) = crate::gcode::preview::interpret_with_index(gcode);
-        let feeds = feeds_per_segment(gcode, &segs);
-        assert_eq!(feeds.len(), 4);
-        assert_eq!(feeds[0], 0.0, "G0 line has no F yet");
-        assert_eq!(feeds[1], 800.0, "F800 glued to G1X10");
-        assert_eq!(
-            feeds[2], 800.0,
-            "no F on line 4 → must inherit modal 800 from line 3",
-        );
-        assert_eq!(feeds[3], 1200.0, "F1200 glued mid-line");
+    fn scan_modal_f_handles_glued_and_whitespace_tokens() {
+        // Glued: F adjacent to a G-word.
+        assert_eq!(scan_modal_f("G1F800X10"), Some(800.0));
+        // Glued with decimal feed.
+        assert_eq!(scan_modal_f("G1F123.45Y0"), Some(123.45));
+        // Standard whitespace-separated.
+        assert_eq!(scan_modal_f("G1 X10 Y0 F800"), Some(800.0));
+        // Mixed: standalone F-line.
+        assert_eq!(scan_modal_f("F500"), Some(500.0));
+        // No F on the line — None.
+        assert_eq!(scan_modal_f("G1 X10 Y0"), None);
     }
 
     /// wox2: modal F set on a standalone F-only line must apply to

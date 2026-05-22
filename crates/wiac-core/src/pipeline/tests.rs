@@ -947,7 +947,7 @@
         // stepdowns at Z-1, Z-2, Z-3 before the final Z-4.330 lap.
         // Counting the distinct intermediate Zs guards against a
         // regression to single-pass.
-        for z in ["Z-1.0", "Z-2.0", "Z-3.0"] {
+        for z in ["Z-1\n", "Z-2\n", "Z-3\n"] {
             assert!(
                 resp.gcode.contains(z),
                 "expected intermediate stepdown {z} in gcode:\n{}",

@@ -363,7 +363,12 @@ pub fn pocket_zigzag_angled(
 /// island to reach the next stroke, the current chain ends and a new
 /// chain begins — the caller emits each chain as its own
 /// `PolylineOffset` so the gcode lifts to clearance between them.
+// Length budget waived: per-row scanline plus per-stroke island
+// subtraction plus per-stroke chain-break logic read top-to-bottom as
+// one state machine; splitting would scatter the island-interval /
+// split-mark tracking across helpers.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn pocket_zigzag(
     boundary: &[Point2],
     islands: &[Vec<Point2>],

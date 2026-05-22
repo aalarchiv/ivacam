@@ -38,10 +38,11 @@ use crate::project::HalfpipeProfile;
 /// corner (the two nearest boundary footings are on different segments,
 /// subtending an angle < ~170° at `v`). At such points the floor must
 /// match the *corner-arc* radius (= the configured profile R for
-/// CircularArc; the cone formula at the user-provided angle for
-/// VBottom) — the incircle `r` reflects the slot-narrowing toward the
-/// corner, not the desired fillet radius, so the previous behaviour
-/// (use `r` for depth everywhere) produced a wrong Z at corners.
+/// `CircularArc`; the cone formula at the user-provided angle for
+/// `VBottom`) — the incircle `r` reflects the slot-narrowing toward
+/// the corner, not the desired fillet radius, so the previous
+/// behaviour (use `r` for depth everywhere) produced a wrong Z at
+/// corners.
 ///
 /// Returns `(z, depth_limited)` — `depth_limited` is true iff either
 /// the profile cap (`CircularArc` with `r > R`) OR `z_cap` clipped the

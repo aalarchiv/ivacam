@@ -56,9 +56,9 @@ const BOUNDARY_SAMPLE_MM: f64 = 0.1;
 /// which a terminal medial-axis chain is considered a spur and pruned.
 /// iqbu: the 0.1 mm boundary sampling produces ~10× too many vertices
 /// on curves; without pruning the medial axis is fuzzy with micro
-/// branches pointing at every densified-curve sample. 0.5 × tool_radius
-/// is a defensible default — anything shorter than half the cutter's
-/// engaged width is dominated by sampling noise.
+/// branches pointing at every densified-curve sample. `0.5 *
+/// tool_radius` is a defensible default — anything shorter than half
+/// the cutter's engaged width is dominated by sampling noise.
 pub const PRUNE_MIN_BRANCH_FACTOR: f64 = 0.5;
 
 /// Densify a closed ring to a list of points spaced ≤ `step` apart.
@@ -429,7 +429,13 @@ pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegi
 ///   should skip the chain and surface a `vcarve_below_tip_radius`
 ///   warning rather than emitting a useless Z=0 traversal that
 ///   silently looks like a successful cut.
+// idne: 3-tuple return surfaces `all_zero` alongside the existing
+// `depth_limited` flag so the op driver can suppress no-op chains
+// instead of silently emitting Z=0 traversals. Factoring the return
+// shape into a named type would obscure the (poly, lim, all_zero)
+// pattern shared with `cam::halfpipe::polyline_to_z`.
 #[must_use]
+#[allow(clippy::type_complexity)]
 pub fn polyline_to_z(
     axis: &[VPoint],
     tip_angle_rad: f64,
@@ -699,8 +705,8 @@ mod tests {
         let r = 2.0_f64;
         let push_corner = |outer: &mut Vec<Point2>, cx: f64, cy: f64, t0: f64| {
             // Quarter arc starting at angle t0, sweeping +PI/2 CCW.
-            for i in 0..=10 {
-                let t = t0 + (std::f64::consts::PI * 0.5) * (i as f64) / 10.0;
+            for i in 0..=10_i32 {
+                let t = t0 + (std::f64::consts::PI * 0.5) * f64::from(i) / 10.0;
                 outer.push(Point2::new(cx + r * t.cos(), cy + r * t.sin()));
             }
         };

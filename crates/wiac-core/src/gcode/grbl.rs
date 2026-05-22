@@ -262,11 +262,30 @@ impl PostProcessor for Post {
         self.inner.configure(decimal_separator, line_number_start, unit);
     }
     fn tool_z_shift(&mut self, shift_mm: f64) {
-        // GRBL accepts G92 albeit with caveats (some firmware revisions
-        // ignore Z component). Emit it through the inner LinuxCNC post
-        // so the output line is identical; controllers that ignore G92
-        // simply skip it.
-        self.inner.tool_z_shift(shift_mm);
+        // plau: GRBL's G92 semantics are firmware-revision-dependent —
+        // some builds reset the G92 offset on power cycle / soft reset,
+        // others persist it, and a few ignore the Z component
+        // altogether. Use `G10 L20 P1 Z<shift>` instead: that's the
+        // GRBL-spec way to overwrite the active WCS (G54 = P1) Z
+        // origin, with deterministic persistence (saved in EEPROM).
+        // Emit `G92.1` first to clear any leftover G92 offset that a
+        // prior program (or our own LinuxCNC peer) might have left
+        // active — otherwise the new G10 stacks on top.
+        if shift_mm.abs() < 1e-9 {
+            return;
+        }
+        // Reach into the inner state so we get the same fmt_len / line
+        // numbering / decimal-separator handling LinuxCNC uses.
+        let s = crate::gcode::fmt_num(
+            shift_mm * self.inner.state.unit_scale,
+            self.inner.state.decimal_separator,
+        );
+        self.inner.raw(&format!("; z-shift: {s}"));
+        self.inner.raw("G92.1");
+        self.inner.raw(&format!("G10 L20 P1 Z{s}"));
+        // The new WCS origin invalidates our delta-encoded last_z;
+        // mirror LinuxCNC's tool_z_shift bookkeeping.
+        self.inner.state.last_z = None;
     }
     fn dwell(&mut self, seconds: f64) {
         self.inner.dwell(seconds);
@@ -355,6 +374,40 @@ mod tests {
             "GRBL output must not contain paren comments: {out}",
         );
         assert!(out.contains("; my header"), "missing rewritten header: {out}");
+    }
+
+    #[test]
+    fn plau_z_shift_uses_g10_l20_with_g92_1_clear() {
+        // GRBL's bare G92 has firmware-revision-dependent persistence;
+        // emit G10 L20 P1 (set G54 origin) preceded by G92.1 (clear any
+        // leftover G92) so the new origin sticks deterministically.
+        let mut post = Post::new();
+        post.tool_z_shift(1.5);
+        let out = post.finish();
+        assert!(
+            out.contains("G92.1"),
+            "expected G92.1 (clear G92) before G10 L20, got: {out}",
+        );
+        assert!(
+            out.contains("G10 L20 P1 Z1.5"),
+            "expected `G10 L20 P1 Z1.5` for tool_z_shift, got: {out}",
+        );
+        assert!(
+            !out.contains("\nG92 Z"),
+            "must not emit bare G92 Z form on GRBL: {out}",
+        );
+    }
+
+    #[test]
+    fn plau_z_shift_zero_is_noop() {
+        // Same skip-on-zero contract LinuxCNC has.
+        let mut post = Post::new();
+        post.tool_z_shift(0.0);
+        let out = post.finish();
+        assert!(
+            !out.contains("G10") && !out.contains("G92"),
+            "zero shift should emit nothing, got: {out}",
+        );
     }
 
     #[test]

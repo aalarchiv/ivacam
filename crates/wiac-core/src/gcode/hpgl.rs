@@ -201,7 +201,40 @@ impl PostProcessor for Post {
     }
     fn tool_offsets(&mut self, _offset: ToolOffset) {}
     fn finish(&self) -> String {
-        self.out.join("") + "\n"
+        // 2nll: HPGL is one logical "program-statement-list" terminated
+        // by `;`, and historically wiaConstructor concatenated every
+        // statement onto a single mega-line. Plotter firmware accepts
+        // both forms; humans, diff tools, and the wiac preview pane do
+        // not. Emit a newline after every `;` so the listing is
+        // browsable and `git diff` shows per-statement changes. Some
+        // emit-sites (like `program_start` emitting `"IN;SP1;"`) pack
+        // multiple statements into one `write`; we split on `;` here
+        // at finalisation so the line break lands AFTER every
+        // semicolon regardless of where the boundary was.
+        let mut s = String::with_capacity(self.out.iter().map(|l| l.len() + 1).sum());
+        for line in &self.out {
+            // Split each buffered entry on `;` and emit one statement
+            // per output line. Empty trailing segments are dropped so
+            // we don't emit a blank line after every terminating
+            // semicolon.
+            let mut cursor = 0;
+            while let Some(idx) = line[cursor..].find(';') {
+                let end = cursor + idx + 1; // include the `;`
+                s.push_str(&line[cursor..end]);
+                s.push('\n');
+                cursor = end;
+            }
+            // Any non-`;`-terminated tail (unusual, but safe to
+            // preserve) keeps the same shape it had before.
+            if cursor < line.len() {
+                s.push_str(&line[cursor..]);
+                s.push('\n');
+            }
+        }
+        if !s.ends_with('\n') {
+            s.push('\n');
+        }
+        s
     }
     fn out_lines_count(&self) -> usize {
         self.out.len()
@@ -310,6 +343,34 @@ mod tests {
         assert!(
             !out.contains("VS"),
             "rate=0 should not emit VS; got: {out}",
+        );
+    }
+
+    #[test]
+    fn nll2_finish_inserts_newlines_after_semicolons() {
+        // 2nll: HPGL output used to be a single mega-line; plotter
+        // firmware accepts that but humans, diff tools, and the wiac
+        // preview pane don't. Verify each statement (terminated by
+        // `;`) lands on its own output line so `git diff` and the
+        // operator's eyes both work.
+        let mut post = Post::new();
+        post.program_start();
+        post.move_to(Some(0.0), Some(0.0), None);
+        post.linear(Some(10.0), Some(10.0), None);
+        post.program_end();
+        let out = post.finish();
+        // Multiple lines now, not one mega-line.
+        let line_count = out.lines().count();
+        assert!(
+            line_count >= 4,
+            "HPGL output should be split per `;`-statement, got {line_count} line(s): {out:?}",
+        );
+        // Specific lines we expect.
+        assert!(out.contains("IN;\n"), "IN; should be its own line: {out:?}");
+        assert!(out.contains("SP1;\n"), "SP1; should be its own line: {out:?}");
+        assert!(
+            out.ends_with('\n'),
+            "output must end with a newline: {out:?}",
         );
     }
 

@@ -42,6 +42,10 @@ pub enum HolderCheck {
     },
 }
 
+// WHY: hrex — the cutter envelope (r <= cutting_radius) is the cutter's
+// own sweep; material there is about to be removed and must NOT count as
+// a holder collision. Only r > cutting_radius — the shank/holder
+// territory above the flutes — gets the wall-vs-envelope test.
 #[must_use]
 #[allow(
     clippy::cast_possible_truncation,
@@ -105,6 +109,12 @@ pub fn check_segment_holder_against_walls(
     let pure_plunge = len_sq < 1e-12;
     let plunge_z = from.z.min(to.z);
     let max_r_sq = max_r * max_r;
+    // hrex: cells inside the cutter's own sweep (r <= cutting_radius)
+    // are about to be removed by the flutes themselves — material there
+    // is NOT a shank/holder collision. Treat them as part of the cutter
+    // envelope, not the wall.
+    let cutting_r = holder.cutting_radius();
+    let cutting_r_sq = cutting_r * cutting_r;
     let cols = heightmap.cols as usize;
 
     let mut worst: Option<(f32, u32, u32, f32)> = None;
@@ -126,6 +136,12 @@ pub fn check_segment_holder_against_walls(
                 (ex * ex + ey * ey, from.z + (to.z - from.z) * t)
             };
             if r_sq > max_r_sq {
+                continue;
+            }
+            // hrex: skip cells inside the cutter envelope — the flutes
+            // sweep them clean, so any "wall" reading there belongs to
+            // the cutter's own work, not to a holder collision.
+            if r_sq <= cutting_r_sq {
                 continue;
             }
             let r = r_sq.sqrt();
@@ -292,14 +308,21 @@ mod tests {
 
     #[test]
     fn deep_narrow_slot_holder_collides() {
-        // 6 mm endmill, 25 mm flute length, ER11-shaped holder approximated
-        // as a 20 mm-diameter cylinder × 30 mm long. Pocket is 30 mm deep
-        // (floor_z = -30) with a 1 mm-wide channel from the path center
-        // line — i.e. the wall is 1 mm out, well inside the holder's 10 mm
-        // max radius.
+        // 6 mm endmill, 15 mm flute length, ER11-shaped holder
+        // approximated as a 20 mm-diameter cylinder × 30 mm long.
+        // Walls 5 mm from the path centerline (well outside cutter
+        // R=3) but inside the holder's 10 mm max radius. Pocket is
+        // 30 mm deep, cutter tip at -25 → wall height above the tip
+        // is 25 mm, but holder grows past r=5 only at z_above_tip=15
+        // (top of flutes, where the shank ends and the cylinder
+        // begins) → required clearance = 25 - 15 = 10 mm.
+        //
+        // After hrex: cells at r ≤ cutting_r (3 mm) are skipped — the
+        // collision is detected at r ∈ (3, 10] where the holder is the
+        // genuine threat.
         let t = tool(
             6.0,
-            Some(25.0),
+            Some(15.0),
             Some(6.0),
             Some(HolderShape::Cylinder {
                 diameter_mm: 20.0,
@@ -307,11 +330,10 @@ mod tests {
             }),
         );
         let holder = HolderProfile::from_tool(&t).expect("holder set");
-        // Pocket is 60×60 grid. Channel width = 1 mm half-width = 2 mm
-        // total. Walls are 1 mm from the path centerline.
-        let hm = build_pocket(60, 60, -30.0, 1.0);
-        // Cut runs along Y = 30 (grid mid) at z = -25 (i.e. flute fully
-        // engaged, tip at -25 — 5 mm short of pocket bottom).
+        // Pocket is 60×60 grid. Channel half-width = 5 mm so walls
+        // sit ≥ 5 mm from the centerline — outside the cutter, inside
+        // the holder.
+        let hm = build_pocket(60, 60, -30.0, 5.0);
         let s = seg((5.0, 30.0, -25.0), (55.0, 30.0, -25.0));
         match check_segment_holder_against_walls(&hm, &s, &holder) {
             HolderCheck::Collision {
@@ -363,5 +385,75 @@ mod tests {
         // the from_tool side here; the sweep wires it up.
         let t = tool(6.0, Some(25.0), None, None);
         assert!(HolderProfile::from_tool(&t).is_none());
+    }
+
+    #[test]
+    fn fresh_plunge_does_not_emit_holder_collision() {
+        // hrex: a first plunge into uncut stock with a holder set used
+        // to emit one HolderCollision per cell directly under the
+        // cutter — because the heightmap was still at top_z under the
+        // tip when the diagnostic ran *before* the carve, and the old
+        // `lowest_z_for_radius` returned 0 for any r <= cutting_radius
+        // (the very first sample is at the tip). With the fix, cells
+        // inside the cutter envelope are skipped and only true
+        // shank/holder territory (r > cutting_radius) is tested.
+        let t = tool(
+            6.0,
+            Some(25.0),
+            Some(6.0),
+            Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            }),
+        );
+        let holder = HolderProfile::from_tool(&t).expect("holder set");
+        // Fresh stock — no carving done. Heightmap stays at top_z = 0.
+        let hm = Heightmap::new(Point2::new(0.0, 0.0), 1.0, 60, 60, 0.0);
+        // Plunge into the middle of the stock from above-stock down to
+        // z = -10 (10 mm deep). Cutter is well inside the cutting_r
+        // envelope of every nearby cell.
+        let s = seg((30.0, 30.0, 0.0), (30.0, 30.0, -10.0));
+        let res = check_segment_holder_against_walls(&hm, &s, &holder);
+        assert_eq!(
+            res,
+            HolderCheck::Clear,
+            "fresh plunge into uncut stock must not emit holder collision (got {res:?})",
+        );
+    }
+
+    #[test]
+    fn fresh_plunge_pipeline_zero_holder_warnings() {
+        // hrex (end-to-end through sweep_range): plunging into uncut
+        // stock with a holder must emit zero `holder_collision`
+        // warnings via the sim pipeline. Mirrors the unit test above
+        // but goes through `sweep_range` so the wiring is exercised.
+        use crate::sim::diagnostics::SimDiagnostics;
+        use crate::sim::heightmap::ToolProfile;
+        use crate::sim::sweep::sweep_range;
+
+        let t = tool(
+            6.0,
+            Some(25.0),
+            Some(6.0),
+            Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            }),
+        );
+        let holder = HolderProfile::from_tool(&t).expect("holder set");
+        let mut hm = Heightmap::new(Point2::new(0.0, 0.0), 1.0, 60, 60, 0.0);
+        let segments = vec![seg((30.0, 30.0, 0.0), (30.0, 30.0, -10.0))];
+        let mut d = SimDiagnostics::new();
+        sweep_range(
+            &mut hm,
+            &segments,
+            0,
+            segments.len(),
+            ToolProfile::Endmill { r: 3.0 },
+            &[],
+            Some(&holder),
+            &mut d,
+        );
+        assert_eq!(d.count("holder_collision"), 0);
     }
 }

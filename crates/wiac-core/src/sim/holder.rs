@@ -9,7 +9,7 @@
 //! by construction — false negatives (flagging clear cuts) are unlikely
 //! while genuine crashes are not missed.
 
-use crate::project::{HolderShape, ToolEntry};
+use crate::project::{HolderShape, ToolEntry, ToolKind};
 
 /// Sample list `(z_above_tip_mm, radius_mm)` describing the tool envelope
 /// from the cutting tip upward. The list is built from the cutting flute
@@ -21,6 +21,11 @@ pub struct HolderProfile {
 }
 
 impl HolderProfile {
+    // WHY: 3oly — T-slot cutters need an extra narrow neck segment
+    // between the head (the flutes) and the shank/holder above. The
+    // neck is the part that sits *inside* the cut slot while the head
+    // rotates: it must be modelled separately so the collision check
+    // can tell the neck clears the kerf the head left.
     /// Build a profile from a project tool entry. Returns `None` when
     /// neither a holder nor a shank diameter is set: there's nothing
     /// above the cutting flutes to check against.
@@ -36,18 +41,54 @@ impl HolderProfile {
             .map_or(cutting_r, |d| d * 0.5)
             .max(0.0);
 
+        // 3oly: T-slot neck — sits between the head and the shank.
+        // The head's cutting radius is the full `cutting_r`; the neck
+        // above is narrower so it clears the slot the head cut. We
+        // only emit the neck segment when both pieces are set AND the
+        // neck is genuinely narrower than the head (otherwise it's
+        // just a regular endmill that happens to have the kind flag).
+        let tslot_neck = if matches!(tool.kind, ToolKind::TSlot) {
+            match (tool.tslot_neck_diameter_mm, tool.tslot_neck_length_mm) {
+                (Some(d), Some(l)) if d > 0.0 && l > 0.0 => {
+                    let nr = (d * 0.5).max(0.0);
+                    if nr < cutting_r {
+                        Some((nr, l.max(0.0)))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         // Sample list anchored at the tip: bottom of flutes, top of
         // flutes / start of shank, then holder transitions.
-        let mut points: Vec<(f64, f64)> = Vec::with_capacity(6);
+        let mut points: Vec<(f64, f64)> = Vec::with_capacity(8);
         points.push((0.0, cutting_r));
         // Top of cutting flutes — radius is still the cutting radius.
         points.push((flute_len, cutting_r));
-        // Start of shank just above the flutes. We add a separate sample
-        // even when shank_r == cutting_r so the radius curve has a clear
-        // "shank" segment for callers that walk it.
-        points.push((flute_len, shank_r));
 
+        // 3oly: insert the T-slot neck segment between the head top
+        // and the shank — at flute_len the cutter drops from
+        // cutting_r down to neck_r, then runs at neck_r for
+        // neck_length, then transitions up to shank_r.
         let mut z_cursor = flute_len;
+        if let Some((neck_r, neck_len)) = tslot_neck {
+            // Step down to the neck at the head's top.
+            points.push((z_cursor, neck_r));
+            z_cursor += neck_len;
+            // Top of neck.
+            points.push((z_cursor, neck_r));
+        }
+
+        // Start of shank just above the flutes (or neck for T-slot).
+        // We add a separate sample even when shank_r == previous-r so
+        // the radius curve has a clear "shank" segment for callers
+        // that walk it.
+        points.push((z_cursor, shank_r));
+
         let mut last_r = shank_r;
 
         // Some holder shapes describe a "shank length" implicitly by
@@ -144,6 +185,15 @@ impl HolderProfile {
     #[must_use]
     pub fn max_radius(&self) -> f64 {
         self.points.iter().map(|p| p.1).fold(0.0_f64, f64::max)
+    }
+
+    /// Cutting (flute) radius at the very tip — `points[0].1` by
+    /// construction. Used by `holder_check` (hrex) to distinguish the
+    /// cutter envelope (where material *is meant* to be removed) from
+    /// the shank/holder envelope above the flutes.
+    #[must_use]
+    pub fn cutting_radius(&self) -> f64 {
+        self.points.first().map_or(0.0, |p| p.1)
     }
 
     /// Total length of the envelope (tip → top of holder).
@@ -268,5 +318,129 @@ mod tests {
         let p = HolderProfile::from_tool(&t).expect("shank-only profile is valid");
         // Without an explicit holder the envelope tops out at the shank.
         assert!((p.max_radius() - 3.0).abs() < 1e-9);
+    }
+
+    fn tslot_tool(
+        head_diameter: f64,
+        head_thickness: f64,
+        neck_diameter: f64,
+        neck_length: f64,
+        shank_diameter: f64,
+        holder: Option<HolderShape>,
+    ) -> ToolEntry {
+        let mut t = tool_with(holder, Some(shank_diameter), Some(head_thickness));
+        t.diameter = head_diameter;
+        t.kind = ToolKind::TSlot;
+        t.tslot_neck_diameter_mm = Some(neck_diameter);
+        t.tslot_neck_length_mm = Some(neck_length);
+        t
+    }
+
+    #[test]
+    fn tslot_neck_is_encoded_above_head() {
+        // 3oly: a T-slot cutter with a 16 mm head (8 mm radius), 4 mm
+        // thick, sitting on a 4 mm neck (2 mm radius) × 10 mm long,
+        // then a 6 mm shank (3 mm radius), and a 20 mm cylinder
+        // holder × 25 mm. Without an explicit shank-length field on
+        // ToolEntry, the shank sits at z=14 with zero length — the
+        // holder takes over immediately.
+        let t = tslot_tool(
+            16.0,
+            4.0,
+            4.0,
+            10.0,
+            6.0,
+            Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 25.0,
+            }),
+        );
+        let p = HolderProfile::from_tool(&t).expect("holder set");
+        // Cutting (head) radius at the very tip.
+        assert!((p.cutting_radius() - 8.0).abs() < 1e-9);
+        // At z = 2 (inside the head), still 8 mm.
+        assert!((p.radius_at(2.0).unwrap() - 8.0).abs() < 1e-9);
+        // At z = 5 (just above the head, inside the neck), narrower
+        // to 2 mm. This is the key invariant: above head_z_top the
+        // envelope is the NECK radius, NOT the head radius.
+        assert!(
+            (p.radius_at(5.0).unwrap() - 2.0).abs() < 1e-9,
+            "neck radius 5 mm above tip should be 2, got {}",
+            p.radius_at(5.0).unwrap()
+        );
+        // At z = 13 (still inside the neck), still 2 mm.
+        assert!((p.radius_at(13.0).unwrap() - 2.0).abs() < 1e-9);
+        // Just above the neck (z = 14.5) the cylinder holder has
+        // already taken over (no shank length) → radius 10.
+        let r_above = p.radius_at(14.5).unwrap();
+        assert!(
+            (r_above - 10.0).abs() < 1e-9,
+            "above neck the holder dominates (no shank length), got {r_above}",
+        );
+        // Total length = head_thickness (4) + neck (10) + holder (25)
+        // = 39.
+        let total = p.total_length();
+        assert!(
+            (total - 39.0).abs() < 1e-9,
+            "total length 4+10+25 = 39, got {total}",
+        );
+        // Max radius = the holder cylinder radius (10 mm).
+        assert!((p.max_radius() - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn tslot_neck_clears_kerf_above_head() {
+        // 3oly acceptance test: an undercut slot whose kerf is the
+        // head width (16 mm), neck is narrower (4 mm). Above the
+        // head_top a *kerf-wide* wall would block an Endmill-equivalent
+        // model — but the neck is half that radius, so the holder
+        // check sees clearance.
+        use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
+        use crate::sim::heightmap::Heightmap;
+        use crate::sim::holder_check::{check_segment_holder_against_walls, HolderCheck};
+
+        let t = tslot_tool(16.0, 4.0, 4.0, 10.0, 6.0, None);
+        let holder = HolderProfile::from_tool(&t).expect("shank set");
+        // Build a heightmap where the slot is already cut to z = -4
+        // (head thickness) in a 16 mm-wide channel. ABOVE the head
+        // (between z = -4 and z = 0) the kerf is the same 16 mm wide
+        // (because the head cut it). Walls *beyond* the kerf are at
+        // top_z = 0 (uncut).
+        let mut hm = Heightmap::new(crate::geometry::Point2::new(0.0, 0.0), 1.0, 60, 60, 0.0);
+        // Channel along Y=30, half-width 8 (16 mm wide), depth -4.
+        for iy in 0..60 {
+            let cy = f64::from(iy) + 0.5;
+            if (cy - 30.0).abs() <= 8.0 {
+                for ix in 0..60 {
+                    hm.lower_at(ix, iy, -4.0);
+                }
+            }
+        }
+        // Cut along the channel with the head fully engaged. Tip at
+        // z=-4 means the head bottom is at -4 and the head top is at
+        // z=0 — flush with the un-cut surface. Walls (at z=0) are 8 mm
+        // from the path centerline at iy = {22, 38}. The neck radius
+        // is 2 mm — far less than 8 mm. Holder should NOT collide.
+        let s = ToolpathSegment {
+            from: Pose3 {
+                x: 5.0,
+                y: 30.0,
+                z: -4.0,
+            },
+            to: Pose3 {
+                x: 55.0,
+                y: 30.0,
+                z: -4.0,
+            },
+            kind: MoveKind::Cut,
+            gcode_line: 0,
+            op_id: 0,
+        };
+        let res = check_segment_holder_against_walls(&hm, &s, &holder);
+        assert_eq!(
+            res,
+            HolderCheck::Clear,
+            "neck (r=2) must clear 16 mm-wide kerf, got {res:?}",
+        );
     }
 }

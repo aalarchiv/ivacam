@@ -149,8 +149,9 @@ fn emit_stufenfase<P: PostProcessor>(
 mod tests {
     use crate::cam::setup::MachineConfig;
     use crate::geometry::Point2;
+    use crate::cam::setup::ToolOffset;
     use crate::pipeline::test_helpers::{
-        closed_circle, closed_square_offset, drill_op, endmill, vbit,
+        closed_circle, closed_square_offset, drill_op, endmill, profile_op, vbit,
     };
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project, SourceCombine, ToolKind};
@@ -612,6 +613,78 @@ mod tests {
         assert!(
             resp.gcode.contains("T2 M6"),
             "expected toolchange T2 M6 for chamfer cutter:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// olpn: a drill op followed by a profile op must emit G80 (cancel
+    /// canned cycle) inside the drill block before the next op's first
+    /// G0. Otherwise FANUC / Mach3 reinterpret that G0 as another
+    /// invocation of the same drill cycle at the modal Z / R.
+    #[test]
+    fn drill_op_emits_g80_before_next_op() {
+        let project = Project {
+            segments: {
+                // One closed circle (the drill target) plus a closed
+                // square (the profile target) so build_op_offsets gets
+                // both an drillable point and a profile cut.
+                let mut s = closed_circle(Point2::new(5.0, 7.0), 0.5);
+                s.extend(closed_square_offset(20.0, 30.0, 30.0));
+                s
+            },
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![
+                drill_op(1, 1, crate::project::DrillCycle::Simple { dwell_sec: 0.0 }),
+                profile_op(2, 1, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let lines: Vec<&str> = resp.gcode.lines().collect();
+        let g80_idx = lines
+            .iter()
+            .position(|l| l == &"G80" || l.starts_with("G80 "))
+            .unwrap_or_else(|| panic!("expected G80 in:\n{}", resp.gcode));
+        // Find the FIRST G0 line strictly after the drill cycle. The
+        // drill cycle is identified by the G81 (or G82 / G83 / G73)
+        // line just before the G80; verify G80 sits between the last
+        // canned-cycle line and any subsequent G0.
+        let last_drill_idx = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| {
+                l.starts_with("G81 ")
+                    || l.starts_with("G82 ")
+                    || l.starts_with("G83 ")
+                    || l.starts_with("G73 ")
+            })
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| panic!("expected a drill cycle line in:\n{}", resp.gcode));
+        assert!(
+            g80_idx > last_drill_idx,
+            "G80 (idx {g80_idx}) must come AFTER the last drill cycle (idx {last_drill_idx}):\n{}",
+            resp.gcode
+        );
+        let next_g0_after_drill = lines
+            .iter()
+            .enumerate()
+            .skip(last_drill_idx + 1)
+            .find(|(_, l)| l.starts_with("G0 "))
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| panic!("expected a G0 after the drill block in:\n{}", resp.gcode));
+        assert!(
+            g80_idx < next_g0_after_drill,
+            "G80 (idx {g80_idx}) must precede the next G0 (idx {next_g0_after_drill}):\n{}",
             resp.gcode
         );
     }

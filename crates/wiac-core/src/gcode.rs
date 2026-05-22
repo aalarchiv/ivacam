@@ -1518,6 +1518,126 @@ mod tests {
         );
     }
 
+    /// sbtg: the prologue must contain G17 (XY plane), G40 (cutter-comp
+    /// off), and G94 (feed-per-minute) BEFORE the first motion line so
+    /// a controller booted in G18 / G42 / G95 doesn't reinterpret the
+    /// first G0 / G1.
+    #[test]
+    fn program_begin_emits_g17_g40_g94() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+
+        let lines: Vec<&str> = g.lines().collect();
+        let first_motion = lines
+            .iter()
+            .position(|l| l.starts_with("G0 ") || l.starts_with("G1 "))
+            .expect("expected at least one motion line");
+        let head: Vec<&str> = lines.iter().take(first_motion).copied().collect();
+        for code in ["G17", "G40", "G94"] {
+            assert!(
+                head.iter().any(|l| l == &code || l.starts_with(&format!("{code} "))),
+                "expected {code} in prologue (before first G0/G1) — got head:\n{}",
+                head.join("\n")
+            );
+        }
+        assert!(
+            first_motion < 30,
+            "expected prologue within 30 lines; first motion at {first_motion}"
+        );
+    }
+
+    /// 3p7v: a full-circle arc (start == end, with a non-trivial I/J
+    /// vector to the center) must split into two G2 / G3 commands so
+    /// GRBL doesn't reject the program with error:33.
+    #[test]
+    fn full_circle_arc_splits_into_two_g2() {
+        // Drive the post directly: rapid to (5, 0), then "arc back to
+        // (5, 0)" with center (0, 0) — a full circle of radius 5.
+        let mut post = linuxcnc::Post::new();
+        post.absolute(true);
+        post.move_to(Some(5.0), Some(0.0), None);
+        // I = center.x - start.x = -5; J = center.y - start.y = 0.
+        post.arc_cw(Some(5.0), Some(0.0), None, Some(-5.0), Some(0.0));
+        let g = post.finish();
+        let g2_lines: Vec<&str> = g.lines().filter(|l| l.starts_with("G2 ")).collect();
+        assert_eq!(
+            g2_lines.len(),
+            2,
+            "expected full circle to split into two G2 commands; got:\n{g}"
+        );
+        // Each half must carry an I or J center vector.
+        for l in &g2_lines {
+            assert!(
+                l.contains('I') || l.contains('J'),
+                "G2 line should keep its I/J center vector: {l}"
+            );
+        }
+        // The two halves' endpoints must differ (start ≠ first endpoint
+        // ≠ second endpoint = start). The first G2 goes to the
+        // diametrically-opposite point (-5, 0); the second returns.
+        assert!(
+            g2_lines[0].contains("X-5"),
+            "first half should end at X-5 (diametrically opposite the start): {}",
+            g2_lines[0]
+        );
+        assert!(
+            g2_lines[1].contains("X5"),
+            "second half should end back at X5 (the original start): {}",
+            g2_lines[1]
+        );
+    }
+
+    /// lyq6: the lead-in plunge must drop to `setup.mill.start_depth`,
+    /// not a literal Z=0. Verifies the proud-stock case
+    /// (start_depth < 0) where Z=0 would crash the cutter.
+    #[test]
+    fn lead_in_plunge_uses_mill_start_depth() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -5.0;
+        setup.mill.start_depth = -2.0; // proud stock; cutter must drop to Z-2 first
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+
+        // Find the FIRST G1 line — it's the lead-in plunge. With the
+        // bug it would carry Z0; with the fix it must carry Z-2.
+        let first_g1 = g
+            .lines()
+            .find(|l| l.starts_with("G1 "))
+            .expect("expected at least one G1 line");
+        assert!(
+            first_g1.contains("Z-2"),
+            "lead-in must plunge to start_depth=-2; first G1: {first_g1}\nfull:\n{g}"
+        );
+        assert!(
+            !first_g1.contains("Z0") || first_g1.contains("Z-2"),
+            "lead-in must NOT plunge to literal Z0; first G1: {first_g1}"
+        );
+    }
+
     #[test]
     fn linuxcnc_emits_a_recognizable_program() {
         let mut setup = Setup::default();

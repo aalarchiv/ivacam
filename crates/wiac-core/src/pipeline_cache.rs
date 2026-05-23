@@ -52,7 +52,7 @@ use crate::project::{
     ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
     OpKind, OpParams, OpSource, PatternConfig, PocketParams, PocketStrategy, ProfileParams,
     SourceCombine, SpindleDirection, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind,
-    VCarveParams,
+    VCarveParams, Wcs, WorkOffset,
 };
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
@@ -168,6 +168,7 @@ pub fn op_cache_key(
         selected_segments,
         fixtures,
         &[],
+        &WorkOffset::default(),
         post_processor_tag,
     )
 }
@@ -187,6 +188,7 @@ pub fn op_cache_key_with_finish(
     selected_segments: &[Segment],
     fixtures: &[Fixture],
     text_layers: &[TextLayer],
+    work_offset: &WorkOffset,
     post_processor_tag: u8,
 ) -> OpCacheKey {
     let mut h = SeaHasher::new();
@@ -222,7 +224,30 @@ pub fn op_cache_key_with_finish(
     for tl in text_layers {
         hash_text_layer(tl, &mut h);
     }
+    // ls7y: project work_offset (xyz + WCS selector) is consulted by
+    // sim alignment + the WCS-origin warning today, and on the roadmap
+    // it will drive G10 L20 / G54..G59 emission. Hash it now so that
+    // when WCS-driven emission lands, cached gcode for ops authored
+    // against a different work_offset is correctly invalidated. Cheap:
+    // 3 f64s + 1 discriminant byte per op.
+    hash_work_offset(work_offset, &mut h);
     OpCacheKey(h.finish())
+}
+
+#[inline]
+fn hash_work_offset<H: Hasher>(w: &WorkOffset, h: &mut H) {
+    hash_f64(w.x_mm, h);
+    hash_f64(w.y_mm, h);
+    hash_f64(w.z_mm, h);
+    let wcs: u8 = match w.wcs {
+        Wcs::G54 => 0,
+        Wcs::G55 => 1,
+        Wcs::G56 => 2,
+        Wcs::G57 => 3,
+        Wcs::G58 => 4,
+        Wcs::G59 => 5,
+    };
+    h.write_u8(wcs);
 }
 
 // ─── primitives ───────────────────────────────────────────────────────
@@ -1278,6 +1303,7 @@ mod tests {
         }
         h.write_usize(0); // no fixtures
         h.write_usize(0); // no text_layers (sqa3)
+        hash_work_offset(&WorkOffset::default(), &mut h); // ls7y
         let bumped = OpCacheKey(h.finish());
         assert_ne!(real, bumped);
     }
@@ -1359,8 +1385,9 @@ mod tests {
         };
         let mut tl2 = tl1.clone();
         tl2.text = "WORLD".into();
-        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl1], 0);
-        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl2], 0);
+        let wo = WorkOffset::default();
+        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl1], &wo, 0);
+        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl2], &wo, 0);
         assert_ne!(k1, k2, "text content change must invalidate the cache key");
     }
 
@@ -1689,6 +1716,79 @@ mod tests {
             !out2.contains("M8"),
             "coolant_flood after restoring Flood state must dedupe (no extra M8); got:\n{out2}"
         );
+    }
+
+    // ─── ls7y: work_offset xyz + WCS selector ───────────────────────
+
+    /// ls7y: bumping `project.work_offset.x_mm` must invalidate the
+    /// per-op cache so that future WCS-driven emission (G10 L20 /
+    /// G54..G59) doesn't serve gcode authored against a different
+    /// origin.
+    #[test]
+    fn work_offset_x_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let wo_a = WorkOffset::default();
+        let mut wo_b = WorkOffset::default();
+        wo_b.x_mm = 50.0;
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        assert_ne!(k1, k2, "work_offset.x_mm should invalidate the cache");
+    }
+
+    #[test]
+    fn work_offset_y_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let wo_a = WorkOffset::default();
+        let mut wo_b = WorkOffset::default();
+        wo_b.y_mm = -12.5;
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        assert_ne!(k1, k2, "work_offset.y_mm should invalidate the cache");
+    }
+
+    #[test]
+    fn work_offset_z_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let wo_a = WorkOffset::default();
+        let mut wo_b = WorkOffset::default();
+        wo_b.z_mm = 3.0;
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        assert_ne!(k1, k2, "work_offset.z_mm should invalidate the cache");
+    }
+
+    /// ls7y: the WCS selector (G54..G59) is a discriminant byte in the
+    /// hash; switching G54 → G55 invalidates the cache even when the
+    /// xyz offsets are identical (default zeros).
+    #[test]
+    fn work_offset_wcs_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let wo_a = WorkOffset::default();
+        let mut wo_b = WorkOffset::default();
+        wo_b.wcs = Wcs::G55;
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        assert_ne!(k1, k2, "work_offset.wcs should invalidate the cache");
     }
 
     /// rt1.10: changing `op.tab_mode` invalidates the cache (`tab_mode`

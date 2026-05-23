@@ -58,7 +58,7 @@ mod warnings;
 // pub(in crate::pipeline) declarations in selection.rs.
 pub(in crate::pipeline) use selection::{
     op_includes_object, ordered_selection, resolve_op_segments, source_combine_mode,
-    validate_op_source_objects,
+    validate_op_source_layers, validate_op_source_objects,
 };
 
 #[cfg(test)]
@@ -764,6 +764,11 @@ where
         // warnings ride along even when the gcode body is served from
         // cache.
         validate_op_source_objects(op, objects, warnings);
+        // dcna: same treatment for OpSource::Layers — a typoed layer
+        // name (or one whose import was removed) used to silently
+        // produce zero segments. Now we surface op_source_missing_layer
+        // (+ op_source_empty when every requested layer is missing).
+        validate_op_source_layers(op, &project.segments, warnings);
 
         // Cache lookup. We skip caching when no cache is provided.
         let cache_key = cache.and_then(|_| {
@@ -785,6 +790,7 @@ where
                 &resolve_op_segments(op, &project.segments, objects),
                 &project.fixtures,
                 &project.text_layers,
+                &project.work_offset,
                 post_tag,
             ))
         });

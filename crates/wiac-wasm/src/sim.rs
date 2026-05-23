@@ -395,7 +395,7 @@ fn from_tool_value(value: JsValue) -> Result<ToolEntry, JsValue> {
 mod tests {
     use super::*;
     use wiac_core::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
-    use wiac_core::project::{Coolant, ToolKind};
+    use wiac_core::project::{Coolant, SpindleDirection, ToolKind};
 
     fn endmill(diameter: f64) -> ToolEntry {
         ToolEntry {
@@ -437,6 +437,10 @@ mod tests {
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
+            // chgd: spindle_direction landed on ToolEntry — mirror the
+            // core test fixture (sim/heightmap.rs) so WASM tests still
+            // compile. Default is Cw, matches pre-spindle behavior.
+            spindle_direction: SpindleDirection::default(),
         }
     }
 

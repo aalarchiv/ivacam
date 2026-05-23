@@ -22,9 +22,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::cam::offsets::{
-    apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets, parallel_offset_inward,
-    parallel_offset_outward, pocket_for_object, small_circle_drill, PocketEmit, PolylineOffset,
-    TabPoint,
+    apply_cut_direction, apply_overcut_to_offsets, attach_tabs_to_offsets,
+    inflate_islands_by_tool_radius, parallel_offset_inward, parallel_offset_outward,
+    pocket_for_object, small_circle_drill, PocketEmit, PolylineOffset, TabPoint,
 };
 use crate::cam::setup::{Setup, ToolOffset};
 use crate::cam::source_combine::combine_source_regions;
@@ -86,6 +86,9 @@ pub(super) fn build_op_offsets(
     // thread (defensive — every op-completion path also drains, so this
     // should be empty in normal operation).
     let _ = crate::cam::offsets::take_parallel_offset_panics();
+    // 0tsy: same defensive drain for nocontour-allowance ignored events
+    // so a stale entry from a prior op can't get attributed to this one.
+    let _ = crate::cam::offsets::take_nocontour_allowance_ignored();
     // Up-front sanity checks that don't depend on whether the cascade
     // succeeds. push_tool_fit_kind_warnings populates `warnings` for
     // tool-kind / op-kind mismatches and impossible tool geometry.
@@ -313,13 +316,22 @@ pub(super) fn build_op_offsets(
                 let synthetic = synthesize_region_object(region);
                 let finish_ring_r = dual_tool_finish_radius(effective_op, project);
                 let pocket_for_kind = effective_op.pocket_params();
+                // knd4: pocket_zigzag / pocket_cascade_with_islands /
+                // stitch_rings_to_polyline all document their `islands`
+                // input as "pre-inflated by tool_radius" — they use the
+                // outline as the centerline safe boundary. Pipeline used
+                // to pass region.holes RAW; the cutter edge then bit
+                // tool_r into every raised feature. Inflate here so the
+                // pocket emitters see a Minkowski-sum boundary that
+                // keeps the centerline a tool_r away from the raw wall.
+                let inflated_holes = inflate_islands_by_tool_radius(&region.holes, radius);
                 for mut o in pocket_for_object(
                     &synthetic,
                     radius,
                     pocket_for_kind.is_some_and(|p| p.pocket_nocontour),
                     6,
                     pocket_emit,
-                    &region.holes,
+                    &inflated_holes,
                     xy_step,
                     pocket_for_kind
                         .and_then(|p| p.finish_xy_allowance_mm)
@@ -346,6 +358,7 @@ pub(super) fn build_op_offsets(
             drain_pocket_cascade_truncations(effective_op, warnings);
             drain_trochoidal_incompletes(effective_op, warnings);
             drain_approach_point_far_rotations(effective_op, warnings);
+            drain_nocontour_allowance_ignored(effective_op, warnings);
             return Ok((offsets, closed));
         }
     }
@@ -434,13 +447,19 @@ pub(super) fn build_op_offsets(
                 if obj.closed {
                     let finish_ring_r = dual_tool_finish_radius(effective_op, project);
                     let pocket_for_kind = effective_op.pocket_params();
+                    // knd4: inflate inner-object islands by tool_radius
+                    // before handing them to pocket_for_object. The
+                    // pocket emitters treat the island input as the
+                    // centerline safe boundary; passing raw inner
+                    // contours used to gouge the island wall by tool_r.
+                    let inflated_islands = inflate_islands_by_tool_radius(&islands, radius);
                     for mut o in pocket_for_object(
                         obj,
                         radius,
                         pocket_for_kind.is_some_and(|p| p.pocket_nocontour),
                         6,
                         pocket_emit,
-                        &islands,
+                        &inflated_islands,
                         xy_step,
                         pocket_for_kind
                             .and_then(|p| p.finish_xy_allowance_mm)
@@ -469,14 +488,23 @@ pub(super) fn build_op_offsets(
                             color: obj.color,
                             source_object_idx: idx,
                             tabs: Vec::new(),
-                            is_finish: false,
+                            is_finish: true,
                         }]
                     }
                     ToolOffset::Outside => parallel_offset_outward(obj, radius),
                     ToolOffset::Inside => parallel_offset_inward(obj, radius),
                 };
+                // c0pm: a single-pass Profile op IS the finishing wall pass
+                // — there's no "rough then finish" split, the lone offset
+                // defines the final wall. Tag every emitted offset as
+                // is_finish so the gcode emitter substitutes the tool's
+                // finish-set rates (rate_h_finish / speed_finish /
+                // rate_v_finish). Pre-fix the rough-set rates were used
+                // even when the user configured distinct finish values,
+                // silently degrading surface finish + tool life.
                 for mut o in new_offsets {
                     o.source_object_idx = idx;
+                    o.is_finish = true;
                     offsets.push(o);
                 }
             }
@@ -617,6 +645,7 @@ pub(super) fn build_op_offsets(
     drain_pocket_cascade_truncations(effective_op, warnings);
     drain_trochoidal_incompletes(effective_op, warnings);
     drain_approach_point_far_rotations(effective_op, warnings);
+    drain_nocontour_allowance_ignored(effective_op, warnings);
     Ok((offsets, closed))
 }
 
@@ -634,6 +663,25 @@ fn drain_trochoidal_incompletes(op: &Op, warnings: &mut Vec<PipelineWarning>) {
             message: format!(
                 "op '{}': trochoidal pocket terminated at centerline vertex {}/{} — the loop disc (r={:.2} mm, engagement {:.0}°) couldn't fit the pocket interior at that point, and continuing would have required a full-slot move at trochoidal feed/RPM. Part of the pocket was left uncleared. Pick a smaller loop_radius_factor or engagement angle, or finish the unswept tail with a separate (zigzag/cascade) op.",
                 op.name, ev.bail_index, ev.centerline_total, ev.r_loop, ev.engagement_angle_deg,
+            ),
+        });
+    }
+}
+
+/// 0tsy: drain any `NocontourAllowanceIgnored` events stashed by
+/// `pocket_for_object` and surface them as
+/// `nocontour_ignores_finish_allowance` warnings. The function folded
+/// the allowance back to 0 (rough cascade walked the wall straight)
+/// because no wall ring would have removed the stock; the user picked
+/// an incompatible combination and we want them to know.
+fn drain_nocontour_allowance_ignored(op: &Op, warnings: &mut Vec<PipelineWarning>) {
+    for ev in crate::cam::offsets::take_nocontour_allowance_ignored() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "nocontour_ignores_finish_allowance".into(),
+            message: format!(
+                "op '{}': pocket_nocontour=true skips the wall ring, so the configured XY finish allowance ({:.3} mm) has no finish pass to remove it. The allowance was ignored — the rough cascade walks the wall directly at the tool radius. To get a finishing wall pass, turn pocket_nocontour off (or use the dual-tool finish-radius path instead).",
+                op.name, ev.allowance_mm,
             ),
         });
     }
@@ -3886,5 +3934,268 @@ mod tests {
                 "cut segment midpoint ({mid_x:.2}, {mid_y:.2}) is inside the auto-annular island region (distance {d:.2} from centre)"
             );
         }
+    }
+
+    /// knd4 regression: a Zigzag pocket with an island must keep the
+    /// cutter CENTERLINE at least `tool_radius` away from the raw
+    /// island wall. Pre-fix the pipeline passed the raw island
+    /// polygons into `pocket_for_object`, but the pocket emitters
+    /// document their `islands` input as already-inflated-by-tool-radius
+    /// and used the polygon-as-given for centerline trimming. Effect:
+    /// the cutter EDGE bit `tool_r` into the raw island on every
+    /// scanline endpoint adjacent to the island — silently shaving the
+    /// label/boss the user wanted preserved. We now inflate islands
+    /// by `tool_radius` in the pipeline before calling `pocket_for_object`,
+    /// so no centerline point lies within `tool_radius - eps` of the
+    /// raw island.
+    #[test]
+    fn pocket_zigzag_with_island_keeps_centerline_outside_raw_island() {
+        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PocketStrategy;
+        let outer = closed_square_offset(60.0, 0.0, 0.0);
+        let island_center = Point2::new(30.0, 30.0);
+        let island_radius = 8.0;
+        let inner = closed_circle(island_center, island_radius);
+        let segments: Vec<Segment> =
+            outer.iter().cloned().chain(inner.iter().cloned()).collect();
+        let tool_diameter = 3.0;
+        let tool_radius = tool_diameter * 0.5;
+        let project = Project {
+            segments,
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, tool_diameter)],
+            operations: vec![Op {
+                id: 1,
+                name: "Zigzag pocket with island".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: PocketStrategy::Zigzag { angle_deg: 0.0 },
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams {
+                        pocket_islands: true,
+                        ..crate::project::PocketParams::default()
+                    },
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams {
+                    plunge: PlungeStrategy::Direct,
+                    ..OpParams::mill_default()
+                },
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Every CUT segment's interior must keep both endpoints
+        // ≥ (island_radius + tool_radius − arc-tol slack) from the
+        // island centre — the cutter centerline never enters the
+        // tool-radius safety band. Pre-fix, scanline endpoints
+        // adjacent to the island sat at d ≈ island_radius (touching
+        // the raw wall), so this gives at least `tool_radius`
+        // (1.5 mm) of headroom on the regression.
+        //
+        // Slack budget: clipper2's outward inflate uses round joins
+        // with arc_tol=0.25, so the Minkowski-sum boundary the
+        // pipeline computes is a chord polygon that sits up to
+        // ~arc_tol inside the perfect tool-radius circle around the
+        // raw island. We allow that tolerance here — anything more
+        // than that is a knd4 regression (the pipeline forgot to
+        // inflate islands at all).
+        let safe_min_distance = island_radius + tool_radius - 0.30;
+        let cuts: Vec<&crate::gcode::preview::ToolpathSegment> = resp
+            .toolpath
+            .iter()
+            .filter(|s| {
+                s.op_id == 1
+                    && matches!(s.kind, crate::gcode::preview::MoveKind::Cut)
+            })
+            .collect();
+        assert!(
+            !cuts.is_empty(),
+            "expected at least one cut segment for the zigzag pocket"
+        );
+        for seg in &cuts {
+            for pt in [&seg.from, &seg.to] {
+                let dx = pt.x - island_center.x;
+                let dy = pt.y - island_center.y;
+                let d = (dx * dx + dy * dy).sqrt();
+                assert!(
+                    d >= safe_min_distance,
+                    "knd4 regression: cut endpoint ({:.3}, {:.3}) sits {:.3} mm from raw island centre — must be ≥ {:.3} (island_r={:.1} + tool_r={:.1})",
+                    pt.x, pt.y, d, safe_min_distance, island_radius, tool_radius,
+                );
+            }
+        }
+    }
+
+    /// c0pm regression: a single-pass Profile op is by definition the
+    /// finishing wall pass — the tool's finish-set rates
+    /// (rate_h_finish / speed_finish / rate_v_finish) must drive the
+    /// emitted gcode, not the rough-set rates. Pre-fix the Profile
+    /// branch never set is_finish=true on the offsets, so the gcode
+    /// emitter substituted the rough feed even when the user
+    /// configured distinct finish values.
+    #[test]
+    fn profile_op_uses_finish_feed_and_speed() {
+        use crate::cam::setup::PlungeStrategy;
+        let mut tool = endmill(1, 3.0);
+        tool.speed = 20_000;
+        tool.feed_rate = 1500;
+        tool.speed_finish = Some(8_000);
+        tool.feed_rate_finish = Some(400);
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Profile Outside".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams {
+                    plunge: PlungeStrategy::Direct,
+                    ..OpParams::mill_default()
+                },
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The finish feed (F400) must appear — the single Profile pass
+        // IS the finishing pass. The rough feed (F1500) must NOT appear
+        // because there is no rough pass on a single-pass Profile.
+        assert!(
+            resp.gcode.contains("F400"),
+            "c0pm regression: Profile op should use the finish feedrate F400; gcode:\n{}",
+            resp.gcode,
+        );
+        assert!(
+            resp.gcode.contains("S8000"),
+            "c0pm regression: Profile op should use the finish spindle S8000; gcode:\n{}",
+            resp.gcode,
+        );
+        assert!(
+            !resp.gcode.contains("F1500"),
+            "c0pm regression: Profile op must NOT use rough feed F1500 — its single pass is by definition a finishing pass; gcode:\n{}",
+            resp.gcode,
+        );
+    }
+
+    /// 0tsy regression: pocket_nocontour=true + finish_xy_allowance_mm > 0
+    /// is a meaningless combination — there's no wall ring to absorb the
+    /// allowance, so the rough cascade would walk `allowance` mm inboard
+    /// of the wall and leave that stock behind forever. We fold allowance
+    /// back to 0 and surface a `nocontour_ignores_finish_allowance`
+    /// warning. The Pocket's outer rough-cascade ring must therefore sit
+    /// at the same XY position as if allowance had never been set.
+    #[test]
+    fn pocket_nocontour_with_allowance_folds_to_zero_and_warns() {
+        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PocketStrategy;
+        let tool_diameter = 3.0;
+        let mk = |allowance: f64, nocontour: bool| Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, tool_diameter)],
+            operations: vec![Op {
+                id: 1,
+                name: "Pocket nocontour".into(),
+                enabled: true,
+                kind: OpKind::Pocket {
+                    strategy: PocketStrategy::Cascade,
+                    contour: crate::project::ContourParams::default(),
+                    pocket: crate::project::PocketParams {
+                        pocket_nocontour: nocontour,
+                        finish_xy_allowance_mm: if allowance > 0.0 {
+                            Some(allowance)
+                        } else {
+                            None
+                        },
+                        ..crate::project::PocketParams::default()
+                    },
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams {
+                    plunge: PlungeStrategy::Direct,
+                    ..OpParams::mill_default()
+                },
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        // Baseline: nocontour + allowance=0.
+        let baseline = run_pipeline(
+            PipelineRequest {
+                project: mk(0.0, true),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Pathological: nocontour + allowance=0.2. Should produce IDENTICAL
+        // toolpath (we folded allowance to 0) AND emit the warning.
+        let ignored = run_pipeline(
+            PipelineRequest {
+                project: mk(0.2, true),
+                post_processor: None,
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            ignored
+                .warnings
+                .iter()
+                .any(|w| w.kind == "nocontour_ignores_finish_allowance"),
+            "0tsy regression: expected nocontour_ignores_finish_allowance warning when pocket_nocontour=true is combined with a non-zero finish allowance; got warnings: {:?}",
+            ignored.warnings,
+        );
+        // Same number of cut moves — the allowance was ignored, not
+        // applied. (We compare counts rather than exact strings because
+        // the gcode-emitter's plunge / lift ordering may differ on
+        // hashing details, but the rough cascade should walk the same
+        // boundary in both runs.)
+        let cuts_baseline = baseline
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .count();
+        let cuts_ignored = ignored
+            .toolpath
+            .iter()
+            .filter(|s| matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .count();
+        assert_eq!(
+            cuts_baseline, cuts_ignored,
+            "0tsy regression: nocontour+allowance must produce the same cut count as nocontour+allowance=0 (allowance is folded to 0). baseline={cuts_baseline}, ignored={cuts_ignored}",
+        );
     }
 }

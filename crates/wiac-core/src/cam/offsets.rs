@@ -384,6 +384,31 @@ pub fn take_pocket_cascade_truncations() -> Vec<PocketCascadeTruncation> {
     POCKET_CASCADE_TRUNCATIONS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
+/// 0tsy: `pocket_for_object` records this when the caller sets
+/// `nocontour=true` together with a non-zero `xy_allowance`. Those flags
+/// are mutually exclusive in practice: no wall ring means there's no
+/// dedicated finish pass to consume the allowance, so the rough cascade
+/// would otherwise leave `allowance` mm of stock on every wall (the
+/// part would come out undersized). The function folds allowance back
+/// to 0 in that case and records this entry so the pipeline can surface
+/// a `nocontour_ignores_finish_allowance` warning attributed to the op.
+#[derive(Debug, Clone, Copy)]
+pub struct NocontourAllowanceIgnored {
+    pub allowance_mm: f64,
+}
+
+thread_local! {
+    static NOCONTOUR_ALLOWANCE_IGNORED: std::cell::RefCell<Vec<NocontourAllowanceIgnored>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Drain (and clear) any `NocontourAllowanceIgnored` events stashed by
+/// `pocket_for_object` on this thread.
+#[must_use]
+pub fn take_nocontour_allowance_ignored() -> Vec<NocontourAllowanceIgnored> {
+    NOCONTOUR_ALLOWANCE_IGNORED.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
 /// Hard cap on the number of rings the cascade can emit before bailing
 /// (mdpo). Was 1024 — raised to 4096 to cover larger pockets at fine
 /// steps (e.g. a 400×400 mm sign cascaded at 0.5 mm step needs ~800
@@ -782,6 +807,65 @@ fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<
 #[must_use]
 pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
     pocket_cascade_with_islands(boundary, &[], delta)
+}
+
+/// knd4: inflate each raw island polygon outward by `tool_radius` so the
+/// cutter centerline keeps a tool-radius clearance from the raw island
+/// wall. The pocket emitters (`pocket_zigzag`, `pocket_cascade_with_islands`,
+/// `stitch_rings_to_polyline`) all document islands as
+/// "pre-inflated by tool_radius" — pipeline callers used to pass RAW
+/// holes / inner-object polygons, so the cutter edge ploughed into the
+/// island by tool_r at the boundary. This helper bridges the gap.
+///
+/// Returns the inflated outer rings (clipper2 may merge overlapping
+/// islands, drop a degenerate one, or split one into multiple). On
+/// failure for a given island (degenerate input, clipper2 returns
+/// empty) the original island is preserved as a fallback — better to
+/// approximate than drop the safety geometry entirely.
+#[must_use]
+pub fn inflate_islands_by_tool_radius(
+    islands: &[Vec<Point2>],
+    tool_radius: f64,
+) -> Vec<Vec<Point2>> {
+    if tool_radius <= 1e-9 {
+        return islands.to_vec();
+    }
+    let mut out: Vec<Vec<Point2>> = Vec::with_capacity(islands.len());
+    for island in islands {
+        if island.len() < 3 {
+            // Too small to inflate meaningfully; keep raw so the caller's
+            // length checks still see it.
+            out.push(island.clone());
+            continue;
+        }
+        // Clipper2 EndType::Polygon with positive delta = outward inflate
+        // of a closed polygon. The result is the Minkowski sum with a
+        // disc of radius `delta`, i.e. the safe centerline boundary the
+        // cutter must stay outside.
+        let path: PathD = island
+            .iter()
+            .map(|p| ClipperPoint::new(p.x, p.y))
+            .collect();
+        let inflated = inflate_paths_d(
+            &vec![path],
+            tool_radius,
+            JoinType::Round,
+            EndType::Polygon,
+            2.0,
+            4,
+            0.25,
+        );
+        if inflated.is_empty() {
+            out.push(island.clone());
+            continue;
+        }
+        for ring in inflated {
+            if ring.len() >= 3 {
+                out.push(ring.iter().map(|pt| Point2::new(pt.x, pt.y)).collect());
+            }
+        }
+    }
+    out
 }
 
 /// Single-step inward offset of a boundary + holes by `delta` (r8ut).
@@ -1246,8 +1330,30 @@ pub fn pocket_for_object(
     // splits the offsets list by is_finish and emits the finish block
     // with the finish tool's setup after an auto toolchange. When None,
     // the finish ring (if any — see allowance) uses `tool_radius`.
-    let allowance = xy_allowance.max(0.0);
+    // 0tsy: `nocontour=true` means there will be no wall ring — neither
+    // the rough boundary (skipped below) nor the dedicated finish ring
+    // (gated on `!nocontour && needs_finish_ring`). A non-zero XY
+    // allowance is therefore meaningless: the rough cascade would walk
+    // an extra `allowance` inboard and the finish ring that should
+    // remove that stock never runs, so every wall comes out undersized
+    // by `allowance`. Fold allowance back to 0 in this case and record
+    // a `nocontour_ignores_finish_allowance` event so the pipeline
+    // surfaces a warning attributed to the op. The dual-tool finish
+    // ring is its own pass and stays untouched — when the user provides
+    // an explicit finish_ring_radius, the cascade still walks at
+    // tool_radius and the finish-radius ring runs below.
+    let raw_allowance = xy_allowance.max(0.0);
     let has_dual_tool_finish = finish_ring_radius.is_some();
+    let allowance = if nocontour && raw_allowance > 1e-9 && !has_dual_tool_finish {
+        NOCONTOUR_ALLOWANCE_IGNORED.with(|s| {
+            s.borrow_mut().push(NocontourAllowanceIgnored {
+                allowance_mm: raw_allowance,
+            });
+        });
+        0.0
+    } else {
+        raw_allowance
+    };
     let rough_delta = tool_radius.abs() + allowance;
     let boundary = parallel_offset_inward(obj, rough_delta);
     if boundary.is_empty() {
@@ -1496,6 +1602,16 @@ fn stitch_rings_to_spiral(
 /// kqsl: prior to this fix islands were ignored — a bridge could carve
 /// straight through a raised feature on pockets-with-islands. The
 /// per-bridge check now considers every island polygon too.
+///
+/// kc86: with ≥3 rings the closest start vertex on ring N+1 to ring
+/// N's end can produce a bridge that grazes an inflated island sitting
+/// between ring N+1 and ring N+2 — the closest vertex isn't always the
+/// safest. We now sweep ALL vertices in the next ring, ordered by
+/// distance from the previous end, and pick the first one whose bridge
+/// passes the containment + island guard. Only after every candidate
+/// fails do we fall back to cascade emission. This recovers spiral
+/// emission on deep pockets with multiple islands where the prior
+/// "first candidate wins" approach silently degraded the toolpath.
 pub(crate) fn stitch_rings_to_polyline(
     rings: &[Vec<Point2>],
     islands: &[Vec<Point2>],
@@ -1523,30 +1639,50 @@ pub(crate) fn stitch_rings_to_polyline(
             }
             return None;
         }
+        let n = ring.len();
         let start_idx = if let Some(end) = last_end {
-            let mut best = 0usize;
-            let mut best_d = f64::INFINITY;
-            for (i, p) in ring.iter().enumerate() {
-                let d = p.distance(end);
-                if d < best_d {
-                    best_d = d;
-                    best = i;
+            // kc86: rank candidate start vertices by distance from the
+            // previous ring's end, then sweep until the bridge guard
+            // passes. The closest vertex is tried first (short bridge
+            // = the original heuristic); when that bridge would cross
+            // the outer ring or an island we slide to the next-best,
+            // and so on. We fall through to None only when EVERY
+            // vertex on this ring yields an unsafe bridge — only then
+            // is cascade fallback truly the right answer.
+            let mut ranked: Vec<(usize, f64)> = ring
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (i, p.distance(end)))
+                .collect();
+            ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            let mut chosen: Option<usize> = None;
+            for (cand, _) in &ranked {
+                let cand_pt = ring[*cand];
+                // Zero-length bridge always passes — same ring boundary,
+                // no straight segment to test.
+                if end.distance(cand_pt) <= 1e-6 {
+                    chosen = Some(*cand);
+                    break;
+                }
+                if bridge_stays_inside_polygon(end, cand_pt, outer)
+                    && !bridge_crosses_any_island(end, cand_pt, islands)
+                {
+                    chosen = Some(*cand);
+                    break;
                 }
             }
-            best
+            match chosen {
+                Some(i) => i,
+                None => return None,
+            }
         } else {
             0
         };
-        let n = ring.len();
         let first = ring[start_idx];
         if let Some(end) = last_end {
             if end.distance(first) > 1e-6 {
-                if !bridge_stays_inside_polygon(end, first, outer) {
-                    return None;
-                }
-                if bridge_crosses_any_island(end, first, islands) {
-                    return None;
-                }
+                // Bridge already validated against outer + islands during
+                // the start_idx sweep above; just emit the vertex.
                 out.push(first);
             }
         } else {
@@ -2096,36 +2232,81 @@ mod tests {
         );
     }
 
-    /// kqsl: a spiral pocket with an island in the bridge path must
-    /// NOT carve through the island. The bridge-containment guard
-    /// rejects bridges that cross any island; on rejection the caller
-    /// falls back to cascade emission (separate closed rings, no
-    /// bridges). We verify by calling `stitch_rings_to_polyline`
-    /// directly with rings whose bridge between consecutive ring start
-    /// vertices crosses an island — must return None.
+    /// kqsl + kc86: a spiral pocket with an island in the bridge path
+    /// must NOT carve through the island. The bridge-containment guard
+    /// rejects bridges that cross any island; on rejection
+    /// `stitch_rings_to_polyline` sweeps OTHER candidate start vertices
+    /// on the next ring (kc86), and only when EVERY candidate fails
+    /// does the stitch return None so the caller falls back to cascade
+    /// emission. We construct rings where every vertex of ring 1 sits
+    /// on the right side of the island clustered tight against the
+    /// pocket's right wall — every bridge from (5, 25) on ring 0
+    /// inevitably traverses the island's footprint, so all candidates
+    /// fail and the stitch must return None.
     #[test]
     fn spiral_bridge_rejected_when_crossing_island() {
         // 50×50 pocket; an island in the middle at [20..30] × [20..30].
-        // Construct two rings so the spiral bridge from ring 0's
-        // chosen-start to ring 1's chosen-start MUST cross the island.
-        // The stitcher picks each ring's start vertex as the closest
-        // to the previous ring's last_end (= that ring's start), so
-        // we constrain ring vertices to engineer the bridge path:
-        // - ring 0 first vertex at (5, 25)  → last_end = (5, 25)
-        // - ring 1 vertices only on the right of the island; nearest
-        //   to (5, 25) is (40, 25) → bridge runs along y=25 from x=5
-        //   to x=40, slicing straight through the centre of the island.
+        // Ring 0 starts at (5, 25) so last_end = (5, 25).
+        // Ring 1 is a thin vertical band on the right (x≈40, y∈[22..28]) —
+        // every line from (5, 25) to a (40, ≈25) vertex passes through
+        // the island's x∈[20..30], y∈[22..28] footprint.
         let ring0 = vec![p(5.0, 25.0), p(5.0, 5.0), p(45.0, 5.0), p(45.0, 45.0), p(5.0, 45.0)];
-        let ring1 = vec![p(40.0, 25.0), p(40.0, 10.0), p(40.0, 5.0), p(40.0, 45.0)];
+        let ring1 = vec![p(40.0, 25.0), p(40.0, 22.0), p(40.0, 28.0), p(40.0, 24.0), p(40.0, 26.0)];
         let rings = vec![ring0, ring1];
         let island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
         // No islands → polyline stitches without complaint (sanity).
         assert!(stitch_rings_to_polyline(&rings, &[]).is_some());
-        // With the island present the y=25 bridge crosses it → reject.
+        // With the island present every candidate bridge crosses it → reject.
         assert!(
             stitch_rings_to_polyline(&rings, &[island.clone()]).is_none(),
-            "stitch must reject a bridge that crosses an island",
+            "stitch must reject when every candidate bridge crosses an island",
         );
+    }
+
+    /// kc86: when the FIRST candidate start vertex would put a bridge
+    /// across an island, the stitch must sweep through the other
+    /// candidate vertices on that ring and find a safe one before
+    /// falling back to None. Pre-fix the function returned None on the
+    /// first failing candidate, silently dropping spiral emission on
+    /// any pocket where the closest vertex happened to be unsafe — even
+    /// though a safe alternative existed.
+    #[test]
+    fn spiral_bridge_sweeps_alternative_start_vertices_around_island() {
+        // 50×50 pocket; island at [20..30]×[20..30].
+        // Ring 0 starts at (5, 25) → last_end = (5, 25).
+        // Ring 1 has a closest vertex (40, 25) that produces an island-
+        // crossing bridge AND a farther vertex (10, 5) whose bridge
+        // from (5, 25) is safe (y ≤ 25, below the island). Pre-fix:
+        // returned None because the first candidate failed. Post-fix:
+        // returns Some, picking (10, 5) as ring 1's start.
+        let ring0 = vec![p(5.0, 25.0), p(5.0, 5.0), p(45.0, 5.0), p(45.0, 45.0), p(5.0, 45.0)];
+        let ring1 = vec![
+            p(40.0, 25.0),   // closest to (5, 25) — bridge crosses island
+            p(10.0, 5.0),    // farther but bridge sits below the island, safe
+            p(10.0, 7.0),
+            p(8.0, 5.0),
+        ];
+        let rings = vec![ring0, ring1];
+        let island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
+        let stitched = stitch_rings_to_polyline(&rings, &[island])
+            .expect("a safe alternative start vertex exists — stitch must not bail");
+        // The chosen bridge endpoint on ring 1 must be one of the safe
+        // alternatives (not the (40, 25) closest-but-unsafe candidate).
+        // We find it by locating ring 1's first vertex in the stitched
+        // polyline — it's the first point with x < 30 after the ring-0
+        // segment ends (ring 0 vertices all sit on x∈{5, 45}, ring 1's
+        // chosen vertex has x ∈ {8, 10}).
+        assert!(
+            stitched.iter().any(|pt| pt.x > 7.0 && pt.x < 11.0 && pt.y < 8.0),
+            "stitch should have picked a ring-1 start that avoids the island; got {:?}",
+            stitched,
+        );
+        // And no point in the stitched polyline should sit inside the
+        // island (the cutter would gouge it).
+        for pt in &stitched {
+            let inside = pt.x > 20.001 && pt.x < 29.999 && pt.y > 20.001 && pt.y < 29.999;
+            assert!(!inside, "stitched polyline crosses the island at {pt:?}");
+        }
     }
 
     /// kqsl helper: `bridge_crosses_any_island` detects a bridge that
@@ -2159,6 +2340,141 @@ mod tests {
             for pt in ring {
                 let inside = pt.x > 10.5 && pt.x < 19.5 && pt.y > 10.5 && pt.y < 19.5;
                 assert!(!inside, "pocket ring crossed the island at {pt:?}");
+            }
+        }
+    }
+
+    /// knd4 helper: `inflate_islands_by_tool_radius` produces an
+    /// outward Minkowski-sum boundary around each island, i.e. a
+    /// polygon every point of which is ≥ tool_radius from the original
+    /// island wall. The pocket emitters (`pocket_zigzag`, the cascade
+    /// inflater, the spiral stitcher) consume the inflated outline as
+    /// the centerline safe boundary; passing the raw polygon used to
+    /// allow the cutter EDGE to bite tool_r into the original island.
+    #[test]
+    fn inflate_islands_by_tool_radius_expands_outward() {
+        // 10x10 axis-aligned square island centered at the origin.
+        let raw = vec![p(-5.0, -5.0), p(5.0, -5.0), p(5.0, 5.0), p(-5.0, 5.0)];
+        let inflated = inflate_islands_by_tool_radius(&[raw.clone()], 1.5);
+        assert_eq!(inflated.len(), 1, "single island in → single ring out");
+        // bbox should extend at least ~tool_radius further in every
+        // direction. Clipper2 with EndType::Polygon + JoinType::Round
+        // rounds corners, so we test the bbox bounds (looser than exact
+        // distance, but enough to catch a missing inflate).
+        let (mut mnx, mut mny, mut mxx, mut mxy) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
+        for pt in &inflated[0] {
+            mnx = mnx.min(pt.x);
+            mny = mny.min(pt.y);
+            mxx = mxx.max(pt.x);
+            mxy = mxy.max(pt.y);
+        }
+        // Original bbox is [-5, 5]² → inflated bbox must be at least
+        // [-6.5, 6.5]² (a tool_radius=1.5 outward expansion).
+        assert!(mnx <= -6.4, "expected min_x ≤ -6.4, got {mnx}");
+        assert!(mny <= -6.4, "expected min_y ≤ -6.4, got {mny}");
+        assert!(mxx >= 6.4, "expected max_x ≥ 6.4, got {mxx}");
+        assert!(mxy >= 6.4, "expected max_y ≥ 6.4, got {mxy}");
+        // The original island center is well inside the inflated ring
+        // — verify with the same point-in-polygon helper the pocket
+        // emitters use.
+        assert!(
+            point_in_polygon_pts(&inflated[0], 0.0, 0.0),
+            "island center (0,0) must lie inside the inflated boundary"
+        );
+    }
+
+    /// knd4 unit test: the cam-layer `pocket_zigzag` documents its
+    /// `islands` input as already-inflated-by-tool-radius and uses each
+    /// island's horizontal-crossings interval as-is (the function
+    /// would otherwise double-inflate). The pipeline's job is to feed
+    /// it pre-inflated polygons via `inflate_islands_by_tool_radius`.
+    /// Verify the contract end-to-end: with a RAW island the cutter
+    /// centerline ploughs straight up to the island wall (gouge); with
+    /// the INFLATED island it keeps a tool_radius clearance.
+    #[test]
+    fn pocket_zigzag_with_inflated_island_keeps_tool_radius_clearance() {
+        let boundary = vec![p(0.0, 0.0), p(40.0, 0.0), p(40.0, 40.0), p(0.0, 40.0)];
+        let raw_island = vec![p(15.0, 15.0), p(25.0, 15.0), p(25.0, 25.0), p(15.0, 25.0)];
+        let tool_diameter = 3.0;
+        let tool_radius = tool_diameter * 0.5;
+        let inflated = inflate_islands_by_tool_radius(&[raw_island.clone()], tool_radius);
+
+        // RAW island fed in (the pre-knd4 broken contract): scanlines
+        // run right up to x∈[15, 25] within y∈[15, 25] — the cutter
+        // centerline sits at the raw wall.
+        let chains_raw = pocket_zigzag(&boundary, &[raw_island.clone()], 1.5, tool_diameter);
+        let mut had_gouge_centerline = false;
+        for chain in &chains_raw {
+            for seg in chain {
+                for pt in [&seg.start, &seg.end] {
+                    // Distance to raw island bbox edge (treat as
+                    // square): the cutter centerline got within
+                    // <1e-3 of x=15 / x=25 on y∈[15..25] rows.
+                    let inside_y = pt.y > 15.0 - 1.0 && pt.y < 25.0 + 1.0;
+                    if inside_y
+                        && ((pt.x - 15.0).abs() < 0.5 || (pt.x - 25.0).abs() < 0.5)
+                    {
+                        had_gouge_centerline = true;
+                    }
+                }
+            }
+        }
+        assert!(
+            had_gouge_centerline,
+            "RAW-island test must demonstrate the pre-knd4 gouge — centerline should reach the raw island wall"
+        );
+
+        // INFLATED island fed in (the post-knd4 fixed contract): no
+        // centerline endpoint sits within tool_radius - eps of the raw
+        // wall. The pocket emitter trims scanlines to a Minkowski-sum
+        // boundary that's tool_r outboard of the raw wall.
+        //
+        // Slack budget: clipper2 inflates with EndType::Polygon +
+        // JoinType::Round at `arc_tol = 0.25`, so the rounded corners
+        // of the inflated polygon are chord-approximated. A scanline
+        // endpoint sampled along a chord between two arc vertices
+        // sits up to `arc_tol` inside the true tool_radius circle —
+        // a sub-mm manufacturing approximation, not a knd4 regression.
+        // We allow ~arc_tol of slack. Pre-knd4 the gouge was a full
+        // tool_radius (1.5 mm) — 5× this slack — so the regression
+        // still flags the broken contract loudly.
+        let chains_safe = pocket_zigzag(&boundary, &inflated, 1.5, tool_diameter);
+        let arc_tol_slack = 0.30;
+        let safe_dist = tool_radius - arc_tol_slack;
+        let raw_bbox_min = (15.0, 15.0);
+        let raw_bbox_max = (25.0, 25.0);
+        for chain in &chains_safe {
+            for seg in chain {
+                for pt in [&seg.start, &seg.end] {
+                    // Find the closest distance from this point to the
+                    // raw island bbox edge. The cutter centerline must
+                    // stay ≥ tool_radius outboard.
+                    let dx = (raw_bbox_min.0 - pt.x).max(pt.x - raw_bbox_max.0).max(0.0);
+                    let dy = (raw_bbox_min.1 - pt.y).max(pt.y - raw_bbox_max.1).max(0.0);
+                    let d = (dx * dx + dy * dy).sqrt();
+                    // If the point sits inside the raw island bbox (dx
+                    // = dy = 0), that's a serious gouge. Otherwise we
+                    // need d ≥ tool_radius.
+                    let inside_raw = pt.x > raw_bbox_min.0 - 1e-3
+                        && pt.x < raw_bbox_max.0 + 1e-3
+                        && pt.y > raw_bbox_min.1 - 1e-3
+                        && pt.y < raw_bbox_max.1 + 1e-3;
+                    assert!(
+                        !inside_raw,
+                        "knd4 regression: centerline sits inside raw island bbox at ({:.3}, {:.3})",
+                        pt.x, pt.y
+                    );
+                    assert!(
+                        d >= safe_dist,
+                        "knd4 regression: centerline endpoint ({:.3}, {:.3}) sits {:.3} mm from raw island wall — must be ≥ {:.3} (tool_radius)",
+                        pt.x, pt.y, d, safe_dist,
+                    );
+                }
             }
         }
     }

@@ -219,14 +219,24 @@ pub(super) fn synthesize_op_setup(
         dragoff: tool.dragoff,
         // Per-op overrides win over the tool library defaults — handy
         // for finishing passes or hard materials without editing the
-        // tool entry itself. They apply to the ROUGH side only; the
-        // finish-set is the user's explicit per-tool finish override,
-        // so a per-op feed override doesn't bulldoze it.
+        // tool entry itself.
+        //
+        // c0pm: the override is applied to BOTH rough and finish slots.
+        // Pre-c0pm Profile ops emitted at rough rates, so the override
+        // only needed to win over `rate_h` / `rate_v`. Post-c0pm a
+        // single-pass Profile emits at finish rates (it IS the finish
+        // pass) and the override has to flow through to the finish
+        // slot too — otherwise a user-set feed override would be
+        // silently ignored on every Profile op that didn't ALSO set
+        // a per-tool finish override. The override wins regardless of
+        // whether the user configured separate per-tool finish rates:
+        // they explicitly typed the override at the op level, that's
+        // the value they want.
         rate_v: op.params.plunge_rate_override.unwrap_or(rough_plunge),
         rate_h: op.params.feed_rate_override.unwrap_or(rough_feed),
         speed_finish: finish_speed,
-        rate_v_finish: finish_plunge,
-        rate_h_finish: finish_feed,
+        rate_v_finish: op.params.plunge_rate_override.unwrap_or(finish_plunge),
+        rate_h_finish: op.params.feed_rate_override.unwrap_or(finish_feed),
         pierce_sec,
         wirbeln_radius,
         wirbeln_stepover,
@@ -572,12 +582,14 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 // Per-op overrides (9vr) carry through into the program-
                 // header feed too — otherwise the header emits the tool
                 // default and the user sees an extra `F800` line at the
-                // top despite the override.
+                // top despite the override. c0pm: the override also
+                // applies to the finish slot so single-pass Profile ops
+                // (which now emit at finish rates) honour the override.
                 rate_v: op.params.plunge_rate_override.unwrap_or(rp),
                 rate_h: op.params.feed_rate_override.unwrap_or(rf),
                 speed_finish: fs,
-                rate_v_finish: fp,
-                rate_h_finish: ff,
+                rate_v_finish: op.params.plunge_rate_override.unwrap_or(fp),
+                rate_h_finish: op.params.feed_rate_override.unwrap_or(ff),
                 pierce_sec,
                 // Wirbeln (3e5) is a cut-time overlay only — the
                 // header_setup_for path is for program header emission

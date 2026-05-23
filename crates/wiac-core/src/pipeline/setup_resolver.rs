@@ -145,6 +145,10 @@ pub(super) fn synthesize_op_setup(
 
     let mut setup = Setup {
         machine: project.machine.clone(),
+        // e2mq: thread the project's active WCS into Setup so the
+        // post's program_begin can emit the explicit G54..G59 word
+        // and GRBL's tool_z_shift maps to the right G10 L20 P<n>.
+        wcs: project.work_offset.wcs,
         ..Setup::default()
     };
     // Pick the per-tool rate variant. Drill ops consume the dedicated
@@ -522,6 +526,10 @@ pub fn fit_helix_radius_for_selection(
 pub(super) fn header_setup_for(project: &Project) -> Setup {
     let mut setup = Setup {
         machine: project.machine.clone(),
+        // e2mq: mirror synthesize_op_setup so the program-header path
+        // (which routes through program_begin / program_end) sees the
+        // same active WCS as the per-op cut blocks.
+        wcs: project.work_offset.wcs,
         ..Setup::default()
     };
     // lo7b: pick the first enabled op THAT ACTUALLY CUTS. Pause ops have

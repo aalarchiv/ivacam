@@ -134,6 +134,39 @@ impl Wcs {
     fn is_default(v: &Self) -> bool {
         matches!(v, Self::G54)
     }
+
+    /// The gcode word that activates this WCS (`G54`..`G59`). e2mq:
+    /// consumed by the post-processor prologue so the controller's
+    /// active WCS matches `Project.work_offset.wcs` even when the
+    /// boot-default isn't G54.
+    #[must_use]
+    pub fn gcode_word(self) -> &'static str {
+        match self {
+            Self::G54 => "G54",
+            Self::G55 => "G55",
+            Self::G56 => "G56",
+            Self::G57 => "G57",
+            Self::G58 => "G58",
+            Self::G59 => "G59",
+        }
+    }
+
+    /// The `P<n>` operand for `G10 L20 P<n>` that targets this WCS.
+    /// `G54 = P1`, `G55 = P2`, …, `G59 = P6` per RS-274 / Mach3 / GRBL
+    /// >= 1.1 / LinuxCNC convention. e2mq: GRBL's `tool_z_shift`
+    /// previously hardcoded `P1`, so a user-active G55 had its
+    /// z-shift written into the wrong WCS.
+    #[must_use]
+    pub fn p_number(self) -> u32 {
+        match self {
+            Self::G54 => 1,
+            Self::G55 => 2,
+            Self::G56 => 3,
+            Self::G57 => 4,
+            Self::G58 => 5,
+            Self::G59 => 6,
+        }
+    }
 }
 
 #[cfg(test)]

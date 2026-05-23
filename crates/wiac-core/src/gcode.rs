@@ -166,6 +166,20 @@ pub trait PostProcessor {
         j: Option<f64>,
     );
 
+    /// pxyt: format a dwell `seconds` value for the post's `G4 P<...>`
+    /// word. Default returns seconds (LinuxCNC / Smoothieware reading).
+    /// Posts that own a [`post_profile::PostProfile`] override this to
+    /// honour `dwell_unit` — Mach3 / Mach4 / Centroid / most Fanuc
+    /// derivatives read `P` in milliseconds, so a profile that opts in
+    /// emits `seconds * 1000` here. Trait-default `drill_simple` /
+    /// `drill_peck` / `drill_chip_break` route through this method
+    /// (instead of the seconds-only free `fmt_dwell` helper) so a GRBL
+    /// post inheriting the defaults but carrying a Mach3-ms profile
+    /// stops producing 1000x dwell mismatches.
+    fn fmt_dwell_post(&self, seconds: f64) -> String {
+        fmt_dwell(seconds)
+    }
+
     /// G81 simple drill: rapid to (x, y, r), feed plunge to z, dwell, retract to r.
     /// `rate_v` is the plunge feed in mm/min; the default impl emits an
     /// F<rate_v> before each G1 plunge so the move lands at a known
@@ -178,7 +192,7 @@ pub trait PostProcessor {
         self.feedrate(rate_v);
         self.linear(None, None, Some(z));
         if dwell_sec > 0.0 {
-            self.raw(&format!("G4 P{}", fmt_dwell(dwell_sec)));
+            self.raw(&format!("G4 P{}", self.fmt_dwell_post(dwell_sec)));
         }
         self.linear(None, None, Some(r));
     }
@@ -208,7 +222,7 @@ pub trait PostProcessor {
             let next_z = (current_z - q).max(z);
             self.linear(None, None, Some(next_z));
             if dwell_sec > 0.0 {
-                self.raw(&format!("G4 P{}", fmt_dwell(dwell_sec)));
+                self.raw(&format!("G4 P{}", self.fmt_dwell_post(dwell_sec)));
             }
             // Full retract to clearance plane.
             self.move_to(None, None, Some(r));
@@ -263,7 +277,7 @@ pub trait PostProcessor {
             let next_z = (current_z - q).max(z);
             self.linear(None, None, Some(next_z));
             if dwell_sec > 0.0 {
-                self.raw(&format!("G4 P{}", fmt_dwell(dwell_sec)));
+                self.raw(&format!("G4 P{}", self.fmt_dwell_post(dwell_sec)));
             }
             current_z = next_z;
             if current_z <= z + 1e-9 {
@@ -379,6 +393,15 @@ pub trait PostProcessor {
     /// reinterpreted by FANUC / Mach3 as another drill at the canned
     /// cycle's modal Z / R.
     fn cancel_canned_cycle(&mut self) {}
+
+    /// e2mq: select the program's active work coordinate system. Called
+    /// once from [`program_begin`] with `Setup.wcs`. `LinuxCNC` / GRBL
+    /// write the explicit `G54..G59` word AND pin the same `Wcs` value
+    /// into `PostState.wcs` so `tool_z_shift` can emit a
+    /// `G10 L20 P<n>` against the active table (P1=G54, P2=G55, …).
+    /// HPGL ignores. Default no-op — posts that don't model a WCS just
+    /// drop the call.
+    fn select_wcs(&mut self, _wcs: crate::project::Wcs) {}
 }
 
 /// Public projection of [`PostState`] used by the per-op cache. Mirrors
@@ -664,6 +687,13 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     post.program_start();
     post.unit(setup.machine.unit);
     post.absolute(true);
+    // e2mq: pin the active WCS so the controller can't be left on a
+    // stale `G55`/`G56` from a prior program — and so per-tool
+    // `tool_z_shift` writes its `G10 L20 P<n>` against the right
+    // table. Emitted after the unit/absolute pragmas (the G54..G59
+    // word is itself a modal pragma; its position in the preamble
+    // is conventional) and before any motion. HPGL ignores.
+    post.select_wcs(setup.wcs);
     // sbtg: emit a known modal preamble before any motion so a
     // controller booted in a non-default state doesn't reinterpret our
     // arcs in XZ (G18), leave cutter-comp on from a prior program
@@ -1081,7 +1111,15 @@ fn multi_pass<P: PostProcessor>(
             // full depth — the lift+rapid+plunge below uses rate_v
             // (typically 100 mm/min) for that small final plunge step.
             let start = segments.first().map_or(plan.center, |s| s.start);
-            post.linear(None, None, Some(setup.mill.fast_move_z));
+            // i6c2: this lift to fast_move_z must be a G0 rapid, not a
+            // G1 cut-feed move. The helix-entry landing already cleared
+            // the helix radius worth of stock; the lift just retracts
+            // through air on the way to the contour-start rapid. The
+            // prior G1 added cycle time across every helix pass with
+            // zero safety benefit (the controller's rapid feed isn't
+            // any less safe in air than the cut feed). Pairs with the
+            // o1g3 fix at line 896 (final-retract G0).
+            post.move_to(None, None, Some(setup.mill.fast_move_z));
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
             post.feedrate(rate_v);
             post.linear(None, None, Some(z));
@@ -1254,6 +1292,14 @@ pub struct PostState {
     /// no spindle direction commanded yet.
     #[serde(default, skip)]
     pub last_spindle_dir: Option<SpindleDirection>,
+    /// e2mq: the active work coordinate system the gcode program runs
+    /// under. Threaded in from `Project.work_offset.wcs` via
+    /// `configure_post_state` and emitted as an explicit `G54..G59`
+    /// in `program_begin`. Without this, GRBL's `tool_z_shift` had to
+    /// hardcode `G10 L20 P1` (= G54) even when the user had picked
+    /// G55 — writing the per-tool z-shift into the wrong WCS.
+    #[serde(default, skip)]
+    pub wcs: crate::project::Wcs,
 }
 
 /// f78z: tracked coolant state for dedup. Mirrors the M-code we last
@@ -1292,6 +1338,7 @@ impl Default for PostState {
             unit_scale: 1.0,
             last_coolant: CoolantState::Unknown,
             last_spindle_dir: None,
+            wcs: crate::project::Wcs::G54,
         }
     }
 }
@@ -2741,6 +2788,208 @@ mod tests {
             swivel_present,
             "expected a swivel arc (G2/G3 with I/J) BEFORE the cut arc at line {cut_arc_idx} ({}); preceding lines: {preceding_lines:?}\n{g}",
             lines[cut_arc_idx],
+        );
+    }
+
+    #[test]
+    fn i6c2_post_helix_entry_lift_uses_g0_rapid() {
+        // i6c2: the lift to fast_move_z that happens AFTER emit_helix_entry
+        // (and before the rapid XY to the contour start + the rate_v plunge)
+        // must be a G0 rapid, not a G1 cut-feed move. The helix entry has
+        // already cleared the spiral disc; the lift travels through air on
+        // its way to the rapid. The prior G1 ran the lift at rate_h on
+        // every helix pass — pure cycle-time burn.
+        //
+        // Pair with the existing `gcode_helix_walk_to_start_uses_safe_feed`
+        // test which already checks the rapid-to-start step; here we
+        // assert the IMMEDIATE next line after the helix arcs is a G0 Z
+        // (the lift), not a G1 Z.
+        use crate::cam::setup::PlungeStrategy;
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 100;
+        setup.mill.depth = -2.0;
+        setup.mill.step = -2.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.mill.plunge = PlungeStrategy::Helix {
+            angle_deg: 3.0,
+            radius_mm: Some(2.0),
+        };
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Inside;
+        let sq = PolylineOffset {
+            segments: vec![
+                Segment::line(p(2.0, 2.0), p(28.0, 2.0), "0", 7),
+                Segment::line(p(28.0, 2.0), p(28.0, 28.0), "0", 7),
+                Segment::line(p(28.0, 28.0), p(2.0, 28.0), "0", 7),
+                Segment::line(p(2.0, 28.0), p(2.0, 2.0), "0", 7),
+            ],
+            closed: true,
+            level: 0,
+            is_pocket: 1,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[sq], &mut post);
+        let lines: Vec<&str> = g.lines().collect();
+        // Find the LAST helix arc line.
+        let last_arc_idx = lines
+            .iter()
+            .rposition(|l| l.starts_with("G2 ") || l.starts_with("G3 "))
+            .unwrap_or_else(|| panic!("expected a helix arc (G2/G3) in output:\n{g}"));
+        // The immediate next motion line must be a G0 Z (the lift), not G1.
+        let next_motion = lines[last_arc_idx + 1..]
+            .iter()
+            .find(|l| l.starts_with("G0") || l.starts_with("G1"))
+            .unwrap_or_else(|| {
+                panic!("expected a motion line after the last helix arc:\n{g}")
+            });
+        assert!(
+            next_motion.starts_with("G0") && next_motion.contains('Z'),
+            "post-helix lift must be G0 Z (rapid), got: {next_motion}\nfull gcode:\n{g}",
+        );
+    }
+
+    #[test]
+    fn nj6_feedrate_zero_skipped_in_post() {
+        // 4nj6: a tool with rate_v=0 or rate_h=0 (default-constructed,
+        // misconfigured laser-on-mill, or a regression that lets a zero
+        // slip past pipeline validation) must NEVER emit `F0` to the
+        // controller. LinuxCNC raises "negative or zero feed rate" and
+        // halts; GRBL returns error:11. The post is the defense of last
+        // resort: drop the F line, leaving the modal at its prior value.
+        let mut post = linuxcnc::Post::new();
+        post.feedrate(0);
+        let g = post.finish();
+        assert!(
+            !g.lines().any(|l| l.trim() == "F0"),
+            "post must skip F0 (controllers reject it); got:\n{g}",
+        );
+        // Sanity: a non-zero feed still emits.
+        let mut post2 = linuxcnc::Post::new();
+        post2.feedrate(500);
+        let g2 = post2.finish();
+        assert!(
+            g2.lines().any(|l| l.trim() == "F500"),
+            "non-zero feed should emit F<rate>; got:\n{g2}",
+        );
+    }
+
+    #[test]
+    fn pxyt_trait_default_drill_honors_ms_dwell_unit() {
+        // pxyt: GRBL inherits the default trait drill_simple / drill_peck /
+        // drill_chip_break impls (it has no canned cycle support). Those
+        // defaults previously emitted `G4 P<seconds>` via a seconds-only
+        // helper, ignoring the active profile's dwell_unit. A Mach3-metric
+        // profile (DwellUnit::Milliseconds) running on GRBL would emit
+        // `G4 P0.5` for an intended 500 ms dwell — a 1000x mismatch.
+        //
+        // After the fix, the trait routes through `fmt_dwell_post`, which
+        // GRBL delegates into LinuxCNC's `fmt_dwell_p` — that consults
+        // PostState.profile.dwell_unit and scales seconds → ms when asked.
+        use crate::gcode::post_profile::{DwellUnit, PostProfile};
+        let mut profile = PostProfile::grbl_default();
+        profile.dwell_unit = Some(DwellUnit::Milliseconds);
+        let mut post = grbl::Post::new();
+        post.set_post_profile(Some(&profile));
+        // Run a default-trait drill_simple; the 0.5 s dwell must render
+        // as a milliseconds integer (500), not seconds (0.5).
+        post.drill_simple(0.0, 0.0, -2.0, 1.0, 100, 0.5);
+        let g = post.finish();
+        assert!(
+            g.lines().any(|l| l.trim() == "G4 P500"),
+            "GRBL with ms profile should emit `G4 P500` for 0.5 s dwell; got:\n{g}",
+        );
+        assert!(
+            !g.lines().any(|l| l.trim() == "G4 P0.5"),
+            "GRBL with ms profile must NOT emit `G4 P0.5` (seconds); got:\n{g}",
+        );
+    }
+
+    #[test]
+    fn pxyt_trait_default_drill_seconds_unchanged_without_profile() {
+        // pxyt regression-guard: the LinuxCNC default (no profile, or
+        // DwellUnit::Seconds) must still emit `G4 P<seconds>` exactly
+        // as before — the fix is profile-driven, not blanket.
+        let mut post = grbl::Post::new();
+        post.drill_simple(0.0, 0.0, -2.0, 1.0, 100, 0.5);
+        let g = post.finish();
+        assert!(
+            g.lines().any(|l| l.trim() == "G4 P0.5"),
+            "GRBL without ms profile must keep emitting `G4 P0.5`; got:\n{g}",
+        );
+    }
+
+    #[test]
+    fn e2mq_program_begin_emits_explicit_g54_by_default() {
+        // e2mq: the program prologue must emit an explicit `G54`
+        // (the default WCS) so the controller isn't left modally on
+        // a stale G55..G59 from a prior program.
+        let setup = Setup::default(); // wcs defaults to G54
+        let mut post = linuxcnc::Post::new();
+        let _g = emit_polylines(&setup, &[], &mut post);
+        let g = post.finish();
+        assert!(
+            g.lines().any(|l| l.trim() == "G54"),
+            "program_begin must emit explicit G54 by default; got:\n{g}",
+        );
+    }
+
+    #[test]
+    fn e2mq_program_begin_emits_active_wcs_when_set() {
+        // e2mq: when the project pins `work_offset.wcs = G55`, the
+        // prologue must emit `G55` (NOT G54) so the controller is
+        // pinned to the same table the user authored against.
+        let mut setup = Setup::default();
+        setup.wcs = crate::project::Wcs::G55;
+        let mut post = linuxcnc::Post::new();
+        let _g = emit_polylines(&setup, &[], &mut post);
+        let g = post.finish();
+        assert!(
+            g.lines().any(|l| l.trim() == "G55"),
+            "program_begin must emit explicit G55 when Setup.wcs = G55; got:\n{g}",
+        );
+        assert!(
+            !g.lines().any(|l| l.trim() == "G54"),
+            "must NOT emit G54 when G55 is active; got:\n{g}",
+        );
+    }
+
+    #[test]
+    fn e2mq_grbl_tool_z_shift_targets_active_wcs_p_number() {
+        // e2mq: GRBL's tool_z_shift emits `G10 L20 P<n> Z<shift>`. The
+        // `P<n>` must match the active WCS (G54=P1, G55=P2, …, G59=P6),
+        // NOT a hardcoded P1. Pre-fix: a user running on G55 saw the
+        // z-shift written into G54's table — silent, no error, but the
+        // cuts landed at the wrong depth.
+        //
+        // Drive via select_wcs (the path program_begin uses) so the
+        // PostState.wcs is pinned identically to the live pipeline.
+        let mut post = grbl::Post::new();
+        post.select_wcs(crate::project::Wcs::G55);
+        post.tool_z_shift(1.5);
+        let g = post.finish();
+        assert!(
+            g.lines().any(|l| l.contains("G10 L20 P2 Z1.5")),
+            "GRBL tool_z_shift on G55 must emit `G10 L20 P2 Z1.5`; got:\n{g}",
+        );
+        assert!(
+            !g.lines().any(|l| l.contains("G10 L20 P1")),
+            "must NOT write into G54 (P1) when active WCS is G55; got:\n{g}",
+        );
+        // Sanity: G59 → P6
+        let mut post6 = grbl::Post::new();
+        post6.select_wcs(crate::project::Wcs::G59);
+        post6.tool_z_shift(2.0);
+        let g6 = post6.finish();
+        assert!(
+            g6.lines().any(|l| l.contains("G10 L20 P6 Z2")),
+            "GRBL tool_z_shift on G59 must emit `G10 L20 P6 Z2...`; got:\n{g6}",
         );
     }
 }

@@ -91,6 +91,16 @@ impl Post {
 }
 
 impl PostProcessor for Post {
+    fn fmt_dwell_post(&self, seconds: f64) -> String {
+        // pxyt: delegate to the inner LinuxCNC post so the trait-default
+        // drill_simple / drill_peck / drill_chip_break methods (GRBL
+        // doesn't override them — no canned cycle support) honour the
+        // active profile's dwell_unit. Without this, a GRBL build
+        // running a Mach3-metric / Centroid profile (DwellUnit::Milliseconds)
+        // would emit `G4 P0.5` (0.5 ms on that controller) for an
+        // intended 500 ms dwell — a 1000x mismatch.
+        self.inner.fmt_dwell_post(seconds)
+    }
     fn separation(&mut self) {
         self.inner.separation();
     }
@@ -274,12 +284,18 @@ impl PostProcessor for Post {
         // plau: GRBL's G92 semantics are firmware-revision-dependent —
         // some builds reset the G92 offset on power cycle / soft reset,
         // others persist it, and a few ignore the Z component
-        // altogether. Use `G10 L20 P1 Z<shift>` instead: that's the
-        // GRBL-spec way to overwrite the active WCS (G54 = P1) Z
-        // origin, with deterministic persistence (saved in EEPROM).
-        // Emit `G92.1` first to clear any leftover G92 offset that a
-        // prior program (or our own LinuxCNC peer) might have left
-        // active — otherwise the new G10 stacks on top.
+        // altogether. Use `G10 L20 P<n> Z<shift>` instead: that's the
+        // GRBL-spec way to overwrite the active WCS Z origin, with
+        // deterministic persistence (saved in EEPROM). Emit `G92.1`
+        // first to clear any leftover G92 offset that a prior program
+        // (or our own LinuxCNC peer) might have left active —
+        // otherwise the new G10 stacks on top.
+        //
+        // e2mq: target the *active* WCS — `PostState.wcs` is pinned at
+        // program_begin from `Setup.wcs` / `Project.work_offset.wcs`,
+        // so G54=P1, G55=P2, ..., G59=P6. The prior code hardcoded P1
+        // (G54) even when the user picked G55, silently writing the
+        // per-tool z-shift into the wrong table.
         if shift_mm.abs() < 1e-9 {
             return;
         }
@@ -289,9 +305,10 @@ impl PostProcessor for Post {
             shift_mm * self.inner.state.unit_scale,
             self.inner.state.decimal_separator,
         );
+        let p = self.inner.state.wcs.p_number();
         self.inner.raw(&format!("; z-shift: {s}"));
         self.inner.raw("G92.1");
-        self.inner.raw(&format!("G10 L20 P1 Z{s}"));
+        self.inner.raw(&format!("G10 L20 P{p} Z{s}"));
         // The new WCS origin invalidates our delta-encoded last_z;
         // mirror LinuxCNC's tool_z_shift bookkeeping.
         self.inner.state.last_z = None;
@@ -322,6 +339,12 @@ impl PostProcessor for Post {
     }
     fn set_token_ctx(&mut self, ctx: &crate::gcode::post_profile::TokenCtx) {
         self.inner.set_token_ctx(ctx);
+    }
+    fn select_wcs(&mut self, wcs: crate::project::Wcs) {
+        // e2mq: delegate to the inner LinuxCNC post so the WCS word
+        // and `PostState.wcs` are pinned identically — our overriden
+        // `tool_z_shift` reads `inner.state.wcs` for its `G10 L20 P<n>`.
+        self.inner.select_wcs(wcs);
     }
 }
 

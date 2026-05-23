@@ -265,6 +265,15 @@ fn axis_for(letter: char, axes: &crate::gcode::post_profile::AxesConfig) -> Axis
 }
 
 impl PostProcessor for Post {
+    fn fmt_dwell_post(&self, seconds: f64) -> String {
+        // pxyt: honour the active profile's dwell_unit when the
+        // trait-default drill_simple / drill_peck / drill_chip_break
+        // dispatch through here. LinuxCNC's own drill overrides go
+        // through `fmt_dwell_p` directly; this method exists so a
+        // GRBL or HPGL post inheriting the trait default still gets
+        // ms-rendered dwell when the user picked a Mach3-style profile.
+        self.fmt_dwell_p(seconds)
+    }
     fn separation(&mut self) {
         self.write("");
     }
@@ -290,6 +299,17 @@ impl PostProcessor for Post {
         }
     }
     fn feedrate(&mut self, rate: u32) {
+        // 4nj6: never emit F0. LinuxCNC raises "negative or zero feed
+        // rate" and halts; GRBL returns error:11. A default-constructed
+        // or misconfigured tool with rate_v=0 or rate_h=0 can reach
+        // this path even when pipeline validation tries to catch it.
+        // Skip and leave the modal F at whatever the prior cut set —
+        // worse than a perfect F-anchor, but better than killing the
+        // program at the first G1. The upstream pipeline warning
+        // (`zero_feed_rate_attempt`) lets the user fix the root cause.
+        if rate == 0 {
+            return;
+        }
         if self.state.last_rate != Some(rate) {
             // w9hd: feedrate is mm/min in pipeline; emit-units = mm/min × unit_scale.
             // For Inch projects that's in/min — matches G20 mode (controllers
@@ -733,6 +753,15 @@ impl PostProcessor for Post {
         // G80 cancels any canned cycle. The drill cycles set
         // `last_z = r` so subsequent moves know where the head is —
         // that's still accurate after G80, so we don't touch state.
+    }
+    fn select_wcs(&mut self, wcs: crate::project::Wcs) {
+        // e2mq: pin the active WCS in the prologue. Emit the explicit
+        // `G54..G59` word so the controller doesn't run against a
+        // stale modal left by a prior program. Pin into `PostState.wcs`
+        // so `tool_z_shift` can build its `G10 L20 P<n>` against the
+        // right table — G54=P1 .. G59=P6.
+        self.state.wcs = wcs;
+        self.write(wcs.gcode_word());
     }
     fn set_post_profile(&mut self, profile: Option<&PostProfile>) {
         self.state.profile = profile.cloned();

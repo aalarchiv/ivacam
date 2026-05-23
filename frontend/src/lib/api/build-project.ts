@@ -10,7 +10,9 @@ import type {
   TextAlignment,
   TextLayer,
   TextLayerKind,
+  WorkOffset,
 } from '../state/project.svelte';
+import { isDefaultWorkOffset } from '../state/project-types';
 import type {
   ChamferOp,
   ContourFields,
@@ -142,6 +144,16 @@ interface WireToolEntry {
   comment?: string;
   flute_length_mm?: number;
   shank_diameter_mm?: number;
+  /// q0kc: stickout between flute top and collet bottom (mm). Omit
+  /// when 0 / undefined so the wire payload stays compact.
+  stickout_length_mm?: number;
+  /// mmu8: laser kerf width (mm). Honored only when kind === 'laser_beam'.
+  /// Omit when undefined so the Rust sim falls back to its 0.15 mm
+  /// default.
+  kerf_mm?: number;
+  /// z1y0: spindle direction. Omit when default ('cw') so legacy
+  /// projects round-trip unchanged.
+  spindle_direction?: 'cw' | 'ccw';
   holder?: WireHolderShape;
 }
 
@@ -378,6 +390,18 @@ interface WireTextLayer {
   width_scale: number;
 }
 
+/// i5g4: wire shape for `wiac_core::project::WorkOffset`. Every field
+/// is serde-`skip_serializing_if = is_zero / is_default`, so we always
+/// omit the field entirely when at default (zero offset + G54) rather
+/// than emit `{x_mm:0, y_mm:0, ...}` — keeps payloads small and
+/// matches what the Rust side serializes.
+export interface WireWorkOffset {
+  x_mm?: number;
+  y_mm?: number;
+  z_mm?: number;
+  wcs?: 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59';
+}
+
 export interface WireProject {
   segments: ImportResponse['segments'];
   machine: WireMachine;
@@ -385,6 +409,9 @@ export interface WireProject {
   operations: WireOp[];
   fixtures?: WireFixture[];
   text_layers?: WireTextLayer[];
+  /// i5g4: program-level WCS offset. Omitted when default (all-zero @
+  /// G54) so the Rust serde-default round-trip matches.
+  work_offset?: WireWorkOffset;
 }
 
 interface ProjectStateView {
@@ -397,6 +424,9 @@ interface ProjectStateView {
   operations: OpEntry[];
   fixtures?: WireFixture[];
   textLayers?: TextLayer[];
+  /// i5g4 / j4tv: program-level WCS offset. Forwarded to the pipeline so
+  /// the sim can align its heightmap to the WCS frame.
+  workOffset?: WorkOffset;
 }
 
 /// Base64 → byte array. Used for embedded TTF/OTF font payloads on the
@@ -505,6 +535,17 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.comment !== undefined && t.comment !== '' ? { comment: t.comment } : {}),
     ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
+    // q0kc: stickout (mm). Skip on zero so the wire payload stays
+    // compact for the legacy "collet sits on flutes" common case.
+    ...(t.stickoutLengthMm !== undefined && t.stickoutLengthMm > 0
+      ? { stickout_length_mm: t.stickoutLengthMm }
+      : {}),
+    // mmu8: laser kerf width (mm). Skip on zero/undefined so the Rust
+    // sim falls back to its 0.15 mm default.
+    ...(t.kerfMm !== undefined && t.kerfMm > 0 ? { kerf_mm: t.kerfMm } : {}),
+    // z1y0: spindle direction. Skip default ('cw') so legacy projects
+    // round-trip unchanged on the wire.
+    ...(t.spindleDirection === 'ccw' ? { spindle_direction: 'ccw' as const } : {}),
     ...(t.holder !== undefined ? { holder: t.holder } : {}),
   };
 }
@@ -764,6 +805,22 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
   };
 }
 
+/// i5g4 / j4tv: convert the FE WorkOffset into its wire shape. Emits
+/// only the non-default scalars + a `wcs` field when not at G54 — the
+/// Rust serde derive uses `skip_serializing_if = is_zero_f64` /
+/// `Wcs::is_default` so this mirrors the canonical Rust payload.
+/// Returns null when the offset is fully at default; the caller drops
+/// the whole `work_offset` key in that case.
+function buildWorkOffset(w: WorkOffset): WireWorkOffset | null {
+  if (isDefaultWorkOffset(w)) return null;
+  const out: WireWorkOffset = {};
+  if (w.x_mm !== 0) out.x_mm = w.x_mm;
+  if (w.y_mm !== 0) out.y_mm = w.y_mm;
+  if (w.z_mm !== 0) out.z_mm = w.z_mm;
+  if (w.wcs !== 'G54') out.wcs = w.wcs;
+  return out;
+}
+
 /// Construct the wire `project` field for PipelineRequest. Returns null
 /// if the frontend has no operations defined yet — caller should fall
 /// back to the legacy segments+setup path.
@@ -771,6 +828,7 @@ export function buildProject(state: ProjectStateView): WireProject | null {
   if (state.operations.length === 0) return null;
   const imp = state.transformedImport;
   if (!imp) return null;
+  const workOffset = state.workOffset ? buildWorkOffset(state.workOffset) : null;
   return {
     segments: imp.segments,
     machine: buildMachine(state.machine),
@@ -780,6 +838,7 @@ export function buildProject(state: ProjectStateView): WireProject | null {
     ...(state.textLayers && state.textLayers.length > 0
       ? { text_layers: state.textLayers.map(buildTextLayer) }
       : {}),
+    ...(workOffset ? { work_offset: workOffset } : {}),
   };
 }
 

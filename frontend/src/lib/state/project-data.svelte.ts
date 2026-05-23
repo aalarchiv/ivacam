@@ -14,12 +14,14 @@
 /// `updateMachine` that wrap the right command in the history bus.
 
 import {
+  defaultWorkOffset,
   type Fixture,
   type ImportEntry,
   type MachineSettings,
   type StockConfig,
   type TextLayer,
   type ToolEntry,
+  type WorkOffset,
 } from './project-types';
 import type { OpEntry } from './op_types';
 import { DEFAULT_OSNAP_SETTINGS, type OSnapSettings } from '../canvas/osnap';
@@ -213,6 +215,13 @@ export class ProjectDataState {
   /// Project fixtures (clamps, dogs, vise jaws). Threaded into the
   /// sim's collision check so the cutter can't run them over.
   fixtures = $state<Fixture[]>([]);
+
+  /// i5g4: program-level WCS offset. All-zero @ G54 is the legacy
+  /// default ("geometry origin = WCS origin"); set when the user
+  /// zeros the spindle somewhere different from the drawing origin
+  /// so the sim aligns the heightmap to the WCS frame. Persisted in
+  /// the project file; full UI editor lands as P2 (abdk).
+  workOffset = $state<WorkOffset>(defaultWorkOffset());
 
   /// Persistent text entities — phase 1 of the text-engraving rework.
   /// Each entry holds the editable inputs (text content, font, size,

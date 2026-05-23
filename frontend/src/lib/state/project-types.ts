@@ -90,6 +90,12 @@ export interface StockConfig {
 
 export type CoolantMode = 'off' | 'mist' | 'flood';
 
+/// z1y0: per-tool spindle direction. `cw` (M3) is the default for most
+/// right-hand cutters; `ccw` (M4) is for left-hand / reverse-thread /
+/// mirror-helix tooling. Mirror of `wiac_core::project::SpindleDirection`,
+/// serde-`rename_all = "lowercase"`.
+export type SpindleDirection = 'cw' | 'ccw';
+
 export interface ToolEntry {
   id: number;
   name: string;
@@ -183,6 +189,20 @@ export interface ToolEntry {
   /// Shank diameter in mm. Undefined = same as `diameter`
   /// (parallel-shank bit). Drives the holder/shank collision sweep.
   shankDiameterMm?: number;
+  /// q0kc: free shank length between the top of the cutting flutes and
+  /// the bottom of the holder/collet (mm). Models reach-extension
+  /// tooling where the collet doesn't grip right above the flutes.
+  /// Undefined / 0 = legacy behavior (collet sits directly on flutes).
+  stickoutLengthMm?: number;
+  /// mmu8: laser kerf width (mm) — the heightmap-side spot radius the
+  /// sim carves at. Honored only when kind === 'laser_beam'. Undefined
+  /// = the legacy 0.15 mm default in the Rust sim.
+  kerfMm?: number;
+  /// z1y0: spindle direction the post commands when this tool is
+  /// selected. Default 'cw' (M3); 'ccw' (M4) for left-hand cutters /
+  /// reverse-thread / mirror-helix tooling. Skipped on the wire when
+  /// at default so legacy projects round-trip unchanged.
+  spindleDirection?: SpindleDirection;
   /// Holder geometry above the shank. Undefined = no holder check.
   holder?: HolderShape;
 }
@@ -481,6 +501,30 @@ export interface ImportEntry {
   lastImportPath?: string | null;
 }
 
+/// i5g4: gcode work-coordinate system identifier. Mirror of
+/// `wiac_core::project::Wcs` (serde `rename_all = "UPPERCASE"`).
+export type Wcs = 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59';
+
+/// i5g4: program-level work-coordinate offset between the geometry
+/// frame (where the DXF / SVG was drawn) and the gcode WCS origin
+/// (where the user zeros the spindle on the real machine). All-zeros
+/// + G54 = "geometry origin = WCS origin", the legacy default.
+/// Mirror of `wiac_core::project::WorkOffset`.
+export interface WorkOffset {
+  x_mm: number;
+  y_mm: number;
+  z_mm: number;
+  wcs: Wcs;
+}
+
+export function defaultWorkOffset(): WorkOffset {
+  return { x_mm: 0, y_mm: 0, z_mm: 0, wcs: 'G54' };
+}
+
+export function isDefaultWorkOffset(w: WorkOffset): boolean {
+  return w.x_mm === 0 && w.y_mm === 0 && w.z_mm === 0 && w.wcs === 'G54';
+}
+
 export interface ProjectFile {
   kind: 'wiac-project';
   version: 1;
@@ -493,6 +537,10 @@ export interface ProjectFile {
   operations?: OpEntry[];
   fixtures?: Fixture[];
   textLayers?: TextLayer[];
+  /// i5g4: program-level WCS offset. Undefined / all-zero @ G54 means
+  /// "geometry origin = WCS origin" (the legacy default; round-trips
+  /// for legacy files lacking the field).
+  workOffset?: WorkOffset;
 }
 
 /// Persistent text entity — editable text + typography + transform.

@@ -77,7 +77,10 @@ import type {
   TextLayer,
   TextLayerKind,
   ToolEntry,
+  Wcs,
+  WorkOffset,
 } from './project-types';
+import { defaultWorkOffset, isDefaultWorkOffset } from './project-types';
 import {
   applyFileTransformToPoint,
   combineImports,
@@ -88,7 +91,9 @@ export {
   DEFAULT_FIXTURE_COLOR,
   defaultAxesConfig,
   defaultFixtureName,
+  defaultWorkOffset,
   identityFileTransform,
+  isDefaultWorkOffset,
   isIdentityFileTransform,
   prettyOpKind,
 };
@@ -119,6 +124,8 @@ export type {
   TextLayer,
   TextLayerKind,
   ToolEntry,
+  Wcs,
+  WorkOffset,
 };
 // OpEntry union + variant types live in op_types.ts; re-export from
 // here for backwards-compat with call sites that imported them from
@@ -392,6 +399,16 @@ class ProjectState {
     this.data.stock = v;
   }
 
+  /// i5g4: program-level WCS offset (j4tv wiring). Defaults to all-zero
+  /// at G54, which serializes as "no work_offset field" on the wire so
+  /// legacy projects round-trip unchanged.
+  get workOffset(): WorkOffset {
+    return this.data.workOffset;
+  }
+  set workOffset(v: WorkOffset) {
+    this.data.workOffset = v;
+  }
+
   get tools(): ToolEntry[] {
     return this.data.tools;
   }
@@ -524,6 +541,9 @@ class ProjectState {
     this.fixtures = [];
     this.textLayers = [];
     this.stock = { ...this.stock };
+    // j4tv: workOffset is per-project (the user pre-zeros their machine
+    // at a different point per drawing), so reset to default like ops.
+    this.workOffset = defaultWorkOffset();
     this.generated = null;
     this.toolpathCumLen = null;
     this.toolpathTotalLen = 0;
@@ -1137,6 +1157,10 @@ class ProjectState {
       operations: this.operations,
       fixtures: this.fixtures,
       textLayers: this.textLayers,
+      // i5g4 / j4tv: only persist work_offset when non-default so legacy
+      // / unset projects keep their compact .wiac-project payloads. The
+      // restore() side defaults to defaultWorkOffset() when absent.
+      ...(isDefaultWorkOffset(this.workOffset) ? {} : { workOffset: this.workOffset }),
     };
   }
 
@@ -1174,6 +1198,12 @@ class ProjectState {
     if (Array.isArray(file.operations)) this.operations = file.operations;
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
     this.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
+    // j4tv: restore the program-level WCS offset. Legacy files lack
+    // this field — fall back to all-zero @ G54, which matches the
+    // pre-i5g4 behavior (geometry origin = WCS origin).
+    this.workOffset = file.workOffset
+      ? { ...defaultWorkOffset(), ...file.workOffset }
+      : defaultWorkOffset();
     this.selectedFixtureId = null;
     this.selectedOpId = null;
     // Loading a project resets to a clean undo baseline.

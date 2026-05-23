@@ -1329,7 +1329,9 @@ mod tests {
     #[test]
     fn engraver_clamps_carve_to_max_engagement_depth() {
         let profile = ToolProfile::Engraver {
-            tip_r: 0.25,
+            // tip_r must exceed cell-center offset (max 0.707mm at 1mm cells)
+            // so the engraver actually covers cell (ix+0.5, iy+0.5).
+            tip_r: 1.5,
             cone_half_angle: 30f32.to_radians(),
             max_engagement_depth: 1.5,
         };
@@ -1371,7 +1373,9 @@ mod tests {
     #[test]
     fn engraver_max_engagement_depth_partial_advance_matches_full() {
         let profile = ToolProfile::Engraver {
-            tip_r: 0.25,
+            // tip_r must exceed cell-center offset (max 0.707mm at 1mm cells)
+            // so the engraver actually covers cell (ix+0.5, iy+0.5).
+            tip_r: 1.5,
             cone_half_angle: 30f32.to_radians(),
             max_engagement_depth: 1.5,
         };

@@ -1020,11 +1020,16 @@ components:
       - unit
       type: object
     MachineMode:
-      enum:
-      - mill
-      - laser
-      - drag
-      type: string
+      oneOf:
+      - enum:
+        - mill
+        - laser
+        - drag
+        type: string
+      - description: 'zpuk: plasma torch. Emits a two-step Z entry — rapid to `pierce_height_mm` above stock, dwell `pierce_delay_sec` while the arc starts and pierces, then G1 to `cut_height_mm` for the cut. The torch-on / -off lines reuse the laser helpers (M3 S<power> / M5) since most plasma controllers accept the same idioms. Tool-on emit lives in [`crate::gcode::cut_tool_on`].'
+        enum:
+        - plasma
+        type: string
     MillConfig:
       properties:
         active:
@@ -1216,7 +1221,7 @@ components:
         - strategy
         - type
         type: object
-      - description: Drill cycle — point or circle smaller than tool. Carries a [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1 fallback for posts that don't support canned cycles). Also carries the Stufenfase post-drill chamfer width (rt1.20) and the optional pattern (kbx5 step 1 — Drill is the only kind patternable for now).
+      - description: Drill cycle — point or circle smaller than tool. Carries a [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1 fallback for posts that don't support canned cycles). Also carries the Stufenfase post-drill chamfer width (rt1.20), the optional pattern (kbx5 step 1 — Drill is the only kind patternable for now), and the optional spot/centerdrill pre-pass (r2af).
         properties:
           chamfer_after_width_mm:
             format: double
@@ -1229,6 +1234,11 @@ components:
             anyOf:
             - $ref: '#/components/schemas/PatternConfig'
             - type: 'null'
+          spot_first:
+            anyOf:
+            - $ref: '#/components/schemas/SpotConfig'
+            - type: 'null'
+            description: 'r2af: optional spot/centerdrill pre-pass. When `Some`, the driver emits a shallow spot-drill block at every hole center BEFORE the main drill block. Twist drills walk on hard / polished stock — the spot dimple locks the chisel edge so the main drill plunges on-nominal instead of drifting by tip/2+. None ⇒ legacy behaviour (no spot pre-pass).'
           type:
             enum:
             - drill
@@ -2208,6 +2218,10 @@ components:
           $ref: '#/components/schemas/TabsConfig'
         tool:
           $ref: '#/components/schemas/ToolConfig'
+        wcs:
+          allOf:
+          - $ref: '#/components/schemas/Wcs'
+          description: 'e2mq: program-active work coordinate system. Threaded in from `Project.work_offset.wcs` by the pipeline `setup_resolver` / `header_setup_for` builders. The post''s `program_begin` emits the explicit `G54..G59` from this and pins the same value into `PostState.wcs` so `tool_z_shift` writes its `G10 L20 P<n>` against the *active* WCS (P1=G54, …, P6=G59), not a hardcoded P1. Defaults to G54 — back-compat for projects that don''t set `work_offset.wcs`.'
       required:
       - leads
       - machine
@@ -2433,6 +2447,25 @@ components:
       - cw
       - ccw
       type: string
+    SpotConfig:
+      description: |-
+        r2af: spot / centerdrill pre-pass config attached to [`OpKind::Drill::spot_first`]. The driver emits a shallow drill block at every hole center BEFORE the main drill block, using the named spot tool. Hardens hole position on hard / polished stock where a twist drill's chisel edge would otherwise walk until it scratched a divot — costing 0.1–0.5 mm of positional accuracy.
+
+        Wire format: `{ "spot_depth_mm": -0.5, "spot_tool_id": 7 }`. `spot_depth_mm` is negative (depth below stock); positive values are clamped to 0 at emit time (= a no-op spot). The spot block uses `DrillCycle::Simple { dwell_sec: 0 }` regardless of the main op's cycle — pecking on a 0.5 mm spot is pointless.
+      properties:
+        spot_depth_mm:
+          description: Depth of the spot dimple below stock top (negative). Typical 0.3–1.0 mm. Positive / zero values disable the spot at emit time without an error.
+          format: double
+          type: number
+        spot_tool_id:
+          description: Tool id (matches [`crate::project::ToolEntry::id`]) of the spot / centerdrill cutter. The driver emits a toolchange envelope between the spot and the main drill block when the spot tool differs from the main drill's tool.
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - spot_depth_mm
+      - spot_tool_id
+      type: object
     TabPlacement:
       description: A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OpSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms.
       properties:
@@ -2684,6 +2717,11 @@ components:
       type: object
     ToolConfig:
       properties:
+        cut_height_mm:
+          default: 0.0
+          description: 'zpuk: plasma cut height (mm above stock top). Generally smaller than `pierce_height_mm`. Resolved from [`crate::project::ToolEntry::cut_height_mm`] at synth time; 0.0 ⇒ defaults to 1.5 mm at emit time.'
+          format: double
+          type: number
         default_xy_overlap:
           description: Per-tool default XY overlap (dr5). Resolved from [`crate::project::ToolEntry::default_xy_overlap`] at synth time; `None` = no tool-level default, fall through to global 0.5.
           format: double
@@ -2691,6 +2729,11 @@ components:
           - number
           - 'null'
         diameter:
+          format: double
+          type: number
+        drag_self_align_angle_rad:
+          default: 0.0
+          description: '0t9o: drag-knife self-alignment threshold in radians. The walk emitter skips the swivel + linear pre-move whenever the corner''s tangent change is below this threshold — real drag knives self-align below ~30° via the trailing offset. Resolved from [`crate::project::ToolEntry::drag_knife_self_align_angle_deg`] at synth time. 0.0 forces the legacy "swivel every corner" behaviour; the default 30° is applied in setup synthesis.'
           format: double
           type: number
         dragoff:
@@ -2716,6 +2759,16 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        pierce_delay_sec:
+          default: 0.0
+          description: 'zpuk: plasma pierce delay in seconds — torch dwells at pierce_height while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.'
+          format: double
+          type: number
+        pierce_height_mm:
+          default: 0.0
+          description: 'zpuk: plasma pierce height in mm (above stock top). The cut emitter does a rapid to this Z, dwells `pierce_delay_sec`, then plunges to `cut_height_mm` for the actual cut. Resolved from [`crate::project::ToolEntry::pierce_height_mm`] at synth time; 0.0 ⇒ plasma defaults at emit time (3.8 mm). Only honored when `setup.machine.mode == MachineMode::Plasma`.'
+          format: double
+          type: number
         pierce_sec:
           default: 0.0
           description: Laser pierce time (rt1.29) — seconds to dwell after laser-on before each plunge so the beam burns through stock. Resolved from `ToolEntry.laser_pierce_sec` at synth time; 0 = no pierce dwell.
@@ -2812,6 +2865,12 @@ components:
           type:
           - number
           - 'null'
+        cut_height_mm:
+          description: 'zpuk: plasma cut height (mm above stock, generally < pierce height). After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.'
+          format: double
+          type:
+          - number
+          - 'null'
         default_peck_step_mm:
           description: Default peck step (positive, mm) for `DrillCycle::Peck` / `ChipBreak` ops that don't set their own `peck_step_mm`. None = the op must specify its own.
           format: double
@@ -2833,6 +2892,12 @@ components:
         diameter:
           format: double
           type: number
+        drag_knife_self_align_angle_deg:
+          description: '0t9o: drag-knife self-alignment threshold in degrees. Corners whose tangent change is smaller than this angle skip the explicit swivel arc + linear pre-move — real drag knives self-align below ~30° via the trailing offset, so emitting a swivel for every chord-of-a-circle pivot bloats output and stresses the blade pivot. Honored only when `dragoff` is also set. `None` ⇒ 30° default; `Some(0.0)` forces the legacy "swivel every corner" behaviour.'
+          format: double
+          type:
+          - number
+          - 'null'
         dragoff:
           description: Drag-knife trailing offset (None for everything else).
           format: double
@@ -2904,6 +2969,18 @@ components:
           format: uint32
           minimum: 0.0
           type: integer
+        pierce_delay_sec:
+          description: 'zpuk: plasma pierce delay in seconds. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.'
+          format: double
+          type:
+          - number
+          - 'null'
+        pierce_height_mm:
+          description: 'zpuk: plasma pierce height (mm above stock). Honored only when the active machine mode is `Plasma`. The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.'
+          format: double
+          type:
+          - number
+          - 'null'
         plunge_rate:
           description: Plunge feedrate (mm/min).
           format: uint32

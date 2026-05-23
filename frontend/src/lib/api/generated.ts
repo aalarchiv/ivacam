@@ -577,8 +577,7 @@ export interface components {
             /** @description Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in `MachineDialog`. */
             work_area?: components["schemas"]["AxisLimits"];
         };
-        /** @enum {string} */
-        MachineMode: "mill" | "laser" | "drag";
+        MachineMode: ("mill" | "laser" | "drag") | "plasma";
         MillConfig: {
             active: boolean;
             /**
@@ -720,6 +719,8 @@ export interface components {
             chamfer_after_width_mm?: number | null;
             cycle: components["schemas"]["DrillCycle"];
             pattern?: components["schemas"]["PatternConfig"] | null;
+            /** @description r2af: optional spot/centerdrill pre-pass. When `Some`, the driver emits a shallow spot-drill block at every hole center BEFORE the main drill block. Twist drills walk on hard / polished stock — the spot dimple locks the chisel edge so the main drill plunges on-nominal instead of drifting by tip/2+. None ⇒ legacy behaviour (no spot pre-pass). */
+            spot_first?: components["schemas"]["SpotConfig"] | null;
             /** @enum {string} */
             type: "drill";
         } | {
@@ -1299,6 +1300,8 @@ export interface components {
             pockets: components["schemas"]["PocketConfig"];
             tabs: components["schemas"]["TabsConfig"];
             tool: components["schemas"]["ToolConfig"];
+            /** @description e2mq: program-active work coordinate system. Threaded in from `Project.work_offset.wcs` by the pipeline `setup_resolver` / `header_setup_for` builders. The post's `program_begin` emits the explicit `G54..G59` from this and pins the same value into `PostState.wcs` so `tool_z_shift` writes its `G10 L20 P<n>` against the *active* WCS (P1=G54, …, P6=G59), not a hardcoded P1. Defaults to G54 — back-compat for projects that don't set `work_offset.wcs`. */
+            wcs?: components["schemas"]["Wcs"];
         };
         SimDiagnostics: {
             warnings: components["schemas"]["SimWarning"][];
@@ -1387,6 +1390,23 @@ export interface components {
          * @enum {string}
          */
         SpindleDirection: "cw" | "ccw";
+        /**
+         * @description r2af: spot / centerdrill pre-pass config attached to [`OpKind::Drill::spot_first`]. The driver emits a shallow drill block at every hole center BEFORE the main drill block, using the named spot tool. Hardens hole position on hard / polished stock where a twist drill's chisel edge would otherwise walk until it scratched a divot — costing 0.1–0.5 mm of positional accuracy.
+         *
+         *     Wire format: `{ "spot_depth_mm": -0.5, "spot_tool_id": 7 }`. `spot_depth_mm` is negative (depth below stock); positive values are clamped to 0 at emit time (= a no-op spot). The spot block uses `DrillCycle::Simple { dwell_sec: 0 }` regardless of the main op's cycle — pecking on a 0.5 mm spot is pointless.
+         */
+        SpotConfig: {
+            /**
+             * Format: double
+             * @description Depth of the spot dimple below stock top (negative). Typical 0.3–1.0 mm. Positive / zero values disable the spot at emit time without an error.
+             */
+            spot_depth_mm: number;
+            /**
+             * Format: uint32
+             * @description Tool id (matches [`crate::project::ToolEntry::id`]) of the spot / centerdrill cutter. The driver emits a toolchange envelope between the spot and the main drill block when the spot tool differs from the main drill's tool.
+             */
+            spot_tool_id: number;
+        };
         /** @description A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OpSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms. */
         TabPlacement: {
             /**
@@ -1535,11 +1555,23 @@ export interface components {
         ToolConfig: {
             /**
              * Format: double
+             * @description zpuk: plasma cut height (mm above stock top). Generally smaller than `pierce_height_mm`. Resolved from [`crate::project::ToolEntry::cut_height_mm`] at synth time; 0.0 ⇒ defaults to 1.5 mm at emit time.
+             * @default 0
+             */
+            cut_height_mm: number;
+            /**
+             * Format: double
              * @description Per-tool default XY overlap (dr5). Resolved from [`crate::project::ToolEntry::default_xy_overlap`] at synth time; `None` = no tool-level default, fall through to global 0.5.
              */
             default_xy_overlap?: number | null;
             /** Format: double */
             diameter: number;
+            /**
+             * Format: double
+             * @description 0t9o: drag-knife self-alignment threshold in radians. The walk emitter skips the swivel + linear pre-move whenever the corner's tangent change is below this threshold — real drag knives self-align below ~30° via the trailing offset. Resolved from [`crate::project::ToolEntry::drag_knife_self_align_angle_deg`] at synth time. 0.0 forces the legacy "swivel every corner" behaviour; the default 30° is applied in setup synthesis.
+             * @default 0
+             */
+            drag_self_align_angle_rad: number;
             /**
              * Format: double
              * @description Drag-knife offset (if present, otherwise None).
@@ -1559,6 +1591,18 @@ export interface components {
              * @description Spindle warm-up pause in seconds.
              */
             pause: number;
+            /**
+             * Format: double
+             * @description zpuk: plasma pierce delay in seconds — torch dwells at pierce_height while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.
+             * @default 0
+             */
+            pierce_delay_sec: number;
+            /**
+             * Format: double
+             * @description zpuk: plasma pierce height in mm (above stock top). The cut emitter does a rapid to this Z, dwells `pierce_delay_sec`, then plunges to `cut_height_mm` for the actual cut. Resolved from [`crate::project::ToolEntry::pierce_height_mm`] at synth time; 0.0 ⇒ plasma defaults at emit time (3.8 mm). Only honored when `setup.machine.mode == MachineMode::Plasma`.
+             * @default 0
+             */
+            pierce_height_mm: number;
             /**
              * Format: double
              * @description Laser pierce time (rt1.29) — seconds to dwell after laser-on before each plunge so the beam burns through stock. Resolved from `ToolEntry.laser_pierce_sec` at synth time; 0 = no pierce dwell.
@@ -1647,6 +1691,11 @@ export interface components {
             corner_radius_mm?: number | null;
             /**
              * Format: double
+             * @description zpuk: plasma cut height (mm above stock, generally < pierce height). After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.
+             */
+            cut_height_mm?: number | null;
+            /**
+             * Format: double
              * @description Default peck step (positive, mm) for `DrillCycle::Peck` / `ChipBreak` ops that don't set their own `peck_step_mm`. None = the op must specify its own.
              */
             default_peck_step_mm?: number | null;
@@ -1662,6 +1711,11 @@ export interface components {
             default_xy_overlap?: number | null;
             /** Format: double */
             diameter: number;
+            /**
+             * Format: double
+             * @description 0t9o: drag-knife self-alignment threshold in degrees. Corners whose tangent change is smaller than this angle skip the explicit swivel arc + linear pre-move — real drag knives self-align below ~30° via the trailing offset, so emitting a swivel for every chord-of-a-circle pivot bloats output and stresses the blade pivot. Honored only when `dragoff` is also set. `None` ⇒ 30° default; `Some(0.0)` forces the legacy "swivel every corner" behaviour.
+             */
+            drag_knife_self_align_angle_deg?: number | null;
             /**
              * Format: double
              * @description Drag-knife trailing offset (None for everything else).
@@ -1715,6 +1769,16 @@ export interface components {
              * @description Spindle warm-up pause in seconds applied once per used tool by the time estimator. Mirrors `ToolConfig.pause`.
              */
             pause?: number;
+            /**
+             * Format: double
+             * @description zpuk: plasma pierce delay in seconds. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.
+             */
+            pierce_delay_sec?: number | null;
+            /**
+             * Format: double
+             * @description zpuk: plasma pierce height (mm above stock). Honored only when the active machine mode is `Plasma`. The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.
+             */
+            pierce_height_mm?: number | null;
             /**
              * Format: uint32
              * @description Plunge feedrate (mm/min).

@@ -417,6 +417,29 @@ pub fn take_nocontour_allowance_ignored() -> Vec<NocontourAllowanceIgnored> {
 /// guard, NOT a project setting.
 pub const POCKET_CASCADE_RING_CAP: usize = 4096;
 
+/// cpym: recorded when [`pocket_zigzag`] bails because the requested
+/// stride is degenerate (≤ 1e-6 mm, non-finite, or NaN). The pipeline
+/// drains this via [`take_zigzag_stride_degenerate`] and emits a
+/// `zigzag_stride_clamped_below_minimum` warning attributed to the op.
+/// Pre-cpym the stride was silently clamped to 0.1 mm and the user got
+/// coarser scallops than requested with no signal.
+#[derive(Debug, Clone, Copy)]
+pub struct ZigzagStrideDegenerate {
+    pub stride_mm: f64,
+}
+
+thread_local! {
+    static ZIGZAG_STRIDE_DEGENERATE: std::cell::RefCell<Vec<ZigzagStrideDegenerate>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Drain (and clear) any `ZigzagStrideDegenerate` records stashed by
+/// [`pocket_zigzag`] on this thread.
+#[must_use]
+pub fn take_zigzag_stride_degenerate() -> Vec<ZigzagStrideDegenerate> {
+    ZIGZAG_STRIDE_DEGENERATE.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
 /// Generate a zigzag (raster) pocket fill within `boundary`. The fill is
 /// a series of horizontal sweep lines at the given Y `stride`, each
 /// segment trimmed to the polygon's interior. Adjacent strokes are
@@ -519,7 +542,23 @@ pub fn pocket_zigzag(
     if boundary.len() < 3 || stride <= 0.0 {
         return Vec::new();
     }
-    let stride = stride.max(0.1);
+    // cpym: previously clamped stride.max(0.1) silently, so a 0.05 mm
+    // mirror-finish raster was bumped to 0.1 mm — user-set scallop
+    // bounds went unenforced and the only diagnosis was measuring the
+    // finished part. The zigzag algorithm tolerates arbitrarily small
+    // strides (it just emits more rows); only a strictly zero / NaN
+    // stride is degenerate. We bail to the no-strokes path for sub-fp
+    // sizes and stash a thread-local record so the pipeline driver can
+    // surface a `zigzag_stride_clamped_below_minimum` warning rather
+    // than burying the toolpath silently.
+    if !stride.is_finite() || stride < 1e-6 {
+        ZIGZAG_STRIDE_DEGENERATE.with(|s| {
+            s.borrow_mut().push(ZigzagStrideDegenerate {
+                stride_mm: stride,
+            });
+        });
+        return Vec::new();
+    }
     let (min_y, max_y) = boundary
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
@@ -625,7 +664,17 @@ pub fn pocket_zigzag(
                 std::mem::swap(&mut s.0, &mut s.1);
             }
         }
-        flip = !flip;
+        // a7v4: only flip parity if the current row actually emitted a
+        // stroke. Empty rows (single-vertex polygon point, scanline
+        // tangent to a corner, every interval swallowed by an island)
+        // used to flip anyway — when the next non-empty row arrived it
+        // ran in the "wrong" direction, doubling cutter travel between
+        // rows and breaking the serpent topology in places where the
+        // user could see it.
+        let row_emitted = !strokes.is_empty();
+        if row_emitted {
+            flip = !flip;
+        }
         for ((a, b), force_break) in strokes.into_iter().zip(split_marks.into_iter()) {
             let mut needs_break = force_break;
             // Cross-row bridge sanity: when prev_end is on one side of
@@ -827,7 +876,18 @@ pub fn inflate_islands_by_tool_radius(
     islands: &[Vec<Point2>],
     tool_radius: f64,
 ) -> Vec<Vec<Point2>> {
-    if tool_radius <= 1e-9 {
+    inflate_islands_by_delta(islands, tool_radius)
+}
+
+/// Internal Minkowski-sum inflation by an arbitrary positive delta.
+/// Shared by [`inflate_islands_by_tool_radius`] and the cascade's
+/// over-inflate path (sbtf). Negative / non-finite deltas pass islands
+/// through unchanged.
+fn inflate_islands_by_delta(
+    islands: &[Vec<Point2>],
+    delta: f64,
+) -> Vec<Vec<Point2>> {
+    if !delta.is_finite() || delta <= 1e-9 {
         return islands.to_vec();
     }
     let mut out: Vec<Vec<Point2>> = Vec::with_capacity(islands.len());
@@ -848,7 +908,7 @@ pub fn inflate_islands_by_tool_radius(
             .collect();
         let inflated = inflate_paths_d(
             &vec![path],
-            tool_radius,
+            delta,
             JoinType::Round,
             EndType::Polygon,
             2.0,
@@ -866,6 +926,42 @@ pub fn inflate_islands_by_tool_radius(
         }
     }
     out
+}
+
+/// sbtf: extra island inflation needed for the inward cascade when the
+/// per-pass `step` is smaller than `tool_radius` (high overlap, e.g. 80%
+/// engagement ⇒ step ≈ 0.2·tool_radius). Callers pass islands that are
+/// ALREADY pre-inflated by `tool_radius` (the knd4 contract); the
+/// cascade's first ring then offsets boundary+islands inward by `-step`.
+/// When `step < tool_radius`, the cutter centerline lands at `step` mm
+/// from the raw island wall — `tool_r − step` short of full clearance.
+/// The cutter EDGE then intrudes into the raised feature by `tool_r −
+/// step` mm.
+///
+/// To restore full clearance on the first ring around the island we
+/// apply an EXTRA `max(0, tool_r − step)` of outward inflation here.
+/// After the cascade's `-step`, the cutter centerline sits at
+/// `tool_r + (tool_r − step) − step = 2·(tool_r − step)` from the raw
+/// wall when step < tool_r; the cutter edge keeps a clean
+/// `tool_r − step` clearance from the raw wall (no intrusion). When
+/// step ≥ tool_r the extra inflation is zero and behaviour matches the
+/// pre-sbtf path.
+///
+/// `islands` MUST already be the knd4-inflated polygons (the cascade /
+/// zigzag / spiral contract). `step` is the per-ring cascade inward
+/// delta — same value passed as the third argument to
+/// [`pocket_cascade_with_islands`].
+#[must_use]
+pub fn over_inflate_islands_for_high_overlap(
+    islands: &[Vec<Point2>],
+    tool_radius: f64,
+    step: f64,
+) -> Vec<Vec<Point2>> {
+    let extra = (tool_radius - step).max(0.0);
+    if extra <= 1e-9 {
+        return islands.to_vec();
+    }
+    inflate_islands_by_delta(islands, extra)
 }
 
 /// Single-step inward offset of a boundary + holes by `delta` (r8ut).
@@ -1363,6 +1459,18 @@ pub fn pocket_for_object(
     // The caller passes the step (typically tool_diameter * (1 - overlap));
     // we clamp to a safe minimum so a 100% overlap doesn't loop forever.
     let step = xy_step.max(tool_radius * 0.05);
+    // sbtf: islands handed in are already knd4-inflated by tool_radius
+    // (cutter-centerline safe boundary). When the cascade per-pass step
+    // is SMALLER than tool_radius (high overlap, e.g. 80% engagement ⇒
+    // step ≈ 0.2·tool_r), the cascade's first inward step around the
+    // island lands the cutter centerline only `step` away from the raw
+    // island wall — the cutter edge intrudes by `tool_r − step`. Apply
+    // an EXTRA outward inflation of `max(0, tool_r − step)` for the
+    // cascade / spiral paths so the first ring keeps clearance. Zigzag
+    // /trochoidal stay on the bare knd4 inflation; zigzag's per-row
+    // inset is already tool_r and trochoidal's loop disc enforces its
+    // own engagement bound.
+    let cascade_islands = over_inflate_islands_for_high_overlap(islands, tool_radius, step);
     for offset in &boundary {
         if !nocontour {
             // When there's no XY allowance AND no dual-tool finish,
@@ -1404,10 +1512,17 @@ pub fn pocket_for_object(
                 // strokes should sit a tool_r inboard so they don't
                 // overlap the wall.
                 let zigzag_tool_d = if nocontour { 0.0 } else { tool_radius * 2.0 };
+                // cpym: pre-fix this wrapper clamped step to 0.1 mm
+                // before handing to pocket_zigzag, defeating fine-finish
+                // strides (e.g. 0.05 mm mirror finish). pocket_zigzag now
+                // tolerates arbitrarily small finite strides and records
+                // a ZigzagStrideDegenerate event only when the stride is
+                // truly non-finite or below the FP working precision —
+                // the pipeline drains that into a user-visible warning.
                 let chains = pocket_zigzag_angled(
                     &pts,
                     islands,
-                    step.max(0.1),
+                    step,
                     zigzag_tool_d,
                     angle_deg,
                 );
@@ -1436,8 +1551,11 @@ pub fn pocket_for_object(
                 // shortens the bridge segment between rings and gives
                 // the path a natural "spiral inward" shape. Approximates
                 // an Archimedean spiral well enough for pocket clearing.
+                //
+                // sbtf: pass the over-inflated islands so the first ring
+                // doesn't intrude when step < tool_radius (high overlap).
                 let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
-                    &pts, islands, step,
+                    &pts, &cascade_islands, step,
                 );
                 if rings.is_empty() {
                     continue;
@@ -1449,7 +1567,13 @@ pub fn pocket_for_object(
                 // every bridge must stay inside it. If any bridge fails
                 // the test we abandon spiral and let the caller fall back
                 // to cascade emission, which doesn't cut bridges.
-                match stitch_rings_to_spiral(&rings, islands, &offset.layer, offset.color) {
+                //
+                // sbtf: the stitcher tests bridges against the islands
+                // it walks around — pass the same over-inflated set the
+                // rings were generated against so the safe-bridge check
+                // sees the same geometry.
+                match stitch_rings_to_spiral(&rings, &cascade_islands, &offset.layer, offset.color)
+                {
                     Some(segs) if !segs.is_empty() => {
                         out.push(PolylineOffset {
                             segments: segs,
@@ -1508,8 +1632,12 @@ pub fn pocket_for_object(
             PocketEmit::Cascade => {}
         }
 
+        // sbtf: cascade emission uses the over-inflated island set so the
+        // first ring keeps clearance from raw island walls when
+        // step < tool_radius (high overlap). The over-inflation is a
+        // no-op when step >= tool_radius (matches the pre-sbtf path).
         let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
-            &pts, islands, step,
+            &pts, &cascade_islands, step,
         );
         // No silent fallback to zigzag here: the user picked cascade or
         // spiral explicitly, and substituting zigzag when no ring fits
@@ -1927,6 +2055,47 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
     let n = offset.segments.len();
     let pts: Vec<(Point2, f64)> = offset.segments.iter().map(|s| (s.start, s.bulge)).collect();
 
+    // fksa: derive an adaptive `perp_tol` from the boundary's bbox
+    // diagonal. The prior fixed 0.25 mm tolerance was tuned for desktop
+    // CNC scales (cm/dm); at sub-mm jewelry / engraving scales (5 mm
+    // object with a 0.3 mm endmill) it was wider than the entire
+    // workpiece, picking the nearest WRONG wall as the dip target.
+    // Pattern: max(1e-3 mm, 1e-3 × bbox_diag) — same shape as the sj4t
+    // chaining fuzzy fix. A 5 mm object gets 5e-3 mm; a 500 mm sign
+    // gets 0.5 mm (looser than the old 0.25, which is fine — long
+    // walls and far endpoints want extra slack).
+    let perp_tol = {
+        let (mut mnx, mut mny, mut mxx, mut mxy) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
+        for s in boundary_segments {
+            for p in [s.start, s.end] {
+                if p.x < mnx {
+                    mnx = p.x;
+                }
+                if p.y < mny {
+                    mny = p.y;
+                }
+                if p.x > mxx {
+                    mxx = p.x;
+                }
+                if p.y > mxy {
+                    mxy = p.y;
+                }
+            }
+        }
+        if mnx.is_finite() && mny.is_finite() && mxx.is_finite() && mxy.is_finite() {
+            let diag = (mxx - mnx).hypot(mxy - mny);
+            (diag * 1e-3).max(1e-3)
+        } else {
+            // Degenerate / empty boundary — keep the floor.
+            1e-3_f64
+        }
+    };
+
     let mut emitted: Vec<(f64, f64, f64)> = Vec::with_capacity(n * 2);
 
     for i in 0..n {
@@ -1985,12 +2154,13 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
         // intersect each boundary segment as a line-segment-vs-ray test
         // so long-wall reflex corners get their dip too.
         //
-        // perp_tol stays at 0.25 mm — that's the existing endpoint-mode
-        // tolerance, retained so the endpoint hits this loop still picks
-        // (a long wall whose closest point on the ray IS its endpoint
-        // resolves identically). Vertex-endpoint hits are picked up by
-        // the segment-distance path with a non-negative `t` clamp.
-        let perp_tol = 0.25_f64;
+        // fksa: perp_tol is now derived ONCE from the boundary bbox
+        // diagonal (see top of fn) so sub-mm jewelry and metre-scale
+        // signs both get a tolerance proportional to the working scale.
+        // The endpoint loop below still uses `perp_tol` directly — long
+        // walls whose closest point on the ray IS their endpoint
+        // continue to resolve here; the segment-distance path picks up
+        // mid-edge hits.
         let mut nearest: Option<f64> = None;
         let mut consider = |along: f64| {
             if along <= 1e-6 {
@@ -3204,5 +3374,309 @@ mod tests {
             max_x > 40.0 - 2.0 * tool_r + 0.5,
             "outermost stroke max_x {max_x:.3} is still ≤ 40 - 2·tool_r — pre-fix double-inset still in effect"
         );
+    }
+
+    /// cpym regression: a fine-finish stride (0.05 mm, well below the
+    /// old 0.1 mm silent clamp) must actually produce rows at the
+    /// requested density. Pre-fix the function ran with stride = 0.1
+    /// regardless of the user's value, halving the raster density and
+    /// hiding the loss behind the silent clamp.
+    #[test]
+    fn pocket_zigzag_honors_sub_clamp_stride() {
+        let _ = take_zigzag_stride_degenerate();
+        // 10 × 10 square pocket. Cutter diameter zero (nocontour-style
+        // — we want the stroke count, not the inset behaviour).
+        let boundary = vec![p(0.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(0.0, 10.0)];
+        let coarse = pocket_zigzag(&boundary, &[], 0.5, 0.0);
+        let fine = pocket_zigzag(&boundary, &[], 0.05, 0.0);
+        let coarse_strokes: usize = coarse.iter().map(|c| c.len()).sum();
+        let fine_strokes: usize = fine.iter().map(|c| c.len()).sum();
+        // 10x coarser stride ⇒ roughly 10x fewer strokes. Pre-fix both
+        // collapsed onto the 0.1 mm clamp and produced ~the same count.
+        assert!(
+            fine_strokes >= coarse_strokes * 5,
+            "fine-stride raster ({} strokes at 0.05 mm) should be much denser than coarse ({} at 0.5 mm) — pre-cpym both clamped to 0.1 mm",
+            fine_strokes,
+            coarse_strokes
+        );
+        // No degeneracy warning at 0.05 mm — that's well above the 1e-6
+        // mm floor.
+        assert!(
+            take_zigzag_stride_degenerate().is_empty(),
+            "0.05 mm stride must not record a degeneracy event — only sub-fp strides do"
+        );
+    }
+
+    /// cpym regression: a truly degenerate stride (sub-fp) must record
+    /// a `ZigzagStrideDegenerate` event so the pipeline can surface a
+    /// `zigzag_stride_clamped_below_minimum` warning instead of
+    /// silently emitting no toolpath.
+    #[test]
+    fn pocket_zigzag_records_degenerate_stride() {
+        let _ = take_zigzag_stride_degenerate();
+        let boundary = vec![p(0.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(0.0, 10.0)];
+        let chains = pocket_zigzag(&boundary, &[], 1e-9, 0.0);
+        assert!(chains.is_empty(), "sub-fp stride must produce no strokes");
+        let drained = take_zigzag_stride_degenerate();
+        assert_eq!(
+            drained.len(),
+            1,
+            "exactly one degeneracy event expected for sub-fp stride"
+        );
+        assert!(drained[0].stride_mm < 1e-6);
+    }
+
+    /// a7v4 regression: an island that wholly spans one or more
+    /// scanlines (so the row emits no strokes) must NOT flip the
+    /// serpent parity. Pre-fix the bookkeeping toggled `flip`
+    /// unconditionally; the next non-empty row ran in the wrong
+    /// direction relative to the previous non-empty row, doubling
+    /// cutter travel across the island.
+    ///
+    /// Setup: 20-mm-tall pocket spanning x ∈ [0..20]. An island
+    /// covering x ∈ [0..20] (full width) for y ∈ [5..15] — i.e. the
+    /// island swallows several scanlines wholesale, producing
+    /// consecutive empty rows. With tool_diameter = 1 mm and
+    /// stride = 1 mm, scanlines at y = 0.5, 1.5, … 19.5 each emit one
+    /// stroke unless they fall inside the island band (5..15) — those
+    /// rows emit zero strokes (the entire outer-pair gets swallowed by
+    /// the island interval).
+    ///
+    /// Pre-a7v4: `flip` toggled on every empty row in the band ⇒ the
+    /// row at y = 15.5 (first non-empty after the band) ran in the
+    /// SAME direction as the row at y = 4.5 (last non-empty before).
+    /// Post-fix: the band leaves parity unchanged ⇒ y = 15.5 runs
+    /// OPPOSITE to y = 4.5.
+    #[test]
+    fn pocket_zigzag_empty_row_preserves_flip_parity() {
+        let boundary = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];
+        // Full-width island swallowing y ∈ [4..13] (an ODD-sized
+        // band — picked so pre-fix's per-row toggle gives an
+        // OBSERVABLY different parity than post-fix's "no toggle on
+        // empty row"). Scanlines run at y = 0.5, 1.5, … 19.5; the
+        // band of empty rows is y = 4.5, 5.5, 6.5, 7.5, 8.5, 9.5,
+        // 10.5, 11.5, 12.5 (9 rows). Pre-fix: 9 toggles flip parity;
+        // post-fix: 0 toggles preserve it.
+        let island = vec![p(-1.0, 4.0), p(21.0, 4.0), p(21.0, 13.0), p(-1.0, 13.0)];
+        let chains = pocket_zigzag(&boundary, &[island], 1.0, 1.0);
+        assert!(!chains.is_empty(), "expected at least one chain");
+        // Collect every horizontal stroke (ignoring connectors), then
+        // pick the first non-empty rows on either side of the gap.
+        let mut strokes: Vec<(f64, f64, f64)> = Vec::new();
+        for chain in &chains {
+            for s in chain {
+                if (s.start.y - s.end.y).abs() < 1e-6 {
+                    strokes.push((s.start.y, s.start.x, s.end.x));
+                }
+            }
+        }
+        strokes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // Find the last stroke with y < 4 (below the island band) and
+        // the first stroke with y > 13 (above the band).
+        let last_below = strokes
+            .iter()
+            .rev()
+            .find(|s| s.0 < 4.0)
+            .copied()
+            .expect("expected at least one row below the island band");
+        let first_above = strokes
+            .iter()
+            .find(|s| s.0 > 13.0)
+            .copied()
+            .expect("expected at least one row above the island band");
+        // Direction sign: +1 = L→R, -1 = R→L.
+        let dir_below = (last_below.2 - last_below.1).signum();
+        let dir_above = (first_above.2 - first_above.1).signum();
+        // Post-a7v4: with 9 empty rows in the band (odd count),
+        // pre-fix would flip parity 9 times → next non-empty row
+        // matches dir_below. Post-fix the band is parity-neutral →
+        // next non-empty row is OPPOSITE to dir_below (the LAST
+        // non-empty row's toggle still applies). Assert opposite.
+        assert!(
+            (dir_below + dir_above).abs() < 0.5,
+            "a7v4 regression: first row above empty-band must run opposite to last row below — got dir_below={dir_below}, dir_above={dir_above}"
+        );
+    }
+
+    /// sbtf regression: at high overlap (xy_step < tool_radius) the
+    /// pre-fix cascade's first ring around an island sat too close to
+    /// the raw island wall — the cutter edge intruded by (tool_r −
+    /// step) mm. With the over-inflation fix the cutter edge MUST stay
+    /// outside the raw island for any step ≤ tool_radius.
+    #[test]
+    fn pocket_cascade_high_overlap_keeps_island_clearance() {
+        // 50 × 50 pocket, 10 × 10 island centered at (25, 25). Tool
+        // radius = 2 mm. Step = 0.4 mm (80% overlap — well below
+        // tool_radius). Pre-fix: first cascade ring around island sits
+        // at 0.4 mm from raw wall ⇒ cutter EDGE bites in by 1.6 mm.
+        let outer = vec![p(0.0, 0.0), p(50.0, 0.0), p(50.0, 50.0), p(0.0, 50.0)];
+        let raw_island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
+        let tool_r = 2.0_f64;
+        let step = 0.4_f64; // < tool_r ⇒ pre-fix intrusion of 1.6 mm
+        let knd4_islands = inflate_islands_by_tool_radius(&[raw_island.clone()], tool_r);
+        let over_inflated =
+            over_inflate_islands_for_high_overlap(&knd4_islands, tool_r, step);
+        // The over-inflated boundary must sit MEASURABLY further from
+        // the raw island wall than the bare knd4 inflation.
+        let bbox = |pts: &[Point2]| {
+            let (mut mnx, mut mxx) =
+                (f64::INFINITY, f64::NEG_INFINITY);
+            for p in pts {
+                if p.x < mnx { mnx = p.x; }
+                if p.x > mxx { mxx = p.x; }
+            }
+            (mnx, mxx)
+        };
+        let (kmin, _) = bbox(&knd4_islands[0]);
+        let (omin, _) = bbox(&over_inflated[0]);
+        // Raw island bbox min_x = 20. knd4 ≈ 18 (tool_r=2 outward).
+        // sbtf over-inflate ≈ 18 - (tool_r - step) = 16.4.
+        assert!(
+            omin + 0.05 < kmin,
+            "sbtf over-inflate must extend further than knd4 (over={omin:.3} vs knd4={kmin:.3})"
+        );
+        // Run the cascade against the over-inflated islands. Every
+        // ring's vertex must keep the cutter EDGE outside the raw
+        // island — i.e. every centerline point must sit ≥ tool_r from
+        // the raw island wall.
+        let rings = pocket_cascade_with_islands(&outer, &over_inflated, step);
+        assert!(!rings.is_empty(), "cascade produced no rings");
+        // Check the FIRST ring around the island (the one that
+        // previously intruded). The cascade returns multiple rings;
+        // every ring vertex near the island must keep ≥ tool_r
+        // clearance from the raw island wall.
+        let dist_to_raw = |pt: Point2| -> f64 {
+            // Euclidean distance from `pt` to the raw [20..30]²
+            // island. For points outside the rectangle this is the
+            // perpendicular drop onto the nearest edge / corner; for
+            // points inside it's negative (signed distance with the
+            // outside positive).
+            let dx_out = ((20.0 - pt.x).max(0.0)).max(pt.x - 30.0);
+            let dy_out = ((20.0 - pt.y).max(0.0)).max(pt.y - 30.0);
+            let inside_x = pt.x > 20.0 && pt.x < 30.0;
+            let inside_y = pt.y > 20.0 && pt.y < 30.0;
+            if inside_x && inside_y {
+                // Inside the rectangle: signed distance to nearest
+                // edge, negated so "inside" is negative.
+                let dx_in = (pt.x - 20.0).min(30.0 - pt.x);
+                let dy_in = (pt.y - 20.0).min(30.0 - pt.y);
+                -(dx_in.min(dy_in))
+            } else {
+                // Outside in at least one axis: Euclidean dist to the
+                // nearest edge or corner.
+                (dx_out * dx_out + dy_out * dy_out).sqrt()
+            }
+        };
+        // Find vertices near the island wall (< 2·tool_r away on the
+        // outside) — these are the first ring around the island.
+        let mut near: Vec<f64> = Vec::new();
+        for ring in &rings {
+            for pt in ring {
+                let d = dist_to_raw(*pt);
+                if (0.0..2.0 * tool_r).contains(&d) {
+                    near.push(d);
+                }
+            }
+        }
+        assert!(
+            !near.is_empty(),
+            "no cascade vertex sat near the island — test geometry mis-sized"
+        );
+        let nearest = near.iter().cloned().fold(f64::INFINITY, f64::min);
+        // Cutter EDGE clearance = nearest_centerline_dist - tool_r.
+        // Must be ≥ 0 (allowing FP slop). Pre-fix this would have been
+        // ≈ step - tool_r = -1.6 mm.
+        let edge_clearance = nearest - tool_r;
+        assert!(
+            edge_clearance >= -0.05,
+            "cutter EDGE intrudes into raw island by {:.3} mm (nearest centerline {:.3}, tool_r {tool_r}) — sbtf regression",
+            -edge_clearance,
+            nearest
+        );
+    }
+
+    /// fksa regression: at sub-mm scale (5 mm part, 0.3 mm endmill) the
+    /// pre-fix overcut's 0.25 mm perp_tol was wider than the entire
+    /// part bbox, picking the nearest WRONG wall as the overcut probe
+    /// target. With the bbox-scaled tolerance the function either picks
+    /// the right wall or makes no dip at all (rather than gouging an
+    /// arbitrary direction). The CHECK here is the inverse: a known
+    /// reflex corner at sub-mm scale must not gouge the offset into a
+    /// totally-wrong direction (>= 2 × intended dip).
+    #[test]
+    fn apply_overcut_scales_perp_tol_with_bbox_at_sub_mm_scale() {
+        // L-shape boundary at 5 mm scale, CCW. Reflex corner sits at
+        // (2.5, 2.5); short arms — 2.5 mm each. Pre-fix the 0.25 mm
+        // perp_tol pulled in the FAR wall (at x=5) as a candidate
+        // because it sat within 0.25 mm of the outward bisector ray's
+        // tangent — wrong wall, gouge in the wrong direction.
+        let boundary_segs = vec![
+            Segment::line(p(0.0, 0.0), p(5.0, 0.0), "0", 7),
+            Segment::line(p(5.0, 0.0), p(5.0, 2.5), "0", 7),
+            Segment::line(p(5.0, 2.5), p(2.5, 2.5), "0", 7),
+            Segment::line(p(2.5, 2.5), p(2.5, 5.0), "0", 7),
+            Segment::line(p(2.5, 5.0), p(0.0, 5.0), "0", 7),
+            Segment::line(p(0.0, 5.0), p(0.0, 0.0), "0", 7),
+        ];
+        // Build an offset polyline matching the boundary inset by
+        // tool_radius = 0.15 mm (0.3 mm endmill). A CCW polyline with
+        // a reflex corner at the inner L joint.
+        let r = 0.15_f64;
+        let off = vec![
+            p(r, r),
+            p(5.0 - r, r),
+            p(5.0 - r, 2.5 - r),
+            p(2.5 - r, 2.5 - r),
+            p(2.5 - r, 5.0 - r),
+            p(r, 5.0 - r),
+        ];
+        let mut offset = PolylineOffset {
+            segments: vec![
+                Segment::line(off[0], off[1], "0", 7),
+                Segment::line(off[1], off[2], "0", 7),
+                Segment::line(off[2], off[3], "0", 7),
+                Segment::line(off[3], off[4], "0", 7),
+                Segment::line(off[4], off[5], "0", 7),
+                Segment::line(off[5], off[0], "0", 7),
+            ],
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        // bbox diagonal of the 5 mm L = √(5² + 5²) = 7.07 mm
+        // ⇒ perp_tol = 7.07e-3 mm. The old 0.25 mm tol was 35× too
+        // loose at this scale. Verify the function still runs (no
+        // panic, no inversion of winding) and any inserted dip points
+        // lie on the OUTWARD side of the reflex corner.
+        apply_overcut(&mut offset, &boundary_segs, r);
+        // The reflex corner of the offset sits at (2.5-r, 2.5-r) =
+        // (2.35, 2.35). Outward direction at this reflex corner points
+        // toward (5, 5) — i.e. +x and +y. Any inserted dip vertex must
+        // lie on that outward side. If the pre-fix loose tolerance had
+        // picked the (0,0) endpoint, the dip would point toward
+        // (-x, -y) and gouge the WRONG quadrant.
+        for s in &offset.segments {
+            for q in [s.start, s.end] {
+                // Allow the original offset vertices (which include
+                // the reflex corner itself). Just check no vertex
+                // lands outside the original boundary bbox by more
+                // than the perp_tol slack: 5 mm + 7e-3 mm.
+                assert!(
+                    q.x >= -0.01 && q.x <= 5.01,
+                    "overcut vertex x={:.3} outside boundary bbox — fksa gouge",
+                    q.x
+                );
+                assert!(
+                    q.y >= -0.01 && q.y <= 5.01,
+                    "overcut vertex y={:.3} outside boundary bbox — fksa gouge",
+                    q.y
+                );
+            }
+        }
     }
 }

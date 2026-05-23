@@ -89,6 +89,9 @@ pub(super) fn build_op_offsets(
     // 0tsy: same defensive drain for nocontour-allowance ignored events
     // so a stale entry from a prior op can't get attributed to this one.
     let _ = crate::cam::offsets::take_nocontour_allowance_ignored();
+    // cpym: defensive drain for zigzag-stride-degenerate events so a
+    // stale entry from a prior op can't bleed into this one.
+    let _ = crate::cam::offsets::take_zigzag_stride_degenerate();
     // Up-front sanity checks that don't depend on whether the cascade
     // succeeds. push_tool_fit_kind_warnings populates `warnings` for
     // tool-kind / op-kind mismatches and impossible tool geometry.
@@ -359,6 +362,7 @@ pub(super) fn build_op_offsets(
             drain_trochoidal_incompletes(effective_op, warnings);
             drain_approach_point_far_rotations(effective_op, warnings);
             drain_nocontour_allowance_ignored(effective_op, warnings);
+            drain_zigzag_stride_degenerate(effective_op, warnings);
             return Ok((offsets, closed));
         }
     }
@@ -646,6 +650,7 @@ pub(super) fn build_op_offsets(
     drain_trochoidal_incompletes(effective_op, warnings);
     drain_approach_point_far_rotations(effective_op, warnings);
     drain_nocontour_allowance_ignored(effective_op, warnings);
+    drain_zigzag_stride_degenerate(effective_op, warnings);
     Ok((offsets, closed))
 }
 
@@ -682,6 +687,26 @@ fn drain_nocontour_allowance_ignored(op: &Op, warnings: &mut Vec<PipelineWarning
             message: format!(
                 "op '{}': pocket_nocontour=true skips the wall ring, so the configured XY finish allowance ({:.3} mm) has no finish pass to remove it. The allowance was ignored — the rough cascade walks the wall directly at the tool radius. To get a finishing wall pass, turn pocket_nocontour off (or use the dual-tool finish-radius path instead).",
                 op.name, ev.allowance_mm,
+            ),
+        });
+    }
+}
+
+/// cpym: drain any zigzag-stride-degenerate events stashed by
+/// [`crate::cam::offsets::pocket_zigzag`] for the current op and surface
+/// them as `zigzag_stride_clamped_below_minimum` warnings. Pre-cpym a
+/// sub-mm stride (mirror-finish raster) was silently clamped to 0.1 mm
+/// and the user got coarser scallops than requested; now strides below
+/// FP working precision still bail (the algorithm can't do anything
+/// useful with them) but the user is told instead of left guessing.
+fn drain_zigzag_stride_degenerate(op: &Op, warnings: &mut Vec<PipelineWarning>) {
+    for ev in crate::cam::offsets::take_zigzag_stride_degenerate() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "zigzag_stride_clamped_below_minimum".into(),
+            message: format!(
+                "op '{}': zigzag pocket stride of {:.6} mm is below the working precision (1e-6 mm) — no raster strokes were emitted. Set the per-pass step to at least 1e-6 mm (sub-fp strides cannot be represented stably). For mirror-finish work pick a stride that resolves at your DRO precision (typically ≥ 0.01 mm).",
+                op.name, ev.stride_mm,
             ),
         });
     }

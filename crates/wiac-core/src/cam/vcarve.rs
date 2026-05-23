@@ -95,15 +95,40 @@ fn densify_ring(ring: &[Point2], step: f64) -> Vec<Point2> {
 }
 
 /// l3uk: a chord (p0, p1) "stays in the region" iff every interior
-/// sample along the chord is in the region. 8 strictly-interior samples
-/// (t ∈ {1/8, …, 7/8}) catches a chord that dips out of the region for
-/// any non-trivial arc-length without paying for arbitrary precision.
-/// Endpoints are excluded (they're circumcenters guaranteed-in-region
-/// by `inside[]`).
+/// sample along the chord is in the region. Endpoints are excluded
+/// (they're circumcenters guaranteed-in-region by `inside[]`).
+///
+/// no0u: previously this used a fixed 8 strictly-interior samples
+/// (t ∈ {1/8, …, 7/8}). For a 50 mm chord that's a 6.25 mm sample
+/// spacing — a hole or re-entrant notch narrower than ~1/8 of the chord
+/// length could sit ENTIRELY between two consecutive samples and the
+/// chord was incorrectly declared safe. The medial-axis stitcher then
+/// emitted a chord that ploughed across the notch (the cutter dipped
+/// into uncut stock OR carved past a hole the user wanted preserved).
+///
+/// Density now scales with chord length: one sample every `MAX_SAMPLE_MM`
+/// (currently 0.5 mm), with a floor of 8 samples so short chords keep
+/// their existing resolution. For most CAD work this is overkill — a
+/// chord rarely exceeds a few mm — but for long axis segments through a
+/// big region it catches small holes / notches the fixed-count version
+/// missed.
 fn chord_stays_in_region(region: &VcRegion, p0: Point2, p1: Point2) -> bool {
-    let samples = 8;
+    /// no0u: target spacing between chord-interior samples in mm.
+    /// 0.5 mm matches the densification used elsewhere in the medial-axis
+    /// pipeline (`BOUNDARY_SAMPLE_MM` is the same order) so a hole that
+    /// resolves to a few samples on its own ring also resolves to a few
+    /// samples on any chord crossing it.
+    const MAX_SAMPLE_MM: f64 = 0.5;
+    let chord_len = p0.distance(p1);
+    // Floor preserves prior behaviour for short chords; ceil ensures we
+    // bracket the chord at least every MAX_SAMPLE_MM mm. `samples` here
+    // is the same parameter the prior implementation called `samples`
+    // (i.e. the number of intervals — we sample t = i / samples for
+    // i in 1..samples, so `samples` intervals yield `samples - 1` points).
+    let samples = (chord_len / MAX_SAMPLE_MM).ceil() as usize;
+    let samples = samples.max(8);
     for i in 1..samples {
-        let t = f64::from(i) / f64::from(samples);
+        let t = (i as f64) / (samples as f64);
         let s = Point2::new(p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t);
         if !point_in_region(region, s) {
             return false;
@@ -858,6 +883,76 @@ mod tests {
         assert!(
             approx(r_max, 2.0, 0.1),
             "R_max = {r_max} on a 20x4 rectangle, expected ≈ 2.0"
+        );
+    }
+
+    /// no0u regression: `chord_stays_in_region` must adapt its sample
+    /// density to the chord length. A long chord with a narrow hole
+    /// sitting between two of the old fixed-8 sample positions used to
+    /// pass the in-region check (the hole was invisible to the sampler)
+    /// — the v-carve emitter then drew a chord that crossed the hole.
+    #[test]
+    fn chord_stays_in_region_catches_narrow_hole_on_long_chord() {
+        // Outer ring: 100 × 10 corridor.
+        // Hole: a 1 mm wide rectangle centred at x = 50 (i.e. 1/2 of
+        //       the chord length). With chord from (0, 5) to (100, 5)
+        //       and 8 fixed samples at t ∈ {1/8 … 7/8}, the samples
+        //       sit at x = 12.5, 25, 37.5, 50, 62.5, 75, 87.5. One
+        //       sample IS at x=50 (the hole centre) so this hole IS
+        //       caught even at fixed density. To force the no0u
+        //       regression we offset the hole AWAY from any fixed
+        //       sample: centred at x=44, width 0.5 mm. Fixed samples
+        //       miss it entirely; no0u's adaptive density (1 sample
+        //       per 0.5 mm ⇒ 200 samples) catches it.
+        let outer = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(100.0, 0.0),
+            Point2::new(100.0, 10.0),
+            Point2::new(0.0, 10.0),
+        ];
+        let hole = vec![
+            Point2::new(43.75, 3.0),
+            Point2::new(44.25, 3.0),
+            Point2::new(44.25, 7.0),
+            Point2::new(43.75, 7.0),
+        ];
+        let region = VcRegion {
+            outer,
+            holes: vec![hole],
+        };
+        // Both endpoints sit in the region (y = 5 is in the corridor,
+        // and x in (1, 99) is in the outer but far from the hole).
+        let p0 = Point2::new(1.0, 5.0);
+        let p1 = Point2::new(99.0, 5.0);
+        assert!(
+            point_in_region(&region, p0),
+            "p0 should be in the region (sanity)"
+        );
+        assert!(
+            point_in_region(&region, p1),
+            "p1 should be in the region (sanity)"
+        );
+        // The chord runs along y=5, straight through the hole at x≈44.
+        // Pre-no0u with 8 fixed samples (x = 12.25, 24.5, 36.75, 49,
+        // 61.25, 73.5, 85.75) — NONE of these land in [43.75, 44.25].
+        // So the chord was incorrectly declared safe. Post-no0u with
+        // 1 sample per 0.5 mm (~200 samples spaced ~0.5 mm), at least
+        // one sample falls inside the hole and the function returns
+        // false.
+        assert!(
+            !chord_stays_in_region(&region, p0, p1),
+            "chord ploughing through a 0.5 mm hole at x=44 must be rejected — no0u regression"
+        );
+        // Sanity: a chord that AVOIDS the hole (offset in y) IS safe.
+        let p0_safe = Point2::new(1.0, 1.0);
+        let p1_safe = Point2::new(99.0, 1.0);
+        // Both sit inside the outer ring (y=1 is in [0..10]) and
+        // outside the hole (y=1 is below y=3, the hole's bottom).
+        assert!(point_in_region(&region, p0_safe));
+        assert!(point_in_region(&region, p1_safe));
+        assert!(
+            chord_stays_in_region(&region, p0_safe, p1_safe),
+            "chord that avoids the hole must be accepted"
         );
     }
 }

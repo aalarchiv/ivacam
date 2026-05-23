@@ -1648,6 +1648,12 @@ export interface components {
              */
             tip_diameter_mm: number;
             /**
+             * Format: double
+             * @description ot80: V-Carve lead-in ramp angle (degrees from horizontal). Resolved from [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`] at synth time; clamped to (0°, 90°). 0.0 ⇒ inherit the legacy 10° default at emit time inside [`crate::cam::vcarve_emit::ratchet_emit`].
+             * @default 0
+             */
+            vcarve_lead_in_angle_deg: number;
+            /**
              * @description Wirbeln spiral rotation direction (climb = `true`, conventional = `false`). Resolved from the op's contour cut direction — matches Estlcam's `Einstellungen.Gleichlauf` flag.
              * @default true
              */
@@ -1830,6 +1836,11 @@ export interface components {
              * @description T-slot / keyway cutter neck length (rt1.28). Honored only when `kind == TSlot`. The vertical extent of the narrow neck above the disk. mm, positive only.
              */
             tslot_neck_length_mm?: number | null;
+            /**
+             * Format: double
+             * @description ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). pmpk originally hardcoded this to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the legacy 10° default so old projects round-trip unchanged.
+             */
+            vcarve_lead_in_angle_deg?: number | null;
             /** @description Wirbeln (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
             wirbeln?: boolean;
             /**

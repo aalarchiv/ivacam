@@ -2793,6 +2793,11 @@ components:
           description: Diameter at the tip of the cone in mm. 0 = sharp point (drill, V-bit). > 0 = flat tip (engraver). For flat-bottom tools (endmill / ball-nose / bull-nose / compression / t-slot / form-profile / drag-knife / laser) the synth step sets this equal to `diameter` so `tip_cone_length()` returns 0 — no auto-extend needed.
           format: double
           type: number
+        vcarve_lead_in_angle_deg:
+          default: 0.0
+          description: 'ot80: V-Carve lead-in ramp angle (degrees from horizontal). Resolved from [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`] at synth time; clamped to (0°, 90°). 0.0 ⇒ inherit the legacy 10° default at emit time inside [`crate::cam::vcarve_emit::ratchet_emit`].'
+          format: double
+          type: number
         wirbeln_climb:
           default: true
           description: Wirbeln spiral rotation direction (climb = `true`, conventional = `false`). Resolved from the op's contour cut direction — matches Estlcam's `Einstellungen.Gleichlauf` flag.
@@ -3025,6 +3030,12 @@ components:
           - 'null'
         tslot_neck_length_mm:
           description: T-slot / keyway cutter neck length (rt1.28). Honored only when `kind == TSlot`. The vertical extent of the narrow neck above the disk. mm, positive only.
+          format: double
+          type:
+          - number
+          - 'null'
+        vcarve_lead_in_angle_deg:
+          description: 'ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). pmpk originally hardcoded this to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the legacy 10° default so old projects round-trip unchanged.'
           format: double
           type:
           - number

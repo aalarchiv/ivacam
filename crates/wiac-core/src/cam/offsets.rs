@@ -1261,11 +1261,22 @@ pub fn pocket_for_object(
                 // becomes a separate PolylineOffset so the gcode emitter
                 // lifts to clearance and re-plunges between sub-chains
                 // — instead of cutting straight through the island.
+                // 06m5: when nocontour=true there's no wall ring laid down,
+                // so pocket_zigzag's self-inset by tool_r would leave a
+                // tool_radius-wide ribbon of uncut stock along every wall
+                // (the boundary `pts` is already inset by tool_r — a
+                // second inset stacks). Pass tool_diameter=0 in that case
+                // so the outermost stroke reaches the inset edge. When
+                // there IS a wall ring, the self-inset is needed: the
+                // ring already touches the inset edge and the raster
+                // strokes should sit a tool_r inboard so they don't
+                // overlap the wall.
+                let zigzag_tool_d = if nocontour { 0.0 } else { tool_radius * 2.0 };
                 let chains = pocket_zigzag_angled(
                     &pts,
                     islands,
                     step.max(0.1),
-                    tool_radius * 2.0,
+                    zigzag_tool_d,
                     angle_deg,
                 );
                 for strokes in chains {
@@ -2733,6 +2744,81 @@ mod tests {
             0,
             "expected even count after coalesce, got {}: {xs:?}",
             xs.len()
+        );
+    }
+
+    /// 06m5 regression: a Pocket op with `nocontour=true` and the Zigzag
+    /// strategy must NOT leave a tool-radius-wide ribbon of uncut stock
+    /// along every wall. Pre-fix the rough boundary was already inset by
+    /// tool_r, then `pocket_zigzag` self-inset by another tool_r —
+    /// without the wall ring (skipped on nocontour) the outermost
+    /// stroke sat 2·tool_r from the original wall. Post-fix:
+    /// `pocket_zigzag` is invoked with `tool_diameter = 0` when
+    /// `nocontour = true` so the outermost stroke reaches the
+    /// already-inset boundary edge (a tool_r from the original wall).
+    #[test]
+    fn pocket_zigzag_nocontour_reaches_inset_edge() {
+        let obj = closed_square(40.0);
+        let tool_r = 2.0_f64;
+        // With nocontour=true the post-fix code passes tool_diameter=0
+        // to pocket_zigzag → no double-inset; strokes reach the
+        // tool_r-inset edge along X (and Y, modulo the half-open
+        // scanline rule that drops the top edge by one stride).
+        let offsets = pocket_for_object(
+            &obj,
+            tool_r,
+            true,
+            6,
+            PocketEmit::Zigzag { angle_deg: 0.0 },
+            &[],
+            tool_r * 2.0 * 0.5,
+            0.0,
+            None,
+        );
+        let mut min_x = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut zigzag_found = false;
+        for o in &offsets {
+            if o.is_pocket != 1 {
+                continue;
+            }
+            zigzag_found = true;
+            for s in &o.segments {
+                for pt in [s.start, s.end] {
+                    min_x = min_x.min(pt.x);
+                    max_x = max_x.max(pt.x);
+                }
+            }
+        }
+        assert!(zigzag_found, "expected at least one zigzag PolylineOffset");
+        // Pre-fix the outermost strokes sat at x ≈ 2*tool_r and
+        // x ≈ 40 - 2*tool_r (the boundary's tool_r self-inset on top
+        // of the rough boundary's tool_r inset = 2·tool_r from the
+        // original wall). Post-fix they sit at x ≈ tool_r and
+        // x ≈ 40 - tool_r. Allow tiny slop for the per-stroke
+        // endpoint inset clamp.
+        let slop = 0.1;
+        assert!(
+            min_x <= tool_r + slop,
+            "outermost stroke min_x {min_x:.3} > inset edge ({:.3}) + slop {slop} — pre-fix double-inset bug",
+            tool_r
+        );
+        assert!(
+            max_x >= 40.0 - tool_r - slop,
+            "outermost stroke max_x {max_x:.3} < inset edge ({:.3}) - slop {slop} — pre-fix double-inset bug",
+            40.0 - tool_r
+        );
+        // Sanity: the buggy pre-fix x bounds would be [2·tool_r,
+        // 40 - 2·tool_r] = [4, 36], leaving a tool_r-wide ribbon.
+        // Post-fix bounds are at least tool_r tighter — verify so
+        // the test fails clearly under the pre-fix regression.
+        assert!(
+            min_x < 2.0 * tool_r - 0.5,
+            "outermost stroke min_x {min_x:.3} is still ≥ 2·tool_r — pre-fix double-inset still in effect"
+        );
+        assert!(
+            max_x > 40.0 - 2.0 * tool_r + 0.5,
+            "outermost stroke max_x {max_x:.3} is still ≤ 40 - 2·tool_r — pre-fix double-inset still in effect"
         );
     }
 }

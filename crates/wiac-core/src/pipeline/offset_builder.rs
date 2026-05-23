@@ -343,6 +343,7 @@ pub(super) fn build_op_offsets(
             push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
             drain_parallel_offset_panics(effective_op, warnings);
             drain_pocket_cascade_truncations(effective_op, warnings);
+            drain_trochoidal_incompletes(effective_op, warnings);
             drain_approach_point_far_rotations(effective_op, warnings);
             return Ok((offsets, closed));
         }
@@ -612,8 +613,28 @@ pub(super) fn build_op_offsets(
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
     drain_parallel_offset_panics(effective_op, warnings);
     drain_pocket_cascade_truncations(effective_op, warnings);
+    drain_trochoidal_incompletes(effective_op, warnings);
     drain_approach_point_far_rotations(effective_op, warnings);
     Ok((offsets, closed))
+}
+
+/// 1ao5: drain any early-termination events stashed by `pocket_trochoidal`
+/// for the current op and surface them as `trochoidal_incomplete`
+/// warnings. The emitter terminates when a centerline vertex's loop disc
+/// strays outside the safe interior — chopping the unsafe tail
+/// prevents a full-slot G1 at trochoidal feed/RPM, but the user needs to
+/// know part of the pocket was left uncleared.
+fn drain_trochoidal_incompletes(op: &Op, warnings: &mut Vec<PipelineWarning>) {
+    for ev in crate::cam::trochoidal::take_trochoidal_incompletes() {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "trochoidal_incomplete".into(),
+            message: format!(
+                "op '{}': trochoidal pocket terminated at centerline vertex {}/{} — the loop disc (r={:.2} mm, engagement {:.0}°) couldn't fit the pocket interior at that point, and continuing would have required a full-slot move at trochoidal feed/RPM. Part of the pocket was left uncleared. Pick a smaller loop_radius_factor or engagement angle, or finish the unswept tail with a separate (zigzag/cascade) op.",
+                op.name, ev.bail_index, ev.centerline_total, ev.r_loop, ev.engagement_angle_deg,
+            ),
+        });
+    }
 }
 
 /// mdpo: drain any cascade-truncation events stashed by

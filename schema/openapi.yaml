@@ -1263,6 +1263,12 @@ components:
             description: '6uns: starting angle of the helix in radians, measured CCW from the +X axis. Default 0 (helix starts at `(center.x + radius, center.y)`) — the pre-6uns behavior. Override to re-cut partial threads where the previous run stopped mid-helix; the new run can pick up where the last one left off.'
             format: double
             type: number
+          thread_depth_mm:
+            description: 'mniu: radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter''s radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud''s flank by `thread_depth`). `None` ⇒ ISO 60° default. Set explicitly for non-ISO thread forms (UN, Whitworth, ACME, …). Older serialized projects without this field deserialize as `None` and pick up the ISO default at planning time — backward compatible.'
+            format: double
+            type:
+            - number
+            - 'null'
           type:
             enum:
             - thread

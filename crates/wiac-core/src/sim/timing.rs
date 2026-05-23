@@ -29,6 +29,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::cam::setup::{AxisLimits, MachineConfig};
+use crate::gcode::post_profile::DwellUnit;
 use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -63,6 +64,13 @@ const DIR_EPS: f64 = 1e-6;
 /// kg13: also scans the gcode for explicit `G4 P<sec>` / `G4 X<sec>`
 /// dwell commands and adds them to the total cycle time. Drill dwell,
 /// post-finish dwell, and any other G4 P pause go through here.
+///
+/// 746b: reads `machine.post_profile.dwell_unit` to know whether the
+/// emitted G4 P value is seconds (LinuxCNC, Smoothieware) or
+/// milliseconds (Mach3/Mach4/Centroid and — despite a previous
+/// comment claiming otherwise — also GRBL when the profile opts in).
+/// The scanner divides ms by 1000 before summing so the dwell time
+/// returned is always pipeline seconds.
 #[must_use]
 pub fn estimate_from_gcode(
     gcode: &str,
@@ -72,11 +80,23 @@ pub fn estimate_from_gcode(
     spindle_warmup_s: f64,
 ) -> TimeEstimate {
     let feeds = feeds_per_segment(gcode, segments);
-    let dwell_s = sum_g4_dwell_seconds(gcode);
+    let dwell_unit = dwell_unit_for(machine);
+    let dwell_s = sum_g4_dwell_seconds(gcode, dwell_unit);
     let mut est = estimate(segments, &feeds, machine, tool_changes, spindle_warmup_s);
     est.dwell_s += dwell_s;
     est.total_s += dwell_s;
     est
+}
+
+/// 746b: pluck the post profile's `dwell_unit` from the machine
+/// config, defaulting to Seconds (LinuxCNC convention) when no
+/// profile or no dwell_unit is set.
+fn dwell_unit_for(machine: &MachineConfig) -> DwellUnit {
+    machine
+        .post_profile
+        .as_ref()
+        .and_then(|p| p.dwell_unit)
+        .unwrap_or(DwellUnit::Seconds)
 }
 
 /// kg13: per-tool-change spindle dwell envelope. Each M6 toolchange in
@@ -108,11 +128,23 @@ pub fn spindle_warmup_total_s(
     toolchange_dwell + per_tool
 }
 
-/// kg13: walk the gcode and sum every `G4 P<sec>` / `G4 X<sec>` dwell
-/// command. `P` is the canonical seconds form (`LinuxCNC`, `GRBL`);
-/// `X` is honored as an alias because some posts emit it. Negative /
-/// non-finite arguments are ignored.
-fn sum_g4_dwell_seconds(gcode: &str) -> f64 {
+/// kg13 + 746b: walk the gcode and sum every `G4 P<v>` / `G4 X<v>`
+/// dwell command, returning a total in SECONDS.
+///
+/// `dwell_unit` describes how the active post emits the P/X value:
+///   - `DwellUnit::Seconds` — LinuxCNC / Smoothieware convention.
+///   - `DwellUnit::Milliseconds` — Mach3 / Mach4 / Centroid and GRBL
+///     when the profile is configured for ms (the GRBL controller
+///     actually reads P in MILLISECONDS — pre-746b code mis-summed
+///     them as seconds and inflated GRBL timing estimates 1000×
+///     compared to what the controller would honor).
+///
+/// Negative / non-finite arguments are ignored.
+fn sum_g4_dwell_seconds(gcode: &str, dwell_unit: DwellUnit) -> f64 {
+    let scale_to_s = match dwell_unit {
+        DwellUnit::Seconds => 1.0,
+        DwellUnit::Milliseconds => 1.0 / 1000.0,
+    };
     let mut total = 0.0_f64;
     for raw in gcode.lines() {
         let line = strip_comment(raw);
@@ -142,7 +174,7 @@ fn sum_g4_dwell_seconds(gcode: &str) -> f64 {
             if matches!(head, "P" | "p" | "X" | "x") {
                 if let Ok(v) = rest.parse::<f64>() {
                     if v.is_finite() && v > 0.0 {
-                        total += v;
+                        total += v * scale_to_s;
                     }
                 }
             }
@@ -175,6 +207,13 @@ pub struct OpRates {
 /// the tool's declared plunge/cut rates (v7f5). `op_rates` is a small
 /// lookup of `op_id → (plunge_rate, feed_rate)`; segments whose `op_id`
 /// isn't present fall through to the modal-F behavior.
+///
+/// 746b: also folds G4 dwell into the total (was previously dropped on
+/// this code path — `estimate_from_gcode` summed it but the
+/// `_with_rates` variant skipped it, so the pipeline's wall-clock
+/// estimate underreported any drill/finish dwell). Honors the active
+/// post profile's `dwell_unit` so GRBL/Mach3 millisecond emissions
+/// sum to the correct number of seconds.
 #[must_use]
 pub fn estimate_from_gcode_with_rates(
     gcode: &str,
@@ -186,7 +225,12 @@ pub fn estimate_from_gcode_with_rates(
 ) -> TimeEstimate {
     let feeds = feeds_per_segment(gcode, segments);
     let clamped = clamp_feeds_by_kind(segments, &feeds, op_rates);
-    estimate(segments, &clamped, machine, tool_changes, spindle_warmup_s)
+    let dwell_unit = dwell_unit_for(machine);
+    let dwell_s = sum_g4_dwell_seconds(gcode, dwell_unit);
+    let mut est = estimate(segments, &clamped, machine, tool_changes, spindle_warmup_s);
+    est.dwell_s += dwell_s;
+    est.total_s += dwell_s;
+    est
 }
 
 /// Clamp per-segment modal feeds against the tool's declared rates so a
@@ -926,12 +970,71 @@ mod tests {
         // cycle P-count) MUST NOT be summed as a dwell. Only lines
         // containing G4 / G04 contribute.
         let gcode = "G81 X10 Y0 Z-3 P2.0\nG4 P0.5\n";
-        let dwell = sum_g4_dwell_seconds(gcode);
+        let dwell = sum_g4_dwell_seconds(gcode, DwellUnit::Seconds);
         // Only the second line's P0.5 counts.
         assert!((dwell - 0.5).abs() < 1e-9, "expected 0.5, got {dwell}");
         // Negative / zero P ignored.
-        let neg = sum_g4_dwell_seconds("G4 P-1.0\nG4 P0\n");
+        let neg = sum_g4_dwell_seconds("G4 P-1.0\nG4 P0\n", DwellUnit::Seconds);
         assert!(neg.abs() < 1e-9, "expected 0, got {neg}");
+    }
+
+    /// 746b: P-values in a Mach3/Mach4/Centroid (and ms-configured
+    /// GRBL) profile are MILLISECONDS, not seconds. The scanner
+    /// must divide by 1000 before summing so the total time is in
+    /// pipeline seconds. Pre-746b code summed them as seconds and
+    /// inflated the run-time estimate by a factor of 1000.
+    #[test]
+    fn g4_dwell_milliseconds_converts_to_seconds() {
+        // Three dwells in ms: 1500 ms + 250 ms + 2000 ms = 3750 ms =
+        // 3.75 s after the unit conversion.
+        let gcode = concat!(
+            "G21\n",
+            "G4 P1500\n",
+            "G4 P250\n",
+            "G04 X2000\n", // X-form + G04 spelling
+        );
+        let s = sum_g4_dwell_seconds(gcode, DwellUnit::Milliseconds);
+        assert!(
+            (s - 3.75).abs() < 1e-9,
+            "ms dwells 1500 + 250 + 2000 should sum to 3.75 s, got {s}"
+        );
+        // Same gcode read as seconds would over-count 1000×.
+        let as_seconds = sum_g4_dwell_seconds(gcode, DwellUnit::Seconds);
+        assert!(
+            (as_seconds - 3750.0).abs() < 1e-9,
+            "control: same gcode as seconds sums to 3750 s, got {as_seconds}",
+        );
+    }
+
+    /// 746b: end-to-end via `estimate_from_gcode_with_rates` — the
+    /// production code path the pipeline calls. With a profile that
+    /// emits dwell in milliseconds the GRBL total must reflect
+    /// seconds, NOT the unconverted ms count.
+    #[test]
+    fn estimate_with_rates_honors_dwell_unit() {
+        use crate::gcode::post_profile::PostProfile;
+        // 500 ms = 0.5 s.
+        let gcode = "G21\nG4 P500\n";
+        let (segs, _) = crate::gcode::preview::interpret_with_index(gcode);
+        let mut m_ms = machine();
+        m_ms.post_profile = Some(PostProfile {
+            dwell_unit: Some(DwellUnit::Milliseconds),
+            ..PostProfile::default()
+        });
+        let est_ms = estimate_from_gcode_with_rates(gcode, &segs, &m_ms, 0, 0.0, &[]);
+        assert!(
+            (est_ms.dwell_s - 0.5).abs() < 1e-9,
+            "ms profile: P500 ⇒ 0.5 s, got {}",
+            est_ms.dwell_s,
+        );
+        // No profile ⇒ default Seconds: P500 read as 500 seconds.
+        let m_default = machine();
+        let est_s = estimate_from_gcode_with_rates(gcode, &segs, &m_default, 0, 0.0, &[]);
+        assert!(
+            (est_s.dwell_s - 500.0).abs() < 1e-9,
+            "seconds profile: P500 ⇒ 500 s, got {}",
+            est_s.dwell_s,
+        );
     }
 
     #[test]

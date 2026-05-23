@@ -513,12 +513,25 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             pitch_mm,
             internal,
             climb,
+            thread_depth_mm,
             ..
         } => {
             h.write_u8(4);
             hash_f64(*pitch_mm, h);
             internal.hash(h);
             climb.hash(h);
+            // mniu: thread_depth_mm changes the helix radius, so
+            // it MUST hash into the cache key. `None` hashes to a
+            // discriminant byte distinct from any `Some(d)` so
+            // legacy entries (None → ISO default) stay separate
+            // from explicit pins.
+            match thread_depth_mm {
+                None => h.write_u8(0),
+                Some(d) => {
+                    h.write_u8(1);
+                    hash_f64(*d, h);
+                }
+            }
             // radial_passes (sqnh): not hashed yet — parent bumps the
             // cache version when wiring it in.
         }

@@ -167,9 +167,15 @@ pub trait PostProcessor {
     );
 
     /// G81 simple drill: rapid to (x, y, r), feed plunge to z, dwell, retract to r.
-    /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
-    fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, dwell_sec: f64) {
+    /// `rate_v` is the plunge feed in mm/min; the default impl emits an
+    /// F<rate_v> before each G1 plunge so the move lands at a known
+    /// feed regardless of what the modal F was when the caller invoked
+    /// us (o01e — non-canned posts must self-anchor their feed).
+    fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, rate_v: u32, dwell_sec: f64) {
         self.move_to(Some(x), Some(y), Some(r));
+        // o01e: anchor plunge feed inside the cycle so we don't inherit
+        // whatever F a prior op left modal (often rate_h or 0).
+        self.feedrate(rate_v);
         self.linear(None, None, Some(z));
         if dwell_sec > 0.0 {
             self.raw(&format!("G4 P{}", fmt_dwell(dwell_sec)));
@@ -178,14 +184,21 @@ pub trait PostProcessor {
     }
 
     /// G83 peck: as G81 but pecks `q` mm at a time, fully retracting to r each peck.
+    /// `rate_v` is the plunge feed (see [`PostProcessor::drill_simple`]).
     /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
-    fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+    fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, rate_v: u32, dwell_sec: f64) {
         let q = q.abs();
         if q < 1e-9 {
-            self.drill_simple(x, y, z, r, dwell_sec);
+            self.drill_simple(x, y, z, r, rate_v, dwell_sec);
             return;
         }
         self.move_to(Some(x), Some(y), Some(r));
+        // o01e: anchor the plunge feed at entry. Without this, the
+        // first G1 plunge would inherit whatever F was last set — for
+        // GRBL (which uses this default impl) that could be rate_h
+        // from the prior cut block, which slams the bit into the work
+        // at 8x the safe plunge feed.
+        self.feedrate(rate_v);
         // Drill bottom is below the retract plane (z < r). Each peck
         // descends by q from the *previous* depth (not from r) so we don't
         // re-cut already-cleared material; full retract to r is by rapid.
@@ -208,25 +221,43 @@ pub trait PostProcessor {
             // plunge feed. Rapidding all the way down to the just-cut
             // depth lets the cutter slam straight into chip-clogged
             // material — fine on a slow Z servo, but it chips tips on
-            // a fast Z. The pipeline already sets feedrate(rate_v) for
-            // drill blocks, so the G1 step uses the plunge feed.
+            // a fast Z.
             const RE_ENTRY_CLEARANCE_MM: f64 = 0.5;
             let re_entry_z = current_z + RE_ENTRY_CLEARANCE_MM;
             self.move_to(None, None, Some(re_entry_z));
+            // o01e: re-anchor the plunge feed after every rapid retract.
+            // G0 doesn't consume F, but it does NOT roll back any prior
+            // modal change, so a controller that re-evaluates F at each
+            // motion-mode change (FANUC, vintage Mach3) sees the right
+            // value at the G1 boundary. Posts dedupe identical-rate
+            // emits so the repeat is free.
+            self.feedrate(rate_v);
             self.linear(None, None, Some(current_z));
         }
     }
 
     /// G73 chip-break: as G83 but only retracts a small amount between pecks.
+    /// `rate_v` is the plunge feed (see [`PostProcessor::drill_simple`]).
     /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
-    fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+    fn drill_chip_break(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        r: f64,
+        q: f64,
+        rate_v: u32,
+        dwell_sec: f64,
+    ) {
         const CHIP_BREAK_RETRACT: f64 = 0.5;
         let q = q.abs();
         if q < 1e-9 {
-            self.drill_simple(x, y, z, r, dwell_sec);
+            self.drill_simple(x, y, z, r, rate_v, dwell_sec);
             return;
         }
         self.move_to(Some(x), Some(y), Some(r));
+        // o01e: anchor plunge feed at entry (see drill_peck).
+        self.feedrate(rate_v);
         let mut current_z = r;
         loop {
             let next_z = (current_z - q).max(z);
@@ -569,19 +600,27 @@ pub fn emit_drill_block<P: PostProcessor>(
         post.move_to(None, None, Some(fast_z));
         match cycle {
             crate::project::DrillCycle::Simple { dwell_sec } => {
-                post.drill_simple(pt.x, pt.y, z, r, dwell_sec);
+                post.drill_simple(pt.x, pt.y, z, r, setup.tool.rate_v, dwell_sec);
             }
             crate::project::DrillCycle::Peck {
                 peck_step_mm,
                 dwell_sec,
             } => {
-                post.drill_peck(pt.x, pt.y, z, r, peck_step_mm, dwell_sec);
+                post.drill_peck(pt.x, pt.y, z, r, peck_step_mm, setup.tool.rate_v, dwell_sec);
             }
             crate::project::DrillCycle::ChipBreak {
                 peck_step_mm,
                 dwell_sec,
             } => {
-                post.drill_chip_break(pt.x, pt.y, z, r, peck_step_mm, dwell_sec);
+                post.drill_chip_break(
+                    pt.x,
+                    pt.y,
+                    z,
+                    r,
+                    peck_step_mm,
+                    setup.tool.rate_v,
+                    dwell_sec,
+                );
             }
         }
         *last_pos = pt;
@@ -724,9 +763,9 @@ fn emit_offset<P: PostProcessor>(
         post.coolant_mist();
     }
     // Surface the chosen cut feedrate before the cut; the plunge feed
-    // gets set explicitly at each Z-down move inside multi_pass.
+    // gets set explicitly at each Z-down move inside multi_pass and at
+    // the lead-in entry plunge below (vfpa).
     post.feedrate(use_rate_h);
-    let _ = use_rate_v;
     let start = offset.segments[0].start;
     // Lead-in (straight, arc, or off) before the first cut. The arc
     // lead is a tangent roll-on at z=0 that lands the cutter on the
@@ -748,13 +787,24 @@ fn emit_offset<P: PostProcessor>(
     // cutting air. `multi_pass` then descends from `start_depth` to
     // the first pass depth via plunge / ramp / helix.
     let entry_z = setup.mill.start_depth;
+    // vfpa: the lead-in plunge from fast_move_z to entry_z is a G1
+    // Z-drop — emit it at the plunge feed (rate_v), not the cut feed
+    // (rate_h). Modal F was set to `use_rate_h` at line 715 (so the
+    // first cut motion has a known F nearby), so we switch to rate_v
+    // here, plunge, then restore rate_h before the lateral cut. Without
+    // this, the cutter dives from safe Z to start_depth at the (often
+    // 8x faster) cut feed — snaps non-center-cutting endmill tips and
+    // is the canonical proud-stock crash. Posts dedupe identical-rate
+    // F-emits so the restore is free when rate_v == rate_h.
     match lead_in {
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            post.feedrate(use_rate_v);
             post.linear(None, None, Some(entry_z));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
+            post.feedrate(use_rate_h);
         }
         LeadGeometry::Arc {
             entry_or_exit: from,
@@ -762,6 +812,7 @@ fn emit_offset<P: PostProcessor>(
             ccw,
         } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
+            post.feedrate(use_rate_v);
             post.linear(None, None, Some(entry_z));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
@@ -773,7 +824,8 @@ fn emit_offset<P: PostProcessor>(
             // arc has no F line nearby — defensive on FANUC / vintage
             // controllers that re-evaluate F at each motion-mode
             // change. Posts dedupe identical-rate emits so this is
-            // free when the modal already matches.
+            // free when the modal already matches. vfpa also makes
+            // this the post-plunge feedrate restore (rate_v → rate_h).
             post.feedrate(use_rate_h);
             // I/J are the offset from the arc's start (current XY) to
             // its center — same convention as ezdxf / ngc / linuxcnc.
@@ -787,10 +839,12 @@ fn emit_offset<P: PostProcessor>(
         }
         LeadGeometry::None => {
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
+            post.feedrate(use_rate_v);
             post.linear(None, None, Some(entry_z));
             if pierce_sec > 0.0 {
                 post.dwell(pierce_sec);
             }
+            post.feedrate(use_rate_h);
         }
     }
 
@@ -833,7 +887,13 @@ fn emit_offset<P: PostProcessor>(
     // post's delta-encoded `last_speed` dedupes the next cut's M3
     // re-arm so no extra lines emit); Drag is a no-op.
     cut_tool_off(post, setup);
-    post.linear(None, None, Some(setup.mill.fast_move_z));
+    // o1g3: final retract after lead-out is a rapid (G0), not a cut
+    // motion (G1). The lead-out already rolled the cutter off the
+    // contour into free space; lifting to fast_move_z at cut feed
+    // multiplies cycle time across hundreds of contours with zero
+    // safety benefit. Use `move_to` (G0) to retract at the controller's
+    // rapid feed.
+    post.move_to(None, None, Some(setup.mill.fast_move_z));
 
     *last_pos = offset.segments.last().map_or(start, |s| s.end);
 }
@@ -2399,6 +2459,274 @@ mod tests {
         assert!(
             g83_line.contains("R2"),
             "R should follow start_depth (=2) when it's above stock; got: {g83_line}",
+        );
+    }
+
+    /// vfpa: lead-in plunge (G1 Z-drop from fast_move_z to start_depth)
+    /// must execute at the plunge feed (rate_v), not the cut feed
+    /// (rate_h). Asserts the F-word sequence at the contour entry:
+    /// F<rate_v> → G1 Z<entry> → F<rate_h> → G1 X/Y (first cut).
+    /// Without the fix the cutter plunges at rate_h (8x faster) and
+    /// snaps non-center-cutting endmill tips.
+    #[test]
+    fn vfpa_lead_in_plunge_uses_plunge_feed_not_cut_feed() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_v = 100; // plunge feed
+        setup.tool.rate_h = 800; // cut feed
+        setup.mill.depth = -2.0;
+        setup.mill.start_depth = 0.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off; // Straight lead-in
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        let lines: Vec<&str> = g.lines().collect();
+
+        // Find: first F-line carrying rate_v (100) followed by a G1 Z move,
+        // then an F-line carrying rate_h (800), then a G1 X/Y move.
+        let f100_idx = lines
+            .iter()
+            .position(|l| l.trim() == "F100")
+            .unwrap_or_else(|| panic!("expected F100 (rate_v) before lead-in plunge:\n{g}"));
+        let g1_z_after_f100 = lines[f100_idx + 1..]
+            .iter()
+            .position(|l| l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y'))
+            .unwrap_or_else(|| panic!("expected `G1 Z<entry>` right after F100:\n{g}"));
+        let f800_after_plunge = lines[f100_idx + 1 + g1_z_after_f100..]
+            .iter()
+            .position(|l| l.trim() == "F800")
+            .unwrap_or_else(|| panic!("expected F800 (rate_h restore) after plunge:\n{g}"));
+        let g1_xy_after_f800 = lines[f100_idx + 1 + g1_z_after_f100 + f800_after_plunge + 1..]
+            .iter()
+            .position(|l| l.starts_with("G1 ") && (l.contains('X') || l.contains('Y')))
+            .unwrap_or_else(|| panic!("expected `G1 X/Y` (first cut) after F800:\n{g}"));
+        // Sanity: the chain succeeded; just touch g1_xy_after_f800 so the
+        // compiler doesn't warn.
+        let _ = g1_xy_after_f800;
+    }
+
+    /// o1g3: final retract after lead-out (to fast_move_z) must be a
+    /// rapid (G0), not a cut motion (G1). The lead-out already rolled
+    /// the cutter into free space; retracting at cut feed multiplies
+    /// cycle time across hundreds of contours with zero safety benefit.
+    #[test]
+    fn o1g3_final_retract_after_leadout_is_g0_not_g1() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_v = 100;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -1.0;
+        setup.mill.start_depth = 0.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 7.5;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::Outside;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        let lines: Vec<&str> = g.lines().collect();
+
+        // Find every line that retracts to fast_move_z (Z7.5). The last
+        // one is program_end's lift (G0 by convention). The earlier one
+        // — emitted at the END of the cut block — must also be G0 with
+        // the fix; before the fix it would be `G1 Z7.5`.
+        let retracts: Vec<(usize, &&str)> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains("Z7.5") && (l.starts_with("G0 ") || l.starts_with("G1 ")))
+            .collect();
+        assert!(
+            retracts.len() >= 2,
+            "expected at least 2 retract-to-fast_move_z lines (post-cut + program_end); got: {retracts:?}\n{g}",
+        );
+        // EVERY retract to fast_move_z must be a G0 — no G1.
+        for (i, l) in &retracts {
+            assert!(
+                l.starts_with("G0 "),
+                "retract to fast_move_z must be G0 (rapid), not G1 (cut feed); line {i}: {l}\n{g}",
+            );
+        }
+    }
+
+    /// o01e: GRBL has no canned-cycle support, so a Peck drill uses the
+    /// trait-default G0/G1 expansion. That default must self-anchor the
+    /// plunge feed (F<rate_v>) at entry AND after each rapid retract
+    /// so the G1 plunges land at the safe plunge feed regardless of
+    /// what modal F a prior op left set.
+    #[test]
+    fn o01e_grbl_peck_anchors_plunge_feed_before_each_g1_plunge() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+        use crate::project::DrillCycle;
+
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_v = 75; // distinctive plunge feed
+        setup.tool.rate_h = 1200; // distinctive cut feed
+        setup.tool.tip_diameter_mm = 3.0;
+        setup.mill.start_depth = 0.0;
+        setup.mill.depth = -3.0;
+        setup.mill.fast_move_z = 10.0;
+        setup.machine.comments = false;
+
+        // Three pecks: 1mm, 1mm, 1mm. With peck_step=1.0 and depth=-3,
+        // we expect three G1 plunges (each preceded by an F75 anchor).
+        let pt = Point2::new(0.0, 0.0);
+        let offsets = vec![PolylineOffset {
+            segments: vec![Segment::point(pt, "0", 7)],
+            closed: false,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        }];
+        let cycle = DrillCycle::Peck {
+            peck_step_mm: 1.0,
+            dwell_sec: 0.0,
+        };
+        let mut post = grbl::Post::new();
+        let mut last = Point2::new(0.0, 0.0);
+        emit_drill_block(&setup, &offsets, cycle, &mut post, &mut last);
+        let g = post.finish();
+        let lines: Vec<&str> = g.lines().collect();
+
+        // Every G1 line in the GRBL drill block must be preceded by an
+        // F<rate_v> within the few lines above it — never an F<rate_h>.
+        let g1_indices: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.starts_with("G1 ") && l.contains('Z'))
+            .map(|(i, _)| i)
+            .collect();
+        assert!(
+            !g1_indices.is_empty(),
+            "expected at least one G1 plunge in GRBL peck output:\n{g}",
+        );
+        for &g1_idx in &g1_indices {
+            // Walk backwards from g1_idx until we hit an F-line or the
+            // top of the block. That F must be F<rate_v>.
+            let mut found_f: Option<&str> = None;
+            for i in (0..g1_idx).rev() {
+                let trimmed = lines[i].trim();
+                if trimmed.starts_with('F') && trimmed[1..].chars().all(|c| c.is_ascii_digit() || c == '.') {
+                    found_f = Some(trimmed);
+                    break;
+                }
+            }
+            let f = found_f.unwrap_or_else(|| {
+                panic!("no F-line found before G1 plunge at line {g1_idx}:\n{g}")
+            });
+            assert_eq!(
+                f, "F75",
+                "G1 plunge at line {g1_idx} ({}) must be preceded by F75 (rate_v), not {f}\n{g}",
+                lines[g1_idx],
+            );
+        }
+    }
+
+    /// g30a: drag-knife Line→Arc transitions must emit a swivel arc
+    /// BEFORE the cut arc — otherwise the trailing blade enters the
+    /// arc still aligned with the prior line direction, bending the
+    /// blade and tearing material at every line→arc seam. Build a
+    /// closed shape with a Line→Arc→Line→Line sequence and assert the
+    /// gcode contains a swivel arc just before the cut arc.
+    #[test]
+    fn g30a_dragoff_emits_swivel_before_arc_on_line_to_arc_transition() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+
+        let mut setup = Setup::default();
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 0;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 800;
+        setup.tool.dragoff = Some(0.5);
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        // Build a Line→Arc transition where the directions actually
+        // change at the seam. A tangent-arc (line ends in +X, arc start
+        // tangent is also +X) does NOT need a swivel — the bug bites
+        // only when the arc's start tangent differs from the prior
+        // motion's exit direction. Here the line ends pointing +X
+        // (toward (15,0)) and the arc starts at (15,0) sweeping CCW
+        // around (10,0) up to (10,5): start radius (5,0), CCW start
+        // tangent = rotate +90° = (0,5) = +Y. So the corner is a sharp
+        // 90° turn (+X → +Y) and the swivel must emit before the arc.
+        // bulge for a 90° CCW arc = tan(sweep/4) = tan(22.5°) ≈ 0.4142.
+        let segs = vec![
+            Segment::line(p(0.0, 0.0), p(15.0, 0.0), "0", 7),
+            Segment::arc(
+                p(15.0, 0.0),
+                p(10.0, 5.0),
+                (std::f64::consts::FRAC_PI_8).tan(),
+                Some(p(10.0, 0.0)),
+                "0",
+                7,
+            ),
+            Segment::line(p(10.0, 5.0), p(0.0, 5.0), "0", 7),
+            Segment::line(p(0.0, 5.0), p(0.0, 0.0), "0", 7),
+        ];
+        let offset = PolylineOffset {
+            segments: segs,
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[offset], &mut post);
+
+        // Locate the cut arc: quarter-CCW from (15,0) to (10,5) — its
+        // line will be `G3 X10 Y5 I-5 J0` (I/J relative to start). The
+        // swivel arc emitted by the fix sits just before it.
+        let lines: Vec<&str> = g.lines().collect();
+        let cut_arc_idx = lines
+            .iter()
+            .position(|l| {
+                (l.starts_with("G2 ") || l.starts_with("G3 "))
+                    && l.contains("X10")
+                    && l.contains("Y5")
+                    && l.contains('I')
+            })
+            .unwrap_or_else(|| panic!("expected the quarter-CCW cut arc (G3 X10 Y5 ...) in output:\n{g}"));
+
+        // The swivel must come BEFORE the cut arc — search the prior
+        // few lines (the corner sequence is at most ~4 lines deep:
+        // post-line linear, swivel pre-step linear, swivel arc, then
+        // the cut arc).
+        let preceding_lines = &lines[cut_arc_idx.saturating_sub(6)..cut_arc_idx];
+        let swivel_present = preceding_lines
+            .iter()
+            .any(|l| (l.starts_with("G2 ") || l.starts_with("G3 ")) && l.contains('I'));
+        assert!(
+            swivel_present,
+            "expected a swivel arc (G2/G3 with I/J) BEFORE the cut arc at line {cut_arc_idx} ({}); preceding lines: {preceding_lines:?}\n{g}",
+            lines[cut_arc_idx],
         );
     }
 }

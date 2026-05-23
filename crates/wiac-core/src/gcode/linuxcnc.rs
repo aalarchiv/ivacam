@@ -564,7 +564,7 @@ impl PostProcessor for Post {
         }
         self.emit_arc_raw("G3", x, y, z, i, j);
     }
-    fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, dwell_sec: f64) {
+    fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, _rate_v: u32, dwell_sec: f64) {
         // LinuxCNC G81 / G82 (G82 is the dwell variant). Use G82 when dwell > 0,
         // G81 otherwise, so machinists who watch the canned cycle code see what
         // they expect.
@@ -586,7 +586,7 @@ impl PostProcessor for Post {
         // emit redundant Z words.
         self.state.last_z = Some(r);
     }
-    fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+    fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, _rate_v: u32, dwell_sec: f64) {
         // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
         // nxn0: P (dwell) follows the profile's dwell_unit.
         let dwell = if dwell_sec > 0.0 {
@@ -602,7 +602,16 @@ impl PostProcessor for Post {
         ));
         self.state.last_z = Some(r);
     }
-    fn drill_chip_break(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, dwell_sec: f64) {
+    fn drill_chip_break(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        r: f64,
+        q: f64,
+        _rate_v: u32,
+        dwell_sec: f64,
+    ) {
         // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
         // nxn0: P (dwell) follows the profile's dwell_unit.
         let dwell = if dwell_sec > 0.0 {

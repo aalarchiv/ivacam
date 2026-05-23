@@ -228,8 +228,59 @@ pub(super) fn emit_path_with_corner_feed<P: PostProcessor>(
     }
 }
 
-fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, post: &mut P) {
+/// Emit the drag-knife swivel arc that pivots the trailing blade
+/// around `corner` from the trail offset perpendicular to `last_m`
+/// to the trail offset perpendicular to `new_m`. Returns the
+/// post-swivel cutter position (= `off2`), or `None` if no arc was
+/// emitted (tangent change below threshold).
+///
+/// g30a: factored out so both Line and Arc branches in
+/// `emit_path_with_dragoff` can call the same logic. Previously the
+/// swivel was inlined only in the Line branch, so Line→Arc corners
+/// emitted the arc with NO swivel — bending the blade.
+fn emit_dragoff_swivel<P: PostProcessor>(
+    corner: Point2,
+    last_m: f64,
+    new_m: f64,
+    dragoff: f64,
+    post: &mut P,
+) -> Option<(f64, f64)> {
     use std::f64::consts::{FRAC_PI_2, PI};
+    let last_a = last_m + FRAC_PI_2;
+    let new_a = new_m + FRAC_PI_2;
+    let off1 = (
+        corner.x + dragoff * last_a.sin(),
+        corner.y - dragoff * last_a.cos(),
+    );
+    let off2 = (
+        corner.x + dragoff * new_a.sin(),
+        corner.y - dragoff * new_a.cos(),
+    );
+    post.linear(Some(off1.0), Some(off1.1), None);
+    let mut diff = new_a - last_a;
+    while diff > PI {
+        diff -= 2.0 * PI;
+    }
+    while diff < -PI {
+        diff += 2.0 * PI;
+    }
+    if diff.abs() > 1e-6 {
+        let i = corner.x - off1.0;
+        let j = corner.y - off1.1;
+        if diff > 0.0 {
+            post.arc_ccw(Some(off2.0), Some(off2.1), None, Some(i), Some(j));
+        } else {
+            post.arc_cw(Some(off2.0), Some(off2.1), None, Some(i), Some(j));
+        }
+        Some(off2)
+    } else {
+        // Below threshold: the linear emit already landed at off1 == off2;
+        // report off1 as the resulting position.
+        Some(off1)
+    }
+}
+
+fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, post: &mut P) {
     let mut last_motion: Option<f64> = None;
     for seg in segments {
         match seg.kind {
@@ -237,33 +288,7 @@ fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, 
                 let new_motion = (seg.end.y - seg.start.y).atan2(seg.end.x - seg.start.x);
                 if dragoff > 1e-9 {
                     if let Some(last_m) = last_motion {
-                        let last_a = last_m + FRAC_PI_2;
-                        let new_a = new_motion + FRAC_PI_2;
-                        let off1 = (
-                            seg.start.x + dragoff * last_a.sin(),
-                            seg.start.y - dragoff * last_a.cos(),
-                        );
-                        let off2 = (
-                            seg.start.x + dragoff * new_a.sin(),
-                            seg.start.y - dragoff * new_a.cos(),
-                        );
-                        post.linear(Some(off1.0), Some(off1.1), None);
-                        let mut diff = new_a - last_a;
-                        while diff > PI {
-                            diff -= 2.0 * PI;
-                        }
-                        while diff < -PI {
-                            diff += 2.0 * PI;
-                        }
-                        if diff.abs() > 1e-6 {
-                            let i = seg.start.x - off1.0;
-                            let j = seg.start.y - off1.1;
-                            if diff > 0.0 {
-                                post.arc_ccw(Some(off2.0), Some(off2.1), None, Some(i), Some(j));
-                            } else {
-                                post.arc_cw(Some(off2.0), Some(off2.1), None, Some(i), Some(j));
-                            }
-                        }
+                        emit_dragoff_swivel(seg.start, last_m, new_motion, dragoff, post);
                     }
                 }
                 post.linear(Some(seg.end.x), Some(seg.end.y), None);
@@ -277,6 +302,26 @@ fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, 
                 let center = seg
                     .center
                     .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+                // g30a: emit the drag-knife swivel arc at the
+                // Line→Arc (or Arc→Arc) corner BEFORE the cut arc.
+                // The arc's start tangent is the radius vector rotated
+                // 90° in the arc's orientation (+90° for CCW / bulge>0,
+                // -90° for CW). Without this, the blade enters the arc
+                // pointing along the previous motion — bending the
+                // blade and tearing material at every line→arc seam.
+                let rx_start = seg.start.x - center.x;
+                let ry_start = seg.start.y - center.y;
+                let (sx, sy) = if seg.bulge > 0.0 {
+                    (-ry_start, rx_start)
+                } else {
+                    (ry_start, -rx_start)
+                };
+                let start_tangent = sy.atan2(sx);
+                if dragoff > 1e-9 {
+                    if let Some(last_m) = last_motion {
+                        emit_dragoff_swivel(seg.start, last_m, start_tangent, dragoff, post);
+                    }
+                }
                 let i = center.x - seg.start.x;
                 let j = center.y - seg.start.y;
                 if seg.bulge > 0.0 {

@@ -263,6 +263,12 @@ impl PostProcessor for Post {
             last_z: None,
             last_rate: None,
             last_speed: None,
+            // sulg: HPGL pen plotters have no coolant or spindle —
+            // leave the new modal-state fields at their defaults
+            // (Unknown / None). Round-trips cleanly with restore_state
+            // below, which ignores them.
+            last_coolant: crate::gcode::CoolantState::Unknown,
+            last_spindle_dir: None,
         }
     }
     fn restore_state(&mut self, s: &CapturedPostState) {

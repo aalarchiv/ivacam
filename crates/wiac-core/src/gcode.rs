@@ -360,6 +360,19 @@ pub struct CapturedPostState {
     pub last_z: Option<f64>,
     pub last_rate: Option<u32>,
     pub last_speed: Option<u32>,
+    /// sulg: last commanded coolant state. Without this, an op that
+    /// turned coolant off would have its M9 line cached, but the next
+    /// op's `coolant_flood` would see the live PostState's stale
+    /// `last_coolant` and skip re-emitting the M8 — leaving the next
+    /// cut dry. `Unknown` keeps pre-sulg cache entries (which deserialize
+    /// via `Default`) compatible with the live default initial state.
+    pub last_coolant: CoolantState,
+    /// sulg: last commanded spindle direction. Op N may flip a tool
+    /// to `Ccw` (M4); when op N+1 is cached and its body was authored
+    /// against `Cw`, the replay would otherwise leave the spindle in
+    /// the wrong direction. None = no spindle direction commanded yet
+    /// (post-program-begin, pre-first-tool).
+    pub last_spindle_dir: Option<SpindleDirection>,
 }
 
 /// Format a dwell value for `G4 P` — strip trailing zeros so the line
@@ -1160,6 +1173,13 @@ pub struct PostState {
     /// gets through.
     #[serde(default, skip)]
     pub last_coolant: CoolantState,
+    /// sulg: last commanded spindle direction. Tracked so the cache
+    /// can capture and restore it across cached-op boundaries — without
+    /// this, op N flipping to `Ccw` (M4) would leave a cached op N+1
+    /// re-emitting against a stale "we're in Cw" assumption. None =
+    /// no spindle direction commanded yet.
+    #[serde(default, skip)]
+    pub last_spindle_dir: Option<SpindleDirection>,
 }
 
 /// f78z: tracked coolant state for dedup. Mirrors the M-code we last
@@ -1197,6 +1217,7 @@ impl Default for PostState {
             token_ctx: crate::gcode::post_profile::TokenCtx::default(),
             unit_scale: 1.0,
             last_coolant: CoolantState::Unknown,
+            last_spindle_dir: None,
         }
     }
 }

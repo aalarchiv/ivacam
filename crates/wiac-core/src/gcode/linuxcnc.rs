@@ -12,6 +12,7 @@ use crate::gcode::{
     configure_post_state, fmt_num, line_number_prefix, CapturedPostState, CoolantState,
     PostProcessor, PostState,
 };
+use crate::project::tool::SpindleDirection;
 
 #[derive(Debug, Default)]
 pub struct Post {
@@ -455,22 +456,37 @@ impl PostProcessor for Post {
     fn spindle_off(&mut self) {
         self.write("M5");
         self.state.last_speed = None;
+        // sulg: clear the tracked direction so the next spindle_on
+        // (M3 / M4) re-asserts it explicitly — matches the cache
+        // semantics in CapturedPostState.last_spindle_dir.
+        self.state.last_spindle_dir = None;
     }
     fn spindle_cw(&mut self, speed: u32, pause: u32) {
-        if self.state.last_speed != Some(speed) {
+        // sulg: re-emit M3 when EITHER the speed changed OR the
+        // direction differs from what's tracked. Otherwise a prior
+        // Ccw op (M4) followed by a same-speed Cw op would silently
+        // leave the spindle running backward.
+        let need_emit = self.state.last_speed != Some(speed)
+            || self.state.last_spindle_dir != Some(SpindleDirection::Cw);
+        if need_emit {
             let rendered = self.render_speed(speed);
             self.write(format!("M3{rendered}"));
             self.state.last_speed = Some(speed);
+            self.state.last_spindle_dir = Some(SpindleDirection::Cw);
             if pause > 0 {
                 self.write(format!("G4 P{pause}"));
             }
         }
     }
     fn spindle_ccw(&mut self, speed: u32, pause: u32) {
-        if self.state.last_speed != Some(speed) {
+        // sulg: same direction-aware dedupe as spindle_cw.
+        let need_emit = self.state.last_speed != Some(speed)
+            || self.state.last_spindle_dir != Some(SpindleDirection::Ccw);
+        if need_emit {
             let rendered = self.render_speed(speed);
             self.write(format!("M4{rendered}"));
             self.state.last_speed = Some(speed);
+            self.state.last_spindle_dir = Some(SpindleDirection::Ccw);
             if pause > 0 {
                 self.write(format!("G4 P{pause}"));
             }
@@ -624,6 +640,14 @@ impl PostProcessor for Post {
         self.state.last_z = None;
         self.state.last_rate = None;
         self.state.last_speed = None;
+        // sulg: a reset forces the next motion to re-emit X/Y/Z/F/S
+        // explicitly. The same applies to the spindle direction —
+        // the pipeline's Pause handler at pipeline.rs:748 relies on
+        // this so the next op's spindle_on (whether M3 or M4)
+        // re-fires. Coolant is intentionally NOT cleared here: M0
+        // doesn't shut off coolant, and forcing a re-emit would
+        // double-print M7/M8 mid-program.
+        self.state.last_spindle_dir = None;
     }
     fn capture_state(&self) -> CapturedPostState {
         CapturedPostState {
@@ -632,6 +656,14 @@ impl PostProcessor for Post {
             last_z: self.state.last_z,
             last_rate: self.state.last_rate,
             last_speed: self.state.last_speed,
+            // sulg: ferry the live coolant + spindle-direction modal
+            // state across the cache boundary. Without this, a
+            // cached op N+1 would replay against a stale "Unknown"
+            // initial state and either re-emit a redundant M7/M8/M3
+            // or — worse — skip a state change the live emitter
+            // would have made.
+            last_coolant: self.state.last_coolant,
+            last_spindle_dir: self.state.last_spindle_dir,
         }
     }
     fn restore_state(&mut self, s: &CapturedPostState) {
@@ -640,6 +672,8 @@ impl PostProcessor for Post {
         self.state.last_z = s.last_z;
         self.state.last_rate = s.last_rate;
         self.state.last_speed = s.last_speed;
+        self.state.last_coolant = s.last_coolant;
+        self.state.last_spindle_dir = s.last_spindle_dir;
     }
     fn configure(
         &mut self,

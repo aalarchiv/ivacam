@@ -51,7 +51,8 @@ use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::{
     ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
     OpKind, OpParams, OpSource, PatternConfig, PocketParams, PocketStrategy, ProfileParams,
-    SourceCombine, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind, VCarveParams,
+    SourceCombine, SpindleDirection, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind,
+    VCarveParams,
 };
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
@@ -344,6 +345,18 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     hash_opt_f64(t.default_step, h);
     hash_opt_f64(t.default_xy_overlap, h);
     t.pause.hash(h);
+    // scwx: kerf_mm (laser spot diameter) carves into the heightmap at
+    // emission time; stickout_length_mm controls the holder/shank
+    // clearance check geometry; spindle_direction routes the post
+    // between M3 / M4 — all three change emitted output and must
+    // invalidate the cache.
+    hash_opt_f64(t.kerf_mm, h);
+    hash_opt_f64(t.stickout_length_mm, h);
+    let sdir: u8 = match t.spindle_direction {
+        SpindleDirection::Cw => 0,
+        SpindleDirection::Ccw => 1,
+    };
+    h.write_u8(sdir);
     hash_opt_f64(t.flute_length_mm, h);
     hash_opt_f64(t.shank_diameter_mm, h);
     match t.holder {
@@ -427,6 +440,27 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     h.write_u32(m.decimal_separator as u32);
     hash_opt_u32(m.line_number_start, h);
     m.plot_mode_z.hash(h);
+    // 3nnj: RPM clamp window changes whether an emitted S<rpm> is
+    // capped / floored (and triggers the matching warning lane), so
+    // it MUST invalidate the cache.
+    hash_opt_u32(m.spindle_rpm_min, h);
+    hash_opt_u32(m.spindle_rpm_max, h);
+    // eaeq / m8sq: toolchange spindle stop/start dwells are emitted
+    // verbatim as G4 P<sec> lines around M5/M3 in the M6 envelope.
+    hash_opt_f64(m.spindle_stop_dwell_sec, h);
+    hash_opt_f64(m.spindle_start_dwell_sec, h);
+    // syol: program_end footer routing — park_at_home flips on the
+    // G53 G0 X0 Y0 retract, park_xy overrides it with an explicit
+    // WCS-coord point. Both materially change the emitted footer.
+    m.park_at_home.hash(h);
+    match m.park_xy {
+        None => h.write_u8(0),
+        Some((x, y)) => {
+            h.write_u8(1);
+            hash_f64(x, h);
+            hash_f64(y, h);
+        }
+    }
     // rt1.15: post-profile templates affect program output, so they
     // must invalidate the cache. None == absent variant byte.
     match &m.post_profile {
@@ -521,8 +555,9 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             pitch_mm,
             internal,
             climb,
+            radial_passes,
+            start_angle_rad,
             thread_depth_mm,
-            ..
         } => {
             h.write_u8(4);
             hash_f64(*pitch_mm, h);
@@ -540,8 +575,14 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
                     hash_f64(*d, h);
                 }
             }
-            // radial_passes (sqnh): not hashed yet — parent bumps the
-            // cache version when wiring it in.
+            // sqnh: radial roughing-pass schedule changes the emitted
+            // helix bodies (one helix per pass vs. one at full
+            // engagement). 6uns: start_angle_rad rotates the helix
+            // start point so partial-thread restarts can pick up
+            // where a prior run stopped. Both materially change the
+            // emitted gcode and so must invalidate cache hits.
+            radial_passes.hash(h);
+            hash_f64(*start_angle_rad, h);
         }
         OpKind::Chamfer {
             width_mm,
@@ -730,6 +771,11 @@ fn hash_operation_params<H: Hasher>(p: &OpParams, h: &mut H) {
     hash_opt_u32(p.plunge_rate_override, h);
     hash_opt_f64(p.finish_step, h);
     hash_f64(p.through_depth, h);
+    // 1mlv: stock_to_leave_mm enlarges the effective tool radius in
+    // offset_builder for every Profile / Pocket cascade — the cutter
+    // walks farther from the geometric wall. Output gcode coordinates
+    // change verbatim, so this MUST be hashed.
+    hash_f64(p.stock_to_leave_mm, h);
     hash_vec_f64(&p.depth_list, h);
 }
 
@@ -1362,6 +1408,287 @@ mod tests {
         let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
         let k2 = op_cache_key(&op, &tool, &with_laser, &segs, &[], 0);
         assert_ne!(k1, k2, "machine.capabilities should invalidate the cache");
+    }
+
+    // ─── scwx: hash_tool kerf / stickout / spindle_direction ────────
+
+    /// scwx: editing a laser tool's kerf must invalidate the cache
+    /// (the heightmap carve radius depends on kerf_mm).
+    #[test]
+    fn hash_tool_changes_when_kerf_mm_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let machine = MachineConfig::default();
+        let mut t1 = endmill();
+        t1.kerf_mm = Some(0.05);
+        let mut t2 = endmill();
+        t2.kerf_mm = Some(0.4);
+        let k1 = op_cache_key(&op, &t1, &machine, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &t2, &machine, &segs, &[], 0);
+        assert_ne!(k1, k2, "tool.kerf_mm should invalidate the cache");
+    }
+
+    /// scwx: tool stickout_length_mm participates in holder/shank
+    /// clearance checks — editing it must invalidate the cache.
+    #[test]
+    fn hash_tool_changes_when_stickout_length_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let machine = MachineConfig::default();
+        let mut t1 = endmill();
+        t1.stickout_length_mm = Some(5.0);
+        let mut t2 = endmill();
+        t2.stickout_length_mm = Some(10.0);
+        let k1 = op_cache_key(&op, &t1, &machine, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &t2, &machine, &segs, &[], 0);
+        assert_ne!(k1, k2, "tool.stickout_length_mm should invalidate the cache");
+    }
+
+    /// scwx + z1y0: flipping the tool's spindle_direction routes the
+    /// post between M3 and M4 — emitted gcode changes verbatim, so
+    /// the cache key must change.
+    #[test]
+    fn hash_tool_changes_when_spindle_direction_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let machine = MachineConfig::default();
+        let mut t_ccw = endmill();
+        t_ccw.spindle_direction = crate::project::SpindleDirection::Ccw;
+        let k_cw = op_cache_key(&op, &endmill(), &machine, &segs, &[], 0);
+        let k_ccw = op_cache_key(&op, &t_ccw, &machine, &segs, &[], 0);
+        assert_ne!(k_cw, k_ccw, "tool.spindle_direction should invalidate the cache");
+    }
+
+    // ─── 75zr: hash_machine RPM clamps / dwells / park ─────────────
+
+    /// 3nnj: tweaking spindle_rpm_min or _max changes whether an
+    /// emitted S<rpm> is clamped (and the matching warning fires),
+    /// so the cache must invalidate on either bound.
+    #[test]
+    fn hash_machine_changes_when_spindle_rpm_min_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut floored = base.clone();
+        floored.spindle_rpm_min = Some(6_000);
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &floored, &segs, &[], 0);
+        assert_ne!(k1, k2, "machine.spindle_rpm_min should invalidate the cache");
+    }
+
+    #[test]
+    fn hash_machine_changes_when_spindle_rpm_max_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut capped = base.clone();
+        capped.spindle_rpm_max = Some(12_000);
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &capped, &segs, &[], 0);
+        assert_ne!(k1, k2, "machine.spindle_rpm_max should invalidate the cache");
+    }
+
+    /// eaeq: the two spindle dwell knobs are emitted as G4 P<sec>
+    /// lines inside the M6 envelope — output bytes change with them.
+    #[test]
+    fn hash_machine_changes_when_spindle_stop_dwell_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut dwell = base.clone();
+        dwell.spindle_stop_dwell_sec = Some(1.5);
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &dwell, &segs, &[], 0);
+        assert_ne!(
+            k1, k2,
+            "machine.spindle_stop_dwell_sec should invalidate the cache"
+        );
+    }
+
+    #[test]
+    fn hash_machine_changes_when_spindle_start_dwell_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut dwell = base.clone();
+        dwell.spindle_start_dwell_sec = Some(2.0);
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &dwell, &segs, &[], 0);
+        assert_ne!(
+            k1, k2,
+            "machine.spindle_start_dwell_sec should invalidate the cache"
+        );
+    }
+
+    /// syol: park_at_home toggles a G53 G0 X0 Y0 line into the
+    /// program_end footer.
+    #[test]
+    fn hash_machine_changes_when_park_at_home_toggles() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut parked = base.clone();
+        parked.park_at_home = true;
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &parked, &segs, &[], 0);
+        assert_ne!(k1, k2, "machine.park_at_home should invalidate the cache");
+    }
+
+    /// syol: explicit park_xy overrides the home / work-zero
+    /// fallback in the program_end footer.
+    #[test]
+    fn hash_machine_changes_when_park_xy_changes() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let base = MachineConfig::default();
+        let mut parked = base.clone();
+        parked.park_xy = Some((150.0, 200.0));
+        let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
+        let k2 = op_cache_key(&op, &tool, &parked, &segs, &[], 0);
+        assert_ne!(k1, k2, "machine.park_xy should invalidate the cache");
+    }
+
+    // ─── cgcu: hash_operation_kind Thread radial_passes / start_angle
+
+    /// sqnh: number of radial roughing passes — driver emits one
+    /// helix body per pass, so the cache key MUST react.
+    #[test]
+    fn hash_thread_changes_when_radial_passes_changes() {
+        let segs = square(20.0);
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let thread = |radial_passes: u32, start_angle_rad: f64| Op {
+            id: 1,
+            name: "Thread".into(),
+            enabled: true,
+            kind: OpKind::Thread {
+                pitch_mm: 1.0,
+                internal: true,
+                climb: false,
+                radial_passes,
+                start_angle_rad,
+                thread_depth_mm: None,
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        let k1 = op_cache_key(&thread(1, 0.0), &tool, &machine, &segs, &[], 0);
+        let k2 = op_cache_key(&thread(3, 0.0), &tool, &machine, &segs, &[], 0);
+        assert_ne!(k1, k2, "Thread.radial_passes should invalidate the cache");
+    }
+
+    /// 6uns: start angle rotates the helix's starting tangent point —
+    /// emitted gcode coordinates change with it.
+    #[test]
+    fn hash_thread_changes_when_start_angle_rad_changes() {
+        let segs = square(20.0);
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let thread = |start_angle_rad: f64| Op {
+            id: 1,
+            name: "Thread".into(),
+            enabled: true,
+            kind: OpKind::Thread {
+                pitch_mm: 1.0,
+                internal: true,
+                climb: false,
+                radial_passes: 1,
+                start_angle_rad,
+                thread_depth_mm: None,
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        let k1 = op_cache_key(&thread(0.0), &tool, &machine, &segs, &[], 0);
+        let k2 = op_cache_key(&thread(1.0), &tool, &machine, &segs, &[], 0);
+        assert_ne!(k1, k2, "Thread.start_angle_rad should invalidate the cache");
+    }
+
+    // ─── 3xxj: hash_operation_params stock_to_leave_mm ──────────────
+
+    /// 1mlv: stock_to_leave_mm bloats the tool offset radius in the
+    /// cascade builder. Output coordinates change verbatim.
+    #[test]
+    fn hash_op_changes_when_stock_to_leave_mm_changes() {
+        let segs = square(20.0);
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let mut op_b = profile_op();
+        op_b.params.stock_to_leave_mm = 0.3;
+        let k1 = op_cache_key(&profile_op(), &tool, &machine, &segs, &[], 0);
+        let k2 = op_cache_key(&op_b, &tool, &machine, &segs, &[], 0);
+        assert_ne!(
+            k1, k2,
+            "op.params.stock_to_leave_mm should invalidate the cache"
+        );
+    }
+
+    // ─── sulg: CapturedPostState last_coolant + last_spindle_dir ────
+
+    /// sulg: the captured post state struct now carries coolant and
+    /// spindle direction. Round-trip a non-default state through a
+    /// real post's capture / restore and assert both fields survive
+    /// the trip — that's what cached op N→N+1 splicing relies on.
+    #[test]
+    fn captured_post_state_round_trips_coolant_and_spindle_dir() {
+        use crate::gcode::{linuxcnc, CoolantState, PostProcessor};
+        use crate::project::SpindleDirection;
+
+        // Author "op N": flip the spindle to Ccw + coolant to flood,
+        // then snapshot.
+        let mut post_a = linuxcnc::Post::default();
+        post_a.spindle_ccw(18_000, 0);
+        post_a.coolant_flood();
+        let snap = post_a.capture_state();
+        assert_eq!(
+            snap.last_spindle_dir,
+            Some(SpindleDirection::Ccw),
+            "capture must preserve last_spindle_dir"
+        );
+        assert_eq!(
+            snap.last_coolant,
+            CoolantState::Flood,
+            "capture must preserve last_coolant"
+        );
+
+        // Restore into a fresh post (simulating an op-N+1 cache hit
+        // replay). Both modal-state fields should land in the post.
+        let mut post_b = linuxcnc::Post::default();
+        post_b.restore_state(&snap);
+
+        // With Ccw restored, a same-speed spindle_cw call MUST emit
+        // M3 — proves the direction was carried over (otherwise the
+        // last_speed-only dedupe would suppress the M3 line).
+        let mut after_restore = linuxcnc::Post::default();
+        after_restore.restore_state(&snap);
+        after_restore.spindle_cw(18_000, 0);
+        let out = after_restore.finish();
+        assert!(
+            out.contains("M3 S18000") || out.contains("M3S18000"),
+            "spindle_cw after restoring Ccw must emit M3 (direction flip);\
+             got:\n{out}"
+        );
+
+        // Same coolant after restore: coolant_flood becomes a no-op
+        // (already Flood). Use a separate fresh post to assert.
+        let mut after_coolant = linuxcnc::Post::default();
+        after_coolant.restore_state(&snap);
+        after_coolant.coolant_flood();
+        let out2 = after_coolant.finish();
+        assert!(
+            !out2.contains("M8"),
+            "coolant_flood after restoring Flood state must dedupe (no extra M8); got:\n{out2}"
+        );
     }
 
     /// rt1.10: changing `op.tab_mode` invalidates the cache (`tab_mode`

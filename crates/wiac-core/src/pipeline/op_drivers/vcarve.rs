@@ -18,6 +18,23 @@ use crate::pipeline::{
 };
 use crate::project::{Op, Project};
 
+/// o3od: cheap pre-check used by `run_per_op` to decide whether the
+/// toolchange envelope (M5+dwell → M6 → z-shift → M3+dwell) needs to
+/// fire BEFORE this op. The medial-axis combine is the cheapest reliable
+/// gate — V-Carve emits exactly when `combine_source_regions` is
+/// non-empty (matches the actual driver's first emission gate at
+/// `regions.is_empty()`). Open polylines / single-line sources fail
+/// closure and produce an empty regions vec, so the M6 dwells used to
+/// fire pointlessly for a no-output op. Returning `false` here skips
+/// the envelope; the driver still runs (so it can still emit its
+/// `vcarve_no_closed_region` warning).
+#[must_use]
+pub(in crate::pipeline) fn vcarve_would_emit(op: &Op, objects: &[VcObject]) -> bool {
+    let selected = ordered_selection(op, objects);
+    let combine = source_combine_mode(op);
+    !combine_source_regions(objects, &selected, combine).is_empty()
+}
+
 // V-Carve driver couples medial-axis sampling, multi-pass cascade, and
 // optional finish-pass into a single state machine — see 55o4 for the
 // planned per-stage extraction. Length budget waived for the same

@@ -431,6 +431,10 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
         MachineMode::Mill => 0,
         MachineMode::Laser => 1,
         MachineMode::Drag => 2,
+        // zpuk: Plasma — keep the discriminant numerically distinct so
+        // cached output isn't shared with Drag (different Z dance:
+        // pierce-height → dwell → cut-height vs. plot-mode single-Z).
+        MachineMode::Plasma => 3,
     };
     h.write_u8(mode);
     m.comments.hash(h);
@@ -452,6 +456,7 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
             MachineMode::Mill => 0,
             MachineMode::Laser => 1,
             MachineMode::Drag => 2,
+            MachineMode::Plasma => 3,
         };
         h.write_u8(cap_disc);
     }
@@ -564,6 +569,7 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             cycle,
             chamfer_after_width_mm,
             pattern,
+            spot_first,
         } => {
             h.write_u8(3);
             hash_drill_cycle(*cycle, h);
@@ -573,6 +579,16 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
                 Some(p) => {
                     h.write_u8(1);
                     hash_pattern(*p, h);
+                }
+            }
+            // r2af: spot pre-pass is part of the op's emission shape;
+            // changing either depth or tool MUST invalidate the cache.
+            match spot_first {
+                None => h.write_u8(0),
+                Some(s) => {
+                    h.write_u8(1);
+                    s.spot_depth_mm.to_bits().hash(h);
+                    h.write_u32(s.spot_tool_id);
                 }
             }
         }
@@ -1040,6 +1056,10 @@ mod tests {
             stickout_length_mm: None,
             holder: None,
             spindle_direction: crate::project::SpindleDirection::default(),
+            drag_knife_self_align_angle_deg: None,
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
         }
     }
 

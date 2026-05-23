@@ -228,15 +228,24 @@ pub enum OpKind {
     /// Drill cycle — point or circle smaller than tool. Carries a
     /// [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1
     /// fallback for posts that don't support canned cycles). Also
-    /// carries the Stufenfase post-drill chamfer width (rt1.20) and
-    /// the optional pattern (kbx5 step 1 — Drill is the only kind
-    /// patternable for now).
+    /// carries the Stufenfase post-drill chamfer width (rt1.20), the
+    /// optional pattern (kbx5 step 1 — Drill is the only kind
+    /// patternable for now), and the optional spot/centerdrill pre-pass
+    /// (r2af).
     Drill {
         cycle: DrillCycle,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         chamfer_after_width_mm: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pattern: Option<PatternConfig>,
+        /// r2af: optional spot/centerdrill pre-pass. When `Some`, the
+        /// driver emits a shallow spot-drill block at every hole center
+        /// BEFORE the main drill block. Twist drills walk on hard /
+        /// polished stock — the spot dimple locks the chisel edge so
+        /// the main drill plunges on-nominal instead of drifting by
+        /// tip/2+. None ⇒ legacy behaviour (no spot pre-pass).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spot_first: Option<SpotConfig>,
     },
     /// Helical thread — single-point cutter walks a helix inside a bore
     /// (internal) or around a stud (external). Z descends linearly by
@@ -401,6 +410,32 @@ impl Default for DrillCycle {
     fn default() -> Self {
         DrillCycle::Simple { dwell_sec: 0.0 }
     }
+}
+
+/// r2af: spot / centerdrill pre-pass config attached to
+/// [`OpKind::Drill::spot_first`]. The driver emits a shallow drill
+/// block at every hole center BEFORE the main drill block, using
+/// the named spot tool. Hardens hole position on hard / polished
+/// stock where a twist drill's chisel edge would otherwise walk
+/// until it scratched a divot — costing 0.1–0.5 mm of positional
+/// accuracy.
+///
+/// Wire format: `{ "spot_depth_mm": -0.5, "spot_tool_id": 7 }`.
+/// `spot_depth_mm` is negative (depth below stock); positive values
+/// are clamped to 0 at emit time (= a no-op spot). The spot block
+/// uses `DrillCycle::Simple { dwell_sec: 0 }` regardless of the
+/// main op's cycle — pecking on a 0.5 mm spot is pointless.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpotConfig {
+    /// Depth of the spot dimple below stock top (negative). Typical
+    /// 0.3–1.0 mm. Positive / zero values disable the spot at emit
+    /// time without an error.
+    pub spot_depth_mm: f64,
+    /// Tool id (matches [`crate::project::ToolEntry::id`]) of the
+    /// spot / centerdrill cutter. The driver emits a toolchange
+    /// envelope between the spot and the main drill block when the
+    /// spot tool differs from the main drill's tool.
+    pub spot_tool_id: u32,
 }
 
 /// Pocket strategy selector. Cascade / Zigzag / Spiral serialize as

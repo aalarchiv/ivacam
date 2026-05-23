@@ -68,6 +68,17 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
         MachineMode::Drag => {
             // Drag knife / pen plotter — no spindle, no beam.
         }
+        MachineMode::Plasma => {
+            // zpuk: plasma torch — most controllers accept M3 S<power>
+            // for "fire arc at <power>" the same way GRBL / LinuxCNC
+            // accept it for a laser. The torch starts before the
+            // Z-drop to pierce_height, dwells, then drops to cut_height.
+            // We reuse `laser_on` rather than introducing a separate
+            // trait method — the wire form is identical and the
+            // pierce/cut-height dance is emitted by the cut path
+            // (emit_offset) rather than the tool-on helper.
+            post.laser_on(power_or_speed);
+        }
     }
 }
 
@@ -77,7 +88,9 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
 /// running between cuts (the post's delta-encoded spindle state
 /// dedupes the re-arm); Drag is a no-op.
 fn cut_tool_off<P: PostProcessor>(post: &mut P, setup: &Setup) {
-    if setup.machine.mode == MachineMode::Laser {
+    if matches!(setup.machine.mode, MachineMode::Laser | MachineMode::Plasma) {
+        // zpuk: plasma torch-off mirrors laser — drop the arc between
+        // cuts so the rapid traverse doesn't leave a melt trail.
         post.laser_off();
     }
 }
@@ -810,6 +823,36 @@ fn emit_offset<P: PostProcessor>(
     // defocused, never pierced, and the first cut yanked unmelted
     // material. Order matches Lightburn / T2Laser / Estlcam laser.
     let pierce_sec = setup.tool.pierce_sec;
+    // zpuk: plasma entry — when machine.mode == Plasma the lead-in
+    // emits a two-step Z descent instead of a single plunge:
+    //   1. Torch already on (cut_tool_on above) — rapid XY at fast_z.
+    //   2. Rapid (G0) to pierce_height_mm above stock.
+    //   3. Dwell pierce_delay_sec while the arc pierces.
+    //   4. G1 down to cut_height_mm at the plunge rate.
+    //   5. Walk the contour (multi_pass collapses to one pass).
+    // Falls back to safe defaults (3.8 / 1.5 / 0.5) when the
+    // resolved values are 0. We carry the booleans + heights into
+    // a small struct so the three lead branches below stay readable.
+    let plasma_entry = if setup.machine.mode == MachineMode::Plasma {
+        let pierce_h = if setup.tool.pierce_height_mm > 0.0 {
+            setup.tool.pierce_height_mm
+        } else {
+            3.8
+        };
+        let cut_h = if setup.tool.cut_height_mm > 0.0 {
+            setup.tool.cut_height_mm
+        } else {
+            1.5
+        };
+        let delay = if setup.tool.pierce_delay_sec > 0.0 {
+            setup.tool.pierce_delay_sec
+        } else {
+            0.5
+        };
+        Some((pierce_h, cut_h, delay))
+    } else {
+        None
+    };
     // lyq6: the lead-in plunge must drop to `start_depth` (the entry
     // plane just above the workpiece), NOT to a literal Z=0. Stock
     // proud of Z=0 (start_depth < 0) would crash the cutter at the
@@ -829,10 +872,24 @@ fn emit_offset<P: PostProcessor>(
     match lead_in {
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
-            post.feedrate(use_rate_v);
-            post.linear(None, None, Some(entry_z));
-            if pierce_sec > 0.0 {
-                post.dwell(pierce_sec);
+            if let Some((pierce_h, cut_h, delay)) = plasma_entry {
+                // zpuk: plasma two-step Z. Rapid to pierce, dwell, G1
+                // to cut height. cut_height is the cut plane that
+                // multi_pass walks at (it short-circuits to one pass
+                // because mode == Plasma — see the plasma branch in
+                // multi_pass).
+                post.move_to(None, None, Some(pierce_h));
+                if delay > 0.0 {
+                    post.dwell(delay);
+                }
+                post.feedrate(use_rate_v);
+                post.linear(None, None, Some(cut_h));
+            } else {
+                post.feedrate(use_rate_v);
+                post.linear(None, None, Some(entry_z));
+                if pierce_sec > 0.0 {
+                    post.dwell(pierce_sec);
+                }
             }
             post.feedrate(use_rate_h);
         }
@@ -842,10 +899,19 @@ fn emit_offset<P: PostProcessor>(
             ccw,
         } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
-            post.feedrate(use_rate_v);
-            post.linear(None, None, Some(entry_z));
-            if pierce_sec > 0.0 {
-                post.dwell(pierce_sec);
+            if let Some((pierce_h, cut_h, delay)) = plasma_entry {
+                post.move_to(None, None, Some(pierce_h));
+                if delay > 0.0 {
+                    post.dwell(delay);
+                }
+                post.feedrate(use_rate_v);
+                post.linear(None, None, Some(cut_h));
+            } else {
+                post.feedrate(use_rate_v);
+                post.linear(None, None, Some(entry_z));
+                if pierce_sec > 0.0 {
+                    post.dwell(pierce_sec);
+                }
             }
             // 3o3n: re-emit the cutting feedrate immediately before
             // the arc lead-in. The roll-on is the first ACTUAL cut
@@ -869,10 +935,19 @@ fn emit_offset<P: PostProcessor>(
         }
         LeadGeometry::None => {
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
-            post.feedrate(use_rate_v);
-            post.linear(None, None, Some(entry_z));
-            if pierce_sec > 0.0 {
-                post.dwell(pierce_sec);
+            if let Some((pierce_h, cut_h, delay)) = plasma_entry {
+                post.move_to(None, None, Some(pierce_h));
+                if delay > 0.0 {
+                    post.dwell(delay);
+                }
+                post.feedrate(use_rate_v);
+                post.linear(None, None, Some(cut_h));
+            } else {
+                post.feedrate(use_rate_v);
+                post.linear(None, None, Some(entry_z));
+                if pierce_sec > 0.0 {
+                    post.dwell(pierce_sec);
+                }
             }
             post.feedrate(use_rate_h);
         }
@@ -959,10 +1034,53 @@ fn multi_pass<P: PostProcessor>(
     // through_depth / depth_list machinery. Laser / plasma / pen
     // plotter / 3D-printer / drag-knife controllers expect binary
     // pen-up / pen-down Z values; all the descent stages are noise.
-    if setup.machine.plot_mode_z {
-        let cut_z = setup.mill.depth.min(0.0);
-        post.feedrate(rate_v);
-        post.linear(None, None, Some(cut_z));
+    //
+    // 6yhs: MachineMode::Drag also collapses to a single pass even
+    // when the global `plot_mode_z` is off. setup_resolver pins
+    // setup.machine.mode = Drag per-op for OpKind::DragKnife
+    // (see setup_resolver.rs:349-351); without this branch, a Drag op
+    // on a Mill-default machine (hobby Shapeoko with a knife taped to
+    // the spindle) walked the same path N times at incrementally more
+    // negative Z values. The knife is physically locked at one
+    // depth — extra passes do nothing useful except wear the Z axis
+    // and waste cycle time. Mirror the plot_mode_z branch: one pass
+    // at the configured `depth`.
+    //
+    // zpuk: Plasma is also a single-pass mode — the torch height stays
+    // at `cut_height_mm` for the whole cut, never stepping down. The
+    // pre-cut pierce + height drop is emitted up in emit_offset BEFORE
+    // multi_pass runs, so by the time we reach here Z is already at
+    // cut_height. Skipping the schedule keeps the walk at constant Z.
+    if setup.machine.plot_mode_z
+        || setup.machine.mode == MachineMode::Drag
+        || setup.machine.mode == MachineMode::Plasma
+    {
+        // zpuk: plasma cuts at `cut_height_mm` above stock (positive
+        // Z), NOT at `mill.depth` (which is the milling-style depth
+        // below stock). For plot_mode_z / Drag the cut Z is still
+        // mill.depth.min(0). The lead-in in emit_offset already
+        // positioned Z at cut_height for plasma; we only need to
+        // re-emit the linear-to-cut-Z guard for plot_mode_z / Drag.
+        let cut_z = if setup.machine.mode == MachineMode::Plasma {
+            // Default 1.5 mm if the resolved value is 0 (legacy
+            // projects without plasma fields set).
+            if setup.tool.cut_height_mm > 0.0 {
+                setup.tool.cut_height_mm
+            } else {
+                1.5
+            }
+        } else {
+            setup.mill.depth.min(0.0)
+        };
+        // For plot_mode_z / Drag we still need to dive to cut_z (the
+        // lead-in plunges to mill.start_depth which may not equal
+        // the cut depth). For Plasma the lead-in already dropped to
+        // cut_height — the post delta-encodes Z so re-emitting the
+        // same Z is a no-op, but skip it anyway for clarity.
+        if setup.machine.mode != MachineMode::Plasma {
+            post.feedrate(rate_v);
+            post.linear(None, None, Some(cut_z));
+        }
         post.feedrate(rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
         let fitted = fit_line_runs(segments, setup);
@@ -2990,6 +3108,302 @@ mod tests {
         assert!(
             g6.lines().any(|l| l.contains("G10 L20 P6 Z2")),
             "GRBL tool_z_shift on G59 must emit `G10 L20 P6 Z2...`; got:\n{g6}",
+        );
+    }
+
+    /// 0t9o: drag-knife self-alignment threshold suppresses swivel
+    /// arcs at shallow corners. A polyline approximating a circle as
+    /// 64 chords has ~5.6° turns at each corner — well below the
+    /// 30° default. The walker must NOT emit a swivel arc at each
+    /// chord; the trailing offset self-aligns the blade.
+    ///
+    /// Build a polyline with two adjacent line segments whose
+    /// included turn is ~10° (below threshold). Assert that the
+    /// walker emits the second linear move directly — no intervening
+    /// swivel arc and no perpendicular pre-step linear.
+    #[test]
+    fn dragoff_skips_swivel_below_self_align_threshold() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+
+        let mut setup = Setup::default();
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 0;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 800;
+        setup.tool.dragoff = Some(0.5);
+        setup.tool.drag_self_align_angle_rad = 30.0_f64.to_radians();
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        let segs = vec![
+            Segment::line(p(0.0, 0.0), p(10.0, 0.0), "0", 7),
+            Segment::line(p(10.0, 0.0), p(20.0, 1.76), "0", 7),
+            Segment::line(p(20.0, 1.76), p(20.0, 5.0), "0", 7),
+            Segment::line(p(20.0, 5.0), p(0.0, 5.0), "0", 7),
+            Segment::line(p(0.0, 5.0), p(0.0, 0.0), "0", 7),
+        ];
+        let offset = PolylineOffset {
+            segments: segs,
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[offset], &mut post);
+        let lines: Vec<&str> = g.lines().collect();
+        // After the first line lands at X10 Y0, the IMMEDIATE next
+        // motion-line MUST be the second line's endpoint (X20 Y1.76)
+        // — no swivel arc + perpendicular pre-step inserted between
+        // them for the shallow ~10° kink.
+        let first_idx = lines
+            .iter()
+            .position(|l| l.starts_with("G1 ") && l.contains("X10") && !l.contains("Y1"))
+            .unwrap_or_else(|| panic!("expected G1 to X10 Y0 (first line endpoint):\n{g}"));
+        // The immediate next motion-emitting line (skipping any
+        // pure-comment / empty lines) must be the next line segment's
+        // endpoint, NOT a swivel pre-step or arc.
+        let next_motion = lines
+            .iter()
+            .skip(first_idx + 1)
+            .find(|l| {
+                let t = l.trim_start();
+                t.starts_with('G') && !t.starts_with("G4")
+            })
+            .copied()
+            .unwrap_or("");
+        assert!(
+            next_motion.starts_with("G1 ") && next_motion.contains("X20") && next_motion.contains("Y1.76"),
+            "0t9o: expected immediate next motion = G1 X20 Y1.76 (no swivel inserted for ~10° corner); got '{next_motion}' in:\n{g}",
+        );
+    }
+
+    /// zpuk: Plasma mode emits a two-step Z entry — rapid to
+    /// pierce_height, dwell pierce_delay_sec, then G1 to cut_height.
+    /// The cut proceeds at constant Z = cut_height (multi_pass
+    /// collapses for Plasma the same way it collapses for Drag).
+    #[test]
+    fn plasma_mode_emits_pierce_then_cut_height_sequence() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Plasma;
+        setup.machine.comments = false;
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 100;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 800;
+        setup.tool.pierce_height_mm = 4.0;
+        setup.tool.cut_height_mm = 1.5;
+        setup.tool.pierce_delay_sec = 0.5;
+        setup.mill.depth = -1.0; // irrelevant for plasma — cut Z = cut_height
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 10.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.mill.offset = ToolOffset::On;
+
+        let segs = vec![
+            Segment::line(p(0.0, 0.0), p(10.0, 0.0), "0", 7),
+            Segment::line(p(10.0, 0.0), p(10.0, 10.0), "0", 7),
+            Segment::line(p(10.0, 10.0), p(0.0, 10.0), "0", 7),
+            Segment::line(p(0.0, 10.0), p(0.0, 0.0), "0", 7),
+        ];
+        let offset = PolylineOffset {
+            segments: segs,
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[offset], &mut post);
+        let lines: Vec<&str> = g.lines().collect();
+        // Entry should rapid to Z4 (pierce height), dwell 0.5s, then
+        // G1 to Z1.5 (cut height). Find a G0 line carrying Z4.
+        let pierce_idx = lines
+            .iter()
+            .position(|l| l.starts_with("G0 ") && l.contains("Z4"))
+            .unwrap_or_else(|| panic!("zpuk: expected G0 to Z4 (pierce_height) in:\n{g}"));
+        // Dwell follows.
+        let dwell = lines.get(pierce_idx + 1).copied().unwrap_or("");
+        assert!(
+            dwell.starts_with("G4 ") && dwell.contains("P0.5"),
+            "zpuk: expected G4 P0.5 dwell after pierce-height rapid; got '{dwell}' in:\n{g}",
+        );
+        // Then G1 to Z1.5.
+        let cut_drop = lines
+            .iter()
+            .skip(pierce_idx)
+            .find(|l| l.starts_with("G1 ") && l.contains("Z1.5"));
+        assert!(
+            cut_drop.is_some(),
+            "zpuk: expected G1 Z1.5 (cut_height) after pierce dwell in:\n{g}",
+        );
+        // No cut moves at the main depth (Z=-1) — plasma collapses
+        // to one pass at cut_height. NO Z-negative G1 should appear.
+        for line in lines.iter() {
+            if line.starts_with("G1 ") && line.contains("Z-") {
+                panic!(
+                    "zpuk: plasma must not descend below stock top; got: {line}\n{g}"
+                );
+            }
+        }
+        // Torch on emit (laser_on path) — `M3 S100`.
+        assert!(
+            g.contains("M3 S100") || g.contains("M3 S 100"),
+            "zpuk: expected torch-on (M3 S<power>) in plasma output:\n{g}",
+        );
+    }
+
+    /// 6yhs: Drag-knife mode (machine.mode = Drag) must collapse to
+    /// a single pass at `setup.mill.depth` even without the global
+    /// plot_mode_z flag. setup_resolver sets mode=Drag per-op for
+    /// DragKnife ops; before the fix, multi_pass walked the schedule
+    /// N times at incrementally negative Z (knife wear + Z-axis wear
+    /// + 3x cycle time).
+    ///
+    /// Build a multi-pass schedule (`step = -0.5`, `depth = -1.5`)
+    /// and assert the output contains exactly ONE distinct Z=
+    /// negative line (= the cut Z), NOT three.
+    #[test]
+    fn drag_mode_collapses_multi_pass_to_one_z() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Drag;
+        setup.machine.comments = false;
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 0;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 800;
+        // depth = -1.5, step = -0.5 → 3 pass schedule in Mill mode.
+        // Drag mode must collapse to one.
+        setup.mill.depth = -1.5;
+        setup.mill.step = -0.5;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.mill.offset = ToolOffset::On;
+
+        let segs = vec![
+            Segment::line(p(0.0, 0.0), p(10.0, 0.0), "0", 7),
+            Segment::line(p(10.0, 0.0), p(10.0, 10.0), "0", 7),
+            Segment::line(p(10.0, 10.0), p(0.0, 10.0), "0", 7),
+            Segment::line(p(0.0, 10.0), p(0.0, 0.0), "0", 7),
+        ];
+        let offset = PolylineOffset {
+            segments: segs,
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[offset], &mut post);
+        // Distinct negative-Z values emitted in the body.
+        let mut neg_z_values: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for line in g.lines() {
+            for tok in line.split_whitespace() {
+                if let Some(rest) = tok.strip_prefix('Z') {
+                    if let Ok(z) = rest.parse::<f64>() {
+                        if z < 0.0 {
+                            neg_z_values.insert(format!("{:.4}", z));
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            neg_z_values.len(),
+            1,
+            "6yhs: Drag mode must collapse to a single cut Z (got {:?}); gcode:\n{g}",
+            neg_z_values
+        );
+        // Only Z value should be -1.5 (the configured depth).
+        assert!(
+            neg_z_values.contains("-1.5000"),
+            "6yhs: expected single Z = -1.5 in Drag mode; got {:?}\n{g}",
+            neg_z_values
+        );
+    }
+
+    /// 0t9o: sanity that a SHARP corner (90°, above threshold) still
+    /// emits the swivel — regression guard so we don't accidentally
+    /// kill the g30a swivel on legitimately-sharp polyline corners.
+    /// Setting `drag_self_align_angle_rad = 0.0` forces legacy
+    /// behaviour (every corner swivels).
+    #[test]
+    fn dragoff_force_legacy_behaviour_with_zero_threshold() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+
+        let mut setup = Setup::default();
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 0;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 800;
+        setup.tool.dragoff = Some(0.5);
+        setup.tool.drag_self_align_angle_rad = 0.0; // legacy: swivel every corner
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        // Same shallow 10° corner as above; with threshold=0, the
+        // swivel MUST emit at this corner (regression: doesn't matter
+        // that the corner is shallow, threshold suppresses nothing).
+        let segs = vec![
+            Segment::line(p(0.0, 0.0), p(10.0, 0.0), "0", 7),
+            Segment::line(p(10.0, 0.0), p(20.0, 1.76), "0", 7),
+            Segment::line(p(20.0, 1.76), p(20.0, 5.0), "0", 7),
+            Segment::line(p(20.0, 5.0), p(0.0, 5.0), "0", 7),
+            Segment::line(p(0.0, 5.0), p(0.0, 0.0), "0", 7),
+        ];
+        let offset = PolylineOffset {
+            segments: segs,
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[offset], &mut post);
+        // Confirm that with zero threshold at least one swivel arc
+        // (G2/G3 with I/J) is present in the output.
+        let any_swivel = g
+            .lines()
+            .any(|l| (l.starts_with("G2 ") || l.starts_with("G3 ")) && l.contains('I'));
+        assert!(
+            any_swivel,
+            "0t9o legacy: with threshold=0 the swivel must still fire on the 10° corner; got:\n{g}",
         );
     }
 }

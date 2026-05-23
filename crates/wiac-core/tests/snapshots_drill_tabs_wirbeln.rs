@@ -177,6 +177,7 @@ fn snapshot_drill_with_stufenfase_and_toolchange() {
                 cycle: DrillCycle::Simple { dwell_sec: 0.0 },
                 chamfer_after_width_mm: Some(0.5),
                 pattern: None,
+                spot_first: None,
             },
             tool_id: 1,
             finish_tool_id: Some(2),

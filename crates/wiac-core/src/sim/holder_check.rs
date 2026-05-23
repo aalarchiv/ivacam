@@ -302,6 +302,10 @@ mod tests {
             stickout_length_mm: None,
             holder,
             spindle_direction: crate::project::SpindleDirection::default(),
+            drag_knife_self_align_angle_deg: None,
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
         }
     }
 

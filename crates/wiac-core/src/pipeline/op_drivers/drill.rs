@@ -16,12 +16,12 @@ use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::gcode::{emit_drill_block, emit_vcarve_block, PostProcessor};
 use crate::geometry::{Point2, SegmentKind};
-use crate::pipeline::setup_resolver::resolve_peck_step;
+use crate::pipeline::setup_resolver::{resolve_peck_step, synthesize_op_setup};
 use crate::pipeline::{
     emit_toolchange_envelope, op_includes_object, synthesize_finish_setup, PipelineError,
     PipelineWarning,
 };
-use crate::project::{DrillCycle, Op, Project};
+use crate::project::{DrillCycle, Op, OpKind, Project, SpotConfig};
 
 /// Returns `true` when the driver actually emitted an internal
 /// drill→chamfer toolchange envelope (nguf). Used by `run_per_op` to
@@ -39,6 +39,18 @@ pub(super) fn run_drill<P: PostProcessor>(
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<bool, PipelineError> {
+    // r2af: optional spot/centerdrill pre-pass BEFORE the main drill
+    // block. Twist drills walk on hard / polished stock — the spot
+    // dimple locks the chisel edge so the main bit drops on-nominal.
+    // The pre-pass runs at every hole center the offset list contains
+    // (Simple G81 cycle, depth = spot_depth_mm).
+    if let OpKind::Drill {
+        spot_first: Some(spot),
+        ..
+    } = &op.kind
+    {
+        emit_spot_pre_pass(op, project, setup, offsets, *spot, post, last_pos, warnings)?;
+    }
     // Peck cycles fall back to the tool's `default_peck_step_mm`
     // when the op's own peck_step_mm is unset (== 0).
     let resolved_cycle = resolve_peck_step(cycle, project, op);
@@ -53,6 +65,132 @@ pub(super) fn run_drill<P: PostProcessor>(
         }
     }
     Ok(false)
+}
+
+/// r2af: emit the spot/centerdrill pre-pass at every hole the main
+/// drill op targets. Runs BEFORE the main drill block. Uses a
+/// Simple G81 cycle (no peck — at 0.3-1.0 mm depths the peck would
+/// retract above stock between every micro-peck, pointless). When
+/// `spot.spot_tool_id` differs from `op.tool_id` the function emits
+/// the standard safety envelope around both swaps (main → spot at
+/// entry, spot → main on exit) so the operator hand-changes both
+/// times. Positive / zero / non-finite `spot_depth_mm` collapses
+/// the spot to a no-op (early return) — the field gate is
+/// `Option<SpotConfig>` but we still defend against bogus values.
+#[allow(clippy::too_many_arguments)]
+fn emit_spot_pre_pass<P: PostProcessor>(
+    op: &Op,
+    project: &Project,
+    main_setup: &Setup,
+    offsets: &[PolylineOffset],
+    spot: SpotConfig,
+    post: &mut P,
+    last_pos: &mut Point2,
+    warnings: &mut Vec<PipelineWarning>,
+) -> Result<(), PipelineError> {
+    if !spot.spot_depth_mm.is_finite() || spot.spot_depth_mm >= 0.0 {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "drill_spot_depth_non_negative".into(),
+            message: format!(
+                "Drill op '{}' has spot_first.spot_depth_mm = {:.4} (must be negative to dimple stock); skipping the spot pre-pass.",
+                op.name, spot.spot_depth_mm
+            ),
+        });
+        return Ok(());
+    }
+    if offsets.is_empty() {
+        return Ok(());
+    }
+    // Resolve the spot tool. If it doesn't exist, warn and skip the
+    // pre-pass (don't fail the whole op — the main drill still runs).
+    let spot_tool = match project.tools.iter().find(|t| t.id == spot.spot_tool_id) {
+        Some(t) => t,
+        None => {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "drill_spot_tool_missing".into(),
+                message: format!(
+                    "Drill op '{}': spot_first.spot_tool_id={} is not in the project's tool library; skipping the spot pre-pass.",
+                    op.name, spot.spot_tool_id
+                ),
+            });
+            return Ok(());
+        }
+    };
+    // Synthesize a tiny synthetic op pointing at the spot tool so the
+    // tool's feeds / RPMs / pierce settings flow through the regular
+    // setup path. Override the depth to spot_depth_mm so emit_drill_block
+    // doesn't accidentally drill to the main op's depth.
+    let mut spot_op = op.clone();
+    spot_op.tool_id = spot.spot_tool_id;
+    spot_op.finish_tool_id = None;
+    // Force a Simple drill cycle and clear the chamfer flag — only
+    // the spot pre-pass runs here. spot_first is cleared so the
+    // synthesized op doesn't infinite-loop.
+    spot_op.kind = OpKind::Drill {
+        cycle: DrillCycle::Simple { dwell_sec: 0.0 },
+        chamfer_after_width_mm: None,
+        pattern: None,
+        spot_first: None,
+    };
+    spot_op.params.depth = spot.spot_depth_mm;
+    let mut spot_setup = synthesize_op_setup(&spot_op, project, warnings)?;
+    // Spot block shares the main op's start_depth / fast_move_z so
+    // the rapid retract plane stays consistent across the
+    // spot→main→chamfer sequence.
+    spot_setup.mill.start_depth = main_setup.mill.start_depth;
+    spot_setup.mill.fast_move_z = main_setup.mill.fast_move_z;
+
+    // If the spot tool differs from the main drill tool, emit a
+    // toolchange envelope BEFORE the spot block AND a return swap
+    // AFTER it. The post's spindle state is reset between blocks so
+    // the M5+dwell pre-swap fires unconditionally on the post-spot
+    // return — matches the dual-tool / stufenfase pattern.
+    let needs_swap = spot.spot_tool_id != op.tool_id;
+    if needs_swap {
+        post.raw(&format!(
+            "; spot: toolchange to T{} for spot pre-pass",
+            spot_tool.id
+        ));
+        emit_toolchange_envelope(
+            post,
+            &project.machine,
+            main_setup,
+            Some(spot_tool),
+            spot_tool.id,
+            false,
+        );
+    }
+    post.raw(&format!("; OP {} spot", op.id));
+    emit_drill_block(
+        &spot_setup,
+        offsets,
+        DrillCycle::Simple { dwell_sec: 0.0 },
+        post,
+        last_pos,
+    );
+    if needs_swap {
+        // Swap back to the main drill tool before the main block runs.
+        let main_tool = project
+            .tools
+            .iter()
+            .find(|t| t.id == op.tool_id)
+            .ok_or(PipelineError::UnknownTool(op.id, op.tool_id))?;
+        post.raw(&format!(
+            "; spot: toolchange back to T{} for main drill",
+            main_tool.id
+        ));
+        emit_toolchange_envelope(
+            post,
+            &project.machine,
+            main_setup,
+            Some(main_tool),
+            main_tool.id,
+            false,
+        );
+    }
+    Ok(())
 }
 
 /// Single full-revolution rim chamfer emitted after the drill block.
@@ -456,6 +594,7 @@ mod tests {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                     chamfer_after_width_mm: None,
                     pattern: None,
+                    spot_first: None,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -610,6 +749,7 @@ mod tests {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                     chamfer_after_width_mm: Some(1.0),
                     pattern: None,
+                    spot_first: None,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -678,6 +818,7 @@ mod tests {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                     chamfer_after_width_mm: Some(0.5),
                     pattern: None,
+                    spot_first: None,
                 },
                 tool_id: 1,
                 finish_tool_id: Some(2),
@@ -808,6 +949,7 @@ mod tests {
                     cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
                     chamfer_after_width_mm: Some(1.0),
                     pattern: None,
+                    spot_first: None,
                 },
                 tool_id: 1,
                 finish_tool_id: None,
@@ -907,6 +1049,132 @@ mod tests {
         assert!(
             !any_chamfer_g1,
             "expected no chamfer revolution gcode in drill-only op:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// r2af: a Drill op with `spot_first` set emits a spot pre-pass
+    /// at every hole center BEFORE the main drill block. The spot
+    /// block uses a Simple G81 cycle (no peck) and runs at the
+    /// configured `spot_depth_mm`. When the spot tool differs from
+    /// the main drill tool, two toolchanges fire (main → spot, then
+    /// spot → main).
+    #[test]
+    fn drill_with_spot_first_emits_spot_pre_pass_block() {
+        let center = Point2::new(5.0, 7.0);
+        let mut spot_tool = endmill(2, 2.0);
+        spot_tool.id = 2;
+        let mut main_drill = endmill(1, 6.0);
+        main_drill.id = 1;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let mut params = OpParams::mill_default();
+        params.depth = -5.0;
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        let project = Project {
+            segments: closed_circle(center, 0.5),
+            machine,
+            tools: vec![main_drill, spot_tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Drill+spot".into(),
+                enabled: true,
+                kind: OpKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    chamfer_after_width_mm: None,
+                    pattern: None,
+                    spot_first: Some(crate::project::SpotConfig {
+                        spot_depth_mm: -0.5,
+                        spot_tool_id: 2,
+                    }),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Spot block exists — labeled with `; OP 1 spot` comment.
+        let lines: Vec<&str> = resp.gcode.lines().collect();
+        let spot_marker = lines.iter().position(|l| l.contains("OP 1 spot"));
+        assert!(
+            spot_marker.is_some(),
+            "r2af: expected `; OP 1 spot` marker in gcode:\n{}",
+            resp.gcode
+        );
+        // Spot block has its own G81 drill cycle at depth -0.5.
+        let spot_g81 = lines
+            .iter()
+            .skip(spot_marker.unwrap())
+            .find(|l| l.starts_with("G81 "));
+        assert!(
+            spot_g81.is_some_and(|l| l.contains("Z-0.5")),
+            "r2af: expected spot G81 at Z-0.5 in spot block; got:\n{}",
+            resp.gcode
+        );
+        // The main G81 still fires at the main depth -5.
+        let main_g81_at_main_depth = lines.iter().any(|l| l.starts_with("G81 ") && l.contains("Z-5"));
+        assert!(
+            main_g81_at_main_depth,
+            "r2af: expected main G81 at Z-5; got:\n{}",
+            resp.gcode
+        );
+        // T2 M6 fires once (main → spot) and T1 M6 fires twice
+        // (program entry + spot → main).
+        let t2_m6 = resp
+            .gcode
+            .lines()
+            .filter(|l| l.contains("T2 M6"))
+            .count();
+        assert!(
+            t2_m6 >= 1,
+            "r2af: expected at least one T2 M6 for spot toolchange:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// r2af: a Drill op WITHOUT `spot_first` set must NOT emit any
+    /// spot block — the legacy path is exactly preserved.
+    #[test]
+    fn drill_without_spot_first_emits_no_spot_block() {
+        let project = Project {
+            segments: closed_circle(Point2::new(5.0, 7.0), 0.5),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![drill_op(
+                1,
+                1,
+                crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+            )],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.contains("OP 1 spot"),
+            "drill without spot_first should not emit a spot block:\n{}",
             resp.gcode
         );
     }

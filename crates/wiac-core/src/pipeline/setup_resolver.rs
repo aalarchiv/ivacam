@@ -123,7 +123,7 @@ pub(super) fn resolve_peck_step(
 // the merge is essentially N field-wise picks; splitting into helpers
 // would scatter what's really one decision per field.
 #[allow(clippy::too_many_lines)]
-pub(super) fn synthesize_op_setup(
+pub(in crate::pipeline) fn synthesize_op_setup(
     op: &Op,
     project: &Project,
     warnings: &mut Vec<PipelineWarning>,
@@ -221,6 +221,17 @@ pub(super) fn synthesize_op_setup(
         mist: matches!(tool.coolant, crate::project::Coolant::Mist),
         flood: matches!(tool.coolant, crate::project::Coolant::Flood),
         dragoff: tool.dragoff,
+        // 0t9o: resolve the drag-knife self-alignment threshold. None ⇒
+        // 30° default (real drag knives self-align below this angle).
+        // 0° forces the legacy "swivel every corner" behaviour. Negative
+        // / non-finite values clamp to 0 so the dot-product compare in
+        // walk.rs stays sane.
+        drag_self_align_angle_rad: tool
+            .drag_knife_self_align_angle_deg
+            .filter(|v| v.is_finite())
+            .unwrap_or(30.0)
+            .max(0.0)
+            .to_radians(),
         // Per-op overrides win over the tool library defaults — handy
         // for finishing passes or hard materials without editing the
         // tool entry itself.
@@ -256,6 +267,13 @@ pub(super) fn synthesize_op_setup(
         tip_angle_deg: tool.tip_angle_deg,
         tip_diameter_mm: effective_tip_diameter_mm(tool),
         spindle_direction: tool.spindle_direction,
+        // zpuk: plasma pierce / cut heights / pierce delay. 0.0
+        // sentinels fall through to plasma defaults at cut time.
+        // Resolved unconditionally — the cut emitter gates on
+        // `setup.machine.mode == Plasma` before consulting them.
+        pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
+        cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
+        pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
     };
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
@@ -587,6 +605,17 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 mist: matches!(tool.coolant, crate::project::Coolant::Mist),
                 flood: matches!(tool.coolant, crate::project::Coolant::Flood),
                 dragoff: tool.dragoff,
+                // 0t9o: same self-align threshold as the per-op path —
+                // header_setup is rarely the active drag-knife setup, but
+                // keeping the field consistent across resolution paths
+                // prevents a stale 0° leaking through if the header_setup
+                // ever drives the walker.
+                drag_self_align_angle_rad: tool
+                    .drag_knife_self_align_angle_deg
+                    .filter(|v| v.is_finite())
+                    .unwrap_or(30.0)
+                    .max(0.0)
+                    .to_radians(),
                 // Per-op overrides (9vr) carry through into the program-
                 // header feed too — otherwise the header emits the tool
                 // default and the user sees an extra `F800` line at the
@@ -611,6 +640,12 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 tip_angle_deg: tool.tip_angle_deg,
                 tip_diameter_mm: effective_tip_diameter_mm(tool),
                 spindle_direction: tool.spindle_direction,
+                // zpuk: header_setup_for-path plasma fields — same
+                // resolution as the per-op path so any consumer that
+                // inspects the header setup sees consistent values.
+                pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
+                cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
+                pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
@@ -636,6 +671,12 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             mist: matches!(tool.coolant, crate::project::Coolant::Mist),
             flood: matches!(tool.coolant, crate::project::Coolant::Flood),
             dragoff: tool.dragoff,
+            drag_self_align_angle_rad: tool
+                .drag_knife_self_align_angle_deg
+                .filter(|v| v.is_finite())
+                .unwrap_or(30.0)
+                .max(0.0)
+                .to_radians(),
             rate_v: rp,
             rate_h: rf,
             speed_finish: fs,
@@ -650,6 +691,9 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             tip_angle_deg: tool.tip_angle_deg,
             tip_diameter_mm: effective_tip_diameter_mm(tool),
             spindle_direction: tool.spindle_direction,
+            pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
+            cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
+            pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
         };
     }
     setup

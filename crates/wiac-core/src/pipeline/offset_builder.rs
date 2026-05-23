@@ -2615,6 +2615,10 @@ mod tests {
             stickout_length_mm: None,
             holder: None,
             spindle_direction: crate::project::SpindleDirection::default(),
+            drag_knife_self_align_angle_deg: None,
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
         };
         let project = Project {
             segments: closed_square_offset(20.0, 0.0, 0.0),

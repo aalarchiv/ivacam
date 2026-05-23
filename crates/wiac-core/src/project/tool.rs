@@ -22,6 +22,16 @@ pub struct ToolEntry {
     /// Drag-knife trailing offset (None for everything else).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dragoff: Option<f64>,
+    /// 0t9o: drag-knife self-alignment threshold in degrees. Corners
+    /// whose tangent change is smaller than this angle skip the
+    /// explicit swivel arc + linear pre-move — real drag knives
+    /// self-align below ~30° via the trailing offset, so emitting a
+    /// swivel for every chord-of-a-circle pivot bloats output and
+    /// stresses the blade pivot. Honored only when `dragoff` is also
+    /// set. `None` ⇒ 30° default; `Some(0.0)` forces the legacy
+    /// "swivel every corner" behaviour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drag_knife_self_align_angle_deg: Option<f64>,
     pub flutes: u8,
     pub speed: u32,
     /// Plunge feedrate (mm/min).
@@ -198,6 +208,28 @@ pub struct ToolEntry {
     /// Holder geometry above the shank. None = no holder check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder: Option<HolderShape>,
+    /// zpuk: plasma pierce height (mm above stock). Honored only when
+    /// the active machine mode is `Plasma`. The pierce arc is
+    /// established at this height — too close and the torch sticks
+    /// to the stock as it slags up; too far and the arc misses or
+    /// drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm
+    /// default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pierce_height_mm: Option<f64>,
+    /// zpuk: plasma cut height (mm above stock, generally < pierce
+    /// height). After the pierce dwell the torch drops to this
+    /// height for the actual cut. Typical 1.5–2.5 mm for thin steel.
+    /// None ⇒ 1.5 mm default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut_height_mm: Option<f64>,
+    /// zpuk: plasma pierce delay in seconds. The torch dwells at
+    /// `pierce_height_mm` for this many seconds before dropping to
+    /// `cut_height_mm`. Long enough to pierce the stock; too long
+    /// and the arc starts to undercut the rim of the pierce hole.
+    /// Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None
+    /// ⇒ 0.5 s default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pierce_delay_sec: Option<f64>,
 }
 
 /// Geometry of the tool holder above the shank. The holder is treated as
@@ -259,6 +291,7 @@ impl Default for ToolEntry {
             tip_diameter: None,
             tip_angle_deg: default_tip_angle_deg(),
             dragoff: None,
+            drag_knife_self_align_angle_deg: None,
             flutes: 2,
             speed: 18_000,
             plunge_rate: 100,
@@ -287,6 +320,14 @@ impl Default for ToolEntry {
             wirbeln_osc_mm: None,
             pause: default_tool_pause(),
             spindle_direction: SpindleDirection::default(),
+            // pierce_height_mm / cut_height_mm / pierce_delay_sec — zpuk:
+            // None ⇒ emission code falls back to plasma defaults
+            // (3.8 / 1.5 / 0.5) at cut time. Listing them here keeps
+            // the struct literal exhaustive even though Default for
+            // ToolEntry is rarely the source of a plasma config.
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
             flute_length_mm: None,
             shank_diameter_mm: None,
             stickout_length_mm: None,

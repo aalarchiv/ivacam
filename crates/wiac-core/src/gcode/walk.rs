@@ -48,7 +48,14 @@ pub(super) fn emit_cut_path<P: PostProcessor>(
         }
         return;
     }
-    emit_path_with_corner_feed(segments, dragoff, rate_h, corner_feed_reduction, post);
+    emit_path_with_corner_feed(
+        segments,
+        dragoff,
+        setup.tool.drag_self_align_angle_rad,
+        rate_h,
+        corner_feed_reduction,
+        post,
+    );
 }
 
 /// Emit segments with optional drag-knife trailing offset. When
@@ -156,12 +163,13 @@ fn arc_bulge_from_center(
 pub(super) fn emit_path_with_corner_feed<P: PostProcessor>(
     segments: &[Segment],
     dragoff: f64,
+    self_align_angle_rad: f64,
     base_rate: u32,
     corner_reduction: f64,
     post: &mut P,
 ) {
     if corner_reduction <= 1e-6 || dragoff > 1e-9 || segments.len() < 2 {
-        emit_path_with_dragoff(segments, dragoff, post);
+        emit_path_with_dragoff(segments, dragoff, self_align_angle_rad, post);
         return;
     }
     let reduced_rate = (f64::from(base_rate) * (1.0 - corner_reduction)).max(1.0) as u32;
@@ -239,23 +247,52 @@ pub(super) fn emit_path_with_corner_feed<P: PostProcessor>(
 /// Emit the drag-knife swivel arc that pivots the trailing blade
 /// around `corner` from the trail offset perpendicular to `last_m`
 /// to the trail offset perpendicular to `new_m`. Returns the
-/// post-swivel cutter position (= `off2`), or `None` if no arc was
-/// emitted (tangent change below threshold).
+/// post-swivel cutter position (= `off2`), or `None` when the diff
+/// is below the self-align threshold (`self_align_angle_rad`) and
+/// the whole swivel + linear pre-move is skipped.
 ///
 /// g30a: factored out so both Line and Arc branches in
 /// `emit_path_with_dragoff` can call the same logic. Previously the
 /// swivel was inlined only in the Line branch, so Line→Arc corners
 /// emitted the arc with NO swivel — bending the blade.
+///
+/// 0t9o: when `self_align_angle_rad > 0`, skip the swivel + linear
+/// pre-move entirely for corners whose tangent change |diff| is
+/// below the threshold. Real drag knives self-align below ~30° via
+/// the trailing offset, so emitting a swivel arc for every short
+/// chord pivot (e.g. a 64-chord circle approximating a real arc)
+/// bloats output and stresses the blade pivot. Returning `None`
+/// signals "no pre-move emitted" so the caller updates `last_motion`
+/// from the incoming direction rather than the post-swivel position.
 fn emit_dragoff_swivel<P: PostProcessor>(
     corner: Point2,
     last_m: f64,
     new_m: f64,
     dragoff: f64,
+    self_align_angle_rad: f64,
     post: &mut P,
 ) -> Option<(f64, f64)> {
     use std::f64::consts::{FRAC_PI_2, PI};
     let last_a = last_m + FRAC_PI_2;
     let new_a = new_m + FRAC_PI_2;
+    let mut diff = new_a - last_a;
+    while diff > PI {
+        diff -= 2.0 * PI;
+    }
+    while diff < -PI {
+        diff += 2.0 * PI;
+    }
+    // 0t9o: skip the linear pre-move + swivel arc for corners below
+    // the self-align threshold. The next cut emit follows in the new
+    // direction and the trailing blade snaps into alignment on its
+    // own. We deliberately return None (not Some(off1)) so the
+    // caller's `last_motion` tracks the incoming chord direction —
+    // matters for downstream small-step chord chains where every
+    // chord is just under threshold; without this, the residual
+    // bias would accumulate.
+    if self_align_angle_rad > 0.0 && diff.abs() < self_align_angle_rad {
+        return None;
+    }
     let off1 = (
         corner.x + dragoff * last_a.sin(),
         corner.y - dragoff * last_a.cos(),
@@ -265,13 +302,6 @@ fn emit_dragoff_swivel<P: PostProcessor>(
         corner.y - dragoff * new_a.cos(),
     );
     post.linear(Some(off1.0), Some(off1.1), None);
-    let mut diff = new_a - last_a;
-    while diff > PI {
-        diff -= 2.0 * PI;
-    }
-    while diff < -PI {
-        diff += 2.0 * PI;
-    }
     if diff.abs() > 1e-6 {
         let i = corner.x - off1.0;
         let j = corner.y - off1.1;
@@ -282,13 +312,18 @@ fn emit_dragoff_swivel<P: PostProcessor>(
         }
         Some(off2)
     } else {
-        // Below threshold: the linear emit already landed at off1 == off2;
-        // report off1 as the resulting position.
+        // At-threshold (>= self_align but ≤ 1e-6 diff): the linear
+        // emit landed at off1 == off2; report off1 as resulting position.
         Some(off1)
     }
 }
 
-fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, post: &mut P) {
+fn emit_path_with_dragoff<P: PostProcessor>(
+    segments: &[Segment],
+    dragoff: f64,
+    self_align_angle_rad: f64,
+    post: &mut P,
+) {
     let mut last_motion: Option<f64> = None;
     for seg in segments {
         match seg.kind {
@@ -296,7 +331,14 @@ fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, 
                 let new_motion = (seg.end.y - seg.start.y).atan2(seg.end.x - seg.start.x);
                 if dragoff > 1e-9 {
                     if let Some(last_m) = last_motion {
-                        emit_dragoff_swivel(seg.start, last_m, new_motion, dragoff, post);
+                        emit_dragoff_swivel(
+                            seg.start,
+                            last_m,
+                            new_motion,
+                            dragoff,
+                            self_align_angle_rad,
+                            post,
+                        );
                     }
                 }
                 post.linear(Some(seg.end.x), Some(seg.end.y), None);
@@ -327,7 +369,14 @@ fn emit_path_with_dragoff<P: PostProcessor>(segments: &[Segment], dragoff: f64, 
                 let start_tangent = sy.atan2(sx);
                 if dragoff > 1e-9 {
                     if let Some(last_m) = last_motion {
-                        emit_dragoff_swivel(seg.start, last_m, start_tangent, dragoff, post);
+                        emit_dragoff_swivel(
+                            seg.start,
+                            last_m,
+                            start_tangent,
+                            dragoff,
+                            self_align_angle_rad,
+                            post,
+                        );
                     }
                 }
                 let i = center.x - seg.start.x;

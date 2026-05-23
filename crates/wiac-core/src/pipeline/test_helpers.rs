@@ -113,6 +113,10 @@ pub(in crate::pipeline) fn endmill(id: u32, diameter: f64) -> ToolEntry {
         stickout_length_mm: None,
         holder: None,
         spindle_direction: crate::project::SpindleDirection::default(),
+        drag_knife_self_align_angle_deg: None,
+        pierce_height_mm: None,
+        cut_height_mm: None,
+        pierce_delay_sec: None,
     }
 }
 
@@ -157,6 +161,10 @@ pub(in crate::pipeline) fn vbit() -> ToolEntry {
         stickout_length_mm: None,
         holder: None,
         spindle_direction: crate::project::SpindleDirection::default(),
+        drag_knife_self_align_angle_deg: None,
+        pierce_height_mm: None,
+        cut_height_mm: None,
+        pierce_delay_sec: None,
     }
 }
 
@@ -253,6 +261,7 @@ pub(in crate::pipeline) fn drill_op(id: u32, tool_id: u32, cycle: DrillCycle) ->
             cycle,
             chamfer_after_width_mm: None,
             pattern: None,
+            spot_first: None,
         },
         tool_id,
         finish_tool_id: None,

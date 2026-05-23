@@ -478,6 +478,10 @@ mod tests {
                 length_mm: 30.0,
             }),
             spindle_direction: crate::project::SpindleDirection::default(),
+            drag_knife_self_align_angle_deg: None,
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
         };
         HolderProfile::from_tool(&t).expect("holder set")
     }
@@ -596,6 +600,10 @@ mod tests {
                 length_mm: 30.0,
             }),
             spindle_direction: crate::project::SpindleDirection::default(),
+            drag_knife_self_align_angle_deg: None,
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
         };
         // No HolderProfile for laser tools.
         assert!(
@@ -654,6 +662,10 @@ mod tests {
             stickout_length_mm: None,
             holder: None,
             spindle_direction: crate::project::SpindleDirection::default(),
+            drag_knife_self_align_angle_deg: None,
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
         };
         let holder = HolderProfile::from_tool(&t).expect("drill has shank profile");
         // diameter * 6 = 18mm. At z=17 above the tip the radius is
@@ -718,6 +730,10 @@ mod tests {
                 length_mm: 30.0,
             }),
             spindle_direction: crate::project::SpindleDirection::default(),
+            drag_knife_self_align_angle_deg: None,
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
         };
         // 50×50×1 mm heightmap with tall walls everywhere outside a
         // narrow channel — exactly the geometry that triggered the

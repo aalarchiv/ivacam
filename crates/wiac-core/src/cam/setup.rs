@@ -44,6 +44,15 @@ pub struct ToolConfig {
     pub flood: bool,
     /// Drag-knife offset (if present, otherwise None).
     pub dragoff: Option<f64>,
+    /// 0t9o: drag-knife self-alignment threshold in radians. The walk
+    /// emitter skips the swivel + linear pre-move whenever the corner's
+    /// tangent change is below this threshold — real drag knives
+    /// self-align below ~30° via the trailing offset. Resolved from
+    /// [`crate::project::ToolEntry::drag_knife_self_align_angle_deg`]
+    /// at synth time. 0.0 forces the legacy "swivel every corner"
+    /// behaviour; the default 30° is applied in setup synthesis.
+    #[serde(default)]
+    pub drag_self_align_angle_rad: f64,
     /// Plunge feedrate (mm/min).
     pub rate_v: u32,
     /// Cutting feedrate (mm/min).
@@ -114,6 +123,27 @@ pub struct ToolConfig {
     /// library. Default `Cw` keeps legacy projects unchanged.
     #[serde(default)]
     pub spindle_direction: crate::project::tool::SpindleDirection,
+    /// zpuk: plasma pierce height in mm (above stock top). The cut
+    /// emitter does a rapid to this Z, dwells `pierce_delay_sec`,
+    /// then plunges to `cut_height_mm` for the actual cut.
+    /// Resolved from
+    /// [`crate::project::ToolEntry::pierce_height_mm`] at synth time;
+    /// 0.0 ⇒ plasma defaults at emit time (3.8 mm). Only honored
+    /// when `setup.machine.mode == MachineMode::Plasma`.
+    #[serde(default)]
+    pub pierce_height_mm: f64,
+    /// zpuk: plasma cut height (mm above stock top). Generally
+    /// smaller than `pierce_height_mm`. Resolved from
+    /// [`crate::project::ToolEntry::cut_height_mm`] at synth time;
+    /// 0.0 ⇒ defaults to 1.5 mm at emit time.
+    #[serde(default)]
+    pub cut_height_mm: f64,
+    /// zpuk: plasma pierce delay in seconds — torch dwells at
+    /// pierce_height while the arc pierces. Resolved from
+    /// [`crate::project::ToolEntry::pierce_delay_sec`] at synth
+    /// time; 0.0 ⇒ defaults to 0.5 s at emit time.
+    #[serde(default)]
+    pub pierce_delay_sec: f64,
 }
 
 fn default_tip_angle_deg() -> f64 {
@@ -165,6 +195,7 @@ impl Default for ToolConfig {
             mist: false,
             flood: false,
             dragoff: None,
+            drag_self_align_angle_rad: 30.0_f64.to_radians(),
             rate_v: 100,
             rate_h: 800,
             speed_finish: 18000,
@@ -176,6 +207,9 @@ impl Default for ToolConfig {
             wirbeln_osc: 0.0,
             wirbeln_climb: true,
             default_xy_overlap: None,
+            pierce_height_mm: 0.0,
+            cut_height_mm: 0.0,
+            pierce_delay_sec: 0.0,
         }
     }
 }
@@ -698,6 +732,14 @@ pub enum MachineMode {
     Mill,
     Laser,
     Drag,
+    /// zpuk: plasma torch. Emits a two-step Z entry — rapid to
+    /// `pierce_height_mm` above stock, dwell `pierce_delay_sec`
+    /// while the arc starts and pierces, then G1 to `cut_height_mm`
+    /// for the cut. The torch-on / -off lines reuse the laser
+    /// helpers (M3 S<power> / M5) since most plasma controllers
+    /// accept the same idioms. Tool-on emit lives in
+    /// [`crate::gcode::cut_tool_on`].
+    Plasma,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]

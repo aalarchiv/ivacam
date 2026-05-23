@@ -23,9 +23,9 @@ mod halfpipe;
 mod thread;
 mod vcarve;
 
-pub(in crate::pipeline) use halfpipe::run_halfpipe_op;
-pub(in crate::pipeline) use thread::run_thread_op;
-pub(in crate::pipeline) use vcarve::run_vcarve_op;
+pub(in crate::pipeline) use halfpipe::{halfpipe_would_emit, run_halfpipe_op};
+pub(in crate::pipeline) use thread::{run_thread_op, thread_would_emit};
+pub(in crate::pipeline) use vcarve::{run_vcarve_op, vcarve_would_emit};
 
 use super::offset_builder::build_op_offsets;
 use crate::cam::setup::Setup;

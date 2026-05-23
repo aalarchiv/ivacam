@@ -12,6 +12,54 @@ use crate::geometry::{Point2, SegmentKind};
 use crate::pipeline::{cancelled, op_includes_object, CancelToken, PipelineError, PipelineWarning};
 use crate::project::{Op, OpKind, Project};
 
+/// o3od: cheap pre-check used by `run_per_op` to decide whether the
+/// toolchange envelope (M5+dwell → M6 → z-shift → M3+dwell) needs to
+/// fire BEFORE this op. Mirrors the driver's own "no closed circles"
+/// short-circuit (`emitted == 0` → `thread_no_circles` warning).
+/// Returns `true` only when at least one selected closed object is a
+/// circle (single Circle segment, or an Arc chain with all the same
+/// center — the same shapes the driver accepts). Returning `false`
+/// skips the envelope; the driver still runs so it emits the
+/// `thread_no_circles` warning.
+#[must_use]
+pub(in crate::pipeline) fn thread_would_emit(op: &Op, objects: &[VcObject]) -> bool {
+    if !matches!(op.kind, OpKind::Thread { .. }) {
+        return false;
+    }
+    for (idx, obj) in objects.iter().enumerate() {
+        if !op_includes_object(op, obj, idx) {
+            continue;
+        }
+        if !obj.closed {
+            continue;
+        }
+        let Some(first) = obj.segments.first() else {
+            continue;
+        };
+        match first.kind {
+            SegmentKind::Circle => {
+                if first.center.is_some() {
+                    return true;
+                }
+            }
+            SegmentKind::Arc => {
+                let Some(c) = first.center else { continue };
+                let all_same_center = obj.segments.iter().all(|s| {
+                    matches!(s.kind, SegmentKind::Arc | SegmentKind::Circle)
+                        && s.center.is_some_and(|sc| {
+                            (sc.x - c.x).abs() < 1e-4 && (sc.y - c.y).abs() < 1e-4
+                        })
+                });
+                if all_same_center {
+                    return true;
+                }
+            }
+            _ => continue,
+        }
+    }
+    false
+}
+
 // Thread driver runs the per-circle helix walker; rather than threading
 // state through five helpers, the per-revolution Z table lives inline.
 // 55o4 tracks the broader pipeline split.
@@ -845,6 +893,105 @@ mod tests {
             found_compensated,
             "expected compensated F200 inside the thread block (300 × 3/4.5 = 200); got:\n{}",
             resp.gcode,
+        );
+    }
+
+    /// o3od: a Thread op whose source contains no closed circles
+    /// (the typical "user pointed Thread at a square" misconfig)
+    /// must NOT emit a toolchange envelope. Before the fix the
+    /// driver returned with `thread_no_circles` warning AFTER the
+    /// envelope (M6 + dwells) had already been written — the
+    /// operator hand-swapped to the thread mill, the spindle warmed
+    /// up, then the program emitted ZERO cut moves and the next op
+    /// would M6 right back to the previous tool.
+    ///
+    /// With the o3od fix the envelope is gated on
+    /// `thread_would_emit`; a Thread op against a closed-square
+    /// source returns false and the M6 line is suppressed entirely.
+    #[test]
+    fn thread_op_skips_toolchange_envelope_when_no_circles() {
+        // Two ops: a Profile against the square (T1) followed by a
+        // Thread also targeting the square (T2). Without the fix
+        // the Thread op would emit `T2 M6` between the Profile and
+        // the Thread block; with the fix the M6 is suppressed because
+        // Thread has nothing to emit.
+        let mut machine = MachineConfig::default();
+        machine.supports_toolchange = true;
+        let mut t1 = endmill(1, 3.0);
+        t1.id = 1;
+        let mut t2 = endmill(2, 1.0);
+        t2.id = 2;
+        let params_profile = OpParams::mill_default();
+        let mut params_thread = OpParams::mill_default();
+        params_thread.depth = -3.0;
+        params_thread.start_depth = 0.0;
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![t1, t2],
+            operations: vec![
+                Op {
+                    id: 1,
+                    name: "Profile".into(),
+                    enabled: true,
+                    kind: OpKind::Profile {
+                        offset: crate::cam::setup::ToolOffset::Outside,
+                        contour: crate::project::ContourParams::default(),
+                        profile: crate::project::ProfileParams::default(),
+                    },
+                    tool_id: 1,
+                    finish_tool_id: None,
+                    source: OpSource::All,
+                    params: params_profile,
+                },
+                Op {
+                    id: 2,
+                    name: "Thread (no circles)".into(),
+                    enabled: true,
+                    kind: OpKind::Thread {
+                        pitch_mm: 1.0,
+                        internal: true,
+                        climb: true,
+                        radial_passes: 1,
+                        start_angle_rad: 0.0,
+                        thread_depth_mm: None,
+                    },
+                    tool_id: 2,
+                    finish_tool_id: None,
+                    source: OpSource::All,
+                    params: params_thread,
+                },
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The thread driver still surfaces its "no circles" warning.
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "thread_no_circles"),
+            "thread_no_circles warning should fire even when envelope is suppressed; got: {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
+        );
+        // The only T<n> M6 line should be T1 — for the Profile op.
+        // T2 M6 used to fire just before the empty Thread block.
+        let t2_m6_count = resp
+            .gcode
+            .lines()
+            .filter(|l| l.contains("T2 M6") || l.trim() == "T2" || l.trim() == "M6")
+            .filter(|l| l.contains("T2"))
+            .count();
+        assert_eq!(
+            t2_m6_count, 0,
+            "o3od: T2 M6 must not appear when the Thread op produces no output; got gcode:\n{}",
+            resp.gcode
         );
     }
 }

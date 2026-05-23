@@ -64,7 +64,10 @@ pub(in crate::pipeline) use selection::{
 #[cfg(test)]
 mod test_helpers;
 
-use op_drivers::{run_halfpipe_op, run_standard_op, run_thread_op, run_vcarve_op};
+use op_drivers::{
+    halfpipe_would_emit, run_halfpipe_op, run_standard_op, run_thread_op, run_vcarve_op,
+    thread_would_emit, vcarve_would_emit,
+};
 use regions::build_region_previews;
 pub use setup_resolver::fit_helix_radius_for_selection;
 use setup_resolver::{header_setup_for, resolve_auto_helix_radius, synthesize_op_setup};
@@ -680,6 +683,29 @@ where
         // from the cache. Exit state is captured/restored separately.
         post.reset_state();
 
+        // o3od: specialty drivers (VCarve / Thread / Halfpipe) all have
+        // structural "no output" cases (open source polylines, no closed
+        // circles, etc.) that produce ZERO cut moves. Without this
+        // pre-check the M6 envelope (M5+dwell → M6 → z-shift → M3+dwell)
+        // still fired for the no-output op — the operator hand-swapped
+        // the cutter, the spindle warmed up, then NOTHING happened.
+        // Probe the source for emit-ability and gate the envelope on it.
+        // The driver still runs (so any "no output" warning still
+        // surfaces); we just don't burn the tool-swap overhead on it.
+        let specialty_will_emit = match &op.kind {
+            OpKind::VCarve { .. } => vcarve_would_emit(op, objects),
+            OpKind::Thread { .. } => thread_would_emit(op, objects),
+            OpKind::Pocket {
+                strategy: PocketStrategy::Halfpipe { .. },
+                ..
+            } => halfpipe_would_emit(op, objects),
+            // Non-specialty ops keep the existing behaviour — the
+            // standard-op offset cascade has its own emptiness guards
+            // and the M6 still helps surface intent on multi-tool
+            // programs even when the cascade produces nothing.
+            _ => true,
+        };
+
         // k2ew: emit M6 toolchange BEFORE body_marker so the M6 is
         // NOT captured into the per-op cache body — the M6 decision
         // depends on prev_tool_id which is runtime state, not op
@@ -687,7 +713,7 @@ where
         // the body that follows starts at body_marker. Skip Pause ops
         // entirely (no tool, no toolchange — and they don't reset
         // prev_tool_id either).
-        if !matches!(op.kind, OpKind::Pause { .. }) {
+        if !matches!(op.kind, OpKind::Pause { .. }) && specialty_will_emit {
             let tool_changes = prev_tool_id != Some(op.tool_id);
             if tool_changes {
                 if let Some(tool) = tool_index.get(&op.tool_id).copied() {

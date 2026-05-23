@@ -18,6 +18,31 @@ use crate::pipeline::{
 };
 use crate::project::{Op, OpKind, PocketStrategy, Project};
 
+/// o3od: cheap pre-check used by `run_per_op` to decide whether the
+/// toolchange envelope needs to fire before this op. Mirrors the
+/// driver's own `regions.is_empty()` short-circuit at the top of
+/// `run_halfpipe_op` — an op selecting open polylines / no closed
+/// contours produces no medial-axis sweep at all and the M6 + dwells
+/// were firing for a no-output op. Returning `false` skips the
+/// envelope; the driver still runs (silently no-ops, matching the
+/// existing behaviour for empty regions — there's no halfpipe warning
+/// to surface today).
+#[must_use]
+pub(in crate::pipeline) fn halfpipe_would_emit(op: &Op, objects: &[VcObject]) -> bool {
+    if !matches!(
+        op.kind,
+        OpKind::Pocket {
+            strategy: PocketStrategy::Halfpipe { .. },
+            ..
+        }
+    ) {
+        return false;
+    }
+    let selected = ordered_selection(op, objects);
+    let combine = source_combine_mode(op);
+    !combine_source_regions(objects, &selected, combine).is_empty()
+}
+
 // Halfpipe driver (Pocket strategy with cross-section profile) walks
 // densified pocket regions per pass — see 55o4 for the planned split.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]

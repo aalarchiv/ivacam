@@ -334,6 +334,26 @@ impl ToolProfile {
         )
     }
 
+    /// 4mp1: maximum reach (mm) the cutter can engage into stock below the
+    /// stock-top plane. `None` means "no profile-imposed limit" (the
+    /// toolpath alone bounds the depth). Engraver is the only profile
+    /// that exposes this today — the cone above its tip flat is non-
+    /// cutting shoulder, so the bit can't survive cuts deeper than the
+    /// configured engagement depth. The sweep clamps `cutter_pz` against
+    /// `heightmap.top_z - max_engagement_depth` for these profiles to
+    /// refuse over-deep carves the operator would never get away with
+    /// in reality.
+    #[must_use]
+    pub fn max_engagement_depth(&self) -> Option<f32> {
+        match self {
+            ToolProfile::Engraver {
+                max_engagement_depth,
+                ..
+            } => Some(*max_engagement_depth),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn eval(&self, r: f32) -> Option<f32> {
         match self {
@@ -539,9 +559,18 @@ impl ToolProfile {
             // corner instead of pretending it's a square endmill.
             // Falls back to flat Endmill when corner_radius is missing
             // / zero (same observable cross-section).
+            // z0x0: when corner_r >= r the BullNose is geometrically
+            // identical to a BallNose at the same radius (the plateau
+            // collapses to zero and the corner-arc spans the full
+            // cross-section). Emit BallNose directly so the sweep takes
+            // the cheaper closed-form eval path instead of re-deriving
+            // the same math through the f64-promoted corner-fillet
+            // branch on every cell.
             ToolKind::BullNose => {
                 let corner_r = (tool.corner_radius_mm.unwrap_or(0.0).max(0.0)) as f32;
-                if corner_r > 0.0 {
+                if corner_r >= r && r > 0.0 {
+                    ToolProfile::BallNose { r }
+                } else if corner_r > 0.0 {
                     ToolProfile::BullNose { r, corner_r }
                 } else {
                     ToolProfile::Endmill { r }
@@ -565,12 +594,26 @@ impl ToolProfile {
                     .tslot_neck_diameter_mm
                     .map_or(f64::from(r), |d| (d * 0.5).max(0.0))
                     as f32;
-                // Flute length doubles as head thickness when set;
-                // otherwise the head is a thin disk at the tip
-                // (head_z_top = 0) and we keep the old Endmill model.
-                let head_z_top = tool.tslot_neck_length_mm.map_or(0.0, |_| {
-                    tool.flute_length_mm.unwrap_or(0.0).max(0.0)
-                }) as f32;
+                // ranj: flute_length doubles as head thickness whenever
+                // the tool advertises any neck geometry (diameter OR
+                // length). Previously we keyed the head_z_top derivation
+                // on `tslot_neck_length_mm.map_or` — a T-slot with a
+                // narrower neck diameter but no explicit neck-length
+                // (legacy projects with only one of the two fields set)
+                // silently degraded to a flat Endmill. Now ANY neck-
+                // diameter-or-length presence promotes the head_z_top
+                // to flute_length so the head/neck split survives, and
+                // the holder pass (which still needs BOTH fields to
+                // emit a neck segment) is free to keep its stricter
+                // requirement without dragging the heightmap profile
+                // down with it.
+                let has_neck_hint = tool.tslot_neck_diameter_mm.is_some()
+                    || tool.tslot_neck_length_mm.is_some();
+                let head_z_top = if has_neck_hint {
+                    tool.flute_length_mm.unwrap_or(0.0).max(0.0) as f32
+                } else {
+                    0.0
+                };
                 if neck_r < r && head_z_top > 0.0 {
                     ToolProfile::TSlot {
                         head_r: r,
@@ -1019,5 +1062,94 @@ mod tests {
             ),
             other => panic!("expected LaserBeam, got {other:?}"),
         }
+    }
+
+    /// z0x0: BullNose with `corner_radius_mm >= diameter/2` collapses to
+    /// a BallNose at the same outer radius. The geometry is identical
+    /// (plateau width = 0; the corner-arc spans the whole cross-section)
+    /// but the BullNose eval routes through the f64-promoted corner-
+    /// fillet branch on every cell; BallNose hits the cheaper closed
+    /// form. Pure perf — the carve shape stays the same.
+    #[test]
+    fn from_tool_bullnose_corner_eq_r_collapses_to_ballnose() {
+        let mut t = make_tool(ToolKind::BullNose, 6.0);
+        // Equal: corner_r == r.
+        t.corner_radius_mm = Some(3.0);
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::BallNose { .. }
+        ));
+        // Larger than r — still collapse to BallNose (the BullNose eval
+        // would otherwise clamp corner_r to r internally and produce the
+        // same shape, but a half-tick slower).
+        t.corner_radius_mm = Some(4.0);
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::BallNose { .. }
+        ));
+        // Strictly less — still BullNose.
+        t.corner_radius_mm = Some(2.0);
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::BullNose { .. }
+        ));
+    }
+
+    /// ranj: T-slot cutter with a narrower neck diameter but no explicit
+    /// `tslot_neck_length_mm` previously degraded to a flat Endmill
+    /// because `head_z_top` keyed off `tslot_neck_length_mm.map_or`.
+    /// Now any neck-hint (diameter OR length) promotes the head/neck
+    /// split — head_z_top is derived from `flute_length_mm`.
+    #[test]
+    fn from_tool_tslot_neck_diameter_only_still_emits_tslot_profile() {
+        let mut t = make_tool(ToolKind::TSlot, 16.0);
+        t.tslot_neck_diameter_mm = Some(4.0);
+        t.tslot_neck_length_mm = None;
+        t.flute_length_mm = Some(4.0);
+        match ToolProfile::from_tool(&t) {
+            ToolProfile::TSlot {
+                head_r,
+                head_z_top,
+                neck_r,
+            } => {
+                assert!(approx(head_r, 8.0));
+                assert!(approx(neck_r, 2.0));
+                assert!(
+                    approx(head_z_top, 4.0),
+                    "head_z_top should come from flute_length when only the neck diameter is set, got {head_z_top}",
+                );
+            }
+            other => panic!("expected TSlot profile, got {other:?}"),
+        }
+    }
+
+    /// ranj companion: legacy "no neck info at all" still falls back to
+    /// the flat Endmill model. Only the diameter-or-length-set hint
+    /// flips the head/neck split on.
+    #[test]
+    fn from_tool_tslot_no_neck_info_still_endmill() {
+        let mut t = make_tool(ToolKind::TSlot, 16.0);
+        t.tslot_neck_diameter_mm = None;
+        t.tslot_neck_length_mm = None;
+        t.flute_length_mm = Some(4.0);
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::Endmill { .. }
+        ));
+    }
+
+    /// 4mp1: Engraver advertises a non-None `max_engagement_depth` so the
+    /// sweep can refuse to carve past the cutter's reach.
+    #[test]
+    fn engraver_advertises_max_engagement_depth() {
+        let mut t = make_tool(ToolKind::Engraver, 6.0);
+        t.tip_diameter = Some(0.5);
+        t.flute_length_mm = Some(2.5);
+        let p = ToolProfile::from_tool(&t);
+        assert!(matches!(p, ToolProfile::Engraver { .. }));
+        assert_eq!(p.max_engagement_depth(), Some(2.5));
+        // Sanity: non-Engraver profiles return None.
+        let em = make_tool(ToolKind::Endmill, 6.0);
+        assert_eq!(ToolProfile::from_tool(&em).max_engagement_depth(), None);
     }
 }

@@ -44,7 +44,19 @@ impl HolderProfile {
         if tool.holder.is_none() && tool.shank_diameter_mm.is_none() {
             return None;
         }
-        let cutting_r = (tool.diameter * 0.5).max(0.0);
+        // 8g4w: ToolProfile::radius() reports the LARGEST cross-section
+        // along the cutter (max of segments for FormProfile, head radius
+        // for TSlot, etc). Pulling `cutting_r` from `tool.diameter * 0.5`
+        // is fine for cylindrically-uniform cutters but loses the wide-
+        // base radius for form bits whose `tool.diameter` reports the
+        // *tip* diameter and whose actual envelope grows past the tip
+        // along the flutes. Mirror ToolProfile::radius() so the holder
+        // check skips the same `r ≤ cutting_r` cells the carve actually
+        // touches — otherwise the cells the sweep just lowered get
+        // flagged as walls the holder is colliding with (false-positive
+        // HolderCollision warnings on form cutters).
+        let cutting_r = form_profile_max_radius(tool)
+            .unwrap_or_else(|| (tool.diameter * 0.5).max(0.0));
         // ityc: drills with no `flute_length_mm` set previously left the
         // shank starting at z=0 above the tip — so any wall above the
         // tip plane within the shank radius alarmed as a collision.
@@ -242,6 +254,19 @@ impl HolderProfile {
     pub(crate) fn samples(&self) -> &[(f64, f64)] {
         &self.points
     }
+}
+
+/// 8g4w: max profile radius for a form cutter, mirroring the same fallback
+/// the `ToolProfile::FormProfile` builder uses (tip_diameter and diameter,
+/// whichever is larger, capped at zero). Returns `None` for non-form tools
+/// so the regular `tool.diameter * 0.5` path keeps owning those cases.
+fn form_profile_max_radius(tool: &ToolEntry) -> Option<f64> {
+    if !matches!(tool.kind, ToolKind::FormProfile) {
+        return None;
+    }
+    let base_r = (tool.diameter * 0.5).max(0.0);
+    let tip_r = tool.tip_diameter.map_or(base_r, |d| (d * 0.5).max(0.0));
+    Some(base_r.max(tip_r))
 }
 
 #[cfg(test)]
@@ -478,6 +503,69 @@ mod tests {
         );
         // Max radius = the holder cylinder radius (10 mm).
         assert!((p.max_radius() - 10.0).abs() < 1e-9);
+    }
+
+    /// 8g4w: a form cutter whose `tool.diameter` advertises the *tip*
+    /// diameter but whose actual envelope grows past the tip along the
+    /// flute (large-base form bit) was previously reporting
+    /// `cutting_radius() = tip_diameter * 0.5`. The carve sweep, on the
+    /// other hand, uses `ToolProfile::radius()` = max of segments. The
+    /// mismatch flagged carved cells `tip_r < r ≤ max_r` as wall
+    /// collisions in the holder check. After 8g4w the holder's cutting
+    /// envelope mirrors the carve envelope (the max profile radius) so
+    /// holder_check skips the same cells the sweep just lowered.
+    #[test]
+    fn form_profile_cutting_radius_matches_max_segment_radius() {
+        // 2 mm tip, 8 mm base form bit. Without the fix, cutting_r = 1
+        // and the holder would see the 8 mm-wide bottom of the swept
+        // path as "walls".
+        let mut t = tool_with(
+            Some(HolderShape::Cylinder {
+                diameter_mm: 12.0,
+                length_mm: 30.0,
+            }),
+            Some(6.0),
+            Some(10.0),
+        );
+        t.kind = ToolKind::FormProfile;
+        t.diameter = 8.0;
+        t.tip_diameter = Some(2.0);
+        let p = HolderProfile::from_tool(&t).expect("holder set");
+        assert!(
+            (p.cutting_radius() - 4.0).abs() < 1e-9,
+            "form cutter cutting_r should mirror max profile radius (4 mm), got {}",
+            p.cutting_radius(),
+        );
+        // And the opposite case: a form cutter with the TIP wider than
+        // the base (truncated cone) — the larger of the two still wins.
+        let mut t_inv = tool_with(
+            Some(HolderShape::Cylinder {
+                diameter_mm: 12.0,
+                length_mm: 30.0,
+            }),
+            Some(6.0),
+            Some(10.0),
+        );
+        t_inv.kind = ToolKind::FormProfile;
+        t_inv.diameter = 2.0;
+        t_inv.tip_diameter = Some(8.0);
+        let p_inv = HolderProfile::from_tool(&t_inv).expect("holder set");
+        assert!(
+            (p_inv.cutting_radius() - 4.0).abs() < 1e-9,
+            "form cutter cutting_r should be max(tip,base), got {}",
+            p_inv.cutting_radius(),
+        );
+        // Non-form tools keep the old behaviour (cutting_r from diameter).
+        let endmill = tool_with(
+            Some(HolderShape::Cylinder {
+                diameter_mm: 12.0,
+                length_mm: 30.0,
+            }),
+            Some(6.0),
+            Some(10.0),
+        );
+        let p_em = HolderProfile::from_tool(&endmill).expect("holder set");
+        assert!((p_em.cutting_radius() - 3.0).abs() < 1e-9);
     }
 
     #[test]

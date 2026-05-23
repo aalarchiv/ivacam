@@ -60,9 +60,16 @@ pub fn sweep_segment(
     holder: Option<&HolderProfile>,
     diagnostics: &mut SimDiagnostics,
 ) -> u32 {
+    // t1ru: drag-knife blade trails the spindle by `dragoff` in the
+    // direction of travel, so fixture / holder / rapid checks must run
+    // against the SHIFTED chord — the spindle path is in air; only the
+    // trailing blade is in material. Build the shifted segment once and
+    // route both diagnostics and carve through it.
+    let shifted = apply_dragoff_offset(segment, profile);
+    let effective = shifted.as_ref().unwrap_or(segment);
     run_segment_warnings(
         heightmap,
-        segment,
+        effective,
         profile,
         segment_idx,
         fixtures,
@@ -101,9 +108,13 @@ pub fn sweep_segment_partial(
         return 0;
     }
     if lo <= 1e-9 {
+        // t1ru: same dragoff-shift as `sweep_segment` — diagnostics
+        // must see the trailing-blade chord, not the spindle axis.
+        let shifted = apply_dragoff_offset(segment, profile);
+        let effective = shifted.as_ref().unwrap_or(segment);
         run_segment_warnings(
             heightmap,
-            segment,
+            effective,
             profile,
             segment_idx,
             fixtures,
@@ -238,13 +249,23 @@ fn sweep_chord_carve(
         return 0;
     }
 
+    // 4mp1: engagement-depth clamp. Profiles that expose a
+    // `max_engagement_depth` (Engraver) refuse to carve more than
+    // `top_z - max_engagement_depth` below the stock-top plane: deeper
+    // toolpaths would snap the bit in reality, so we refuse to model
+    // the unphysical cut rather than letting the heightmap drop past
+    // the cutter's reach.
+    let depth_floor_z = profile
+        .max_engagement_depth()
+        .map(|d| top_z - f64::from(d));
     let layout = HeightmapLayout::of(heightmap);
     let mut touched = 0u32;
     // `for_each_swept_cell` clamps (ix, iy) to the heightmap's cell
     // rectangle, so the safe `lower_at`'s bounds branch is redundant
     // every frame — use the unchecked path here (audit-5el3).
     for_each_swept_cell(&layout, segment, profile, |ix, iy, _r, cutter_pz, dz| {
-        let surface_z = cutter_pz as f32 + dz;
+        let clamped_pz = depth_floor_z.map_or(cutter_pz, |floor| cutter_pz.max(floor));
+        let surface_z = clamped_pz as f32 + dz;
         heightmap.lower_at_unchecked(ix, iy, surface_z);
         touched += 1;
     });
@@ -355,6 +376,10 @@ fn sweep_chord_carve_partial(
 
     let cell = layout.cell;
     let r_tool_sq = r_tool * r_tool;
+    // 4mp1: engagement-depth clamp — same semantics as `sweep_chord_carve`.
+    let depth_floor_z = profile
+        .max_engagement_depth()
+        .map(|d| top_z - f64::from(d));
     let mut touched = 0u32;
     for iy in iy0..=iy1 {
         for ix in ix0..=ix1 {
@@ -404,7 +429,8 @@ fn sweep_chord_carve_partial(
                 };
                 dz
             };
-            let surface_z = cutter_pz as f32 + dz;
+            let clamped_pz = depth_floor_z.map_or(cutter_pz, |floor| cutter_pz.max(floor));
+            let surface_z = clamped_pz as f32 + dz;
             heightmap.lower_at_unchecked(ix, iy, surface_z);
             touched += 1;
         }
@@ -1294,5 +1320,161 @@ mod tests {
             &mut d,
         );
         assert_eq!(d.count("fixture_collision"), 0);
+    }
+
+    /// 4mp1: Engraver refuses to carve more than `max_engagement_depth`
+    /// below the stock-top plane. Drive a plunge well past the
+    /// configured depth and confirm the cell under the tip clamps to
+    /// `top_z - max_engagement_depth`, not the toolpath Z.
+    #[test]
+    fn engraver_clamps_carve_to_max_engagement_depth() {
+        let profile = ToolProfile::Engraver {
+            tip_r: 0.25,
+            cone_half_angle: 30f32.to_radians(),
+            max_engagement_depth: 1.5,
+        };
+        // top_z = 0.0 (fresh_map). Plunge to z = -5 — well past the
+        // 1.5 mm reach. The cell directly under the tip should clamp to
+        // -1.5, not -5.
+        let mut map = fresh_map(40, 40);
+        let mut d = diag();
+        let s = seg(
+            MoveKind::Plunge,
+            pose(20.0, 20.0, 0.0),
+            pose(20.0, 20.0, -5.0),
+        );
+        sweep_segment(&mut map, &s, &profile, 0, &[], None, &mut d);
+        let z = cell(&map, 20, 20);
+        assert!(
+            (z - -1.5).abs() < 1e-5,
+            "engraver tip should clamp at top_z - max_engagement_depth = -1.5, got {z}",
+        );
+        // A shallower plunge (still within reach) is unaffected.
+        let mut map2 = fresh_map(40, 40);
+        let mut d2 = diag();
+        let shallow = seg(
+            MoveKind::Plunge,
+            pose(10.0, 10.0, 0.0),
+            pose(10.0, 10.0, -1.0),
+        );
+        sweep_segment(&mut map2, &shallow, &profile, 0, &[], None, &mut d2);
+        let z_shallow = cell(&map2, 10, 10);
+        assert!(
+            (z_shallow - -1.0).abs() < 1e-5,
+            "shallow cut within reach should not clamp, got {z_shallow}",
+        );
+    }
+
+    /// 4mp1: the engagement-depth clamp survives partial-advance carves
+    /// — splitting the segment in half must produce the same clamped
+    /// surface as a full sweep.
+    #[test]
+    fn engraver_max_engagement_depth_partial_advance_matches_full() {
+        let profile = ToolProfile::Engraver {
+            tip_r: 0.25,
+            cone_half_angle: 30f32.to_radians(),
+            max_engagement_depth: 1.5,
+        };
+        let s = seg(
+            MoveKind::Cut,
+            pose(5.0, 20.0, -3.0),
+            pose(35.0, 20.0, -3.0),
+        );
+        let mut full = fresh_map(40, 40);
+        let mut df = diag();
+        sweep_segment(&mut full, &s, &profile, 0, &[], None, &mut df);
+        let mut split = fresh_map(40, 40);
+        let mut ds = diag();
+        sweep_segment_partial(&mut split, &s, &profile, 0, &[], None, &mut ds, 0.0, 0.5);
+        sweep_segment_partial(&mut split, &s, &profile, 0, &[], None, &mut ds, 0.5, 1.0);
+        for iy in 0..full.rows {
+            for ix in 0..full.cols {
+                let a = cell(&full, ix, iy);
+                let b = cell(&split, ix, iy);
+                assert!(
+                    (a - b).abs() < 1e-5,
+                    "engraver clamp drift at ({ix}, {iy}): full={a} split={b}",
+                );
+            }
+        }
+        // Carve depth at the chord centerline must clamp to -1.5.
+        assert!((cell(&full, 20, 20) - -1.5).abs() < 1e-5);
+    }
+
+    /// t1ru: drag-knife fixture / holder / rapid diagnostics must run
+    /// against the trailing-blade chord, NOT the spindle path. A
+    /// fixture sitting behind the spindle endpoint (in the blade's
+    /// shifted path) was previously missed.
+    #[test]
+    fn dragknife_fixture_collision_uses_shifted_chord() {
+        use crate::project::{Fixture, FixtureKind};
+        // Drag-knife with dragoff=4. Spindle moves from (10, 20) to
+        // (20, 20). Trailing blade is shifted -4 along +X, so it
+        // travels from (6, 20) to (16, 20). Place a fixture at (8, 20)
+        // — under the blade's path but not the spindle's.
+        let profile = ToolProfile::DragKnife {
+            r: 0.5,
+            dragoff: 4.0,
+        };
+        let s = seg(
+            MoveKind::Cut,
+            pose(10.0, 20.0, -1.0),
+            pose(20.0, 20.0, -1.0),
+        );
+        let fixture = Fixture {
+            id: 42,
+            name: "blade-path clamp".into(),
+            kind: FixtureKind::Box {
+                width: 2.0,
+                depth: 2.0,
+            },
+            origin: (8.0, 20.0),
+            z_bottom: -2.0,
+            z_top: 5.0,
+            color: 0xFFA0_50C0,
+        };
+        let mut map = fresh_map(40, 40);
+        let mut d = diag();
+        sweep_segment(&mut map, &s, &profile, 0, &[fixture], None, &mut d);
+        assert_eq!(
+            d.count("fixture_collision"),
+            1,
+            "fixture under the trailing blade must raise a collision",
+        );
+    }
+
+    /// t1ru companion: with dragoff = 0, the diagnostics see the same
+    /// chord as the carve — no false-negative regression for the legacy
+    /// path.
+    #[test]
+    fn dragknife_zero_dragoff_diagnostics_match_unshifted_segment() {
+        use crate::project::{Fixture, FixtureKind};
+        // Fixture sits directly on the spindle path. dragoff = 0 means
+        // no shift; the fixture collision is detected.
+        let profile = ToolProfile::DragKnife {
+            r: 0.5,
+            dragoff: 0.0,
+        };
+        let s = seg(
+            MoveKind::Cut,
+            pose(10.0, 20.0, -1.0),
+            pose(20.0, 20.0, -1.0),
+        );
+        let fixture = Fixture {
+            id: 7,
+            name: "on-path clamp".into(),
+            kind: FixtureKind::Box {
+                width: 2.0,
+                depth: 2.0,
+            },
+            origin: (15.0, 20.0),
+            z_bottom: -2.0,
+            z_top: 5.0,
+            color: 0xFFA0_50C0,
+        };
+        let mut map = fresh_map(40, 40);
+        let mut d = diag();
+        sweep_segment(&mut map, &s, &profile, 0, &[fixture], None, &mut d);
+        assert_eq!(d.count("fixture_collision"), 1);
     }
 }

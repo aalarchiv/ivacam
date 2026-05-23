@@ -65,6 +65,48 @@
 
   let isDirty = $derived.by(() => open && JSON.stringify(draft) !== pristine);
 
+  /// jkgj: numeric-field validation. Before, every input on a row used
+  /// `parseFloat(...) || 0` with no `min` attribute, so 0 or a
+  /// negative diameter / RPM / feed silently committed and the
+  /// pipeline produced zero-rate gcode (zero_rate_emitted) or worse.
+  /// These predicates classify each row as invalid so:
+  ///   * the input gets `.invalid` (red border, same pattern as
+  ///     `defaultStep`),
+  ///   * OK is disabled while any row is broken.
+  ///
+  /// Per-field rule:
+  ///   * diameter:  must be > 0 (mm) when the kind cuts at all
+  ///   * speed:     must be ≥ 1 RPM when fieldApplies('speed')
+  ///   * feedRate:  must be ≥ 1 mm/min (always required)
+  ///   * plungeRate: must be ≥ 1 mm/min when fieldApplies('plunge')
+  ///
+  /// Disabled fields (drag-knife speed, laser plunge, etc.) are
+  /// excluded — fieldApplies() already says they're not used.
+  function diameterInvalid(t: ToolEntry): boolean {
+    return !(t.diameter > 0);
+  }
+  function speedInvalid(t: ToolEntry): boolean {
+    if (!fieldApplies('speed', t.kind)) return false;
+    return !(t.speed >= 1);
+  }
+  function feedInvalid(t: ToolEntry): boolean {
+    return !(t.feedRate >= 1);
+  }
+  function plungeInvalid(t: ToolEntry): boolean {
+    if (!fieldApplies('plunge', t.kind)) return false;
+    return !(t.plungeRate >= 1);
+  }
+  function rowInvalid(t: ToolEntry): boolean {
+    return (
+      diameterInvalid(t) ||
+      speedInvalid(t) ||
+      feedInvalid(t) ||
+      plungeInvalid(t) ||
+      (t.defaultStep !== undefined && t.defaultStep >= 0)
+    );
+  }
+  let hasInvalidRow = $derived(draft.some(rowInvalid));
+
   /// Two-step close-on-dirty: first attempt arms `confirmingDiscard`
   /// so the footer swaps to a "Discard / Keep editing" pair; second
   /// click on Discard actually fires `onClose`. Replaces the prior
@@ -105,6 +147,11 @@
   });
 
   function commit() {
+    // jkgj: refuse to commit while any row has an invalid numeric
+    // field. The OK button is also disabled in that state — this is
+    // belt-and-braces so a keyboard / programmatic invocation can't
+    // smuggle a zero-rate tool through.
+    if (draft.some(rowInvalid)) return;
     // Deep-snapshot so the command system receives plain objects —
     // Svelte 5 `$state` proxies inside `draft[i]` can trip up the
     // `structuredClone` call inside replaceToolsCommand on some
@@ -456,7 +503,12 @@
             <input
               type="number"
               step="0.1"
+              min="0.01"
               value={tool.diameter}
+              class:invalid={diameterInvalid(tool)}
+              title={diameterInvalid(tool)
+                ? 'Tool ⌀ must be greater than 0 mm — zero / negative values produce no toolpath.'
+                : ''}
               onchange={(e) =>
                 updateField(
                   i,
@@ -513,9 +565,15 @@
             <input
               type="number"
               step="500"
+              min="1"
               value={tool.speed}
               disabled={!fieldApplies('speed', tool.kind)}
-              title={fieldApplies('speed', tool.kind) ? '' : fieldReasonForKind('speed', tool.kind)}
+              class:invalid={speedInvalid(tool)}
+              title={!fieldApplies('speed', tool.kind)
+                ? fieldReasonForKind('speed', tool.kind)
+                : speedInvalid(tool)
+                  ? 'Spindle speed must be ≥ 1 RPM — zero / negative values emit no S word and the controller may refuse.'
+                  : ''}
               onchange={(e) =>
                 updateField(
                   i,
@@ -526,8 +584,14 @@
             <input
               type="number"
               step="50"
+              min="1"
               value={tool.feedRate}
-              title={tool.kind === 'drill' ? 'For drill, this is the plunge feed.' : ''}
+              class:invalid={feedInvalid(tool)}
+              title={feedInvalid(tool)
+                ? 'Feed rate must be ≥ 1 mm/min — zero / negative values emit no F word and the controller stalls.'
+                : tool.kind === 'drill'
+                  ? 'For drill, this is the plunge feed.'
+                  : ''}
               onchange={(e) =>
                 updateField(
                   i,
@@ -538,11 +602,15 @@
             <input
               type="number"
               step="50"
+              min="1"
               value={tool.plungeRate}
               disabled={!fieldApplies('plunge', tool.kind)}
-              title={fieldApplies('plunge', tool.kind)
-                ? ''
-                : fieldReasonForKind('plunge', tool.kind)}
+              class:invalid={plungeInvalid(tool)}
+              title={!fieldApplies('plunge', tool.kind)
+                ? fieldReasonForKind('plunge', tool.kind)
+                : plungeInvalid(tool)
+                  ? 'Plunge rate must be ≥ 1 mm/min — zero / negative values cause the controller to refuse the move.'
+                  : ''}
               onchange={(e) =>
                 updateField(
                   i,
@@ -1241,8 +1309,20 @@
           Load (add)…
         </button>
         <span class="sep"></span>
+        {#if hasInvalidRow}
+          <!-- jkgj: surface why OK is greyed out so the user knows
+               which inputs need fixing. -->
+          <span class="validation-msg" role="status"
+            >Fix highlighted fields (⌀, RPM, feed, plunge must be &gt; 0).</span
+          >
+        {/if}
         <button class="secondary" onclick={close}>Cancel</button>
-        <button class="primary" onclick={commit}>OK</button>
+        <button
+          class="primary"
+          onclick={commit}
+          disabled={hasInvalidRow}
+          title={hasInvalidRow ? 'Fix the highlighted fields before saving.' : ''}>OK</button
+        >
       {/if}
     </footer>
   </Modal>
@@ -1463,6 +1543,16 @@
     margin-right: auto;
     color: var(--danger, #c0392b);
     font-size: 0.85rem;
+    align-self: center;
+  }
+  /* jkgj: footer-side validation hint shown when an OK-disabling
+     row is present. Same red palette as `.discard-prompt`, but
+     keeps the action buttons aligned to the right by NOT setting
+     `margin-right: auto` — we want this slot inline with the
+     buttons, not pushed to the start. */
+  .validation-msg {
+    color: var(--danger, #c0392b);
+    font-size: 0.78rem;
     align-self: center;
   }
 </style>

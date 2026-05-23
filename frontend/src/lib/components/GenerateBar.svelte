@@ -14,7 +14,11 @@
   import { exportGeneratedGcode } from '../state/file_ops';
   import { computeFootprint } from '../sim/driver';
   import type { SimWarning, TimeEstimate } from '../api/types';
-  import { countCriticalPipelineWarnings } from '../api/pipeline-warnings';
+  import {
+    countCriticalPipelineWarnings,
+    pipelineWarningSeverity,
+    type PipelineWarning,
+  } from '../api/pipeline-warnings';
   import GenerateProgress from './GenerateProgress.svelte';
   import { workspace } from '../state/workspace.svelte';
 
@@ -117,6 +121,16 @@
   });
 
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);
+  // dvs4: surface pipeline-level warnings in the same panel that
+  // showed sim warnings before. Previously the panel was hard-coded to
+  // `project.simDiagnostics?.warnings` and the panel gate required a
+  // non-null simDiagnostics, so a Generate that raised, say,
+  // `op_source_empty` or `tool_too_large` flagged the chip but
+  // clicking it showed "No warnings — sim is clean." now we render
+  // BOTH lists in one panel with a source tag per row.
+  let pipelineWarnings = $derived<PipelineWarning[]>(
+    (project.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
+  );
   // 94sf: critical-count now spans BOTH sim warnings AND pipeline-level
   // warnings (tool_too_large, op_order_suspect, frame_padding_below_tool_radius,
   // spindle_speed_clamped_above_max, stock_origin_outside_geometry_bbox, …).
@@ -126,15 +140,12 @@
   // didn't fit emitted zero toolpath, raised `tool_too_large`, and the
   // user's "block on critical" setting did NOT prevent the broken gcode
   // from shipping).
-  let pipelineCriticalCount = $derived(
-    countCriticalPipelineWarnings(
-      (project.generated as { warnings?: import('../api/pipeline-warnings').PipelineWarning[] } | null)?.warnings,
-    ),
-  );
+  let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(pipelineWarnings));
   let criticalCount = $derived(
     warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,
   );
-  let isClean = $derived(warnings.length === 0 && pipelineCriticalCount === 0);
+  let totalWarningCount = $derived(warnings.length + pipelineWarnings.length);
+  let isClean = $derived(totalWarningCount === 0 && pipelineCriticalCount === 0);
 
   /// Post-Generate bounds scan — counts cut/plunge/arc segments whose
   /// endpoints fall outside the stock OR outside the machine work area.
@@ -295,25 +306,30 @@
   let simStale = $derived(project.simDiagnostics != null && project.dirty);
 
   function chipClass(): string {
-    if (project.simDiagnostics == null) return 'sim-chip idle';
+    // dvs4: chip color reflects WORST of sim + pipeline warnings.
+    // "idle" only when there's no generate-side state AND no sim run
+    // yet (chip is hidden anyway in that case).
+    if (project.simDiagnostics == null && pipelineWarnings.length === 0) return 'sim-chip idle';
     if (simStale) return 'sim-chip stale';
     if (criticalCount > 0) return 'sim-chip critical';
-    if (warnings.length > 0) return 'sim-chip warning';
+    if (totalWarningCount > 0) return 'sim-chip warning';
     return 'sim-chip clean';
   }
 
   function chipLabel(): string {
-    if (project.simDiagnostics == null) return 'Sim: not run yet — Generate first';
+    if (project.simDiagnostics == null && pipelineWarnings.length === 0) {
+      return 'Sim: not run yet — Generate first';
+    }
     if (simStale) return 'Sim: stale — re-Generate';
     if (isClean) return 'Sim clean';
     if (criticalCount > 0) {
-      return `Sim: ${warnings.length} warning${warnings.length === 1 ? '' : 's'} (${criticalCount} critical)`;
+      return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'} (${criticalCount} critical)`;
     }
-    return `Sim: ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`;
+    return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'}`;
   }
 
   function chipGlyph(): string {
-    if (project.simDiagnostics == null) return '🛡';
+    if (project.simDiagnostics == null && pipelineWarnings.length === 0) return '🛡';
     if (simStale) return '↻';
     if (isClean) return '✓';
     if (criticalCount > 0) return '⛔';
@@ -418,7 +434,7 @@
     <span class="sim-chip idle" title={SIM_IDLE_HINT}>
       🛡 {chipLabel()}
     </span>
-  {:else if project.simDiagnostics != null || warnings.length > 0}
+  {:else if project.simDiagnostics != null || totalWarningCount > 0}
     <button
       class={chipClass()}
       onclick={() => (warningPanelOpen = !warningPanelOpen)}
@@ -457,25 +473,42 @@
 </div>
 
 {#if warningPanelOpen}
-  <div class="panel" role="dialog" aria-label="Sim warnings">
+  <!-- dvs4: panel now lists BOTH sim warnings AND pipeline warnings.
+       Each row tags its source (Sim / Pipeline) so the user can tell
+       which subsystem flagged it. Pipeline warnings use the
+       pipeline-warnings.ts severity classifier (fj88) so the row dot
+       colour matches what the safety gate sees. -->
+  <div class="panel" role="dialog" aria-label="Warnings">
     <header>
-      <h3>Sim warnings ({warnings.length})</h3>
+      <h3>Warnings ({totalWarningCount})</h3>
       <button class="close" onclick={() => (warningPanelOpen = false)} aria-label="Close">×</button>
     </header>
     <div class="list">
-      {#if warnings.length === 0}
-        <p class="empty">No warnings — sim is clean.</p>
+      {#if totalWarningCount === 0}
+        <p class="empty">No warnings — sim and pipeline are clean.</p>
       {:else}
-        {#each warnings as w, i (i)}
+        {#each warnings as w, i (`sim-${i}`)}
           <button
             class="row severity-{simWarningSeverity(w)}"
             onclick={() => flyToWarning(w)}
             type="button"
           >
             <span class="dot" aria-hidden="true"></span>
+            <span class="source" title="Surfaced by the simulator after gcode generation.">sim</span>
             <span class="kind">{w.kind}</span>
             <span class="msg">{simWarningSummary(w)}</span>
           </button>
+        {/each}
+        {#each pipelineWarnings as pw, i (`pipe-${i}`)}
+          <div
+            class="row severity-{pipelineWarningSeverity(pw)} pipeline"
+            title={pw.message}
+          >
+            <span class="dot" aria-hidden="true"></span>
+            <span class="source pipeline" title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span>
+            <span class="kind">{pw.kind}</span>
+            <span class="msg">{pw.message}</span>
+          </div>
         {/each}
       {/if}
     </div>
@@ -768,7 +801,7 @@
   }
   .panel .row {
     display: grid;
-    grid-template-columns: 0.8rem 8rem 1fr;
+    grid-template-columns: 0.8rem 3.6rem 8rem 1fr;
     align-items: center;
     gap: 0.5rem;
     text-align: left;
@@ -779,7 +812,14 @@
     padding: 0.35rem 0.55rem;
     font-size: 0.74rem;
   }
-  .panel .row:hover {
+  /* Sim rows are interactive (button) — flyToWarning seeks the
+     playhead. Pipeline rows are static (div) — they have no segment
+     index to fly to. Use the same hover for click-affordance parity
+     on the interactive ones only. */
+  button.row {
+    cursor: pointer;
+  }
+  button.row:hover {
     background: var(--bg-hover, var(--bg-input));
   }
   .panel .row .dot {
@@ -796,9 +836,28 @@
   .panel .row.severity-info .dot {
     background: var(--marker-info);
   }
+  .panel .row .source {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 0.3rem;
+    text-align: center;
+    line-height: 1.3;
+    background: var(--bg-app);
+  }
+  .panel .row .source.pipeline {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
   .panel .row .kind {
     font-family: ui-monospace, monospace;
     color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .panel .row .msg {
     color: var(--text-strong);

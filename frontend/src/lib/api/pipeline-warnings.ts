@@ -35,6 +35,37 @@ export type PipelineSeverity = 'critical' | 'warning' | 'info';
 ///   the result is a hollow ring, not a pocket.
 /// * `helix_radius_unfittable` — auto-helix bailed; cutter falls
 ///   through to a different (possibly unsafe) entry strategy.
+///
+/// Round-2 audit additions (fj88) — these kinds emit silently when
+/// the pipeline can't produce a valid toolpath but still returns a
+/// "successful" generate response:
+///
+/// * `zero_rate_emitted` — feed / plunge / spindle rate resolved to 0;
+///   downstream gcode lacks an F/S word and the machine may refuse.
+/// * `op_source_empty` — op references zero geometry after filtering;
+///   no toolpath emitted for this op.
+/// * `op_source_missing_object` — op references an object that no
+///   longer exists; that part of the user's selection is silently
+///   dropped.
+/// * `vcarve_no_medial_axis` / `vcarve_no_closed_region` /
+///   `vcarve_below_tip_radius` — V-Carve op produced no usable cut
+///   (no medial axis / no closed boundary / region too narrow for
+///   the tip); the V-groove the user expects is missing.
+/// * `tool_geometry_impossible` — declared tool dims are mathematically
+///   impossible (e.g. tip ⌀ ≥ cutting ⌀); the depth-from-angle math
+///   silently produces garbage.
+/// * `thread_zero_bore` / `thread_tool_too_large` / `thread_no_depth` /
+///   `thread_no_circles` — Thread op can't compute helical pass: no
+///   thread is cut, but the gcode file looks "done".
+/// * `halfpipe_tool_reach_exceeded` — half-pipe radius exceeds tool
+///   stickout; the cut goes wherever the holder collides.
+/// * `halfpipe_radius_mismatch` — selected tool radius doesn't match
+///   the requested half-pipe radius; profile is the wrong shape.
+/// * `parallel_offset_panicked` — the polygon offset library bailed;
+///   the toolpath for that pocket is missing or partial.
+/// * `dual_tool_no_toolchange` — Dual-tool op needs an M6, but the
+///   post profile suppresses tool changes; the second tool's path
+///   runs with the first tool still loaded.
 const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'tool_too_large',
   'frame_padding_below_tool_radius',
@@ -44,6 +75,22 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'pocket_fill_incomplete',
   'helix_radius_unfittable',
   'stock_origin_outside_geometry_bbox',
+  // fj88 round-2 additions
+  'zero_rate_emitted',
+  'op_source_empty',
+  'op_source_missing_object',
+  'vcarve_no_medial_axis',
+  'vcarve_no_closed_region',
+  'vcarve_below_tip_radius',
+  'tool_geometry_impossible',
+  'thread_zero_bore',
+  'thread_tool_too_large',
+  'thread_no_depth',
+  'thread_no_circles',
+  'halfpipe_tool_reach_exceeded',
+  'halfpipe_radius_mismatch',
+  'parallel_offset_panicked',
+  'dual_tool_no_toolchange',
 ]);
 
 export function pipelineWarningSeverity(w: PipelineWarning): PipelineSeverity {

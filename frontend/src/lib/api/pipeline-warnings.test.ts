@@ -40,6 +40,44 @@ describe('pipelineWarningSeverity', () => {
     expect(pipelineWarningSeverity(w('plunge_overridden', 4))).toBe('warning');
     expect(pipelineWarningSeverity(w('ramp_arcs_at_boundary', 5))).toBe('warning');
     expect(pipelineWarningSeverity(w('chamfer_non_vbit', 6))).toBe('warning');
+    // Depth-limited / step-unspecified / clamped-below-min are heads-up
+    // kinds — the gcode still cuts something useful, just not exactly
+    // what was ordered. Stay non-critical.
+    expect(pipelineWarningSeverity(w('vcarve_depth_limited', 7))).toBe('warning');
+    expect(pipelineWarningSeverity(w('halfpipe_depth_limited', 8))).toBe('warning');
+    expect(pipelineWarningSeverity(w('step_unspecified', 9))).toBe('warning');
+    expect(pipelineWarningSeverity(w('spindle_speed_clamped_below_min', 10))).toBe('warning');
+    expect(pipelineWarningSeverity(w('tool_kind_mismatch', 11))).toBe('warning');
+  });
+
+  /// fj88 round-2 audit: lock the silent-corruption kinds that the
+  /// pipeline emits but the original CRITICAL_KINDS set missed. Each
+  /// of these reflects "the pipeline returned a generate response but
+  /// the toolpath is substantively missing / wrong" — they must
+  /// register as critical so the safety gate blocks shipping.
+  describe('fj88 round-2: silent-corruption kinds are critical', () => {
+    const SILENT_CORRUPTION_KINDS = [
+      'zero_rate_emitted',
+      'op_source_empty',
+      'op_source_missing_object',
+      'vcarve_no_medial_axis',
+      'vcarve_no_closed_region',
+      'vcarve_below_tip_radius',
+      'tool_geometry_impossible',
+      'thread_zero_bore',
+      'thread_tool_too_large',
+      'thread_no_depth',
+      'thread_no_circles',
+      'halfpipe_tool_reach_exceeded',
+      'halfpipe_radius_mismatch',
+      'parallel_offset_panicked',
+      'dual_tool_no_toolchange',
+    ];
+    for (const kind of SILENT_CORRUPTION_KINDS) {
+      it(`marks ${kind} as critical`, () => {
+        expect(pipelineWarningSeverity(w(kind, 1))).toBe('critical');
+      });
+    }
   });
 });
 

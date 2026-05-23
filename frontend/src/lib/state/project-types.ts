@@ -280,6 +280,37 @@ export interface MachineSettings {
   /// instead of their hard-coded program_start / program_end /
   /// tool_change / coolant lines. Undefined ⇒ defaults.
   postProfile?: PostProfile;
+  /// 3nnj: lower bound on the spindle RPM the controller will accept.
+  /// Tool / op RPMs below this clamp UP to the min and emit a
+  /// `spindle_speed_clamped_below_min` warning. Undefined disables
+  /// the floor (default; back-compat).
+  spindleRpmMin?: number;
+  /// 3nnj: upper bound on the spindle RPM the controller will accept.
+  /// Tool / op RPMs above this clamp DOWN to the max and emit a
+  /// `spindle_speed_clamped_above_max` warning. Undefined disables
+  /// the ceiling (default; back-compat).
+  spindleRpmMax?: number;
+  /// Spindle-start dwell (seconds) inserted into the M6 toolchange
+  /// envelope after `M3 S<rpm>`. Lets the new tool come up to
+  /// commanded RPM before the next cut. Undefined ⇒ 0.5 s default.
+  spindleStartDwellSec?: number;
+  /// Spindle-stop dwell (seconds) inserted into the M6 toolchange
+  /// envelope between `M5` and the actual `T<n> M6`. Gives the
+  /// spindle time to spin down before the chuck is touched.
+  /// Undefined ⇒ 0.5 s default.
+  spindleStopDwellSec?: number;
+  /// syol: when true, the program_end footer adds a `G53 G0 X0 Y0`
+  /// retract-to-machine-home before the spindle-off + M30 sequence.
+  /// When false, falls back to a `G0 X0 Y0` in the current WCS
+  /// (work zero). Both modes lift to `fast_move_z` first. Default
+  /// false.
+  parkAtHome?: boolean;
+  /// syol: optional explicit park XY (mm, in WCS coordinates). When
+  /// set, the program_end footer routes the head to this point after
+  /// the safe-Z lift, overriding the machine-home / work-zero
+  /// fallback. Only meaningful when `parkAtHome` is false (the WCS
+  /// fallback path). Emitted as `[x, y]` on the wire.
+  parkXy?: [number, number];
 }
 
 /// Mirror of `wiac_core::gcode::post_profile::PostProfile` (rt1.15).

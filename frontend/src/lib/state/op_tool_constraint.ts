@@ -16,8 +16,19 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
   switch (op) {
     case 'profile':
       // Contouring along an outline — any rotating cutter with a
-      // defined diameter works. Drag-knife / laser / drill don't.
-      return ['endmill', 'ball_nose', 'bull_nose', 'compression', 't_slot', 'form_profile'];
+      // defined diameter works. Laser ablates along the outline at
+      // constant Z and uses the kerf width as its effective cut
+      // diameter, so it fits the same op kind. Drag-knife / drill
+      // don't.
+      return [
+        'endmill',
+        'ball_nose',
+        'bull_nose',
+        'compression',
+        't_slot',
+        'form_profile',
+        'laser_beam',
+      ];
     case 'pocket':
       // Pocketing needs a flat or near-flat bottom. V-bits / engravers
       // taper, so they leave wedge-shaped residue across the floor.
@@ -35,8 +46,11 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       return ['v_bit', 'engraver'];
     case 'engrave':
       // Engraving uses V-bit / engraver. A small-diameter endmill works
-      // too — many users engrave with a 0.5 mm flat tool.
-      return ['v_bit', 'engraver', 'endmill'];
+      // too — many users engrave with a 0.5 mm flat tool. Laser
+      // engraving (raster or vector along curves) is the natural fit
+      // when the machine has a laser head — same op kind, kerf width
+      // drives the line weight.
+      return ['v_bit', 'engraver', 'endmill', 'laser_beam'];
     case 'drag_knife':
       // Dedicated kind — the post's pivot-arc compensation expects the
       // dragoff geometry.

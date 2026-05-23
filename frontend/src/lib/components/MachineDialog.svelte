@@ -615,6 +615,156 @@
           />
         </div>
       {/if}
+
+      <div class="section-title">Spindle clamps &amp; warmup</div>
+      <label
+        title="3nnj: lower spindle-RPM clamp (M3 S<rpm>). Tool / op RPMs below this clamp UP to the min and emit a 'spindle_speed_clamped_below_min' warning. Empty = no floor (back-compat default)."
+      >
+        Spindle RPM min
+        <span class="field"
+          ><input
+            type="number"
+            min="0"
+            step="100"
+            placeholder="—"
+            value={draft.spindleRpmMin ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              if (raw === '') {
+                draft.spindleRpmMin = undefined;
+                return;
+              }
+              const v = parseInt(raw, 10);
+              draft.spindleRpmMin = isFinite(v) && v >= 0 ? v : undefined;
+            }}
+          /><span class="unit">RPM</span></span
+        >
+      </label>
+      <label
+        title="3nnj: upper spindle-RPM clamp. Tool / op RPMs above this clamp DOWN to the max and emit a 'spindle_speed_clamped_above_max' warning. Empty = no ceiling (back-compat default)."
+      >
+        Spindle RPM max
+        <span class="field"
+          ><input
+            type="number"
+            min="0"
+            step="500"
+            placeholder="—"
+            value={draft.spindleRpmMax ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              if (raw === '') {
+                draft.spindleRpmMax = undefined;
+                return;
+              }
+              const v = parseInt(raw, 10);
+              draft.spindleRpmMax = isFinite(v) && v >= 0 ? v : undefined;
+            }}
+          /><span class="unit">RPM</span></span
+        >
+      </label>
+      <label
+        title="Spindle-start dwell inserted into the M6 toolchange envelope after M3 S<rpm>. Lets the spindle reach commanded RPM before the next cut. Stacks with the per-tool ToolEntry.pause. Empty = 0.5 s default."
+      >
+        Spindle start dwell
+        <span class="field"
+          ><input
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder="0.5"
+            value={draft.spindleStartDwellSec ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              if (raw === '') {
+                draft.spindleStartDwellSec = undefined;
+                return;
+              }
+              const v = parseFloat(raw);
+              draft.spindleStartDwellSec = isFinite(v) && v >= 0 ? v : undefined;
+            }}
+          /><span class="unit">s</span></span
+        >
+      </label>
+      <label
+        title="Spindle-stop dwell inserted between M5 and the actual T<n> M6. Gives the spindle time to spin down before the chuck is touched. Most VFD spindles want 0.5–1 s; high-inertia big-iron may want 1–2 s. Set to 0 to skip. Empty = 0.5 s default."
+      >
+        Spindle stop dwell
+        <span class="field"
+          ><input
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder="0.5"
+            value={draft.spindleStopDwellSec ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              if (raw === '') {
+                draft.spindleStopDwellSec = undefined;
+                return;
+              }
+              const v = parseFloat(raw);
+              draft.spindleStopDwellSec = isFinite(v) && v >= 0 ? v : undefined;
+            }}
+          /><span class="unit">s</span></span
+        >
+      </label>
+      <label
+        class="check"
+        title="syol: when on, the program_end footer emits G53 G0 X0 Y0 — retract to machine home after the safe-Z lift, before spindle-off and M30. When off, falls back to G0 X0 Y0 in the current WCS (work zero) and the optional Park XY below applies."
+      >
+        <input type="checkbox" bind:checked={draft.parkAtHome} />
+        Park at machine home (G53)
+      </label>
+      {#if !draft.parkAtHome}
+        <div class="triplet-label">
+          Park XY <span class="unit">mm, WCS</span>
+          <small class="park-help"
+            >Optional — empty = retract to work zero (0, 0). Set both fields to route the head to
+            a specific load / tool-station point after the safe-Z lift.</small
+          >
+        </div>
+        <div class="park-pair">
+          <input
+            type="number"
+            step="1"
+            aria-label="Park X (mm, WCS)"
+            placeholder="X"
+            value={draft.parkXy?.[0] ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              const cur = draft.parkXy ?? [0, 0];
+              if (raw === '') {
+                // Clearing X drops the whole pair — both must be set
+                // for park_xy to mean anything on the wire.
+                draft.parkXy = undefined;
+                return;
+              }
+              const v = parseFloat(raw);
+              if (!isFinite(v)) return;
+              draft.parkXy = [v, cur[1]];
+            }}
+          />
+          <input
+            type="number"
+            step="1"
+            aria-label="Park Y (mm, WCS)"
+            placeholder="Y"
+            value={draft.parkXy?.[1] ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              const cur = draft.parkXy ?? [0, 0];
+              if (raw === '') {
+                draft.parkXy = undefined;
+                return;
+              }
+              const v = parseFloat(raw);
+              if (!isFinite(v)) return;
+              draft.parkXy = [cur[0], v];
+            }}
+          />
+        </div>
+      {/if}
     </div>
 
     <footer>
@@ -763,6 +913,21 @@
   }
   .triplet input[type='number'] {
     width: 100%;
+  }
+  .park-pair {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.3rem;
+  }
+  .park-pair input[type='number'] {
+    width: 100%;
+  }
+  .park-help {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: normal;
+    margin-top: 0.15rem;
   }
   footer {
     display: flex;

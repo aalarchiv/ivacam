@@ -698,6 +698,21 @@
                   />
                 </label>
                 <label>
+                  <span>Stickout (mm)</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="—"
+                    value={tool.stickoutLengthMm ?? ''}
+                    title="q0kc: free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models reach-extension tooling where the collet doesn't grip right above the flutes. Empty / 0 = legacy behavior (collet sits directly on flutes)."
+                    onchange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      updateField(i, 'stickoutLengthMm', v === '' ? undefined : parseFloat(v));
+                    }}
+                  />
+                </label>
+                <label>
                   <span>Preset</span>
                   <select
                     title="Apply common ER-style holder presets — fills in flute length, shank, and holder fields with conservative ballpark values."
@@ -1058,6 +1073,37 @@
                     }}
                   />
                 </label>
+                <fieldset
+                  class="spindle-dir"
+                  disabled={tool.kind === 'drag_knife' || tool.kind === 'laser_beam'}
+                  title={tool.kind === 'drag_knife'
+                    ? `Drag-knife doesn't spin.`
+                    : tool.kind === 'laser_beam'
+                      ? `Laser has no spindle.`
+                      : 'z1y0: spindle direction the post commands when this tool is selected. CW (M3) is the default; CCW (M4) is for left-hand cutters / reverse-thread / mirror-helix tooling.'}
+                >
+                  <legend>Spindle dir</legend>
+                  <label class="radio">
+                    <input
+                      type="radio"
+                      name="spindle-dir-{tool.id}"
+                      value="cw"
+                      checked={(tool.spindleDirection ?? 'cw') === 'cw'}
+                      onchange={() => updateField(i, 'spindleDirection', undefined)}
+                    />
+                    <span>CW (M3)</span>
+                  </label>
+                  <label class="radio">
+                    <input
+                      type="radio"
+                      name="spindle-dir-{tool.id}"
+                      value="ccw"
+                      checked={tool.spindleDirection === 'ccw'}
+                      onchange={() => updateField(i, 'spindleDirection', 'ccw')}
+                    />
+                    <span>CCW (M4)</span>
+                  </label>
+                </fieldset>
               </div>
               <div class="holder-row pass-overrides">
                 <span
@@ -1260,6 +1306,26 @@
                       onchange={(e) => {
                         const v = (e.currentTarget as HTMLInputElement).value;
                         updateField(i, 'laserLeadInMm', v === '' ? undefined : parseFloat(v));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Kerf (mm)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.15"
+                      value={tool.kerfMm ?? ''}
+                      title="mmu8: laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Empty / 0 = the legacy 0.15 mm default in the Rust sim. Set to your measured kerf on the actual stock for accurate heightmap previews."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        if (v === '') {
+                          updateField(i, 'kerfMm', undefined);
+                          return;
+                        }
+                        const n = parseFloat(v);
+                        updateField(i, 'kerfMm', isNaN(n) || n <= 0 ? undefined : n);
                       }}
                     />
                   </label>
@@ -1472,6 +1538,30 @@
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+  .holder-row fieldset.spindle-dir {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.4rem 0.15rem;
+    margin: 0;
+    min-width: 0;
+  }
+  .holder-row fieldset.spindle-dir legend {
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 0.2rem;
+  }
+  .holder-row fieldset.spindle-dir label.radio {
+    min-width: auto;
+    flex-direction: row;
+  }
+  .holder-row fieldset.spindle-dir[disabled] {
+    opacity: 0.4;
   }
   input,
   select {

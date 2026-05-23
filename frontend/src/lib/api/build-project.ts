@@ -203,6 +203,23 @@ interface WireMachine {
       speed: WireAxisFormat;
     };
   };
+  /// 3nnj: machine spindle clamps. Omit when undefined so the
+  /// Rust serde default (no clamp) round-trips for legacy projects.
+  spindle_rpm_min?: number;
+  spindle_rpm_max?: number;
+  /// Spindle warmup / spindown dwells (seconds) emitted around M6
+  /// tool changes. Omit when undefined so the Rust 0.5 s defaults
+  /// apply.
+  spindle_start_dwell_sec?: number;
+  spindle_stop_dwell_sec?: number;
+  /// syol: park-at-home flag + optional explicit park XY (mm). When
+  /// `park_at_home` is true the program_end footer emits
+  /// `G53 G0 X0 Y0`; when false (and `park_xy` is None) it falls
+  /// back to `G0 X0 Y0` in the current WCS. When `park_xy` is
+  /// set the head routes to that explicit point instead. Omit
+  /// when at default so legacy projects round-trip unchanged.
+  park_at_home?: boolean;
+  park_xy?: [number, number];
 }
 
 interface WireAxisFormat {
@@ -475,6 +492,28 @@ function buildMachine(m: MachineSettings): WireMachine {
     ...(m.plotModeZ ? { plot_mode_z: true } : {}),
     ...(m.postProfile ? { post_profile: m.postProfile } : {}),
     ...(m.workArea ? { work_area: { x: m.workArea.x, y: m.workArea.y, z: m.workArea.z } } : {}),
+    // 3nnj: spindle RPM clamps. Skip on undefined so the Rust serde
+    // default (no clamp) applies; zero is a meaningful explicit setting
+    // (everything clamps up to 0 → effectively disabled spindle) but we
+    // pass it through verbatim because the user typed it.
+    ...(m.spindleRpmMin !== undefined ? { spindle_rpm_min: m.spindleRpmMin } : {}),
+    ...(m.spindleRpmMax !== undefined ? { spindle_rpm_max: m.spindleRpmMax } : {}),
+    // Spindle warmup / spindown dwells. Skip on undefined so the
+    // Rust 0.5 s default applies.
+    ...(m.spindleStartDwellSec !== undefined
+      ? { spindle_start_dwell_sec: m.spindleStartDwellSec }
+      : {}),
+    ...(m.spindleStopDwellSec !== undefined
+      ? { spindle_stop_dwell_sec: m.spindleStopDwellSec }
+      : {}),
+    // syol: park-at-home flag. Skip on the default (false) so legacy
+    // projects round-trip unchanged.
+    ...(m.parkAtHome ? { park_at_home: true } : {}),
+    // syol: explicit park XY. Per the audit spec we only emit this when
+    // `parkAtHome === false` — when parkAtHome is true the G53 path
+    // already pins the head to machine home, so an explicit WCS XY
+    // would be ambiguous (and the Rust side ignores it anyway).
+    ...(!m.parkAtHome && m.parkXy ? { park_xy: m.parkXy } : {}),
   };
 }
 

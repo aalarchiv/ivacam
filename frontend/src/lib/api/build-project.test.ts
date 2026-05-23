@@ -214,3 +214,116 @@ describe('buildProject — j4tv work_offset wiring', () => {
     });
   });
 });
+
+// Round-3 P2: MachineDialog now exposes spindle_rpm_min/max,
+// spindle_start_dwell_sec, spindle_stop_dwell_sec, park_at_home,
+// park_xy. The wire layer skips each on default so legacy projects
+// round-trip unchanged; with all six set the WireMachine carries the
+// canonical snake_case names the Rust serde derive expects.
+describe('buildMachine — Round-3 spindle clamps & parking', () => {
+  it('omits every spindle / park field when at default', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    const m = project!.machine as unknown as Record<string, unknown>;
+    expect(m).not.toHaveProperty('spindle_rpm_min');
+    expect(m).not.toHaveProperty('spindle_rpm_max');
+    expect(m).not.toHaveProperty('spindle_start_dwell_sec');
+    expect(m).not.toHaveProperty('spindle_stop_dwell_sec');
+    expect(m).not.toHaveProperty('park_at_home');
+    expect(m).not.toHaveProperty('park_xy');
+  });
+
+  it('emits spindle_rpm_min / max when set', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: { ...baseMachine(), spindleRpmMin: 6000, spindleRpmMax: 24000 },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({
+      spindle_rpm_min: 6000,
+      spindle_rpm_max: 24000,
+    });
+  });
+
+  it('emits spindle_start_dwell_sec and spindle_stop_dwell_sec when set', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: {
+        ...baseMachine(),
+        spindleStartDwellSec: 1.2,
+        spindleStopDwellSec: 2.5,
+      },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({
+      spindle_start_dwell_sec: 1.2,
+      spindle_stop_dwell_sec: 2.5,
+    });
+  });
+
+  it('emits park_at_home when true', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: { ...baseMachine(), parkAtHome: true },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({ park_at_home: true });
+  });
+
+  it('emits park_xy when park_at_home is false', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: { ...baseMachine(), parkAtHome: false, parkXy: [150, 75] },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({ park_xy: [150, 75] });
+    const m = project!.machine as unknown as Record<string, unknown>;
+    expect(m).not.toHaveProperty('park_at_home');
+  });
+
+  it('drops park_xy when park_at_home is true (ambiguous combo)', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: { ...baseMachine(), parkAtHome: true, parkXy: [150, 75] },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({ park_at_home: true });
+    const m = project!.machine as unknown as Record<string, unknown>;
+    expect(m).not.toHaveProperty('park_xy');
+  });
+
+  it('round-trips all six fields together', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: {
+        ...baseMachine(),
+        spindleRpmMin: 8000,
+        spindleRpmMax: 30000,
+        spindleStartDwellSec: 0.75,
+        spindleStopDwellSec: 1.5,
+        parkAtHome: false,
+        parkXy: [200, 100],
+      },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({
+      spindle_rpm_min: 8000,
+      spindle_rpm_max: 30000,
+      spindle_start_dwell_sec: 0.75,
+      spindle_stop_dwell_sec: 1.5,
+      park_xy: [200, 100],
+    });
+    const m = project!.machine as unknown as Record<string, unknown>;
+    expect(m).not.toHaveProperty('park_at_home');
+  });
+});

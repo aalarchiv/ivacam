@@ -120,18 +120,50 @@ fn emit_stufenfase<P: PostProcessor>(
         if r < 0.05 {
             continue;
         }
-        let mut flat: Vec<(f64, f64, f64)> = (0..=STEPS)
-            .map(|i| {
-                let a = (i as f64) * std::f64::consts::TAU / (STEPS as f64);
-                (center.x + r * a.cos(), center.y + r * a.sin(), chamfer_z)
-            })
-            .collect();
-        if let Some(&first) = flat.first() {
-            if let Some(last) = flat.last_mut() {
-                *last = first;
-            }
+        // x412: insert a spiral lead-in BEFORE the flat revolution so
+        // the V-bit doesn't plunge vertically at the rim. emit_vcarve_block
+        // (gcode.rs) plunges G1 vertically from start_depth=0 down to the
+        // first polyline point's Z at rate_v; for a sharp 60°/90° V-bit
+        // that's a tip-snap on hardwood / aluminum (same class of failure
+        // pmpk fixed for the V-Carve emitter). Match the pmpk pattern:
+        // ramp Z from 0 down to chamfer_z at LEAD_IN_ANGLE_DEG=10° from
+        // horizontal along the rim, then walk the full flat revolution
+        // at chamfer_z. If the rim's circumference is too short for the
+        // 10° ramp, do a single ramped revolution (depth still reaches
+        // chamfer_z so the chamfer isn't shallow — the slope merely
+        // steepens; still better than a vertical plunge).
+        const LEAD_IN_ANGLE_DEG: f64 = 10.0;
+        let circumference = std::f64::consts::TAU * r;
+        let needed_arc = chamfer_z.abs() / LEAD_IN_ANGLE_DEG.to_radians().tan();
+        let lead_arc = needed_arc.min(circumference);
+        let lead_angle = lead_arc / r; // radians swept by the ramp
+        // Lead-in resolution: scale with the revolution density so the
+        // ramp's per-point depth step never exceeds the flat revolution's
+        // tangential step. ceil((lead_angle / TAU) * STEPS).max(8).
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let lead_steps =
+            ((lead_angle / std::f64::consts::TAU * (STEPS as f64)).ceil() as usize).max(8);
+        let mut path: Vec<(f64, f64, f64)> = Vec::with_capacity(lead_steps + STEPS + 1);
+        for i in 0..=lead_steps {
+            let t = (i as f64) / (lead_steps as f64);
+            let a = -lead_angle + t * lead_angle;
+            let z = chamfer_z * t;
+            path.push((center.x + r * a.cos(), center.y + r * a.sin(), z));
         }
-        polylines.push(flat);
+        // Flat revolution: start at angle 0 (matches lead-in end), end
+        // at angle TAU. Skip the first sample because it duplicates the
+        // ramp's final point.
+        for i in 1..=STEPS {
+            let a = (i as f64) * std::f64::consts::TAU / (STEPS as f64);
+            path.push((center.x + r * a.cos(), center.y + r * a.sin(), chamfer_z));
+        }
+        // Close the revolution loop exactly on the ramp-end point so
+        // arc-fit can collapse adjacent samples into a clean G2/G3.
+        let ramp_end = path[lead_steps];
+        if let Some(last) = path.last_mut() {
+            *last = ramp_end;
+        }
+        polylines.push(path);
         found += 1;
     }
     if non_circle_skipped > 0 {
@@ -741,6 +773,106 @@ mod tests {
             g80_idx < next_g0_after_drill,
             "G80 (idx {g80_idx}) must precede the next G0 (idx {next_g0_after_drill}):\n{}",
             resp.gcode
+        );
+    }
+
+    /// x412: a stufenfase chamfer must not begin with a vertical
+    /// G1 plunge at the rim XY. Pre-fix `emit_stufenfase` built a
+    /// flat 64-point polyline at `chamfer_z` directly, and
+    /// `emit_vcarve_block` then drove the cutter G1 down from
+    /// `start_depth=0` to `chamfer_z` at the SAME XY as the first
+    /// rim point — a vertical plunge that snaps sharp V-bit tips on
+    /// hardwood / aluminum. The fix prepends a spiral lead-in
+    /// (LEAD_IN_ANGLE_DEG=10°) so the first G1 with a Z change also
+    /// moves in XY.
+    #[test]
+    fn stufenfase_first_g1_is_not_vertical_plunge_at_rim() {
+        let mut vbit_drill = vbit();
+        vbit_drill.kind = ToolKind::Drill;
+        vbit_drill.diameter = 3.0;
+        vbit_drill.tip_angle_deg = 90.0;
+        let center = Point2::new(5.0, 7.0);
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        let project = Project {
+            segments: closed_circle(center, 0.5),
+            machine: MachineConfig::default(),
+            tools: vec![vbit_drill],
+            operations: vec![Op {
+                id: 1,
+                name: "Drill+chamfer".into(),
+                enabled: true,
+                kind: OpKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    chamfer_after_width_mm: Some(1.0),
+                    pattern: None,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Find the chamfer block — it's after the drill cycle's G80
+        // cancel-canned-cycle marker.
+        let g80_idx = resp
+            .gcode
+            .find("\nG80")
+            .unwrap_or_else(|| panic!("expected G80 between drill and chamfer in:\n{}", resp.gcode));
+        let chamfer = &resp.gcode[g80_idx..];
+        // Locate the first G1 with a Z token AFTER any rapids /
+        // straight-Z plunge to start_depth=0. That is the first
+        // *cutting* descent toward chamfer_z. It MUST also include an
+        // X or Y delta (i.e. not a pure vertical plunge at the rim).
+        // Walk past the G0 X/Y rapid, the G1 Z0 plunge, and find the
+        // first subsequent G1 that has a non-zero Z move below 0.
+        let mut saw_g1_to_zero = false;
+        let mut first_descent: Option<String> = None;
+        for raw in chamfer.lines() {
+            let l = raw.trim_start();
+            if l.is_empty() || l.starts_with(';') {
+                continue;
+            }
+            if !l.starts_with("G1 ") {
+                continue;
+            }
+            // Lead-in plunge to Z0 ("Z0" or "Z-0.0" etc.) — skip it,
+            // it happens above stock.
+            if l.contains('Z') && !l.contains('X') && !l.contains('Y') {
+                saw_g1_to_zero = true;
+                continue;
+            }
+            // First G1 with a Z token that ALSO has X or Y — the lead
+            // descent. If we instead see a pure G1 Z<negative> as the
+            // first descending move, that's the bug.
+            if l.contains('Z') {
+                first_descent = Some(l.to_string());
+                break;
+            }
+        }
+        assert!(
+            saw_g1_to_zero,
+            "x412: expected a G1 plunge to z=0 before the chamfer descent:\n{chamfer}"
+        );
+        let first = first_descent
+            .unwrap_or_else(|| panic!("x412: expected a chamfer-descent G1 in:\n{chamfer}"));
+        assert!(
+            first.contains('X') || first.contains('Y'),
+            "x412: first chamfer descent must include XY motion (spiral lead-in), \
+             got pure vertical plunge: `{first}`\nchamfer block:\n{chamfer}"
         );
     }
 

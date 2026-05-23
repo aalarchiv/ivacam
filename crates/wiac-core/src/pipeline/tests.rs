@@ -2734,3 +2734,129 @@
             resp.gcode
         );
     }
+
+    /// lx1u: a laser-mode multi-tool project must NOT emit M3 / M4 in
+    /// the toolchange envelope. Pre-fix the envelope always called
+    /// `crate::gcode::spindle_on(...)` (and `spindle_off()` for the
+    /// stop side), which on GRBL laser turns the beam steady-on at
+    /// the clamped-min RPM during a toolchange — silent fire-mode
+    /// flip (pulse → steady-on at min power) and a real safety hazard.
+    ///
+    /// Per-cut laser firing is still handled by `emit_*_block`'s
+    /// `cut_tool_on` (20y5); the envelope is only there to manage the
+    /// SPINDLE, which laser mode doesn't have. Gate it on
+    /// `MachineMode::Mill`.
+    #[test]
+    fn laser_mode_toolchange_envelope_emits_no_spindle_commands() {
+        use crate::cam::setup::MachineMode;
+        let mut t1 = endmill(1, 6.0);
+        t1.kind = ToolKind::LaserBeam;
+        t1.speed = 1000;
+        let mut t2 = endmill(2, 3.0);
+        t2.kind = ToolKind::LaserBeam;
+        t2.speed = 500;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            mode: MachineMode::Laser,
+            ..MachineConfig::default()
+        };
+        let project = crate::project::Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![t1, t2],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Grbl),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The envelope must not leak ANY spindle directive — neither
+        // M3 / M4 (spindle-up) nor a bare M5 in the toolchange context.
+        // Per-cut laser-on / -off is handled by cut_tool_on (20y5)
+        // and lives INSIDE each op's body, not in the envelope.
+        //
+        // GRBL's laser post emits `M5` only at cut-leave (laser_off) or
+        // program_end; neither path runs inside the envelope after the
+        // lx1u gate. Scan the gcode for any M3 / M4 line — none must
+        // appear, because the per-cut path goes through `laser_on(S)`
+        // which uses M3 too — wait, that's the same opcode. Refine the
+        // assertion: any M3/M4 line that appears between the safe-Z
+        // lift and the T<n> M6 of a toolchange envelope is the bug.
+        //
+        // For GRBL with laser tools, `laser_on(power)` does emit
+        // `M3 S<power>` (laser firing rides on the spindle opcode). So
+        // the simpler check is: scan the gcode for occurrences of
+        // `M3 S<clamped_min>` between consecutive `T<n> M6` lines.
+        // The clamped-min is whatever the post's silent clamp produced
+        // for speed=0 — we don't depend on the value, just that the
+        // ENVELOPE itself doesn't introduce a spurious M3/M4 at the
+        // tool's commanded speed.
+        //
+        // GRBL doesn't emit `T<n> M6` literally — it emits a
+        // `; toolchange: T2 (...)` comment and skips the M6. Use the
+        // toolchange-comment marker to bracket the envelope.
+        //
+        // Between OP 1's last cut and the "; toolchange:" marker the
+        // emitter runs `cut_tool_off` (laser_off → M5) plus the
+        // envelope's safe-Z lift. The M5 is *correct* and part of the
+        // per-cut path (20y5), not the envelope. The bug we're testing
+        // for is the envelope adding a SECOND M5 (post.spindle_off)
+        // and an M3 S<clamped_min> (post.spindle_on) which silently
+        // fired the laser at min power during the toolchange.
+        //
+        // Count: post-fix the entire OP1-end → OP2-start window has
+        // EXACTLY ONE M5 line (the cut_tool_off) and ZERO M3/M4 lines.
+        // Pre-fix it had at least TWO M5 lines and ONE M3 S<n> line.
+        let op1_end = resp
+            .gcode
+            .find("; OP 2")
+            .unwrap_or_else(|| panic!("expected ; OP 2 marker in:\n{}", resp.gcode));
+        let prefix = &resp.gcode[..op1_end];
+        let last_cut = prefix
+            .rfind("G1 X")
+            .or_else(|| prefix.rfind("G1 Y"))
+            .or_else(|| prefix.rfind("G2"))
+            .or_else(|| prefix.rfind("G3"))
+            .unwrap_or_else(|| panic!("expected at least one OP 1 cut line in:\n{}", resp.gcode));
+        let envelope_window = &resp.gcode[last_cut..op1_end];
+        let mut m5_count = 0;
+        let mut m3_count = 0;
+        let mut m4_count = 0;
+        for line in envelope_window.lines() {
+            let t = line.trim();
+            if t == "M5" {
+                m5_count += 1;
+            }
+            if t.starts_with("M3") && !t.starts_with("M30") {
+                m3_count += 1;
+            }
+            if t.starts_with("M4") {
+                m4_count += 1;
+            }
+        }
+        assert_eq!(
+            m5_count, 1,
+            "lx1u: laser-mode envelope leaked extra M5 (pre-fix had spindle_off + laser_off):\n{envelope_window}\nfull:\n{}",
+            resp.gcode
+        );
+        assert_eq!(
+            m3_count, 0,
+            "lx1u: laser-mode envelope leaked M3 (firing laser at clamped-min during toolchange):\n{envelope_window}\nfull:\n{}",
+            resp.gcode
+        );
+        assert_eq!(
+            m4_count, 0,
+            "lx1u: laser-mode envelope leaked M4:\n{envelope_window}\nfull:\n{}",
+            resp.gcode
+        );
+    }

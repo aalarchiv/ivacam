@@ -541,4 +541,200 @@ mod tests {
             RapidCheck::Clear,
         );
     }
+
+    /// ityc: a LaserBeam tool has no physical shank to drag through
+    /// walls. Even when the user wires a shank diameter on the laser
+    /// tool entry (because they share a project-wide tool table with
+    /// mill tools), `HolderProfile::from_tool` must return `None` so
+    /// the rapid-check skips the shank pass and doesn't spuriously
+    /// alarm on every rapid that flies above tall walls.
+    #[test]
+    fn laser_tool_skips_shank_pass_entirely() {
+        use crate::project::{Coolant, HolderShape, ToolEntry, ToolKind};
+        let t = ToolEntry {
+            id: 1,
+            name: "laser".into(),
+            kind: ToolKind::LaserBeam,
+            diameter: 0.2,
+            tip_diameter: None,
+            tip_angle_deg: 60.0,
+            dragoff: None,
+            flutes: 0,
+            speed: 1000,
+            plunge_rate: 100,
+            feed_rate: 800,
+            coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
+            default_step: None,
+            default_xy_overlap: None,
+            comment: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            kerf_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
+            pause: 0,
+            // User accidentally / by-template set a shank + holder on
+            // the laser entry — pre-fix this triggered the shank pass.
+            flute_length_mm: None,
+            shank_diameter_mm: Some(6.0),
+            stickout_length_mm: None,
+            holder: Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            }),
+            spindle_direction: crate::project::SpindleDirection::default(),
+        };
+        // No HolderProfile for laser tools.
+        assert!(
+            HolderProfile::from_tool(&t).is_none(),
+            "ityc: laser tools must not produce a HolderProfile (skips shank/holder pass)"
+        );
+    }
+
+    /// ityc: a drill with NO `flute_length_mm` set used to leave the
+    /// shank starting at z=0 above the tip. Any wall above the tip
+    /// plane within the shank radius alarmed as a shank collision —
+    /// silly false-positive on every drill program. The fix synthesizes
+    /// a default body length of `diameter * 6` (typical L/D ratio for
+    /// twist drills) so the shank envelope only kicks in above a
+    /// realistic body height.
+    #[test]
+    fn drill_no_flute_length_uses_diameter_times_six_body() {
+        use crate::project::{Coolant, ToolEntry, ToolKind};
+        let t = ToolEntry {
+            id: 1,
+            name: "3mm drill".into(),
+            kind: ToolKind::Drill,
+            diameter: 3.0,
+            tip_diameter: None,
+            tip_angle_deg: 118.0,
+            dragoff: None,
+            flutes: 2,
+            speed: 3000,
+            plunge_rate: 100,
+            feed_rate: 200,
+            coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
+            default_step: None,
+            default_xy_overlap: None,
+            comment: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            kerf_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
+            pause: 0,
+            flute_length_mm: None, // ← the bug: pre-fix shank started at z=0
+            shank_diameter_mm: Some(3.0),
+            stickout_length_mm: None,
+            holder: None,
+            spindle_direction: crate::project::SpindleDirection::default(),
+        };
+        let holder = HolderProfile::from_tool(&t).expect("drill has shank profile");
+        // diameter * 6 = 18mm. At z=17 above the tip the radius is
+        // still the cutting radius (1.5); at z=19 it would be the
+        // shank radius. Test radius at a probe point inside the
+        // synthetic flute region.
+        let r_mid = holder
+            .radius_at(15.0)
+            .expect("z=15 still inside synthetic flute span (18mm)");
+        assert!(
+            (r_mid - 1.5).abs() < 1e-9,
+            "ityc: at z=15mm above tip the drill's synthetic flute region must \
+             still report cutting_r=1.5, got r={r_mid}"
+        );
+    }
+
+    /// ityc: a rapid over walls that previously slammed the shank-pass
+    /// (laser tool with shank-on-tip pre-fix) now clears.
+    #[test]
+    fn laser_rapid_over_walls_does_not_alarm() {
+        use crate::project::{Coolant, HolderShape, ToolEntry, ToolKind};
+        let laser = ToolEntry {
+            id: 1,
+            name: "laser".into(),
+            kind: ToolKind::LaserBeam,
+            diameter: 0.2,
+            tip_diameter: None,
+            tip_angle_deg: 60.0,
+            dragoff: None,
+            flutes: 0,
+            speed: 1000,
+            plunge_rate: 100,
+            feed_rate: 800,
+            coolant: Coolant::Off,
+            speed_finish: None,
+            plunge_rate_finish: None,
+            feed_rate_finish: None,
+            speed_drill: None,
+            plunge_rate_drill: None,
+            feed_rate_drill: None,
+            default_peck_step_mm: None,
+            default_step: None,
+            default_xy_overlap: None,
+            comment: None,
+            z_shift_mm: None,
+            laser_pierce_sec: None,
+            laser_lead_in_mm: None,
+            kerf_mm: None,
+            corner_radius_mm: None,
+            tslot_neck_diameter_mm: None,
+            tslot_neck_length_mm: None,
+            wirbeln: false,
+            wirbeln_stepover_mm: None,
+            wirbeln_extra_width_mm: None,
+            wirbeln_osc_mm: None,
+            pause: 0,
+            flute_length_mm: None,
+            shank_diameter_mm: Some(6.0),
+            stickout_length_mm: None,
+            holder: Some(HolderShape::Cylinder {
+                diameter_mm: 20.0,
+                length_mm: 30.0,
+            }),
+            spindle_direction: crate::project::SpindleDirection::default(),
+        };
+        // 50×50×1 mm heightmap with tall walls everywhere outside a
+        // narrow channel — exactly the geometry that triggered the
+        // pre-fix bug.
+        let holder = HolderProfile::from_tool(&laser);
+        let mut map = fresh_map(50, 50, 50.0);
+        for ix in 0..50 {
+            for iy in 24..=26 {
+                map.lower_at(ix, iy, 0.0);
+            }
+        }
+        let beam = ToolProfile::Endmill { r: 0.1 };
+        let s = rapid(pose(5.0, 25.0, 10.0), pose(45.0, 25.0, 10.0));
+        assert_eq!(
+            check_rapid_against_stock(&map, &s, &beam, holder.as_ref()),
+            RapidCheck::Clear,
+            "ityc: laser rapid above tall walls must be Clear (no shank to drag)"
+        );
+    }
 }

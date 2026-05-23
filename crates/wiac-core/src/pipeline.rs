@@ -1061,12 +1061,25 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     let fast_z = header_setup.mill.fast_move_z;
     post.move_to(None, None, Some(fast_z));
 
+    // lx1u: the toolchange envelope only manages a SPINDLE — laser /
+    // drag-knife / pen-plotter modes don't have one. The per-cut
+    // `cut_tool_on` (gcode.rs::emit_*) is mode-aware and fires the
+    // laser / no-ops drag on its own; emitting M3/M4 S<rpm> here would
+    // (a) on GRBL laser, turn the beam steady-on at the clamped-min
+    // RPM during toolchange — a real safety hazard, and (b) on pen
+    // plotter modes, leak a spindle line a controller may reject.
+    // Stop-side M5 is similarly out of scope: many laser controllers
+    // accept M5 as "beam off" which is fine, but the per-cut
+    // `cut_tool_off` already arms that — and on Drag/HPGL plotters M5
+    // is meaningless. Gate the entire spindle envelope on Mill mode.
+    let is_mill = machine.mode == crate::cam::setup::MachineMode::Mill;
+
     // Stop the spindle BEFORE the change. On the first op the spindle
     // isn't running yet — M5 is a harmless idempotent assertion and
     // costs one line. Skip the stop dwell when we know there's no
     // motion to wait for (first tool) so initial-state programs stay
     // identical to pre-fix output minus the M5 line.
-    if !is_first_tool {
+    if !is_first_tool && is_mill {
         post.spindle_off();
         let stop_dwell = machine.effective_spindle_stop_dwell_sec();
         if stop_dwell > 0.0 {
@@ -1094,18 +1107,20 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
         // `spindle_ccw(speed, 0)` saw last_speed == speed and elided
         // the M4 entirely (program ran CW with a CCW tool).
         if let Some(t) = new_tool {
-            crate::gcode::spindle_on(
-                post,
-                t.spindle_direction,
-                setup_resolver::clamp_rpm_silent(t.speed, machine),
-                0,
-            );
-            let start_dwell = machine.effective_spindle_start_dwell_sec();
-            if start_dwell > 0.0 {
-                post.dwell(start_dwell);
-            }
-            if t.pause > 0 {
-                post.dwell(f64::from(t.pause));
+            if is_mill {
+                crate::gcode::spindle_on(
+                    post,
+                    t.spindle_direction,
+                    setup_resolver::clamp_rpm_silent(t.speed, machine),
+                    0,
+                );
+                let start_dwell = machine.effective_spindle_start_dwell_sec();
+                if start_dwell > 0.0 {
+                    post.dwell(start_dwell);
+                }
+                if t.pause > 0 {
+                    post.dwell(f64::from(t.pause));
+                }
             }
         }
     } else {
@@ -1138,23 +1153,26 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             // Force the next M3/M4 to actually emit (the operator may
             // have hand-spun the spindle off during the pause; we
             // can't trust the delta-encoder's last_speed snapshot
-            // anymore).
-            post.reset_state();
-            // Explicit spindle-up so the next cut starts with the
-            // spindle at commanded RPM — don't rely on lazy emit.
-            // zjgt: route through `spindle_on` so a CCW tool emits M4.
-            crate::gcode::spindle_on(
-                post,
-                t.spindle_direction,
-                setup_resolver::clamp_rpm_silent(t.speed, machine),
-                0,
-            );
-            let start_dwell = machine.effective_spindle_start_dwell_sec();
-            if start_dwell > 0.0 {
-                post.dwell(start_dwell);
-            }
-            if t.pause > 0 {
-                post.dwell(f64::from(t.pause));
+            // anymore). lx1u: only meaningful for Mill mode — laser /
+            // drag-knife envelopes don't drive the spindle from here.
+            if is_mill {
+                post.reset_state();
+                // Explicit spindle-up so the next cut starts with the
+                // spindle at commanded RPM — don't rely on lazy emit.
+                // zjgt: route through `spindle_on` so a CCW tool emits M4.
+                crate::gcode::spindle_on(
+                    post,
+                    t.spindle_direction,
+                    setup_resolver::clamp_rpm_silent(t.speed, machine),
+                    0,
+                );
+                let start_dwell = machine.effective_spindle_start_dwell_sec();
+                if start_dwell > 0.0 {
+                    post.dwell(start_dwell);
+                }
+                if t.pause > 0 {
+                    post.dwell(f64::from(t.pause));
+                }
             }
         }
     }

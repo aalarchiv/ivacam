@@ -29,13 +29,37 @@ impl HolderProfile {
     /// Build a profile from a project tool entry. Returns `None` when
     /// neither a holder nor a shank diameter is set: there's nothing
     /// above the cutting flutes to check against.
+    ///
+    /// ityc: LaserBeam tools have no physical body — the "tool" is a
+    /// focused beam, not a cutter / shank. Even when the user sets a
+    /// shank/holder (because the laser shares a tool table with mill
+    /// tools), there's no shaft to drag through tall walls. Return
+    /// `None` so the shank-pass / holder-pass / fixture-pass all skip
+    /// laser tools entirely.
     #[must_use]
     pub fn from_tool(tool: &ToolEntry) -> Option<Self> {
+        if matches!(tool.kind, ToolKind::LaserBeam) {
+            return None;
+        }
         if tool.holder.is_none() && tool.shank_diameter_mm.is_none() {
             return None;
         }
         let cutting_r = (tool.diameter * 0.5).max(0.0);
-        let flute_len = tool.flute_length_mm.unwrap_or(0.0).max(0.0);
+        // ityc: drills with no `flute_length_mm` set previously left the
+        // shank starting at z=0 above the tip — so any wall above the
+        // tip plane within the shank radius alarmed as a collision.
+        // Real twist drills have a flute (helix) running the full body
+        // length, typically 5–8× diameter. Default to 6× diameter so
+        // the shank-radius envelope only kicks in above the realistic
+        // body length. Other kinds keep the zero-default — endmills /
+        // V-bits / ballnose normally have flute_length wired in, and a
+        // 0 there genuinely means "treat as cutter all the way up".
+        let raw_flute = tool.flute_length_mm.unwrap_or(0.0).max(0.0);
+        let flute_len = if matches!(tool.kind, ToolKind::Drill) && raw_flute < 1e-6 {
+            (tool.diameter * 6.0).max(0.0)
+        } else {
+            raw_flute
+        };
         let shank_r = tool
             .shank_diameter_mm
             .map_or(cutting_r, |d| d * 0.5)

@@ -63,6 +63,29 @@ pub struct WirbelnParams {
     pub climb: bool,
 }
 
+/// qm9x: persistent helical-overlay state that carries the spiral phase
+/// (`winkel`) and stride residual (`consumed_since_last_step`) across
+/// successive `apply_wirbeln` calls — typically the per-pass loop in
+/// `multi_pass`. Without this, every pass restarted at `winkel = 0`
+/// and produced a visible flat spot on the wall at every pass boundary
+/// (the spiral phase jumped to the same angular position on every Z
+/// step, so the cutter entered the new pass from the same direction
+/// regardless of where the previous pass left off).
+///
+/// Matches 89n5's cross-chord continuity for cross-pass continuity:
+/// the spiral now traces ONE continuous helical centerline across the
+/// entire multi-pass cut.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WirbelnState {
+    /// Cumulative spiral phase in radians, monotonically increasing
+    /// across stride steps.
+    pub winkel: f64,
+    /// Arc-length residual since the last stride stamp; carried into
+    /// the next segment / pass so the next stride lands at the right
+    /// cumulative arc-length.
+    pub consumed_since_last_step: f64,
+}
+
 /// Number of stride steps per full revolution. Matches Estlcam's
 /// `Schritte ≈ LIM(360 / (11.5 / √R), 36, 360)` — coarser for small
 /// radii, finer for large radii, so the perimeter discretization stays
@@ -89,11 +112,34 @@ pub fn schritte_for_radius(radius: f64) -> u32 {
 ///
 /// Returns an empty Vec when `params.radius` or `params.stepover` is
 /// non-positive — caller falls back to the plain emit path.
+///
+/// This entry point starts at phase zero — for single-shot applications
+/// (e.g. tests, plot-mode single-pass emit) it's fine. For multi-pass
+/// emission use `apply_wirbeln_with_state` and thread a single
+/// `WirbelnState` across passes so the spiral phase doesn't reset and
+/// produce flat spots at pass boundaries (qm9x).
 #[must_use]
 pub fn apply_wirbeln(
     segments: &[Segment],
     cut_z: f64,
     params: WirbelnParams,
+) -> Vec<(f64, f64, f64)> {
+    let mut state = WirbelnState::default();
+    apply_wirbeln_with_state(segments, cut_z, params, &mut state)
+}
+
+/// qm9x: variant of [`apply_wirbeln`] that takes an external
+/// [`WirbelnState`] reference. The caller can keep ONE state across
+/// successive calls so spiral phase + stride residual carry over —
+/// matching 89n5's cross-chord continuity for cross-pass continuity.
+///
+/// Pass `&mut WirbelnState::default()` for the single-shot behavior.
+#[must_use]
+pub fn apply_wirbeln_with_state(
+    segments: &[Segment],
+    cut_z: f64,
+    params: WirbelnParams,
+    state: &mut WirbelnState,
 ) -> Vec<(f64, f64, f64)> {
     if params.radius <= 0.0 || params.stepover <= 0.0 || segments.is_empty() {
         return Vec::new();
@@ -107,20 +153,17 @@ pub fn apply_wirbeln(
     let schritt_rad = std::f64::consts::TAU / f64::from(schritte);
 
     let mut out: Vec<(f64, f64, f64)> = Vec::new();
-    let mut winkel = 0.0_f64;
-    // Track residual stride distance carried across segment boundaries
-    // so the spiral phase isn't reset every segment — same continuous
-    // rotation Estlcam's Flooper accumulates across emits.
-    let mut consumed_since_last_step = 0.0_f64;
 
     // Always stamp the first waypoint at the very start of the path so
-    // the cutter approaches the cascade ring's start cleanly.
+    // the cutter approaches the cascade ring's start cleanly. Phase is
+    // the CURRENT cumulative winkel (carried over from prior calls when
+    // a shared state is threaded — qm9x).
     let start = segments[0].start;
     out.push(stamp(
         start.x,
         start.y,
         cut_z,
-        winkel,
+        state.winkel,
         dir,
         params.radius,
         params.osc,
@@ -136,12 +179,12 @@ pub fn apply_wirbeln(
                 let revs = 1.0;
                 let n = (f64::from(schritte) * revs) as u32;
                 for _ in 0..n {
-                    winkel += schritt_rad;
+                    state.winkel += schritt_rad;
                     out.push(stamp(
                         seg.start.x,
                         seg.start.y,
                         cut_z,
-                        winkel,
+                        state.winkel,
                         dir,
                         params.radius,
                         params.osc,
@@ -158,8 +201,8 @@ pub fn apply_wirbeln(
                     dir,
                     params.radius,
                     params.osc,
-                    &mut winkel,
-                    &mut consumed_since_last_step,
+                    &mut state.winkel,
+                    &mut state.consumed_since_last_step,
                     &mut out,
                 );
             }
@@ -180,8 +223,8 @@ pub fn apply_wirbeln(
                         dir,
                         params.radius,
                         params.osc,
-                        &mut winkel,
-                        &mut consumed_since_last_step,
+                        &mut state.winkel,
+                        &mut state.consumed_since_last_step,
                         &mut out,
                     );
                 }
@@ -493,6 +536,57 @@ mod tests {
             5.0 * schritt_rad,
             winkel_split,
         );
+    }
+
+    /// qm9x: when the SAME shared `WirbelnState` is threaded across two
+    /// consecutive `apply_wirbeln_with_state` calls, the second call's
+    /// spiral phase continues from where the first ended. Reset state
+    /// (a fresh `WirbelnState::default()` for each call) restarts the
+    /// phase at zero — that's the pre-qm9x flat-spot bug.
+    #[test]
+    fn cross_pass_state_continues_phase_across_apply_wirbeln_calls() {
+        let segs = vec![line(0.0, 0.0, 10.0, 0.0)];
+        let params = WirbelnParams {
+            radius: 1.0,
+            stepover: 2.0,
+            osc: 0.0,
+            climb: true,
+        };
+        // Two calls with a SHARED state.
+        let mut shared = WirbelnState::default();
+        let pass1_shared = apply_wirbeln_with_state(&segs, -1.0, params, &mut shared);
+        let winkel_after_pass1 = shared.winkel;
+        let pass2_shared = apply_wirbeln_with_state(&segs, -2.0, params, &mut shared);
+        // Two calls with FRESH state each time (the pre-qm9x bug).
+        let mut fresh1 = WirbelnState::default();
+        let pass1_fresh = apply_wirbeln_with_state(&segs, -1.0, params, &mut fresh1);
+        let mut fresh2 = WirbelnState::default();
+        let pass2_fresh = apply_wirbeln_with_state(&segs, -2.0, params, &mut fresh2);
+        // pass2 with shared state starts at the carried-over winkel, so
+        // its first waypoint sits at a different XY than pass2 with fresh
+        // state (which starts at winkel=0 again).
+        assert!(
+            winkel_after_pass1 > 0.0,
+            "pass1 must have accumulated some phase"
+        );
+        let (sx_shared, sy_shared, _) = pass2_shared[0];
+        let (sx_fresh, sy_fresh, _) = pass2_fresh[0];
+        let delta = ((sx_shared - sx_fresh).powi(2) + (sy_shared - sy_fresh).powi(2)).sqrt();
+        // The XY delta is the spiral-offset rotation between the two
+        // starting phases; on a 1 mm radius it can be up to 2 mm
+        // chord (diameter), well over the FP-noise floor.
+        assert!(
+            delta > 0.01,
+            "pass2 with shared state must start at a different XY than pass2 with fresh state; delta={delta}"
+        );
+        // Pass 1 outputs must be identical regardless (same initial state).
+        assert_eq!(pass1_shared.len(), pass1_fresh.len());
+        for (i, ((xa, ya, _), (xb, yb, _))) in pass1_shared.iter().zip(pass1_fresh.iter()).enumerate() {
+            assert!(
+                (xa - xb).abs() < 1e-9 && (ya - yb).abs() < 1e-9,
+                "pass1 stride {i}: shared and fresh diverge",
+            );
+        }
     }
 
     #[test]

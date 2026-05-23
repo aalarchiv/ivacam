@@ -325,6 +325,7 @@ pub(super) fn build_op_offsets(
                         .and_then(|p| p.finish_xy_allowance_mm)
                         .unwrap_or(0.0),
                     finish_ring_r,
+                    setup.tool.spindle_direction,
                 ) {
                     o.source_object_idx = region.source_idx;
                     offsets.push(o);
@@ -336,7 +337,7 @@ pub(super) fn build_op_offsets(
             if effective_op.profile_params().is_some_and(|p| p.overcut) {
                 apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
             }
-            apply_cut_direction(&mut offsets, effective_op, false);
+            apply_cut_direction(&mut offsets, effective_op, false, setup.tool.spindle_direction);
             if let Some(ap) = effective_op.contour_params().and_then(|c| c.approach_point) {
                 crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
             }
@@ -445,6 +446,7 @@ pub(super) fn build_op_offsets(
                             .and_then(|p| p.finish_xy_allowance_mm)
                             .unwrap_or(0.0),
                         finish_ring_r,
+                        setup.tool.spindle_direction,
                     ) {
                         o.source_object_idx = idx;
                         offsets.push(o);
@@ -606,7 +608,7 @@ pub(super) fn build_op_offsets(
     if effective_op.profile_params().is_some_and(|p| p.overcut) {
         apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
     }
-    apply_cut_direction(&mut offsets, effective_op, false);
+    apply_cut_direction(&mut offsets, effective_op, false, setup.tool.spindle_direction);
     if let Some(ap) = effective_op.contour_params().and_then(|c| c.approach_point) {
         crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
     }
@@ -705,6 +707,11 @@ fn drain_parallel_offset_panics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
 /// Map a frontend pocket strategy choice onto the offsets-layer
 /// emitter, including the trochoidal-specific climb/conventional and
 /// loop parameters.
+///
+/// q57s: `PocketEmit::Trochoidal { climb }` stores the user's climb
+/// intent unchanged; `pocket_trochoidal` XORs that with the spindle
+/// direction internally so the geometric loop winding matches physical
+/// climb on either M3 / M4.
 fn pocket_emit_for(strategy: PocketStrategy, op: &Op) -> PocketEmit {
     match strategy {
         PocketStrategy::Zigzag { angle_deg } => PocketEmit::Zigzag { angle_deg },
@@ -3034,6 +3041,7 @@ mod tests {
             1.5,
             0.0,
             None,
+            crate::project::tool::SpindleDirection::Cw,
         );
         let with_allow = pocket_for_object(
             &obj,
@@ -3045,6 +3053,7 @@ mod tests {
             1.5,
             0.5,
             None,
+            crate::project::tool::SpindleDirection::Cw,
         );
         // With allowance we expect exactly one MORE level-0 ring:
         // the rough boundary (is_finish=false) + the finish boundary

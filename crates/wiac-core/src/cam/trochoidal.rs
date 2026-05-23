@@ -76,6 +76,15 @@ pub fn take_trochoidal_incompletes() -> Vec<TrochoidalIncomplete> {
 // Trochoidal pocket emitter takes the full set of geometry + tool +
 // engagement-angle + step parameters because the loop generation derives
 // every other quantity from them.
+//
+// q57s: `spindle` is the per-tool rotation direction. For a right-hand
+// (CW, M3) spindle the geometric loop direction follows `climb` directly
+// — climb=true ⇒ CCW loops. For a left-hand (CCW, M4) spindle the
+// cutting edge rotates the other way, so the GEOMETRIC loop direction
+// that produces a climb cut is the OPPOSITE. We XOR `climb` with the
+// spindle bit so the physical chip evacuation matches the user's intent
+// regardless of M3/M4. Pre-q57s, the emitter hard-coded right-hand and
+// silently inverted climb/conventional on left-hand cutters.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn pocket_trochoidal(
@@ -87,6 +96,7 @@ pub fn pocket_trochoidal(
     climb: bool,
     layer: &str,
     color: i32,
+    spindle: crate::project::tool::SpindleDirection,
 ) -> Option<Vec<Segment>> {
     pocket_trochoidal_cancellable(
         boundary_pts,
@@ -98,6 +108,7 @@ pub fn pocket_trochoidal(
         layer,
         color,
         None,
+        spindle,
     )
 }
 
@@ -113,7 +124,14 @@ pub fn pocket_trochoidal_cancellable(
     layer: &str,
     color: i32,
     cancel: Option<&CancelToken>,
+    spindle: crate::project::tool::SpindleDirection,
 ) -> Option<Vec<Segment>> {
+    use crate::project::tool::SpindleDirection;
+    // q57s: flip geometric loop direction on a left-hand spindle.
+    let climb = match spindle {
+        SpindleDirection::Cw => climb,
+        SpindleDirection::Ccw => !climb,
+    };
     let is_cancelled = || cancel.is_some_and(super::super::pipeline::CancelToken::is_cancelled);
     if boundary_pts.len() < 3 || tool_radius <= 0.0 {
         return Some(Vec::new());
@@ -352,8 +370,18 @@ mod tests {
 
     #[test]
     fn rectangular_pocket_emits_arcs_at_loop_radius() {
-        let segs = pocket_trochoidal(&rect(100.0, 60.0), &[], 3.0, 30.0, 0.6, true, "0", 7)
-            .expect("trochoidal should not fail on a convex rectangle");
+        let segs = pocket_trochoidal(
+            &rect(100.0, 60.0),
+            &[],
+            3.0,
+            30.0,
+            0.6,
+            true,
+            "0",
+            7,
+            crate::project::tool::SpindleDirection::Cw,
+        )
+        .expect("trochoidal should not fail on a convex rectangle");
         assert!(!segs.is_empty(), "expected at least one segment");
         let arcs: Vec<_> = segs
             .iter()
@@ -393,7 +421,17 @@ mod tests {
             Point2::new(10.0, 30.0),
             Point2::new(0.0, 30.0),
         ];
-        let segs = pocket_trochoidal(&l_shape, &[], 3.0, 30.0, 0.6, true, "0", 7);
+        let segs = pocket_trochoidal(
+            &l_shape,
+            &[],
+            3.0,
+            30.0,
+            0.6,
+            true,
+            "0",
+            7,
+            crate::project::tool::SpindleDirection::Cw,
+        );
         // Either Some(non-empty) or None (containment guard fired).
         // If we got segments, they must all stay inside the L-shape's
         // (relaxed) bbox — a quick sanity check that no arc center
@@ -413,8 +451,18 @@ mod tests {
 
     #[test]
     fn climb_emits_ccw_arcs() {
-        let segs =
-            pocket_trochoidal(&rect(100.0, 60.0), &[], 3.0, 30.0, 0.6, true, "0", 7).unwrap();
+        let segs = pocket_trochoidal(
+            &rect(100.0, 60.0),
+            &[],
+            3.0,
+            30.0,
+            0.6,
+            true,
+            "0",
+            7,
+            crate::project::tool::SpindleDirection::Cw,
+        )
+        .unwrap();
         let arcs: Vec<_> = segs
             .iter()
             .filter(|s| s.kind == crate::geometry::SegmentKind::Arc)
@@ -456,8 +504,18 @@ mod tests {
         // refused (the bail terminates the path), so the test
         // explicitly picks params that the algorithm can satisfy
         // safely.
-        let segs = pocket_trochoidal(&rect(100.0, 60.0), &[], tool_r, 30.0, 0.3, true, "0", 7)
-            .expect("trochoidal pocket failed");
+        let segs = pocket_trochoidal(
+            &rect(100.0, 60.0),
+            &[],
+            tool_r,
+            30.0,
+            0.3,
+            true,
+            "0",
+            7,
+            crate::project::tool::SpindleDirection::Cw,
+        )
+        .expect("trochoidal pocket failed");
         // Sample every emitted segment endpoint AND midpoints to
         // approximate the cutter path; for arc midpoints we use a
         // crude approximation that's good enough for coverage.
@@ -533,10 +591,51 @@ mod tests {
         );
     }
 
+    /// q57s: on a left-hand spindle (M4) the geometric loop direction
+    /// flips for any given climb/conventional intent — climb on M4 must
+    /// emit CW loops (the physically-climb direction with reversed
+    /// rotation) where on M3 it emits CCW.
+    #[test]
+    fn climb_on_lefthand_spindle_emits_cw_arcs() {
+        let segs = pocket_trochoidal(
+            &rect(100.0, 60.0),
+            &[],
+            3.0,
+            30.0,
+            0.6,
+            true, // climb intent
+            "0",
+            7,
+            crate::project::tool::SpindleDirection::Ccw,
+        )
+        .unwrap();
+        let arcs: Vec<_> = segs
+            .iter()
+            .filter(|s| s.kind == crate::geometry::SegmentKind::Arc)
+            .collect();
+        assert!(!arcs.is_empty());
+        // On a CW spindle, climb emits CCW arcs (bulge > 0). On a CCW
+        // spindle the geometric direction flips ⇒ CW arcs (bulge < 0).
+        assert!(
+            arcs.iter().all(|a| a.bulge < 0.0),
+            "left-hand spindle + climb intent must emit CW arcs"
+        );
+    }
+
     #[test]
     fn conventional_emits_cw_arcs() {
-        let segs =
-            pocket_trochoidal(&rect(100.0, 60.0), &[], 3.0, 30.0, 0.6, false, "0", 7).unwrap();
+        let segs = pocket_trochoidal(
+            &rect(100.0, 60.0),
+            &[],
+            3.0,
+            30.0,
+            0.6,
+            false,
+            "0",
+            7,
+            crate::project::tool::SpindleDirection::Cw,
+        )
+        .unwrap();
         let arcs: Vec<_> = segs
             .iter()
             .filter(|s| s.kind == crate::geometry::SegmentKind::Arc)
@@ -568,8 +667,18 @@ mod tests {
             Point2::new(60.0, 5.0),
             Point2::new(0.0, 5.0),
         ];
-        let segs = pocket_trochoidal(&slot, &[], 2.0, 30.0, 1.0, true, "0", 7)
-            .expect("trochoidal should still return Some on this slot");
+        let segs = pocket_trochoidal(
+            &slot,
+            &[],
+            2.0,
+            30.0,
+            1.0,
+            true,
+            "0",
+            7,
+            crate::project::tool::SpindleDirection::Cw,
+        )
+        .expect("trochoidal should still return Some on this slot");
         // No segment may be a long axial G1 across the slot. Specifically,
         // no Line segment should be longer than ~r_loop + a small margin —
         // valid connectors between adjacent loops are bounded by the

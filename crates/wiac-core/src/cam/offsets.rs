@@ -959,7 +959,7 @@ pub enum CutContext {
 /// Apply a desired cut direction to a closed offset by reversing its
 /// traversal if the resulting winding doesn't match the convention.
 ///
-/// For a right-hand spindle (standard CW from above):
+/// For a right-hand spindle (standard CW from above, `SpindleDirection::Cw`):
 ///
 /// |  context |   conventional   |     climb        |
 /// |----------|------------------|------------------|
@@ -971,11 +971,22 @@ pub enum CutContext {
 /// outside of a part = Outer; walking inside a pocket = Inner; walking
 /// around an island inside a pocket = Outer (the cutter is outside the
 /// island).
+///
+/// q57s: for a LEFT-hand spindle (`SpindleDirection::Ccw`, M4 mode — left-
+/// hand cutter, mirror tooling), climb and conventional are physically
+/// flipped because the cutting edge rotates the other way. The truth table
+/// above is XOR'd with the spindle bit so that the requested intent
+/// ("climb" / "conventional") matches the physical cut on either spindle.
+/// Pre-q57s, climb-vs-conventional was silently inverted on M4 spindles —
+/// "climb" picked CCW geometry on inner-pocket regardless of which way
+/// the cutter was rotating.
 pub fn enforce_winding(
     offset: &mut PolylineOffset,
     context: CutContext,
     direction: crate::project::CutDirection,
+    spindle: crate::project::tool::SpindleDirection,
 ) {
+    use crate::project::tool::SpindleDirection;
     use crate::project::CutDirection;
     if !offset.closed || matches!(context, CutContext::Skip) {
         return;
@@ -984,12 +995,20 @@ pub fn enforce_winding(
     if area.abs() < 1e-9 {
         return;
     }
-    let want_ccw = match (context, direction) {
+    // Geometric want_ccw for a right-hand (CW) spindle.
+    let want_ccw_rh = match (context, direction) {
         (CutContext::Inner, CutDirection::Conventional) => true,
         (CutContext::Inner, CutDirection::Climb) => false,
         (CutContext::Outer, CutDirection::Conventional) => false,
         (CutContext::Outer, CutDirection::Climb) => true,
         (CutContext::Skip, _) => return,
+    };
+    // q57s: flip the geometric winding for left-hand spindles so the
+    // physical chipload direction matches the user's climb/conventional
+    // intent regardless of M3/M4.
+    let want_ccw = match spindle {
+        SpindleDirection::Cw => want_ccw_rh,
+        SpindleDirection::Ccw => !want_ccw_rh,
     };
     let is_ccw = area > 0.0;
     if is_ccw != want_ccw {
@@ -1091,6 +1110,7 @@ pub fn apply_cut_direction(
     offsets: &mut [PolylineOffset],
     op: &crate::project::Op,
     finish_default_for_outside_profile_only: bool,
+    spindle: crate::project::tool::SpindleDirection,
 ) {
     use crate::cam::setup::ToolOffset;
     use crate::project::OpKind;
@@ -1136,7 +1156,7 @@ pub fn apply_cut_direction(
         // level=0 is the wall-defining pass for both Pocket and Profile
         // (single-pass profile is itself the finishing pass).
         let dir = if offset.level == 0 { finish } else { main };
-        enforce_winding(offset, ctx, dir);
+        enforce_winding(offset, ctx, dir, spindle);
     }
 }
 
@@ -1183,6 +1203,11 @@ pub enum PocketEmit {
 // Pocket-for-object computes the full inward cascade for a single source
 // VcObject: parametrisation passes through depth / step / tabs / overcut /
 // finish-radius / dual-tool. The geometric pipeline reads linearly.
+//
+// q57s: `spindle` is forwarded into `pocket_trochoidal` so the loop
+// winding flips on left-hand spindles. Cascade / Spiral / Zigzag are
+// unaffected — their winding is fixed up later by `enforce_winding`,
+// which gets the spindle direction via `apply_cut_direction`.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn pocket_for_object(
     obj: &VcObject,
@@ -1194,6 +1219,7 @@ pub fn pocket_for_object(
     xy_step: f64,
     xy_allowance: f64,
     finish_ring_radius: Option<f64>,
+    spindle: crate::project::tool::SpindleDirection,
 ) -> Vec<PolylineOffset> {
     let mut out = Vec::new();
 
@@ -1355,6 +1381,7 @@ pub fn pocket_for_object(
                     climb,
                     &offset.layer,
                     offset.color,
+                    spindle,
                 ) {
                     if !segs.is_empty() {
                         out.push(PolylineOffset {
@@ -2015,6 +2042,7 @@ mod tests {
             1.5,
             0.0,
             None,
+            crate::project::tool::SpindleDirection::Cw,
         );
         assert_eq!(offsets.len(), 1);
         assert_eq!(offsets[0].segments.len(), 1);
@@ -2253,6 +2281,7 @@ mod tests {
             &mut o,
             CutContext::Inner,
             crate::project::CutDirection::Conventional,
+            crate::project::tool::SpindleDirection::Cw,
         );
         // Inner + Conventional → CCW. CCW-input stays CCW.
         assert!(offset_signed_area(&o) > 0.0);
@@ -2265,6 +2294,7 @@ mod tests {
             &mut o,
             CutContext::Inner,
             crate::project::CutDirection::Climb,
+            crate::project::tool::SpindleDirection::Cw,
         );
         assert!(offset_signed_area(&o) < 0.0);
     }
@@ -2276,6 +2306,7 @@ mod tests {
             &mut o,
             CutContext::Outer,
             crate::project::CutDirection::Conventional,
+            crate::project::tool::SpindleDirection::Cw,
         );
         assert!(offset_signed_area(&o) < 0.0);
     }
@@ -2287,6 +2318,7 @@ mod tests {
             &mut o,
             CutContext::Outer,
             crate::project::CutDirection::Climb,
+            crate::project::tool::SpindleDirection::Cw,
         );
         assert!(offset_signed_area(&o) > 0.0);
     }
@@ -2299,9 +2331,44 @@ mod tests {
             &mut o,
             CutContext::Skip,
             crate::project::CutDirection::Conventional,
+            crate::project::tool::SpindleDirection::Cw,
         );
         let after: Vec<_> = o.segments.iter().map(|s| (s.start, s.end)).collect();
         assert_eq!(before, after);
+    }
+
+    /// q57s: a left-hand spindle (`Ccw`, M4 mode) flips the geometric
+    /// winding picked for any given climb/conventional intent because
+    /// the cutting edge rotates the other way. Inner+Climb on a right-
+    /// hand spindle picks CW (area<0); on a left-hand spindle the same
+    /// intent must pick CCW (area>0) so the chipload direction stays
+    /// "climb" physically.
+    #[test]
+    fn enforce_winding_inner_climb_lefthand_keeps_ccw() {
+        let mut o = sample_offset_ccw();
+        enforce_winding(
+            &mut o,
+            CutContext::Inner,
+            crate::project::CutDirection::Climb,
+            crate::project::tool::SpindleDirection::Ccw,
+        );
+        // RH would flip to CW here; LH must keep CCW.
+        assert!(offset_signed_area(&o) > 0.0);
+    }
+
+    /// q57s symmetric case: outer+conventional on a left-hand spindle
+    /// flips to CCW (RH would pick CW).
+    #[test]
+    fn enforce_winding_outer_conventional_lefthand_keeps_ccw() {
+        let mut o = sample_offset_ccw();
+        enforce_winding(
+            &mut o,
+            CutContext::Outer,
+            crate::project::CutDirection::Conventional,
+            crate::project::tool::SpindleDirection::Ccw,
+        );
+        // RH would flip to CW; LH must keep CCW.
+        assert!(offset_signed_area(&o) > 0.0);
     }
 
     /// Regression for C1 (audit): the zigzag inset used to double-apply
@@ -2774,6 +2841,7 @@ mod tests {
             tool_r * 2.0 * 0.5,
             0.0,
             None,
+            crate::project::tool::SpindleDirection::Cw,
         );
         let mut min_x = f64::INFINITY;
         let mut max_x = f64::NEG_INFINITY;

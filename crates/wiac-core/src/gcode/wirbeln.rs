@@ -9,4 +9,6 @@
 //! thread profile on a lathe — is a separate, deferred operation; see
 //! follow-up issue filed against the audit.
 
-pub use super::face_mill_overlay::{apply_wirbeln, schritte_for_radius, WirbelnParams};
+pub use super::face_mill_overlay::{
+    apply_wirbeln, apply_wirbeln_with_state, schritte_for_radius, WirbelnParams, WirbelnState,
+};

@@ -936,6 +936,8 @@ fn multi_pass<P: PostProcessor>(
         post.feedrate(rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
         let fitted = fit_line_runs(segments, setup);
+        // Plot mode is single-pass; a fresh wirbeln state is fine.
+        let mut wirbeln_state = face_mill_overlay::WirbelnState::default();
         emit_cut_path(
             &fitted,
             setup,
@@ -943,6 +945,7 @@ fn multi_pass<P: PostProcessor>(
             dragoff,
             rate_h,
             setup.mill.corner_feed_reduction,
+            &mut wirbeln_state,
             post,
         );
         let _ = tabs; // tabs are meaningless in plot mode
@@ -1040,6 +1043,13 @@ fn multi_pass<P: PostProcessor>(
     // when it matters most. We track them with separate state.
     let mut prev_z: Option<f64> = None;
     let mut ramp_from: f64 = setup.mill.start_depth;
+    // qm9x: ONE shared wirbeln state for the entire multi-pass cut so
+    // the spiral phase accumulates continuously across pass boundaries
+    // — same continuity principle as 89n5 (cross-chord) extended to
+    // cross-pass. Pre-qm9x, every pass instantiated fresh state at
+    // `winkel = 0`, leaving a visible flat spot on the wall at every
+    // pass boundary.
+    let mut wirbeln_state = face_mill_overlay::WirbelnState::default();
     // Walk the depth schedule. When empty (degenerate) bail.
     if z_schedule.is_empty() {
         return;
@@ -1085,6 +1095,7 @@ fn multi_pass<P: PostProcessor>(
                 dragoff,
                 rate_h,
                 setup.mill.corner_feed_reduction,
+                &mut wirbeln_state,
                 post,
             );
         } else if let Some(angle) = ramp_angle_deg.filter(|_| !pass_uses_tabs) {
@@ -1119,6 +1130,7 @@ fn multi_pass<P: PostProcessor>(
                     dragoff,
                     rate_h,
                     setup.mill.corner_feed_reduction,
+                    &mut wirbeln_state,
                     post,
                 );
             }
@@ -1148,6 +1160,7 @@ fn multi_pass<P: PostProcessor>(
                     dragoff,
                     rate_h,
                     setup.mill.corner_feed_reduction,
+                    &mut wirbeln_state,
                     post,
                 );
             }
@@ -1178,6 +1191,7 @@ fn multi_pass<P: PostProcessor>(
             dragoff,
             rate_h,
             setup.mill.corner_feed_reduction,
+            &mut wirbeln_state,
             post,
         );
     }

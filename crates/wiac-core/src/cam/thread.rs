@@ -22,7 +22,7 @@
 //!   total_steps = ceil(revolutions * steps_per_rev)
 //! ```
 //!
-//! On a right-hand spindle the climb-cut direction depends on whether
+//! On a right-hand spindle (M3) the climb-cut direction depends on whether
 //! the cutter is walking inside the bore (internal) or around the stud
 //! (external):
 //!
@@ -37,6 +37,15 @@
 //! signature (rt1.17) hard-wired `internal=true`; passing
 //! `internal=false` with `climb=true` used to silently emit conventional
 //! cuts on a stud (7nd2).
+//!
+//! q57s: for a LEFT-hand spindle (M4 / left-hand thread cutter), the
+//! cutting edge rotates the other way, so the GEOMETRIC winding that
+//! produces a "climb" cut is flipped. The right-hand truth table above
+//! is XOR'd with the spindle bit so the user's climb-vs-conventional
+//! intent matches the physical chip evacuation direction regardless of
+//! M3/M4. Pre-q57s the helix hard-coded right-hand and silently inverted
+//! the cut on left-hand thread mills (M4 + climb cut conventional →
+//! stripped first pass on hard material).
 //!
 //! ## Internal vs external
 //!
@@ -97,6 +106,18 @@ const EXTERNAL_RETRACT_SAFETY_MM: f64 = 0.5;
 /// it walks around a stud. The direction is chosen so the cut is true
 /// climb (or true conventional) on a right-hand spindle regardless of
 /// orientation — see the module-level truth table.
+///
+/// q57s: `spindle` selects between right-hand (M3, CW) and left-hand
+/// (M4, CCW) spindle rotation. Left-hand flips the geometric winding
+/// so "climb"/"conventional" intent matches physical chipload on either
+/// spindle.
+///
+/// ttoa: short helices (`|dz| < pitch_mm`) used to emit a single G1
+/// diagonal across the bore because `revolutions` rounded down to a
+/// fraction; now floored at 1.0 so the cutter always completes at
+/// least one full turn at `pitch_mm` per rev. Callers that need to
+/// detect the shallow case should compare `|dz|` against `pitch_mm`
+/// themselves and surface a `thread_dz_less_than_pitch` warning.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn helix_waypoints(
@@ -109,6 +130,7 @@ pub fn helix_waypoints(
     internal: bool,
     tool_radius: f64,
     start_angle_rad: f64,
+    spindle: crate::project::tool::SpindleDirection,
 ) -> Vec<(f64, f64, f64)> {
     helix_waypoints_with_density(
         center,
@@ -121,6 +143,7 @@ pub fn helix_waypoints(
         tool_radius,
         DEFAULT_STEPS_PER_REV,
         start_angle_rad,
+        spindle,
     )
 }
 
@@ -140,7 +163,9 @@ pub fn helix_waypoints_with_density(
     tool_radius: f64,
     steps_per_rev: usize,
     start_angle_rad: f64,
+    spindle: crate::project::tool::SpindleDirection,
 ) -> Vec<(f64, f64, f64)> {
+    use crate::project::tool::SpindleDirection;
     if radius <= 0.0 || pitch_mm <= 0.0 || steps_per_rev < 4 {
         return Vec::new();
     }
@@ -148,10 +173,19 @@ pub fn helix_waypoints_with_density(
     if dz.abs() < 1e-9 {
         return Vec::new();
     }
+    // ttoa: even when |dz| < pitch, we still need at least one full
+    // revolution at the configured pitch. The pre-ttoa formula
+    // `revolutions = max(|dz|/pitch, 1/steps_per_rev)` rounded a
+    // 5 µm finishing pass to ≈1.5 % of a rev, which collapsed to a
+    // single G1 diagonal across the bore — full-bore crash on
+    // internal, slam-into-stud on external. Guard with `.max(1.0)`
+    // so the cutter always traces a full helix; the driver surfaces
+    // a `thread_dz_less_than_pitch` warning when it makes this call.
+    //
     // Number of revolutions; we round UP and let the last point land
     // exactly at bottom_z so the caller gets full-depth coverage even
     // if the Z range isn't an exact multiple of pitch.
-    let revolutions = (dz.abs() / pitch_mm).max(1.0 / steps_per_rev as f64);
+    let revolutions = (dz.abs() / pitch_mm).max(1.0);
     let total_steps = (revolutions * steps_per_rev as f64).ceil() as usize;
     if total_steps == 0 {
         return Vec::new();
@@ -163,7 +197,13 @@ pub fn helix_waypoints_with_density(
     //   internal+conventional→ CW  (-Δθ)
     //   external+climb       → CW  (-Δθ)
     //   external+conventional→ CCW (+Δθ)
-    let ccw = climb ^ !internal;
+    let ccw_rh = climb ^ !internal;
+    // q57s: left-hand spindle flips the geometric winding because the
+    // cutting edge rotates the other way.
+    let ccw = match spindle {
+        SpindleDirection::Cw => ccw_rh,
+        SpindleDirection::Ccw => !ccw_rh,
+    };
     let dir: f64 = if ccw { 1.0 } else { -1.0 };
     for i in 0..=total_steps {
         let t = i as f64 / total_steps as f64;
@@ -206,6 +246,7 @@ pub fn helix_waypoints_with_density(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::tool::SpindleDirection;
 
     fn p(x: f64, y: f64) -> Point2 {
         Point2::new(x, y)
@@ -216,7 +257,18 @@ mod tests {
     /// radial retract (internal → bore center) at the same Z.
     #[test]
     fn single_revolution_at_pitch_descends_z_by_pitch() {
-        let wps = helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, true, 0.5, 0.0);
+        let wps = helix_waypoints(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -1.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        );
         assert!(wps.len() >= 3);
         // Helix endpoint is the second-to-last waypoint; retract sits
         // on top of it at the same Z.
@@ -238,7 +290,18 @@ mod tests {
     /// on the helix circle.
     #[test]
     fn every_waypoint_is_on_the_circle() {
-        let wps = helix_waypoints(p(10.0, 20.0), 3.0, 0.0, -3.0, 1.0, true, true, 0.5, 0.0);
+        let wps = helix_waypoints(
+            p(10.0, 20.0),
+            3.0,
+            0.0,
+            -3.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        );
         assert!(wps.len() >= 2);
         // Drop the final retract waypoint; it intentionally leaves the
         // circle to clear the just-cut thread.
@@ -254,8 +317,19 @@ mod tests {
     /// waypoint sits below the X axis.
     #[test]
     fn internal_conventional_winds_clockwise() {
-        let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, false, true, 0.5, 64, 0.0);
+        let wps = helix_waypoints_with_density(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -1.0,
+            1.0,
+            false,
+            true,
+            0.5,
+            64,
+            0.0,
+            SpindleDirection::Cw,
+        );
         let (_, y1, _) = wps[1];
         assert!(
             y1 < 0.0,
@@ -267,8 +341,19 @@ mod tests {
     /// waypoint sits above the X axis.
     #[test]
     fn internal_climb_winds_counterclockwise() {
-        let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, true, 0.5, 64, 0.0);
+        let wps = helix_waypoints_with_density(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -1.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            64,
+            0.0,
+            SpindleDirection::Cw,
+        );
         let (_, y1, _) = wps[1];
         assert!(
             y1 > 0.0,
@@ -281,8 +366,19 @@ mod tests {
     /// in the conventional direction. Second waypoint sits below +X.
     #[test]
     fn external_climb_winds_cw() {
-        let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, true, false, 0.5, 64, 0.0);
+        let wps = helix_waypoints_with_density(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -1.0,
+            1.0,
+            true,
+            false,
+            0.5,
+            64,
+            0.0,
+            SpindleDirection::Cw,
+        );
         let (_, y1, _) = wps[1];
         assert!(
             y1 < 0.0,
@@ -294,8 +390,19 @@ mod tests {
     /// waypoint sits above +X.
     #[test]
     fn external_conventional_winds_ccw() {
-        let wps =
-            helix_waypoints_with_density(p(0.0, 0.0), 5.0, 0.0, -1.0, 1.0, false, false, 0.5, 64, 0.0);
+        let wps = helix_waypoints_with_density(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -1.0,
+            1.0,
+            false,
+            false,
+            0.5,
+            64,
+            0.0,
+            SpindleDirection::Cw,
+        );
         let (_, y1, _) = wps[1];
         assert!(
             y1 > 0.0,
@@ -308,7 +415,18 @@ mod tests {
     /// retract waypoint sit at bottom_z.
     #[test]
     fn multi_revolution_descent_reaches_bottom() {
-        let wps = helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -4.0, 1.0, true, true, 0.5, 0.0);
+        let wps = helix_waypoints(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -4.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        );
         let helix_end = wps[wps.len() - 2];
         assert!((helix_end.2 - (-4.0)).abs() < 1e-9, "got {}", helix_end.2);
         let (_, _, retract_z) = *wps.last().unwrap();
@@ -319,7 +437,18 @@ mod tests {
     /// the post-helix G0 lift travels through cleared air (7388).
     #[test]
     fn internal_retract_pulls_cutter_to_bore_center() {
-        let wps = helix_waypoints(p(10.0, 20.0), 4.5, 0.0, -3.0, 1.0, true, true, 0.5, 0.0);
+        let wps = helix_waypoints(
+            p(10.0, 20.0),
+            4.5,
+            0.0,
+            -3.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        );
         let (lx, ly, _) = *wps.last().unwrap();
         assert!(
             (lx - 10.0).abs() < 1e-9 && (ly - 20.0).abs() < 1e-9,
@@ -335,7 +464,18 @@ mod tests {
         let center = p(0.0, 0.0);
         let helix_radius = 5.0;
         let tool_radius = 1.0;
-        let wps = helix_waypoints(center, helix_radius, 0.0, -1.0, 1.0, true, false, tool_radius, 0.0);
+        let wps = helix_waypoints(
+            center,
+            helix_radius,
+            0.0,
+            -1.0,
+            1.0,
+            true,
+            false,
+            tool_radius,
+            0.0,
+            SpindleDirection::Cw,
+        );
         let (lx, ly, _) = *wps.last().unwrap();
         let r = (lx * lx + ly * ly).sqrt();
         // Clear radius is helix_radius + tool_diameter + safety;
@@ -350,8 +490,116 @@ mod tests {
     /// equal top/bottom Z.
     #[test]
     fn degenerate_inputs_return_empty() {
-        assert!(helix_waypoints(p(0.0, 0.0), 0.0, 0.0, -1.0, 1.0, true, true, 0.5, 0.0).is_empty());
-        assert!(helix_waypoints(p(0.0, 0.0), 5.0, 0.0, -1.0, 0.0, true, true, 0.5, 0.0).is_empty());
-        assert!(helix_waypoints(p(0.0, 0.0), 5.0, 0.0, 0.0, 1.0, true, true, 0.5, 0.0).is_empty());
+        assert!(helix_waypoints(
+            p(0.0, 0.0),
+            0.0,
+            0.0,
+            -1.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        )
+        .is_empty());
+        assert!(helix_waypoints(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -1.0,
+            0.0,
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        )
+        .is_empty());
+        assert!(helix_waypoints(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            0.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        )
+        .is_empty());
+    }
+
+    /// q57s: a left-hand spindle (`SpindleDirection::Ccw`, M4 mode)
+    /// flips the geometric winding so the user's climb intent matches
+    /// physical chipload. Internal+climb on a RH spindle winds CCW;
+    /// on a LH spindle the same intent must wind CW so the cutting edge
+    /// (rotating the other way) still climbs.
+    #[test]
+    fn internal_climb_lefthand_spindle_winds_cw() {
+        let wps = helix_waypoints_with_density(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -1.0,
+            1.0,
+            true,
+            true,
+            0.5,
+            64,
+            0.0,
+            SpindleDirection::Ccw,
+        );
+        let (_, y1, _) = wps[1];
+        assert!(
+            y1 < 0.0,
+            "internal+climb on LH spindle must wind CW (second point in -Y); got y={y1}"
+        );
+    }
+
+    /// ttoa: short helices (|dz| < pitch) used to emit a single G1
+    /// diagonal across the bore because revolutions rounded to a
+    /// fraction. Post-ttoa the function clamps to at least one full
+    /// revolution. dz=0.005, pitch=1.0 used to give 2 waypoints (a
+    /// straight diagonal); now it emits a full helix's worth of
+    /// waypoints on the helix circle.
+    #[test]
+    fn shallow_dz_emits_at_least_one_full_turn() {
+        let wps = helix_waypoints(
+            p(0.0, 0.0),
+            5.0,
+            0.0,
+            -0.005, // 5 µm — well under pitch
+            1.0,    // 1 mm pitch
+            true,
+            true,
+            0.5,
+            0.0,
+            SpindleDirection::Cw,
+        );
+        // Should have many waypoints (a full turn at default 64
+        // steps/rev), not just 2 collinear points.
+        assert!(
+            wps.len() >= 4,
+            "shallow dz must emit a full turn, got {} waypoints",
+            wps.len()
+        );
+        // Every helix waypoint sits on the helix circle.
+        for (x, y, _) in &wps[..wps.len() - 1] {
+            let r = (x * x + y * y).sqrt();
+            assert!(
+                (r - 5.0).abs() < 1e-3,
+                "shallow-dz helix waypoint off-circle: r={r}"
+            );
+        }
+        // Last waypoint of the helix ring must reach the requested
+        // bottom_z (= -0.005).
+        let helix_end = wps[wps.len() - 2];
+        assert!(
+            (helix_end.2 - (-0.005)).abs() < 1e-9,
+            "shallow helix must still reach bottom_z; got {}",
+            helix_end.2
+        );
     }
 }

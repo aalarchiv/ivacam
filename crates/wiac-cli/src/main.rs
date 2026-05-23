@@ -199,6 +199,7 @@ fn build_offsets(
                 radius,
                 0.0,
                 None,
+                wiac_core::project::tool::SpindleDirection::Cw,
             ) {
                 o.source_object_idx = idx;
                 offsets.push(o);

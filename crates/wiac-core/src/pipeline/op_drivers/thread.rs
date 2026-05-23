@@ -67,6 +67,24 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
         });
         return Ok(());
     }
+    // ttoa: when the requested Z range is smaller than one full pitch
+    // (e.g. a shallow chase / finishing pass), the helix emitter clamps
+    // to a minimum of one full revolution at the configured pitch so
+    // the cutter doesn't degenerate to a single G1 diagonal across the
+    // bore. Surface a `thread_dz_less_than_pitch` warning so the user
+    // knows the Z descent will be steeper than `pitch` over the helix.
+    if (bottom_z - top_z).abs() < pitch_mm {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "thread_dz_less_than_pitch".into(),
+            message: format!(
+                "Thread op '{}' has |Z range| ({:.4} mm) smaller than pitch ({:.4} mm). Emitting one full helical turn at the configured pitch so the cutter doesn't shortcut across the bore; the helix descent will be faster than the configured pitch.",
+                op.name,
+                (bottom_z - top_z).abs(),
+                pitch_mm,
+            ),
+        });
+    }
     // sqnh: schedule multiple roughing passes when the user opts in
     // (`radial_passes > 1`). Each pass cuts at a fraction of the
     // final radial engagement, ramping linearly from
@@ -210,9 +228,37 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
                 internal,
                 tool_radius,
                 start_angle_rad,
+                setup.tool.spindle_direction,
             );
             if path.len() >= 2 {
-                polylines.push(path);
+                // 4p8c: prepend an axial lead-in arc segment so the
+                // cutter doesn't engage the full thread tooth at the
+                // first G1 of revolution 0. The lead-in sits at the
+                // kiss_radius (the cutter just touches the wall, zero
+                // engagement) at top_z, and ramps in over a
+                // quarter-turn to the pass_radius. The full helix
+                // body follows unchanged.
+                //
+                // We approximate the lead-in as a chord polyline at the
+                // same chord density as the helix (steps_per_rev=64,
+                // default DEFAULT_STEPS_PER_REV in cam::thread). Over a
+                // quarter-turn (16 chord steps) the radial interpolation
+                // is from kiss_radius → pass_radius and Z stays at
+                // top_z. This gives the cutter a tangential ramp into
+                // material before the helical descent begins.
+                let leadin = thread_lead_in(
+                    center,
+                    kiss_radius,
+                    pass_radius,
+                    top_z,
+                    start_angle_rad,
+                    climb,
+                    internal,
+                    setup.tool.spindle_direction,
+                );
+                let mut combined = leadin;
+                combined.extend(path);
+                polylines.push(combined);
                 emitted += 1;
             }
         }
@@ -295,6 +341,73 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
     }
     emit_vcarve_block(setup, &polylines, post, last_pos);
     Ok(())
+}
+
+/// 4p8c: axial lead-in for the thread helix. Returns waypoints that
+/// take the cutter from the kiss radius (no engagement) to the helix
+/// pass radius over approximately a quarter revolution, all at the
+/// helix top Z. Prepended to the helix waypoints so the cutter eases
+/// into the thread tooth instead of slamming the full engagement on
+/// revolution 0.
+///
+/// The geometry mirrors `cam::thread::helix_waypoints`: the lead-in
+/// winds in the same direction (climb XOR !internal, XOR spindle) as
+/// the helix so the lead-in tangentially flows into the first helix
+/// waypoint. Radius is linearly interpolated from `kiss_radius` to
+/// `final_radius` across `LEAD_IN_STEPS` chord steps over
+/// `LEAD_IN_SWEEP_RAD` radians.
+///
+/// `start_angle_rad` matches the helix entry angle; the lead-in ENDS
+/// at `start_angle_rad` (so the last lead-in waypoint coincides with
+/// the first helix waypoint) and STARTS a quarter-turn back along the
+/// helix winding direction.
+#[allow(clippy::too_many_arguments)]
+fn thread_lead_in(
+    center: crate::geometry::Point2,
+    kiss_radius: f64,
+    final_radius: f64,
+    top_z: f64,
+    start_angle_rad: f64,
+    climb: bool,
+    internal: bool,
+    spindle: crate::project::tool::SpindleDirection,
+) -> Vec<(f64, f64, f64)> {
+    use crate::project::tool::SpindleDirection;
+    // 4p8c: quarter-turn lead-in over 16 chord steps (matching the
+    // helix's 64 steps/rev default density). A quarter-turn at typical
+    // M6 helix radii covers ≈ 2-3 mm of arc length — well over one
+    // tool diameter, so the cutter ramps engagement instead of
+    // engaging the full thread tooth on the first chip.
+    const LEAD_IN_STEPS: usize = 16;
+    const LEAD_IN_SWEEP_RAD: f64 = std::f64::consts::FRAC_PI_2; // quarter turn
+    if !final_radius.is_finite() || final_radius <= 0.0 {
+        return Vec::new();
+    }
+    // Match the helix winding direction (see helix_waypoints).
+    let ccw_rh = climb ^ !internal;
+    let ccw = match spindle {
+        SpindleDirection::Cw => ccw_rh,
+        SpindleDirection::Ccw => !ccw_rh,
+    };
+    let dir: f64 = if ccw { 1.0 } else { -1.0 };
+    // Lead-in starts a quarter-turn back from `start_angle_rad` so the
+    // last lead-in waypoint lands exactly at `start_angle_rad`. The
+    // helix's first waypoint is at that same angle / `top_z`, so the
+    // join is smooth.
+    let start_theta = start_angle_rad - dir * LEAD_IN_SWEEP_RAD;
+    let mut out = Vec::with_capacity(LEAD_IN_STEPS + 1);
+    for i in 0..LEAD_IN_STEPS {
+        // i ranges 0..LEAD_IN_STEPS; skip the final endpoint so the
+        // helix's first waypoint isn't duplicated.
+        #[allow(clippy::cast_precision_loss)]
+        let t = (i as f64) / (LEAD_IN_STEPS as f64);
+        let theta = start_theta + dir * t * LEAD_IN_SWEEP_RAD;
+        let r = kiss_radius + (final_radius - kiss_radius) * t;
+        let x = center.x + r * theta.cos();
+        let y = center.y + r * theta.sin();
+        out.push((x, y, top_z));
+    }
+    out
 }
 
 #[cfg(test)]

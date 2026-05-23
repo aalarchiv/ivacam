@@ -28,10 +28,45 @@
   /// request (the "edit this tool" link in OpPropertiesPanel).
   let highlightedId = $state<number | null>(null);
   let bodyEl = $state<HTMLDivElement | null>(null);
-  /// Snapshot captured at open — dirty check compares stringified draft
-  /// to this so X / Esc / click-outside can prompt before silently
-  /// discarding edits (audit-dh1n).
-  let pristine = $state<string>('');
+  /// Snapshot captured at open — dirty check compares a deep clone of
+  /// the draft (via the deepEqual helper) so X / Esc / click-outside
+  /// can prompt before silently discarding edits (audit-dh1n).
+  ///
+  /// 1xgj: was `JSON.stringify(newDraft)` vs `JSON.stringify(draft)`,
+  /// which is sensitive to key-order shuffle on $state proxies.
+  /// Likely benign in practice — object literal updates via `...t`
+  /// preserve key order — but a deep-equal compare is robust to any
+  /// future code path that rebuilds the row by destructuring.
+  let pristine = $state<ToolEntry[]>([]);
+
+  /// 1xgj: minimal recursive deep-equal. Handles primitives, arrays,
+  /// and plain object records — which is everything we ever store in a
+  /// ToolEntry (no Dates, Maps, Sets, class instances). Skips
+  /// prototype-walking, getters, and circular detection on purpose:
+  /// ToolEntry is a flat JSON shape so none of those apply.
+  function deepEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (a === null || b === null) return false;
+    if (typeof a !== 'object' || typeof b !== 'object') return false;
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (!deepEqual(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    const ao = a as Record<string, unknown>;
+    const bo = b as Record<string, unknown>;
+    const aKeys = Object.keys(ao);
+    const bKeys = Object.keys(bo);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const k of aKeys) {
+      if (!Object.prototype.hasOwnProperty.call(bo, k)) return false;
+      if (!deepEqual(ao[k], bo[k])) return false;
+    }
+    return true;
+  }
 
   $effect(() => {
     if (open) {
@@ -51,7 +86,11 @@
       expanded = new Set(
         newDraft.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id),
       );
-      pristine = JSON.stringify(newDraft);
+      // 1xgj: snapshot a deep clone so subsequent edits to nested
+      // fields (e.g. `tool.holder.diameter_mm`) don't mutate the
+      // pristine reference. structuredClone handles the nested
+      // `holder` discriminated union correctly.
+      pristine = structuredClone(newDraft) as ToolEntry[];
     }
   });
 
@@ -63,7 +102,11 @@
     return kind === 'drag_knife' || kind === 'bull_nose' || kind === 't_slot';
   }
 
-  let isDirty = $derived.by(() => open && JSON.stringify(draft) !== pristine);
+  // 1xgj: was `JSON.stringify(draft) !== pristine` — fragile because
+  // a Svelte 5 $state proxy could in principle iterate keys in a
+  // different order than the source object, falsely flagging the
+  // dialog as dirty. Deep-equal is invariant to key order.
+  let isDirty = $derived.by(() => open && !deepEqual(draft, pristine));
 
   /// jkgj: numeric-field validation. Before, every input on a row used
   /// `parseFloat(...) || 0` with no `min` attribute, so 0 or a
@@ -519,15 +562,29 @@
             <input
               type="number"
               step="0.05"
+              min="0"
               value={tool.tipDiameter ?? ''}
               placeholder={fieldApplies('tipDiameter', tool.kind) ? '—' : 'n/a'}
               disabled={!fieldApplies('tipDiameter', tool.kind)}
-              title={fieldApplies('tipDiameter', tool.kind)
-                ? ''
-                : fieldReasonForKind('tipDiameter', tool.kind)}
+              class:invalid={tool.tipDiameter !== undefined && tool.tipDiameter < 0}
+              title={!fieldApplies('tipDiameter', tool.kind)
+                ? fieldReasonForKind('tipDiameter', tool.kind)
+                : tool.tipDiameter !== undefined && tool.tipDiameter < 0
+                  ? 'Tip ⌀ must be ≥ 0 mm — the V-Carve depth math (z = -(r - tip_r) / tan(angle / 2)) silently clamps negative values to 0, hiding the typo.'
+                  : ''}
               onchange={(e) => {
+                // wz0r: reject negative tip ⌀ — Rust setup_resolver.rs:669
+                // does .max(0.0) on this, so a typo like -0.5 silently
+                // becomes 0 and the depth math changes without warning.
+                // Treat any negative input as "unset" (same pattern as
+                // defaultStep) so the user must enter a valid value.
                 const v = (e.currentTarget as HTMLInputElement).value;
-                updateField(i, 'tipDiameter', v === '' ? undefined : parseFloat(v));
+                if (v === '') {
+                  updateField(i, 'tipDiameter', undefined);
+                  return;
+                }
+                const n = parseFloat(v);
+                updateField(i, 'tipDiameter', isNaN(n) || n < 0 ? undefined : n);
               }}
             />
             <input

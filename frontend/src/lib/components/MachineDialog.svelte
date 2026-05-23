@@ -234,6 +234,18 @@
       <button class="close" onclick={close} aria-label="Close">×</button>
     </header>
 
+    <!--
+      ninc: storage is always mm regardless of `draft.unit`. The unit
+      selector below only switches the G20/G21 word in emitted gcode.
+      We hint that once here instead of stamping "mm" onto every
+      individual numeric input — a literal "mm" suffix while the user
+      had unit=inch selected was misleading.
+    -->
+    <p class="storage-note">
+      Lengths are stored in <strong>mm</strong> regardless of the Unit selector below — the Unit
+      only switches the G20/G21 word in emitted gcode.
+    </p>
+
     <div class="grid">
       <label
         title="Free-text identifier for this machine setup. Shown in the dialog header + persisted into .wiac-machine.json save files. (h0tx)"
@@ -294,9 +306,7 @@
       >
         Fast-move Z
         <span class="field"
-          ><input type="number" bind:value={draft.fastMoveZ} step="0.1" /><span class="unit"
-            >mm</span
-          ></span
+          ><input type="number" bind:value={draft.fastMoveZ} step="0.1" /></span
         >
       </label>
       <fieldset class="work-area">
@@ -318,7 +328,7 @@
                   draft.workArea = { x: v, y: draft.workArea?.y ?? 300, z: draft.workArea?.z ?? 50 };
                 }
               }}
-            /><span class="unit">mm</span></span
+            /></span
           >
         </label>
         <label
@@ -335,7 +345,7 @@
                   draft.workArea = { x: draft.workArea?.x ?? 200, y: v, z: draft.workArea?.z ?? 50 };
                 }
               }}
-            /><span class="unit">mm</span></span
+            /></span
           >
         </label>
         <label
@@ -352,7 +362,7 @@
                   draft.workArea = { x: draft.workArea?.x ?? 200, y: draft.workArea?.y ?? 300, z: v };
                 }
               }}
-            /><span class="unit">mm</span></span
+            /></span
           >
         </label>
       </fieldset>
@@ -386,7 +396,7 @@
               const v = (e.target as HTMLInputElement).valueAsNumber;
               draft.arcFitToleranceMm = isFinite(v) && v >= 0 ? v : undefined;
             }}
-          /><span class="unit">mm</span></span
+          /></span
         >
       </label>
       <label
@@ -838,6 +848,18 @@
     font-size: 1.2rem;
     cursor: pointer;
     padding: 0 0.3rem;
+  }
+  .storage-note {
+    margin: 0;
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel));
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+  .storage-note strong {
+    color: var(--text);
   }
   .grid {
     padding: 0.7rem;

@@ -317,11 +317,16 @@
   }
 
   function chipLabel(): string {
+    // qvsa: chip wording is neutral — sim AND pipeline both feed the
+    // count, so labelling the chip "Sim" misled users into hunting in
+    // the sim diagnostic UI for a warning that was actually emitted
+    // by the CAM pipeline. The panel that opens still tags each row
+    // with its source (sim / pipeline) so attribution stays visible.
     if (project.simDiagnostics == null && pipelineWarnings.length === 0) {
-      return 'Sim: not run yet — Generate first';
+      return 'Warnings: not run yet — Generate first';
     }
-    if (simStale) return 'Sim: stale — re-Generate';
-    if (isClean) return 'Sim clean';
+    if (simStale) return 'Warnings: stale — re-Generate';
+    if (isClean) return 'No warnings';
     if (criticalCount > 0) {
       return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'} (${criticalCount} critical)`;
     }

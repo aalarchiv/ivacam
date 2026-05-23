@@ -9,6 +9,7 @@ use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::gcode::{emit_vcarve_block, PostProcessor};
 use crate::geometry::{Point2, SegmentKind};
+use crate::pipeline::warnings::push_tool_fit_kind_warnings;
 use crate::pipeline::{cancelled, op_includes_object, CancelToken, PipelineError, PipelineWarning};
 use crate::project::{Op, OpKind, Project};
 
@@ -74,6 +75,13 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
 ) -> Result<(), PipelineError> {
+    // lo4j: surface tool-kind mismatches (e.g. user pointed a Drill or
+    // LaserBeam at a Thread op) the same way the V-Carve / Halfpipe /
+    // standard drivers do. Pre-fix the thread driver silently emitted
+    // a helix using whatever cutter happened to be configured —
+    // including non-rotating tools the user almost certainly did not
+    // mean to thread with.
+    push_tool_fit_kind_warnings(op, project, setup, warnings);
     let OpKind::Thread {
         pitch_mm,
         internal,
@@ -992,6 +1000,64 @@ mod tests {
             t2_m6_count, 0,
             "o3od: T2 M6 must not appear when the Thread op produces no output; got gcode:\n{}",
             resp.gcode
+        );
+    }
+
+    /// lo4j: a Thread op assigned a wrong-kind tool (Drill / DragKnife
+    /// / LaserBeam) must surface a `tool_kind_mismatch` warning. The
+    /// thread driver routes tool-fit sanity through the shared
+    /// `push_tool_fit_kind_warnings` helper at op entry; pre-fix the
+    /// driver silently emitted a helix with whatever cutter the user
+    /// configured, including ones that can't physically cut a thread.
+    #[test]
+    fn lo4j_thread_op_with_drill_tool_emits_kind_mismatch_warning() {
+        let center = Point2::new(0.0, 0.0);
+        let radius = 5.0;
+        let segments = closed_circle(center, radius);
+        // Configure a Drill tool — the driver should still attempt to
+        // emit (it doesn't reject the op) but must raise the warning.
+        let mut tool = endmill(1, 1.0);
+        tool.kind = crate::project::ToolKind::Drill;
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        let project = Project {
+            segments,
+            machine: MachineConfig::default(),
+            tools: vec![tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Thread+Drill".into(),
+                enabled: true,
+                kind: OpKind::Thread {
+                    pitch_mm: 1.0,
+                    internal: true,
+                    climb: true,
+                    radial_passes: 1,
+                    start_angle_rad: 0.0,
+                    thread_depth_mm: Some(0.5),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"),
+            "lo4j: expected tool_kind_mismatch warning for Thread + Drill tool; got: {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
     }
 }

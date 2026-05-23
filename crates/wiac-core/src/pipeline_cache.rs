@@ -1060,6 +1060,7 @@ mod tests {
             pierce_height_mm: None,
             cut_height_mm: None,
             pierce_delay_sec: None,
+            vcarve_lead_in_angle_deg: None,
         }
     }
 

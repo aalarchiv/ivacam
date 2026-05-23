@@ -144,6 +144,14 @@ pub struct ToolConfig {
     /// time; 0.0 ⇒ defaults to 0.5 s at emit time.
     #[serde(default)]
     pub pierce_delay_sec: f64,
+    /// ot80: V-Carve lead-in ramp angle (degrees from horizontal).
+    /// Resolved from
+    /// [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`] at
+    /// synth time; clamped to (0°, 90°). 0.0 ⇒ inherit the legacy
+    /// 10° default at emit time inside
+    /// [`crate::cam::vcarve_emit::ratchet_emit`].
+    #[serde(default)]
+    pub vcarve_lead_in_angle_deg: f64,
 }
 
 fn default_tip_angle_deg() -> f64 {
@@ -210,6 +218,7 @@ impl Default for ToolConfig {
             pierce_height_mm: 0.0,
             cut_height_mm: 0.0,
             pierce_delay_sec: 0.0,
+            vcarve_lead_in_angle_deg: 0.0,
         }
     }
 }

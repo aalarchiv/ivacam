@@ -274,6 +274,13 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
         cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
         pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
+        // ot80: V-Carve lead-in ramp angle. 0.0 sentinel = inherit the
+        // legacy 10° at emit time inside `ratchet_emit`. Clamp to the
+        // physically meaningful open interval (0°, 90°); anything else
+        // means "use the default".
+        vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(
+            tool.vcarve_lead_in_angle_deg,
+        ),
     };
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
@@ -646,6 +653,9 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
                 cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
                 pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
+                vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(
+                    tool.vcarve_lead_in_angle_deg,
+                ),
             };
         }
         setup.mill.fast_move_z = op.params.fast_move_z;
@@ -694,9 +704,29 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
             cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
             pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
+            vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(
+                tool.vcarve_lead_in_angle_deg,
+            ),
         };
     }
     setup
+}
+
+/// ot80: clamp the tool's optional V-Carve lead-in angle into the
+/// physically meaningful open interval (0°, 90°). `None` or
+/// non-finite values → 0.0 (the sentinel that
+/// [`crate::cam::vcarve_emit::ratchet_emit`] interprets as
+/// "inherit the legacy 10° default"). Out-of-range values clamp into
+/// (1.0, 89.0) so the ramp neither degenerates to a vertical plunge
+/// (≈ 90°) nor stretches out into an infinite-length horizontal walk
+/// (≈ 0°). Picked the 1°/89° bounds rather than ε so the resulting
+/// `tan(angle)` stays a sane positive number on any platform.
+#[must_use]
+pub(crate) fn resolve_vcarve_lead_in_angle_deg(opt: Option<f64>) -> f64 {
+    match opt {
+        Some(v) if v.is_finite() && v > 0.0 && v < 90.0 => v.clamp(1.0, 89.0),
+        _ => 0.0,
+    }
 }
 
 /// Same as `clamp_spindle_rpm` but silent (no warnings). Used by
@@ -744,6 +774,29 @@ mod tests {
     use crate::pipeline::test_helpers::{endmill, profile_op, project_with};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
     use crate::project::{resolve_tool_rates, PassKind};
+
+    /// ot80: the lead-in-angle resolver clamps into the physical
+    /// (1°, 89°) band, treats unset / out-of-range / non-finite
+    /// inputs as the 0.0 sentinel, and passes valid values through.
+    #[test]
+    fn ot80_resolve_vcarve_lead_in_angle_handles_edge_cases() {
+        // None → 0.0 (inherit default at emit time).
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(None), 0.0);
+        // Valid 5° lands in (1°, 89°) — bumped up to 5° (no clamp).
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(Some(5.0)), 5.0);
+        // Boundary: 0° rejected → 0.0.
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(Some(0.0)), 0.0);
+        // Boundary: 90° rejected → 0.0.
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(Some(90.0)), 0.0);
+        // Negative → 0.0.
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(Some(-15.0)), 0.0);
+        // NaN → 0.0.
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(Some(f64::NAN)), 0.0);
+        // Infinite → 0.0.
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(Some(f64::INFINITY)), 0.0);
+        // 45° passes through unchanged.
+        assert_eq!(resolve_vcarve_lead_in_angle_deg(Some(45.0)), 45.0);
+    }
 
     #[test]
     fn effective_step_op_override_wins() {

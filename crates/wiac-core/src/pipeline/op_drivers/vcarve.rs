@@ -250,7 +250,12 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                 // kagr: ratchet_emit returns a list of sub-polylines
                 // so the caller can rapid (G0) between them rather
                 // than dragging the bit across uncut stock at feed.
-                let paths = crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp);
+                // ot80: route the per-tool lead-in angle through.
+                let paths = crate::cam::vcarve_emit::ratchet_emit_with_lead_in(
+                    &z_axis,
+                    dpp,
+                    setup.tool.vcarve_lead_in_angle_deg,
+                );
                 let mut added_any = false;
                 for p in paths {
                     if p.len() >= 2 {

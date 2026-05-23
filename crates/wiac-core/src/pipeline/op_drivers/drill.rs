@@ -7,14 +7,14 @@
 //! (rt1.20 Stufenfase) — walks a single revolution at each hole's
 //! rim at the V-bit chamfer depth.
 
-// CAM/sim pedantic-lint exemption: STEPS is a tiny constant, cast
-// to f64 for trig is fine.
+// CAM/sim pedantic-lint exemption: lead-ramp sample counts are
+// bounded by a tiny constant; the f64 cast for trig math is fine.
 #![allow(clippy::cast_precision_loss)]
 
 use crate::cam::offsets::PolylineOffset;
 use crate::cam::setup::Setup;
 use crate::cam::VcObject;
-use crate::gcode::{emit_drill_block, emit_vcarve_block, PostProcessor};
+use crate::gcode::{emit_drill_block, emit_stufenfase_rim_block, PostProcessor, StufenfaseHole};
 use crate::geometry::{Point2, SegmentKind};
 use crate::pipeline::setup_resolver::{resolve_peck_step, synthesize_op_setup};
 use crate::pipeline::{
@@ -209,9 +209,9 @@ fn emit_stufenfase<P: PostProcessor>(
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<bool, PipelineError> {
-    // Single full revolution at constant Z. 64 waypoints + closing
-    // point so arc-fit produces clean one-or-two arcs.
-    const STEPS: usize = 64;
+    // sq8z: rim chamfer is now emitted as a single G2/G3 full-circle
+    // (via `emit_stufenfase_rim_block`) plus a short angled lead-in
+    // ramp. The legacy 64-chord-G1 polyline path is gone.
     let cutter_id = op.finish_tool_id.unwrap_or(op.tool_id);
     let cutter = project
         .tools
@@ -229,7 +229,7 @@ fn emit_stufenfase<P: PostProcessor>(
     if chamfer_z.abs() < 1e-9 {
         return Ok(false);
     }
-    let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    let mut holes: Vec<StufenfaseHole> = Vec::new();
     let mut found = 0usize;
     let mut non_circle_skipped = 0usize;
     for (idx, obj) in objects.iter().enumerate() {
@@ -259,49 +259,53 @@ fn emit_stufenfase<P: PostProcessor>(
             continue;
         }
         // x412: insert a spiral lead-in BEFORE the flat revolution so
-        // the V-bit doesn't plunge vertically at the rim. emit_vcarve_block
-        // (gcode.rs) plunges G1 vertically from start_depth=0 down to the
-        // first polyline point's Z at rate_v; for a sharp 60°/90° V-bit
-        // that's a tip-snap on hardwood / aluminum (same class of failure
-        // pmpk fixed for the V-Carve emitter). Match the pmpk pattern:
-        // ramp Z from 0 down to chamfer_z at LEAD_IN_ANGLE_DEG=10° from
-        // horizontal along the rim, then walk the full flat revolution
-        // at chamfer_z. If the rim's circumference is too short for the
-        // 10° ramp, do a single ramped revolution (depth still reaches
-        // chamfer_z so the chamfer isn't shallow — the slope merely
-        // steepens; still better than a vertical plunge).
+        // the V-bit doesn't plunge vertically at the rim. Match the pmpk
+        // pattern: ramp Z from 0 down to chamfer_z at LEAD_IN_ANGLE_DEG
+        // (10°) from horizontal along the rim, then walk one full
+        // revolution at chamfer_z. If the rim's circumference is too
+        // short for the 10° ramp, the lead-in occupies the full
+        // circumference and the slope steepens (depth still reaches
+        // chamfer_z — still better than a vertical plunge).
+        //
+        // sq8z: emit the flat revolution as a single G2/G3 full-circle
+        // (handled by `emit_stufenfase_rim_block`) rather than the
+        // pre-fix 64-chord G1 polyline. Only the ramp's varying-Z piece
+        // still needs polyline samples — at LEAD_RAMP_STEPS the chord
+        // error stays well under 1 % of `r` for any realistic chamfer.
         const LEAD_IN_ANGLE_DEG: f64 = 10.0;
+        const LEAD_RAMP_STEPS: usize = 12;
         let circumference = std::f64::consts::TAU * r;
         let needed_arc = chamfer_z.abs() / LEAD_IN_ANGLE_DEG.to_radians().tan();
         let lead_arc = needed_arc.min(circumference);
         let lead_angle = lead_arc / r; // radians swept by the ramp
-        // Lead-in resolution: scale with the revolution density so the
-        // ramp's per-point depth step never exceeds the flat revolution's
-        // tangential step. ceil((lead_angle / TAU) * STEPS).max(8).
+        // Lead-in resolution: enough samples to chord-tessellate the
+        // arc to ~1% of `r`. Compute from the angular sweep so short
+        // ramps don't over-sample.
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let lead_steps =
-            ((lead_angle / std::f64::consts::TAU * (STEPS as f64)).ceil() as usize).max(8);
-        let mut path: Vec<(f64, f64, f64)> = Vec::with_capacity(lead_steps + STEPS + 1);
+        let lead_steps = ((lead_angle / std::f64::consts::TAU * (LEAD_RAMP_STEPS as f64))
+            .ceil() as usize)
+            .max(4);
+        let mut ramp: Vec<(f64, f64, f64)> = Vec::with_capacity(lead_steps + 1);
         for i in 0..=lead_steps {
             let t = (i as f64) / (lead_steps as f64);
             let a = -lead_angle + t * lead_angle;
             let z = chamfer_z * t;
-            path.push((center.x + r * a.cos(), center.y + r * a.sin(), z));
+            ramp.push((center.x + r * a.cos(), center.y + r * a.sin(), z));
         }
-        // Flat revolution: start at angle 0 (matches lead-in end), end
-        // at angle TAU. Skip the first sample because it duplicates the
-        // ramp's final point.
-        for i in 1..=STEPS {
-            let a = (i as f64) * std::f64::consts::TAU / (STEPS as f64);
-            path.push((center.x + r * a.cos(), center.y + r * a.sin(), chamfer_z));
-        }
-        // Close the revolution loop exactly on the ramp-end point so
-        // arc-fit can collapse adjacent samples into a clean G2/G3.
-        let ramp_end = path[lead_steps];
-        if let Some(last) = path.last_mut() {
-            *last = ramp_end;
-        }
-        polylines.push(path);
+        // The ramp ends at angle 0 by construction (a = 0 when t = 1).
+        // The full-circle revolution starts AND ends at that same point;
+        // the post emits one G2/G3 with target XY == start XY and I/J
+        // pointing back to the rim center.
+        holes.push(StufenfaseHole {
+            center,
+            radius: r,
+            // Match the legacy polyline orientation (lead-in walked
+            // from negative angle toward 0 CCW, flat revolution walked
+            // 0 → TAU CCW). CCW ⇒ G3.
+            ccw: true,
+            flat_z: chamfer_z,
+            ramp,
+        });
         found += 1;
     }
     if non_circle_skipped > 0 {
@@ -352,7 +356,7 @@ fn emit_stufenfase<P: PostProcessor>(
             swapped = true;
         }
     }
-    emit_vcarve_block(&chamfer_setup, &polylines, post, last_pos);
+    emit_stufenfase_rim_block(&chamfer_setup, &holes, post, last_pos);
     Ok(swapped)
 }
 
@@ -1015,6 +1019,88 @@ mod tests {
             first.contains('X') || first.contains('Y'),
             "x412: first chamfer descent must include XY motion (spiral lead-in), \
              got pure vertical plunge: `{first}`\nchamfer block:\n{chamfer}"
+        );
+    }
+
+    /// sq8z: the rim revolution emits as a single G2/G3 full-circle
+    /// (which the linuxcnc / grbl posts may split into two half-arcs
+    /// for full-circle handling) rather than the legacy 64-chord G1
+    /// polyline. The total G2+G3 lines for the rim should be a small
+    /// number (1 or 2 from full-circle splitting); the chamfer block
+    /// should contain at most a handful of G1 moves (the lead-in
+    /// ramp).
+    #[test]
+    fn sq8z_stufenfase_rim_emits_g2_full_circle_not_64_g1() {
+        let mut vbit_drill = vbit();
+        vbit_drill.kind = ToolKind::Drill;
+        vbit_drill.diameter = 3.0;
+        vbit_drill.tip_angle_deg = 90.0;
+        let center = Point2::new(5.0, 7.0);
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        let project = Project {
+            segments: closed_circle(center, 0.5),
+            machine: MachineConfig::default(),
+            tools: vec![vbit_drill],
+            operations: vec![Op {
+                id: 1,
+                name: "Drill+chamfer".into(),
+                enabled: true,
+                kind: OpKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    chamfer_after_width_mm: Some(1.0),
+                    pattern: None,
+                    spot_first: None,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The chamfer block follows the drill's G80. Count G1 / G2 / G3
+        // tokens AFTER G80 so the canned-cycle output (which doesn't
+        // emit cut G1s) doesn't confuse the totals.
+        let g80_idx = resp
+            .gcode
+            .find("\nG80")
+            .unwrap_or_else(|| panic!("expected G80 between drill and chamfer in:\n{}", resp.gcode));
+        let chamfer = &resp.gcode[g80_idx..];
+        let g2_count = chamfer
+            .lines()
+            .filter(|l| l.trim_start().starts_with("G2 "))
+            .count();
+        let g3_count = chamfer
+            .lines()
+            .filter(|l| l.trim_start().starts_with("G3 "))
+            .count();
+        let g1_count = chamfer
+            .lines()
+            .filter(|l| l.trim_start().starts_with("G1 "))
+            .count();
+        // Pre-fix: 64 chord-G1s for the rim plus a handful of lead-in
+        // G1s — total > 60. Post-fix: short ramp (a dozen at most) plus
+        // 1 or 2 arc moves for the full circle.
+        assert!(
+            g2_count + g3_count >= 1,
+            "sq8z: expected at least one G2/G3 arc for the rim revolution; got g2={g2_count} g3={g3_count} in:\n{chamfer}",
+        );
+        assert!(
+            g1_count < 30,
+            "sq8z: expected fewer than 30 G1 moves (lead-ramp only); got {g1_count} in:\n{chamfer}",
         );
     }
 

@@ -209,7 +209,12 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
             // kagr: ratchet_emit returns sub-polylines split at any
             // above-surface gaps. Push each one as a separate cut
             // block so the caller G0-rapids between them at safe Z.
-            for p in crate::cam::vcarve_emit::ratchet_emit(&z_axis, dpp) {
+            // ot80: per-tool lead-in angle override (0.0 ⇒ default 10°).
+            for p in crate::cam::vcarve_emit::ratchet_emit_with_lead_in(
+                &z_axis,
+                dpp,
+                setup.tool.vcarve_lead_in_angle_deg,
+            ) {
                 if p.len() >= 2 {
                     polylines.push(p);
                 }

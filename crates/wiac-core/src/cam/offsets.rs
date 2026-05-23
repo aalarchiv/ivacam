@@ -1978,11 +1978,18 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
 /// for circles whose radius sat in `[0.95·r, r)` — too narrow for the
 /// inward-offset cascade (which collapsed to empty geometry) but too wide
 /// to drill under the strict bound. Result: such holes were silently
-/// dropped. The threshold is now extended to `r < 0.999 * tool_radius` so
+/// dropped. The threshold was extended to `r < 0.999 * tool_radius` so
 /// any circle that won't pocket gets a drill substitution at its centre.
-/// The tiny remaining sliver `[0.999·r, r)` is genuinely a manufacturing
-/// boundary (the tool exactly fills the hole) — it's left to the cascade
-/// + the `pocket_fill_incomplete` / `tool_too_large` warnings.
+///
+/// hnc1: the previous strict `<` left an exact-fit case `r == tool_radius`
+/// (think a 6 mm hole milled with a 6 mm endmill) where the cascade
+/// returned empty geometry AND the drill substitution was rejected — the
+/// hole was silently dropped. The cascade can't carve a hole that exactly
+/// equals the tool, but the drill substitution can: the cutter plunges to
+/// depth at the circle's center and the hole is cut by the tool's full
+/// diameter. The threshold is widened to `radius <= tool_radius * 1.001`
+/// so the small floating-point slop band (≤ 1 ‰ over nominal) and the
+/// exact-fit value both route to the drill substitution.
 #[must_use]
 pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOffset> {
     use crate::geometry::SegmentKind;
@@ -1995,7 +2002,7 @@ pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOf
     }
     let center = obj.segments[0].center?;
     let radius = obj.segments[0].start.distance(center);
-    if radius >= tool_radius * 0.999 {
+    if radius > tool_radius * 1.001 {
         return None;
     }
     Some(PolylineOffset {
@@ -3129,6 +3136,113 @@ mod tests {
         assert_eq!(drill.segments.len(), 1);
         assert!(matches!(drill.segments[0].kind, SegmentKind::Point));
         assert!(drill.segments[0].start.distance(center) < 1e-9);
+    }
+
+    /// hnc1 regression: a closed circle whose radius EXACTLY equals the
+    /// tool radius (e.g. a 6 mm hole milled with a 6 mm endmill) must
+    /// route through the drill substitution — the cascade can't carve
+    /// such a hole (inward offset collapses to empty) but the drill
+    /// plunge cuts a perfectly fitting hole at the circle's center.
+    /// Pre-fix the `>= tool_radius * 0.999` rejected the exact-fit case
+    /// and the hole was silently dropped.
+    #[test]
+    fn exact_fit_circle_drills_at_center() {
+        use crate::geometry::SegmentKind;
+        // 3 mm radius circle, 3 mm tool radius (6 mm endmill, 6 mm hole).
+        let tool_radius = 3.0_f64;
+        let r = 3.0_f64;
+        let center = Point2::new(5.0, 5.0);
+        let p_right = Point2::new(center.x + r, center.y);
+        let p_left = Point2::new(center.x - r, center.y);
+        let half1 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_right,
+            end: p_left,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let half2 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_left,
+            end: p_right,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let obj = VcObject::new(vec![half1, half2], true);
+        let drill = small_circle_drill(&obj, tool_radius);
+        assert!(
+            drill.is_some(),
+            "exact-fit circle (r == tool_radius) must drill at center",
+        );
+        let drill = drill.unwrap();
+        assert_eq!(drill.segments.len(), 1);
+        assert!(matches!(drill.segments[0].kind, SegmentKind::Point));
+        assert!(drill.segments[0].start.distance(center) < 1e-9);
+    }
+
+    /// hnc1 boundary: a circle slightly LARGER than the tool (within
+    /// the 0.1 % floating-point slop band) still routes to drill — the
+    /// cutter fills the hole; we'd rather emit a useful drill plunge
+    /// than a silent drop. Above that band (radius > 1.001 *
+    /// tool_radius) the cascade owns the cut.
+    #[test]
+    fn slightly_oversize_circle_drills_at_center_within_slop_band() {
+        use crate::geometry::SegmentKind;
+        let tool_radius = 3.0_f64;
+        // r = tool_radius + 0.0005 → 0.017 % over nominal, well inside
+        // the 0.1 % slop band.
+        let r = tool_radius + 0.0005;
+        let center = Point2::new(0.0, 0.0);
+        let p_right = Point2::new(center.x + r, center.y);
+        let p_left = Point2::new(center.x - r, center.y);
+        let half1 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_right,
+            end: p_left,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let half2 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_left,
+            end: p_right,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let obj = VcObject::new(vec![half1, half2], true);
+        assert!(small_circle_drill(&obj, tool_radius).is_some());
+        // Far above the slop band: the cascade owns this.
+        let bigger_r = tool_radius * 1.05;
+        let p_right = Point2::new(center.x + bigger_r, center.y);
+        let p_left = Point2::new(center.x - bigger_r, center.y);
+        let half1 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_right,
+            end: p_left,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let half2 = Segment {
+            kind: SegmentKind::Circle,
+            start: p_left,
+            end: p_right,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        };
+        let obj = VcObject::new(vec![half1, half2], true);
+        assert!(small_circle_drill(&obj, tool_radius).is_none());
     }
 
     /// axhd regression: a U-shaped pocket's zigzag joiner that would

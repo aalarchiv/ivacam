@@ -374,6 +374,123 @@ mod tests {
         );
     }
 
+    /// u2u1 regression: arc segments are measured against the true
+    /// arc-to-point distance, not chord distance. A bulgy contour wall
+    /// whose chord sits comfortably outside the lead arc's swept disk
+    /// while the bulge itself reaches INTO the disk must be detected
+    /// as a collision — the lead arc would otherwise carve into the
+    /// arc's sagitta.
+    #[test]
+    fn u2u1_arc_segment_distance_accounts_for_sagitta() {
+        // Half-circle on the UPPER side from (10, 0) CCW to (-10, 0)
+        // — start angle 0, sweep +π, passing through (0, 10). bulge
+        // = tan(π/4) = +1. Center (0, 0), radius 10. The chord is
+        // the X-axis y=0. A probe at (0, -0.5) sits 0.5 mm BELOW
+        // the chord, so chord distance is 0.5 — but the arc itself
+        // is on the +Y side, 10.5 mm away from the probe at its
+        // closest point (the endpoint (10, 0) or (-10, 0), the
+        // radial foot falls outside the sweep).
+        let arc = Segment::arc(
+            Point2::new(10.0, 0.0),
+            Point2::new(-10.0, 0.0),
+            1.0,
+            Some(Point2::new(0.0, 0.0)),
+            "0",
+            7,
+        );
+        // Probe directly BELOW the arc center, distance 5 below the
+        // X-axis. Chord distance = 5; arc-to-point distance: the
+        // radial foot points at angle -π/2 which is OUTSIDE the
+        // sweep [0, π], so the nearest arc point is one of the
+        // endpoints (-10, 0) or (10, 0), distance √(100+25) ≈ 11.18.
+        let probe = Point2::new(0.0, -5.0);
+        let d = segment_distance_to_point(&arc, probe);
+        let expected = (100.0f64 + 25.0).sqrt();
+        assert!(
+            (d - expected).abs() < 1e-9,
+            "expected true arc-to-point distance {expected}, got {d}",
+        );
+    }
+
+    /// u2u1: a point on the arc itself must report ~zero distance.
+    /// The chord distance would over-report by the local sagitta.
+    #[test]
+    fn u2u1_arc_segment_distance_zero_on_arc() {
+        // Upper-half-circle from (10, 0) CCW to (-10, 0) (bulge +1).
+        // A probe at (0, 10) sits on the arc apex (angle π/2 which
+        // is inside the sweep [0, π]); distance must be ~0. Chord
+        // distance to y=0 would be 10.
+        let arc = Segment::arc(
+            Point2::new(10.0, 0.0),
+            Point2::new(-10.0, 0.0),
+            1.0,
+            Some(Point2::new(0.0, 0.0)),
+            "0",
+            7,
+        );
+        let probe = Point2::new(0.0, 10.0);
+        let d = segment_distance_to_point(&arc, probe);
+        assert!(d < 1e-9, "probe on arc should have ~zero distance, got {d}");
+    }
+
+    /// u2u1: when the probe's radial foot falls outside the arc's
+    /// angular sweep, the nearest point on the arc is one of the
+    /// endpoints — not a phantom radial projection.
+    #[test]
+    fn u2u1_arc_segment_distance_outside_sweep_uses_endpoint() {
+        // Quarter arc from (10, 0) CCW to (0, 10) (start angle 0,
+        // end angle π/2, sweep π/2). bulge = tan(π/8). Center
+        // origin, radius 10.
+        let bulge = (std::f64::consts::PI / 8.0).tan();
+        let arc = Segment::arc(
+            Point2::new(10.0, 0.0),
+            Point2::new(0.0, 10.0),
+            bulge,
+            Some(Point2::new(0.0, 0.0)),
+            "0",
+            7,
+        );
+        // Probe at (5, -5) — radial foot direction (5, -5) is at
+        // angle -π/4, OUTSIDE the sweep [0, π/2]. Nearest endpoint
+        // is (10, 0), distance √(25+25) = 5√2.
+        let probe = Point2::new(5.0, -5.0);
+        let d = segment_distance_to_point(&arc, probe);
+        assert!(
+            (d - (5.0f64.hypot(5.0))).abs() < 1e-9,
+            "expected endpoint distance, got {d}",
+        );
+    }
+
+    /// u2u1: chord-distance would report ~0 here (the probe sits
+    /// right on the chord midpoint); the true arc distance is the
+    /// radius minus zero (probe is at arc center) → radius. Verifies
+    /// the function doesn't accidentally pretend chord-distance is
+    /// arc-distance when the probe is INSIDE the swept circle.
+    #[test]
+    fn u2u1_arc_segment_distance_at_arc_center_returns_radius() {
+        // Upper-half-circle from (10, 0) CCW to (-10, 0), center
+        // (0,0), radius 10.
+        let arc = Segment::arc(
+            Point2::new(10.0, 0.0),
+            Point2::new(-10.0, 0.0),
+            1.0,
+            Some(Point2::new(0.0, 0.0)),
+            "0",
+            7,
+        );
+        let probe = Point2::new(0.0, 0.0);
+        let d = segment_distance_to_point(&arc, probe);
+        // At the center, distance to any point on the circle is the
+        // radius. With radial-foot ill-defined (d_to_arc_center = 0),
+        // we fall back to endpoint distance — both endpoints are
+        // (±10, 0) which sit 10 from the center. Either way the
+        // result is 10.
+        assert!(
+            (d - 10.0).abs() < 1e-9,
+            "expected radius-distance at arc center, got {d}",
+        );
+    }
+
     #[test]
     fn p62d_arc_lead_falls_back_to_straight_when_no_room() {
         // Integration test through lead_in_geometry: a constrained
@@ -404,27 +521,113 @@ mod tests {
     }
 }
 
-/// Shortest distance from `center` to the chord of `seg` (start→end).
-/// Arc segments are checked against their CHORD; the arc itself sits
-/// on the inner side of the chord by at most the sagitta, so chord
-/// distance over-estimates safety by sagitta — acceptable for the
-/// "fits in available room" sanity test.
+/// Shortest distance from `center` to a segment.
+///
+/// Lines: standard point-to-chord projection.
+///
+/// Arcs / Circles: u2u1 — the prior chord-based distance over-estimated
+/// safety by the sagitta. A bulgy contour wall could carve into the
+/// lead arc's swept disk while chord distance still reported "fits in
+/// available room"; the lead-in then arc'd straight into the just-cut
+/// surface. Use the true point-to-arc distance:
+///   * If `center` projects onto the arc's angular sweep, the closest
+///     point on the arc is `|distance(arc_center, center) - radius|`.
+///   * Otherwise the nearest point is one of the arc endpoints — fall
+///     back to the smaller endpoint distance.
 fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
-    let ax = seg.start.x;
-    let ay = seg.start.y;
-    let bx = seg.end.x;
-    let by = seg.end.y;
-    let dx = bx - ax;
-    let dy = by - ay;
-    let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-18 {
-        // Degenerate — distance to the start point.
-        return ((center.x - ax).hypot(center.y - ay)).abs();
+    use crate::geometry::SegmentKind;
+    let line_chord_distance = |sx: f64, sy: f64, ex: f64, ey: f64| {
+        let dx = ex - sx;
+        let dy = ey - sy;
+        let len_sq = dx * dx + dy * dy;
+        if len_sq < 1e-18 {
+            return (center.x - sx).hypot(center.y - sy);
+        }
+        let t = (((center.x - sx) * dx + (center.y - sy) * dy) / len_sq).clamp(0.0, 1.0);
+        let px = sx + t * dx;
+        let py = sy + t * dy;
+        (center.x - px).hypot(center.y - py)
+    };
+    match seg.kind {
+        SegmentKind::Line | SegmentKind::Point => {
+            line_chord_distance(seg.start.x, seg.start.y, seg.end.x, seg.end.y)
+        }
+        SegmentKind::Arc | SegmentKind::Circle => {
+            // Fall back to deriving the center from the bulge when
+            // the segment data didn't carry it — same convention as
+            // the surrounding arc-center derivations in this module.
+            let arc_center = seg.center.unwrap_or_else(|| {
+                math::bulge_to_arc(seg.start, seg.end, seg.bulge).0
+            });
+            let arc_radius =
+                (seg.start.x - arc_center.x).hypot(seg.start.y - arc_center.y);
+            if arc_radius < 1e-9 {
+                return line_chord_distance(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
+            }
+            // Full circle (no angular gating): the closest point lies
+            // along the radial line from `arc_center` toward `center`.
+            let dx = center.x - arc_center.x;
+            let dy = center.y - arc_center.y;
+            let d_to_arc_center = dx.hypot(dy);
+            let radial_dist = (d_to_arc_center - arc_radius).abs();
+            if matches!(seg.kind, SegmentKind::Circle) {
+                return radial_dist;
+            }
+            // Arc: check whether the radial foot falls inside the
+            // angular span. Same machinery as `arc_intersects_tab` in
+            // tabs.rs — sweep from theta_start through `4*atan(bulge)`.
+            let theta_start =
+                (seg.start.y - arc_center.y).atan2(seg.start.x - arc_center.x);
+            let sweep = 4.0 * seg.bulge.atan();
+            // Theta of the candidate foot on the circle (only well-
+            // defined when `center` isn't at the arc center; fall back
+            // to the endpoint distance if it is).
+            if d_to_arc_center < 1e-12 {
+                let de_s = (center.x - seg.start.x).hypot(center.y - seg.start.y);
+                let de_e = (center.x - seg.end.x).hypot(center.y - seg.end.y);
+                return de_s.min(de_e);
+            }
+            let theta_foot = dy.atan2(dx);
+            if arc_contains_angle(theta_start, sweep, theta_foot) {
+                radial_dist
+            } else {
+                // Foot lies outside the sweep — nearest point on the
+                // arc is one of the endpoints.
+                let de_s = (center.x - seg.start.x).hypot(center.y - seg.start.y);
+                let de_e = (center.x - seg.end.x).hypot(center.y - seg.end.y);
+                de_s.min(de_e)
+            }
+        }
     }
-    let t = (((center.x - ax) * dx + (center.y - ay) * dy) / len_sq).clamp(0.0, 1.0);
-    let px = ax + t * dx;
-    let py = ay + t * dy;
-    (center.x - px).hypot(center.y - py)
+}
+
+/// Returns true when `theta` lies within the directed arc sweep from
+/// `theta_start` by `sweep` radians (signed: CCW positive, CW negative).
+/// Mirrors the same helper in `gcode/tabs.rs`; duplicated here so the
+/// leads module stays self-contained.
+fn arc_contains_angle(theta_start: f64, sweep: f64, theta: f64) -> bool {
+    let two_pi = std::f64::consts::TAU;
+    if sweep.abs() >= two_pi - 1e-9 {
+        return true;
+    }
+    let mut delta = theta - theta_start;
+    if sweep >= 0.0 {
+        while delta < -1e-12 {
+            delta += two_pi;
+        }
+        while delta >= two_pi - 1e-12 {
+            delta -= two_pi;
+        }
+        delta <= sweep + 1e-9
+    } else {
+        while delta > 1e-12 {
+            delta -= two_pi;
+        }
+        while delta <= -two_pi + 1e-12 {
+            delta += two_pi;
+        }
+        delta >= sweep - 1e-9
+    }
 }
 
 pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeometry {

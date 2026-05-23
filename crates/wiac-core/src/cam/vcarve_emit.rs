@@ -34,9 +34,10 @@ pub type ZPolyline = Vec<(f64, f64, f64)>;
 /// has effectively zero safe plunge depth. Vectric Aspire and Estlcam
 /// both use a ramp lead-in for V-carve entry; 10° from horizontal is
 /// a defensible conservative default (≈ 5.7× more XY travel than
-/// vertical drop). Configurable per-tool in a future pass — see
-/// follow-up bd for the knob.
-const LEAD_IN_ANGLE_DEG: f64 = 10.0;
+/// vertical drop). ot80: now configurable per-tool via
+/// [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`]; this
+/// constant remains the fallback when the tool field is unset.
+pub const LEAD_IN_ANGLE_DEG: f64 = 10.0;
 
 /// Build the full V-Carve sweep for a single per-point-Z polyline.
 ///
@@ -68,6 +69,28 @@ const LEAD_IN_ANGLE_DEG: f64 = 10.0;
 // would split tightly-coupled cut_z/path state across helpers.
 #[allow(clippy::too_many_lines)]
 pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<ZPolyline> {
+    ratchet_emit_with_lead_in(axis, depth_per_pass, LEAD_IN_ANGLE_DEG)
+}
+
+/// ot80: same as `ratchet_emit` but with a configurable lead-in angle
+/// (degrees from horizontal). Values outside (0°, 90°) silently fall
+/// back to the legacy 10° default — this is the kernel of the
+/// configurable lead-in ramp; the per-tool setting flows through
+/// `ToolEntry::vcarve_lead_in_angle_deg` → `ToolConfig` → here.
+#[allow(clippy::too_many_lines)]
+pub fn ratchet_emit_with_lead_in(
+    axis: &[(f64, f64, f64, f64)],
+    depth_per_pass: f64,
+    lead_in_angle_deg: f64,
+) -> Vec<ZPolyline> {
+    let lead_in_angle = if lead_in_angle_deg.is_finite()
+        && lead_in_angle_deg > 0.0
+        && lead_in_angle_deg < 90.0
+    {
+        lead_in_angle_deg
+    } else {
+        LEAD_IN_ANGLE_DEG
+    };
     if axis.len() < 2 {
         return Vec::new();
     }
@@ -134,14 +157,14 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<Z
 
     // pmpk: emit angled lead-in ramp from z=0 down to z=first_cut_z
     // along the chain's spine, replacing the original `-dpp` forward
-    // sweep. The ramp slope is fixed at LEAD_IN_ANGLE_DEG from
-    // horizontal so the V-bit shaves a sloped sliver of material
-    // instead of plunging vertically into solid stock at the R≈0 chain
-    // endpoint. After the ramp finishes (or the chain ends, whichever
-    // comes first), every following point is cut at the post-ramp
-    // depth (-dpp). The ratchet then continues at -2*dpp, -3*dpp, ...
+    // sweep. The ramp slope is set by `lead_in_angle` (resolved above)
+    // so the V-bit shaves a sloped sliver of material instead of
+    // plunging vertically into solid stock at the R≈0 chain endpoint.
+    // After the ramp finishes (or the chain ends, whichever comes
+    // first), every following point is cut at the post-ramp depth
+    // (-dpp). The ratchet then continues at -2*dpp, -3*dpp, ...
     let first_cut_z = (-dpp).max(z_min);
-    let tan_angle = LEAD_IN_ANGLE_DEG.to_radians().tan();
+    let tan_angle = lead_in_angle.to_radians().tan();
     let lead_in_len = (-first_cut_z) / tan_angle;
     // Cumulative XY arc length along compact — used to pace the ramp.
     let mut arc: Vec<f64> = Vec::with_capacity(n);
@@ -521,6 +544,78 @@ mod tests {
                 surface_count <= 1,
                 "polyline #{poly_idx} has {surface_count} surface waypoints (>1 = kagr bug); \
                  poly = {poly:?}",
+            );
+        }
+    }
+
+    /// ot80: the configurable lead-in angle changes the ramp slope.
+    /// A steeper angle ⇒ shorter horizontal travel for the same
+    /// descent; the wrapper `ratchet_emit_with_lead_in` flows the
+    /// user-configured angle through. Out-of-range values silently
+    /// fall back to the legacy 10° default.
+    #[test]
+    fn ot80_lead_in_angle_overrides_default_slope() {
+        // 50 mm linear chain with target depth -3 mm at the entry
+        // (worst case for ramp behavior). DPP 1 mm so first cut sits
+        // at -1.
+        let mut axis: Vec<(f64, f64, f64, f64)> = vec![(0.0, 0.0, 0.0, 0.0)];
+        for i in 1..=50 {
+            let x = i as f64;
+            axis.push((x, 0.0, -3.0, 1.5));
+        }
+        let dpp = 1.0_f64;
+        let polylines_default = ratchet_emit(&axis, dpp);
+        let polylines_steep = ratchet_emit_with_lead_in(&axis, dpp, 45.0);
+        // Steeper ramps travel less XY before reaching -dpp. Find the
+        // first segment whose Z is at or below -0.9*dpp, then compare
+        // the cumulative XY length to get there.
+        let xy_to_first_dpp = |polylines: &[ZPolyline]| -> f64 {
+            let mut total = 0.0_f64;
+            for poly in polylines {
+                for w in poly.windows(2) {
+                    let (ax, ay, _) = w[0];
+                    let (bx, by, bz) = w[1];
+                    total += (bx - ax).hypot(by - ay);
+                    if bz <= -0.9 * dpp {
+                        return total;
+                    }
+                }
+            }
+            f64::INFINITY
+        };
+        let xy_default = xy_to_first_dpp(&polylines_default);
+        let xy_steep = xy_to_first_dpp(&polylines_steep);
+        assert!(
+            xy_default.is_finite() && xy_steep.is_finite(),
+            "both ramps should reach -dpp; default={xy_default} steep={xy_steep}",
+        );
+        // 45° ramp travels ~1 mm of XY per 1 mm of depth; the 10° default
+        // travels ~5.7 mm of XY per 1 mm of depth. The steep variant
+        // MUST get to -dpp in less XY travel.
+        assert!(
+            xy_steep < xy_default,
+            "ot80: steeper lead-in must hit -dpp in less XY travel; default={xy_default:.3} steep={xy_steep:.3}",
+        );
+    }
+
+    /// ot80: out-of-range / non-finite angle overrides silently revert
+    /// to the legacy 10° default — defensive against bad project
+    /// data.
+    #[test]
+    fn ot80_invalid_lead_in_angle_falls_back_to_default() {
+        let mut axis: Vec<(f64, f64, f64, f64)> = vec![(0.0, 0.0, 0.0, 0.0)];
+        for i in 1..=50 {
+            axis.push((i as f64, 0.0, -3.0, 1.5));
+        }
+        let dpp = 1.0_f64;
+        let pl_legacy = ratchet_emit(&axis, dpp);
+        // 0°, negative, > 90°, NaN ⇒ all fall back to LEAD_IN_ANGLE_DEG.
+        for bogus in &[0.0_f64, -10.0, 95.0, f64::NAN] {
+            let pl = ratchet_emit_with_lead_in(&axis, dpp, *bogus);
+            assert_eq!(
+                pl.len(),
+                pl_legacy.len(),
+                "bogus angle {bogus} should fall back to default and produce the same polylines"
             );
         }
     }

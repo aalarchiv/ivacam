@@ -562,6 +562,99 @@ pub fn emit_vcarve_block<P: PostProcessor>(
     post.move_to(None, None, Some(fast_z));
 }
 
+/// Stufenfase rim chamfer geometry: lead-in ramp polyline (Z descending
+/// along the rim's arc) followed by a single full-revolution G2/G3 at
+/// `flat_z`. The ramp polyline starts above stock and ends tangent to
+/// the flat revolution's start XY at `flat_z`.
+///
+/// sq8z: prior to this struct the rim revolution was a 64-point flat
+/// polyline emitted via `emit_vcarve_block`, which walks point-by-point
+/// at G1. Output was bloated, jerky, and chord-approximated a true
+/// circle. By passing the rim's actual `(center, radius, ccw)` we can
+/// emit ONE G2/G3 full-circle and let the post-processor split it for
+/// controllers that need the half-circle pair (3p7v in linuxcnc.rs and
+/// grbl.rs).
+#[derive(Debug, Clone)]
+pub struct StufenfaseHole {
+    pub center: Point2,
+    pub radius: f64,
+    /// CCW = true ⇒ G3 (positive bulge convention); false ⇒ G2.
+    pub ccw: bool,
+    /// Final cut depth at the rim. Negative.
+    pub flat_z: f64,
+    /// Lead-in ramp waypoints: XYZ along the rim, Z descending from 0
+    /// to `flat_z`. The last point's XY MUST be the rim's revolution
+    /// start (the same point the full-circle G2/G3 starts AND ends on).
+    pub ramp: Vec<(f64, f64, f64)>,
+}
+
+/// Emit a sequence of Stufenfase rim chamfers. Each hole gets:
+///   * G0 lift to safe Z, then G0 XY to the ramp's start;
+///   * G1 plunge to `start_depth`;
+///   * G1 walk of the lead-in ramp at cut feed;
+///   * single G2/G3 full revolution at `flat_z` (the post splits
+///     full-circles for controllers that need it — see 3p7v).
+///
+/// sq8z: replaces the previous "build a 64-point polyline and feed it
+/// to `emit_vcarve_block`" path; rim revolutions now emit as a single
+/// arc move rather than 64 chord G1s.
+pub fn emit_stufenfase_rim_block<P: PostProcessor>(
+    setup: &Setup,
+    holes: &[StufenfaseHole],
+    post: &mut P,
+    last_pos: &mut Point2,
+) {
+    if holes.is_empty() {
+        return;
+    }
+    let fast_z = setup.mill.fast_move_z;
+    cut_tool_on(post, setup, setup.tool.speed);
+    if setup.tool.flood {
+        post.coolant_flood();
+    }
+    if setup.tool.mist {
+        post.coolant_mist();
+    }
+    for (i, hole) in holes.iter().enumerate() {
+        if hole.ramp.len() < 2 {
+            continue;
+        }
+        let (sx, sy, _) = hole.ramp[0];
+        // Inter-hole travel: lift to safe Z, fly to the ramp's start XY,
+        // drop to the op's start_depth before the ramp walk.
+        if i > 0 {
+            cut_tool_off(post, setup);
+        }
+        post.move_to(None, None, Some(fast_z));
+        post.move_to(Some(sx), Some(sy), None);
+        if i > 0 {
+            cut_tool_on(post, setup, setup.tool.speed);
+        }
+        post.feedrate(setup.tool.rate_v);
+        post.linear(None, None, Some(setup.mill.start_depth));
+        post.feedrate(setup.tool.rate_h);
+        // Walk the ramp's XYZ waypoints at cut feed.
+        for &(x, y, z) in &hole.ramp {
+            post.linear(Some(x), Some(y), Some(z));
+        }
+        // Full revolution at constant Z. After the ramp, the cutter
+        // sits at the rim's revolution start point. Emit the full
+        // circle as a single arc — same XY target as the start, with
+        // I/J pointing from the cutter to the rim's center.
+        let (lx, ly, _) = *hole.ramp.last().unwrap();
+        let i_off = hole.center.x - lx;
+        let j_off = hole.center.y - ly;
+        if hole.ccw {
+            post.arc_ccw(Some(lx), Some(ly), Some(hole.flat_z), Some(i_off), Some(j_off));
+        } else {
+            post.arc_cw(Some(lx), Some(ly), Some(hole.flat_z), Some(i_off), Some(j_off));
+        }
+        *last_pos = Point2::new(lx, ly);
+    }
+    cut_tool_off(post, setup);
+    post.move_to(None, None, Some(fast_z));
+}
+
 /// Drill-cycle emit. Walks `offsets` whose single segment is a Point and
 /// dispatches to the [`PostProcessor`] drill_* method matching `cycle`.
 /// Used by the pipeline's per-op driver when `OpKind::Drill`.

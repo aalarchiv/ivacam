@@ -299,6 +299,18 @@ pub(super) fn push_tool_fit_kind_warnings(
             Some("pocket op assigned a drag knife (cut path won't carve area)")
         }
         (OpKind::Profile { .. }, ToolKind::Drill) => Some("profile op assigned a drill bit"),
+        // lo4j: Thread ops require a rotating side-cutting tool — drag
+        // knives don't cut, laser beams can't form a helix, drills only
+        // plunge axially.
+        (OpKind::Thread { .. }, ToolKind::DragKnife) => {
+            Some("thread op assigned a drag knife (can't cut a helix)")
+        }
+        (OpKind::Thread { .. }, ToolKind::LaserBeam) => {
+            Some("thread op assigned a laser beam (no XY-helix cutting)")
+        }
+        (OpKind::Thread { .. }, ToolKind::Drill) => {
+            Some("thread op assigned a drill bit (drill cuts axially, not helically)")
+        }
         _ => None,
     };
     if let Some(msg) = mismatch {

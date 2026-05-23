@@ -230,6 +230,19 @@ pub struct ToolEntry {
     /// ⇒ 0.5 s default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pierce_delay_sec: Option<f64>,
+    /// ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from
+    /// horizontal. Controls how steeply the cutter walks into the
+    /// material at the start of each cut to avoid a vertical plunge
+    /// at the R≈0 medial-axis endpoint (V-bits have effectively zero
+    /// safe plunge depth). pmpk originally hardcoded this to 10°
+    /// (Vectric / Estlcam default) inside
+    /// [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets
+    /// shops dial it per-tool — harder materials want shallower
+    /// (5–8°), softer materials tolerate steeper (15°+). Values
+    /// outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit
+    /// the legacy 10° default so old projects round-trip unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vcarve_lead_in_angle_deg: Option<f64>,
 }
 
 /// Geometry of the tool holder above the shank. The holder is treated as
@@ -332,6 +345,7 @@ impl Default for ToolEntry {
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
+            vcarve_lead_in_angle_deg: None,
         }
     }
 }

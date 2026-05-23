@@ -476,6 +476,29 @@ impl PostProcessor for Post {
             }
         }
     }
+    fn laser_on(&mut self, power: u32) {
+        // 20y5: fire the laser at the configured power. Emit `M3 S<power>`
+        // — `M3` matches what Lightburn / T2Laser / Estlcam laser emit
+        // by default. GRBL's dynamic-laser `M4` is an alternative, but
+        // `M3` works in both GRBL `$32=1` (laser-mode) and standard
+        // mill mode, so it's the portable choice. Skip emission when
+        // the post's last_speed already matches — the cut block re-arms
+        // the laser around every rapid traverse, but consecutive arms
+        // at the same power are no-ops.
+        if self.state.last_speed != Some(power) {
+            let rendered = self.render_speed(power);
+            self.write(format!("M3{rendered}"));
+            self.state.last_speed = Some(power);
+        }
+    }
+    fn laser_off(&mut self) {
+        // 20y5: emit M5 to drop the beam before rapid traversal.
+        // Clear last_speed so the next laser_on re-emits M3 S<power>
+        // — otherwise the delta-encoded state would suppress the
+        // re-arm and the beam would stay off through subsequent cuts.
+        self.write("M5");
+        self.state.last_speed = None;
+    }
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         let body = self.coords(x, y, z);
         if !body.is_empty() {

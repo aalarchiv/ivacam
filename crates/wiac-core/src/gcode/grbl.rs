@@ -206,6 +206,15 @@ impl PostProcessor for Post {
     fn spindle_ccw(&mut self, speed: u32, pause: u32) {
         self.inner.spindle_ccw(speed, pause);
     }
+    fn laser_on(&mut self, power: u32) {
+        // 20y5: delegate to the inner LinuxCNC post, which emits
+        // `M3 S<power>`. GRBL in laser-mode (`$32=1`) accepts the
+        // same syntax and modally tracks S as the laser PWM duty.
+        self.inner.laser_on(power);
+    }
+    fn laser_off(&mut self) {
+        self.inner.laser_off();
+    }
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         self.inner.move_to(x, y, z);
     }

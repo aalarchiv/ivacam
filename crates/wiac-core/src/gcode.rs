@@ -34,6 +34,48 @@ fn spindle_on<P: PostProcessor>(post: &mut P, dir: SpindleDirection, speed: u32,
     }
 }
 
+/// 20y5: dispatch the cut-entry "tool-on" call based on the machine
+/// mode. Mill spins the spindle (M3 / M4). Laser fires the beam at the
+/// configured power (M3 S<power>) via the post's `laser_on` hook. Drag
+/// (knives, pen plotters) has no spindle / beam — no-op.
+///
+/// Centralized so the three emission sites (`emit_offset`,
+/// `emit_drill_block`, `emit_vcarve_block`) don't each re-derive the
+/// mode dispatch. The previous code gated `spindle_on` behind
+/// `mode == Mill` only, which left laser cuts with NO `M3 S<power>` at
+/// all — the program ran the moves but the beam stayed off.
+fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u32) {
+    match setup.machine.mode {
+        MachineMode::Mill => {
+            spindle_on(
+                post,
+                setup.tool.spindle_direction,
+                power_or_speed,
+                setup.tool.pause,
+            );
+        }
+        MachineMode::Laser => {
+            // Laser power rides on the same `tool.speed` channel used
+            // for spindle RPM in milling — viaConstructor convention.
+            post.laser_on(power_or_speed);
+        }
+        MachineMode::Drag => {
+            // Drag knife / pen plotter — no spindle, no beam.
+        }
+    }
+}
+
+/// 20y5: dispatch the cut-exit "tool-off" call. Laser MUST drop the
+/// beam (M5 or S0) before any rapid traverse, otherwise the rapid
+/// burns a stripe through the workpiece. Mill leaves the spindle
+/// running between cuts (the post's delta-encoded spindle state
+/// dedupes the re-arm); Drag is a no-op.
+fn cut_tool_off<P: PostProcessor>(post: &mut P, setup: &Setup) {
+    if setup.machine.mode == MachineMode::Laser {
+        post.laser_off();
+    }
+}
+
 pub mod arc_fit;
 mod entry;
 pub mod face_mill_overlay;
@@ -83,6 +125,21 @@ pub trait PostProcessor {
     fn spindle_off(&mut self) {}
     fn spindle_cw(&mut self, speed: u32, pause_seconds: u32);
     fn spindle_ccw(&mut self, speed: u32, pause_seconds: u32);
+
+    /// 20y5: laser-on at the configured power. Called by `cut_tool_on`
+    /// at the start of every cut block when `machine.mode == Laser`.
+    /// LinuxCNC / GRBL override to emit `M3 S<power>` (dynamic-laser
+    /// mode `M4` on GRBL is also acceptable, but `M3` matches what
+    /// Lightburn / T2Laser / Estlcam laser emit by default). HPGL
+    /// ignores. Default no-op so non-laser-aware posts keep working.
+    fn laser_on(&mut self, _power: u32) {}
+
+    /// 20y5: laser-off — drop the beam between cuts so the rapid
+    /// traverse doesn't burn a stripe through the part. Called by
+    /// `cut_tool_off` at the end of every cut block in Laser mode.
+    /// LinuxCNC / GRBL override to emit `M5` (which is `S0` modally
+    /// for GRBL's laser mode). HPGL ignores. Default no-op.
+    fn laser_off(&mut self) {}
 
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>);
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>);
@@ -369,28 +426,37 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         return;
     }
     let fast_z = setup.mill.fast_move_z;
-    if setup.machine.mode == MachineMode::Mill {
-        spindle_on(
-            post,
-            setup.tool.spindle_direction,
-            setup.tool.speed,
-            setup.tool.pause,
-        );
-    }
+    // 20y5: spin up the spindle / arm the laser ONCE at block entry.
+    // For Mill, the spindle stays on and the loop's re-arms dedupe via
+    // `last_speed`. For Laser, the loop bounces M3 S<power> / M5 around
+    // each rapid traverse so the beam is off during travel — see the
+    // cut_tool_off / cut_tool_on pair around the inter-poly rapid below.
+    cut_tool_on(post, setup, setup.tool.speed);
     if setup.tool.flood {
         post.coolant_flood();
     }
     if setup.tool.mist {
         post.coolant_mist();
     }
-    for poly in polylines {
+    for (i, poly) in polylines.iter().enumerate() {
         if poly.len() < 2 {
             continue;
         }
         let (sx, sy, _) = poly[0];
         // Travel: lift to safe Z, fly to the start XY, drop to start_depth.
+        // 20y5: drop the laser BEFORE the inter-poly rapid traverse;
+        // re-arm at the new start XY. Mill's spindle_off is NOT called
+        // here — only laser_off, which is a no-op for non-laser modes.
+        // The first iteration skips the off/on bounce because the
+        // outer `cut_tool_on` already armed the tool.
+        if i > 0 {
+            cut_tool_off(post, setup);
+        }
         post.move_to(None, None, Some(fast_z));
         post.move_to(Some(sx), Some(sy), None);
+        if i > 0 {
+            cut_tool_on(post, setup, setup.tool.speed);
+        }
         post.feedrate(setup.tool.rate_v);
         post.linear(None, None, Some(setup.mill.start_depth));
         post.feedrate(setup.tool.rate_h);
@@ -404,6 +470,9 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         // (7388 — thread helices end with a radial retract so the lift
         // doesn't scrape the just-cut crest).
     }
+    // 20y5: drop the laser before the final lift so a subsequent op's
+    // rapid (or program_end's park traverse) doesn't burn.
+    cut_tool_off(post, setup);
     post.move_to(None, None, Some(fast_z));
 }
 
@@ -433,16 +502,29 @@ pub fn emit_drill_block<P: PostProcessor>(
     // still works.
     let cone_extra = setup.tool.tip_cone_length();
     let z = setup.mill.depth - setup.mill.through_depth.max(0.0) - cone_extra;
-    let r = setup.mill.start_depth;
+    // 3kqo: separate the canned-cycle retract plane R from the user's
+    // `start_depth` (the entry / clearance plane configured per op).
+    // R is the plane to which G83/G73 RAPID retract after every peck —
+    // it MUST be above the stock surface, otherwise the bit retracts
+    // INSIDE the chip-clogged hole and breaks. Treat Z=0 as the stock
+    // top (project convention) and add a small clearance so chips
+    // clear; never let R drop below start_depth (recessed work where
+    // start_depth > 0 — there the user explicitly said "stock surface
+    // is at start_depth"). Match the co8b re-entry clearance value
+    // (0.5 mm) so the canned-cycle path uses the same air-gap budget
+    // as the trait-default manual peck loop.
+    const DRILL_R_CLEARANCE_MM: f64 = 0.5;
+    let stock_top_z = 0.0_f64;
+    let r = setup
+        .mill
+        .start_depth
+        .max(stock_top_z + DRILL_R_CLEARANCE_MM);
     let fast_z = setup.mill.fast_move_z;
-    if setup.machine.mode == MachineMode::Mill {
-        spindle_on(
-            post,
-            setup.tool.spindle_direction,
-            setup.tool.speed,
-            setup.tool.pause,
-        );
-    }
+    // 20y5: laser-aware tool-on. Drilling under a laser is an unusual
+    // workflow (you'd be ablating spots) but it should at least fire
+    // the beam — better than the previous "mode != Mill" gate that
+    // emitted moves with the laser silently off.
+    cut_tool_on(post, setup, setup.tool.speed);
     if setup.tool.flood {
         post.coolant_flood();
     }
@@ -492,6 +574,9 @@ pub fn emit_drill_block<P: PostProcessor>(
     // results. Emit BEFORE the safe-Z lift so the G80 lands inside
     // the drill block, not adjacent to the next op's spindle line.
     post.cancel_canned_cycle();
+    // 20y5: drop the laser before the final lift so a subsequent op's
+    // rapid traverse (or program_end's park move) doesn't burn.
+    cut_tool_off(post, setup);
     // Lift back to safe Z so subsequent ops start clean.
     post.move_to(None, None, Some(fast_z));
 }
@@ -607,14 +692,12 @@ fn emit_offset<P: PostProcessor>(
     } else {
         (setup.tool.speed, setup.tool.rate_v, setup.tool.rate_h)
     };
-    if setup.machine.mode == MachineMode::Mill {
-        spindle_on(
-            post,
-            setup.tool.spindle_direction,
-            use_speed,
-            setup.tool.pause,
-        );
-    }
+    // 20y5: dispatch by machine mode. Mill: spin the spindle. Laser:
+    // fire M3 S<power>. Drag: no-op. The previous code gated
+    // `spindle_on` behind `mode == Mill` only, so laser cuts never
+    // turned the beam on — the program emitted G0/G1 moves with the
+    // laser silently off and produced no engraving.
+    cut_tool_on(post, setup, use_speed);
     if setup.tool.flood {
         post.coolant_flood();
     }
@@ -725,6 +808,12 @@ fn emit_offset<P: PostProcessor>(
         }
         LeadGeometry::None => {}
     }
+    // 20y5: drop the laser BEFORE the safe-Z retract so the rapid
+    // traverse to the next offset / op doesn't burn a stripe through
+    // the part. Mill keeps the spindle running between cuts (the
+    // post's delta-encoded `last_speed` dedupes the next cut's M3
+    // re-arm so no extra lines emit); Drag is a no-op.
+    cut_tool_off(post, setup);
     post.linear(None, None, Some(setup.mill.fast_move_z));
 
     *last_pos = offset.segments.last().map_or(start, |s| s.end);
@@ -2022,5 +2111,267 @@ mod tests {
         assert!(g.contains("M3 S12000"), "should start spindle CW at 12000");
         assert!(g.contains("G1 X10"), "should cut to first corner");
         assert!(g.contains("M5"), "should stop spindle at end");
+    }
+
+    /// 20y5: in Laser mode, every cut block must turn the beam ON
+    /// (M3 S<power>) at cut entry and OFF (M5) before the safe-Z
+    /// retract / rapid traverse — otherwise the rapid burns a stripe
+    /// through the workpiece and / or the program runs with the
+    /// laser silently off (the bug the old `mode == Mill`-only gate
+    /// produced).
+    #[test]
+    fn laser_mode_emits_m3_at_cut_entry_and_m5_before_retract() {
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Laser;
+        setup.machine.plot_mode_z = true; // typical laser config
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 750; // laser power
+        setup.tool.rate_h = 1200;
+        setup.tool.rate_v = 1200;
+        setup.mill.depth = 0.0;
+        setup.mill.step = 0.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+
+        assert!(
+            g.contains("M3 S750"),
+            "laser mode must fire the beam with `M3 S<power>`; got:\n{g}",
+        );
+        let lines: Vec<&str> = g.lines().collect();
+        let first_m3 = lines.iter().position(|l| l.contains("M3 S750")).expect("M3 S750 missing");
+        let first_g1 = lines.iter().position(|l| l.starts_with("G1 ")).expect("no G1");
+        assert!(
+            first_m3 < first_g1,
+            "M3 must come BEFORE the first cut motion; M3 at {first_m3}, G1 at {first_g1}\n{g}",
+        );
+        // M5 must appear AFTER the last G1 cut and BEFORE program_end's park.
+        // Find the last G1 cut and verify some M5 sits between it and the
+        // tail of the program — that's the cut_tool_off drop.
+        let m5_positions: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim() == "M5")
+            .map(|(i, _)| i)
+            .collect();
+        assert!(
+            m5_positions.len() >= 2,
+            "expected at least two M5 lines (one between cuts at end-of-block, one at program_end); got {}:\n{g}",
+            m5_positions.len(),
+        );
+    }
+
+    /// 20y5: in Laser mode with multiple offsets, M5 must be emitted
+    /// between every pair of cut blocks so the rapid traverse doesn't
+    /// burn. Each subsequent cut re-arms the beam with M3 S<power>.
+    #[test]
+    fn laser_mode_drops_beam_between_offsets() {
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Laser;
+        setup.machine.plot_mode_z = true;
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 500;
+        setup.tool.rate_h = 1200;
+        setup.tool.rate_v = 1200;
+        setup.mill.depth = 0.0;
+        setup.mill.step = 0.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        let sq1 = square_offset();
+        let mut sq2 = square_offset();
+        for s in &mut sq2.segments {
+            s.start.x += 50.0;
+            s.end.x += 50.0;
+        }
+        sq2.source_object_idx = 1;
+
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[sq1, sq2], &mut post);
+        // M3 S500 must appear AT LEAST TWICE — once per cut block —
+        // because each cut_tool_off clears `last_speed`, forcing the
+        // next cut_tool_on to re-emit the M3 word.
+        let m3_count = g
+            .lines()
+            .filter(|l| l.contains("M3 S500"))
+            .count();
+        assert!(
+            m3_count >= 2,
+            "expected ≥2 `M3 S500` lines (one per cut block); got {m3_count}\n{g}",
+        );
+        // M5 between cuts: at least one M5 in the interior of the
+        // program (not just the program_end M5).
+        let m5_count = g.lines().filter(|l| l.trim() == "M5").count();
+        assert!(
+            m5_count >= 2,
+            "expected ≥2 `M5` lines (one per inter-cut transition + program_end); got {m5_count}\n{g}",
+        );
+    }
+
+    /// 20y5: Drag knife / pen plotter mode must NOT emit M3 or M5 —
+    /// there's no spindle or beam to control. The default (Mill)
+    /// path keeps emitting M3 / M5; this test pins the Drag exclusion.
+    #[test]
+    fn drag_mode_emits_no_spindle_or_laser_commands() {
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Drag;
+        setup.machine.plot_mode_z = true;
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 0;
+        setup.tool.rate_h = 800;
+        setup.tool.rate_v = 800;
+        setup.tool.dragoff = Some(0.5);
+        setup.mill.depth = -1.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        // No M3 / M4 in the body. (program_end's spindle_off may
+        // still emit M5 unconditionally — that's harmless, but we
+        // want to verify no laser power was ever switched on.)
+        for line in g.lines() {
+            let trimmed = line.trim();
+            assert!(
+                !trimmed.starts_with("M3 ") && trimmed != "M3" && !trimmed.starts_with("M3S"),
+                "drag mode must not emit M3 (no spindle/beam): {line}\nfull:\n{g}",
+            );
+            assert!(
+                !trimmed.starts_with("M4 ") && trimmed != "M4" && !trimmed.starts_with("M4S"),
+                "drag mode must not emit M4: {line}\nfull:\n{g}",
+            );
+        }
+    }
+
+    /// 3kqo: G83 / G73 R-word must be above the stock surface, NOT at
+    /// `start_depth` when start_depth sits below the stock top. If R
+    /// is below the stock surface, the canned cycle's rapid retract
+    /// between pecks pulls the bit back into the chip-clogged hole
+    /// instead of clearing the chips.
+    #[test]
+    fn drill_peck_r_word_above_stock_top_when_start_depth_negative() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+        use crate::project::DrillCycle;
+
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_v = 200;
+        setup.tool.tip_diameter_mm = 3.0; // flat-bottom: no cone_extra
+        // Proud stock or recessed-feature edge: start_depth dips BELOW
+        // the stock surface (Z=0). The old code used this as R; the
+        // fix clamps R to stock_top + 0.5 mm.
+        setup.mill.start_depth = -1.0;
+        setup.mill.depth = -5.0;
+        setup.mill.fast_move_z = 10.0;
+        setup.machine.comments = false;
+
+        let pt = Point2::new(2.5, 4.5);
+        let offsets = vec![PolylineOffset {
+            segments: vec![Segment::point(pt, "0", 7)],
+            closed: false,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        }];
+
+        let cycle = DrillCycle::Peck {
+            peck_step_mm: 1.0,
+            dwell_sec: 0.0,
+        };
+        let mut post = linuxcnc::Post::new();
+        let mut last = Point2::new(0.0, 0.0);
+        // Header / footer not needed for the R-word check.
+        emit_drill_block(&setup, &offsets, cycle, &mut post, &mut last);
+        let g = post.finish();
+
+        // Find the G83 line and parse its R value.
+        let g83_line = g
+            .lines()
+            .find(|l| l.starts_with("G83 "))
+            .expect("expected a G83 line");
+        // R must be POSITIVE (above stock surface) — the old code
+        // would have emitted `R-1` (start_depth) which retracts INTO
+        // the hole.
+        assert!(
+            !g83_line.contains("R-"),
+            "G83 R-word must be above stock top (positive Z); got: {g83_line}\nfull:\n{g}",
+        );
+        assert!(
+            g83_line.contains("R0.5"),
+            "expected R=0.5 (stock_top + 0.5 mm clearance) when start_depth = -1; got: {g83_line}",
+        );
+    }
+
+    /// 3kqo: when start_depth sits ABOVE the stock surface (recessed
+    /// work where the user explicitly raised the entry plane), R
+    /// follows start_depth — it would be wasteful to drop R to the
+    /// stock_top clearance because every peck rapid then has to
+    /// travel further down through air to get back to the previous
+    /// peck depth.
+    #[test]
+    fn drill_peck_r_word_follows_start_depth_when_above_stock() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+        use crate::project::DrillCycle;
+
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 12000;
+        setup.tool.rate_v = 200;
+        setup.tool.tip_diameter_mm = 3.0;
+        setup.mill.start_depth = 2.0; // 2 mm above the stock surface
+        setup.mill.depth = -5.0;
+        setup.mill.fast_move_z = 10.0;
+        setup.machine.comments = false;
+
+        let pt = Point2::new(0.0, 0.0);
+        let offsets = vec![PolylineOffset {
+            segments: vec![Segment::point(pt, "0", 7)],
+            closed: false,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        }];
+        let cycle = DrillCycle::Peck {
+            peck_step_mm: 1.0,
+            dwell_sec: 0.0,
+        };
+        let mut post = linuxcnc::Post::new();
+        let mut last = Point2::new(0.0, 0.0);
+        emit_drill_block(&setup, &offsets, cycle, &mut post, &mut last);
+        let g = post.finish();
+
+        let g83_line = g
+            .lines()
+            .find(|l| l.starts_with("G83 "))
+            .expect("expected a G83 line");
+        assert!(
+            g83_line.contains("R2"),
+            "R should follow start_depth (=2) when it's above stock; got: {g83_line}",
+        );
     }
 }

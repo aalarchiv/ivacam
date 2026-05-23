@@ -586,14 +586,41 @@ fn count_tool_changes(project: &Project) -> u32 {
             prev_tool_id = Some(op.tool_id);
         }
         if let Some(finish_id) = op.finish_tool_id {
-            if finish_id != op.tool_id {
-                // Internal dual-tool change inside this op.
+            if finish_id != op.tool_id && op_can_emit_internal_swap(op) {
+                // vmm0: only count an internal dual-tool swap when the
+                // op kind actually exercises the dual-tool / chamfer
+                // path. Previously the +1 fired for ANY op carrying a
+                // distinct finish_tool_id, but `synthesize_finish_setup`
+                // only returns Some for Pocket kinds OR drill ops with
+                // chamfer_after_width_mm > 0 (see synthesize_finish_setup
+                // at L1037 — non-Pocket / non-chamfer ops fall through
+                // to None, dual_tool.rs:34 hits the single-emit branch
+                // with no envelope, and runtime M6 count is N, not N+1).
+                // This brings the estimator into structural agreement
+                // with the runtime; the remaining edge cases — Pocket
+                // with no is_finish offsets, or drill+chamfer with no
+                // Circle objects — still over-count by one but those
+                // require the full offsets cascade / object inspection
+                // to detect and are documented as acceptable in the
+                // bug report's "Either accept over-count" trade-off.
                 n += 1;
                 prev_tool_id = Some(finish_id);
             }
         }
     }
     n
+}
+
+/// vmm0: structural mirror of `synthesize_finish_setup`'s op-kind
+/// guard at L1037 (non-Pocket / non-drill-chamfer return None).
+/// Used by `count_tool_changes` to skip the internal +1 for ops that
+/// would fall through to single-emit with no envelope. Keep in sync
+/// when new op kinds gain dual-tool support.
+fn op_can_emit_internal_swap(op: &Op) -> bool {
+    if matches!(op.kind, OpKind::Pocket { .. }) {
+        return true;
+    }
+    op.drill_chamfer_after_width_mm().is_some_and(|w| w > 0.0)
 }
 
 fn spindle_warmup_seconds(project: &Project) -> f64 {
@@ -1106,6 +1133,30 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     // is meaningless. Gate the entire spindle envelope on Mill mode.
     let is_mill = machine.mode == crate::cam::setup::MachineMode::Mill;
 
+    // 3lf0: turn off active coolant BEFORE stopping the spindle / opening
+    // the tool holder. With flood (M8) still running through M5 + M6,
+    // water sprays into the open spindle taper / collet — operator
+    // safety hazard AND contamination that ruins the chuck's grip. Many
+    // auto-changers refuse to operate with coolant active. Mist (M7)
+    // has the same problem on a smaller scale. Gate on
+    // `!is_first_tool` so the program-start path (no coolant ever
+    // commanded) doesn't emit a leading M9; gate on the post's tracked
+    // `last_coolant` so we don't emit a redundant M9 when the previous
+    // op already had coolant off. The next op's `coolant_flood` /
+    // `coolant_mist` call (inside emit_offset / emit_drill_block /
+    // emit_vcarve_block) will re-engage based on the new tool's
+    // coolant setting — the post dedupes against `last_coolant=Off`
+    // so the re-emit is just one M7/M8 line at the right place.
+    if !is_first_tool && is_mill {
+        let live_coolant = post.capture_state().last_coolant;
+        if matches!(
+            live_coolant,
+            crate::gcode::CoolantState::Mist | crate::gcode::CoolantState::Flood
+        ) {
+            post.coolant_off();
+        }
+    }
+
     // Stop the spindle BEFORE the change. On the first op the spindle
     // isn't running yet — M5 is a harmless idempotent assertion and
     // costs one line. Skip the stop dwell when we know there's no
@@ -1300,5 +1351,43 @@ mod count_tool_changes_tests {
             vec![endmill(1, 3.0), endmill(2, 6.0)],
         );
         assert_eq!(count_tool_changes(&project), 1);
+    }
+
+    /// vmm0: a Profile op with finish_tool_id set to a different tool
+    /// MUST NOT count an internal swap. The runtime dual_tool path
+    /// only synthesizes a finish setup for Pocket / drill-with-chamfer
+    /// ops (synthesize_finish_setup at pipeline.rs:1037); a Profile
+    /// op falls through to single-emit with no envelope, so the actual
+    /// M6 count is 1, not 2. Pre-fix the estimator added +1
+    /// unconditionally on `finish_tool_id != tool_id`.
+    #[test]
+    fn profile_op_with_distinct_finish_tool_counts_one_change() {
+        let mut op = profile_op(1, 1, crate::cam::setup::ToolOffset::Outside);
+        op.finish_tool_id = Some(2);
+        let project = project_with(
+            vec![op],
+            vec![endmill(1, 3.0), endmill(2, 6.0)],
+        );
+        // One load + zero internal swap (Profile op kind doesn't dual-tool).
+        assert_eq!(count_tool_changes(&project), 1);
+    }
+
+    /// vmm0: Pocket op WITH a distinct finish_tool_id still counts the
+    /// internal swap — Pocket is the canonical dual-tool path. The
+    /// estimator slightly over-counts when the offsets cascade fails
+    /// to produce an is_finish ring (e.g. zero-size pocket), but that
+    /// edge is intentionally pessimistic per the bug report — the
+    /// alternative is running the full offsets cascade twice.
+    #[test]
+    fn pocket_op_with_distinct_finish_tool_still_counts_internal_swap() {
+        use crate::pipeline::test_helpers::pocket_op;
+        let mut op = pocket_op(1, 1, crate::project::OpSource::All);
+        op.finish_tool_id = Some(2);
+        let project = project_with(
+            vec![op],
+            vec![endmill(1, 6.0), endmill(2, 3.0)],
+        );
+        // One load (tool 1) + one internal swap to tool 2.
+        assert_eq!(count_tool_changes(&project), 2);
     }
 }

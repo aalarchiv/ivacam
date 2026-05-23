@@ -2174,6 +2174,105 @@
         );
     }
 
+    /// 3lf0: with flood coolant active, the inter-op toolchange
+    /// envelope must turn coolant OFF (M9) BEFORE stopping the
+    /// spindle (M5) and performing the tool change (M6). Otherwise
+    /// water/mist sprays into the open spindle taper / collet while
+    /// the change happens — operator safety hazard and chuck
+    /// contamination; many auto-changers refuse to operate with
+    /// coolant active. The next op's `coolant_flood` call inside
+    /// `emit_offset` then re-engages M8 at the new tool's first cut.
+    #[test]
+    fn coolant_off_before_spindle_off_in_inter_op_toolchange() {
+        let mut tool_a = endmill(1, 6.0);
+        tool_a.coolant = crate::project::Coolant::Flood;
+        let mut tool_b = endmill(2, 3.0);
+        tool_b.coolant = crate::project::Coolant::Flood;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![tool_a, tool_b],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let op1_pos = must_find(&resp.gcode, "; OP 1");
+        let op2_pos = must_find(&resp.gcode, "; OP 2");
+        let between = &resp.gcode[op1_pos..op2_pos];
+        // The first M8 fires inside OP 1's emit, so look for M9 in the
+        // inter-op block followed by M5 followed by T2 M6.
+        let m9_pos = between
+            .find("\nM9")
+            .unwrap_or_else(|| panic!("3lf0: missing M9 (coolant off) between ops:\n{between}"));
+        let m5_pos = between
+            .find("\nM5")
+            .unwrap_or_else(|| panic!("3lf0: missing M5 between ops:\n{between}"));
+        let m6_pos = must_find(between, "T2 M6");
+        assert!(
+            m9_pos < m5_pos,
+            "3lf0: M9 (coolant off) must precede M5 (spindle stop) so the toolchange happens dry; got M9={m9_pos} M5={m5_pos}:\n{between}"
+        );
+        assert!(
+            m5_pos < m6_pos,
+            "3lf0: M5 must still precede T2 M6; got M5={m5_pos} M6={m6_pos}:\n{between}"
+        );
+    }
+
+    /// 3lf0: first-tool path (program start) doesn't have prior coolant
+    /// active — the envelope must NOT emit a leading M9 there. Only
+    /// inter-op envelopes after a coolant-on op need the safeguard.
+    #[test]
+    fn first_tool_envelope_omits_leading_coolant_off() {
+        let mut tool = endmill(1, 3.0);
+        tool.coolant = crate::project::Coolant::Flood;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![tool],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The first `; OP 1` marker bounds the first-tool envelope —
+        // anything before it that's an M9 would be a spurious leading
+        // coolant-off (no prior op).
+        let op1 = must_find(&resp.gcode, "; OP 1");
+        let header = &resp.gcode[..op1];
+        assert!(
+            !header.contains("\nM9"),
+            "3lf0: first-tool envelope must NOT emit M9 (no prior coolant to disable):\n{header}"
+        );
+    }
+
     /// Same-tool back-to-back ops must skip the envelope entirely
     /// between them — no M5/M6/M3 between OP 1 and OP 2.
     #[test]

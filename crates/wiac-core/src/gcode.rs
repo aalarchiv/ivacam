@@ -545,6 +545,15 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         }
         post.feedrate(setup.tool.rate_v);
         post.linear(None, None, Some(setup.mill.start_depth));
+        // md0m: laser-mode V-carve needs a pierce dwell at the cut
+        // plane so the beam burns through stock before lateral motion
+        // begins. gd2x added this to emit_offset; emit_vcarve_block
+        // had the same plunge-then-immediately-cut shape and dragged
+        // the first few mm through unmelted material. Mirror the
+        // gd2x ordering: F<rate_v> → G1 Z<start> → dwell → F<rate_h>.
+        if setup.tool.pierce_sec > 0.0 {
+            post.dwell(setup.tool.pierce_sec);
+        }
         post.feedrate(setup.tool.rate_h);
         for &(x, y, z) in poly {
             post.linear(Some(x), Some(y), Some(z));
@@ -2784,6 +2793,95 @@ mod tests {
         let _ = g1_xy_after_f800;
     }
 
+    /// irg7: with the vfpa lead-plunge-feed fix in place, EVERY lead
+    /// arm (Arc / Straight / None) must restore F<rate_h> between
+    /// the plunge Z-drop and the first cut motion. The Arc arm got
+    /// this via the 3o3n defensive re-emit historically; the Straight
+    /// and None arms relied on the modal F set further upstream
+    /// matching `rate_h` — which after vfpa it no longer does (modal
+    /// is `rate_v` at that point). Regression: an op with each lead
+    /// kind must emit `F<rate_h>` between plunge Z and the first
+    /// cutting motion. Uses a separately-closed square per arm to
+    /// avoid Arc lead-fit fallback to Straight on tight geometry.
+    #[test]
+    fn irg7_feedrate_restored_on_all_three_lead_arms() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+
+        // Closed 30mm square — large enough for Arc lead-in to "fit"
+        // (62pd arc_lead_fits check).
+        fn big_closed_square() -> PolylineOffset {
+            PolylineOffset {
+                segments: vec![
+                    Segment::line(p(0.0, 0.0), p(30.0, 0.0), "0", 7),
+                    Segment::line(p(30.0, 0.0), p(30.0, 30.0), "0", 7),
+                    Segment::line(p(30.0, 30.0), p(0.0, 30.0), "0", 7),
+                    Segment::line(p(0.0, 30.0), p(0.0, 0.0), "0", 7),
+                ],
+                closed: true,
+                level: 0,
+                is_pocket: 0,
+                layer: "0".into(),
+                color: 7,
+                source_object_idx: 0,
+                tabs: Vec::new(),
+                is_finish: false,
+            }
+        }
+
+        fn check_arm(lead_kind: LeadKind, in_len: f64, arm_label: &str) {
+            let mut setup = Setup::default();
+            setup.tool.diameter = 3.0;
+            setup.tool.speed = 12000;
+            setup.tool.rate_v = 100; // distinctive plunge feed
+            setup.tool.rate_h = 800; // distinctive cut feed
+            setup.mill.depth = -2.0;
+            setup.mill.start_depth = 0.0;
+            setup.mill.step = -1.0;
+            setup.mill.fast_move_z = 5.0;
+            setup.leads.r#in = lead_kind;
+            setup.leads.in_lenght = in_len;
+            setup.leads.out = LeadKind::Off;
+            setup.machine.comments = false;
+            setup.mill.offset = ToolOffset::Outside;
+
+            let mut post = linuxcnc::Post::new();
+            let g = emit_polylines(&setup, &[big_closed_square()], &mut post);
+            let lines: Vec<&str> = g.lines().collect();
+
+            // For Off → LeadGeometry::None; for Arc / Straight → the
+            // emitter does F100 (plunge) → G1 Z → F800 (restore) →
+            // cut motion. Verify F800 appears AFTER the first F100 +
+            // G1 Z descent so the lateral cut runs at rate_h.
+            let f100_idx = lines
+                .iter()
+                .position(|l| l.trim() == "F100")
+                .unwrap_or_else(|| {
+                    panic!("[{arm_label}] expected F100 (rate_v) before plunge:\n{g}")
+                });
+            let g1_z_after_f100 = lines[f100_idx + 1..]
+                .iter()
+                .position(|l| l.starts_with("G1 ") && l.contains('Z'))
+                .unwrap_or_else(|| panic!("[{arm_label}] expected G1 Z after F100:\n{g}"));
+            let _f800_after_plunge = lines[f100_idx + 1 + g1_z_after_f100..]
+                .iter()
+                .position(|l| l.trim() == "F800")
+                .unwrap_or_else(|| {
+                    panic!(
+                        "[{arm_label}] expected F800 (rate_h restore) between plunge Z and first cut:\n{g}"
+                    )
+                });
+        }
+
+        // All three lead arms covered. Arc: large in_lenght on a closed
+        // 30mm square so arc_lead_fits succeeds. Straight: any positive
+        // in_lenght. Off: in_lenght irrelevant but pass a value so the
+        // setup is realistic.
+        check_arm(LeadKind::Arc, 3.0, "Arc");
+        check_arm(LeadKind::Straight, 3.0, "Straight");
+        check_arm(LeadKind::Off, 0.0, "None");
+    }
+
     /// o1g3: final retract after lead-out (to fast_move_z) must be a
     /// rapid (G0), not a cut motion (G1). The lead-out already rolled
     /// the cutter into free space; retracting at cut feed multiplies
@@ -3498,5 +3596,70 @@ mod tests {
             any_swivel,
             "0t9o legacy: with threshold=0 the swivel must still fire on the 10° corner; got:\n{g}",
         );
+    }
+
+    /// md0m: V-Carve emit must honor `pierce_sec` — laser-mode V-carve
+    /// needs to dwell at the cut plane so the beam burns through the
+    /// stock before lateral motion begins. The bug was that
+    /// `emit_vcarve_block` plunged then immediately started cutting,
+    /// dragging the first few mm of each sub-polyline through unmelted
+    /// material. Mirror the gd2x ordering used by `emit_offset`.
+    /// Asserts a `G4 P<pierce_sec>` appears between the plunge G1 Z
+    /// (to start_depth) and the first lateral G1 motion.
+    #[test]
+    fn md0m_vcarve_emit_dwells_pierce_sec_after_plunge() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 1.0;
+        setup.tool.tip_diameter_mm = 0.0;
+        setup.tool.speed = 0;
+        setup.tool.rate_v = 100;
+        setup.tool.rate_h = 800;
+        setup.tool.pierce_sec = 0.7;
+        setup.mill.depth = -1.0;
+        setup.mill.start_depth = 0.0;
+        setup.mill.step = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.machine.comments = false;
+
+        // Two-polyline V-carve so we also verify the dwell fires on
+        // EACH sub-polyline's entry, not just the first. Each polyline
+        // is a short cut at constant Z = -0.5.
+        let polylines = vec![
+            vec![(0.0, 0.0, -0.5), (5.0, 0.0, -0.5)],
+            vec![(10.0, 0.0, -0.5), (15.0, 0.0, -0.5)],
+        ];
+        let mut post = linuxcnc::Post::new();
+        let mut last_pos = Point2::new(0.0, 0.0);
+        emit_vcarve_block(&setup, &polylines, &mut post, &mut last_pos);
+        let g = post.finish();
+        // Two pierce dwells (one per sub-polyline). `G4 P0.7` is the
+        // LinuxCNC dwell form.
+        let dwell_count = g.lines().filter(|l| l.trim_start().starts_with("G4 P0.7")).count();
+        assert_eq!(
+            dwell_count, 2,
+            "md0m: expected one `G4 P0.7` per V-carve sub-polyline (got {dwell_count}); pierce dwell missing — laser drags through unmelted stock:\n{g}",
+        );
+        // Ordering: each dwell must follow a plunge G1 Z to start_depth
+        // (Z0 here) and precede the first lateral motion.
+        let lines: Vec<&str> = g.lines().collect();
+        let dwell_idxs: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim_start().starts_with("G4 P0.7"))
+            .map(|(i, _)| i)
+            .collect();
+        for &di in &dwell_idxs {
+            // Find a preceding G1 Z (plunge to start_depth) — it should
+            // appear somewhere before the dwell in the same poly block.
+            let plunge_before = lines[..di]
+                .iter()
+                .rev()
+                .take(10)
+                .any(|l| l.starts_with("G1 ") && l.contains('Z'));
+            assert!(
+                plunge_before,
+                "md0m: dwell at line {di} not preceded by plunge G1 Z within 10 lines:\n{g}",
+            );
+        }
     }
 }

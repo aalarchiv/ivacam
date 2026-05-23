@@ -158,8 +158,17 @@ impl PostProcessor for Post {
             self.write("PU;");
             self.pen_down = false;
         }
-        if let (Some(x), Some(y)) = (x, y) {
-            let (xi, yi) = Self::fmt_xy(x, y);
+        // ywsj: mirror `linear`'s single-axis fallback. A caller that
+        // emits move_to(Some(x), None, None) or move_to(None, Some(y),
+        // None) should still produce a PA emit — the missing axis
+        // falls back to the last known position. Without this, partial
+        // moves are silently dropped (asymmetric with `linear`, which
+        // already does this). Plotter PA is XY-only; we still need
+        // BOTH coordinates to format the statement.
+        let cx = x.or_else(|| self.last_x.map(|v| v as f64 / 40.0));
+        let cy = y.or_else(|| self.last_y.map(|v| v as f64 / 40.0));
+        if let (Some(cx), Some(cy)) = (cx, cy) {
+            let (xi, yi) = Self::fmt_xy(cx, cy);
             self.write(format!("PA{xi},{yi};"));
             self.last_x = Some(xi);
             self.last_y = Some(yi);
@@ -407,6 +416,41 @@ mod tests {
                 || out.contains(approx_45_alt)
                 || out.contains(approx_45_alt2),
             "expected a 45° midpoint waypoint near PA283,283; in: {out}",
+        );
+    }
+
+    /// ywsj: `move_to(Some(x), None, None)` (single-axis partial move)
+    /// must NOT silently drop. The previous code's `if let (Some(x),
+    /// Some(y)) = (x, y)` guard skipped PA emission when only one
+    /// axis was supplied, asymmetric with `linear` which already fell
+    /// back to `last_x` / `last_y`. Fix: mirror linear's fallback —
+    /// substitute the missing axis from the post's last known position.
+    #[test]
+    fn ywsj_move_to_single_axis_uses_last_position_fallback() {
+        let mut post = Post::new();
+        post.program_start();
+        // Seed a known position (5, 5) via a full move.
+        post.move_to(Some(5.0), Some(5.0), None);
+        // Single-axis move: X only — Y must carry over from last.
+        post.move_to(Some(15.0), None, None);
+        // Single-axis move: Y only — X must carry over from last.
+        post.move_to(None, Some(20.0), None);
+        let out = post.finish();
+        // Count PA emissions after `program_start` (which emits IN;SP1;).
+        let pa_count = out.matches("PA").count();
+        assert_eq!(
+            pa_count, 3,
+            "ywsj: expected 3 PA emissions (1 seed + 2 partial); single-axis moves were dropped:\n{out}",
+        );
+        // First partial: PA<15*40>,<5*40>; = PA600,200;
+        assert!(
+            out.contains("PA600,200;"),
+            "ywsj: missing PA600,200 for move_to(Some(15), None) after seed (5,5):\n{out}",
+        );
+        // Second partial: X=15 (carried from previous), Y=20 → PA600,800;
+        assert!(
+            out.contains("PA600,800;"),
+            "ywsj: missing PA600,800 for move_to(None, Some(20)) after (15,5):\n{out}",
         );
     }
 }

@@ -723,13 +723,21 @@ where
         }
         let body_marker = post.out_lines_count();
 
-        // rt1.34: Pause op — emit M5 → optional-stop → M3 and skip the
-        // rest of the op machinery (no tool, no source, no setup, no
-        // cache). The controller halts on M0; pressing Cycle Start
-        // resumes. M3 with no S argument restores the spindle to its
-        // last commanded RPM (handled controller-side; the post's
-        // last_speed state is unchanged so the next op's spindle_cw at
-        // the same RPM correctly elides its own M3).
+        // rt1.34: Pause op — emit M5 → optional-stop and skip the rest
+        // of the op machinery (no tool, no source, no setup, no cache).
+        // The controller halts on M0; pressing Cycle Start resumes.
+        //
+        // yc2a: after M0 we DON'T emit a raw `M3` — that hard-codes CW
+        // and would lock a CCW-tool program into the wrong direction
+        // (and would emit no S<rpm>, leaving the controller at
+        // whatever last speed it cached). Instead, call
+        // `post.reset_state()` so the post's delta encoder forgets
+        // `last_speed` / `last_spindle_dir`; the NEXT op's lazy
+        // `spindle_on(...)` (driven by the op's tool's
+        // `spindle_direction`) will then re-emit M3/M4 S<rpm>
+        // explicitly. Net effect: the pause behaves as a true
+        // mid-program restart for the spindle, honoring whatever
+        // direction the next op needs.
         if let OpKind::Pause { message } = &op.kind {
             post.raw(&format!("; OP {} (pause)", op.id));
             post.raw("M5");
@@ -737,7 +745,7 @@ where
                 post.comment(message);
             }
             post.raw("M0");
-            post.raw("M3");
+            post.reset_state();
             emitted_ops += 1;
             progress(
                 "gcode",
@@ -796,13 +804,21 @@ where
                     s.0 += cached.closed_count;
                     s.1 += cached.offset_count;
                 }
-                // k2ew: same end-of-op prev_tool_id update as the
-                // non-cached path — cached bodies for dual_tool ops
-                // include the internal toolchange.
-                if let Some(finish_id) = op.finish_tool_id {
-                    if finish_id != op.tool_id {
-                        prev_tool_id = Some(finish_id);
+                // k2ew + nguf: end-of-op prev_tool_id update mirrors
+                // the fresh-emit path — only bias to finish_id when
+                // the cached body actually contained the internal
+                // toolchange envelope. A cached body for a dual-tool
+                // op that fell through to single-emit (no finish
+                // offsets) leaves prev_tool_id == op.tool_id so the
+                // next same-rough-tool op correctly elides its M6.
+                if cached.internal_swap_emitted {
+                    if let Some(finish_id) = op.finish_tool_id {
+                        if finish_id != op.tool_id {
+                            prev_tool_id = Some(finish_id);
+                        }
                     }
+                } else {
+                    prev_tool_id = Some(op.tool_id);
                 }
                 emitted_ops += 1;
                 progress(
@@ -822,6 +838,10 @@ where
         resolve_auto_helix_radius(op, objects, &mut setup, warnings);
         let mut closed_count_emitted: usize = 0;
         let mut offset_count_emitted: usize = 0;
+        // nguf: tracks whether the kind-specific driver actually
+        // emitted an internal dual-tool envelope. Only set by the
+        // standard-op path (VCarve / Thread / Halfpipe don't dual-tool).
+        let mut internal_swap_emitted = false;
         if matches!(op.kind, OpKind::VCarve { .. }) {
             post.raw(&format!("; OP {}", op.id));
             run_vcarve_op(
@@ -865,7 +885,7 @@ where
                 cancel,
             )?;
         } else {
-            let (closed_count, offset_count) = run_standard_op(
+            let (closed_count, offset_count, swapped) = run_standard_op(
                 op,
                 project,
                 objects,
@@ -877,6 +897,7 @@ where
             )?;
             closed_count_emitted = closed_count;
             offset_count_emitted = offset_count;
+            internal_swap_emitted = swapped;
             let mut s = stats.borrow_mut();
             s.0 += closed_count;
             s.1 += offset_count;
@@ -895,23 +916,32 @@ where
                     offset_count: offset_count_emitted,
                     exit_state: post.capture_state(),
                     exit_xy: (last_pos.x, last_pos.y),
+                    internal_swap_emitted,
                 },
             );
         }
-        // k2ew: if this op declared a distinct finish tool (dual_tool
-        // Pocket or Stufenfase drill chamfer), the op's internal
-        // driver may have switched to it mid-op. We pessimistically
-        // record that as the end-of-op tool so the next op's M6
-        // decision is safety-biased: if the driver actually swapped,
-        // the next op gets a correct M6 decision; if it didn't swap
-        // (e.g. no finish offsets produced), the next op may emit an
-        // extra T<rough> M6 — wasteful, but safe. Same-tool ops
-        // (no finish or finish == rough) keep prev_tool_id == op.tool_id
-        // so back-to-back same-tool ops still emit at most one M6.
-        if let Some(finish_id) = op.finish_tool_id {
-            if finish_id != op.tool_id {
-                prev_tool_id = Some(finish_id);
+        // k2ew + nguf: end-of-op prev_tool_id update. Only bias to
+        // the finish id when the driver actually emitted the internal
+        // rough→finish (or drill→chamfer) envelope. Otherwise — same
+        // tool, no finish_tool_id, or dual_tool fell through to
+        // single-emit (no finish offsets / chamfer_z ≈ 0) — keep
+        // prev_tool_id == op.tool_id so the next same-rough-tool op
+        // correctly elides its M6.
+        //
+        // The previous "pessimistic" bias to finish_id whenever
+        // finish_tool_id was set caused a real bug: if dual_tool
+        // skipped the swap, the next op asking for the rough tool
+        // saw prev_tool_id == finish_id, said "tool changes — skip",
+        // and ran the cutter with the wrong T number still in the
+        // spindle.
+        if internal_swap_emitted {
+            if let Some(finish_id) = op.finish_tool_id {
+                if finish_id != op.tool_id {
+                    prev_tool_id = Some(finish_id);
+                }
             }
+        } else {
+            prev_tool_id = Some(op.tool_id);
         }
         emitted_ops += 1;
         progress(
@@ -1054,15 +1084,22 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             }
         }
         // Spin back up at the NEW tool's RPM. Pass pause=0 so the post
-        // emits M3 S<rpm> without an integer-second dwell tail; we
+        // emits M3/M4 S<rpm> without an integer-second dwell tail; we
         // follow with an explicit `dwell(...)` so the machine-wide
         // spin-up (sub-second supported) AND the per-tool warm-up both
-        // fire in the right order. Goes through `spindle_cw` so the
-        // post's `last_speed` delta-encoder stays in sync — the next
-        // `emit_polylines_block`'s lazy `spindle_cw(speed, pause)`
-        // elides cleanly.
+        // fire in the right order. zjgt: route through the central
+        // `spindle_on` dispatcher so a CCW tool emits M4 here — the
+        // previous unconditional `spindle_cw` baked M3 into the
+        // post's `last_speed` snapshot, so the next op's lazy
+        // `spindle_ccw(speed, 0)` saw last_speed == speed and elided
+        // the M4 entirely (program ran CW with a CCW tool).
         if let Some(t) = new_tool {
-            post.spindle_cw(setup_resolver::clamp_rpm_silent(t.speed, machine), 0);
+            crate::gcode::spindle_on(
+                post,
+                t.spindle_direction,
+                setup_resolver::clamp_rpm_silent(t.speed, machine),
+                0,
+            );
             let start_dwell = machine.effective_spindle_start_dwell_sec();
             if start_dwell > 0.0 {
                 post.dwell(start_dwell);
@@ -1098,14 +1135,20 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             if let Some(shift) = t.z_shift_mm {
                 post.tool_z_shift(shift);
             }
-            // Force the next M3 to actually emit (the operator may
+            // Force the next M3/M4 to actually emit (the operator may
             // have hand-spun the spindle off during the pause; we
             // can't trust the delta-encoder's last_speed snapshot
             // anymore).
             post.reset_state();
             // Explicit spindle-up so the next cut starts with the
             // spindle at commanded RPM — don't rely on lazy emit.
-            post.spindle_cw(setup_resolver::clamp_rpm_silent(t.speed, machine), 0);
+            // zjgt: route through `spindle_on` so a CCW tool emits M4.
+            crate::gcode::spindle_on(
+                post,
+                t.spindle_direction,
+                setup_resolver::clamp_rpm_silent(t.speed, machine),
+                0,
+            );
             let start_dwell = machine.effective_spindle_start_dwell_sec();
             if start_dwell > 0.0 {
                 post.dwell(start_dwell);

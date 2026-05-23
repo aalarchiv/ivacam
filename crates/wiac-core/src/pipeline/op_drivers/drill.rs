@@ -23,6 +23,10 @@ use crate::pipeline::{
 };
 use crate::project::{DrillCycle, Op, Project};
 
+/// Returns `true` when the driver actually emitted an internal
+/// drill→chamfer toolchange envelope (nguf). Used by `run_per_op` to
+/// decide whether to bias `prev_tool_id` to `finish_tool_id` for the
+/// next op's M6 decision.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_drill<P: PostProcessor>(
     op: &Op,
@@ -34,7 +38,7 @@ pub(super) fn run_drill<P: PostProcessor>(
     post: &mut P,
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
-) -> Result<(), PipelineError> {
+) -> Result<bool, PipelineError> {
     // Peck cycles fall back to the tool's `default_peck_step_mm`
     // when the op's own peck_step_mm is unset (== 0).
     let resolved_cycle = resolve_peck_step(cycle, project, op);
@@ -45,16 +49,17 @@ pub(super) fn run_drill<P: PostProcessor>(
     // kbx5 step 2: Stufenfase width is now on the OpKind::Drill variant.
     if let Some(w) = op.drill_chamfer_after_width_mm() {
         if w > 0.0 {
-            emit_stufenfase(op, project, objects, setup, w, post, last_pos, warnings)?;
+            return emit_stufenfase(op, project, objects, setup, w, post, last_pos, warnings);
         }
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Single full-revolution rim chamfer emitted after the drill block.
 /// V-bit depth comes from the cutter's tip angle and the user-set
 /// chamfer width. Honors `op.finish_tool_id` for dual-tool
-/// drill+chamfer setups.
+/// drill+chamfer setups. Returns `true` when an actual drill→chamfer
+/// toolchange envelope was emitted (nguf).
 #[allow(clippy::too_many_arguments)]
 fn emit_stufenfase<P: PostProcessor>(
     op: &Op,
@@ -65,7 +70,7 @@ fn emit_stufenfase<P: PostProcessor>(
     post: &mut P,
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
-) -> Result<(), PipelineError> {
+) -> Result<bool, PipelineError> {
     // Single full revolution at constant Z. 64 waypoints + closing
     // point so arc-fit produces clean one-or-two arcs.
     const STEPS: usize = 64;
@@ -84,7 +89,7 @@ fn emit_stufenfase<P: PostProcessor>(
         cutter.tip_diameter.unwrap_or(0.0),
     );
     if chamfer_z.abs() < 1e-9 {
-        return Ok(());
+        return Ok(false);
     }
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut found = 0usize;
@@ -140,9 +145,10 @@ fn emit_stufenfase<P: PostProcessor>(
         });
     }
     if found == 0 {
-        return Ok(());
+        return Ok(false);
     }
     let mut chamfer_setup = drill_setup.clone();
+    let mut swapped = false;
     if op.finish_tool_id.is_some() && op.finish_tool_id != Some(op.tool_id) {
         if !project.machine.supports_toolchange {
             warnings.push(PipelineWarning {
@@ -173,10 +179,11 @@ fn emit_stufenfase<P: PostProcessor>(
                 false,
             );
             chamfer_setup = finish_setup;
+            swapped = true;
         }
     }
     emit_vcarve_block(&chamfer_setup, &polylines, post, last_pos);
-    Ok(())
+    Ok(swapped)
 }
 
 #[cfg(test)]

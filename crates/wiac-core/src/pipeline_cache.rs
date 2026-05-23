@@ -86,6 +86,14 @@ pub struct OpCacheValue {
     /// Cutter XY position after this op finished, used by the next op's
     /// `order_offsets` to pick the nearest-first cut.
     pub exit_xy: (f64, f64),
+    /// nguf: `true` when the cached body contains an internal dual-tool
+    /// toolchange envelope (rough→finish, drill→chamfer). Lets the
+    /// per-op driver replay the correct `prev_tool_id` bias on a cache
+    /// hit — without this, an op that declared a finish tool but
+    /// produced no finish offsets would still pessimistically bias the
+    /// next op to the finish id, causing the next same-rough-tool op
+    /// to skip its M6 envelope and run with the wrong tool.
+    pub internal_swap_emitted: bool,
 }
 
 #[derive(Debug)]
@@ -1241,6 +1249,7 @@ mod tests {
                     offset_count: 0,
                     exit_state: CapturedPostState::default(),
                     exit_xy: (0.0, 0.0),
+                    internal_swap_emitted: false,
                 },
             );
         }
@@ -1268,6 +1277,7 @@ mod tests {
             offset_count: 4,
             exit_state: CapturedPostState::default(),
             exit_xy: (0.0, 0.0),
+            internal_swap_emitted: false,
         };
         cache.put(OpCacheKey(42), v.clone());
         let got = cache.get(OpCacheKey(42)).expect("hit");

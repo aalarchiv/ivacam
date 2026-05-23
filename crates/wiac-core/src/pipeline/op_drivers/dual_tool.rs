@@ -19,6 +19,10 @@ use crate::geometry::Point2;
 use crate::pipeline::{emit_toolchange_envelope, synthesize_finish_setup, PipelineError, PipelineWarning};
 use crate::project::{Op, Project};
 
+/// Returns `true` when the driver actually emitted an internal
+/// rough→finish toolchange envelope. Used by `run_per_op` to decide
+/// whether to bias `prev_tool_id` to `finish_tool_id` for the next
+/// op's M6 decision (nguf).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
     op: &Op,
@@ -28,14 +32,17 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
     post: &mut P,
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
-) -> Result<(), PipelineError> {
+) -> Result<bool, PipelineError> {
     let dual = synthesize_finish_setup(op, project, warnings)?;
     let has_finish_offsets = offsets.iter().any(|o| o.is_finish);
     let Some(finish_setup) = dual.filter(|_| has_finish_offsets) else {
         // Plain single-tool single-emit path — the common case for
         // Profile / Pocket / Engrave / etc. without a finish ring.
+        // nguf: includes the dual-tool-declared-but-no-finish-offsets
+        // fall-through, which previously left `prev_tool_id` biased
+        // to the finish id even though no swap was emitted.
         emit_polylines_block(setup, offsets, post, last_pos);
-        return Ok(());
+        return Ok(false);
     };
 
     let (rough_offsets, finish_offsets): (Vec<_>, Vec<_>) =
@@ -81,7 +88,7 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
     if !finish_offsets.is_empty() {
         emit_polylines_block(&finish_setup, &finish_offsets, post, last_pos);
     }
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]

@@ -25,9 +25,15 @@ use crate::project::tool::SpindleDirection;
 
 /// z1y0: route the post's spindle-direction call based on the tool's
 /// `spindle_direction`. Centralized so every cut-emission site
-/// (`emit_offset`, `emit_drill_block`, `emit_vcarve_block`) picks the
-/// same path without each caller open-coding the match.
-fn spindle_on<P: PostProcessor>(post: &mut P, dir: SpindleDirection, speed: u32, pause: u32) {
+/// (`emit_offset`, `emit_drill_block`, `emit_vcarve_block`) and the
+/// toolchange envelope (`pipeline::emit_toolchange_envelope`) pick
+/// the same path without each caller open-coding the match.
+pub(crate) fn spindle_on<P: PostProcessor>(
+    post: &mut P,
+    dir: SpindleDirection,
+    speed: u32,
+    pause: u32,
+) {
     match dir {
         SpindleDirection::Cw => post.spindle_cw(speed, pause),
         SpindleDirection::Ccw => post.spindle_ccw(speed, pause),

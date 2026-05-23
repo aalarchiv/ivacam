@@ -46,9 +46,12 @@ use crate::project::{Op, OpKind, Project};
 ///   `emit_polylines_block` for the rough offsets, with an optional
 ///   dual-tool finish ring (rt1.33).
 ///
-/// Returns `(closed_count, offset_count)` so the caller can fold the
-/// numbers into [`super::PipelineStats`] without re-walking the
-/// returned offsets.
+/// Returns `(closed_count, offset_count, swapped)` so the caller can
+/// fold the numbers into [`super::PipelineStats`] without re-walking
+/// the returned offsets. `swapped` is `true` when the kind-specific
+/// sub-driver actually emitted an internal dual-tool toolchange
+/// (rough→finish, drill→chamfer); used by `run_per_op` to bias
+/// `prev_tool_id` only when a real swap happened (nguf).
 ///
 /// jzpl Phase 1: `build_op_offsets` now takes `&[VcObject]` and produces
 /// pattern / frame expansions in locally-owned `Vec<VcObject>`s. The
@@ -65,21 +68,22 @@ pub(in crate::pipeline) fn run_standard_op<P: PostProcessor>(
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
-) -> Result<(usize, usize), PipelineError> {
+) -> Result<(usize, usize, bool), PipelineError> {
     let (offsets, closed_count) =
         build_op_offsets(op, project, objects, setup, warnings, cancel)?;
     let offset_count = offsets.len();
     post.raw(&format!("; OP {}", op.id));
+    let mut swapped = false;
     if !offsets.is_empty() {
-        if let OpKind::Drill { cycle, .. } = op.kind {
+        swapped = if let OpKind::Drill { cycle, .. } = op.kind {
             drill::run_drill(
                 op, project, objects, setup, &offsets, cycle, post, last_pos, warnings,
-            )?;
+            )?
         } else {
             dual_tool::run_dual_tool_or_single(
                 op, project, setup, &offsets, post, last_pos, warnings,
-            )?;
-        }
+            )?
+        };
     }
-    Ok((closed_count, offset_count))
+    Ok((closed_count, offset_count, swapped))
 }

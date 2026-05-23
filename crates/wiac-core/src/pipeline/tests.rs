@@ -1486,9 +1486,12 @@
         assert!(err.to_structured(None).is_none());
     }
 
-    /// rt1.34: a Pause op emits M5 → M0 → M3 inline at its slot in the
-    /// op list. The cutter doesn't move and no source geometry is
-    /// touched. The comment carries the operator message.
+    /// rt1.34 + yc2a: a Pause op emits M5 → M0 inline at its slot in
+    /// the op list. The cutter doesn't move and no source geometry is
+    /// touched. The comment carries the operator message. Post-pause
+    /// spindle restart is deferred to the next op's `spindle_on`
+    /// (via a `post.reset_state()`) so a CCW-tool program doesn't
+    /// get locked into M3 by a hardcoded raw line.
     #[test]
     fn pipeline_emits_m0_for_pause_op() {
         let pause = Op {
@@ -1556,13 +1559,29 @@
             gcode.contains("Swap to 1/8 endmill"),
             "expected message comment; got:\n{gcode}",
         );
-        // M5 (spindle off) immediately before M0; M3 (spindle back on)
-        // immediately after.
+        // M5 (spindle off) precedes M0. yc2a: we DON'T assert M3 after
+        // M0 — the post-pause spindle restart is driven by the next
+        // op's tool.spindle_direction via the lazy `spindle_on`
+        // dispatcher, not a hard-coded raw "M3". The Pause itself
+        // emits only the bare M5 / message / M0 sequence and resets
+        // the post's delta-encoder so the NEXT op's spindle command
+        // re-emits.
         let m0_pos = gcode.find("\nM0\n").unwrap();
         let pre = &gcode[..m0_pos];
-        let post = &gcode[m0_pos..];
+        let post_slice = &gcode[m0_pos..];
         assert!(pre.rfind("\nM5\n").is_some(), "expected M5 before M0");
-        assert!(post.contains("\nM3\n"), "expected M3 after M0");
+        // The Pause op itself must NOT inject a bare M3 — only program
+        // end (M5) or a subsequent cut op's M3/M4 may appear after M0.
+        // Pause is the last op here, so the only post-M0 spindle line
+        // is the program-end M5.
+        let post_pause_lines: Vec<&str> = post_slice.lines().collect();
+        let stray_m3 = post_pause_lines
+            .iter()
+            .find(|l| l.trim() == "M3" || l.trim_start().starts_with("M3 "));
+        assert!(
+            stray_m3.is_none(),
+            "yc2a: Pause op must not emit a bare M3 after M0; got:\n{gcode}",
+        );
     }
 
     /// rt1.34: Pause carries no tool reference, so the missing-tool
@@ -2300,6 +2319,418 @@
         assert!(
             resp.gcode.lines().any(|l| l.contains("Z-0.03")),
             "expected a Z near -0.039 (-1 mm in inches), got:\n{}",
+            resp.gcode
+        );
+    }
+
+    // ----------------------------------------------------------------
+    // P0 pipeline-state regressions: zjgt + nguf + yc2a
+    // ----------------------------------------------------------------
+
+    /// zjgt: a tool with `spindle_direction == Ccw` must produce M4
+    /// (counter-clockwise) — not M3 — both at program-start spindle-up
+    /// AND at every toolchange envelope's post-M6 spindle-up.
+    ///
+    /// Pre-fix `emit_toolchange_envelope` hardcoded `post.spindle_cw(...)`
+    /// which (a) wrote M3 directly into the gcode and (b) primed the
+    /// post's `last_speed` so the next cut's lazy `spindle_ccw(speed,...)`
+    /// saw the same speed and elided the M4 — silently flipping the
+    /// program from CCW to CW.
+    #[test]
+    fn toolchange_envelope_routes_ccw_tool_through_m4() {
+        let mut t1 = endmill(1, 6.0);
+        t1.spindle_direction = crate::project::SpindleDirection::Ccw;
+        t1.speed = 12_000;
+        let mut t2 = endmill(2, 3.0);
+        t2.spindle_direction = crate::project::SpindleDirection::Ccw;
+        t2.speed = 18_000;
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = crate::project::Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![t1, t2],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // CCW program must NOT emit a bare M3 (the W-flag is M4).
+        // Allow incidental "M3" substrings inside other tokens; check
+        // each whitespace-bounded line.
+        for line in resp.gcode.lines() {
+            let trimmed = line.trim();
+            assert!(
+                trimmed != "M3" && !trimmed.starts_with("M3 "),
+                "zjgt: CCW tool program leaked an M3 line:\n{line}\nfull gcode:\n{}",
+                resp.gcode
+            );
+        }
+        // Both first-tool envelope and inter-op envelope must emit M4
+        // at the correct RPM for the corresponding tool.
+        assert!(
+            resp.gcode.contains("M4 S12000"),
+            "expected M4 S12000 for first CCW tool (rpm 12000):\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("M4 S18000"),
+            "expected M4 S18000 after T2 M6 for second CCW tool:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// zjgt: same-direction (CW) tools still emit M3 — the dispatcher
+    /// must not regress the default path.
+    #[test]
+    fn toolchange_envelope_keeps_m3_for_default_cw_tool() {
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        let project = crate::project::Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.lines().any(|l| {
+                let t = l.trim();
+                t == "M4" || t.starts_with("M4 ")
+            }),
+            "default CW project leaked an M4 line:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("M3 S"),
+            "expected M3 S<rpm> for default CW tool:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// nguf: a dual-tool op that declares a `finish_tool_id` but
+    /// whose driver doesn't actually emit the internal swap must NOT
+    /// bias `prev_tool_id` to the finish id. The next op asking for
+    /// the rough tool would then see "tool changes — skip" and run
+    /// with the wrong T number still in the spindle.
+    ///
+    /// Uses a Pocket on a wide-enough geometry to actually swap to T2
+    /// for the wall ring — exercises the `real_swap == true` branch,
+    /// where post-fix we DO bias `prev_tool_id` to 2 (so OP 2 on T1
+    /// re-emits T1 M6). The companion `..._drill_chamfer_skip` test
+    /// exercises the `real_swap == false` branch.
+    #[test]
+    fn prev_tool_id_stays_unchanged_when_dual_tool_skips_finish() {
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        // Build a Pocket op pointing at finish_tool 2 but geometry
+        // small enough that the cascade likely produces only rough
+        // offsets (no `is_finish` ring). Even if it does produce one,
+        // we explicitly assert behavior conditional on whether a real
+        // toolchange envelope showed up.
+        let pocket = Op {
+            id: 1,
+            name: "Pocket".into(),
+            enabled: true,
+            kind: OpKind::Pocket {
+                strategy: crate::project::PocketStrategy::Cascade,
+                contour: crate::project::ContourParams::default(),
+                pocket: crate::project::PocketParams::default(),
+            },
+            tool_id: 1,
+            finish_tool_id: Some(2),
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        // Second op on the same rough tool 1. The bug: it would skip
+        // its M6 envelope because prev_tool_id was biased to 2.
+        let follow_up = profile_op(2, 1, ToolOffset::Outside);
+        let project = crate::project::Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![pocket, follow_up],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Slice the gcode between the END of OP 1's body and the END
+        // of OP 2's body. That's the window where the per-op
+        // toolchange envelope for OP 2 (if any) sits.
+        let op1 = must_find(&resp.gcode, "; OP 1");
+        let op2 = must_find(&resp.gcode, "; OP 2");
+        let after_op1_block_end = op2; // OP 2 marker is end of OP 1
+        let after_op2 = &resp.gcode[op2..];
+        let next_op = after_op2.find("\n; OP ").map_or(after_op2.len(), |i| i);
+        let around_op2 = &resp.gcode[op2..op2 + next_op];
+        // The inter-op envelope (if any) for OP 2 lives between
+        // `; OP 1`'s last line and `; OP 2`. We need to inspect that
+        // region — it's where the bug's M6 would show up.
+        let inter_op_window = &resp.gcode[op1..after_op1_block_end];
+        // Determine whether the Pocket actually emitted an internal
+        // dual-tool envelope (rough→finish). Scan only the body
+        // (before any potential inter-op envelope tail).
+        //
+        // The rough→finish envelope is annotated with the
+        // `; toolchange: finish pass with tool 2` comment from
+        // dual_tool.rs, which is distinct from the run_per_op's
+        // `toolchange: T? (...) for op ...` comment.
+        let real_swap = inter_op_window.contains("toolchange: finish pass with tool");
+        if real_swap {
+            // Post-fix: when the cascade DID emit a real T2 swap
+            // inside OP 1, prev_tool_id MUST be biased to 2 so that
+            // OP 2 (on tool 1) emits its own T1 M6 envelope to swap
+            // back. Failure here means a real swap was lost.
+            assert!(
+                inter_op_window.contains("T1 M6"),
+                "nguf: cascade swapped to T2 inside OP 1; OP 2 on \
+                 tool 1 must emit T1 M6 to swap back. Got:\n{}",
+                resp.gcode
+            );
+        } else {
+            // Bug condition: dual_tool fell through to single-emit
+            // (no finish ring). Pre-fix prev_tool_id was still
+            // Some(2). Post-fix: prev_tool_id stays at 1, so OP 2's
+            // tool-change check sees no change and skips the envelope
+            // entirely. The window between OP 1 and OP 2 must NOT
+            // contain any M6 line.
+            for line in inter_op_window.lines() {
+                let t = line.trim();
+                assert!(
+                    !t.contains(" M6") && t != "M6",
+                    "nguf: dual_tool didn't actually swap to T2, but \
+                     an M6 line appeared between OP 1 and OP 2 — \
+                     pre-fix bug would emit T?M6 here. Line:\n{line}\nfull gcode:\n{}",
+                    resp.gcode
+                );
+            }
+            // Sanity: also no T2-related M6 inside OP 2's block.
+            assert!(
+                !around_op2.contains("T2 M6"),
+                "nguf: OP 2 unexpectedly emitted T2 M6 even though \
+                 OP 1's dual_tool did not swap; full gcode:\n{}",
+                resp.gcode
+            );
+        }
+    }
+
+    /// nguf companion: an op declaring `finish_tool_id = Some(2)` whose
+    /// driver decides NOT to emit the internal swap (e.g. Drill op
+    /// without `chamfer_after_width_mm`) must leave `prev_tool_id`
+    /// at the rough tool, so the next op on the same rough tool
+    /// correctly skips its own M6 envelope.
+    ///
+    /// Pre-fix: `prev_tool_id = Some(finish_id = 2)` always at end of
+    /// op, so the next op on tool 1 saw `prev_tool_id != Some(1)`,
+    /// emitted a T1 M6 envelope, and the user got a wasteful M6 — or
+    /// worse, the controller's tool-table told it T2 was loaded so
+    /// the wrong tool geometry / offset got applied to the next cut.
+    #[test]
+    fn prev_tool_id_unchanged_after_drill_skips_chamfer_swap() {
+        let machine = MachineConfig {
+            supports_toolchange: true,
+            ..MachineConfig::default()
+        };
+        // Drill op on tool 1 declares finish_tool_id = Some(2) but
+        // no chamfer_after_width_mm → run_drill returns Ok(false).
+        let drill = Op {
+            id: 1,
+            name: "Drill".into(),
+            enabled: true,
+            kind: OpKind::Drill {
+                cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                chamfer_after_width_mm: None,
+                pattern: None,
+            },
+            tool_id: 1,
+            finish_tool_id: Some(2),
+            source: OpSource::All,
+            params: {
+                let mut p = OpParams::mill_default();
+                p.depth = -3.0;
+                p.start_depth = 0.0;
+                p.fast_move_z = 5.0;
+                p
+            },
+        };
+        let follow_up = profile_op(2, 1, ToolOffset::Outside);
+        let project = crate::project::Project {
+            segments: {
+                let mut s = closed_square_offset(50.0, 0.0, 0.0);
+                // Add a small drill target circle inside the square.
+                s.extend(super::test_helpers::closed_circle(
+                    crate::geometry::Point2::new(25.0, 25.0),
+                    0.5,
+                ));
+                s
+            },
+            machine,
+            tools: vec![endmill(1, 3.0), endmill(2, 1.5)],
+            operations: vec![drill, follow_up],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // The drill op declared finish_tool_id=Some(2) but didn't ask
+        // for chamfer, so the driver MUST NOT have emitted an internal
+        // T2 M6. Anywhere.
+        let op1 = must_find(&resp.gcode, "; OP 1");
+        let op2 = must_find(&resp.gcode, "; OP 2");
+        let between = &resp.gcode[op1..op2];
+        assert!(
+            !between.contains("T2 M6"),
+            "nguf: drill without chamfer should not emit T2 M6 between \
+             OP 1 and OP 2; got:\n{between}\nfull:\n{}",
+            resp.gcode
+        );
+        // The follow-up Profile op is on tool 1, same as the drill's
+        // rough tool. Post-fix prev_tool_id == 1 at end of OP 1, so
+        // OP 2's envelope is elided. Pre-fix, prev_tool_id was 2
+        // (finish_id bias), so OP 2 emitted a spurious T1 M6.
+        assert!(
+            !between.contains("T1 M6"),
+            "nguf: pre-fix bug — OP 2 on the same rough tool emitted \
+             T1 M6 because prev_tool_id was pessimistically biased to \
+             finish_id (2). Post-fix expects no envelope between \
+             same-tool ops. Got:\n{between}\nfull:\n{}",
+            resp.gcode
+        );
+        // And no stray M5 (the envelope's spindle-stop) either.
+        assert!(
+            !between.lines().any(|l| l.trim() == "M5"),
+            "nguf: pre-fix bug — OP 2's spurious envelope emitted M5 \
+             between same-tool ops. Got:\n{between}\nfull:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// yc2a: a Pause op in a CCW-tool program must not lock the
+    /// post-pause spindle into M3. The pause emits only `M5 / message
+    /// / M0` plus a `reset_state()` so the NEXT op's lazy `spindle_on`
+    /// (driven by its tool's `spindle_direction`) re-emits M3 OR M4
+    /// at the correct speed and direction.
+    #[test]
+    fn pause_op_does_not_lock_spindle_direction() {
+        let mut ccw_tool = endmill(1, 3.0);
+        ccw_tool.spindle_direction = crate::project::SpindleDirection::Ccw;
+        ccw_tool.speed = 15_000;
+        let profile_before = profile_op(1, 1, ToolOffset::Outside);
+        let pause = Op {
+            id: 2,
+            name: "Pause".into(),
+            enabled: true,
+            kind: OpKind::Pause {
+                message: "manual flip".into(),
+            },
+            tool_id: 0,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        let profile_after = profile_op(3, 1, ToolOffset::Outside);
+        let project = crate::project::Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![ccw_tool],
+            operations: vec![profile_before, pause, profile_after],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            crate::pipeline::PipelineRequest {
+                project,
+                post_processor: Some(crate::pipeline::PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // No stray M3 lines anywhere — the whole program is CCW.
+        for line in resp.gcode.lines() {
+            let trimmed = line.trim();
+            assert!(
+                trimmed != "M3" && !trimmed.starts_with("M3 "),
+                "yc2a: CCW + Pause program leaked an M3 line:\n{line}\nfull gcode:\n{}",
+                resp.gcode
+            );
+        }
+        // The pause sequence emits exactly M5 → comment → M0; no raw
+        // M3 follows.
+        let m0_pos = resp
+            .gcode
+            .find("\nM0\n")
+            .unwrap_or_else(|| panic!("expected M0 in pause output:\n{}", resp.gcode));
+        let after_m0 = &resp.gcode[m0_pos..];
+        // Find the next op's `; OP 3` header so we can slice the
+        // post-pause window without including OP 3's gcode.
+        let op3 = after_m0
+            .find("; OP 3")
+            .unwrap_or_else(|| panic!("expected OP 3 after pause:\n{}", resp.gcode));
+        let immediate = &after_m0[..op3];
+        for line in immediate.lines() {
+            let t = line.trim();
+            assert!(
+                t != "M3" && !t.starts_with("M3 "),
+                "yc2a: Pause op injected a raw M3 between M0 and OP 3:\n{immediate}"
+            );
+        }
+        // After the pause, OP 3's spindle-on must re-emit M4 with the
+        // CCW tool's RPM (last_speed was cleared by reset_state, so
+        // the lazy `spindle_ccw(15000, ...)` actually emits).
+        let op3_start = resp
+            .gcode
+            .find("; OP 3")
+            .unwrap_or_else(|| panic!("expected OP 3 marker:\n{}", resp.gcode));
+        let op3_block = &resp.gcode[op3_start..];
+        assert!(
+            op3_block.contains("M4 S15000"),
+            "yc2a: expected M4 S15000 to re-emit after pause for CCW tool:\n{}",
             resp.gcode
         );
     }

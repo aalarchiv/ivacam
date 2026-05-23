@@ -545,7 +545,11 @@ mod tests {
     /// phase at zero — that's the pre-qm9x flat-spot bug.
     #[test]
     fn cross_pass_state_continues_phase_across_apply_wirbeln_calls() {
-        let segs = vec![line(0.0, 0.0, 10.0, 0.0)];
+        // 11 mm line × 2 mm stepover: total winkel after pass1 ≈ 5.5·TAU
+        // — deliberately NOT a multiple of TAU, so the carried phase
+        // lands the first waypoint of pass2 at a different XY than a
+        // fresh pass2 (which starts at winkel=0).
+        let segs = vec![line(0.0, 0.0, 11.0, 0.0)];
         let params = WirbelnParams {
             radius: 1.0,
             stepover: 2.0,

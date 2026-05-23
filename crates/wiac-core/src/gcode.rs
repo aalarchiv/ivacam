@@ -1563,6 +1563,30 @@ impl Default for PostState {
     }
 }
 
+impl PostState {
+    /// tsay: number of decimal places to use when formatting numbers
+    /// for emission. mm projects stay at 4 (0.0001 mm = 0.1 µm, finer
+    /// than any realistic CNC repeats). Inch projects consult the
+    /// post profile's `decimal_places_inch` override and fall back to
+    /// 4 — that's the historical default; shops doing sub-mil work
+    /// can opt up to 5 or 6 via the profile.
+    #[must_use]
+    pub fn decimals(&self) -> u8 {
+        // 1.0 / 25.4 is the only inch scale we ever set, but the test
+        // helpers occasionally hand-set unit_scale; use the !=1.0 check
+        // as the "we're not in mm" gate.
+        let is_inch = (self.unit_scale - 1.0).abs() > 1e-12;
+        if is_inch {
+            self.profile
+                .as_ref()
+                .and_then(|p| p.decimal_places_inch)
+                .unwrap_or(4)
+        } else {
+            4
+        }
+    }
+}
+
 /// Apply the post-processor numbering / separator settings derived
 /// from `MachineConfig` (rt1.36) and the program-wide unit scale
 /// (w9hd). Drains down into `PostState` so the per-post `write` /
@@ -1591,8 +1615,9 @@ pub fn configure_post_state(
 }
 
 /// Format a floating-point number using the post-state's decimal
-/// separator. Matches the upstream's formatting otherwise: 4 decimal
-/// places, strip trailing zeros, never end with `.`.
+/// separator. Default precision is 4 decimal places, strip trailing
+/// zeros, never end with `.`. The decimal count is the maximum width;
+/// shorter renderings (e.g. round numbers) trim down identically.
 ///
 /// e0hq: snap values whose magnitude is below half-an-ULP of the
 /// emitted precision to a positive literal `0` so we never render
@@ -1601,14 +1626,24 @@ pub fn configure_post_state(
 /// the listing rightly find `Z-0` confusing.
 #[must_use]
 pub fn fmt_num(v: f64, sep: char) -> String {
-    // Suppress signed-zero: any value with magnitude < 0.5 * 10^-4
-    // (half-ULP of the 4-decimal output) would round to "0" anyway —
-    // including `-0.000049…`, which currently rendered as `-0`. Snap
-    // those to a clean positive zero before formatting so the leading
-    // `-` never appears.
-    const ZERO_EPS: f64 = 0.5e-4;
-    let v = if v.abs() < ZERO_EPS { 0.0 } else { v };
-    let s = format!("{v:.4}");
+    fmt_num_dp(v, sep, 4)
+}
+
+/// tsay: same as [`fmt_num`] but with caller-chosen decimal places.
+/// Inch mode (0.0001 in = 0.00254 mm) is borderline for sub-mil work,
+/// so the post can opt into 5 or 6 decimals via
+/// `PostProfile::decimal_places_inch`. mm-mode defaults remain at 4.
+#[must_use]
+pub fn fmt_num_dp(v: f64, sep: char, decimals: u8) -> String {
+    // Suppress signed-zero: any value with magnitude < 0.5 * 10^-N
+    // (half-ULP of the N-decimal output) would round to "0" anyway —
+    // including `-0.000049…` at 4 dp, which used to render as `-0`.
+    // Snap those to a clean positive zero before formatting so the
+    // leading `-` never appears.
+    let zero_eps = 0.5 * 10f64.powi(-i32::from(decimals));
+    let v = if v.abs() < zero_eps { 0.0 } else { v };
+    let dp = usize::from(decimals);
+    let s = format!("{v:.*}", dp);
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
     let base = if trimmed.is_empty() {
         "0".into()

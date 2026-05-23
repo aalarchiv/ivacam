@@ -62,14 +62,6 @@ pub enum SimWarning {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cells: Vec<crate::sim::holder_check::HolderCollisionCell>,
     },
-    EngagementOverload {
-        segment_idx: usize,
-        engagement_pct: f32,
-    },
-    DraggingRapids {
-        first_segment_idx: usize,
-        count: usize,
-    },
     /// wpzm: the simulator coarsened cell_size to fit the user's
     /// `maxSimulationCells` budget. Without this surfaced, tool-engagement
     /// issues and small features get silently smoothed away — the user has
@@ -100,9 +92,6 @@ pub fn severity(w: &SimWarning) -> Severity {
         SimWarning::RapidThroughMaterial { .. }
         | SimWarning::FixtureCollision { .. }
         | SimWarning::HolderCollision { .. } => Severity::Critical,
-        SimWarning::EngagementOverload { .. } | SimWarning::DraggingRapids { .. } => {
-            Severity::Warning
-        }
         // wpzm: coarsening is purely informational — the sim still runs,
         // just at coarser resolution. Surface it so the user knows what
         // happened, but don't escalate to warning/critical.
@@ -116,8 +105,6 @@ pub fn kind_str(w: &SimWarning) -> &'static str {
         SimWarning::RapidThroughMaterial { .. } => "rapid_through_material",
         SimWarning::FixtureCollision { .. } => "fixture_collision",
         SimWarning::HolderCollision { .. } => "holder_collision",
-        SimWarning::EngagementOverload { .. } => "engagement_overload",
-        SimWarning::DraggingRapids { .. } => "dragging_rapids",
         SimWarning::CellSizeCoarsened { .. } => "cell_size_coarsened",
     }
 }
@@ -129,7 +116,7 @@ pub fn kind_str(w: &SimWarning) -> &'static str {
 /// for trusting the next prediction (the audit's "sim agrees with
 /// reality" gap).
 ///
-/// The shape is deliberately minimal — counts and one scalar — so it
+/// The shape is deliberately minimal — counts only — so it
 /// survives JSON round-trip without dragging in the heightmap data.
 /// `warnings_by_kind_count` is a flat (kind_str -> count) map so the
 /// caller can compare counts without reflection over the discriminant.
@@ -140,10 +127,6 @@ pub struct SimRunSummary {
     /// usable upper bound; the caller may pass the exact lowered-count
     /// from sweep_range when tracked).
     pub cells_carved: u64,
-    /// Worst engagement percentage observed across the run — peak
-    /// of `EngagementOverload.engagement_pct`. 0.0 when no engagement
-    /// signal was emitted.
-    pub max_engagement: f32,
     /// Per-warning-kind counts (kind_str -> count). Stable kind keys
     /// match `kind_str(&SimWarning)` so downstream consumers can
     /// dispatch by kind.
@@ -165,18 +148,11 @@ impl SimRunSummary {
     ) -> Self {
         let mut counts: std::collections::BTreeMap<String, u32> =
             std::collections::BTreeMap::new();
-        let mut max_engagement: f32 = 0.0;
         for w in &diagnostics.warnings {
             *counts.entry(kind_str(w).to_string()).or_insert(0) += 1;
-            if let SimWarning::EngagementOverload { engagement_pct, .. } = w {
-                if *engagement_pct > max_engagement {
-                    max_engagement = *engagement_pct;
-                }
-            }
         }
         Self {
             cells_carved,
-            max_engagement,
             warnings_by_kind_count: counts,
             total_seconds,
         }
@@ -199,7 +175,6 @@ impl SimRunSummary {
         tracing::info!(
             target: "wiac_core::sim::summary",
             cells_carved = self.cells_carved,
-            max_engagement = self.max_engagement,
             total_seconds = self.total_seconds,
             warnings = %warnings_str,
             "sim run complete",
@@ -210,6 +185,16 @@ impl SimRunSummary {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SimDiagnostics {
     pub warnings: Vec<SimWarning>,
+    /// f1z3: per-`advance` idempotency token for the `partial_advance`
+    /// warning gate in `sweep_segment_partial`. When the driver subdivides
+    /// a segment finely near `t=0` (e.g. `[0, 1e-10]` then `[1e-10, 0.5]`),
+    /// `lo <= 1e-9` is true on both chunks and the warning pass would
+    /// fire twice on the same segment. We stash the last segment_idx that
+    /// fired the gate so the second-or-later chunk against the same
+    /// segment is a no-op. Cleared implicitly when the driver moves on
+    /// to the next segment_idx.
+    #[serde(default, skip)]
+    pub last_partial_warn_segment_idx: Option<usize>,
 }
 
 impl SimDiagnostics {
@@ -295,22 +280,12 @@ mod tests {
             required_clearance_mm: 1.5,
             cells: vec![],
         });
-        d.push(SimWarning::EngagementOverload {
-            segment_idx: 4,
-            engagement_pct: 92.0,
-        });
-        d.push(SimWarning::DraggingRapids {
-            first_segment_idx: 5,
-            count: 3,
-        });
         let s = serde_json::to_string(&d).unwrap();
         let back: SimDiagnostics = serde_json::from_str(&s).unwrap();
         assert_eq!(back.warnings.len(), d.warnings.len());
         assert_eq!(back.count("rapid_through_material"), 1);
         assert_eq!(back.count("fixture_collision"), 1);
         assert_eq!(back.count("holder_collision"), 1);
-        assert_eq!(back.count("engagement_overload"), 1);
-        assert_eq!(back.count("dragging_rapids"), 1);
         assert_eq!(back.critical_count(), 3);
     }
 
@@ -318,9 +293,11 @@ mod tests {
     fn is_clean_empty_and_after_push() {
         let mut d = SimDiagnostics::new();
         assert!(d.is_clean());
-        d.push(SimWarning::DraggingRapids {
-            first_segment_idx: 0,
-            count: 2,
+        d.push(SimWarning::FixtureCollision {
+            segment_idx: 0,
+            fixture_id: 1,
+            nearest_x: 0.0,
+            nearest_y: 0.0,
         });
         assert!(!d.is_clean());
     }
@@ -339,18 +316,18 @@ mod tests {
             Severity::Critical,
         );
         assert_eq!(
-            severity(&SimWarning::EngagementOverload {
-                segment_idx: 0,
-                engagement_pct: 100.0,
+            severity(&SimWarning::CellSizeCoarsened {
+                original_cell_size_mm: 0.5,
+                coarsened_cell_size_mm: 1.0,
+                reason: "max_simulation_cells".into(),
             }),
-            Severity::Warning,
+            Severity::Info,
         );
     }
 
     /// 03zx: sim-run summary aggregates from a `SimDiagnostics`
-    /// snapshot. Counts every kind correctly, captures the worst
-    /// engagement_pct, and passes through cells_carved + total_seconds
-    /// from the caller-tracked aggregates.
+    /// snapshot. Counts every kind correctly and passes through
+    /// cells_carved + total_seconds from the caller-tracked aggregates.
     #[test]
     fn sim_run_summary_aggregates_diagnostics() {
         let mut d = SimDiagnostics::new();
@@ -362,14 +339,6 @@ mod tests {
             rapid_pz: 0.0,
             subkind: RapidCollisionSubkind::Tip,
         });
-        d.push(SimWarning::EngagementOverload {
-            segment_idx: 1,
-            engagement_pct: 75.0,
-        });
-        d.push(SimWarning::EngagementOverload {
-            segment_idx: 2,
-            engagement_pct: 93.5,
-        });
         d.push(SimWarning::FixtureCollision {
             segment_idx: 3,
             fixture_id: 1,
@@ -379,16 +348,10 @@ mod tests {
         let summary = SimRunSummary::from_diagnostics(&d, 4_200, 12.5);
         assert_eq!(summary.cells_carved, 4_200);
         assert!((summary.total_seconds - 12.5).abs() < 1e-9);
-        // Max engagement reflects the worst observed pct.
-        assert!((summary.max_engagement - 93.5).abs() < 1e-5);
         // BTreeMap counts mirror the kind_str dispatch.
         assert_eq!(
             summary.warnings_by_kind_count.get("rapid_through_material"),
             Some(&1)
-        );
-        assert_eq!(
-            summary.warnings_by_kind_count.get("engagement_overload"),
-            Some(&2)
         );
         assert_eq!(
             summary.warnings_by_kind_count.get("fixture_collision"),
@@ -401,15 +364,13 @@ mod tests {
     }
 
     #[test]
-    fn sim_run_summary_clean_run_has_zero_max_engagement() {
-        // Empty diagnostics → no warnings, max_engagement = 0,
-        // warnings_by_kind_count empty. The single info-level log call
-        // should still fire safely.
+    fn sim_run_summary_clean_run_is_empty() {
+        // Empty diagnostics → no warnings, warnings_by_kind_count
+        // empty. The single info-level log call should still fire safely.
         let d = SimDiagnostics::new();
         let s = SimRunSummary::from_diagnostics(&d, 0, 0.0);
         assert_eq!(s.cells_carved, 0);
         assert!(s.warnings_by_kind_count.is_empty());
-        assert!(s.max_engagement.abs() < 1e-9);
         // log() must not panic on the empty path.
         s.log();
     }

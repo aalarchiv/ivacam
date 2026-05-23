@@ -9,7 +9,7 @@
 use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::post_profile::{template_lines, AxisFormat, PostProfile, TokenCtx};
 use crate::gcode::{
-    configure_post_state, fmt_num, line_number_prefix, CapturedPostState, CoolantState,
+    configure_post_state, fmt_num_dp, line_number_prefix, CapturedPostState, CoolantState,
     PostProcessor, PostState,
 };
 use crate::project::tool::SpindleDirection;
@@ -40,7 +40,7 @@ impl Post {
     }
 
     fn fmt(&self, v: f64) -> String {
-        fmt_num(v, self.state.decimal_separator)
+        fmt_num_dp(v, self.state.decimal_separator, self.state.decimals())
     }
 
     /// nxn0: render a dwell value in the active post's time unit.
@@ -77,7 +77,11 @@ impl Post {
     /// Coordinates already in emit units (e.g. dwell seconds) keep
     /// using `fmt` directly.
     fn fmt_len(&self, v_mm: f64) -> String {
-        fmt_num(v_mm * self.state.unit_scale, self.state.decimal_separator)
+        fmt_num_dp(
+            v_mm * self.state.unit_scale,
+            self.state.decimal_separator,
+            self.state.decimals(),
+        )
     }
 
     /// Format a single axis word. Consults the profile's per-axis
@@ -100,7 +104,10 @@ impl Post {
         let v_emit = v * self.state.unit_scale;
         let rendered = match af {
             Some(af) => af.render(v_emit)?,
-            None => format!("{default}{}", fmt_num(v_emit, self.state.decimal_separator)),
+            None => format!(
+                "{default}{}",
+                fmt_num_dp(v_emit, self.state.decimal_separator, self.state.decimals())
+            ),
         };
         if self.state.decimal_separator == '.' {
             Some(rendered)
@@ -336,7 +343,11 @@ impl PostProcessor for Post {
                     } else {
                         self.write(format!(
                             "F{}",
-                            fmt_num(rate_emit, self.state.decimal_separator)
+                            fmt_num_dp(
+                                rate_emit,
+                                self.state.decimal_separator,
+                                self.state.decimals(),
+                            )
                         ));
                     }
                 }

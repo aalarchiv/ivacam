@@ -1177,6 +1177,11 @@ export interface components {
             coolant_mist_off?: string | null;
             /** @description `COOLANT_MIST` ON / OFF templates. Replace `M7` / `M9`. */
             coolant_mist_on?: string | null;
+            /**
+             * Format: uint8
+             * @description tsay: decimal places used by `fmt_num` when the project is in Inch mode. The default of 4 (i.e. 0.0001 in = 0.00254 mm) is borderline for sub-mil work — shops authoring in tenths or micro-inches want 5 or 6. `None` ⇒ keep the 4-decimal default. The mm path is untouched: it stays at 4 decimals (0.0001 mm = 0.1 µm) which is already finer than any realistic CNC repeats.
+             */
+            decimal_places_inch?: number | null;
             /** @description nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P. LinuxCNC reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (LinuxCNC default). */
             dwell_unit?: components["schemas"]["DwellUnit"] | null;
             /** @description File extension for save-to-disk (no leading dot). Default `"nc"`. Mach3 commonly uses `"tap"`, GRBL stays `"nc"`. */
@@ -1352,20 +1357,6 @@ export interface components {
             worst_x: number;
             /** Format: double */
             worst_y: number;
-        } | {
-            /** Format: float */
-            engagement_pct: number;
-            /** @enum {string} */
-            kind: "engagement_overload";
-            /** Format: uint */
-            segment_idx: number;
-        } | {
-            /** Format: uint */
-            count: number;
-            /** Format: uint */
-            first_segment_idx: number;
-            /** @enum {string} */
-            kind: "dragging_rapids";
         } | {
             /** Format: double */
             coarsened_cell_size_mm: number;

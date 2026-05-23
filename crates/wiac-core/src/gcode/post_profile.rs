@@ -75,6 +75,14 @@ pub struct PostProfile {
     /// `None` ⇒ Seconds (LinuxCNC default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dwell_unit: Option<DwellUnit>,
+    /// tsay: decimal places used by `fmt_num` when the project is in
+    /// Inch mode. The default of 4 (i.e. 0.0001 in = 0.00254 mm) is
+    /// borderline for sub-mil work — shops authoring in tenths or
+    /// micro-inches want 5 or 6. `None` ⇒ keep the 4-decimal default.
+    /// The mm path is untouched: it stays at 4 decimals (0.0001 mm =
+    /// 0.1 µm) which is already finer than any realistic CNC repeats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decimal_places_inch: Option<u8>,
 }
 
 /// nxn0: which time unit the post emits for `P<value>` dwell words.

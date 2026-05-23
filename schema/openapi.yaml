@@ -1984,6 +1984,13 @@ components:
           type:
           - string
           - 'null'
+        decimal_places_inch:
+          description: 'tsay: decimal places used by `fmt_num` when the project is in Inch mode. The default of 4 (i.e. 0.0001 in = 0.00254 mm) is borderline for sub-mil work — shops authoring in tenths or micro-inches want 5 or 6. `None` ⇒ keep the 4-decimal default. The mm path is untouched: it stays at 4 decimals (0.0001 mm = 0.1 µm) which is already finer than any realistic CNC repeats.'
+          format: uint8
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         dwell_unit:
           anyOf:
           - $ref: '#/components/schemas/DwellUnit'
@@ -2340,41 +2347,6 @@ components:
         - wall_z
         - worst_x
         - worst_y
-        type: object
-      - properties:
-          engagement_pct:
-            format: float
-            type: number
-          kind:
-            enum:
-            - engagement_overload
-            type: string
-          segment_idx:
-            format: uint
-            minimum: 0.0
-            type: integer
-        required:
-        - engagement_pct
-        - kind
-        - segment_idx
-        type: object
-      - properties:
-          count:
-            format: uint
-            minimum: 0.0
-            type: integer
-          first_segment_idx:
-            format: uint
-            minimum: 0.0
-            type: integer
-          kind:
-            enum:
-            - dragging_rapids
-            type: string
-        required:
-        - count
-        - first_segment_idx
-        - kind
         type: object
       - description: 'wpzm: the simulator coarsened cell_size to fit the user''s `maxSimulationCells` budget. Without this surfaced, tool-engagement issues and small features get silently smoothed away — the user has no signal that the sim accuracy dropped. The warning carries both the requested cell size and the actual one so the UI can hint at "increase Max simulation cells to see this at full resolution".'
         properties:

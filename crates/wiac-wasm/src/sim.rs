@@ -199,7 +199,7 @@ impl Simulator {
         );
         // 03zx: emit a single tracing::info line per advance so the
         // frontend (and post-mortem tooling) have a stable telemetry
-        // record of cells_carved, max_engagement, per-kind warning
+        // record of cells_carved + per-kind warning
         // counts. `total_seconds` is left 0 here because advance()
         // doesn't wall-clock itself — the JS driver can pair this
         // with a Performance.now() delta when persisting.

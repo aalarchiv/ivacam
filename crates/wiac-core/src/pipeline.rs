@@ -72,7 +72,7 @@ use regions::build_region_previews;
 pub use setup_resolver::fit_helix_radius_for_selection;
 use setup_resolver::{header_setup_for, resolve_auto_helix_radius, synthesize_op_setup};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -623,17 +623,43 @@ fn op_can_emit_internal_swap(op: &Op) -> bool {
     op.drill_chamfer_after_width_mm().is_some_and(|w| w > 0.0)
 }
 
+/// keyl: spindle-warmup time accrues PER tool-change envelope, not per
+/// unique tool. The old implementation summed `tool.pause` once per
+/// distinct tool_id, which under-reports the duration for sequences
+/// like `A(tool1) -> B(tool2) -> C(tool1)`: that program physically
+/// loads tool1 twice (first and third op), so the operator-set
+/// `pause` runs twice. Walk the enabled op stream with the same
+/// rules `count_tool_changes` uses (skip pause ops, account for
+/// dual-tool finishes) and tally `tool.pause` per actual envelope
+/// event so the warmup estimate tracks the gcode that ships.
 fn spindle_warmup_seconds(project: &Project) -> f64 {
-    let mut used: HashSet<u32> = HashSet::new();
+    let pause_for = |tool_id: u32| -> f64 {
+        project
+            .tools
+            .iter()
+            .find(|t| t.id == tool_id)
+            .map_or(0.0, |t| f64::from(t.pause))
+    };
+    let mut total = 0.0;
+    let mut prev_tool_id: Option<u32> = None;
     for op in project.operations.iter().filter(|o| o.enabled) {
-        used.insert(op.tool_id);
+        if matches!(op.kind, OpKind::Pause { .. }) {
+            continue;
+        }
+        if prev_tool_id != Some(op.tool_id) {
+            total += pause_for(op.tool_id);
+            prev_tool_id = Some(op.tool_id);
+        }
+        if let Some(finish_id) = op.finish_tool_id {
+            if finish_id != op.tool_id {
+                // Internal dual-tool change inside this op: an extra
+                // toolchange envelope fires for the finish tool.
+                total += pause_for(finish_id);
+                prev_tool_id = Some(finish_id);
+            }
+        }
     }
-    project
-        .tools
-        .iter()
-        .filter(|t| used.contains(&t.id))
-        .map(|t| f64::from(t.pause))
-        .sum()
+    total
 }
 
 /// Per-post-processor monomorphisation of the per-op driver. Pulled out

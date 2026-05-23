@@ -107,7 +107,14 @@ pub fn sweep_segment_partial(
     if hi <= lo {
         return 0;
     }
-    if lo <= 1e-9 {
+    // f1z3: the `lo <= 1e-9` gate fires the once-per-segment diagnostic
+    // pass at the start of a segment. A driver that subdivides finely
+    // around `t=0` (e.g. `[0, 1e-10]` then `[1e-10, 0.5]`) would otherwise
+    // fire the gate twice — `lo=0` and `lo=1e-10` are both within the
+    // epsilon. Track the last segment_idx we fired against so the second
+    // sub-chunk against the same segment is a no-op. The token clears
+    // implicitly when the driver advances to a different segment.
+    if lo <= 1e-9 && diagnostics.last_partial_warn_segment_idx != Some(segment_idx) {
         // t1ru: same dragoff-shift as `sweep_segment` — diagnostics
         // must see the trailing-blade chord, not the spindle axis.
         let shifted = apply_dragoff_offset(segment, profile);
@@ -121,6 +128,7 @@ pub fn sweep_segment_partial(
             holder,
             diagnostics,
         );
+        diagnostics.last_partial_warn_segment_idx = Some(segment_idx);
     }
     if matches!(segment.kind, MoveKind::Rapid) {
         return 0;

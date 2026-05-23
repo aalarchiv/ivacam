@@ -301,9 +301,10 @@ impl PostProcessor for Post {
         }
         // Reach into the inner state so we get the same fmt_len / line
         // numbering / decimal-separator handling LinuxCNC uses.
-        let s = crate::gcode::fmt_num(
+        let s = crate::gcode::fmt_num_dp(
             shift_mm * self.inner.state.unit_scale,
             self.inner.state.decimal_separator,
+            self.inner.state.decimals(),
         );
         let p = self.inner.state.wcs.p_number();
         self.inner.raw(&format!("; z-shift: {s}"));

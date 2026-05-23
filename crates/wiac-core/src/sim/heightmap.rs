@@ -36,7 +36,13 @@ impl Heightmap {
     pub fn new(origin: Point2, cell: f64, cols: u32, rows: u32, top_z: f32) -> Self {
         assert!(cell > 0.0, "Heightmap cell size must be > 0");
         assert!(cols > 0 && rows > 0, "Heightmap dimensions must be > 0");
-        let len = (cols as usize) * (rows as usize);
+        // eexa: WASM32 `usize` is `u32`, so the product `cols * rows`
+        // wraps once it exceeds 2^32 — silently allocating a tiny vec
+        // and corrupting every later index. Use `checked_mul` so the
+        // overflow trips loudly even in release builds.
+        let len = (cols as usize)
+            .checked_mul(rows as usize)
+            .expect("heightmap dim overflow");
         Self {
             origin,
             cell,

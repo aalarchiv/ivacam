@@ -761,13 +761,6 @@
       const tint: [number, number, number] =
         sev === 'critical' ? [0.9, 0.28, 0.28] : [0.94, 0.75, 0.13];
       warningSegmentColors.set(idx, tint);
-      if (w.kind === 'dragging_rapids') {
-        for (let i = 1; i < w.count; i++) {
-          if (!warningSegmentColors.has(idx + i)) {
-            warningSegmentColors.set(idx + i, tint);
-          }
-        }
-      }
     }
   }
 

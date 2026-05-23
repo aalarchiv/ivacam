@@ -751,6 +751,11 @@ export interface components {
              * @default 0
              */
             start_angle_rad: number;
+            /**
+             * Format: double
+             * @description mniu: radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter's radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud's flank by `thread_depth`). `None` ⇒ ISO 60° default. Set explicitly for non-ISO thread forms (UN, Whitworth, ACME, …). Older serialized projects without this field deserialize as `None` and pick up the ISO default at planning time — backward compatible.
+             */
+            thread_depth_mm?: number | null;
             /** @enum {string} */
             type: "thread";
         } | {

@@ -27,6 +27,11 @@
   --success-bg: #2f8f4a;
   --error: #ef8585;
   --warn: #ffd23a;
+  /* Saturated red for destructive button backgrounds. `--error` is calibrated
+     for error text on dark panels (paler in dark, deeper in light); buttons
+     need higher saturation against white text. */
+  --danger: #c0392b;
+  --warn-bg: color-mix(in srgb, var(--warn) 18%, transparent);
   --grid-major: #3a3a3a;
   --grid-minor: #262626;
   --axis-x: #c44343;
@@ -42,7 +47,24 @@
   --imported-faded: #585858;
 
   --tab-marker: #ffd23a;
+  --tab-auto: #ffeb88;
   --shadow-modal: rgba(0, 0, 0, 0.55);
+
+  /* Hover / rest tint conventions — pulled into tokens (audit hbi7)
+     so a future theme tweak is a single edit instead of ~15 inline
+     `color-mix()` calls. Naming: <state>-<surface> where surface is
+     the bg the tint mixes ONTO. */
+  --rest-bg-panel: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
+  --hover-bg-panel: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+  --hover-bg-elevated: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  --accent-tint: color-mix(in srgb, var(--accent) 16%, transparent);
+
+  /* Radius scale (audit hbi7) — collapses prior 8 hardcoded values
+     (2/3/4/6 px + 50%) into three semantic tokens. Round buttons keep
+     50% inline since "pill of unknown width" doesn't fit a fixed token. */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-pill: 999px;
   --stock-edge: #888888;
   /* 2D canvas tints for objects assigned to an operation. Active op =
      bright; other ops = dim. Selected / hovered still override. */
@@ -67,8 +89,10 @@
   --z-overlay: 20;       /* loading spinner overlay */
   --z-floating: 40;      /* on-canvas popovers (sim-warning panel, tab popover) */
   --z-dropdown: 100;     /* menu / Add+ dropdowns */
-  --z-toast: 200;        /* SourceStaleToast, error toast */
   --z-modal: 500;        /* MachineDialog / ToolLibraryDialog / SettingsDialog / AddTextDialog */
+  --z-toast: 600;        /* error toast / SourceStaleToast — above modals because
+                            backend errors that surface while a dialog is open
+                            still need to reach the user. */
   --z-drop-catcher: 1000;/* full-window drag-drop indicator */
 }
 
@@ -103,6 +127,8 @@
   --success-bg: #15803d;
   --error: #b91c1c;
   --warn: #b45309;
+  --danger: #b91c1c;
+  --warn-bg: color-mix(in srgb, var(--warn) 18%, transparent);
   --grid-major: #cccccc;
   --grid-minor: #e5e5e5;
   --axis-x: #c14040;
@@ -117,10 +143,12 @@
   --imported-faded: #b6b6b6;
 
   --tab-marker: #b58000;
+  --tab-auto: #d4a017;
   --shadow-modal: rgba(0, 0, 0, 0.18);
   --stock-edge: #777777;
   --obj-assigned-active: #1c8a3a;
   --obj-assigned-other: #6ba87f;
+  /* Hover-tint mixes track --accent which already flipped for light. */
 }
 
 @media (prefers-color-scheme: light) {
@@ -140,6 +168,8 @@
     --success-bg: #15803d;
     --error: #b91c1c;
     --warn: #b45309;
+    --danger: #b91c1c;
+    --warn-bg: color-mix(in srgb, var(--warn) 18%, transparent);
     --grid-major: #cccccc;
     --grid-minor: #e5e5e5;
     --axis-x: #c14040;
@@ -154,8 +184,11 @@
     --imported-faded: #b6b6b6;
 
     --tab-marker: #b58000;
+    --tab-auto: #d4a017;
     --shadow-modal: rgba(0, 0, 0, 0.18);
     --stock-edge: #777777;
+    --obj-assigned-active: #1c8a3a;
+    --obj-assigned-other: #6ba87f;
   }
 }
 
@@ -184,4 +217,170 @@ body,
   font-size: 0.7rem;
   color: var(--text-muted);
   margin-left: 0.25rem;
+}
+
+/* Global keyboard-focus ring. Per-component styles that set their own
+   :focus-visible (e.g. GenerateBar .time-chip) win via specificity; this
+   is the catch-all so every other button / input / role-button / role-menuitem
+   still draws a visible outline when reached via Tab. */
+:where(button, [role='button'], [role='menuitem'], [role='option'], [role='tab'], [role='radio'], [role='separator'], a, summary):focus-visible,
+:where(input, select, textarea, [contenteditable='true']):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Global utility classes (audit hbi7). Shared shapes that were
+   duplicated across 4-9 components — `<style>` blocks in each dialog
+   now reference these instead of re-declaring the same 6-15 lines.
+
+   Naming is intentionally classy / non-semantic: these are presentation
+   primitives that Svelte's scoped CSS would otherwise rewrite per-file.
+   Defining them at :where(...) keeps specificity at 0,1,0 so a per-
+   component override doesn't need !important. */
+:where(.btn-primary) {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  padding: 0.3rem 0.8rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 80ms;
+}
+:where(.btn-primary):hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+:where(.btn-primary):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+:where(.btn-secondary) {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.8rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 80ms;
+}
+:where(.btn-secondary):hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--text-strong);
+}
+:where(.btn-danger) {
+  background: var(--danger);
+  color: white;
+  border: 0;
+  padding: 0.3rem 0.8rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 80ms;
+}
+:where(.btn-danger):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 80%, white);
+}
+
+/* Dialog chrome — header strip + footer button row. Pairs with Modal.svelte. */
+:where(.dlg-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+:where(.dlg-footer) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+/* Inline "Discard unsaved changes?" hint inside a dirty-prompt footer.
+   Sits flush-left while the buttons keep their flex-end position. */
+:where(.discard-prompt) {
+  margin-right: auto;
+  color: var(--danger);
+  font-size: 0.85rem;
+  align-self: center;
+}
+
+/* Accordion / sidebar group head — Stock / Layers / Text / Operations
+   all wear this. grid-template-columns differs per panel and is
+   declared in the per-component scope. */
+:where(.group-head) {
+  display: grid;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--rest-bg-panel);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  min-height: 1.55rem;
+  box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+}
+:where(.group-head):hover {
+  background: var(--hover-bg-panel);
+}
+
+/* Caret / disclosure toggle inside group-heads + sidebar panels. */
+:where(.caret-btn) {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  cursor: pointer;
+}
+:where(.caret-btn):hover {
+  color: var(--text-strong);
+}
+
+/* Section eyebrow — small uppercase labels above a related cluster
+   (gcode panel section, report header, op-properties subsection, etc.). */
+:where(.eyebrow) {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Number-input field row — label + .field span + input + unit suffix. */
+:where(.field) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+:where(.field) input[type='number'] {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.18rem 0.35rem;
+  font-size: 0.78rem;
+}
+:where(.field) input[readonly] {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-input) 70%, transparent);
+  cursor: default;
+}
+:where(.field) input.invalid {
+  border-color: var(--danger);
+}
+:where(.field) .unit {
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }

@@ -14,12 +14,21 @@ interface FakeButton {
 /// Build a minimal body stand-in that returns the supplied buttons from
 /// `querySelectorAll(FOCUSABLE_SELECTOR)`. `ownerDocument.activeElement`
 /// is settable so tests can simulate which button currently has focus.
-function makeBody(buttons: FakeButton[], active: FakeButton | null) {
+/// `contains` defaults to "active is one of the supplied buttons" so the
+/// trap can tell inside-from-outside without a real DOM. Pass
+/// `containsActive: false` to simulate focus that's still on the trigger
+/// (outside the dialog).
+function makeBody(
+  buttons: FakeButton[],
+  active: FakeButton | null,
+  containsActive = true,
+) {
   return {
     querySelectorAll: (sel: string) => {
       if (sel !== FOCUSABLE_SELECTOR) return [] as unknown as NodeListOf<HTMLElement>;
       return buttons as unknown as NodeListOf<HTMLElement>;
     },
+    contains: (n: unknown) => containsActive && n === active,
     ownerDocument: { activeElement: active },
   } as unknown as HTMLElement;
 }
@@ -56,6 +65,44 @@ describe('Modal keyboard handler', () => {
     handleModalKey(ev, body, vi.fn());
     expect(first.focus).toHaveBeenCalledOnce();
     expect(last.focus).not.toHaveBeenCalled();
+    expect(ev.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('Shift+Tab on the first focusable wraps focus to the last', () => {
+    const first = makeButton();
+    const last = makeButton();
+    const body = makeBody([first, last], first);
+    const ev = makeKey('Tab', true);
+    handleModalKey(ev, body, vi.fn());
+    expect(last.focus).toHaveBeenCalledOnce();
+    expect(first.focus).not.toHaveBeenCalled();
+    expect(ev.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('Tab while focus is outside the modal pulls it to the first focusable', () => {
+    // Simulates the just-opened-modal state: trigger still has focus,
+    // user hits Tab; without the inside-check the trap would let Tab
+    // walk to the next document element instead of entering the dialog.
+    const triggerOutside = makeButton();
+    const first = makeButton();
+    const last = makeButton();
+    const body = makeBody([first, last], triggerOutside, /* containsActive */ false);
+    const ev = makeKey('Tab');
+    handleModalKey(ev, body, vi.fn());
+    expect(first.focus).toHaveBeenCalledOnce();
+    expect(last.focus).not.toHaveBeenCalled();
+    expect(ev.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('Shift+Tab while focus is outside pulls it to the last focusable', () => {
+    const triggerOutside = makeButton();
+    const first = makeButton();
+    const last = makeButton();
+    const body = makeBody([first, last], triggerOutside, /* containsActive */ false);
+    const ev = makeKey('Tab', true);
+    handleModalKey(ev, body, vi.fn());
+    expect(last.focus).toHaveBeenCalledOnce();
+    expect(first.focus).not.toHaveBeenCalled();
     expect(ev.preventDefault).toHaveBeenCalledOnce();
   });
 });

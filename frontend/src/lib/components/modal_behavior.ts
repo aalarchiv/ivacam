@@ -11,7 +11,9 @@ export const FOCUSABLE_SELECTOR =
 
 /// Handle Escape / Tab inside the modal. Escape calls onClose; Tab wraps
 /// focus to the first or last focusable element when it would otherwise
-/// leave the body.
+/// leave the body. If the currently active element is OUTSIDE the modal
+/// body (e.g. focus is still on the trigger after open, or on the body
+/// itself), Tab forces focus into the first focusable so the trap engages.
 export function handleModalKey(
   e: KeyboardEvent,
   body: HTMLElement | null,
@@ -29,6 +31,24 @@ export function handleModalKey(
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
     const active = (body.ownerDocument ?? globalThis.document).activeElement;
+    // Duck-type `body.contains` rather than relying on `instanceof Node`
+    // — the unit tests run in plain Node (no jsdom), so DOM globals
+    // are absent and the stand-in body has only the methods the trap
+    // actually uses.
+    const bodyContains = (body as { contains?: (n: unknown) => boolean }).contains;
+    const insideModal =
+      active != null && typeof bodyContains === 'function'
+        ? bodyContains.call(body, active)
+        : false;
+    if (!insideModal) {
+      // Focus has not yet entered the modal — pull it in regardless of
+      // shift direction. Without this, the first Tab after opening
+      // a modal sends focus to the next element in document order
+      // (often a button OUTSIDE the dialog), defeating the trap.
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+      return;
+    }
     if (e.shiftKey && active === first) {
       e.preventDefault();
       last.focus();

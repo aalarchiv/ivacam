@@ -81,7 +81,11 @@ import type {
   Wcs,
   WorkOffset,
 } from './project-types';
-import { defaultWorkOffset, isDefaultWorkOffset } from './project-types';
+import {
+  defaultWorkOffset,
+  inferDefaultWorkOffset,
+  isDefaultWorkOffset,
+} from './project-types';
 import {
   applyFileTransformToPoint,
   combineImports,
@@ -818,6 +822,15 @@ class ProjectState {
     this.selectedObjects = new Set();
     this.hoverSegment = null;
     this.sourceFileStaleNotice = null;
+    // gldc: auto-default work_offset to the geometry bbox's bottom-left
+    // when the drawing was authored off-origin in CAD and the user
+    // hasn't explicitly set an offset. Suppresses the
+    // `stock_origin_outside_geometry_bbox` pipeline warning at its
+    // most common firing site (drawings centered around a non-zero
+    // point in the source CAD), matching the canonical CNC workflow
+    // (operator zeros at the bottom-left corner of the drawing).
+    // No-op when the user has already moved away from default.
+    this.workOffset = inferDefaultWorkOffset(r.bbox, this.workOffset);
     // Replacing the imported geometry implies a new project boundary —
     // drop any text-preview segments cached from the previous project
     // so we don't paint stale TextLayer glyphs over the new file.

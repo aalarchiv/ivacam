@@ -556,6 +556,47 @@ export function isDefaultWorkOffset(w: WorkOffset): boolean {
   return w.x_mm === 0 && w.y_mm === 0 && w.z_mm === 0 && w.wcs === 'G54';
 }
 
+/// Pick a `WorkOffset` for a freshly-imported drawing such that the
+/// gcode WCS origin sits at the geometry's bottom-left corner — the
+/// canonical CNC zeroing convention (audit gldc). Without this auto-
+/// default, drawings drawn off-origin in CAD (e.g. a part bbox of
+/// (5.76, 5.79) → (24.22, 24.24)) fire the
+/// `stock_origin_outside_geometry_bbox` pipeline warning, because the
+/// pipeline thinks the operator will zero at (0, 0) in geometry space
+/// while every realistic operator will zero at a stock CORNER.
+///
+/// Respects user intent: leaves `current` unchanged if (a) the user
+/// already moved away from the default offset, (b) the bbox is
+/// degenerate / non-finite, or (c) the bbox ALREADY contains the
+/// origin (so the default WCS-at-origin is already correct).
+///
+/// Pure / dependency-free so the inference can be unit-tested without
+/// loading the Svelte rune compiler.
+export function inferDefaultWorkOffset(
+  bbox: { min_x: number; min_y: number; max_x: number; max_y: number } | null,
+  current: WorkOffset,
+): WorkOffset {
+  if (!isDefaultWorkOffset(current)) return current;
+  if (!bbox) return current;
+  const { min_x, min_y, max_x, max_y } = bbox;
+  if (
+    !Number.isFinite(min_x) ||
+    !Number.isFinite(min_y) ||
+    !Number.isFinite(max_x) ||
+    !Number.isFinite(max_y)
+  ) {
+    return current;
+  }
+  if (max_x < min_x || max_y < min_y) return current; // degenerate
+  // 1e-3 mm slack so paths drawn exactly to the origin edge don't
+  // trigger an offset — matches the slack in pipeline/warnings.rs.
+  const slack = 1e-3;
+  const containsOrigin =
+    min_x - slack <= 0 && 0 <= max_x + slack && min_y - slack <= 0 && 0 <= max_y + slack;
+  if (containsOrigin) return current;
+  return { ...current, x_mm: min_x, y_mm: min_y };
+}
+
 export interface ProjectFile {
   kind: 'wiac-project';
   version: 1;

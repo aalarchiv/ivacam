@@ -14,8 +14,6 @@
 
 use crate::geometry::Point2;
 
-pub const TWO_PI: f64 = std::f64::consts::TAU;
-
 /// Convert a polyline bulge between `start` and `end` to arc parameters
 /// (center, `start_angle`, `end_angle`, radius).
 ///
@@ -72,10 +70,10 @@ pub fn arc_to_bulge(
     );
     let mut sweep = end_angle - start_angle;
     while sweep > std::f64::consts::PI {
-        sweep -= TWO_PI;
+        sweep -= std::f64::consts::TAU;
     }
     while sweep < -std::f64::consts::PI {
-        sweep += TWO_PI;
+        sweep += std::f64::consts::TAU;
     }
     let bulge = (sweep * 0.25).tan();
     (start, end, bulge)
@@ -101,10 +99,10 @@ pub fn tessellate_arc(start: Point2, end: Point2, bulge: f64, max_angle_rad: f64
     }
     let mut sweep = a1 - a0;
     if bulge > 0.0 && sweep < 0.0 {
-        sweep += TWO_PI;
+        sweep += std::f64::consts::TAU;
     }
     if bulge < 0.0 && sweep > 0.0 {
-        sweep -= TWO_PI;
+        sweep -= std::f64::consts::TAU;
     }
     let max_angle_rad = max_angle_rad.max(0.001);
     let steps = (sweep.abs() / max_angle_rad).ceil() as usize;

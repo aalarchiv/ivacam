@@ -33,7 +33,6 @@ use std::collections::HashMap;
 
 use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::{Point2, Segment, SegmentKind};
-use crate::math;
 
 /// One concentric offset of a closed object — used for both the boundary
 /// pass and any inward pocket cascade rings.
@@ -2016,11 +2015,6 @@ pub fn small_circle_drill(obj: &VcObject, tool_radius: f64) -> Option<PolylineOf
         tabs: Vec::new(),
         is_finish: false,
     })
-}
-
-#[allow(dead_code)]
-fn _math_unused() {
-    let _ = math::TWO_PI;
 }
 
 /// Apply overcut to every closed offset whose source object exists in

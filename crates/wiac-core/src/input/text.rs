@@ -27,7 +27,6 @@ use ttf_parser::{Face, OutlineBuilder};
 
 use crate::errors::Error;
 use crate::geometry::{Point2, Segment};
-use crate::math;
 use crate::project::{text_layer_synthetic_layer, TextAlignment, TextLayer, TextLayerKind};
 
 /// Request payload for the cross-transport `/text` endpoint. The frontend
@@ -596,11 +595,6 @@ fn bbox_of_contours(contours: &[Vec<Point2>]) -> (f64, f64, f64, f64) {
         }
     }
     (min_x, min_y, max_x, max_y)
-}
-
-#[allow(dead_code)]
-fn _math_unused() {
-    let _ = math::TWO_PI;
 }
 
 #[cfg(test)]

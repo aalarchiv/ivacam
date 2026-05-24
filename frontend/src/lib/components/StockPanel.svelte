@@ -81,7 +81,7 @@
   /// through `setWorkOffset`. The `wo:` prefix keeps the invalid-key
   /// namespace separate so a stock-thickness validation flash doesn't
   /// also red-border the WCS-X input.
-  function onWorkOffsetNumberChange(key: 'x_mm' | 'y_mm' | 'z_mm', e: Event) {
+  function onWorkOffsetNumberChange(key: 'x_mm' | 'y_mm', e: Event) {
     const parsed = parseFiniteNumber((e.target as HTMLInputElement).value);
     const ns = `wo:${key}`;
     if (parsed.value == null) {
@@ -290,20 +290,11 @@
         <span class="unit">mm</span>
       </span>
     </label>
-    <label>
-      <span>Z</span>
-      <span class="field">
-        <input
-          type="number"
-          step="0.5"
-          value={project.workOffset.z_mm}
-          class:invalid={invalidKey === 'wo:z_mm'}
-          onchange={(e) => onWorkOffsetNumberChange('z_mm', e)}
-          title="Reserved — Z offset participates in the wire-format but the sim and pipeline currently use stock-top z=0."
-        />
-        <span class="unit">mm</span>
-      </span>
-    </label>
+    <!-- 1bcu: Z spinner intentionally omitted. work_offset.z_mm stays
+         in the wire format + cache key for forward-compat, but the sim
+         and pipeline currently treat stock-top as z=0, so exposing a
+         spinner that does nothing was actively misleading. Restore the
+         label + input when the pipeline grows real Z-offset support. -->
     <button
       type="button"
       class="snap-btn"

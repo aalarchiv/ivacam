@@ -58,6 +58,18 @@
     return v === 'grbl' || v === 'hpgl' ? v : 'linuxcnc';
   }
   let post: PostId = $state(coercePost(workspace.get().last_post_processor));
+  /// Tracks which post-processor produced the currently cached `project.generated`
+  /// gcode buffer. When the user flips the dropdown to a different dialect, the
+  /// cached text is now wrong-dialect — exporting it via the Download button
+  /// would write LinuxCNC gcode into a .plt (HPGL) file. Clear the cache so the
+  /// user is forced to regen, matching how a machine swap invalidates the run.
+  let generatedPost: PostId | null = null;
+  $effect(() => {
+    // Drop the post tag whenever the cached gcode disappears (project
+    // reload, manual clear, machine swap) so the next run re-captures
+    // the current dropdown choice.
+    if (project.generated == null) generatedPost = null;
+  });
   $effect(() => {
     const current = post;
     // Defer the workspace write off the synchronous effect flush.
@@ -71,11 +83,110 @@
         console.warn('persist post processor:', e);
       }
     });
+    if (
+      generatedPost != null &&
+      generatedPost !== current &&
+      project.generated != null
+    ) {
+      // Dialect changed — drop the cached gcode so Download can't emit
+      // it into a file with the new dialect's extension.
+      project.generated = null;
+      generatedPost = null;
+    }
   });
   let progressMsg = $state<string>('');
   let progressFrac = $state<number>(0);
   let warningPanelOpen = $state(false);
   let abortController: AbortController | null = null;
+
+  // ──────────────────────────────────────────────────────────────────
+  // Warnings floating panel: drag-movable header + resize handle (aw8j).
+  // Position is in viewport pixels relative to (0,0); size is the
+  // panel's content box. Defaults sit the panel in the top-right
+  // (same place it lived when it was inline-absolute), but the user
+  // can drag the header to reposition and pull the bottom-right corner
+  // to resize. State is component-local — re-opening resets to the
+  // last in-session position unless the window has shrunk past it,
+  // in which case `clampPanelRect` snaps it back into view.
+  const WP_DEFAULT_W = 480;
+  const WP_DEFAULT_H = Math.round(typeof window === 'undefined' ? 480 : window.innerHeight * 0.6);
+  let wpX = $state<number | null>(null); // null = uncomputed → default to top-right on first open
+  let wpY = $state<number | null>(null);
+  let wpW = $state<number>(WP_DEFAULT_W);
+  let wpH = $state<number>(WP_DEFAULT_H);
+  let wpDrag: { mode: 'move' | 'resize'; offX: number; offY: number; pointerId: number } | null = null;
+
+  function clampPanelRect() {
+    if (typeof window === 'undefined') return;
+    const minW = 320,
+      minH = 220;
+    wpW = Math.max(minW, Math.min(window.innerWidth - 16, wpW));
+    wpH = Math.max(minH, Math.min(window.innerHeight - 16, wpH));
+    if (wpX != null) wpX = Math.max(8, Math.min(window.innerWidth - wpW - 8, wpX));
+    if (wpY != null) wpY = Math.max(8, Math.min(window.innerHeight - wpH - 8, wpY));
+  }
+
+  function onWarningPanelOpen() {
+    if (typeof window === 'undefined') return;
+    if (wpX == null || wpY == null) {
+      // First-open default: top-right with 1rem (~16 px) margins, matches
+      // the inline-absolute position the panel had before.
+      wpX = Math.max(16, window.innerWidth - wpW - 16);
+      wpY = 56; // toolbar height + a bit
+    }
+    clampPanelRect();
+  }
+  $effect(() => {
+    if (warningPanelOpen) onWarningPanelOpen();
+  });
+
+  function wpHeaderPointerDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) return; // don't grab a drag from the close button
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    wpDrag = {
+      mode: 'move',
+      offX: e.clientX - (wpX ?? 0),
+      offY: e.clientY - (wpY ?? 0),
+      pointerId: e.pointerId,
+    };
+    e.preventDefault();
+  }
+  function wpResizePointerDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    wpDrag = {
+      mode: 'resize',
+      offX: e.clientX - wpW,
+      offY: e.clientY - wpH,
+      pointerId: e.pointerId,
+    };
+    e.preventDefault();
+  }
+  function wpPointerMove(e: PointerEvent) {
+    if (!wpDrag || e.pointerId !== wpDrag.pointerId) return;
+    if (wpDrag.mode === 'move') {
+      wpX = e.clientX - wpDrag.offX;
+      wpY = e.clientY - wpDrag.offY;
+    } else {
+      wpW = e.clientX - wpDrag.offX;
+      wpH = e.clientY - wpDrag.offY;
+    }
+    clampPanelRect();
+  }
+  function wpPointerUp(e: PointerEvent) {
+    if (!wpDrag || e.pointerId !== wpDrag.pointerId) return;
+    wpDrag = null;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+  }
+  // Re-clamp when the viewport changes so a previously-sized panel can't
+  // sit off-screen after the user shrinks the window.
+  function onWindowResize() {
+    if (warningPanelOpen) clampPanelRect();
+  }
 
   function cancelRun() {
     if (project.pipelineState !== 'running') return;
@@ -252,6 +363,7 @@
         r = await client.generate(req);
       }
       project.setGenerated(r);
+      generatedPost = post;
       project.finishGenerate();
     } catch (e) {
       if (e instanceof CancelledError) {
@@ -362,9 +474,18 @@
     <button
       onclick={run}
       disabled={!project.transformedImport || project.generating}
-      title="Run the CAM pipeline and produce a toolpath. Reads the current ops, tools, stock, and machine — output is cached so unchanged ops re-emit instantly."
+      class:stale={project.dirty && project.generated != null}
+      title={project.dirty && project.generated != null
+        ? 'The visible toolpath is stale — the project has changed since the last Generate. Click to refresh.'
+        : 'Run the CAM pipeline and produce a toolpath. Reads the current ops, tools, stock, and machine — output is cached so unchanged ops re-emit instantly.'}
     >
-      {project.generating ? 'Generating G-code…' : 'Generate G-code'}
+      {#if project.generating}
+        Generating G-code…
+      {:else if project.dirty && project.generated != null}
+        Regenerate G-code
+      {:else}
+        Generate G-code
+      {/if}
     </button>
   {/if}
   {#if project.generated}
@@ -408,7 +529,7 @@
     <!-- opqb: source-file-changed chip lives in the toolbar where the
          user looks for actionable state, instead of the standalone
          bottom-right toast that competed with other floating UI. -->
-    <span class="stale-chip" role="alert" aria-live="polite" title="The source file on disk has changed since the last import. Reload to pick up the changes; Ignore to keep the current view.">
+    <span class="stale-chip" role="alert" aria-live="polite" title={`Source file changed on disk: ${project.sourceFileStaleNotice.path}. Reload to pick up the changes; Ignore to keep the current view.`}>
       <span class="stale-msg">
         ⟳ <strong
           >{project.sourceFileStaleNotice.path.split(/[\\/]/).pop()}</strong
@@ -477,46 +598,101 @@
   {/if}
 </div>
 
+<svelte:window onresize={onWindowResize} />
+
 {#if warningPanelOpen}
-  <!-- dvs4: panel now lists BOTH sim warnings AND pipeline warnings.
-       Each row tags its source (Sim / Pipeline) so the user can tell
-       which subsystem flagged it. Pipeline warnings use the
-       pipeline-warnings.ts severity classifier (fj88) so the row dot
-       colour matches what the safety gate sees. -->
-  <div class="panel" role="dialog" aria-label="Warnings">
-    <header>
+  <!-- aw8j: floating, drag-movable + resizable panel. Each row is a
+       browser-dev-tools-style <details> — summary collapses to a one-line
+       header (dot · source · kind · ellipsed msg + Go-to for sim rows),
+       expanded body shows the full message with user-select: text so the
+       user can drag-select and copy. dvs4: lists both sim + pipeline
+       warnings, tagged by source. -->
+  <div
+    class="panel"
+    role="dialog"
+    aria-label="Warnings"
+    style:left="{wpX ?? 0}px"
+    style:top="{wpY ?? 0}px"
+    style:width="{wpW}px"
+    style:height="{wpH}px"
+  >
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <header
+      role="toolbar"
+      tabindex="-1"
+      aria-label="Warnings panel header — drag to move"
+      onpointerdown={wpHeaderPointerDown}
+      onpointermove={wpPointerMove}
+      onpointerup={wpPointerUp}
+      onpointercancel={wpPointerUp}
+      title="Drag to move"
+    >
       <h3>Warnings ({totalWarningCount})</h3>
-      <button class="close" onclick={() => (warningPanelOpen = false)} aria-label="Close">×</button>
+      <button class="dlg-close" onclick={() => (warningPanelOpen = false)} aria-label="Close">×</button>
     </header>
     <div class="list">
       {#if totalWarningCount === 0}
         <p class="empty">No warnings — sim and pipeline are clean.</p>
       {:else}
         {#each warnings as w, i (`sim-${i}`)}
-          <button
-            class="row severity-{simWarningSeverity(w)}"
-            onclick={() => flyToWarning(w)}
-            type="button"
-          >
-            <span class="dot" aria-hidden="true"></span>
-            <span class="source" title="Surfaced by the simulator after gcode generation.">sim</span>
-            <span class="kind">{w.kind}</span>
-            <span class="msg">{simWarningSummary(w)}</span>
-          </button>
+          {@const sev = simWarningSeverity(w)}
+          {@const summary = simWarningSummary(w)}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <details class="row severity-{sev}">
+            <summary>
+              <span class="dot" aria-hidden="true"></span>
+              <span class="source" title="Surfaced by the simulator after gcode generation.">sim</span>
+              <span class="kind">{w.kind}</span>
+              <span class="msg">{summary}</span>
+              <button
+                type="button"
+                class="row-action"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  flyToWarning(w);
+                }}
+                title="Move the 3D playhead to this warning"
+                aria-label="Go to warning in 3D scene"
+              >
+                go to
+              </button>
+            </summary>
+            <div class="row-body">
+              <p class="full-msg">{summary}</p>
+              <pre class="json">{JSON.stringify(w, null, 2)}</pre>
+            </div>
+          </details>
         {/each}
         {#each pipelineWarnings as pw, i (`pipe-${i}`)}
-          <div
-            class="row severity-{pipelineWarningSeverity(pw)} pipeline"
-            title={pw.message}
-          >
-            <span class="dot" aria-hidden="true"></span>
-            <span class="source pipeline" title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span>
-            <span class="kind">{pw.kind}</span>
-            <span class="msg">{pw.message}</span>
-          </div>
+          {@const sev = pipelineWarningSeverity(pw)}
+          <details class="row severity-{sev} pipeline">
+            <summary>
+              <span class="dot" aria-hidden="true"></span>
+              <span class="source pipeline" title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span>
+              <span class="kind">{pw.kind}</span>
+              <span class="msg">{pw.message}</span>
+            </summary>
+            <div class="row-body">
+              <p class="full-msg">{pw.message}</p>
+              <pre class="json">{JSON.stringify(pw, null, 2)}</pre>
+            </div>
+          </details>
         {/each}
       {/if}
     </div>
+    <!-- Bottom-right resize handle. svg corner-glyph repeats the
+         convention used by every other floating-resizable widget on
+         the platform. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="resize-handle"
+      onpointerdown={wpResizePointerDown}
+      onpointermove={wpPointerMove}
+      onpointerup={wpPointerUp}
+      onpointercancel={wpPointerUp}
+      title="Drag to resize"
+      aria-hidden="true"
+    ></div>
   </div>
 {/if}
 
@@ -559,9 +735,28 @@
     border-radius: 4px;
     font-size: 0.78rem;
     cursor: pointer;
+    transition:
+      background 80ms,
+      box-shadow 80ms;
+  }
+  button:hover:not(:disabled) {
+    background: var(--accent-strong);
+  }
+  button.stale {
+    /* Generate button when the cached toolpath is older than the current
+       project state. Warning-tinted background so the user notices the
+       toolpath they're looking at doesn't reflect their latest edits. */
+    background: color-mix(in srgb, var(--warn) 70%, var(--accent));
+  }
+  button.stale:hover:not(:disabled) {
+    background: var(--warn);
+    color: var(--text-strong);
   }
   button.download {
     background: var(--success-bg);
+  }
+  button.download:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--success-bg) 80%, white);
   }
   button:disabled {
     opacity: 0.5;
@@ -595,11 +790,11 @@
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    z-index: 50;
+    z-index: var(--z-floating);
     background: var(--bg-panel);
     outline: 1px solid var(--border);
     border-radius: 4px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     padding: 0.4rem 0.55rem;
     font-size: 0.74rem;
     white-space: nowrap;
@@ -679,7 +874,9 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 24ch;
+    /* Cap relative to viewport so long file names get more room on
+       wide displays; the title tooltip carries the full path either way. */
+    max-width: min(40ch, 40vw);
   }
   .stale-chip .stale-msg strong {
     font-weight: 600;
@@ -755,20 +952,22 @@
     margin-right: 0.25rem;
     font-weight: bold;
   }
+  /* aw8j: floating panel — fixed positioning so the drag-movable
+     top/left coordinates work in screen space rather than inheriting
+     a relative offset from the toolbar. Resize handle in the SE
+     corner; user-select: text on the body so users can copy. */
   .panel {
-    position: absolute;
-    right: 1rem;
-    top: 3rem;
-    width: min(420px, 90vw);
-    max-height: 60vh;
+    position: fixed;
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-radius: 6px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     z-index: var(--z-floating);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-width: 320px;
+    min-height: 220px;
   }
   .panel header {
     display: flex;
@@ -777,26 +976,27 @@
     padding: 0.5rem 0.7rem;
     border-bottom: 1px solid var(--border);
     background: var(--bg-elevated);
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+  }
+  .panel header:active {
+    cursor: grabbing;
   }
   .panel h3 {
     font-size: 0.85rem;
     margin: 0;
     color: var(--text-strong);
   }
-  .panel .close {
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 0.3rem;
-  }
+  /* The panel's close uses the shared `.dlg-close` (audit hbi7). */
   .panel .list {
+    flex: 1;
     overflow: auto;
     padding: 0.4rem;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    user-select: text;
   }
   .panel .empty {
     color: var(--text-muted);
@@ -804,44 +1004,52 @@
     margin: 0.5rem;
     text-align: center;
   }
-  .panel .row {
-    display: grid;
-    grid-template-columns: 0.8rem 3.6rem 8rem 1fr;
-    align-items: center;
-    gap: 0.5rem;
-    text-align: left;
+  /* Each row is a <details>. Summary lays out the row contents in a
+     grid with the chevron suppressed (we don't need the default
+     browser caret next to the dot — the row already signals
+     interactivity via background/hover). */
+  .panel details.row {
     background: var(--bg-elevated);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 0.35rem 0.55rem;
     font-size: 0.74rem;
+    overflow: hidden;
   }
-  /* Sim rows are interactive (button) — flyToWarning seeks the
-     playhead. Pipeline rows are static (div) — they have no segment
-     index to fly to. Use the same hover for click-affordance parity
-     on the interactive ones only. */
-  button.row {
+  .panel details.row > summary {
+    display: grid;
+    grid-template-columns: 0.8rem 3.6rem 8rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.55rem;
     cursor: pointer;
+    list-style: none;
   }
-  button.row:hover {
-    background: var(--bg-hover, var(--bg-input));
+  .panel details.row > summary::-webkit-details-marker {
+    display: none;
   }
-  .panel .row .dot {
+  .panel details.row > summary:hover {
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+  }
+  .panel details.row[open] > summary {
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
+  }
+  .panel .dot {
     width: 0.6rem;
     height: 0.6rem;
     border-radius: 50%;
   }
-  .panel .row.severity-critical .dot {
+  .panel .severity-critical .dot {
     background: var(--marker-critical);
   }
-  .panel .row.severity-warning .dot {
+  .panel .severity-warning .dot {
     background: var(--marker-warn);
   }
-  .panel .row.severity-info .dot {
+  .panel .severity-info .dot {
     background: var(--marker-info);
   }
-  .panel .row .source {
+  .panel .source {
     font-size: 0.66rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -853,21 +1061,86 @@
     line-height: 1.3;
     background: var(--bg-app);
   }
-  .panel .row .source.pipeline {
+  .panel .source.pipeline {
     color: var(--accent);
     border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   }
-  .panel .row .kind {
+  .panel .kind {
     font-family: ui-monospace, monospace;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .panel .row .msg {
+  .panel .msg {
     color: var(--text-strong);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .panel .row-action {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    border-radius: 3px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    line-height: 1.3;
+  }
+  .panel .row-action:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent-strong);
+    border-color: var(--accent-strong);
+  }
+  /* Expanded body — full message + JSON dump. user-select: text so
+     drag-select to copy works (previously the row was a <button>
+     which broke selection in some browsers). */
+  .panel .row-body {
+    padding: 0.4rem 0.6rem 0.55rem;
+    background: var(--bg-app);
+    user-select: text;
+  }
+  .panel .row-body .full-msg {
+    margin: 0 0 0.35rem;
+    color: var(--text-strong);
+    font-size: 0.78rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .panel .row-body .json {
+    margin: 0;
+    padding: 0.4rem 0.55rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-muted);
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    max-height: 16rem;
+    overflow: auto;
+    white-space: pre;
+    user-select: text;
+  }
+  .panel .resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    touch-action: none;
+    /* Two diagonal lines drawn as a corner glyph — matches the
+       OS-native resize affordance. */
+    background:
+      linear-gradient(135deg, transparent 45%, var(--text-muted) 45%, var(--text-muted) 55%, transparent 55%) center / 100% 100% no-repeat,
+      linear-gradient(135deg, transparent 70%, var(--text-muted) 70%, var(--text-muted) 80%, transparent 80%) center / 100% 100% no-repeat;
+  }
+  .panel .resize-handle:hover {
+    background:
+      linear-gradient(135deg, transparent 45%, var(--text-strong) 45%, var(--text-strong) 55%, transparent 55%) center / 100% 100% no-repeat,
+      linear-gradient(135deg, transparent 70%, var(--text-strong) 70%, var(--text-strong) 80%, transparent 80%) center / 100% 100% no-repeat;
   }
 </style>

@@ -26,6 +26,12 @@
   }
   let { op, patch }: Props = $props();
 
+  /// Invalid-feedback flags for Width / Height — surface the user's
+  /// typo with a red border instead of silently rejecting the change
+  /// (audit 08zk). Reset on a successful commit.
+  let tabWidthInvalid = $state(false);
+  let tabHeightInvalid = $state(false);
+
   const TAB_TYPE_HELP: Record<string, string> = {
     rectangle:
       'Rectangular tab: cutter steps up to tab Z, walks the tab span at constant height, steps back down. Standard hold-down.',
@@ -160,9 +166,15 @@
         step="0.5"
         min="0.1"
         value={op.tabWidth ?? 10}
+        class:invalid={tabWidthInvalid}
         onchange={(e) => {
           const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-          if (!isNaN(v) && v > 0) patch('tabWidth', v);
+          if (!isNaN(v) && v >= 0.1) {
+            patch('tabWidth', v);
+            tabWidthInvalid = false;
+          } else {
+            tabWidthInvalid = true;
+          }
         }}
       />
       <span class="unit">mm</span>
@@ -176,9 +188,15 @@
         step="0.1"
         min="0.1"
         value={op.tabHeight ?? 1}
+        class:invalid={tabHeightInvalid}
         onchange={(e) => {
           const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-          if (!isNaN(v) && v > 0) patch('tabHeight', v);
+          if (!isNaN(v) && v >= 0.1) {
+            patch('tabHeight', v);
+            tabHeightInvalid = false;
+          } else {
+            tabHeightInvalid = true;
+          }
         }}
       />
       <span class="unit">mm</span>

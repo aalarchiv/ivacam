@@ -294,28 +294,9 @@
     overflow: hidden;
     border-top: 1px solid var(--border);
   }
+  /* Base `.group-head` / `.caret-btn` shapes live in app.css. */
   .group-head {
-    display: grid;
     grid-template-columns: auto 1fr auto auto;
-    gap: 0.3rem;
-    align-items: center;
-    padding: 0.2rem 0.35rem;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
-    font-size: 0.78rem;
-    line-height: 1.2;
-    min-height: 1.55rem;
-    box-sizing: border-box;
-  }
-  .caret-btn {
-    background: transparent;
-    border: 0;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 0 0.2rem;
-    font-size: 0.85rem;
-    line-height: 1;
   }
   .group-name {
     color: var(--text-strong);
@@ -350,7 +331,9 @@
     margin: 0.2rem 0 0 0.5rem;
     padding-left: 0.3rem;
     border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    max-height: 38vh;
+    /* The sidebar accordion gives this host the active 1fr row and
+       clips overflow on the host wrapper, so we don't need a second
+       max-height cap here — see LayerList for the same fix. */
     overflow-y: auto;
   }
   ul {
@@ -410,16 +393,24 @@
     font-size: 0.78rem;
   }
   .del-btn {
+    /* WCAG ≥24×24 hit target — was padding: 0 0.3rem. */
     background: transparent;
     border: 0;
     color: var(--text-muted);
     cursor: pointer;
     font-size: 1rem;
     line-height: 1;
-    padding: 0 0.3rem;
+    padding: 0;
+    min-width: 24px;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
   }
   .del-btn:hover {
     color: var(--error);
+    background: color-mix(in srgb, var(--error) 12%, transparent);
   }
   .empty {
     margin: 0.6rem 0.2rem;

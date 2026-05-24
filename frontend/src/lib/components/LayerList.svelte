@@ -60,6 +60,40 @@
     if (target?.closest('.add-menu')) return;
     closeAddMenu();
   }
+  function onWindowKey(e: KeyboardEvent) {
+    if (e.key === 'Escape' && addMenuOpen) {
+      e.preventDefault();
+      closeAddMenu();
+    }
+  }
+  /// Arrow-key nav across the "+ Add" disclosure (audit xc3a). The
+  /// disclosure has just two items so keyboard support is small but
+  /// matches the pattern used by the menubar dropdowns.
+  function onAddMenuKey(e: KeyboardEvent) {
+    const root = e.currentTarget as HTMLElement;
+    const items = Array.from(
+      root.querySelectorAll<HTMLElement>('button[role="menuitem"]:not(:disabled)'),
+    );
+    if (items.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    const idx = active ? items.indexOf(active) : -1;
+    let next = idx;
+    if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
+    else if (e.key === 'ArrowUp') next = idx <= 0 ? items.length - 1 : idx - 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = items.length - 1;
+    else return;
+    e.preventDefault();
+    items[next]?.focus();
+  }
+  function focusFirstAddMenuItem(node: HTMLElement) {
+    queueMicrotask(() => {
+      const first = node.querySelector<HTMLElement>(
+        'button[role="menuitem"]:not(:disabled)',
+      );
+      first?.focus();
+    });
+  }
 
   const ACI: Record<number, string> = {
     1: '#ff0000',
@@ -114,7 +148,7 @@
   }
 </script>
 
-<svelte:window onclick={onWindowClick} />
+<svelte:window onclick={onWindowClick} onkeydown={onWindowKey} />
 
 <aside class="layers">
   <div class="group-head">
@@ -166,7 +200,14 @@
         </button>
         {#if addMenuOpen}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="add-dropdown" role="menu" tabindex="-1" onmouseleave={closeAddMenu}>
+          <div
+            class="add-dropdown"
+            role="menu"
+            tabindex="-1"
+            onmouseleave={closeAddMenu}
+            onkeydown={onAddMenuKey}
+            use:focusFirstAddMenuItem
+          >
             {#if onOpenFileClick}
               <button
                 type="button"
@@ -358,7 +399,7 @@
                   onchange={() => project.toggleLayer(layer.name)}
                   title="Active = included in pipeline + visible on canvas. Uncheck to deactivate."
                 />
-                <span class="swatch" style="background: {swatch(layer.color)}"></span>
+                <span class="swatch" style:background={swatch(layer.color)}></span>
                 <span class="name">{layer.name}</span>
                 <span class="count">{layer.segment_count}</span>
               </label>
@@ -420,19 +461,10 @@
   /* Header mirrors OperationsList's group-head for visual parity.
      Five-column layout: caret · all-visible toggle · filename / label ·
      count / file-stats · Add+ menu. */
+  /* Base shape lives in app.css `.group-head`; only the per-panel
+     grid (5 columns) is local. */
   .group-head {
-    display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-    gap: 0.3rem;
-    align-items: center;
-    padding: 0.2rem 0.35rem;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
-    font-size: 0.78rem;
-    line-height: 1.2;
-    min-height: 1.55rem;
-    box-sizing: border-box;
   }
   .add-menu {
     position: relative;
@@ -475,7 +507,7 @@
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 4px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     padding: 0.2rem;
     z-index: var(--z-dropdown);
     display: flex;
@@ -503,15 +535,7 @@
   .add-item .label {
     white-space: nowrap;
   }
-  .caret-btn {
-    background: transparent;
-    border: 0;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 0 0.2rem;
-    font-size: 0.85rem;
-    line-height: 1;
-  }
+  /* `.caret-btn` shape is in app.css. */
   .group-name {
     color: var(--text-strong);
     font-weight: 600;
@@ -544,8 +568,11 @@
     margin: 0.2rem 0 0 0.5rem;
     padding-left: 0.3rem;
     border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    /* Cap so a huge layer set doesn't dominate; scrolls internally. */
-    max-height: 28vh;
+    /* Sidebar accordion (App.svelte) already gives the active layers
+       host `minmax(0, 1fr)` and clips overflow on its host wrapper.
+       The prior `max-height: 28vh` capped this region INSIDE that
+       1fr row and created a nested second scrollbar that wasted
+       vertical space on tall windows. Let the host own scrolling. */
     overflow-y: auto;
   }
   /* Per-import card (wrsu Phase 2). When the project has multiple
@@ -708,16 +735,26 @@
     min-width: 0;
   }
   .del-btn {
+    /* WCAG-sized hit target (≥24×24) — was `padding: 0 0.3rem` which
+       gave ~16-20 px depending on the glyph. Min-width / -height enforce
+       the floor; centering keeps the × visually unchanged. */
     background: transparent;
     border: 0;
     color: var(--text-muted);
     cursor: pointer;
     font-size: 1rem;
     line-height: 1;
-    padding: 0 0.3rem;
+    padding: 0;
+    min-width: 24px;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
   }
   .del-btn:hover {
     color: var(--error);
+    background: color-mix(in srgb, var(--error) 12%, transparent);
   }
   input[type='checkbox'] {
     accent-color: var(--accent);

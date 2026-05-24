@@ -69,22 +69,42 @@
 ></div>
 
 <style>
-  /* 4 px hit slab on the seam between two panes; brightens to accent
-     on hover/drag so the affordance is obvious. */
+  /* Visible 2-px seam between two panes with a 10-px transparent overlay
+     widening the hit-target to ~24 px effective grab area. Brightens to
+     accent on hover/drag so the affordance is obvious. The old 4-px slab
+     was a hostile target on trackpads and touch (WCAG recommends ≥24×24). */
   .splitter {
     background: var(--border);
     transition: background 80ms;
     flex-shrink: 0;
     user-select: none;
     touch-action: none;
+    position: relative;
+  }
+  .splitter::after {
+    /* Invisible overlay extending the pointer-hit area without bloating
+       the visual seam. inset chosen so the hit zone is ~10 px wide
+       (5 px on each side of the 2-px band), within the column-resize
+       cursor's tolerance. */
+    content: '';
+    position: absolute;
+    inset: 0;
   }
   .splitter.horizontal {
-    width: 4px;
+    width: 2px;
     cursor: col-resize;
   }
+  .splitter.horizontal::after {
+    left: -5px;
+    right: -5px;
+  }
   .splitter.vertical {
-    height: 4px;
+    height: 2px;
     cursor: row-resize;
+  }
+  .splitter.vertical::after {
+    top: -5px;
+    bottom: -5px;
   }
   .splitter:hover,
   .splitter.dragging {

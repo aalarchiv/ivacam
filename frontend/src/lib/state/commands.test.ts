@@ -462,6 +462,21 @@ describe('lowerSimResolutionCommand', () => {
     expect(t.settings.cellResolutionMode).toBe('auto');
     expect(t.settings.cellResolutionMm).toBe(0.2);
   });
+
+  it('does NOT flip project dirty — settings is per-install, not part of the project snapshot (audit zxee)', () => {
+    const t = blankTarget();
+    t.settings = {
+      ...(t.settings as CommandTarget['settings']),
+      cellResolutionMode: 'auto',
+      cellResolutionMm: 0.2,
+    };
+    t.dirty = false;
+    const cmd = lowerSimResolutionCommand(0.5);
+    cmd.apply(t);
+    expect(t.dirty).toBe(false);
+    cmd.revert(t);
+    expect(t.dirty).toBe(false);
+  });
 });
 
 describe('autoFixToCommand', () => {

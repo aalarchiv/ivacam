@@ -105,12 +105,12 @@
 </script>
 
 {#if open}
-  <Modal {onClose} modalClass="report-modal" width="min(640px, 96vw)">
+  <Modal {onClose} modalClass="report-modal" width="min(640px, 96vw)" ariaLabelledBy="report-title">
     <header class="report-head">
-      <h2>Project report</h2>
+      <h2 id="report-title">Project report</h2>
       <div class="report-actions">
-        <button type="button" class="primary" onclick={printNow}>Print</button>
-        <button type="button" class="close" onclick={onClose} aria-label="Close">×</button>
+        <button type="button" class="btn-primary" onclick={printNow}>Print</button>
+        <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
       </div>
     </header>
     <article class="report-body" id="report-print-root">
@@ -247,30 +247,8 @@
     gap: 0.3rem;
     align-items: center;
   }
-  .report-actions .primary {
-    background: var(--accent);
-    color: #fff;
-    border: 0;
-    padding: 0.25rem 0.7rem;
-    border-radius: 3px;
-    font-size: 0.78rem;
-    cursor: pointer;
-  }
-  .report-actions .primary:hover {
-    background: var(--accent-strong);
-  }
-  .report-actions .close {
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    padding: 0.1rem 0.4rem;
-    font-size: 1.1rem;
-    cursor: pointer;
-    line-height: 1;
-  }
-  .report-actions .close:hover {
-    color: var(--text);
-  }
+  /* Print + close buttons use global `.btn-primary` / `.dlg-close`
+     (audit hbi7) — no local overrides needed. */
   .report-body {
     padding: 1rem 1.1rem;
     max-height: 75vh;
@@ -346,6 +324,26 @@
     :global(body) {
       background: white;
       color: black;
+    }
+    /* Hide everything outside the report — menubar, toolbar, sidebar,
+       canvas, gcode panel, footer, the modal's own overlay backdrop.
+       The earlier rule only hid children of `.report-modal`, leaving
+       the rest of the app to print on top of the report. */
+    :global(body > *) {
+      display: none !important;
+    }
+    /* Re-show only the Modal overlay's tree, then hide its insides
+       (we re-enable the report-print-root subtree below). The Modal
+       overlay sits as a direct body child via the dialog mount. */
+    :global(body > :has(.report-modal)) {
+      display: block !important;
+    }
+    :global(.report-modal) {
+      box-shadow: none !important;
+      border: 0 !important;
+      background: white !important;
+      max-height: none !important;
+      overflow: visible !important;
     }
     :global(.report-modal *) {
       visibility: hidden;

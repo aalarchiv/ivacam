@@ -27,6 +27,12 @@ export {
   type WorkspaceTransport,
 } from './workspace';
 
+/// localStorage key the underlying `WorkspaceStore` uses. Keep in
+/// sync with `STORAGE_KEY` in `./workspace.ts`. We listen to the
+/// `storage` event so a second tab's writes don't get silently
+/// clobbered by the first tab's debounced flush.
+const STORAGE_KEY = 'wiac-workspace';
+
 class ReactiveWorkspaceStore extends WorkspaceStore {
   /// Bumped whenever the underlying state changes. Components that need
   /// to react to workspace changes use `void workspace.version` inside
@@ -38,6 +44,16 @@ class ReactiveWorkspaceStore extends WorkspaceStore {
     this.subscribe(() => {
       this.version += 1;
     });
+    // Cross-tab sync: when another tab writes the workspace key,
+    // re-read so our in-memory state reflects theirs. Without this,
+    // two tabs open on the same project race on every panel resize /
+    // recent-files add and the last debounced flush wins blindly.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key !== STORAGE_KEY || e.newValue == null) return;
+        void this.load();
+      });
+    }
   }
 }
 

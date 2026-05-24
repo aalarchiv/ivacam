@@ -37,7 +37,7 @@
     aria-valuenow={percent}
     title={label}
   >
-    <div class="bar-fill" style="width: {percent}%"></div>
+    <div class="bar-fill" style:width="{percent}%"></div>
     <span class="progress-text">
       {#if cancelling}
         Cancelling…
@@ -90,7 +90,7 @@
     padding: 0 0.4rem;
   }
   button.cancel {
-    background: #d04848;
+    background: var(--danger);
     color: white;
     border: none;
     padding: 0.3rem 0.7rem;

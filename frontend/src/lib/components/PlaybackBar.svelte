@@ -60,6 +60,27 @@
     playing = !playing;
   }
 
+  /// Global Space key toggles play/pause when the user isn't typing in
+  /// an input. Matches the universal video / DAW / CAM-sim affordance —
+  /// users hit Space expecting it to work and the previous build did
+  /// nothing.
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    if (!project.generated) return;
+    const t = e.target as HTMLElement | null;
+    const tag = t?.tagName ?? '';
+    if (
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      t?.isContentEditable
+    ) {
+      return;
+    }
+    e.preventDefault();
+    togglePlay();
+  }
+
   function onScrub(e: Event) {
     const v = parseFloat((e.currentTarget as HTMLInputElement).value);
     project.playhead = isNaN(v) ? 0 : v;
@@ -175,6 +196,8 @@
   });
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 {#if project.generated && project.generated.toolpath.length > 0}
   <div class="bar">
     <button
@@ -207,7 +230,18 @@
       ⏭
     </button>
     <div class="track">
-      <input type="range" min="0" max="1" step="0.001" value={project.playhead} oninput={onScrub} />
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.001"
+        value={project.playhead}
+        oninput={onScrub}
+        aria-label="Toolpath playback position"
+        aria-valuetext={chapterTicks.length > 0 && activeTickIdx >= 0
+          ? `${Math.round(project.playhead * 100)} percent · ${chapterTicks[activeTickIdx].chapter.name}`
+          : `${Math.round(project.playhead * 100)} percent`}
+      />
       {#if chapterTicks.length > 0}
         <div class="chapter-ticks" aria-hidden="true">
           {#each chapterTicks as t, i (i)}
@@ -275,6 +309,11 @@
   .bar {
     display: flex;
     align-items: center;
+    /* Wrap on narrow viewports — without this the play button, op-nav,
+       track, chapter ticks, frame counter and speed input collide
+       below ~520 px. Wrapping is preferable to the squashed slider. */
+    flex-wrap: wrap;
+    row-gap: 0.3rem;
     gap: 0.5rem;
     padding: 0.3rem 0.6rem;
     background: var(--bg-panel);
@@ -335,6 +374,9 @@
     cursor: pointer;
     pointer-events: auto;
     transform: translateX(-50%);
+    /* Local stacking within `.track`: slider rail (1) < tick (2) < marker
+       (2). Not part of the global `--z-*` scale because nothing outside
+       `.track` is ever positioned to stack with these. */
     z-index: 2;
     min-width: 0;
   }
@@ -394,6 +436,8 @@
   }
   .marker.critical::before {
     content: '✕';
+    /* Critical marker bg is `--error` — saturated red in both themes;
+       white reads on either. */
     color: #fff;
     font-size: 0.55rem;
     line-height: 0.9rem;
@@ -402,7 +446,11 @@
   }
   .marker.warning::before {
     content: '!';
-    color: #000;
+    /* Warning marker bg is `--warn`: bright yellow in dark theme, dark
+       amber in light theme. `--bg-app` inverts cleanly with each (near-
+       black on dark, near-white on light) so the glyph stays readable
+       in both. Was hardcoded `#000` which became invisible in light. */
+    color: var(--bg-app);
     font-size: 0.6rem;
     line-height: 0.9rem;
     text-align: center;

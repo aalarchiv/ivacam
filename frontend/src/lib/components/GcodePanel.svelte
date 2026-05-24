@@ -100,6 +100,32 @@
     }
   }
 
+  /// Keyboard-focused line for the container-level listbox roving
+  /// tabindex pattern. Updated by ArrowUp/Down/Home/End; Enter calls
+  /// `jumpToLine`. Default tracks `activeLine` so Tab into a paused
+  /// playback lands on the highlighted row.
+  let focusedLine = $state<number | null>(null);
+  function onPanelKey(e: KeyboardEvent) {
+    if (lines.length === 0) return;
+    const cur = focusedLine ?? activeLine ?? 1;
+    let next = cur;
+    if (e.key === 'ArrowDown') next = Math.min(lines.length, cur + 1);
+    else if (e.key === 'ArrowUp') next = Math.max(1, cur - 1);
+    else if (e.key === 'PageDown') next = Math.min(lines.length, cur + 25);
+    else if (e.key === 'PageUp') next = Math.max(1, cur - 25);
+    else if (e.key === 'Home') next = 1;
+    else if (e.key === 'End') next = lines.length;
+    else if (e.key === 'Enter' || e.key === ' ') {
+      jumpToLine(cur);
+      e.preventDefault();
+      return;
+    } else return;
+    e.preventDefault();
+    focusedLine = next;
+    const row = host?.querySelector(`[data-line="${next}"]`) as HTMLElement | null;
+    row?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  }
+
   /// When the playhead moves onto a new chapter (driven by PlaybackBar's
   /// prev/next-op buttons), scroll the chapter header into view. Without
   /// this nudge the row-level $effect lands on `block: 'nearest'` of the
@@ -123,8 +149,10 @@
     class="gcode"
     class:stale={project.dirty}
     bind:this={host}
-    role="region"
+    role="listbox"
     aria-label="G-code"
+    tabindex="0"
+    onkeydown={onPanelKey}
   >
     {#if project.dirty}
       <div
@@ -153,18 +181,23 @@
             {/if}
           </div>
         {/if}
-        <button
-          type="button"
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- Keyboard support lives at the container (.gcode listbox);
+             each option is a -1 tabindex to keep the roving pattern. -->
+        <div
+          role="option"
+          tabindex="-1"
+          aria-selected={activeLine === line}
           class="row"
           class:active={activeLine === line}
+          class:focused={focusedLine === line}
           class:silenced={ch?.disabled ?? false}
           data-line={line}
           onclick={() => jumpToLine(line)}
-          tabindex="-1"
         >
           <span class="num">{line}</span>
           <span class="text">{ch?.disabled && text.length > 0 ? '; ' + text : text}</span>
-        </button>
+        </div>
       {/each}
     </div>
   </div>
@@ -194,7 +227,7 @@
   .stale-badge {
     position: sticky;
     top: 0;
-    z-index: 2;
+    z-index: var(--z-anchor);
     background: color-mix(in srgb, var(--warn) 22%, var(--bg-panel));
     color: var(--text-strong);
     border-bottom: 1px solid color-mix(in srgb, var(--warn) 50%, var(--border));
@@ -269,6 +302,13 @@
     background: color-mix(in srgb, var(--accent) 30%, transparent);
     color: var(--text-strong);
   }
+  /* Roving-tabindex listbox focused row (keyboard ArrowUp/Down moves
+     `focusedLine`). Subtle outline so it's distinct from `.active`,
+     which marks the playhead line. */
+  .row.focused {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
   .row.silenced {
     color: var(--text-muted);
     opacity: 0.55;
@@ -281,6 +321,12 @@
     font-variant-numeric: tabular-nums;
   }
   .text {
+    /* Allow drag-select-to-copy of the gcode text. The container is now
+       a div with onclick (not a `<button>`), so dragging starts a real
+       text selection instead of getting eaten by the button's click
+       gesture. The `.num` column keeps user-select:none so line numbers
+       aren't pulled into the copy. */
+    user-select: text;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: pre;

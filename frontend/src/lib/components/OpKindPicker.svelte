@@ -126,9 +126,41 @@
     return req.some((c) => machineCapabilities.includes(c));
   }
   const visibleKinds = $derived(ALL_PICKER_KINDS.filter(isPickerKindSupported));
+
+  /// Arrow-key nav across the 2-column picker grid. The picker is opened
+  /// in several contexts (OperationsList "+", canvas right-click ctx menu,
+  /// LayerList "+ Add"); without keyboard arrow nav, users dependent on
+  /// the keyboard had to Tab through the whole document to walk items.
+  function onPickerKey(e: KeyboardEvent) {
+    const root = e.currentTarget as HTMLElement;
+    const items = Array.from(
+      root.querySelectorAll<HTMLElement>('button[role="menuitem"]:not(:disabled)'),
+    );
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLElement);
+    const cols = 2;
+    let next = idx;
+    if (e.key === 'ArrowDown') next = idx < 0 ? 0 : Math.min(items.length - 1, idx + cols);
+    else if (e.key === 'ArrowUp') next = idx <= 0 ? 0 : Math.max(0, idx - cols);
+    else if (e.key === 'ArrowRight') next = idx < 0 ? 0 : (idx + 1) % items.length;
+    else if (e.key === 'ArrowLeft')
+      next = idx <= 0 ? items.length - 1 : idx - 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = items.length - 1;
+    else return;
+    e.preventDefault();
+    items[next]?.focus();
+  }
+  function autoFocusFirst(node: HTMLElement) {
+    queueMicrotask(() => {
+      const first = node.querySelector<HTMLElement>('button[role="menuitem"]:not(:disabled)');
+      first?.focus();
+    });
+  }
 </script>
 
-<div class="picker" role="menu">
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="picker" role="menu" tabindex="-1" onkeydown={onPickerKey} use:autoFocusFirst>
   {#each visibleKinds as k (k)}
     {@const disabled = k === 'pocket_outside' && pocketOutsideDisabled}
     <button

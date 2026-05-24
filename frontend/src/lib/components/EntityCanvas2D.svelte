@@ -30,6 +30,7 @@
     type OSnapTargets,
   } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import { computeFootprint } from '../sim/driver';
   import {
     previewSegmentsFor,
     previewVersion,
@@ -450,6 +451,35 @@
       return;
     }
 
+    // Audit kj8i: hover-near-marker preview. Mirror the hit-test that
+    // onPointerDown does for click-to-drag so the cursor flips to
+    // `grab` BEFORE the user mousedowns — without this the marker is
+    // draggable but invisibly so.
+    {
+      const selOp = project.selectedOpId == null
+        ? null
+        : project.operations.find((o) => o.id === project.selectedOpId);
+      if (
+        selOp &&
+        (selOp.kind === 'profile' || selOp.kind === 'pocket') &&
+        selOp.approachPoint &&
+        !panDrag &&
+        !boxSelect
+      ) {
+        const data = pxToData(cx, cy);
+        if (data) {
+          const hitR = approachMarkerHitRadiusData();
+          const [ax, ay] = selOp.approachPoint;
+          const dx = data.x - ax;
+          const dy = data.y - ay;
+          if (dx * dx + dy * dy <= hitR * hitR) {
+            canvas.style.cursor = 'grab';
+            return;
+          }
+        }
+      }
+    }
+
     // Active pan drag: translate the user-pan offsets by the cursor
     // delta. Each move is RELATIVE so we anchor on the previous frame's
     // screen position, then update the anchor for the next frame.
@@ -567,9 +597,16 @@
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
     if (pixelHit(cx, cy) != null) return; // hit something — don't reset
+    fitView();
+  }
+  /// Shared reset — invoked from the fit-view button, double-click
+  /// empty space, and the keyboard `F` / `Home` shortcuts. Pulls the
+  /// canvas back to its auto-fit baseline (no user pan, no user zoom).
+  function fitView() {
     userZoom = 1;
     userPanX = 0;
     userPanY = 0;
+    drawBackground();
   }
 
   /// Return the set of object ids whose bbox lies fully INSIDE the
@@ -900,6 +937,19 @@
     }
     if (e.key === 'Escape' && ctxMenu) {
       ctxMenu = null;
+      e.preventDefault();
+    }
+    // Audit kj8i: F / Home reset the 2D view to its auto-fit baseline.
+    // Mirrors the new `.fit-btn` overlay button and the 3D pane's
+    // equivalent. Bail when the user is typing — we don't want F to
+    // wipe an unrelated input.
+    if ((e.key === 'f' || e.key === 'F' || e.key === 'Home') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName ?? '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) {
+        return;
+      }
+      fitView();
       e.preventDefault();
     }
     // n79: ESC finalizes the approach-point picker (sticky mode exit).
@@ -1236,6 +1286,7 @@
     drawGrid(ctx, w, h, scale, offX, offY);
     drawAxes(ctx, w, h, offX, offY);
     drawWorkArea(ctx, project2);
+    drawStock(ctx, project2);
 
     // Filled-region preview painted under the wireframe so contours stay
     // legible. Regions come from the backend (pipeline.rs
@@ -1354,7 +1405,10 @@
     if (op.kind !== 'profile' && op.kind !== 'pocket') return;
 
     const markerColor = themeVar('--accent', '#3aa');
-    const snapColor = '#3c3'; // green = locked-to-vertex (matches EstlCam)
+    // green = locked-to-vertex (matches EstlCam). Pulls from `--success`
+    // so light theme gets the deeper #166534 forest instead of #3c3 which
+    // gets lost against pale canvas backgrounds.
+    const snapColor = themeVar('--success', '#3c3');
     const ringColor = themeVar('--text', '#000');
 
     // The committed point, when present.
@@ -1950,6 +2004,36 @@
     ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
     ctx.restore();
   }
+
+  /// Solid outline of the workpiece bounds in XY. Mirrors the
+  /// translucent stock box the 3D scene already paints — the 2D pane
+  /// previously omitted it entirely, so users couldn't see whether
+  /// their drawing sat inside the stock without flipping to 3D.
+  function drawStock(
+    ctx: CanvasRenderingContext2D,
+    p: (x: number, y: number) => [number, number],
+  ) {
+    const fp = computeFootprint(
+      project.transformedImport,
+      project.stock,
+      project.machine.workArea,
+    );
+    const sizeX = fp.maxX - fp.minX;
+    const sizeY = fp.maxY - fp.minY;
+    if (sizeX <= 0 || sizeY <= 0) return;
+    const [x0, y0] = p(fp.minX, fp.minY);
+    const [x1, y1] = p(fp.maxX, fp.maxY);
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = themeVar('--stock-edge', '#888');
+    ctx.globalAlpha = 0.85;
+    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+    ctx.restore();
+  }
 </script>
 
 <svelte:window
@@ -1988,6 +2072,12 @@
   {#if cursorXY}
     <div class="cursor-hud" aria-hidden="true">
       x: {cursorXY.x.toFixed(2)} &nbsp; y: {cursorXY.y.toFixed(2)} mm
+      {#if shiftDown && (approachPickActive || tabPlacementActive)}
+        <!-- Audit kj8i: visible cue that Shift is suppressing snap.
+             Without this the snap glyph just silently disappears and
+             the user can't tell why their click no longer locks. -->
+        <span class="snap-off">snap off</span>
+      {/if}
     </div>
   {/if}
   {#if project.transformedImport && project.operations.length === 0}
@@ -2096,6 +2186,19 @@
       </div>
     {/if}
   {/if}
+  <!-- Fit-to-view affordance mirroring Scene3D's .fit-btn (audit kj8i).
+       Doubleclick on empty space already resets, but that's undocumented
+       — adding the button gives an obvious affordance and matches the 3D
+       pane. F / Home shortcuts also call fitView when canvas has focus. -->
+  <button
+    type="button"
+    class="fit-btn"
+    onclick={fitView}
+    title="Fit view to scene (F)"
+    aria-label="Fit view to scene"
+  >
+    ⌖
+  </button>
   {#if onShowHelp}
     <button
       type="button"
@@ -2161,7 +2264,7 @@
     border-radius: 999px;
     color: var(--text-strong);
     font-size: 0.78rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     pointer-events: none;
     max-width: calc(100% - 2rem);
     white-space: nowrap;
@@ -2187,7 +2290,9 @@
      numbers don't dance as the cursor moves. */
   .cursor-hud {
     position: absolute;
-    top: 0.5rem;
+    /* Sits below the fit-btn / help-btn cluster so it doesn't collide
+       with the round overlay buttons in the top-right corner. */
+    top: 2.4rem;
     right: 0.5rem;
     background: color-mix(in srgb, var(--bg-elevated) 85%, transparent);
     color: var(--text);
@@ -2200,6 +2305,16 @@
     pointer-events: none;
     white-space: nowrap;
   }
+  .cursor-hud .snap-off {
+    margin-left: 0.5rem;
+    padding: 0 0.3rem;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--warn) 28%, transparent);
+    color: var(--text-strong);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
   .ctx-menu {
     position: absolute;
     min-width: 16rem;
@@ -2208,7 +2323,7 @@
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 4px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     z-index: var(--z-floating);
     padding: 0.25rem;
   }
@@ -2220,7 +2335,7 @@
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 4px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     z-index: var(--z-floating);
     padding: 0.55rem 0.6rem 0.5rem;
     display: flex;
@@ -2252,15 +2367,15 @@
   .tab-popover-delete {
     margin-top: 0.3rem;
     background: transparent;
-    color: var(--danger, #c44);
-    border: 1px solid var(--danger, #c44);
+    color: var(--danger);
+    border: 1px solid var(--danger);
     border-radius: 3px;
     padding: 0.25rem 0.5rem;
     font-size: 0.72rem;
     cursor: pointer;
   }
   .tab-popover-delete:hover {
-    background: color-mix(in srgb, var(--danger, #c44) 15%, transparent);
+    background: color-mix(in srgb, var(--danger) 15%, transparent);
   }
   .tab-popover-close {
     position: absolute;
@@ -2322,6 +2437,36 @@
     font-size: 0.74rem;
     cursor: pointer;
   }
+  /* Fit-to-view button — visual twin of Scene3D's .fit-btn, sits to
+     the LEFT of the help-btn so both float in the same top-right
+     cluster regardless of which pane the user is in. */
+  .fit-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 2.5rem;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.7;
+    transition:
+      opacity 0.12s ease,
+      color 0.12s ease;
+  }
+  .fit-btn:hover,
+  .fit-btn:focus-visible {
+    opacity: 1;
+    color: var(--text-strong);
+  }
   .help-btn {
     position: absolute;
     top: 0.5rem;
@@ -2346,7 +2491,7 @@
       color 0.12s ease;
   }
   .help-btn:hover,
-  .help-btn:focus {
+  .help-btn:focus-visible {
     opacity: 1;
     color: var(--text-strong);
   }

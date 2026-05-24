@@ -29,13 +29,34 @@
     if (typeof max === 'number' && v > max) v = max;
     return v;
   }
+
+  /// WAI-ARIA radiogroup arrow-key nav for the Theme segmented buttons.
+  /// ArrowLeft/Up moves to previous, ArrowRight/Down to next, Home/End
+  /// jump to ends. Selection moves with focus per the radiogroup pattern.
+  const THEMES: Array<'auto' | 'light' | 'dark'> = ['auto', 'light', 'dark'];
+  function onThemeKey(e: KeyboardEvent) {
+    const cur = THEMES.indexOf(project.settings.theme as (typeof THEMES)[number]);
+    let next = cur;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (cur - 1 + THEMES.length) % THEMES.length;
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (cur + 1) % THEMES.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = THEMES.length - 1;
+    else return;
+    e.preventDefault();
+    update('theme', THEMES[next]);
+    queueMicrotask(() => {
+      (e.currentTarget as HTMLElement | null)
+        ?.querySelector<HTMLElement>(`[role="radio"][aria-checked="true"]`)
+        ?.focus();
+    });
+  }
 </script>
 
 {#if open}
-  <Modal {onClose} modalClass="settings-modal">
+  <Modal {onClose} width="min(540px, 95vw)" ariaLabelledBy="settings-title">
     <header>
       <h2 id="settings-title">Settings</h2>
-      <button class="close" onclick={onClose} aria-label="Close">×</button>
+      <button class="dlg-close" onclick={onClose} aria-label="Close">×</button>
     </header>
 
     <div class="body">
@@ -44,18 +65,33 @@
         <div class="grid">
           <label
             >Theme
-            <div class="seg" role="group" aria-label="Theme">
+            <div
+              class="seg"
+              role="radiogroup"
+              aria-label="Theme"
+              tabindex="-1"
+              onkeydown={onThemeKey}
+            >
               <button
+                role="radio"
+                aria-checked={project.settings.theme === 'auto'}
+                tabindex={project.settings.theme === 'auto' ? 0 : -1}
                 class:active={project.settings.theme === 'auto'}
                 onclick={() => update('theme', 'auto')}
                 type="button">Auto</button
               >
               <button
+                role="radio"
+                aria-checked={project.settings.theme === 'light'}
+                tabindex={project.settings.theme === 'light' ? 0 : -1}
                 class:active={project.settings.theme === 'light'}
                 onclick={() => update('theme', 'light')}
                 type="button">Light</button
               >
               <button
+                role="radio"
+                aria-checked={project.settings.theme === 'dark'}
+                tabindex={project.settings.theme === 'dark' ? 0 : -1}
                 class:active={project.settings.theme === 'dark'}
                 onclick={() => update('theme', 'dark')}
                 type="button">Dark</button
@@ -130,7 +166,7 @@
                 max="1"
                 step="0.05"
                 value={project.settings.solidOpacity}
-                oninput={(e) =>
+                onchange={(e) =>
                   update(
                     'solidOpacity',
                     toNumber(
@@ -171,7 +207,7 @@
                 max="1"
                 step="0.05"
                 value={project.settings.edgeOpacity}
-                oninput={(e) =>
+                onchange={(e) =>
                   update(
                     'edgeOpacity',
                     toNumber(
@@ -207,15 +243,18 @@
               <input
                 type="number"
                 min="0.01"
+                max="5"
                 step="0.05"
+                title="Voxel resolution for the sim heightmap. Below 0.05 mm explodes RAM; above ~2 mm loses tab + sliver detail. Cap is 5 mm to keep the sim sane."
                 value={project.settings.cellResolutionMm}
-                oninput={(e) =>
+                onchange={(e) =>
                   update(
                     'cellResolutionMm',
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
                       project.settings.cellResolutionMm,
                       0.01,
+                      5,
                     ),
                   )}
               />
@@ -244,7 +283,7 @@
               min="100000"
               step="100000"
               value={project.settings.maxSimulationCells}
-              oninput={(e) =>
+              onchange={(e) =>
                 update(
                   'maxSimulationCells',
                   Math.round(
@@ -265,7 +304,7 @@
               min="100000"
               step="100000"
               value={project.settings.maxRenderTriangles}
-              oninput={(e) =>
+              onchange={(e) =>
                 update(
                   'maxRenderTriangles',
                   Math.round(
@@ -378,7 +417,7 @@
               min="0.1"
               step="0.1"
               value={project.settings.osnap?.gridStepMm ?? 5}
-              oninput={(e) =>
+              onchange={(e) =>
                 update('osnap', {
                   ...project.settings.osnap,
                   gridStepMm: Math.max(
@@ -402,15 +441,12 @@
     </div>
 
     <footer>
-      <button class="primary" onclick={onClose} type="button">Done</button>
+      <button class="btn-primary" onclick={onClose} type="button">Done</button>
     </footer>
   </Modal>
 {/if}
 
 <style>
-  :global(.settings-modal) {
-    width: min(540px, 95vw);
-  }
   header {
     display: flex;
     align-items: center;
@@ -423,14 +459,6 @@
     font-size: 0.95rem;
     margin: 0;
     color: var(--text-strong);
-  }
-  .close {
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 0.3rem;
   }
   .body {
     padding: 0.7rem 0.9rem;
@@ -549,13 +577,5 @@
     padding: 0.5rem 0.7rem;
     border-top: 1px solid var(--border);
     background: var(--bg-elevated);
-  }
-  .primary {
-    background: var(--accent);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
   }
 </style>

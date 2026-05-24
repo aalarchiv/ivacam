@@ -125,12 +125,17 @@
     >
       <span>Refine pass</span>
       <input type="checkbox" checked={false} disabled />
-      <span class="hint" style="margin-left:0.5rem">not yet implemented</span>
+      <span class="hint hint-trailing">not yet implemented</span>
     </label>
   </details>
 </fieldset>
 
 <style>
+  /* Trailing hint sibling — sits inline after a checkbox / input. Was an
+     inline `style="margin-left:.5rem"`; promoted to a class. */
+  :global(.hint.hint-trailing) {
+    margin-left: 0.5rem;
+  }
   /* rt1.7: 'Duplicate as inlay plug' button. Sized to match the
      existing per-section action buttons (re-pick, repick) so the V-Carve
      fieldset doesn't look like it bolted on something special. */

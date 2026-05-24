@@ -211,7 +211,10 @@
               value={op.halfpipeProfile.included_angle_deg}
               onchange={(e) => {
                 const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                if (!isNaN(v) && v > 0)
+                // Match the HTML min/max guards (1..179) — the prior
+                // `v > 0` accepted 200° which produced a degenerate
+                // V-bit profile with no warning.
+                if (!isNaN(v) && v >= 1 && v <= 179)
                   patch('halfpipeProfile', { kind: 'v_bottom', included_angle_deg: v });
               }}
             />

@@ -245,6 +245,26 @@
   function cssColor(name: string, fallback: number): THREE.Color {
     return new THREE.Color(cssVar(name, '') || fallback);
   }
+  /// Per-toolpath-kind tip colors for the playhead glyph (the small
+  /// cone/sphere at the cutter tip). Recomputed by `applyTheme` so
+  /// theme switches don't leave the tip a stale color while the rest
+  /// of the toolpath restyles.
+  let tipColorByKind: Record<string, number> = {
+    rapid: 0x35a2ff,
+    cut: 0xff5555,
+    plunge: 0xffd23a,
+    retract: 0x5fd06e,
+    arc: 0xff8a3a,
+  };
+  function refreshTipColors() {
+    tipColorByKind = {
+      rapid: cssColor('--toolpath-rapid', 0x35a2ff).getHex(),
+      cut: cssColor('--toolpath-cut', 0xff5555).getHex(),
+      plunge: cssColor('--toolpath-plunge', 0xffd23a).getHex(),
+      retract: cssColor('--toolpath-retract', 0x5fd06e).getHex(),
+      arc: cssColor('--toolpath-arc', 0xff8a3a).getHex(),
+    };
+  }
 
   /// Deterministic hue in [0, 1) per op id. Spread by the golden-ratio
   /// conjugate so even close ids land far apart on the wheel.
@@ -354,10 +374,15 @@
       attributes: true,
       attributeFilter: ['data-theme'],
     });
+    // Populate the tip-color cache with the live tokens — without this
+    // the first frame after mount would draw the playhead in the
+    // dark-theme fallback even when the user's on light theme.
+    refreshTipColors();
   });
 
   function applyTheme() {
     if (!scene) return;
+    refreshTipColors();
     scene.background = cssColor('--bg-app', 0x0d0d0d);
     const grid = scene.getObjectByName('theme-grid') as THREE.GridHelper | undefined;
     if (grid) {
@@ -885,8 +910,10 @@
   /// Fixture ids currently flashing red (set by the playhead $effect).
   let flashingFixtures = new Set<number>();
 
-  function warningMarkerColor(w: SimWarning): number {
-    return simWarningSeverity(w) === 'critical' ? 0xe54848 : 0xf0c020;
+  function warningMarkerColor(w: SimWarning): THREE.Color {
+    return simWarningSeverity(w) === 'critical'
+      ? cssColor('--error', 0xe54848)
+      : cssColor('--warn', 0xf0c020);
   }
 
   function warningPosition(w: SimWarning): { x: number; y: number; z: number } | null {
@@ -1024,7 +1051,10 @@
     const fillMat = new THREE.MeshBasicMaterial({
       transparent: true,
       opacity: 0.05,
-      color: 0xcccccc,
+      // Theme-tracking neutral so the stock fill is visible against both
+      // the dark and light backdrops. `--stock-edge` is the matching
+      // outline token (used a few lines below).
+      color: cssColor('--stock-edge', 0xcccccc),
       side: THREE.DoubleSide,
       depthWrite: false,
     });
@@ -1212,11 +1242,13 @@
   /// Re-apply the flashingFixtures color override. Called whenever the
   /// flashing set changes (playhead crosses a fixture_collision segment).
   function applyFixtureFlash() {
+    const flashColor = cssColor('--error', 0xe54848);
     for (const [id, mats] of fixtureMaterials) {
       const flash = flashingFixtures.has(id);
       const base = fixtureBaseColors.get(id) ?? 0xffa050c0;
       for (const m of mats) {
-        m.color.set(flash ? 0xe54848 : base);
+        if (flash) m.color.copy(flashColor);
+        else m.color.set(base);
       }
     }
   }
@@ -1390,14 +1422,7 @@
     const py = seg.from.y + (seg.to.y - seg.from.y) * t;
     const pz = seg.from.z + (seg.to.z - seg.from.z) * t;
 
-    const tipColor: Record<string, number> = {
-      rapid: 0x35a2ff,
-      cut: 0xff5555,
-      plunge: 0xffd23a,
-      retract: 0x5fd06e,
-      arc: 0xff8a3a,
-    };
-    const colorHex = tipColor[seg.kind] ?? 0xff5555;
+    const colorHex = tipColorByKind[seg.kind] ?? tipColorByKind.cut;
 
     // Pick the tool: prefer the selected op's tool, else the active
     // segment's op, else the first tool entry, else fallback.
@@ -1893,6 +1918,21 @@
   >
     ⌖
   </button>
+  {#if !project.transformedImport}
+    <!-- Empty-state mirror of EntityCanvas2D's "Open a file" overlay.
+         Before this, switching to 3D before loading anything showed a
+         blank grid + axes with no affordance. The pointer-events:none
+         keeps OrbitControls fully usable around it. -->
+    <div class="empty-state" aria-hidden="true">
+      <div class="empty-card">
+        <div class="empty-glyph">⌗</div>
+        <div class="empty-title">No drawing loaded</div>
+        <div class="empty-sub">
+          Open a DXF / SVG, drop a file onto the window, or pick a sample.
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1927,11 +1967,44 @@
     transition:
       opacity 0.12s ease,
       color 0.12s ease;
-    z-index: 2;
+    z-index: var(--z-anchor);
   }
   .fit-btn:hover,
-  .fit-btn:focus {
+  .fit-btn:focus-visible {
     opacity: 1;
     color: var(--text-strong);
+  }
+  /* Empty-state overlay shown when no drawing is loaded. Mirrors the
+     2D pane's empty hint so the user gets the same affordance in
+     either view. pointer-events:none lets OrbitControls keep working. */
+  .empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .empty-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 1.2rem 2rem;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .empty-glyph {
+    font-size: 2.4rem;
+    color: var(--canvas-empty);
+    line-height: 1;
+  }
+  .empty-title {
+    font-size: 1.05rem;
+    color: var(--text);
+  }
+  .empty-sub {
+    font-size: 0.82rem;
+    max-width: 22rem;
   }
 </style>

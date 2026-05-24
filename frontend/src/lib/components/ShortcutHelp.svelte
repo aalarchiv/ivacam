@@ -12,11 +12,11 @@
   let { onClose }: Props = $props();
 </script>
 
-<Modal {onClose} width="min(560px, 95vw)" maxHeight="90vh">
+<Modal {onClose} width="min(560px, 95vw)" maxHeight="90vh" ariaLabelledBy="shortcut-help-title">
  <div class="shortcut-grid">
   <header>
     <h2 id="shortcut-help-title">Keyboard &amp; mouse shortcuts</h2>
-    <button class="close" onclick={onClose} type="button" aria-label="Close">×</button>
+    <button class="dlg-close" onclick={onClose} type="button" aria-label="Close">×</button>
   </header>
 
   <div class="body">
@@ -70,18 +70,19 @@
   </div>
 
   <footer>
-    <button class="primary" onclick={onClose} type="button">Done</button>
+    <button class="btn-primary" onclick={onClose} type="button">Done</button>
   </footer>
  </div>
 </Modal>
 
 <style>
-  /* Modal sizing comes from Modal.svelte's width / max-height props. */
+  /* Modal sizing comes from Modal.svelte's width / max-height props.
+     Drop the prior `height: 100%` — the parent has only `max-height`,
+     so `100%` resolved against an unsized box and collapsed to content
+     anyway. Let the grid size to content and rely on Modal's overflow. */
   .shortcut-grid {
     display: grid;
-    grid-template-rows: auto 1fr auto;
-    height: 100%;
-    overflow: hidden;
+    grid-template-rows: auto auto auto;
   }
   header {
     display: flex;
@@ -95,14 +96,6 @@
     font-size: 0.95rem;
     margin: 0;
     color: var(--text-strong);
-  }
-  .close {
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 0.3rem;
   }
   .body {
     padding: 0.7rem 0.9rem;
@@ -163,13 +156,5 @@
     padding: 0.5rem 0.7rem;
     border-top: 1px solid var(--border);
     background: var(--bg-elevated);
-  }
-  .primary {
-    background: var(--accent);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
   }
 </style>

@@ -226,10 +226,53 @@
     dragId = null;
     dragOverId = null;
   }
+
+  /// Listbox arrow-key nav with Alt-Up/Down to reorder rows (the
+  /// drag-grip's mouse-only counterpart, audit xc3a). Roving tabindex
+  /// on each row: only the selected op is in the tab order.
+  function onListKey(e: KeyboardEvent) {
+    const ops = project.operations;
+    if (ops.length === 0) return;
+    const curIdx = Math.max(0, ops.findIndex((o) => o.id === project.selectedOpId));
+    let nextIdx = curIdx;
+    if (e.key === 'ArrowDown') nextIdx = Math.min(ops.length - 1, curIdx + 1);
+    else if (e.key === 'ArrowUp') nextIdx = Math.max(0, curIdx - 1);
+    else if (e.key === 'Home') nextIdx = 0;
+    else if (e.key === 'End') nextIdx = ops.length - 1;
+    else if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      // Alt + Arrow: reorder — keyboard counterpart to drag-grip.
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      const dest = Math.max(0, Math.min(ops.length - 1, curIdx + dir));
+      if (dest !== curIdx) {
+        project.reorderOperation(ops[curIdx].id, dest);
+        e.preventDefault();
+      }
+      return;
+    } else return;
+    e.preventDefault();
+    selectOp(ops[nextIdx].id);
+    // Move focus onto the newly-selected row to match the tabindex flip.
+    queueMicrotask(() => {
+      (e.currentTarget as HTMLElement | null)
+        ?.querySelector<HTMLElement>(
+          `[data-op-row-id="${ops[nextIdx].id}"] [role="option"]`,
+        )
+        ?.focus();
+    });
+  }
 </script>
 
 <div class="ops" class:collapsed={!active}>
-  <header onclick={onActivate} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') onActivate(); }}>
+  <!-- audit xc3a: dropped nested `role="button" tabindex="0"` on the
+       header — the caret + add buttons inside are already focusable, so
+       the wrapper-button created duplicate Tab stops + an Enter shortcut
+       that overlapped with the caret's own activate behavior.
+       audit o1od: shape now matches TextList/Stock .group-head — grid
+       layout with accent-tinted bg + border so the three accordion
+       panels read as one design language. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="group-head" onclick={onActivate}>
     <button
       class="caret-btn"
       onclick={(e) => { e.stopPropagation(); onActivate(); }}
@@ -238,17 +281,17 @@
     >
       {active ? '▾' : '▸'}
     </button>
-    <h3>Operations</h3>
-    <span class="ops-count" title="Number of operations">{project.operations.length}</span>
+    <span class="group-name">Operations</span>
+    <span class="group-count" title="Number of operations">{project.operations.length}</span>
     <button
-      class="add"
+      class="add-btn"
       onclick={(e) => { e.stopPropagation(); if (!active) onActivate(); pickerOpen = !pickerOpen; }}
       title="Add operation"
       aria-label="Add operation"
     >
       +
     </button>
-  </header>
+  </div>
 
 {#if active}
   {#if pickerOpen}
@@ -268,7 +311,7 @@
       </button>
     </div>
   {:else}
-    <ul role="listbox" class="ops-list">
+    <ul role="listbox" class="ops-list" tabindex="-1" onkeydown={onListKey}>
       {#each project.operations as op (op.id)}
         {@const status = statusFor(op)}
         {@const selected = project.selectedOpId === op.id}
@@ -291,7 +334,7 @@
               if (e.key === 'Enter' || e.key === ' ') selectOp(op.id);
             }}
             role="option"
-            tabindex="0"
+            tabindex={selected ? 0 : -1}
             aria-selected={selected}
           >
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -300,7 +343,7 @@
               draggable="true"
               ondragstart={(e) => onDragStart(e, op.id)}
               ondragend={onDragEnd}
-              title="Drag to reorder"
+              title="Drag to reorder · Alt+Up / Alt+Down with the row focused does the same from the keyboard"
               aria-hidden="true">⋮⋮</span
             >
             <input
@@ -388,41 +431,28 @@
     padding: 0.25rem 0.6rem;
     height: auto;
   }
-  .ops.collapsed header {
+  .ops.collapsed .group-head {
     margin-bottom: 0;
   }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
+  /* Base shape lives in app.css `.group-head` / `.caret-btn`; only the
+     per-panel grid + bottom margin are local. */
+  .group-head {
+    grid-template-columns: auto 1fr auto auto;
     margin-bottom: 0.4rem;
-    cursor: pointer;
-    user-select: none;
   }
-  .caret-btn {
-    background: transparent;
-    border: 0;
+  .group-name {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .group-count {
     color: var(--text-muted);
-    font-size: 0.85rem;
-    line-height: 1;
-    padding: 0 0.15rem;
-    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0 0.3rem;
+    background: var(--bg-app);
+    border-radius: 10px;
+    line-height: 1.4;
   }
-  h3 {
-    margin: 0;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    flex: 0 0 auto;
-  }
-  .ops-count {
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    margin-left: 0.1rem;
-    flex: 1 1 auto;
-  }
-  .add {
+  .add-btn {
     background: var(--bg-elevated);
     color: var(--text);
     border: 1px solid var(--border);
@@ -431,6 +461,11 @@
     font-size: 0.95rem;
     line-height: 1;
     cursor: pointer;
+  }
+  .add-btn:hover {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    border-color: var(--accent);
+    color: var(--text-strong);
   }
   .picker-host {
     margin-bottom: 0.4rem;
@@ -561,19 +596,29 @@
   }
   .dup,
   .del {
+    /* WCAG ≥24×24 hit target — was padding: 0 0.25rem on a 0.9 rem
+       glyph, ~14-18 px tall depending on row gap. */
     background: transparent;
     border: 0;
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9rem;
     line-height: 1;
-    padding: 0 0.25rem;
+    padding: 0;
+    min-width: 24px;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
   }
   .dup:hover {
     color: var(--text);
+    background: var(--bg-elevated);
   }
   .del:hover {
     color: var(--error);
+    background: color-mix(in srgb, var(--error) 12%, transparent);
   }
   /* eb8.7: inline Re-pick shortcut on rows whose source references
      objects / layers that no longer exist in the current import.

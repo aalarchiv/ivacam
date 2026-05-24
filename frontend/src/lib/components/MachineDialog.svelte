@@ -228,10 +228,10 @@
 </script>
 
 {#if open}
-  <Modal onClose={close} modalClass="machine-modal">
+  <Modal onClose={close} modalClass="machine-modal" width="min(880px, 96vw)" ariaLabelledBy="machine-title">
     <header>
       <h2 id="machine-title">Machine</h2>
-      <button class="close" onclick={close} aria-label="Close">×</button>
+      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
     </header>
 
     <!--
@@ -306,7 +306,9 @@
       >
         Fast-move Z
         <span class="field"
-          ><input type="number" bind:value={draft.fastMoveZ} step="0.1" /></span
+          ><input type="number" bind:value={draft.fastMoveZ} step="0.1" /><span class="unit"
+            >mm</span
+          ></span
         >
       </label>
       <fieldset class="work-area">
@@ -328,7 +330,7 @@
                   draft.workArea = { x: v, y: draft.workArea?.y ?? 300, z: draft.workArea?.z ?? 50 };
                 }
               }}
-            /></span
+            /><span class="unit">mm</span></span
           >
         </label>
         <label
@@ -345,7 +347,7 @@
                   draft.workArea = { x: draft.workArea?.x ?? 200, y: v, z: draft.workArea?.z ?? 50 };
                 }
               }}
-            /></span
+            /><span class="unit">mm</span></span
           >
         </label>
         <label
@@ -362,7 +364,7 @@
                   draft.workArea = { x: draft.workArea?.x ?? 200, y: draft.workArea?.y ?? 300, z: v };
                 }
               }}
-            /></span
+            /><span class="unit">mm</span></span
           >
         </label>
       </fieldset>
@@ -396,7 +398,7 @@
               const v = (e.target as HTMLInputElement).valueAsNumber;
               draft.arcFitToleranceMm = isFinite(v) && v >= 0 ? v : undefined;
             }}
-          /></span
+          /><span class="unit">mm</span></span
         >
       </label>
       <label
@@ -780,11 +782,11 @@
     <footer>
       {#if confirmingDiscard}
         <span class="discard-prompt">Discard unsaved changes?</span>
-        <button class="secondary" onclick={cancelDiscard}>Keep editing</button>
-        <button class="danger" onclick={discardAndClose}>Discard</button>
+        <button class="btn-secondary" onclick={cancelDiscard}>Keep editing</button>
+        <button class="btn-danger" onclick={discardAndClose}>Discard</button>
       {:else}
         <button
-          class="secondary"
+          class="btn-secondary"
           onclick={async () => {
             // Commit any pending edits first so the saved snapshot
             // reflects what the user is looking at, not the
@@ -797,7 +799,7 @@
           Save…
         </button>
         <button
-          class="secondary"
+          class="btn-secondary"
           onclick={async () => {
             await fileOps.loadMachine();
             // Refresh draft so the dialog shows the freshly-loaded
@@ -811,8 +813,8 @@
           Load…
         </button>
         <span class="sep"></span>
-        <button class="secondary" onclick={close}>Cancel</button>
-        <button class="primary" onclick={commit}>OK</button>
+        <button class="btn-secondary" onclick={close}>Cancel</button>
+        <button class="btn-primary" onclick={commit}>OK</button>
       {/if}
     </footer>
   </Modal>
@@ -841,14 +843,8 @@
     margin: 0;
     color: var(--text-strong);
   }
-  .close {
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 0.3rem;
-  }
+  /* `.dlg-close` lives in Modal.svelte; `.btn-primary|secondary|danger`
+     + `.discard-prompt` in app.css (audit hbi7). */
   .storage-note {
     margin: 0;
     padding: 0.45rem 0.7rem;
@@ -958,36 +954,6 @@
     padding: 0.5rem 0.7rem;
     border-top: 1px solid var(--border);
     background: var(--bg-elevated);
-  }
-  .primary {
-    background: var(--accent);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .secondary {
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .danger {
-    background: var(--danger, #c0392b);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .discard-prompt {
-    margin-right: auto;
-    color: var(--danger, #c0392b);
-    font-size: 0.85rem;
-    align-self: center;
   }
   .pp-summary {
     grid-column: 1 / -1;

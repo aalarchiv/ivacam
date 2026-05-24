@@ -20,6 +20,7 @@
   import type { TextFontSource, TextLayer } from '../state/project.svelte';
   import { STYLE_TABLE, engravingMismatch, type TextStyle } from './text_style';
   import { computeFootprint } from '../sim/driver';
+  import { formatLength } from '../cam/units';
   import Modal from './Modal.svelte';
   import { onMount } from 'svelte';
 
@@ -50,19 +51,33 @@
   /// pick visually based on the shapes that actually matter.
   const FONT_SAMPLE = 'AaBb 0123 äöß€';
 
-  let text = $state('Text');
-  let style = $state<TextStyle>('engraving');
-  let sizeMm = $state(12);
+  /// Initial values for every editable field — used by `isDirty` so the
+  /// close path can detect "user has typed something" and prompt instead
+  /// of silently discarding the draft.
+  const INITIAL_TEXT = 'Text';
+  const INITIAL_STYLE: TextStyle = 'engraving';
+  const INITIAL_SIZE_MM = 12;
+  const INITIAL_WIDTH_PCT = 100;
+  const INITIAL_POS_X = 0;
+  const INITIAL_POS_Y = 0;
+  const INITIAL_DEPTH = -0.5;
+  const INITIAL_TOOL_ID = 1;
+  const INITIAL_USE_USER_FONT = false;
+  const INITIAL_BUNDLED_FONT_PATH = BUNDLED_FONTS[0]?.path ?? '';
+
+  let text = $state(INITIAL_TEXT);
+  let style = $state<TextStyle>(INITIAL_STYLE);
+  let sizeMm = $state(INITIAL_SIZE_MM);
   /// 969h: horizontal stretch as a percentage. UI exposes 50–200 %;
   /// stored on TextLayer as a 0.5–2.0 multiplier.
-  let widthPct = $state(100);
-  let posX = $state(0);
-  let posY = $state(0);
-  let depth = $state(-0.5);
-  let toolId = $state<number>(1);
+  let widthPct = $state(INITIAL_WIDTH_PCT);
+  let posX = $state(INITIAL_POS_X);
+  let posY = $state(INITIAL_POS_Y);
+  let depth = $state(INITIAL_DEPTH);
+  let toolId = $state<number>(INITIAL_TOOL_ID);
   let userFontFile = $state<File | null>(null);
-  let bundledFontPath = $state<string>(BUNDLED_FONTS[0]?.path ?? '');
-  let useUserFont = $state(false);
+  let bundledFontPath = $state<string>(INITIAL_BUNDLED_FONT_PATH);
+  let useUserFont = $state(INITIAL_USE_USER_FONT);
   /// 6y3m: dropdown popover state. Each bundled font is registered as a
   /// FontFace at mount so the rows + selected chip can render in the
   /// actual font's glyphs (vs the platform default that <select>'s
@@ -350,16 +365,50 @@
     }
   }
 
+  /// True when any draft field has diverged from its initial value, or
+  /// the user has dropped a custom font file. Drives the discard-prompt
+  /// in close() — without this, ESC/backdrop/× discards typed text + a
+  /// painstakingly-picked font without asking.
+  const isDirty = $derived(
+    text !== INITIAL_TEXT ||
+      style !== INITIAL_STYLE ||
+      sizeMm !== INITIAL_SIZE_MM ||
+      widthPct !== INITIAL_WIDTH_PCT ||
+      posX !== INITIAL_POS_X ||
+      posY !== INITIAL_POS_Y ||
+      depth !== INITIAL_DEPTH ||
+      toolId !== INITIAL_TOOL_ID ||
+      useUserFont !== INITIAL_USE_USER_FONT ||
+      bundledFontPath !== INITIAL_BUNDLED_FONT_PATH ||
+      userFontFile != null,
+  );
+
+  /// Two-step close on dirty — mirrors MachineDialog. ESC / backdrop /
+  /// × all route through close(); the first call arms the prompt, the
+  /// "Discard" button in the prompt fires onClose() for real.
+  let confirmingDiscard = $state(false);
+
   function close() {
+    if (isDirty) {
+      confirmingDiscard = true;
+      return;
+    }
     onClose();
+  }
+  function discardAndClose() {
+    confirmingDiscard = false;
+    onClose();
+  }
+  function cancelDiscard() {
+    confirmingDiscard = false;
   }
 </script>
 
 {#if open}
-  <Modal onClose={close} width="min(540px, 95vw)">
+  <Modal onClose={close} width="min(540px, 95vw)" ariaLabelledBy="addtext-title">
     <header>
       <h2 id="addtext-title">Add Text</h2>
-      <button class="close" onclick={close} aria-label="Close">×</button>
+      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
     </header>
 
     <div class="body">
@@ -501,7 +550,9 @@
           <span>Tool</span>
           <select bind:value={toolId}>
             {#each filteredTools as t (t.id)}
-              <option value={t.id}>{t.name} ({t.kind}, {t.diameter} mm)</option>
+              <option value={t.id}
+                >{t.name} ({t.kind}, {formatLength(t.diameter, project.machine.unit)})</option
+              >
             {/each}
             {#if filteredTools.length === 0}
               <option value={0}>(no {STYLE_TABLE[style].toolKind} in library)</option>
@@ -527,8 +578,14 @@
     </div>
 
     <footer>
-      <button class="secondary" onclick={close}>Cancel</button>
-      <button class="primary" onclick={apply} disabled={busy}>Add</button>
+      {#if confirmingDiscard}
+        <span class="discard-prompt">Discard unsaved text?</span>
+        <button class="btn-secondary" onclick={cancelDiscard}>Keep editing</button>
+        <button class="btn-danger" onclick={discardAndClose}>Discard</button>
+      {:else}
+        <button class="btn-secondary" onclick={close}>Cancel</button>
+        <button class="btn-primary" onclick={apply} disabled={busy}>Add</button>
+      {/if}
     </footer>
   </Modal>
 {/if}
@@ -547,18 +604,10 @@
     margin: 0;
     color: var(--text-strong);
   }
-  .close {
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 0.3rem;
-  }
   .body {
     padding: 0.7rem;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.5rem;
     overflow: auto;
   }
@@ -722,7 +771,7 @@
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 4px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     z-index: var(--z-dropdown);
     max-height: 14rem;
     overflow-y: auto;
@@ -758,25 +807,5 @@
     padding: 0.5rem 0.7rem;
     border-top: 1px solid var(--border);
     background: var(--bg-elevated);
-  }
-  .primary {
-    background: var(--accent);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .secondary {
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
   }
 </style>

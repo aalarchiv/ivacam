@@ -126,7 +126,11 @@
   /// Disabled fields (drag-knife speed, laser plunge, etc.) are
   /// excluded — fieldApplies() already says they're not used.
   function diameterInvalid(t: ToolEntry): boolean {
-    return !(t.diameter > 0);
+    // HTML min="0.01" is the actual floor — flag anything below it as
+    // invalid so the user gets the red border (the prior `> 0` accepted
+    // 0.005 mm which is below the HTML constraint and gets clamped /
+    // ignored downstream without surface feedback).
+    return !(t.diameter >= 0.01);
   }
   function speedInvalid(t: ToolEntry): boolean {
     if (!fieldApplies('speed', t.kind)) return false;
@@ -489,10 +493,10 @@
 </script>
 
 {#if open}
-  <Modal onClose={close} persistKey="tool-library" width="min(960px, 96vw)">
+  <Modal onClose={close} persistKey="tool-library" width="min(960px, 96vw)" ariaLabelledBy="tools-title">
     <header>
       <h2 id="tools-title">Tool library</h2>
-      <button class="close" onclick={close} aria-label="Close">×</button>
+      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
     </header>
     <div class="body" bind:this={bodyEl}>
       <div class="table">
@@ -1397,11 +1401,11 @@
     <footer>
       {#if confirmingDiscard}
         <span class="discard-prompt">Discard unsaved changes?</span>
-        <button class="secondary" onclick={cancelDiscard}>Keep editing</button>
-        <button class="danger" onclick={discardAndClose}>Discard</button>
+        <button class="btn-secondary" onclick={cancelDiscard}>Keep editing</button>
+        <button class="btn-danger" onclick={discardAndClose}>Discard</button>
       {:else}
         <button
-          class="secondary"
+          class="btn-secondary"
           onclick={async () => {
             await fileOps.saveToolset();
           }}
@@ -1410,7 +1414,7 @@
           Save…
         </button>
         <button
-          class="secondary"
+          class="btn-secondary"
           onclick={async () => {
             await fileOps.loadToolset('replace');
             // Editor draft must follow the new tools so the dialog
@@ -1422,7 +1426,7 @@
           Load (replace)…
         </button>
         <button
-          class="secondary"
+          class="btn-secondary"
           onclick={async () => {
             await fileOps.loadToolset('add');
             draft = project.tools.map((t) => ({ ...t }));
@@ -1439,9 +1443,9 @@
             >Fix highlighted fields (⌀, RPM, feed, plunge must be &gt; 0).</span
           >
         {/if}
-        <button class="secondary" onclick={close}>Cancel</button>
+        <button class="btn-secondary" onclick={close}>Cancel</button>
         <button
-          class="primary"
+          class="btn-primary"
           onclick={commit}
           disabled={hasInvalidRow}
           title={hasInvalidRow ? 'Fix the highlighted fields before saving.' : ''}>OK</button
@@ -1465,14 +1469,6 @@
     margin: 0;
     color: var(--text-strong);
   }
-  .close {
-    background: transparent;
-    color: var(--text-muted);
-    border: 0;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 0.3rem;
-  }
   .body {
     padding: 0.6rem 0.7rem;
     overflow: auto;
@@ -1481,18 +1477,27 @@
   .table {
     display: grid;
     gap: 0.2rem;
+    /* Below ~720 px the 13-column tools grid (id, name, kind, diameter,
+       reach, flutes, ∠, speed, feed, plunge, warmup, notes, trash) used
+       to squash numeric inputs to unreadable widths because every column
+       was fr-based. min-content forces the cells to their intrinsic
+       width and the body's `overflow: auto` kicks in as a horizontal
+       scroller — a clearly worse-than-fitting outcome only on tiny
+       windows, but never an unreadable squash on the common 900-1200 px
+       laptop sizes. */
+    min-width: min-content;
   }
   .row {
     display: grid;
     grid-template-columns:
-      2.5rem minmax(0, 1.6fr) minmax(0, 1fr)
-      4.5rem 4.5rem 4rem 3.5rem 5rem 5rem 5rem 4.5rem minmax(0, 1fr) 2rem;
+      2.5rem minmax(8rem, 1.6fr) minmax(6rem, 1fr)
+      4.5rem 4.5rem 4rem 3.5rem 5rem 5rem 5rem 4.5rem minmax(6rem, 1fr) 2rem;
     gap: 0.3rem;
     align-items: center;
     font-size: 0.78rem;
   }
   input.invalid {
-    border-color: var(--danger, #c44);
+    border-color: var(--danger);
   }
   /* Disabled fields (per-kind n/a entries) fade visibly so users see
      they're not editable, without changing the row layout. */
@@ -1510,6 +1515,13 @@
     font-size: 0.68rem;
     padding-bottom: 0.2rem;
     border-bottom: 1px solid var(--border);
+    /* Sticky so unit headers (mm / ° / RPM / mm/min) stay visible while
+       scrolling through a long tool library; was previously scrolling
+       off and leaving rows context-free. `.body` is the scroll container. */
+    position: sticky;
+    top: 0;
+    background: var(--bg-panel);
+    z-index: var(--z-anchor);
   }
   .row.head .unit-hdr {
     color: var(--text-faint);
@@ -1662,43 +1674,13 @@
     border-top: 1px solid var(--border);
     background: var(--bg-elevated);
   }
-  .primary {
-    background: var(--accent);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .secondary {
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .danger {
-    background: var(--danger, #c0392b);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .discard-prompt {
-    margin-right: auto;
-    color: var(--danger, #c0392b);
-    font-size: 0.85rem;
-    align-self: center;
-  }
   /* jkgj: footer-side validation hint shown when an OK-disabling
      row is present. Same red palette as `.discard-prompt`, but
      keeps the action buttons aligned to the right by NOT setting
      `margin-right: auto` — we want this slot inline with the
      buttons, not pushed to the start. */
   .validation-msg {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
     font-size: 0.78rem;
     align-self: center;
   }

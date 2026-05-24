@@ -22,6 +22,7 @@
   import { defaultClient } from '../api/http';
   import type { HelixRadiusResponse } from '../api/types';
   import { prettyOpKind } from '../state/project-types';
+  import { formatLength } from '../cam/units';
   import { formatExpectedToolKinds, isToolKindAcceptable } from '../state/op_tool_constraint';
   import VCarveSection from './op_properties/VCarveSection.svelte';
   import ChamferSection from './op_properties/ChamferSection.svelte';
@@ -211,7 +212,7 @@
         oninput={(e) => patch('message', (e.currentTarget as HTMLInputElement).value)}
       />
     </label>
-    <p class="hint" style="margin-top:0.5rem">
+    <p class="hint hint-pause">
       The pipeline emits <code>M5</code>, this message as a comment, <code>M0</code>,
       and <code>M3</code> at this slot. Spindle stops; pressing Cycle Start resumes.
     </p>
@@ -251,7 +252,7 @@
         >
           {#each project.tools as t (t.id)}
             <option value={t.id} title={t.comment ?? ''}
-              >#{t.id} {t.name} ({t.diameter}mm)</option
+              >#{t.id} {t.name} ({formatLength(t.diameter, project.machine.unit)})</option
             >
           {/each}
         </select>
@@ -399,8 +400,13 @@
             type="number"
             step="0.1"
             value={op.depth}
-            onchange={(e) =>
-              patch('depth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+            onchange={(e) => {
+              const raw = (e.currentTarget as HTMLInputElement).value;
+              const v = parseFloat(raw);
+              // Reject NaN — the prior `|| 0` silently snapped a typo
+              // to depth=0 with no UI cue.
+              if (Number.isFinite(v)) patch('depth', v);
+            }}
           />
           <span class="unit">mm</span>
         </div>
@@ -412,8 +418,11 @@
             type="number"
             step="0.1"
             value={op.startDepth}
-            onchange={(e) =>
-              patch('startDepth', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+            onchange={(e) => {
+              const raw = (e.currentTarget as HTMLInputElement).value;
+              const v = parseFloat(raw);
+              if (Number.isFinite(v)) patch('startDepth', v);
+            }}
           />
           <span class="unit">mm</span>
         </div>
@@ -972,6 +981,12 @@
 </aside>
 
 <style>
+  /* Top-margin spacer for the pause-op explanatory paragraph (was an
+     inline `style=""`; pulled into a class so CSP-strict deployments
+     don't break and we don't ship a single-purpose inline rule). */
+  :global(.hint.hint-pause) {
+    margin-top: 0.5rem;
+  }
   .props {
     width: 100%;
     height: 100%;

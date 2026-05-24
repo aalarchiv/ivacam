@@ -13,9 +13,44 @@
 
   import { project } from '../state/project.svelte';
   import { computeFootprint } from '../sim/driver';
+  import { parseFiniteNumber } from '../cam/units';
 
   function patch(p: Partial<typeof project.stock>) {
     project.setStock(p);
+  }
+
+  /// Wrap a stock-field onchange handler with shared invalid-feedback
+  /// behavior: on a parse failure / out-of-range value the input keeps
+  /// the rejected value but doesn't commit it, and the `.invalid` class
+  /// renders a red border so the user sees their input was refused.
+  /// Without this the old `parseFloat(v) || 0` patterns silently
+  /// snapped stock dims to 0 when the user typed "abc" or a negative.
+  function commitStockNumber(
+    key: keyof typeof project.stock,
+    raw: string,
+    opts: { min?: number; allowNegative?: boolean } = {},
+  ) {
+    const minimum = opts.allowNegative ? undefined : (opts.min ?? 0);
+    const parsed = parseFiniteNumber(raw, { min: minimum });
+    if (parsed.value == null) return false;
+    patch({ [key]: parsed.value });
+    return true;
+  }
+
+  /// Reactive marker — set when the most recent commit attempt for the
+  /// keyed field returned `invalid`. Drives the `.invalid` class.
+  /// Resets per-field on a successful commit. The single-shared
+  /// invalid-key avoids piling per-field $state slots for what is
+  /// essentially a transient validation flash.
+  let invalidKey = $state<string | null>(null);
+
+  function onStockNumberChange(
+    key: keyof typeof project.stock,
+    e: Event,
+    opts: { min?: number; allowNegative?: boolean } = {},
+  ) {
+    const ok = commitStockNumber(key, (e.target as HTMLInputElement).value, opts);
+    invalidKey = ok ? null : key;
   }
 
   const footprint = $derived(
@@ -63,8 +98,8 @@
             step="0.5"
             min="1"
             value={project.stock.customX}
-            onchange={(e) =>
-              patch({ customX: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+            class:invalid={invalidKey === 'customX'}
+            onchange={(e) => onStockNumberChange('customX', e, { min: 1 })}
           />
         {/if}
         <span class="unit">mm</span>
@@ -81,8 +116,8 @@
             step="0.5"
             min="1"
             value={project.stock.customY}
-            onchange={(e) =>
-              patch({ customY: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+            class:invalid={invalidKey === 'customY'}
+            onchange={(e) => onStockNumberChange('customY', e, { min: 1 })}
           />
         {/if}
         <span class="unit">mm</span>
@@ -96,8 +131,8 @@
           step="0.5"
           min="0.1"
           value={project.stock.thickness}
-          onchange={(e) =>
-            patch({ thickness: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+          class:invalid={invalidKey === 'thickness'}
+          onchange={(e) => onStockNumberChange('thickness', e, { min: 0.1 })}
         />
         <span class="unit">mm</span>
       </span>
@@ -111,8 +146,8 @@
             step="0.5"
             min="0"
             value={project.stock.margin}
-            onchange={(e) =>
-              patch({ margin: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+            class:invalid={invalidKey === 'margin'}
+            onchange={(e) => onStockNumberChange('margin', e, { min: 0 })}
             title="Adds to Length + Width (auto-fit case); Thickness is unaffected."
           />
           <span class="unit">mm</span>
@@ -130,8 +165,8 @@
           type="number"
           step="0.5"
           value={project.stock.offsetX ?? 0}
-          onchange={(e) =>
-            patch({ offsetX: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+          class:invalid={invalidKey === 'offsetX'}
+          onchange={(e) => onStockNumberChange('offsetX', e, { allowNegative: true })}
         />
         <span class="unit">mm</span>
       </span>
@@ -143,8 +178,8 @@
           type="number"
           step="0.5"
           value={project.stock.offsetY ?? 0}
-          onchange={(e) =>
-            patch({ offsetY: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+          class:invalid={invalidKey === 'offsetY'}
+          onchange={(e) => onStockNumberChange('offsetY', e, { allowNegative: true })}
         />
         <span class="unit">mm</span>
       </span>
@@ -156,8 +191,8 @@
           type="number"
           step="0.5"
           value={project.stock.offsetZ ?? 0}
-          onchange={(e) =>
-            patch({ offsetZ: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+          class:invalid={invalidKey === 'offsetZ'}
+          onchange={(e) => onStockNumberChange('offsetZ', e, { allowNegative: true })}
           title="Reserved — currently the pipeline assumes stock top at z = 0."
         />
         <span class="unit">mm</span>
@@ -179,7 +214,7 @@
     padding: 0.35rem 0.55rem 0.45rem;
     margin: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.3rem 0.5rem;
   }
   legend {
@@ -191,7 +226,7 @@
     letter-spacing: 0.05em;
   }
   fieldset.mode {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
   fieldset.mode .radio {
     display: inline-flex;
@@ -232,6 +267,9 @@
     color: var(--text-muted);
     background: color-mix(in srgb, var(--bg-input) 70%, transparent);
     cursor: default;
+  }
+  .field input.invalid {
+    border-color: var(--danger);
   }
   .field .unit {
     font-size: 0.7rem;

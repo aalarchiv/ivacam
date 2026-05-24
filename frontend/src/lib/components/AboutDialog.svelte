@@ -131,10 +131,10 @@
   ];
 </script>
 
-<Modal {onClose} modalClass="about-modal" width="640px">
+<Modal {onClose} modalClass="about-modal" width="min(640px, 95vw)" ariaLabelledBy="about-title">
   <header>
-    <h2>About wiaConstructor</h2>
-    <button type="button" class="close" onclick={onClose} aria-label="Close">×</button>
+    <h2 id="about-title">About wiaConstructor</h2>
+    <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
   </header>
   <section>
     <p class="tagline">Open-source CAM for hobbyist CNC, laser, and drag-knife machines.</p>
@@ -245,18 +245,6 @@
   header h2 {
     margin: 0;
     font-size: 1.05rem;
-  }
-  .close {
-    background: transparent;
-    border: 0;
-    color: var(--text-muted);
-    font-size: 1.4rem;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0.1rem 0.45rem;
-  }
-  .close:hover {
-    color: var(--text-strong);
   }
   section {
     padding: 0.75rem 1.25rem;

@@ -36,7 +36,10 @@
   }
 .props .row {
     display: grid;
-    grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+    /* Label column shrinks below its 6.5 rem natural width on narrow
+       sidebars so the input column keeps a usable size. Container
+       query would be cleaner but the props panel doesn't carry one. */
+    grid-template-columns: minmax(4rem, 6.5rem) minmax(0, 1fr);
     gap: 0.5rem;
     align-items: center;
     margin: 0.2rem 0;
@@ -75,7 +78,7 @@
   }
 .props .hint.warn {
     color: var(--warn, #b86f00);
-    background: var(--warn-bg, rgba(184, 111, 0, 0.08));
+    background: var(--warn-bg);
     border-left: 2px solid var(--warn, #b86f00);
     padding: 0.15rem 0.4rem;
     border-radius: 2px;
@@ -220,7 +223,7 @@
     color: var(--text-faint);
   }
 .props input.invalid {
-    border-color: var(--danger, #c44);
+    border-color: var(--danger);
   }
 .props .reset-link {
     background: transparent;
@@ -232,6 +235,10 @@
     padding: 0;
     white-space: nowrap;
   }
+.props .reset-link:hover {
+    color: var(--text-strong);
+    text-decoration-thickness: 2px;
+  }
 .props .reset-link.pick-active {
     color: var(--accent);
     font-weight: 600;
@@ -240,9 +247,9 @@
 .props .step-error {
     margin: 0.1rem 0 0.2rem;
     padding: 0.15rem 0.4rem;
-    background: color-mix(in srgb, var(--danger, #c44) 18%, transparent);
-    color: var(--danger, #c44);
-    border: 1px solid var(--danger, #c44);
+    background: color-mix(in srgb, var(--danger) 18%, transparent);
+    color: var(--danger);
+    border: 1px solid var(--danger);
     border-radius: 3px;
     font-size: 0.72rem;
     width: max-content;

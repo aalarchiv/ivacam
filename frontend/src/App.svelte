@@ -75,12 +75,6 @@
   /// an unstyled OS dialog (audit C10).
   let reopenPrompt = $state<{ path: string; filename: string } | null>(null);
 
-  /// qjec: in-app confirmation shown when the user tries to close the
-  /// window with unsaved work. The desktop shell intercepts close,
-  /// emits `app:close_requested`, and we either confirm immediately
-  /// (no unsaved work) or arm this prompt and wait for the user.
-  let closePrompt = $state(false);
-
   // Open the Tool library dialog when OpPropertiesPanel's "edit this
   // tool" icon requests focus on a specific tool row. The dialog reads
   // project.toolsDialogFocusId and handles scroll/highlight.
@@ -97,6 +91,8 @@
   let gcodeOpen = $state(false);
   import { project } from './lib/state/project.svelte';
   import { workspace } from './lib/state/workspace.svelte';
+  import { confirmStore } from './lib/state/confirm.svelte';
+  import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
   import {
     openFile,
     openProject,
@@ -279,7 +275,16 @@
     } catch {
       // ignore — defaults are fine.
     }
-    void workspace.pruneMissingProjects();
+    // Await prune so a deleted-last-project entry has already been
+    // dropped by the time we read `last_project` below. Without the
+    // await, the reopen banner can appear for a path that prune is
+    // about to remove — clicking Reopen then falls into an import-path
+    // error toast for a file the user no longer has.
+    try {
+      await workspace.pruneMissingProjects();
+    } catch {
+      // ignore — best-effort cleanup.
+    }
     if (isDesktop()) {
       const last = workspace.get().last_project;
       if (last) {
@@ -296,13 +301,12 @@
     const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
     if (isProjectFile) await loadProjectPath(path);
     else await loadFromPath(path);
-    // The per-project workspace state restores the user's last layer-
-    // visibility selection, but reopens are a fresh session — if the
-    // user accidentally hid a layer right before closing they'd open
-    // the app to a blank canvas with no obvious "show it" affordance.
-    // Reset to all-visible on reopen so the geometry is visible
-    // immediately; subsequent toggles still persist within the session.
-    if (project.transformedImport) {
+    // If the project file already restored layer-visibility from
+    // per-project workspace state, leave it alone — overwriting was
+    // the previous behavior (audit zxee). If the user had every layer
+    // hidden when they closed (rare but possible), expand to
+    // all-visible so the user isn't staring at an empty canvas.
+    if (project.transformedImport && project.visibleLayers.size === 0) {
       project.visibleLayers = new Set(project.transformedImport.layers.map((l) => l.name));
     }
   }
@@ -384,8 +388,18 @@
   /// really wants out fast.
   let unlistenCloseRequested: (() => void) | null = null;
   async function wireCloseConfirm() {
-    unlistenCloseRequested = await wireCloseRequested(() => {
-      closePrompt = true;
+    unlistenCloseRequested = await wireCloseRequested(async () => {
+      const dirty = project.dirty;
+      const ok = await confirmStore.ask({
+        title: 'Quit wiaConstructor?',
+        body: dirty
+          ? 'You have unsaved changes. They will be lost if you quit now.'
+          : 'Are you sure you want to quit?',
+        primaryLabel: dirty ? 'Discard & quit' : 'Quit',
+        cancelLabel: dirty ? 'Keep editing' : 'Cancel',
+        danger: dirty,
+      });
+      if (ok) void confirmClose();
     });
   }
 
@@ -416,6 +430,24 @@
     const step = e.shiftKey ? -1 : 1;
     const next = PREVIEW_CYCLE[(i + step + PREVIEW_CYCLE.length) % PREVIEW_CYCLE.length];
     project.updateSettings({ previewMode: next });
+  }
+  /// WAI-ARIA tablist arrow-key nav: ArrowLeft/Right toggles activePane,
+  /// Home/End jump to 2D/3D. Roving tabindex on the buttons themselves
+  /// keeps Tab order tidy (only the active tab is in the normal flow).
+  function onPaneTablistKey(e: KeyboardEvent) {
+    if (e.key === 'ArrowLeft' || e.key === 'Home') {
+      activePane = '2d';
+      e.preventDefault();
+    } else if (e.key === 'ArrowRight' || e.key === 'End') {
+      activePane = '3d';
+      e.preventDefault();
+    } else return;
+    // Move focus along with selection so the visible focus ring tracks.
+    queueMicrotask(() => {
+      (e.currentTarget as HTMLElement | null)
+        ?.querySelector<HTMLElement>(`[role="tab"][aria-selected="true"]`)
+        ?.focus();
+    });
   }
 
   // Auto-switch to 3D when /generate returns; people want to see the toolpath.
@@ -599,6 +631,41 @@
     closeAllMenus();
   }
 
+  /// Arrow-key / Home / End nav inside an open menubar dropdown. Wired
+  /// to the dropdown div's onkeydown — keeps focus inside the menu and
+  /// matches the WAI-ARIA pattern for `role="menu"`. ESC is handled at
+  /// the window level (which already calls closeAllMenus).
+  function onMenuKey(e: KeyboardEvent) {
+    const dropdown = (e.currentTarget as HTMLElement) ?? null;
+    if (!dropdown) return;
+    const items = Array.from(
+      dropdown.querySelectorAll<HTMLElement>('button[role="menuitem"]:not(:disabled)'),
+    );
+    if (items.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    const idx = active ? items.indexOf(active) : -1;
+    let next = idx;
+    if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
+    else if (e.key === 'ArrowUp') next = idx <= 0 ? items.length - 1 : idx - 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = items.length - 1;
+    else return;
+    e.preventDefault();
+    items[next]?.focus();
+  }
+  /// Svelte action that auto-focuses the first menuitem inside the
+  /// dropdown on mount. Without it, keyboard users opening the File menu
+  /// would have to Tab past every preceding control to reach the first
+  /// item — combined with `onMenuKey` above, arrow keys then walk items.
+  function focusFirstMenuItemAction(node: HTMLElement) {
+    queueMicrotask(() => {
+      const first = node.querySelector<HTMLElement>(
+        'button[role="menuitem"]:not(:disabled)',
+      );
+      first?.focus();
+    });
+  }
+
   // dteo: window-level drag-and-drop import. Accept .dxf / .svg
   // (loadFile) and .wiac-project.json / .json (loadProjectFile). The
   // overlay only paints while a drag with a `Files` payload is over
@@ -668,13 +735,17 @@
   }
 
   // ---- Resizable layout ------------------------------------------------
-  // Sidebar width in px; clamped 240..720. Persisted in workspace so
-  // the user's preferred ratio survives restart.
+  // Sidebar width in px; clamped against the current viewport in
+  // `clampSidebar`. Persisted in workspace so the user's preferred ratio
+  // survives restart. Window resize re-clamps both panels via the
+  // listener below so a restored 720 px sidebar can't eat an 800 px-wide
+  // viewport, and a 60 %-tall gcode panel can't run off a shrunk window.
   const SIDEBAR_DEFAULT = 360;
   let sidebarWidth = $state<number>(SIDEBAR_DEFAULT);
-  // Gcode panel height in px; clamped 120..720. Default ~35vh.
-  const GCODE_DEFAULT = Math.round(window.innerHeight * 0.35);
-  let gcodeHeight = $state<number>(GCODE_DEFAULT);
+  // Gcode panel height: default ~35 % of viewport. `$state` so the
+  // default tracks resize until the user drags the splitter (after
+  // which the persisted value takes precedence via `clampGcode`).
+  let gcodeHeight = $state<number>(Math.round(window.innerHeight * 0.35));
 
   // Restore persisted sizes from the workspace store once it has loaded.
   $effect(() => {
@@ -685,7 +756,11 @@
   });
 
   function clampSidebar(v: number): number {
-    return Math.max(240, Math.min(720, v));
+    // Hard floor stays at 240 px (under that the OperationsList grid
+    // overlaps); ceiling tracks viewport so a too-wide persisted value
+    // can't crowd the canvas to zero on a smaller monitor.
+    const ceiling = Math.max(240, Math.min(720, Math.round(window.innerWidth * 0.6)));
+    return Math.max(240, Math.min(ceiling, v));
   }
   function clampGcode(v: number): number {
     return Math.max(120, Math.min(Math.round(window.innerHeight * 0.7), v));
@@ -714,6 +789,22 @@
   function resetGcode() {
     gcodeHeight = Math.round(window.innerHeight * 0.35);
     persistLayout();
+  }
+
+  // Re-clamp panel sizes on viewport changes — without this, a persisted
+  // 720 px sidebar restored on an 800 px window would leave 80 px for the
+  // canvas, and a 600 px gcode panel on a 700 px-tall window would crowd
+  // the 3D scene to nothing. Listener is installed once at mount and torn
+  // down on destroy. The persist call is debounced via the workspace's
+  // own write debounce — no rAF needed.
+  function onWindowResize() {
+    const oldSide = sidebarWidth;
+    const oldGcode = gcodeHeight;
+    const newSide = clampSidebar(sidebarWidth);
+    const newGcode = clampGcode(gcodeHeight);
+    if (newSide !== oldSide) sidebarWidth = newSide;
+    if (newGcode !== oldGcode) gcodeHeight = newGcode;
+    if (newSide !== oldSide || newGcode !== oldGcode) persistLayout();
   }
 
   /// Status bar text — three layers.
@@ -808,6 +899,7 @@
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
+  onresize={onWindowResize}
 />
 
 <div class="app">
@@ -823,7 +915,7 @@
       >
       {#if openMenu === 'file'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
           <button role="menuitem" class="item" onclick={() => pickMenu(openFile)}>
             <span class="label">Open file…</span><span class="kbd">Ctrl+O</span>
           </button>
@@ -907,7 +999,7 @@
       >
       {#if openMenu === 'edit'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
           <button
             role="menuitem"
             class="item"
@@ -944,7 +1036,7 @@
       >
       {#if openMenu === 'view'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
           <button
             role="menuitem"
             class="item"
@@ -985,7 +1077,7 @@
       >
       {#if openMenu === 'tools'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
           <button role="menuitem" class="item" onclick={() => pickMenu(() => (toolsOpen = true))}>
             <span class="label">Tool library…</span>
           </button>
@@ -1013,7 +1105,7 @@
       >
       {#if openMenu === 'help'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus}>
+        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
           <button
             role="menuitem"
             class="item"
@@ -1108,7 +1200,7 @@
     <button
       class="tb-btn icon config"
       onclick={() => (settingsOpen = true)}
-      title="App settings — language, sim safety, theme, auto-regenerate"
+      title="App settings — theme, sim safety, cutting preview, auto-regenerate"
       aria-label="Open Settings dialog"
     >
       ⚙
@@ -1130,11 +1222,18 @@
         <span>Regions</span>
       </label>
     {/if}
-    <div class="pane-toggle" role="tablist" aria-label="Viewport mode">
+    <div
+      class="pane-toggle"
+      role="tablist"
+      aria-label="Viewport mode"
+      tabindex="-1"
+      onkeydown={onPaneTablistKey}
+    >
       <button
         type="button"
         role="tab"
         aria-selected={activePane === '2d'}
+        tabindex={activePane === '2d' ? 0 : -1}
         class:active={activePane === '2d'}
         onclick={() => (activePane = '2d')}>2D</button
       >
@@ -1142,6 +1241,7 @@
         type="button"
         role="tab"
         aria-selected={activePane === '3d'}
+        tabindex={activePane === '3d' ? 0 : -1}
         class:active={activePane === '3d'}
         onclick={onClick3dButton}
         title="Click to switch to 3D. Click again to cycle preview mode: both → wireframe → solid. Shift+click reverses."
@@ -1292,37 +1392,7 @@
     {@const C = AboutDialog}
     <C onClose={() => (aboutOpen = false)} />
   {/if}
-  {#if closePrompt}
-    <div
-      class="close-prompt-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="close-prompt-title"
-    >
-      <div class="close-prompt-card">
-        <h2 id="close-prompt-title">Quit wiaConstructor?</h2>
-        {#if project.dirty}
-          <p>You have unsaved changes. They will be lost if you quit now.</p>
-        {:else}
-          <p>Are you sure you want to quit?</p>
-        {/if}
-        <div class="close-prompt-actions">
-          <button class="secondary" onclick={() => (closePrompt = false)}>
-            {project.dirty ? 'Keep editing' : 'Cancel'}
-          </button>
-          <button
-            class="danger"
-            onclick={() => {
-              closePrompt = false;
-              void confirmClose();
-            }}
-          >
-            {project.dirty ? 'Discard & quit' : 'Quit'}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <ConfirmPrompt />
 
   <footer
     class:footer-pick={modalStatusHint != null}
@@ -1410,7 +1480,7 @@
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 4px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 6px 18px var(--shadow-modal);
     padding: 0.2rem;
     z-index: var(--z-dropdown);
     display: flex;
@@ -1456,7 +1526,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 280px;
+    /* Cap relative to viewport so wide windows can show longer filenames
+       (Recent Projects in particular); narrow windows still ellipsis. */
+    max-width: min(420px, 80vw);
   }
   .dropdown .kbd {
     color: var(--text-muted);
@@ -1706,32 +1778,17 @@
   .stock-host.active {
     overflow: auto;
   }
-  /* Stock panel header mirrors LayerList's .group-head so all three
-     sidebar panels (Stock / Layers / Operations) share one visual
-     language. Caret in the leading slot · name · live dimensions
-     readout pinned right. */
+  /* Base `.group-head` shape lives in app.css; stock-host only sets the
+     per-panel grid (caret · name · dims-readout). The button-tag adds
+     `font-family: inherit` so the <button>-as-group-head doesn't render
+     as system-monospace. */
   .stock-host .group-head {
-    display: grid;
     grid-template-columns: auto auto minmax(0, 1fr);
-    gap: 0.3rem;
-    align-items: center;
     width: 100%;
-    padding: 0.2rem 0.35rem;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
-    font-size: 0.78rem;
-    line-height: 1.2;
-    min-height: 1.55rem;
-    box-sizing: border-box;
     color: var(--text-strong);
     font-weight: 600;
-    cursor: pointer;
     font-family: inherit;
     text-align: left;
-  }
-  .stock-host .group-head:hover {
-    background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
   }
   .stock-host .caret {
     color: var(--text-muted);
@@ -1823,7 +1880,7 @@
     border: 2px dashed var(--accent);
     border-radius: 12px;
     background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 6px 18px var(--shadow-modal);
   }
   .drop-glyph {
     font-size: 2.4rem;
@@ -1845,52 +1902,5 @@
   }
   footer .status-shortcuts {
     opacity: 0.75;
-  }
-  .close-prompt-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-  }
-  .close-prompt-card {
-    background: var(--bg-elevated);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 1rem 1.25rem;
-    max-width: 28rem;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-  }
-  .close-prompt-card h2 {
-    margin: 0 0 0.4rem 0;
-    font-size: 1.05rem;
-  }
-  .close-prompt-card p {
-    margin: 0 0 0.9rem 0;
-    color: var(--text-muted);
-  }
-  .close-prompt-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  .close-prompt-actions .secondary {
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 0.35rem 0.9rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .close-prompt-actions .danger {
-    background: var(--danger, #c0392b);
-    color: white;
-    border: 0;
-    padding: 0.35rem 0.9rem;
-    border-radius: 3px;
-    cursor: pointer;
   }
 </style>

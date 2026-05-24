@@ -69,7 +69,11 @@
           value={op.leadIn ?? 5}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            patch('leadIn', isNaN(v) || v < 0 ? 0 : v);
+            // Don't write negative values back (audit 08zk): the prior
+            // silent-clamp-to-0 looked broken to users who typed -1
+            // expecting either an error or a bounce. Refuse the change
+            // and the visible input snaps back to the stored value.
+            if (Number.isFinite(v) && v >= 0) patch('leadIn', v);
           }}
         />
         <span class="unit">mm</span>
@@ -110,7 +114,7 @@
           value={op.leadOut ?? 5}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            patch('leadOut', isNaN(v) || v < 0 ? 0 : v);
+            if (Number.isFinite(v) && v >= 0) patch('leadOut', v);
           }}
         />
         <span class="unit">mm</span>

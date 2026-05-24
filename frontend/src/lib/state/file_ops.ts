@@ -7,10 +7,14 @@
 
 import { project } from './project.svelte';
 import { workspace } from './workspace.svelte';
+import { confirmStore } from './confirm.svelte';
 import { isTauri } from '../api/env';
 import { defaultClient } from '../api/http';
 import { tryParseStructuredError } from '../api/client';
-import { pushRecent } from '../recent';
+// `pushRecent` (from ../recent) was a parallel store the UI never read
+// — the File menu draws Recent Projects from workspace.recent_projects.
+// The two stores could diverge silently (audit zxee). Dropped; the
+// `wiac.recent` localStorage key is harmlessly orphaned.
 import type { ImportResponse } from '../api/types';
 import type { MachineSettings, ToolEntry } from './project.svelte';
 
@@ -103,16 +107,21 @@ export async function openFile() {
 
 /// If the project has unsaved changes, prompt the user before a
 /// destructive load (open file, open project, recent). Returns
-/// `true` to proceed, `false` to bail. Uses window.confirm because
-/// it's synchronous and trivially blocks the load until the user
-/// decides — a styled modal would be nicer but isn't worth the
-/// wiring for a one-button question.
+/// `true` to proceed, `false` to bail.
+///
+/// Uses `confirmStore` for an in-app styled prompt — the previous
+/// `window.confirm` regressed against the Tauri C10 rule (WebKitGTK
+/// blocks the renderer and never returns).
 async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   if (!project.dirty) return true;
   if (typeof window === 'undefined') return true;
-  return window.confirm(
-    `Your project has unsaved changes. Continue and ${action}? (Your unsaved work will be lost.)`,
-  );
+  return confirmStore.ask({
+    title: 'Unsaved changes',
+    body: `Your project has unsaved changes. Continue and ${action}? Your unsaved work will be lost.`,
+    primaryLabel: 'Discard & continue',
+    cancelLabel: 'Keep editing',
+    danger: true,
+  });
 }
 
 /// Desktop: native open dialog for `.wiac-project.json`. Browser: same
@@ -141,7 +150,6 @@ export async function openProject() {
       await clearPipelineCacheOnReplace();
       project.restore(JSON.parse(text));
       const filename = selected.split(/[\\/]/).pop() ?? selected;
-      await pushRecent({ path: selected, filename, lastOpened: new Date().toISOString() });
       workspace.addRecentProject(selected, filename);
       project.setActiveProjectPath(selected);
       project.dirty = false;
@@ -175,7 +183,6 @@ export async function loadFromPath(path: string) {
     project.setImported(result, path);
     await project.convertImportedTextEntities();
     const filename = path.split(/[\\/]/).pop() ?? path;
-    await pushRecent({ path, filename, lastOpened: new Date().toISOString() });
     workspace.addRecentProject(path, filename);
     project.setActiveProjectPath(path);
     // setImported flips dirty=true; reset because the freshly-loaded
@@ -225,7 +232,6 @@ export async function loadProjectPath(path: string) {
     await clearPipelineCacheOnReplace();
     project.restore(JSON.parse(text));
     const filename = path.split(/[\\/]/).pop() ?? path;
-    await pushRecent({ path, filename, lastOpened: new Date().toISOString() });
     workspace.addRecentProject(path, filename);
     project.setActiveProjectPath(path);
     project.dirty = false;

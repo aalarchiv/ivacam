@@ -110,9 +110,7 @@
 
 <div class="drop-catcher" class:drag-over={dragOver} aria-hidden="true"></div>
 
-{#if project.error}
-  <ErrorToast error={project.error} />
-{/if}
+<ErrorToast />
 
 <style>
   /* The drag indicator overlay is purely visual — window-level event

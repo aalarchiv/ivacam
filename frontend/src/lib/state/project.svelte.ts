@@ -1589,6 +1589,14 @@ class ProjectState {
 
   setMachine(next: MachineSettings) {
     this.history.exec(setMachineCommand(next), this.target());
+    // Machine change invalidates the cached gcode: work area / units /
+    // post-processor dialect / rapid feeds all feed into the run, so a
+    // toolpath generated against the prior machine isn't safe to draw
+    // against the new envelope or download into the new dialect's file.
+    // The user has to regen; clearing here lets the GcodePanel + Scene3D
+    // empty-state messaging show the stale-vs-fresh distinction
+    // immediately instead of silently lying.
+    this.generated = null;
   }
 
   setStock(patch: Partial<StockConfig>) {

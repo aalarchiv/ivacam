@@ -172,13 +172,35 @@
     );
     onSave(hasContent ? draft : undefined);
   }
+
+  /// True when `draft` has diverged from `initial`. The previous comment
+  /// at lines 90-96 read the lack of a confirm as intentional — but the
+  /// audit (hzlr) flagged it as inconsistent with MachineDialog /
+  /// ToolLibraryDialog, both of which guard their drafts. Use a JSON
+  /// compare since PostProfile is plain-JSON-only.
+  const isDirty = $derived(JSON.stringify(draft) !== JSON.stringify(initial));
+  let confirmingDiscard = $state(false);
+  function close() {
+    if (isDirty) {
+      confirmingDiscard = true;
+      return;
+    }
+    onClose();
+  }
+  function discardAndClose() {
+    confirmingDiscard = false;
+    onClose();
+  }
+  function cancelDiscard() {
+    confirmingDiscard = false;
+  }
 </script>
 
 {#if open}
-  <Modal {onClose} width="min(1000px, 94vw)">
+  <Modal onClose={close} width="min(1000px, 94vw)" ariaLabelledBy="post-editor-title">
     <header>
-      <h2>Post-processor editor</h2>
-      <button class="close" onclick={onClose} aria-label="Close">×</button>
+      <h2 id="post-editor-title">Post-processor editor</h2>
+      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
     </header>
 
     <div class="pp-grid">
@@ -414,9 +436,14 @@
                       type="number"
                       step="0.001"
                       value={af.scale}
+                      title="Linear multiplier applied to the axis value before formatting. -1 flips Z-up vs Z-down; 0.0393701 converts mm to inch. 0 is rejected — it would emit a constant axis word."
                       oninput={(e) => {
                         const v = (e.target as HTMLInputElement).valueAsNumber;
-                        if (Number.isFinite(v)) patchAxis(row.key, { scale: v });
+                        // Reject zero — `scale: 0` produces a constant
+                        // axis word (e.g. always "X0") and silently
+                        // breaks every emitted line. Negative is allowed
+                        // (flip-Z) so we explicitly check `!== 0`.
+                        if (Number.isFinite(v) && v !== 0) patchAxis(row.key, { scale: v });
                       }}
                       aria-label="{row.label} scale"
                     />
@@ -445,19 +472,30 @@
     </div>
 
     <footer>
-      <label class="secondary import-btn">
-        Import JSON…
-        <input type="file" accept="application/json" onchange={onImportChange} hidden />
-      </label>
-      <button class="secondary" onclick={exportJson}>Export JSON</button>
-      <span style="flex:1"></span>
-      <button class="secondary" onclick={onClose}>Cancel</button>
-      <button class="primary" onclick={save}>Save</button>
+      {#if confirmingDiscard}
+        <span class="discard-prompt">Discard unsaved profile edits?</span>
+        <button class="btn-secondary" onclick={cancelDiscard}>Keep editing</button>
+        <button class="btn-danger" onclick={discardAndClose}>Discard</button>
+      {:else}
+        <label class="btn-secondary import-btn">
+          Import JSON…
+          <input type="file" accept="application/json" onchange={onImportChange} hidden />
+        </label>
+        <button class="btn-secondary" onclick={exportJson}>Export JSON</button>
+        <span class="spacer"></span>
+        <button class="btn-secondary" onclick={close}>Cancel</button>
+        <button class="btn-primary" onclick={save}>Save</button>
+      {/if}
     </footer>
   </Modal>
 {/if}
 
 <style>
+  /* Footer spacer (was `style="flex:1"` inline). Promoted to a class so
+     CSP-strict deployments don't break. */
+  .spacer {
+    flex: 1;
+  }
   header {
     display: flex;
     align-items: center;
@@ -468,14 +506,6 @@
   header h2 {
     margin: 0;
     font-size: 1rem;
-  }
-  .close {
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    font-size: 1.4rem;
-    cursor: pointer;
-    line-height: 1;
   }
   .pp-grid {
     display: grid;
@@ -647,7 +677,7 @@
     white-space: pre;
   }
   .import-err {
-    color: #b04646;
+    color: var(--error);
     font-size: 0.78rem;
     margin: 0.3rem 0;
   }
@@ -663,21 +693,5 @@
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-  }
-  .primary {
-    background: var(--accent);
-    color: white;
-    border: 0;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .secondary {
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
-    cursor: pointer;
   }
 </style>

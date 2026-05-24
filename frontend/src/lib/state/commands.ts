@@ -702,6 +702,12 @@ export function changeProfileOffsetCommand(opId: number, offset: ProfileOffset):
 
 /// Lower the simulation cell resolution to bring the cell count back
 /// under the configured cap. The LowerSimResolution auto-fix.
+///
+/// Note: `settings` is per-installation (wiac.settings localStorage,
+/// outside the project snapshot). Don't flip `t.dirty` — accepting the
+/// auto-fix shouldn't mark the project file as having unsaved changes
+/// (audit zxee). The setting still persists via `project.saveSettings()`
+/// which the ErrorToast call site fires explicitly.
 export function lowerSimResolutionCommand(suggestedCellMm: number): Command {
   let prev: { mode: 'auto' | 'manual'; cellMm: number } | null = null;
   return {
@@ -717,7 +723,6 @@ export function lowerSimResolutionCommand(suggestedCellMm: number): Command {
         cellResolutionMode: 'manual',
         cellResolutionMm: suggestedCellMm,
       };
-      t.dirty = true;
     },
     revert: (s) => {
       const t = s as CommandTarget;
@@ -728,7 +733,6 @@ export function lowerSimResolutionCommand(suggestedCellMm: number): Command {
         cellResolutionMode: restore.mode,
         cellResolutionMm: restore.cellMm,
       };
-      t.dirty = true;
     },
   };
 }

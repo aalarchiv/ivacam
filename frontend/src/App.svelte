@@ -57,16 +57,18 @@
 
   /// Window title carries the build version so a screenshot pins the
   /// report to the exact binary. Format: "wiaConstructor v<pkg>
-  /// (<git-describe>)" — the package version is hard-coded for now
-  /// (still 0.0.0); when we cut a real release we wire it through
-  /// here. `document.title` updates on every paint that touches the
-  /// effect, but it's cheap.
+  /// (<git-describe>)" — package version comes from
+  /// frontend/package.json via the `__WIAC_PKG_VERSION__` define
+  /// baked by vite.config.ts (audit qcvl), git-describe via
+  /// `__WIAC_BUILD_VERSION__`. `document.title` updates on every
+  /// paint that touches the effect, but it's cheap.
+  const pkgVersion =
+    typeof __WIAC_PKG_VERSION__ === 'string' ? __WIAC_PKG_VERSION__ : '0.0.0';
   $effect(() => {
-    const pkg = '0.0.0';
     if (buildVersion && buildVersion !== 'unknown') {
-      document.title = `wiaConstructor v${pkg} (${buildVersion})`;
+      document.title = `wiaConstructor v${pkgVersion} (${buildVersion})`;
     } else {
-      document.title = `wiaConstructor v${pkg}`;
+      document.title = `wiaConstructor v${pkgVersion}`;
     }
   });
   /// Startup banner: when set, the user was previously editing a

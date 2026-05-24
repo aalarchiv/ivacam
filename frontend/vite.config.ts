@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /// Build-time version stamp. `git describe --always --dirty` so each
 /// build carries the exact commit (and `-dirty` if the working tree
@@ -19,6 +21,20 @@ function gitVersion(): string {
   }
 }
 
+/// Package version baked into the bundle so the window title + About
+/// dialog show the real release identifier instead of a hardcoded
+/// '0.0.0' (audit qcvl). Reads `package.json` at vite-config time so a
+/// `pnpm version <next>` cuts a new build identity automatically.
+function pkgVersion(): string {
+  try {
+    const pkgPath = fileURLToPath(new URL('./package.json', import.meta.url));
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string };
+    return typeof pkg.version === 'string' && pkg.version.length > 0 ? pkg.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte()],
@@ -29,6 +45,10 @@ export default defineConfig({
     // tell which day a binary was produced without scraping the
     // commit hash against the git log.
     __WIAC_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+    // Package version from package.json so the window title shows the
+    // real release identifier (qcvl). The git-describe value above is
+    // the commit-level stamp; this is the human-facing semver.
+    __WIAC_PKG_VERSION__: JSON.stringify(pkgVersion()),
   },
   build: {
     // Scene3D + three.js is a single intentional chunk (~540 KB);

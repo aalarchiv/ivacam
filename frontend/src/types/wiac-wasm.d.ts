@@ -25,3 +25,8 @@ declare const __WIAC_BUILD_VERSION__: string;
 /// ISO-8601 UTC timestamp of the vite build. Shown in the About
 /// dialog so users can tell when a binary was produced.
 declare const __WIAC_BUILD_DATE__: string;
+
+/// Package version baked from `frontend/package.json` at vite-build
+/// time (audit qcvl). Shown in the window title alongside the
+/// git-describe build version.
+declare const __WIAC_PKG_VERSION__: string;

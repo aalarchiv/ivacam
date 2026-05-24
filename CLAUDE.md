@@ -24,30 +24,30 @@ bd close <id>         # Complete work
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**This repo is local-only — there is no git remote configured. Skip
+the push step until a remote is added** (`git remote -v` is empty,
+and bd memory `audit-2026-05-22-fitness` confirms "Issues are saved
+locally only"). Do NOT spend cycles trying to push to a remote that
+doesn't exist.
 
-**MANDATORY WORKFLOW:**
+**MANDATORY WORKFLOW (local-only variant):**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+1. **File issues for remaining work** — Create bd issues for anything
+   that needs follow-up
+2. **Run quality gates** (if code changed) — Tests, linters, builds
+3. **Update issue status** — Close finished work, update in-progress
+   items via `bd close <id>` / `bd update <id> --claim`
+4. **Commit locally** — Every logical change should land as its own
+   commit on `main`. NEVER stop with uncommitted work in the working
+   tree (that's the failure mode wiaconstructor-5kcj documented).
+5. **Verify** — `git status` shows clean working tree; `bd list
+   --status=in_progress` is empty or accurately reflects active work
+6. **Hand off** — Provide a brief context summary for the next session
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+**IF A REMOTE IS LATER ADDED:** restore the push step
+(`git pull --rebase && git push`) between steps 4 and 5. Until then,
+treat local commits as authoritative.
+<!-- END BEADS INTEGRATION (block edited locally — wiaconstructor-uqvd; bd init may regenerate, re-apply the no-remote workflow if so) -->
 
 
 ## Build & Test

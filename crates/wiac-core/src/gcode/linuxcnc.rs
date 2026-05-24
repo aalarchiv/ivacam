@@ -538,6 +538,19 @@ impl PostProcessor for Post {
             self.state.last_speed = Some(power);
         }
     }
+    fn laser_arm(&mut self) {
+        // xkvv: arm the laser at zero power before the rapid traverse.
+        // Same M3 modal as `laser_on` but S0 — the controller carries
+        // the laser-on state through the rapid (so spindle-bound axes
+        // and `$32=1` GRBL modes don't fight) while no power means no
+        // burn. The pierce-time `laser_on(power)` re-emits S<power>
+        // since `last_speed` is now Some(0).
+        if self.state.last_speed != Some(0) {
+            let rendered = self.render_speed(0);
+            self.write(format!("M3{rendered}"));
+            self.state.last_speed = Some(0);
+        }
+    }
     fn laser_off(&mut self) {
         // 20y5: emit M5 to drop the beam before rapid traversal.
         // Clear last_speed so the next laser_on re-emits M3 S<power>

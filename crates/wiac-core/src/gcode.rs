@@ -61,9 +61,13 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
             );
         }
         MachineMode::Laser => {
-            // Laser power rides on the same `tool.speed` channel used
-            // for spindle RPM in milling — viaConstructor convention.
-            post.laser_on(power_or_speed);
+            // xkvv: arm the laser at S0 BEFORE the rapid to the entry
+            // point. The previous `laser_on(power)` here fired the beam
+            // at full power before the head had moved — every rapid
+            // traverse scorched a line across the workpiece. The
+            // matching `cut_tool_pierce` below ramps to cut power just
+            // before the pierce dwell.
+            post.laser_arm();
         }
         MachineMode::Drag => {
             // Drag knife / pen plotter — no spindle, no beam.
@@ -71,14 +75,22 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
         MachineMode::Plasma => {
             // zpuk: plasma torch — most controllers accept M3 S<power>
             // for "fire arc at <power>" the same way GRBL / LinuxCNC
-            // accept it for a laser. The torch starts before the
-            // Z-drop to pierce_height, dwells, then drops to cut_height.
-            // We reuse `laser_on` rather than introducing a separate
-            // trait method — the wire form is identical and the
-            // pierce/cut-height dance is emitted by the cut path
-            // (emit_offset) rather than the tool-on helper.
+            // accept it for a laser. Unlike laser, the plasma torch
+            // must be LIT during the rapid + Z-drop to pierce height
+            // (the arc needs to strike before the head reaches the
+            // workpiece), so we keep the full-power fire here rather
+            // than routing through `laser_arm` / `cut_tool_pierce`.
             post.laser_on(power_or_speed);
         }
+    }
+}
+
+/// xkvv: ramp the laser from armed (S0) to cut power right before the
+/// pierce dwell. No-op for every mode except Laser; the matching arm
+/// happened at `cut_tool_on` so the rapid traverse runs cold.
+fn cut_tool_pierce<P: PostProcessor>(post: &mut P, setup: &Setup, power: u32) {
+    if matches!(setup.machine.mode, MachineMode::Laser) {
+        post.laser_on(power);
     }
 }
 
@@ -145,13 +157,25 @@ pub trait PostProcessor {
     fn spindle_cw(&mut self, speed: u32, pause_seconds: u32);
     fn spindle_ccw(&mut self, speed: u32, pause_seconds: u32);
 
-    /// 20y5: laser-on at the configured power. Called by `cut_tool_on`
-    /// at the start of every cut block when `machine.mode == Laser`.
+    /// 20y5: laser-on at the configured power. Called by `cut_tool_pierce`
+    /// AFTER the rapid + Z-drop has landed the head at the pierce point;
+    /// the beam ramps up to cut power just before the pierce dwell so
+    /// the rapid itself runs at zero power (see `laser_arm`).
     /// LinuxCNC / GRBL override to emit `M3 S<power>` (dynamic-laser
     /// mode `M4` on GRBL is also acceptable, but `M3` matches what
     /// Lightburn / T2Laser / Estlcam laser emit by default). HPGL
     /// ignores. Default no-op so non-laser-aware posts keep working.
     fn laser_on(&mut self, _power: u32) {}
+
+    /// xkvv: laser-arm — emit `M3 S0` to bring the controller into
+    /// laser-on / spindle-clockwise modal state at ZERO power BEFORE
+    /// the rapid traverse to the entry point. Without this the prior
+    /// `cut_tool_on` fired `M3 S<power>` and the rapid burnt a stripe
+    /// through the workpiece. Called by `cut_tool_on` for laser mode;
+    /// followed by `laser_on(power)` at pierce time via
+    /// `cut_tool_pierce`. Default no-op so non-laser-aware posts keep
+    /// working.
+    fn laser_arm(&mut self) {}
 
     /// 20y5: laser-off — drop the beam between cuts so the rapid
     /// traverse doesn't burn a stripe through the part. Called by
@@ -989,6 +1013,10 @@ fn emit_offset<P: PostProcessor>(
             } else {
                 post.feedrate(use_rate_v);
                 post.linear(None, None, Some(entry_z));
+                // xkvv: laser-mode ramps from armed (S0) to full power
+                // here, between the plunge and the pierce dwell. Mill /
+                // drag / plasma are no-ops in this helper.
+                cut_tool_pierce(post, setup, use_speed);
                 if pierce_sec > 0.0 {
                     post.dwell(pierce_sec);
                 }
@@ -1011,6 +1039,10 @@ fn emit_offset<P: PostProcessor>(
             } else {
                 post.feedrate(use_rate_v);
                 post.linear(None, None, Some(entry_z));
+                // xkvv: laser-mode ramps from armed (S0) to full power
+                // here, between the plunge and the pierce dwell. Mill /
+                // drag / plasma are no-ops in this helper.
+                cut_tool_pierce(post, setup, use_speed);
                 if pierce_sec > 0.0 {
                     post.dwell(pierce_sec);
                 }
@@ -1047,6 +1079,10 @@ fn emit_offset<P: PostProcessor>(
             } else {
                 post.feedrate(use_rate_v);
                 post.linear(None, None, Some(entry_z));
+                // xkvv: laser-mode ramps from armed (S0) to full power
+                // here, between the plunge and the pierce dwell. Mill /
+                // drag / plasma are no-ops in this helper.
+                cut_tool_pierce(post, setup, use_speed);
                 if pierce_sec > 0.0 {
                     post.dwell(pierce_sec);
                 }
@@ -2516,12 +2552,13 @@ mod tests {
         assert!(g.contains("M5"), "should stop spindle at end");
     }
 
-    /// 20y5: in Laser mode, every cut block must turn the beam ON
-    /// (M3 S<power>) at cut entry and OFF (M5) before the safe-Z
-    /// retract / rapid traverse — otherwise the rapid burns a stripe
-    /// through the workpiece and / or the program runs with the
-    /// laser silently off (the bug the old `mode == Mill`-only gate
-    /// produced).
+    /// 20y5 / xkvv: in Laser mode, every cut block must arm the beam at
+    /// S0 BEFORE the rapid traverse (so the rapid doesn't burn), ramp to
+    /// `M3 S<power>` AFTER the plunge to cut Z, and OFF (M5) before the
+    /// safe-Z retract / rapid out — otherwise the rapid burns a stripe
+    /// through the workpiece (xkvv) and / or the program runs with the
+    /// laser silently off (20y5's original bug from the `mode == Mill`-
+    /// only gate).
     #[test]
     fn laser_mode_emits_m3_at_cut_entry_and_m5_before_retract() {
         let mut setup = Setup::default();
@@ -2545,14 +2582,21 @@ mod tests {
 
         assert!(
             g.contains("M3 S750"),
-            "laser mode must fire the beam with `M3 S<power>`; got:\n{g}",
+            "laser mode must fire the beam with `M3 S<power>` at pierce time; got:\n{g}",
         );
         let lines: Vec<&str> = g.lines().collect();
-        let first_m3 = lines.iter().position(|l| l.contains("M3 S750")).expect("M3 S750 missing");
-        let first_g1 = lines.iter().position(|l| l.starts_with("G1 ")).expect("no G1");
+        let full_power = lines
+            .iter()
+            .position(|l| l.contains("M3 S750"))
+            .expect("M3 S750 missing");
+        // First LATERAL cut: a `G1 X…` or `G1 Y…`, not the `G1 Z…` plunge.
+        let first_lateral_cut = lines
+            .iter()
+            .position(|l| (l.starts_with("G1 X") || l.starts_with("G1 Y")))
+            .expect("no G1 X/Y cut motion");
         assert!(
-            first_m3 < first_g1,
-            "M3 must come BEFORE the first cut motion; M3 at {first_m3}, G1 at {first_g1}\n{g}",
+            full_power < first_lateral_cut,
+            "`M3 S<power>` must come BEFORE the first lateral cut; power at {full_power}, cut at {first_lateral_cut}\n{g}",
         );
         // M5 must appear AFTER the last G1 cut and BEFORE program_end's park.
         // Find the last G1 cut and verify some M5 sits between it and the
@@ -2617,6 +2661,80 @@ mod tests {
         assert!(
             m5_count >= 2,
             "expected ≥2 `M5` lines (one per inter-cut transition + program_end); got {m5_count}\n{g}",
+        );
+    }
+
+    /// xkvv: in Laser mode the BEAM must be at S0 during the rapid
+    /// traverse to the entry point. Sequence: `M3 S0` → G0 rapid → G1
+    /// plunge → `M3 S<power>` → optional pierce dwell → cut motion.
+    /// Pre-fix the M3 S<power> appeared BEFORE the rapid, scorching a
+    /// line across the workpiece on every cut block.
+    #[test]
+    fn laser_op_does_not_scorch_during_rapid() {
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Laser;
+        setup.machine.plot_mode_z = true;
+        setup.tool.diameter = 0.0;
+        setup.tool.speed = 800; // laser power (PWM duty)
+        setup.tool.rate_h = 1200;
+        setup.tool.rate_v = 1200;
+        setup.tool.pierce_sec = 0.5; // arm the pierce dwell
+        setup.mill.depth = 0.0;
+        setup.mill.step = 0.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Off;
+        setup.leads.out = LeadKind::Off;
+        setup.machine.comments = false;
+        setup.mill.offset = ToolOffset::On;
+
+        let offsets = vec![square_offset()];
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &offsets, &mut post);
+        let lines: Vec<&str> = g.lines().collect();
+
+        let pos = |needle: &str| -> Option<usize> {
+            lines.iter().position(|l| l.contains(needle))
+        };
+        let arm = pos("M3 S0")
+            .expect(&format!("`M3 S0` must arm the laser BEFORE the rapid\n{g}"));
+        // The G0 rapid TRAVERSE to the entry XY (not the safe-Z lift
+        // that program_begin already emitted). Match on `G0 X` so we
+        // don't grab the leading `G0 Z5`.
+        let g0_xy = lines
+            .iter()
+            .position(|l| l.starts_with("G0 X"))
+            .expect(&format!("missing G0 X rapid to entry\n{g}"));
+        let full_power = pos("M3 S800")
+            .expect(&format!("`M3 S800` must ramp up before pierce\n{g}"));
+        // First LATERAL cut — skip the G1 Z plunge that follows the rapid.
+        let first_lateral = lines
+            .iter()
+            .position(|l| l.starts_with("G1 X") || l.starts_with("G1 Y"))
+            .expect(&format!("missing G1 X/Y cut motion\n{g}"));
+
+        assert!(
+            arm < g0_xy,
+            "`M3 S0` (arm) must come BEFORE the rapid traverse; arm at {arm}, G0 X at {g0_xy}\n{g}",
+        );
+        assert!(
+            full_power > g0_xy,
+            "`M3 S<power>` must come AFTER the rapid traverse (S0 during travel);\
+             power at {full_power}, G0 X at {g0_xy}\n{g}",
+        );
+        assert!(
+            full_power < first_lateral,
+            "`M3 S<power>` must come BEFORE the first lateral cut (pierce time);\
+             power at {full_power}, lateral G1 at {first_lateral}\n{g}",
+        );
+
+        // The pierce dwell (`G4 P0.5`) must sit between the power ramp
+        // and the first cut motion. Otherwise the cut starts before the
+        // beam has burned through focused stock.
+        let dwell = pos("G4 P0.5")
+            .expect(&format!("expected pierce dwell `G4 P0.5` after power ramp\n{g}"));
+        assert!(
+            full_power < dwell && dwell < first_lateral,
+            "pierce dwell must sit between power ramp ({full_power}) and first lateral cut ({first_lateral}); dwell at {dwell}\n{g}",
         );
     }
 

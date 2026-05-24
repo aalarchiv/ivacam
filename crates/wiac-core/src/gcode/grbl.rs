@@ -222,6 +222,12 @@ impl PostProcessor for Post {
         // same syntax and modally tracks S as the laser PWM duty.
         self.inner.laser_on(power);
     }
+    fn laser_arm(&mut self) {
+        // xkvv: delegate to LinuxCNC's `M3 S0`. GRBL laser-mode
+        // (`$32=1`) tracks the modal S = 0 through the rapid, so the
+        // pierce-time `laser_on(power)` re-emits the S<power> word.
+        self.inner.laser_arm();
+    }
     fn laser_off(&mut self) {
         self.inner.laser_off();
     }

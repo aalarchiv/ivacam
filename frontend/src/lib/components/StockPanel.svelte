@@ -14,10 +14,35 @@
   import { project } from '../state/project.svelte';
   import { computeFootprint } from '../sim/driver';
   import { parseFiniteNumber } from '../cam/units';
+  import { inferDefaultWorkOffset, type Wcs, type WorkOffset } from '../state/project-types';
 
   function patch(p: Partial<typeof project.stock>) {
     project.setStock(p);
   }
+  function patchWorkOffset(p: Partial<WorkOffset>) {
+    project.setWorkOffset(p);
+  }
+  /// Snap the WCS origin to the geometry bbox's bottom-left corner —
+  /// the canonical CNC-zero default the import-time helper applies.
+  /// Bound to the "Set to bbox bottom-left" button below + the warnings-
+  /// panel Apply-Fix path. No-op when no geometry is loaded.
+  function snapWorkOffsetToBboxMin() {
+    const imp = project.transformedImport;
+    if (!imp) return;
+    // Pass a "fresh default" so the helper unconditionally computes
+    // the snap target even though the user's current offset isn't
+    // default (the inference defaults are about FRESH IMPORTS; this
+    // button is the user explicitly asking for the snap regardless).
+    const candidate = inferDefaultWorkOffset(imp.bbox, {
+      x_mm: 0,
+      y_mm: 0,
+      z_mm: 0,
+      wcs: project.workOffset.wcs,
+    });
+    patchWorkOffset({ x_mm: candidate.x_mm, y_mm: candidate.y_mm });
+  }
+
+  const WCS_OPTIONS: Wcs[] = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'];
 
   /// Wrap a stock-field onchange handler with shared invalid-feedback
   /// behavior: on a parse failure / out-of-range value the input keeps
@@ -51,6 +76,20 @@
   ) {
     const ok = commitStockNumber(key, (e.target as HTMLInputElement).value, opts);
     invalidKey = ok ? null : key;
+  }
+  /// Same invalid-feedback shape as `onStockNumberChange`, but writes
+  /// through `setWorkOffset`. The `wo:` prefix keeps the invalid-key
+  /// namespace separate so a stock-thickness validation flash doesn't
+  /// also red-border the WCS-X input.
+  function onWorkOffsetNumberChange(key: 'x_mm' | 'y_mm' | 'z_mm', e: Event) {
+    const parsed = parseFiniteNumber((e.target as HTMLInputElement).value);
+    const ns = `wo:${key}`;
+    if (parsed.value == null) {
+      invalidKey = ns;
+      return;
+    }
+    invalidKey = null;
+    patchWorkOffset({ [key]: parsed.value });
   }
 
   const footprint = $derived(
@@ -199,6 +238,82 @@
       </span>
     </label>
   </fieldset>
+
+  <!-- abdk: Work-coordinate-system origin (per-project). Where on the
+       drawing the operator zeroed the machine. Fresh imports auto-default
+       to bbox bottom-left (audit gldc); this section lets the user pick a
+       different WCS slot (G54..G59) or nudge the origin manually. -->
+  <fieldset class="wcs">
+    <legend
+      title="The WCS origin — where on the imported drawing the operator zeroed the machine. Cuts are emitted relative to this point; if it falls outside the geometry bbox the simulator warns. Auto-defaults to the bbox bottom-left on fresh import."
+      >Work origin (WCS)</legend
+    >
+    <label>
+      <span>WCS</span>
+      <span class="field">
+        <select
+          value={project.workOffset.wcs}
+          onchange={(e) =>
+            patchWorkOffset({
+              wcs: (e.currentTarget as HTMLSelectElement).value as Wcs,
+            })}
+        >
+          {#each WCS_OPTIONS as w (w)}
+            <option value={w}>{w}</option>
+          {/each}
+        </select>
+      </span>
+    </label>
+    <label>
+      <span>X</span>
+      <span class="field">
+        <input
+          type="number"
+          step="0.5"
+          value={project.workOffset.x_mm}
+          class:invalid={invalidKey === 'wo:x_mm'}
+          onchange={(e) => onWorkOffsetNumberChange('x_mm', e)}
+        />
+        <span class="unit">mm</span>
+      </span>
+    </label>
+    <label>
+      <span>Y</span>
+      <span class="field">
+        <input
+          type="number"
+          step="0.5"
+          value={project.workOffset.y_mm}
+          class:invalid={invalidKey === 'wo:y_mm'}
+          onchange={(e) => onWorkOffsetNumberChange('y_mm', e)}
+        />
+        <span class="unit">mm</span>
+      </span>
+    </label>
+    <label>
+      <span>Z</span>
+      <span class="field">
+        <input
+          type="number"
+          step="0.5"
+          value={project.workOffset.z_mm}
+          class:invalid={invalidKey === 'wo:z_mm'}
+          onchange={(e) => onWorkOffsetNumberChange('z_mm', e)}
+          title="Reserved — Z offset participates in the wire-format but the sim and pipeline currently use stock-top z=0."
+        />
+        <span class="unit">mm</span>
+      </span>
+    </label>
+    <button
+      type="button"
+      class="snap-btn"
+      onclick={snapWorkOffsetToBboxMin}
+      disabled={!project.transformedImport}
+      title="Snap the WCS origin to the bottom-left of the imported drawing's bounding box — the canonical CNC zeroing convention."
+    >
+      Snap to bbox bottom-left
+    </button>
+  </fieldset>
 </div>
 
 <style>
@@ -240,12 +355,47 @@
     accent-color: var(--accent);
   }
   fieldset.dims label,
-  fieldset.origin label {
+  fieldset.origin label,
+  fieldset.wcs label {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
     color: var(--text-muted);
     font-size: 0.72rem;
+  }
+  /* WCS section uses the same 2-col grid as Origin offset but adds a
+     full-width snap-button row beneath. The select gets the same field
+     wrapper styling as the number inputs. */
+  fieldset.wcs .field select {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.3rem;
+    font-size: 0.78rem;
+  }
+  .snap-btn {
+    margin-top: 0.3rem;
+    grid-column: 1 / -1;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem 0.5rem;
+    font-size: 0.74rem;
+    cursor: pointer;
+  }
+  .snap-btn:hover:not(:disabled) {
+    background: var(--hover-bg-elevated);
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .snap-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .field {
     display: inline-flex;

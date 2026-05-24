@@ -19,6 +19,7 @@ import type {
   TabPlacement,
   TextLayer,
   ToolEntry,
+  WorkOffset,
 } from './project.svelte';
 import type { WiacAutoFix } from '../api/types';
 import type { ContourFields, ProfileOffset } from './op_types';
@@ -51,6 +52,7 @@ export interface CommandTarget {
   stock: StockConfig;
   settings: AppSettings;
   textLayers: TextLayer[];
+  workOffset: WorkOffset;
   dirty: boolean;
 }
 
@@ -507,6 +509,36 @@ export function setMachineCommand(next: MachineSettings): Command {
     // commit() on close, but multi-field edits should collapse into
     // one undo step too).
     coalesce_key: 'setMachine',
+  };
+}
+
+/// Apply a partial WorkOffset patch (audit abdk). The X/Y/Z spinners
+/// + WCS picker in StockPanel route through this so each edit is
+/// undoable and the coalesce key collapses rapid spinner mashing into
+/// one history entry — same UX as the stock-dim spinners.
+export function setWorkOffsetCommand(patch: Partial<WorkOffset>): Command {
+  let prevPatch: Partial<WorkOffset> = {};
+  return {
+    label: 'Update WCS / work offset',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      prevPatch = {};
+      for (const k of Object.keys(patch) as (keyof WorkOffset)[]) {
+        (prevPatch as Record<string, unknown>)[k as string] = t.workOffset[k];
+      }
+      t.workOffset = { ...t.workOffset, ...patch };
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.workOffset = { ...t.workOffset, ...prevPatch };
+      t.dirty = true;
+    },
+    // Per-field coalesce: many small spin-button taps on X collapse to
+    // one undo step; switching WCS dropdown is its own step; X then Y
+    // edits stay separate (so undo undoes Y, then X — matching user
+    // intuition).
+    coalesce_key: `setWorkOffset:${Object.keys(patch).sort().join(',')}`,
   };
 }
 

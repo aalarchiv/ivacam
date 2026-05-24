@@ -22,6 +22,7 @@ import {
   setMachineCommand,
   setOpFieldCommand,
   setStockCommand,
+  setWorkOffsetCommand,
   toggleTabPlacementCommand,
   updateFixtureCommand,
   updateOperationCommand,
@@ -82,6 +83,7 @@ function blankTarget(): CommandTarget {
     settings: {} as CommandTarget['settings'],
     textLayers: [],
     imports: [],
+    workOffset: { x_mm: 0, y_mm: 0, z_mm: 0, wcs: 'G54' },
     dirty: false,
   };
 }
@@ -407,6 +409,31 @@ describe('machine / stock', () => {
     cmd.revert(t);
     expect(t.stock.margin).toBe(5);
     expect(cmd.coalesce_key).toBe('setStock:margin');
+  });
+
+  it('setWorkOffsetCommand patches X / WCS and restores; flips dirty (audit abdk)', () => {
+    const t = blankTarget();
+    t.dirty = false;
+    const cmd = setWorkOffsetCommand({ x_mm: 5.76, y_mm: 5.79, wcs: 'G55' });
+    cmd.apply(t);
+    expect(t.workOffset.x_mm).toBeCloseTo(5.76);
+    expect(t.workOffset.y_mm).toBeCloseTo(5.79);
+    expect(t.workOffset.wcs).toBe('G55');
+    expect(t.workOffset.z_mm).toBe(0);
+    expect(t.dirty).toBe(true);
+    cmd.revert(t);
+    expect(t.workOffset.x_mm).toBe(0);
+    expect(t.workOffset.y_mm).toBe(0);
+    expect(t.workOffset.wcs).toBe('G54');
+  });
+
+  it('setWorkOffsetCommand coalesces per-field (audit abdk)', () => {
+    expect(setWorkOffsetCommand({ x_mm: 1 }).coalesce_key).toBe('setWorkOffset:x_mm');
+    expect(setWorkOffsetCommand({ wcs: 'G56' }).coalesce_key).toBe('setWorkOffset:wcs');
+    // Multi-field patches sort their keys so the coalesce_key is stable.
+    expect(setWorkOffsetCommand({ y_mm: 1, x_mm: 2 }).coalesce_key).toBe(
+      'setWorkOffset:x_mm,y_mm',
+    );
   });
 });
 

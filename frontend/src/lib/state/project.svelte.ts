@@ -213,6 +213,7 @@ import {
   setImportsCommand,
   setMachineCommand,
   setStockCommand,
+  setWorkOffsetCommand,
   toggleTabPlacementCommand,
   updateFixtureCommand,
   updateOperationCommand,
@@ -1615,6 +1616,15 @@ class ProjectState {
   setStock(patch: Partial<StockConfig>) {
     if (Object.keys(patch).length === 0) return;
     this.history.exec(setStockCommand(patch), this.target());
+  }
+
+  /// Undoable WorkOffset edit. Routes through the command bus so the
+  /// X/Y/Z spinners + WCS picker in StockPanel + the warnings-panel
+  /// Apply-Fix button all coalesce into history entries identical to
+  /// the stock-dim flow (audit abdk).
+  setWorkOffset(patch: Partial<WorkOffset>) {
+    if (Object.keys(patch).length === 0) return;
+    this.history.exec(setWorkOffsetCommand(patch), this.target());
   }
 
   /// Per-import variant of patchFileTransform (wrsu Phase 2). Undoable;

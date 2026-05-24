@@ -21,6 +21,7 @@
   } from '../api/pipeline-warnings';
   import GenerateProgress from './GenerateProgress.svelte';
   import { workspace } from '../state/workspace.svelte';
+  import { inferDefaultWorkOffset } from '../state/project-types';
 
   // Format a duration in seconds as HH:MM:SS (always two digits per
   // unit). Negative / NaN inputs render as 00:00:00.
@@ -251,12 +252,11 @@
   // didn't fit emitted zero toolpath, raised `tool_too_large`, and the
   // user's "block on critical" setting did NOT prevent the broken gcode
   // from shipping).
-  let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(pipelineWarnings));
-  let criticalCount = $derived(
-    warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,
-  );
-  let totalWarningCount = $derived(warnings.length + pipelineWarnings.length);
-  let isClean = $derived(totalWarningCount === 0 && pipelineCriticalCount === 0);
+  // `allPipelineWarnings` is defined after `boundsScan` / `boundsWarnings`
+  // so the synthesized bounds rows (out_of_stock / out_of_work_area)
+  // get folded into the same severity classifier + warnings-panel render
+  // as the pipeline's own warnings. The combined-count + critical-count
+  // derivations move down with it.
 
   /// Post-Generate bounds scan — counts cut/plunge/arc segments whose
   /// endpoints fall outside the stock OR outside the machine work area.
@@ -299,6 +299,41 @@
     if (outWA === 0 && outStock === 0) return null;
     return { outWA, outStock, firstWaLine, firstStockLine };
   });
+  /// Bounds findings projected as PipelineWarning-shaped rows so they
+  /// render in the warnings panel alongside the pipeline's own findings
+  /// (and participate in the same severity classifier + critical gate).
+  /// Returns 0 / 1 / 2 entries — one per offending axis.
+  const boundsWarnings = $derived.by<PipelineWarning[]>(() => {
+    const b = boundsScan;
+    if (!b) return [];
+    const out: PipelineWarning[] = [];
+    if (b.outStock > 0) {
+      out.push({
+        kind: 'out_of_stock',
+        message: `${b.outStock} cut move${b.outStock === 1 ? '' : 's'} outside the stock${b.firstStockLine ? ` (first at gcode line ${b.firstStockLine})` : ''}. The controller will try to cut into air or below the stock — either re-zero the machine, expand the stock, or translate the geometry into the stock bbox.`,
+      });
+    }
+    if (b.outWA > 0) {
+      out.push({
+        kind: 'out_of_work_area',
+        message: `${b.outWA} cut move${b.outWA === 1 ? '' : 's'} outside the machine work area${b.firstWaLine ? ` (first at gcode line ${b.firstWaLine})` : ''}. The controller may refuse the move (soft-limit fault) or, worse, crash into the gantry. Set Project.work_offset so the cuts land inside the work envelope.`,
+      });
+    }
+    return out;
+  });
+  /// Pipeline warnings + the synthesized bounds rows, fed through the
+  /// same panel render + severity gate. Declared HERE (not next to
+  /// `pipelineWarnings`) so `boundsWarnings` above is initialized first.
+  let allPipelineWarnings = $derived<PipelineWarning[]>([
+    ...pipelineWarnings,
+    ...boundsWarnings,
+  ]);
+  let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(allPipelineWarnings));
+  let criticalCount = $derived(
+    warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,
+  );
+  let totalWarningCount = $derived(warnings.length + allPipelineWarnings.length);
+  let isClean = $derived(totalWarningCount === 0 && pipelineCriticalCount === 0);
 
   async function run() {
     if (!project.transformedImport) return;
@@ -408,6 +443,26 @@
       const segs = project.generated?.toolpath.length ?? 0;
       if (segs > 0) project.playhead = Math.min(1, (segIdx + 1) / segs);
     }
+  }
+
+  /// Apply-Fix handler for the `stock_origin_outside_geometry_bbox`
+  /// pipeline warning (audit abdk). Snaps the WCS origin to the geometry
+  /// bbox's bottom-left corner — the same inference the import-time
+  /// auto-default uses (audit gldc), but applied to the CURRENT state
+  /// rather than fresh-import-only. Routes through `setWorkOffset` so
+  /// the change is undoable.
+  function applyWcsBboxSnapFix() {
+    const imp = project.transformedImport;
+    if (!imp) return;
+    // Force the inference even when the current offset isn't default —
+    // user clicked Apply Fix, they're explicitly asking.
+    const next = inferDefaultWorkOffset(imp.bbox, {
+      x_mm: 0,
+      y_mm: 0,
+      z_mm: 0,
+      wcs: project.workOffset.wcs,
+    });
+    project.setWorkOffset({ x_mm: next.x_mm, y_mm: next.y_mm });
   }
 
   /// Sim status goes STALE the moment the user edits anything that
@@ -573,18 +628,12 @@
     </button>
   {/if}
   {#if boundsScan}
-    <span
+    <button
+      type="button"
       class="sim-chip bounds"
-      title={[
-        boundsScan.outWA > 0
-          ? `${boundsScan.outWA} cut move${boundsScan.outWA === 1 ? '' : 's'} outside the machine work area (first @ gcode line ${boundsScan.firstWaLine || '?'})`
-          : '',
-        boundsScan.outStock > 0
-          ? `${boundsScan.outStock} cut move${boundsScan.outStock === 1 ? '' : 's'} outside the stock (first @ gcode line ${boundsScan.firstStockLine || '?'})`
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n')}
+      onclick={() => (warningPanelOpen = !warningPanelOpen)}
+      aria-expanded={warningPanelOpen}
+      title="Click for details — the bounds findings are listed in the warnings panel alongside the pipeline / sim warnings."
     >
       <span class="glyph" aria-hidden="true">⚠</span>
       {#if boundsScan.outWA > 0 && boundsScan.outStock > 0}
@@ -594,7 +643,7 @@
       {:else}
         {boundsScan.outStock} cut move{boundsScan.outStock === 1 ? '' : 's'} outside stock
       {/if}
-    </span>
+    </button>
   {/if}
 </div>
 
@@ -663,14 +712,30 @@
             </div>
           </details>
         {/each}
-        {#each pipelineWarnings as pw, i (`pipe-${i}`)}
+        {#each allPipelineWarnings as pw, i (`pipe-${i}`)}
           {@const sev = pipelineWarningSeverity(pw)}
+          {@const hasFix = pw.kind === 'stock_origin_outside_geometry_bbox'}
           <details class="row severity-{sev} pipeline">
             <summary>
               <span class="dot" aria-hidden="true"></span>
               <span class="source pipeline" title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span>
               <span class="kind">{pw.kind}</span>
               <span class="msg">{pw.message}</span>
+              {#if hasFix}
+                <button
+                  type="button"
+                  class="row-action"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    applyWcsBboxSnapFix();
+                  }}
+                  disabled={!project.transformedImport}
+                  title="Snap the WCS origin to the geometry bbox's bottom-left corner — the canonical CNC zeroing convention."
+                  aria-label="Apply suggested WCS origin"
+                >
+                  apply fix
+                </button>
+              {/if}
             </summary>
             <div class="row-body">
               <p class="full-msg">{pw.message}</p>

@@ -75,6 +75,11 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'pocket_fill_incomplete',
   'helix_radius_unfittable',
   'stock_origin_outside_geometry_bbox',
+  // Front-end-synthesized kinds from GenerateBar's post-Generate
+  // bounds scan — surfaced through the same warnings panel as the
+  // pipeline's own warnings so the user has one place to look.
+  'out_of_stock',
+  'out_of_work_area',
   // fj88 round-2 additions
   'zero_rate_emitted',
   'op_source_empty',

@@ -157,6 +157,9 @@ fn emit_spot_pre_pass<P: PostProcessor>(
             Some(spot_tool),
             spot_tool.id,
             false,
+            // Spot pre-pass runs at the spot tool's library speed — no
+            // finish-pass override here (liyy).
+            None,
         );
     }
     post.raw(&format!("; OP {} spot", op.id));
@@ -185,6 +188,8 @@ fn emit_spot_pre_pass<P: PostProcessor>(
             Some(main_tool),
             main_tool.id,
             false,
+            // Returning to the main drill tool's own speed (liyy).
+            None,
         );
     }
     Ok(())
@@ -348,6 +353,10 @@ fn emit_stufenfase<P: PostProcessor>(
                 Some(cutter),
                 finish_setup.tool.number,
                 false,
+                // liyy: the rim-chamfer block emits at the resolved finish
+                // RPM — spin up to it directly to avoid a transient M3 at
+                // the rough speed.
+                Some(finish_setup.tool.speed),
             );
             chamfer_setup = finish_setup;
             swapped = true;

@@ -795,6 +795,10 @@ where
                         Some(tool),
                         tool.id,
                         is_first_tool,
+                        // Inter-op boundary: the next op's resolved cut
+                        // speed isn't synthesized at this site, so fall
+                        // back to the tool's library speed (liyy).
+                        None,
                     );
                 }
                 prev_tool_id = Some(op.tool_id);
@@ -1131,6 +1135,15 @@ pub(super) fn synthesize_finish_setup(
 /// [`PostProcessor::spindle_cw`]) so the next cut starts with the
 /// spindle already at commanded speed — we can't trust the
 /// delta-encoder's `last_speed` after a hand-swap.
+/// liyy: `target_speed` is the RPM the envelope spins the spindle back
+/// up to. Pass `Some(rpm)` when the caller knows the first cut after the
+/// change runs at a non-default speed — notably the dual-tool and
+/// stufenfase finish passes, whose blocks emit at `speed_finish`. Passing
+/// the rough `ToolEntry.speed` there would emit a transient M3 at the
+/// rough RPM that the following cut block immediately overrides via the
+/// delta-encoder. `None` falls back to the tool's library `speed` (the
+/// inter-op boundary case, where the next op's resolved speed isn't known
+/// at this site).
 pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     post: &mut P,
     machine: &crate::cam::setup::MachineConfig,
@@ -1138,6 +1151,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     new_tool: Option<&ToolEntry>,
     new_tool_id: u32,
     is_first_tool: bool,
+    target_speed: Option<u32>,
 ) {
     // Conservative: always lift to the program-wide safe Z before
     // touching the spindle. The post delta-encodes Z so this collapses
@@ -1220,7 +1234,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
                 crate::gcode::spindle_on(
                     post,
                     t.spindle_direction,
-                    setup_resolver::clamp_rpm_silent(t.speed, machine),
+                    setup_resolver::clamp_rpm_silent(target_speed.unwrap_or(t.speed), machine),
                     0,
                 );
                 let start_dwell = machine.effective_spindle_start_dwell_sec();
@@ -1272,7 +1286,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
                 crate::gcode::spindle_on(
                     post,
                     t.spindle_direction,
-                    setup_resolver::clamp_rpm_silent(t.speed, machine),
+                    setup_resolver::clamp_rpm_silent(target_speed.unwrap_or(t.speed), machine),
                     0,
                 );
                 let start_dwell = machine.effective_spindle_start_dwell_sec();

@@ -20,6 +20,7 @@
   import type { TextFontSource, TextLayer } from '../state/project.svelte';
   import { STYLE_TABLE, engravingMismatch, type TextStyle } from './text_style';
   import { computeFootprint } from '../sim/driver';
+  import { selectionOrigin } from '../canvas/selection-geometry';
   import { formatLength } from '../cam/units';
   import Modal from './Modal.svelte';
   import { onMount } from 'svelte';
@@ -165,6 +166,16 @@
   });
 
   function defaultPosition(): { x: number; y: number } {
+    // 245i: if the user had geometry selected when opening the dialog,
+    // anchor the new text at the bottom-left (0,0) corner of the
+    // selection's bbox — the canonical "place text relative to this
+    // part" flow. Falls back to centering on the stock footprint when
+    // nothing is selected.
+    const origin = selectionOrigin(
+      project.transformedImport?.object_meta ?? [],
+      project.selectedObjects,
+    );
+    if (origin) return origin;
     // Center the new text on the effective stock footprint — same
     // computation Scene3D / sim use, so the preview lands inside the
     // visible workpiece regardless of whether a drawing is loaded.

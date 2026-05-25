@@ -13,6 +13,19 @@
 
   import { project } from '../state/project.svelte';
   import type { TextLayer, TextLayerKind, TextAlignment } from '../state/project.svelte';
+  import { selectionOrigin } from '../canvas/selection-geometry';
+
+  /// 245i: bottom-left of the current object selection's bbox, or null
+  /// when nothing is selected. Drives the per-text "snap origin to
+  /// selection" affordance — the on-demand equivalent of the placement
+  /// AddTextDialog does at creation time.
+  const selOrigin = $derived(
+    selectionOrigin(project.transformedImport?.object_meta ?? [], project.selectedObjects),
+  );
+  function snapOriginToSelection(id: number) {
+    if (!selOrigin) return;
+    project.updateTextLayer(id, { origin: { x: selOrigin.x, y: selOrigin.y } });
+  }
 
   interface Props {
     /// Accordion-controlled (sidebar parent passes active + activate).
@@ -201,6 +214,20 @@
                         )}
                     />
                   </label>
+                  <!-- 245i: re-anchor the text origin to the bottom-left
+                       of the current object selection's bbox — the
+                       on-demand "source of text origin" control. -->
+                  <button
+                    type="button"
+                    class="snap-origin"
+                    onclick={() => snapOriginToSelection(layer.id)}
+                    disabled={!selOrigin}
+                    title={selOrigin
+                      ? `Move origin to the bottom-left of the selection bbox (${selOrigin.x.toFixed(1)}, ${selOrigin.y.toFixed(1)})`
+                      : 'Select geometry in the canvas first, then snap the text origin to its bottom-left corner'}
+                  >
+                    Snap origin to selection
+                  </button>
                   <label>
                     <span>Rotation (°)</span>
                     <input
@@ -481,5 +508,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* 245i: full-width snap-origin button under the X/Y origin fields. */
+  .edit-form .snap-origin {
+    grid-column: 1 / -1;
+    padding: 0.2rem 0.4rem;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .edit-form .snap-origin:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .edit-form .snap-origin:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

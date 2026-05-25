@@ -6,8 +6,15 @@ import {
   lineCrossesBBox,
   pointInPolygon,
   projectOntoSegment,
+  selectionOrigin,
+  type BBox2D,
 } from './selection-geometry';
 import type { Segment } from '../api/types';
+
+function meta(id: number, b: [number, number, number, number]) {
+  const bbox: BBox2D = { min_x: b[0], min_y: b[1], max_x: b[2], max_y: b[3] };
+  return { id, bbox };
+}
 
 describe('selection-geometry', () => {
   describe('clamp', () => {
@@ -114,6 +121,40 @@ describe('selection-geometry', () => {
       ];
       const b = bboxOfSegments(segs);
       expect(b).toEqual({ min_x: -2, min_y: 0, max_x: 10, max_y: 8 });
+    });
+  });
+
+  describe('selectionOrigin (245i)', () => {
+    const metas = [
+      meta(1, [5, 5, 10, 10]),
+      meta(2, [20, -3, 30, 4]),
+      meta(3, [-8, 12, -2, 18]),
+    ];
+
+    it('returns null for an empty selection', () => {
+      expect(selectionOrigin(metas, new Set())).toBeNull();
+    });
+
+    it('returns the bbox min corner of a single selected object', () => {
+      expect(selectionOrigin(metas, new Set([1]))).toEqual({ x: 5, y: 5 });
+    });
+
+    it('unions the bboxes of multiple selected objects and takes the min corner', () => {
+      // ids 2 (min 20,-3) + 3 (min -8,12) → min corner (-8, -3)
+      expect(selectionOrigin(metas, new Set([2, 3]))).toEqual({ x: -8, y: -3 });
+    });
+
+    it('ignores ids that have no meta entry', () => {
+      expect(selectionOrigin(metas, new Set([1, 999]))).toEqual({ x: 5, y: 5 });
+    });
+
+    it('returns null when no selected id resolves to a meta entry', () => {
+      expect(selectionOrigin(metas, new Set([42]))).toBeNull();
+    });
+
+    it('skips objects with a non-finite bbox', () => {
+      const withNan = [meta(1, [NaN, 0, 10, 10]), meta(2, [3, 7, 9, 9])];
+      expect(selectionOrigin(withNan, new Set([1, 2]))).toEqual({ x: 3, y: 7 });
     });
   });
 });

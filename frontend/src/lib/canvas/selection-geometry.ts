@@ -125,3 +125,29 @@ export function bboxOfSegments(segs: Segment[]): BBox2D {
   }
   return { min_x: minX, min_y: minY, max_x: maxX, max_y: maxY };
 }
+
+/// Bottom-left (min) corner of the union of the bboxes of the objects
+/// in `selectedIds`, read from the import's per-object `object_meta`
+/// (245i). This is the "0,0 of the selection bbox" anchor used to place
+/// a freshly-added text op at the selection's origin. Returns `null`
+/// when no selected object has a finite bbox (empty selection, or ids
+/// that don't resolve to a meta entry). Pure so it's unit-testable
+/// without the canvas / rune runtime.
+export function selectionOrigin(
+  objectMeta: readonly { id: number; bbox: BBox2D }[],
+  selectedIds: ReadonlySet<number>,
+): Point2D | null {
+  if (selectedIds.size === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let found = false;
+  for (const m of objectMeta) {
+    if (!selectedIds.has(m.id)) continue;
+    const b = m.bbox;
+    if (!Number.isFinite(b.min_x) || !Number.isFinite(b.min_y)) continue;
+    if (b.min_x < minX) minX = b.min_x;
+    if (b.min_y < minY) minY = b.min_y;
+    found = true;
+  }
+  return found ? { x: minX, y: minY } : null;
+}

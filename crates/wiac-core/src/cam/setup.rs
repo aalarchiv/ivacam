@@ -600,6 +600,16 @@ pub struct MachineConfig {
     /// `None` disables the ceiling (default, back-compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm_max: Option<u32>,
+    /// jcmx: upper bound on the cutting / plunge feed (mm/min) the
+    /// machine can actually drive. Tool / op feeds above this clamp
+    /// DOWN to the max and emit a `feed_clamped_above_max` warning, so
+    /// an out-of-range feed (a fat-fingered op override, an aggressive
+    /// tool-library value) can't reach the controller as a verbatim
+    /// `F<huge>` — which some controllers fault on and others silently
+    /// cap, both producing a program that doesn't run as previewed.
+    /// `None` disables the ceiling (default, back-compat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_feed_mm_min: Option<u32>,
     /// syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0`
     /// retract-to-machine-home before the spindle-off + M30 sequence.
     /// Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts
@@ -720,6 +730,7 @@ impl Default for MachineConfig {
             capabilities: Vec::new(),
             spindle_rpm_min: None,
             spindle_rpm_max: None,
+            max_feed_mm_min: None,
             park_at_home: false,
             park_xy: None,
         }

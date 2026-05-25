@@ -406,7 +406,7 @@ components:
         - peck_step_mm
         type: object
     DwellUnit:
-      description: 'nxn0: which time unit the post emits for `P<value>` dwell words. LinuxCNC and Smoothieware read P in seconds; Mach3/Mach4/Centroid/ most Fanuc-derived controllers read P in milliseconds. Defaulting to Seconds keeps the existing LinuxCNC golden snapshots stable.'
+      description: 'nxn0: which time unit the post emits for `P<value>` dwell words. `LinuxCNC` and Smoothieware read P in seconds; Mach3/Mach4/Centroid/ most Fanuc-derived controllers read P in milliseconds. Defaulting to Seconds keeps the existing `LinuxCNC` golden snapshots stable.'
       enum:
       - seconds
       - milliseconds
@@ -914,7 +914,7 @@ components:
           description: Whether the machine emits arc commands (G2/G3).
           type: boolean
         capabilities:
-          description: 'h0tx: which op kinds the machine can run. Drives the frontend''s OpKindPicker filter — a laser-only machine doesn''t show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (back-compat default for old project files).'
+          description: 'h0tx: which op kinds the machine can run. Drives the frontend''s `OpKindPicker` filter — a laser-only machine doesn''t show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (back-compat default for old project files).'
           items:
             $ref: '#/components/schemas/MachineMode'
           type: array
@@ -937,16 +937,23 @@ components:
           type:
           - integer
           - 'null'
+        max_feed_mm_min:
+          description: 'jcmx: upper bound on the cutting / plunge feed (mm/min) the machine can actually drive. Tool / op feeds above this clamp DOWN to the max and emit a `feed_clamped_above_max` warning, so an out-of-range feed (a fat-fingered op override, an aggressive tool-library value) can''t reach the controller as a verbatim `F<huge>` — which some controllers fault on and others silently cap, both producing a program that doesn''t run as previewed. `None` disables the ceiling (default, back-compat).'
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         mode:
           $ref: '#/components/schemas/MachineMode'
         name:
           description: 'h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.wiac-machine.json` save/load files.'
           type: string
         park_at_home:
-          description: 'syol: when true, the program_end footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (LinuxCNC, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first.'
+          description: 'syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first.'
           type: boolean
         park_xy:
-          description: 'syol: optional explicit park XY (mm, in WCS coordinates). When `Some`, the program_end footer routes the head to this point after the safe-Z lift, overriding the machine-home / work-zero fallback. Useful for a known tool-station / load-station that isn''t (0, 0) in either frame.'
+          description: 'syol: optional explicit park XY (mm, in WCS coordinates). When `Some`, the `program_end` footer routes the head to this point after the safe-Z lift, overriding the machine-home / work-zero fallback. Useful for a known tool-station / load-station that isn''t (0, 0) in either frame.'
           items:
           - format: double
             type: number
@@ -1264,7 +1271,7 @@ components:
             type: number
           radial_passes:
             default: 1
-            description: 'sqnh: number of radial roughing passes from `start_radius` → final thread radius. Single helix at full engagement is too aggressive for hard materials; multi- pass schedules let the chipload soften. Default 1 (single-pass; backward-compatible). Each pass cuts a deeper helix at radius = lerp(start_radius_frac → 1.0, i/N).'
+            description: 'sqnh: number of radial roughing passes from `start_radius` → final thread radius. Single helix at full engagement is too aggressive for hard materials; multi- pass schedules let the chipload soften. Default 1 (single-pass; backward-compatible). Each pass cuts a deeper helix at radius = `lerp(start_radius_frac` → 1.0, i/N).'
             format: uint32
             minimum: 0.0
             type: integer
@@ -1274,7 +1281,10 @@ components:
             format: double
             type: number
           thread_depth_mm:
-            description: 'mniu: radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter''s radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud''s flank by `thread_depth`). `None` ⇒ ISO 60° default. Set explicitly for non-ISO thread forms (UN, Whitworth, ACME, …). Older serialized projects without this field deserialize as `None` and pick up the ISO default at planning time — backward compatible.'
+            description: |-
+              mniu: radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter's radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud's flank by `thread_depth`).
+
+              `None` ⇒ ISO 60° default. Set explicitly for non-ISO thread forms (UN, Whitworth, ACME, …). Older serialized projects without this field deserialize as `None` and pick up the ISO default at planning time — backward compatible.
             format: double
             type:
             - number
@@ -1995,7 +2005,7 @@ components:
           anyOf:
           - $ref: '#/components/schemas/DwellUnit'
           - type: 'null'
-          description: 'nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P. LinuxCNC reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (LinuxCNC default).'
+          description: 'nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P. `LinuxCNC` reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (`LinuxCNC` default).'
         file_extension:
           description: File extension for save-to-disk (no leading dot). Default `"nc"`. Mach3 commonly uses `"tap"`, GRBL stays `"nc"`.
           type:
@@ -2348,7 +2358,7 @@ components:
         - worst_x
         - worst_y
         type: object
-      - description: 'wpzm: the simulator coarsened cell_size to fit the user''s `maxSimulationCells` budget. Without this surfaced, tool-engagement issues and small features get silently smoothed away — the user has no signal that the sim accuracy dropped. The warning carries both the requested cell size and the actual one so the UI can hint at "increase Max simulation cells to see this at full resolution".'
+      - description: 'wpzm: the simulator coarsened `cell_size` to fit the user''s `maxSimulationCells` budget. Without this surfaced, tool-engagement issues and small features get silently smoothed away — the user has no signal that the sim accuracy dropped. The warning carries both the requested cell size and the actual one so the UI can hint at "increase Max simulation cells to see this at full resolution".'
         properties:
           coarsened_cell_size_mm:
             format: double
@@ -2733,7 +2743,7 @@ components:
           type: integer
         pierce_delay_sec:
           default: 0.0
-          description: 'zpuk: plasma pierce delay in seconds — torch dwells at pierce_height while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.'
+          description: 'zpuk: plasma pierce delay in seconds — torch dwells at `pierce_height` while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.'
           format: double
           type: number
         pierce_height_mm:

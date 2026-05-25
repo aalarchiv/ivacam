@@ -57,7 +57,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 35;
+pub const PIPELINE_VERSION: u32 = 36;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -475,6 +475,8 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     // it MUST invalidate the cache.
     hash_opt_u32(m.spindle_rpm_min, h);
     hash_opt_u32(m.spindle_rpm_max, h);
+    // jcmx: feed ceiling changes the clamped emitted feeds.
+    hash_opt_u32(m.max_feed_mm_min, h);
     // eaeq / m8sq: toolchange spindle stop/start dwells are emitted
     // verbatim as G4 P<sec> lines around M5/M3 in the M6 envelope.
     hash_opt_f64(m.spindle_stop_dwell_sec, h);
@@ -1108,7 +1110,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0xc1bb_19a6_ae5d_2264_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0xca82_d6f9_9991_f394_u64, "got {:#018x}", key.0);
     }
 
     #[test]

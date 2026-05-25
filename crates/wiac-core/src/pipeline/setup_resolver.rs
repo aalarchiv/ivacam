@@ -64,6 +64,46 @@ fn clamp_spindle_rpm(
     clamped
 }
 
+/// jcmx: clamp a resolved feed (mm/min) DOWN to the machine's
+/// `max_feed_mm_min` ceiling. `None` (unset) disables the clamp. Used
+/// for both cutting and plunge feeds — a single ceiling is the safe
+/// limit (plunge is normally well under it, so it rarely fires there).
+/// Emits one warning per clamp event, tagged with the pass + axis so
+/// the user sees which feed was capped. Mirrors `clamp_spindle_rpm`.
+fn clamp_feed(
+    feed: u32,
+    axis: &str,
+    machine: &MachineConfig,
+    op: &Op,
+    pass: PassKind,
+    warnings: &mut Vec<PipelineWarning>,
+) -> u32 {
+    if let Some(max) = machine.max_feed_mm_min {
+        if feed > max {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "feed_clamped_above_max".into(),
+                message: format!(
+                    "op '{}' ({pass:?} pass): {axis} feed {feed} mm/min exceeds machine max_feed_mm_min {max}; clamped to {max}.",
+                    op.name
+                ),
+            });
+            return max;
+        }
+    }
+    feed
+}
+
+/// Silent feed clamp (no warnings) — for the inert `header_setup_for`
+/// paths, so `ToolConfig` feed fields stay consistent with the emitted
+/// per-op path. Mirrors `clamp_rpm_silent`.
+fn clamp_feed_silent(feed: u32, machine: &MachineConfig) -> u32 {
+    match machine.max_feed_mm_min {
+        Some(max) if feed > max => max,
+        _ => feed,
+    }
+}
+
 pub(super) fn dual_tool_finish_radius(op: &Op, project: &Project) -> Option<f64> {
     if !matches!(op.kind, OpKind::Pocket { .. }) {
         return None;
@@ -247,11 +287,42 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         // whether the user configured separate per-tool finish rates:
         // they explicitly typed the override at the op level, that's
         // the value they want.
-        rate_v: op.params.plunge_rate_override.unwrap_or(rough_plunge),
-        rate_h: op.params.feed_rate_override.unwrap_or(rough_feed),
+        // jcmx: clamp the FINAL feed (after op override) to the machine
+        // ceiling so even a fat-fingered override can't emit an
+        // out-of-range F-word. Plunge + cut, rough + finish.
+        rate_v: clamp_feed(
+            op.params.plunge_rate_override.unwrap_or(rough_plunge),
+            "plunge",
+            &project.machine,
+            op,
+            main_pass,
+            warnings,
+        ),
+        rate_h: clamp_feed(
+            op.params.feed_rate_override.unwrap_or(rough_feed),
+            "cut",
+            &project.machine,
+            op,
+            main_pass,
+            warnings,
+        ),
         speed_finish: finish_speed,
-        rate_v_finish: op.params.plunge_rate_override.unwrap_or(finish_plunge),
-        rate_h_finish: op.params.feed_rate_override.unwrap_or(finish_feed),
+        rate_v_finish: clamp_feed(
+            op.params.plunge_rate_override.unwrap_or(finish_plunge),
+            "plunge",
+            &project.machine,
+            op,
+            PassKind::Finish,
+            warnings,
+        ),
+        rate_h_finish: clamp_feed(
+            op.params.feed_rate_override.unwrap_or(finish_feed),
+            "cut",
+            &project.machine,
+            op,
+            PassKind::Finish,
+            warnings,
+        ),
         pierce_sec,
         wirbeln_radius,
         wirbeln_stepover,
@@ -629,11 +700,23 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 // top despite the override. c0pm: the override also
                 // applies to the finish slot so single-pass Profile ops
                 // (which now emit at finish rates) honour the override.
-                rate_v: op.params.plunge_rate_override.unwrap_or(rp),
-                rate_h: op.params.feed_rate_override.unwrap_or(rf),
+                rate_v: clamp_feed_silent(
+                    op.params.plunge_rate_override.unwrap_or(rp),
+                    &project.machine,
+                ),
+                rate_h: clamp_feed_silent(
+                    op.params.feed_rate_override.unwrap_or(rf),
+                    &project.machine,
+                ),
                 speed_finish: fs,
-                rate_v_finish: op.params.plunge_rate_override.unwrap_or(fp),
-                rate_h_finish: op.params.feed_rate_override.unwrap_or(ff),
+                rate_v_finish: clamp_feed_silent(
+                    op.params.plunge_rate_override.unwrap_or(fp),
+                    &project.machine,
+                ),
+                rate_h_finish: clamp_feed_silent(
+                    op.params.feed_rate_override.unwrap_or(ff),
+                    &project.machine,
+                ),
                 pierce_sec,
                 // Wirbeln (3e5) is a cut-time overlay only — the
                 // header_setup_for path is for program header emission
@@ -687,11 +770,11 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 .unwrap_or(30.0)
                 .max(0.0)
                 .to_radians(),
-            rate_v: rp,
-            rate_h: rf,
+            rate_v: clamp_feed_silent(rp, &project.machine),
+            rate_h: clamp_feed_silent(rf, &project.machine),
             speed_finish: fs,
-            rate_v_finish: fp,
-            rate_h_finish: ff,
+            rate_v_finish: clamp_feed_silent(fp, &project.machine),
+            rate_h_finish: clamp_feed_silent(ff, &project.machine),
             pierce_sec,
             wirbeln_radius: 0.0,
             wirbeln_stepover: 0.0,
@@ -1036,5 +1119,73 @@ mod tests {
             "expected clamped S12000, got {}",
             resp.gcode
         );
+    }
+
+    /// jcmx: a cutting feed above the machine's `max_feed_mm_min` ceiling
+    /// clamps DOWN at the output boundary and emits a
+    /// `feed_clamped_above_max` warning — the raw F-word never reaches
+    /// the controller.
+    #[test]
+    fn feed_above_machine_max_clamps_and_warns() {
+        let mut tool = endmill(1, 3.0);
+        tool.feed_rate = 5000; // above the machine ceiling
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-1.0);
+        op.params.depth = -1.0;
+        let mut project = project_with(vec![op], vec![tool]);
+        project.machine.max_feed_mm_min = Some(2000);
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "feed_clamped_above_max"),
+            "expected feed clamp warning, got {:?}",
+            resp.warnings
+        );
+        assert!(
+            !resp.gcode.contains("F5000"),
+            "raw 5000 mm/min feed leaked into gcode despite clamp:\n{}",
+            resp.gcode
+        );
+        assert!(
+            resp.gcode.contains("F2000"),
+            "expected clamped F2000, got:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// jcmx: an op-level feed override above the ceiling is ALSO clamped
+    /// — the clamp sits after the override merge, so a fat-fingered
+    /// override can't bypass the machine limit.
+    #[test]
+    fn feed_override_above_machine_max_clamps() {
+        let tool = endmill(1, 3.0);
+        let mut op = profile_op(1, 1, ToolOffset::Outside);
+        op.params.step = Some(-1.0);
+        op.params.depth = -1.0;
+        op.params.feed_rate_override = Some(9999);
+        let mut project = project_with(vec![op], vec![tool]);
+        project.machine.max_feed_mm_min = Some(1500);
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !resp.gcode.contains("F9999"),
+            "override feed bypassed the machine ceiling:\n{}",
+            resp.gcode
+        );
+        assert!(resp.gcode.contains("F1500"), "expected clamped F1500");
     }
 }

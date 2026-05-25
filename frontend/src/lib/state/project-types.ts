@@ -289,6 +289,11 @@ export interface MachineSettings {
   /// `spindle_speed_clamped_above_max` warning. Undefined disables
   /// the ceiling (default; back-compat).
   spindleRpmMax?: number;
+  /// jcmx: upper bound on the cutting / plunge feed (mm/min) the machine
+  /// can drive. Feeds above this clamp DOWN to the max and emit a
+  /// `feed_clamped_above_max` warning. Undefined disables the ceiling
+  /// (default; back-compat).
+  maxFeedMmMin?: number;
   /// Spindle-start dwell (seconds) inserted into the M6 toolchange
   /// envelope after `M3 S<rpm>`. Lets the new tool come up to
   /// commanded RPM before the next cut. Undefined ⇒ 0.5 s default.

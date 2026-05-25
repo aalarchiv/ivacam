@@ -700,6 +700,29 @@
         >
       </label>
       <label
+        title="jcmx: upper feed clamp. Cutting / plunge feeds above this clamp DOWN to the max and emit a 'feed_clamped_above_max' warning, so an out-of-range feed can't reach the controller. Empty = no ceiling (back-compat default)."
+      >
+        Max feed
+        <span class="field"
+          ><input
+            type="number"
+            min="0"
+            step="100"
+            placeholder="—"
+            value={draft.maxFeedMmMin ?? ''}
+            oninput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              if (raw === '') {
+                draft.maxFeedMmMin = undefined;
+                return;
+              }
+              const v = parseInt(raw, 10);
+              draft.maxFeedMmMin = isFinite(v) && v >= 0 ? v : undefined;
+            }}
+          /><span class="unit">mm/min</span></span
+        >
+      </label>
+      <label
         title="Spindle-start dwell inserted into the M6 toolchange envelope after M3 S<rpm>. Lets the spindle reach commanded RPM before the next cut. Stacks with the per-tool ToolEntry.pause. Empty = 0.5 s default."
       >
         Spindle start dwell

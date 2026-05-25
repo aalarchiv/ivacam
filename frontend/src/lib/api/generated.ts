@@ -280,7 +280,7 @@ export interface components {
           peck_step_mm: number;
         };
     /**
-     * @description nxn0: which time unit the post emits for `P<value>` dwell words. LinuxCNC and Smoothieware read P in seconds; Mach3/Mach4/Centroid/ most Fanuc-derived controllers read P in milliseconds. Defaulting to Seconds keeps the existing LinuxCNC golden snapshots stable.
+     * @description nxn0: which time unit the post emits for `P<value>` dwell words. `LinuxCNC` and Smoothieware read P in seconds; Mach3/Mach4/Centroid/ most Fanuc-derived controllers read P in milliseconds. Defaulting to Seconds keeps the existing `LinuxCNC` golden snapshots stable.
      * @enum {string}
      */
     DwellUnit: 'seconds' | 'milliseconds';
@@ -515,7 +515,7 @@ export interface components {
       arc_fit_tolerance_mm?: number | null;
       /** @description Whether the machine emits arc commands (G2/G3). */
       arcs: boolean;
-      /** @description h0tx: which op kinds the machine can run. Drives the frontend's OpKindPicker filter — a laser-only machine doesn't show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (back-compat default for old project files). */
+      /** @description h0tx: which op kinds the machine can run. Drives the frontend's `OpKindPicker` filter — a laser-only machine doesn't show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (back-compat default for old project files). */
       capabilities?: components['schemas']['MachineMode'][];
       comments: boolean;
       /** @description Decimal separator for emitted numbers (rt1.36). `'.'` (default) suits `LinuxCNC` / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'. */
@@ -527,12 +527,17 @@ export interface components {
        * @description Starting line number for `N<n>` prefixes (rt1.36). `None` (the default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`, `N30`, … incrementing by 10. Required by some FANUC / vintage controllers; useful operator reference even on modern ones.
        */
       line_number_start?: number | null;
+      /**
+       * Format: uint32
+       * @description jcmx: upper bound on the cutting / plunge feed (mm/min) the machine can actually drive. Tool / op feeds above this clamp DOWN to the max and emit a `feed_clamped_above_max` warning, so an out-of-range feed (a fat-fingered op override, an aggressive tool-library value) can't reach the controller as a verbatim `F<huge>` — which some controllers fault on and others silently cap, both producing a program that doesn't run as previewed. `None` disables the ceiling (default, back-compat).
+       */
+      max_feed_mm_min?: number | null;
       mode: components['schemas']['MachineMode'];
       /** @description h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.wiac-machine.json` save/load files. */
       name?: string;
-      /** @description syol: when true, the program_end footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (LinuxCNC, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first. */
+      /** @description syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first. */
       park_at_home?: boolean;
-      /** @description syol: optional explicit park XY (mm, in WCS coordinates). When `Some`, the program_end footer routes the head to this point after the safe-Z lift, overriding the machine-home / work-zero fallback. Useful for a known tool-station / load-station that isn't (0, 0) in either frame. */
+      /** @description syol: optional explicit park XY (mm, in WCS coordinates). When `Some`, the `program_end` footer routes the head to this point after the safe-Z lift, overriding the machine-home / work-zero fallback. Useful for a known tool-station / load-station that isn't (0, 0) in either frame. */
       park_xy?: [number, number] | null;
       /** @description Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op's cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op's `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers. */
       plot_mode_z?: boolean;
@@ -744,7 +749,7 @@ export interface components {
           pitch_mm: number;
           /**
            * Format: uint32
-           * @description sqnh: number of radial roughing passes from `start_radius` → final thread radius. Single helix at full engagement is too aggressive for hard materials; multi- pass schedules let the chipload soften. Default 1 (single-pass; backward-compatible). Each pass cuts a deeper helix at radius = lerp(start_radius_frac → 1.0, i/N).
+           * @description sqnh: number of radial roughing passes from `start_radius` → final thread radius. Single helix at full engagement is too aggressive for hard materials; multi- pass schedules let the chipload soften. Default 1 (single-pass; backward-compatible). Each pass cuts a deeper helix at radius = `lerp(start_radius_frac` → 1.0, i/N).
            * @default 1
            */
           radial_passes: number;
@@ -756,7 +761,9 @@ export interface components {
           start_angle_rad: number;
           /**
            * Format: double
-           * @description mniu: radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter's radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud's flank by `thread_depth`). `None` ⇒ ISO 60° default. Set explicitly for non-ISO thread forms (UN, Whitworth, ACME, …). Older serialized projects without this field deserialize as `None` and pick up the ISO default at planning time — backward compatible.
+           * @description mniu: radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter's radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud's flank by `thread_depth`).
+           *
+           *     `None` ⇒ ISO 60° default. Set explicitly for non-ISO thread forms (UN, Whitworth, ACME, …). Older serialized projects without this field deserialize as `None` and pick up the ISO default at planning time — backward compatible.
            */
           thread_depth_mm?: number | null;
           /** @enum {string} */
@@ -1205,7 +1212,7 @@ export interface components {
        * @description tsay: decimal places used by `fmt_num` when the project is in Inch mode. The default of 4 (i.e. 0.0001 in = 0.00254 mm) is borderline for sub-mil work — shops authoring in tenths or micro-inches want 5 or 6. `None` ⇒ keep the 4-decimal default. The mm path is untouched: it stays at 4 decimals (0.0001 mm = 0.1 µm) which is already finer than any realistic CNC repeats.
        */
       decimal_places_inch?: number | null;
-      /** @description nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P. LinuxCNC reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (LinuxCNC default). */
+      /** @description nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P. `LinuxCNC` reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (`LinuxCNC` default). */
       dwell_unit?: components['schemas']['DwellUnit'] | null;
       /** @description File extension for save-to-disk (no leading dot). Default `"nc"`. Mach3 commonly uses `"tap"`, GRBL stays `"nc"`. */
       file_extension?: string | null;
@@ -1612,7 +1619,7 @@ export interface components {
       pause: number;
       /**
        * Format: double
-       * @description zpuk: plasma pierce delay in seconds — torch dwells at pierce_height while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.
+       * @description zpuk: plasma pierce delay in seconds — torch dwells at `pierce_height` while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.
        * @default 0
        */
       pierce_delay_sec: number;

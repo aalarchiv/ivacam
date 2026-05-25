@@ -207,6 +207,8 @@ interface WireMachine {
   /// Rust serde default (no clamp) round-trips for legacy projects.
   spindle_rpm_min?: number;
   spindle_rpm_max?: number;
+  /// jcmx: feed ceiling (mm/min). Omit when undefined (no clamp).
+  max_feed_mm_min?: number;
   /// Spindle warmup / spindown dwells (seconds) emitted around M6
   /// tool changes. Omit when undefined so the Rust 0.5 s defaults
   /// apply.
@@ -503,6 +505,7 @@ function buildMachine(m: MachineSettings): WireMachine {
     // pass it through verbatim because the user typed it.
     ...(m.spindleRpmMin !== undefined ? { spindle_rpm_min: m.spindleRpmMin } : {}),
     ...(m.spindleRpmMax !== undefined ? { spindle_rpm_max: m.spindleRpmMax } : {}),
+    ...(m.maxFeedMmMin !== undefined ? { max_feed_mm_min: m.maxFeedMmMin } : {}),
     // Spindle warmup / spindown dwells. Skip on undefined so the
     // Rust 0.5 s default applies.
     ...(m.spindleStartDwellSec !== undefined

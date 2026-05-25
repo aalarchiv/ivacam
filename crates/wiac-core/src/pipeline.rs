@@ -493,6 +493,11 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         return Err(PipelineError::Cancelled);
     }
     let (toolpath, gcode_index) = preview::interpret_with_index(&gcode);
+    // v0ez: scan the emitted toolpath against the machine work-area
+    // envelope here (core-side) so every transport — not just the
+    // frontend — surfaces soft-limit / gantry-crash risk as a critical
+    // `out_of_work_area` warning.
+    warnings::push_work_area_warning(&toolpath, &project.machine, &mut warnings);
     let regions = build_region_previews(&project, &objects);
     let tool_changes = count_tool_changes(&project);
     let spindle_warmup_s = spindle_warmup_seconds(&project);

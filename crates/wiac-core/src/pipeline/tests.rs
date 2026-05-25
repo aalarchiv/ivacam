@@ -2954,3 +2954,66 @@
             resp.gcode
         );
     }
+
+    /// v0ez: the work-area envelope guard is enforced pipeline-side, so a
+    /// program whose cuts leave the machine travel box surfaces an
+    /// `out_of_work_area` warning on EVERY transport (here via the bare
+    /// `run_pipeline` core entry, no frontend involved). A 20 mm square
+    /// placed at X 250..270 sits entirely past the default 200 mm X
+    /// travel.
+    #[test]
+    fn run_pipeline_flags_cuts_outside_work_area() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 250.0, 0.0),
+            machine: MachineConfig::default(), // 200×300×50
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline should run");
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "out_of_work_area"),
+            "expected core-side out_of_work_area warning for cuts at X>200; got {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
+        );
+    }
+
+    /// v0ez companion: an in-envelope program must NOT raise the
+    /// work-area warning — the guard is silent when the cuts stay inside
+    /// the travel box. Placed at (50, 50) so the Outside profile's
+    /// tool-radius offset (≈ -1.5 mm at the corner) still lands well
+    /// inside [0, travel] on every axis.
+    #[test]
+    fn run_pipeline_no_work_area_warning_when_in_bounds() {
+        let project = Project {
+            segments: closed_square_offset(20.0, 50.0, 50.0),
+            machine: MachineConfig::default(),
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .expect("pipeline should run");
+        assert!(
+            !resp.warnings.iter().any(|w| w.kind == "out_of_work_area"),
+            "in-bounds program should not raise out_of_work_area; got {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
+        );
+    }

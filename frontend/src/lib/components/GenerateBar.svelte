@@ -275,16 +275,26 @@
   // user's "block on critical" setting did NOT prevent the broken gcode
   // from shipping).
   // `allPipelineWarnings` is defined after `boundsScan` / `boundsWarnings`
-  // so the synthesized bounds rows (out_of_stock / out_of_work_area)
-  // get folded into the same severity classifier + warnings-panel render
-  // as the pipeline's own warnings. The combined-count + critical-count
+  // so the synthesized stock-bounds row (out_of_stock) gets folded into
+  // the same severity classifier + warnings-panel render as the
+  // pipeline's own warnings (which now include the core-side
+  // out_of_work_area row — v0ez). The combined-count + critical-count
   // derivations move down with it.
 
-  /// Post-Generate bounds scan — counts cut/plunge/arc segments whose
-  /// endpoints fall outside the stock OR outside the machine work area.
-  /// Different from the existing sim warnings (which catch rapid-through-
-  /// stock / fixture collision); this is purely an "is your gcode valid
-  /// for this stock + machine envelope" check.
+  /// Post-Generate STOCK bounds scan — counts cut/plunge/arc segments
+  /// whose endpoints fall outside the stock box. Different from the
+  /// existing sim warnings (which catch rapid-through-stock / fixture
+  /// collision); this is purely an "is your gcode valid for this stock"
+  /// check.
+  ///
+  /// v0ez: the work-area half of this scan moved into the pipeline
+  /// (`crates/wiac-core/.../warnings.rs::push_work_area_warning`) so every
+  /// transport — not just this frontend — surfaces soft-limit risk. The
+  /// resulting `out_of_work_area` warning rides in on
+  /// `project.generated.warnings` → `pipelineWarnings`, so we must NOT
+  /// re-synthesize it here (that would double-count). The STOCK check
+  /// stays frontend-side because the core `Project` has no stock model —
+  /// stock dims live only in `project.stock` (StockConfig).
   const boundsScan = $derived.by(() => {
     const gen = project.generated;
     if (!gen) return null;
@@ -293,26 +303,11 @@
     const stockTop = 0;
     const stockBottom = -Math.max(0.01, project.stock.thickness);
     const isCut = (k: string) => k === 'cut' || k === 'plunge' || k === 'arc';
-    let outWA = 0;
     let outStock = 0;
-    let firstWaLine = 0;
     let firstStockLine = 0;
     for (const seg of gen.toolpath) {
       if (!isCut(seg.kind)) continue;
       const p = seg.to;
-      if (wa && wa.x > 0 && wa.y > 0 && wa.z > 0) {
-        if (
-          p.x < -1e-6 ||
-          p.x > wa.x + 1e-6 ||
-          p.y < -1e-6 ||
-          p.y > wa.y + 1e-6 ||
-          p.z < -wa.z - 1e-6 ||
-          p.z > 1e-6
-        ) {
-          outWA++;
-          if (firstWaLine === 0) firstWaLine = seg.gcode_line;
-        }
-      }
       if (
         p.x < stockFp.minX - 1e-6 ||
         p.x > stockFp.maxX + 1e-6 ||
@@ -325,13 +320,15 @@
         if (firstStockLine === 0) firstStockLine = seg.gcode_line;
       }
     }
-    if (outWA === 0 && outStock === 0) return null;
-    return { outWA, outStock, firstWaLine, firstStockLine };
+    if (outStock === 0) return null;
+    return { outStock, firstStockLine };
   });
-  /// Bounds findings projected as PipelineWarning-shaped rows so they
-  /// render in the warnings panel alongside the pipeline's own findings
-  /// (and participate in the same severity classifier + critical gate).
-  /// Returns 0 / 1 / 2 entries — one per offending axis.
+  /// Stock-bounds finding projected as a PipelineWarning-shaped row so it
+  /// renders in the warnings panel alongside the pipeline's own findings
+  /// (and participates in the same severity classifier + critical gate).
+  /// Returns 0 / 1 entries. The `out_of_work_area` row is emitted
+  /// pipeline-side now (see `boundsScan` note), so it's NOT synthesized
+  /// here.
   const boundsWarnings = $derived.by<PipelineWarning[]>(() => {
     const b = boundsScan;
     if (!b) return [];
@@ -340,12 +337,6 @@
       out.push({
         kind: 'out_of_stock',
         message: `${b.outStock} cut move${b.outStock === 1 ? '' : 's'} outside the stock${b.firstStockLine ? ` (first at gcode line ${b.firstStockLine})` : ''}. The controller will try to cut into air or below the stock — either re-zero the machine, expand the stock, or translate the geometry into the stock bbox.`,
-      });
-    }
-    if (b.outWA > 0) {
-      out.push({
-        kind: 'out_of_work_area',
-        message: `${b.outWA} cut move${b.outWA === 1 ? '' : 's'} outside the machine work area${b.firstWaLine ? ` (first at gcode line ${b.firstWaLine})` : ''}. The controller may refuse the move (soft-limit fault) or, worse, crash into the gantry. Set Project.work_offset so the cuts land inside the work envelope.`,
       });
     }
     return out;

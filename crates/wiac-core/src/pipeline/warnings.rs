@@ -64,6 +64,74 @@ pub(super) fn push_wcs_origin_warning(
     }
 }
 
+/// v0ez: post-emit work-area envelope scan. Until now the ONLY check
+/// that emitted cuts stay inside the machine travel box lived in the
+/// frontend (`GenerateBar.boundsScan`), so any non-frontend consumer
+/// (CLI / server / wasm called directly) got no soft-limit guard at all.
+/// This moves the work-area half of that scan into the pipeline so every
+/// transport is protected. The stock half stays frontend-side: the core
+/// `Project` has no stock model yet (stock dims live only in the
+/// frontend's `StockConfig`).
+///
+/// Mirrors the frontend logic exactly so behavior is unchanged for FE
+/// users (the frontend drops its own work-area synthesis now that this
+/// emits the same `out_of_work_area` kind): scan Cut / Plunge / Arc
+/// segment END points against X ∈ [0, wa.x], Y ∈ [0, wa.y],
+/// Z ∈ [-wa.z, 0] (origin at stock top) with a 1e-6 mm slack. Rapids and
+/// retracts are excluded — they legitimately fly to clearance / park
+/// positions outside the cut envelope. Emits a single `out_of_work_area`
+/// warning (the frontend classifies that kind as critical, so the
+/// block-on-critical gate refuses to ship the program). Skipped when the
+/// work area is unset / zero on any axis.
+pub(super) fn push_work_area_warning(
+    toolpath: &[crate::gcode::preview::ToolpathSegment],
+    machine: &crate::cam::setup::MachineConfig,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    use crate::gcode::preview::MoveKind;
+    let wa = machine.work_area;
+    if !(wa.x > 0.0 && wa.y > 0.0 && wa.z > 0.0) {
+        return;
+    }
+    let eps = 1e-6;
+    let mut count = 0usize;
+    let mut first_line = 0u32;
+    for seg in toolpath {
+        if !matches!(seg.kind, MoveKind::Cut | MoveKind::Plunge | MoveKind::Arc) {
+            continue;
+        }
+        let p = seg.to;
+        let outside = p.x < -eps
+            || p.x > wa.x + eps
+            || p.y < -eps
+            || p.y > wa.y + eps
+            || p.z < -wa.z - eps
+            || p.z > eps;
+        if outside {
+            count += 1;
+            if first_line == 0 {
+                first_line = seg.gcode_line;
+            }
+        }
+    }
+    if count == 0 {
+        return;
+    }
+    let plural = if count == 1 { "" } else { "s" };
+    let where_line = if first_line != 0 {
+        format!(" (first at gcode line {first_line})")
+    } else {
+        String::new()
+    };
+    warnings.push(PipelineWarning {
+        op_id: None,
+        kind: "out_of_work_area".into(),
+        message: format!(
+            "{count} cut move{plural} outside the machine work area{where_line}. The controller may refuse the move (soft-limit fault) or, worse, crash into the gantry. Set Project.work_offset so the cuts land inside the work envelope."
+        ),
+    });
+}
+
 /// tnxu: scan the enabled-op sequence for obviously wrong orderings —
 /// the classic "Profile cuts the part free → Drill on the loose part
 /// fails" sequence. We don't auto-reorder (the user may have a real
@@ -483,6 +551,76 @@ mod tests {
             .find(|w| w.kind == "stock_origin_outside_geometry_bbox")
             .expect("expected WCS origin warning when geometry doesn't include (0,0)");
         assert_eq!(hit.op_id, None, "WCS warning is project-wide, not per-op");
+    }
+
+    /// v0ez: a Cut segment whose endpoint leaves the machine work-area
+    /// box emits exactly one project-wide `out_of_work_area` warning
+    /// carrying the offending count + first gcode line. An in-bounds cut
+    /// and an out-of-bounds RAPID are both ignored.
+    #[test]
+    fn work_area_scan_flags_out_of_envelope_cut() {
+        use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
+        let machine = crate::cam::setup::MachineConfig::default(); // 200×300×50
+        let seg = |fx, fy, fz, tx, ty, tz, kind, line| ToolpathSegment {
+            from: Pose3 { x: fx, y: fy, z: fz },
+            to: Pose3 { x: tx, y: ty, z: tz },
+            kind,
+            gcode_line: line,
+            op_id: 0,
+        };
+        let toolpath = vec![
+            // In-bounds cut — fine.
+            seg(0.0, 0.0, 0.0, 50.0, 50.0, -2.0, MoveKind::Cut, 10),
+            // Cut that ends 25 mm past +X travel — out of envelope.
+            seg(50.0, 50.0, -2.0, 225.0, 50.0, -2.0, MoveKind::Cut, 11),
+            // Rapid well outside the box — excluded (park / clearance move).
+            seg(225.0, 50.0, -2.0, 500.0, 500.0, 5.0, MoveKind::Rapid, 12),
+        ];
+        let mut warnings = Vec::new();
+        push_work_area_warning(&toolpath, &machine, &mut warnings);
+        let hits: Vec<_> = warnings
+            .iter()
+            .filter(|w| w.kind == "out_of_work_area")
+            .collect();
+        assert_eq!(hits.len(), 1, "expected exactly one work-area warning: {warnings:?}");
+        assert_eq!(hits[0].op_id, None, "work-area warning is project-wide");
+        assert!(
+            hits[0].message.contains("1 cut move") && hits[0].message.contains("gcode line 11"),
+            "message should count one offending cut at line 11: {}",
+            hits[0].message
+        );
+    }
+
+    /// v0ez: a fully in-envelope toolpath produces no warning, and a
+    /// zeroed work area (unset machine) is skipped rather than flagging
+    /// every move.
+    #[test]
+    fn work_area_scan_silent_when_in_bounds_or_unset() {
+        use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
+        let in_bounds = vec![ToolpathSegment {
+            from: Pose3 { x: 0.0, y: 0.0, z: 0.0 },
+            to: Pose3 { x: 10.0, y: 10.0, z: -1.0 },
+            kind: MoveKind::Cut,
+            gcode_line: 5,
+            op_id: 0,
+        }];
+        let mut warnings = Vec::new();
+        push_work_area_warning(&in_bounds, &crate::cam::setup::MachineConfig::default(), &mut warnings);
+        assert!(warnings.is_empty(), "in-bounds toolpath should not warn: {warnings:?}");
+
+        // Same out-of-bounds cut but with a zeroed work area → skipped.
+        let mut zeroed = crate::cam::setup::MachineConfig::default();
+        zeroed.work_area = crate::cam::setup::AxisLimits { x: 0.0, y: 0.0, z: 0.0 };
+        let wild = vec![ToolpathSegment {
+            from: Pose3 { x: 0.0, y: 0.0, z: 0.0 },
+            to: Pose3 { x: 9999.0, y: 9999.0, z: -9999.0 },
+            kind: MoveKind::Cut,
+            gcode_line: 7,
+            op_id: 0,
+        }];
+        let mut w2 = Vec::new();
+        push_work_area_warning(&wild, &zeroed, &mut w2);
+        assert!(w2.is_empty(), "zeroed/unset work area should be skipped: {w2:?}");
     }
 
     /// Origin-containing geometry produces NO WCS warning. (0..20 square

@@ -21,20 +21,13 @@
 /// downstream recomputation.
 
 import type { BBox, ImportResponse, Point2, Segment } from '../api/types';
-import {
-  isIdentityFileTransform,
-  type FileTransform,
-  type ImportEntry,
-} from './project-types';
+import { isIdentityFileTransform, type FileTransform, type ImportEntry } from './project-types';
 
 /// Apply `t` to a full ImportResponse. Object ids, layers, warnings,
 /// unit_scale, format, filename — all unchanged. Segments, top-level
 /// bbox, and per-object object_meta[i].bbox are recomputed against the
 /// transformed segments.
-export function applyFileTransform(
-  imp: ImportResponse,
-  t: FileTransform,
-): ImportResponse {
+export function applyFileTransform(imp: ImportResponse, t: FileTransform): ImportResponse {
   if (isIdentityFileTransform(t)) return imp;
   const pivot = bboxCenter(imp.bbox);
   const transformedSegments = imp.segments.map((s) => transformSegment(s, t, pivot));

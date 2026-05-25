@@ -32,11 +32,7 @@
   } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { computeFootprint } from '../sim/driver';
-  import {
-    previewSegmentsFor,
-    previewVersion,
-    requestPreview,
-  } from '../state/text_preview.svelte';
+  import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
 
   interface Props {
     onShowHelp?: () => void;
@@ -243,8 +239,7 @@
   /// commits the point to `op.approachPoint` while staying in pick
   /// mode (sticky — ESC exits).
   const approachPickActive = $derived(
-    project.pickMode?.kind === 'approach-point' &&
-      project.pickMode.opId === selectedOp?.id,
+    project.pickMode?.kind === 'approach-point' && project.pickMode.opId === selectedOp?.id,
   );
 
   /// Live preview state while picking. `lastTransform`-relative data
@@ -374,10 +369,16 @@
     const dataX = (canvasX - offX) / scale;
     const dataY = (offY - canvasY) / scale;
     const tolData = HIT_PIXEL_TOL / scale;
-    return queryHit(data, hitIndex, dataX, dataY, tolData, (l) =>
-      // 8jce/vm3c: the synthetic stock-outline layer isn't in the
-      // user's visibleLayers set, but it must always be hittable.
-      l === STOCK_OUTLINE_LAYER || project.visibleLayers.has(l),
+    return queryHit(
+      data,
+      hitIndex,
+      dataX,
+      dataY,
+      tolData,
+      (l) =>
+        // 8jce/vm3c: the synthetic stock-outline layer isn't in the
+        // user's visibleLayers set, but it must always be hittable.
+        l === STOCK_OUTLINE_LAYER || project.visibleLayers.has(l),
     );
   }
 
@@ -422,9 +423,7 @@
       const data = pxToData(cx, cy);
       if (data) {
         const tol = approachSnapToleranceData();
-        const snap = shiftDown
-          ? null
-          : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
+        const snap = shiftDown ? null : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
         approachPreview = snap
           ? { x: snap.x, y: snap.y, snap: snap.kind }
           : { x: data.x, y: data.y, snap: null };
@@ -442,9 +441,7 @@
       const data = pxToData(cx, cy);
       if (data) {
         const tol = approachSnapToleranceData();
-        const snap = shiftDown
-          ? null
-          : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
+        const snap = shiftDown ? null : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
         const x = snap ? snap.x : data.x;
         const y = snap ? snap.y : data.y;
         project.updateOperation(approachDrag.opId, { approachPoint: [x, y] });
@@ -459,9 +456,10 @@
     // `grab` BEFORE the user mousedowns — without this the marker is
     // draggable but invisibly so.
     {
-      const selOp = project.selectedOpId == null
-        ? null
-        : project.operations.find((o) => o.id === project.selectedOpId);
+      const selOp =
+        project.selectedOpId == null
+          ? null
+          : project.operations.find((o) => o.id === project.selectedOpId);
       if (
         selOp &&
         (selOp.kind === 'profile' || selOp.kind === 'pocket') &&
@@ -760,8 +758,7 @@
       if (proj && proj.d2 <= snapTolData * snapTolData) {
         // 'intersection' collapses to 'vertex' in the tab snap-kind
         // enum since both are discrete points (no separate visual).
-        const snapKind: 'vertex' | 'midpoint' =
-          osnap.kind === 'midpoint' ? 'midpoint' : 'vertex';
+        const snapKind: 'vertex' | 'midpoint' = osnap.kind === 'midpoint' ? 'midpoint' : 'vertex';
         promoted = {
           t: proj.t,
           x: osnap.x,
@@ -947,7 +944,12 @@
     // Mirrors the new `.fit-btn` overlay button and the 3D pane's
     // equivalent. Bail when the user is typing — we don't want F to
     // wipe an unrelated input.
-    if ((e.key === 'f' || e.key === 'F' || e.key === 'Home') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (
+      (e.key === 'f' || e.key === 'F' || e.key === 'Home') &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey
+    ) {
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName ?? '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) {
@@ -1056,9 +1058,7 @@
       const data = pxToData(cx, cy);
       if (data) {
         const tol = approachSnapToleranceData();
-        const snap = shiftDown
-          ? null
-          : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
+        const snap = shiftDown ? null : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
         const x = snap ? snap.x : data.x;
         const y = snap ? snap.y : data.y;
         project.updateOperation(selectedOp.id, { approachPoint: [x, y] });
@@ -1085,11 +1085,11 @@
     // n79: dragging an already-placed approach marker. Only allowed
     // when the selected op has one and we're NOT in pick mode.
     if (
-      !approachPickActive
-      && selectedOp
-      && (selectedOp.kind === 'profile' || selectedOp.kind === 'pocket')
-      && selectedOp.approachPoint
-      && e.button === 0
+      !approachPickActive &&
+      selectedOp &&
+      (selectedOp.kind === 'profile' || selectedOp.kind === 'pocket') &&
+      selectedOp.approachPoint &&
+      e.button === 0
     ) {
       const data = pxToData(cx, cy);
       const hitR = approachMarkerHitRadiusData();
@@ -1135,8 +1135,7 @@
     // space). The pure reducer in lib/canvas/entity-selection.ts (774f)
     // resolves modifiers and emits the action list; we dispatch and
     // arm the box-select store.
-    const hitObjectId =
-      idx == null ? null : (project.geometryView?.objects?.[idx] ?? 0);
+    const hitObjectId = idx == null ? null : (project.geometryView?.objects?.[idx] ?? 0);
     const actions = reduceCanvasClick(
       {
         hitObjectId,
@@ -1164,7 +1163,14 @@
           if (project.selectedOpId !== action.opId) project.selectedOpId = action.opId;
           break;
         case 'arm-box-select':
-          boxSelect = { startX: cx, startY: cy, curX: cx, curY: cy, mode: action.mode, armed: true };
+          boxSelect = {
+            startX: cx,
+            startY: cy,
+            curX: cx,
+            curY: cy,
+            mode: action.mode,
+            armed: true,
+          };
           // Capture so pointermove keeps firing if the user drags past
           // the canvas edge — otherwise box-select would freeze at the
           // last point inside the canvas.
@@ -1245,7 +1251,12 @@
     data: import('../api/types').ImportResponse,
     w: number,
     h: number,
-  ): { scale: number; offX: number; offY: number; project2: (x: number, y: number) => [number, number] } {
+  ): {
+    scale: number;
+    offX: number;
+    offY: number;
+    project2: (x: number, y: number) => [number, number];
+  } {
     const { min_x, min_y, max_x, max_y } = data.bbox;
     const dataW = Math.max(max_x - min_x, 1e-6);
     const dataH = Math.max(max_y - min_y, 1e-6);
@@ -2015,15 +2026,8 @@
   /// translucent stock box the 3D scene already paints — the 2D pane
   /// previously omitted it entirely, so users couldn't see whether
   /// their drawing sat inside the stock without flipping to 3D.
-  function drawStock(
-    ctx: CanvasRenderingContext2D,
-    p: (x: number, y: number) => [number, number],
-  ) {
-    const fp = computeFootprint(
-      project.transformedImport,
-      project.stock,
-      project.machine.workArea,
-    );
+  function drawStock(ctx: CanvasRenderingContext2D, p: (x: number, y: number) => [number, number]) {
+    const fp = computeFootprint(project.transformedImport, project.stock, project.machine.workArea);
     const sizeX = fp.maxX - fp.minX;
     const sizeY = fp.maxY - fp.minY;
     if (sizeX <= 0 || sizeY <= 0) return;

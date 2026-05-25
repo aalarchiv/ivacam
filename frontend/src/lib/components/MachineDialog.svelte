@@ -250,8 +250,8 @@
       had unit=inch selected was misleading.
     -->
     <p class="storage-note">
-      Lengths are stored in <strong>mm</strong> regardless of the Unit selector below — the Unit
-      only switches the G20/G21 word in emitted gcode.
+      Lengths are stored in <strong>mm</strong> regardless of the Unit selector below — the Unit only
+      switches the G20/G21 word in emitted gcode.
     </p>
 
     <div class="grid">
@@ -286,14 +286,18 @@
         </select>
       </label>
       <fieldset class="capabilities">
-        <legend title="Which op kinds the machine can run. The op-picker hides kinds the machine doesn't support — e.g. a laser-only machine never shows Drill. Defaults to just the primary Mode above if left empty.">
+        <legend
+          title="Which op kinds the machine can run. The op-picker hides kinds the machine doesn't support — e.g. a laser-only machine never shows Drill. Defaults to just the primary Mode above if left empty."
+        >
           Capabilities
         </legend>
         {#each ['mill', 'laser', 'drag'] as cap (cap)}
           <label class="cap-toggle">
             <input
               type="checkbox"
-              checked={(draft.capabilities ?? [draft.mode]).includes(cap as 'mill' | 'laser' | 'drag')}
+              checked={(draft.capabilities ?? [draft.mode]).includes(
+                cap as 'mill' | 'laser' | 'drag',
+              )}
               onchange={(e) => {
                 const on = (e.currentTarget as HTMLInputElement).checked;
                 const cur = new Set(draft.capabilities ?? [draft.mode]);
@@ -335,7 +339,11 @@
               oninput={(e) => {
                 const v = (e.target as HTMLInputElement).valueAsNumber;
                 if (Number.isFinite(v) && v > 0) {
-                  draft.workArea = { x: v, y: draft.workArea?.y ?? 300, z: draft.workArea?.z ?? 50 };
+                  draft.workArea = {
+                    x: v,
+                    y: draft.workArea?.y ?? 300,
+                    z: draft.workArea?.z ?? 50,
+                  };
                 }
               }}
             /><span class="unit">mm</span></span
@@ -352,7 +360,11 @@
               oninput={(e) => {
                 const v = (e.target as HTMLInputElement).valueAsNumber;
                 if (Number.isFinite(v) && v > 0) {
-                  draft.workArea = { x: draft.workArea?.x ?? 200, y: v, z: draft.workArea?.z ?? 50 };
+                  draft.workArea = {
+                    x: draft.workArea?.x ?? 200,
+                    y: v,
+                    z: draft.workArea?.z ?? 50,
+                  };
                 }
               }}
             /><span class="unit">mm</span></span
@@ -369,7 +381,11 @@
               oninput={(e) => {
                 const v = (e.target as HTMLInputElement).valueAsNumber;
                 if (Number.isFinite(v) && v > 0) {
-                  draft.workArea = { x: draft.workArea?.x ?? 200, y: draft.workArea?.y ?? 300, z: v };
+                  draft.workArea = {
+                    x: draft.workArea?.x ?? 200,
+                    y: draft.workArea?.y ?? 300,
+                    z: v,
+                  };
                 }
               }}
             /><span class="unit">mm</span></span
@@ -740,8 +756,8 @@
         <div class="triplet-label">
           Park XY <span class="unit">mm, WCS</span>
           <small class="park-help"
-            >Optional — empty = retract to work zero (0, 0). Set both fields to route the head to
-            a specific load / tool-station point after the safe-Z lift.</small
+            >Optional — empty = retract to work zero (0, 0). Set both fields to route the head to a
+            specific load / tool-station point after the safe-Z lift.</small
           >
         </div>
         <div class="park-pair">

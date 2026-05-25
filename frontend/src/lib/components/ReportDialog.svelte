@@ -53,13 +53,7 @@
   /// Distinct tool IDs referenced by enabled ops, excluding Pause
   /// (which carries toolId 0 but uses no tool).
   const usedToolIds = $derived(
-    Array.from(
-      new Set(
-        enabledOps
-          .filter((o) => o.kind !== 'pause')
-          .map((o) => o.toolId),
-      ),
-    ),
+    Array.from(new Set(enabledOps.filter((o) => o.kind !== 'pause').map((o) => o.toolId))),
   );
   const usedTools = $derived(
     usedToolIds
@@ -111,8 +105,7 @@
   /// Assemble the report into the pure ReportData shape, then serialize
   /// to Markdown + front matter and save (vh6e).
   function reportData(): ReportData {
-    const toolNameFor = (id: number) =>
-      project.tools.find((t) => t.id === id)?.name ?? `#${id}`;
+    const toolNameFor = (id: number) => project.tools.find((t) => t.id === id)?.name ?? `#${id}`;
     return {
       projectName: projectName(),
       generatedBy,
@@ -253,7 +246,9 @@
                   <td>{op.name}</td>
                   <td>{op.kind}</td>
                   <td>
-                    {op.kind === 'pause' ? '—' : project.tools.find((t) => t.id === op.toolId)?.name ?? `#${op.toolId}`}
+                    {op.kind === 'pause'
+                      ? '—'
+                      : (project.tools.find((t) => t.id === op.toolId)?.name ?? `#${op.toolId}`)}
                   </td>
                   <td>{opSourceSummary(op)}</td>
                   <td>{opDepth(op)}</td>

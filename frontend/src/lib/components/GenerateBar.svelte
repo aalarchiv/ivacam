@@ -86,11 +86,7 @@
         console.warn('persist post processor:', e);
       }
     });
-    if (
-      generatedPost != null &&
-      generatedPost !== current &&
-      project.generated != null
-    ) {
+    if (generatedPost != null && generatedPost !== current && project.generated != null) {
       // Dialect changed — drop the cached gcode so Download can't emit
       // it into a file with the new dialect's extension.
       project.generated = null;
@@ -117,7 +113,8 @@
   let wpY = $state<number | null>(null);
   let wpW = $state<number>(WP_DEFAULT_W);
   let wpH = $state<number>(WP_DEFAULT_H);
-  let wpDrag: { mode: 'move' | 'resize'; offX: number; offY: number; pointerId: number } | null = null;
+  let wpDrag: { mode: 'move' | 'resize'; offX: number; offY: number; pointerId: number } | null =
+    null;
 
   function clampPanelRect() {
     if (typeof window === 'undefined') return;
@@ -157,9 +154,7 @@
     void tick().then(() => {
       if (typeof document === 'undefined') return;
       const panel = document.querySelector('[aria-label="Warnings"]');
-      const rows = panel?.querySelectorAll<HTMLDetailsElement>(
-        `details[data-op-id="${opId}"]`,
-      );
+      const rows = panel?.querySelectorAll<HTMLDetailsElement>(`details[data-op-id="${opId}"]`);
       rows?.forEach((r, i) => {
         r.open = true;
         if (i === 0) r.scrollIntoView({ block: 'nearest' });
@@ -306,7 +301,14 @@
       if (!isCut(seg.kind)) continue;
       const p = seg.to;
       if (wa && wa.x > 0 && wa.y > 0 && wa.z > 0) {
-        if (p.x < -1e-6 || p.x > wa.x + 1e-6 || p.y < -1e-6 || p.y > wa.y + 1e-6 || p.z < -wa.z - 1e-6 || p.z > 1e-6) {
+        if (
+          p.x < -1e-6 ||
+          p.x > wa.x + 1e-6 ||
+          p.y < -1e-6 ||
+          p.y > wa.y + 1e-6 ||
+          p.z < -wa.z - 1e-6 ||
+          p.z > 1e-6
+        ) {
           outWA++;
           if (firstWaLine === 0) firstWaLine = seg.gcode_line;
         }
@@ -351,10 +353,7 @@
   /// Pipeline warnings + the synthesized bounds rows, fed through the
   /// same panel render + severity gate. Declared HERE (not next to
   /// `pipelineWarnings`) so `boundsWarnings` above is initialized first.
-  let allPipelineWarnings = $derived<PipelineWarning[]>([
-    ...pipelineWarnings,
-    ...boundsWarnings,
-  ]);
+  let allPipelineWarnings = $derived<PipelineWarning[]>([...pipelineWarnings, ...boundsWarnings]);
   let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(allPipelineWarnings));
   let criticalCount = $derived(
     warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,
@@ -579,7 +578,8 @@
       {post === 'hpgl' ? 'Download .plt' : 'Download .ngc'}
     </button>
     <span class="stats">
-      {project.generated.stats.object_count} obj · {project.generated.stats.offset_count} offsets · {project.generated.toolpath.length} moves
+      {project.generated.stats.object_count} obj · {project.generated.stats.offset_count} offsets · {project
+        .generated.toolpath.length} moves
       {#if project.lastGenerateCachedCount > 0}
         <span class="cached-tag"
           >· {project.lastGenerateCachedCount} of {project.lastGenerateOpCount} cached</span
@@ -611,11 +611,14 @@
     <!-- opqb: source-file-changed chip lives in the toolbar where the
          user looks for actionable state, instead of the standalone
          bottom-right toast that competed with other floating UI. -->
-    <span class="stale-chip" role="alert" aria-live="polite" title={`Source file changed on disk: ${project.sourceFileStaleNotice.path}. Reload to pick up the changes; Ignore to keep the current view.`}>
+    <span
+      class="stale-chip"
+      role="alert"
+      aria-live="polite"
+      title={`Source file changed on disk: ${project.sourceFileStaleNotice.path}. Reload to pick up the changes; Ignore to keep the current view.`}
+    >
       <span class="stale-msg">
-        ⟳ <strong
-          >{project.sourceFileStaleNotice.path.split(/[\\/]/).pop()}</strong
-        > changed
+        ⟳ <strong>{project.sourceFileStaleNotice.path.split(/[\\/]/).pop()}</strong> changed
       </span>
       <button
         type="button"
@@ -691,7 +694,9 @@
       title="Drag to move"
     >
       <h3>Warnings ({totalWarningCount})</h3>
-      <button class="dlg-close" onclick={() => (warningPanelOpen = false)} aria-label="Close">×</button>
+      <button class="dlg-close" onclick={() => (warningPanelOpen = false)} aria-label="Close"
+        >×</button
+      >
     </header>
     <div class="list">
       {#if totalWarningCount === 0}
@@ -704,7 +709,9 @@
           <details class="row severity-{sev}">
             <summary>
               <span class="dot" aria-hidden="true"></span>
-              <span class="source" title="Surfaced by the simulator after gcode generation.">sim</span>
+              <span class="source" title="Surfaced by the simulator after gcode generation."
+                >sim</span
+              >
               <span class="kind">{w.kind}</span>
               <span class="msg">{summary}</span>
               <button
@@ -732,7 +739,10 @@
           <details class="row severity-{sev} pipeline" data-op-id={pw.op_id ?? undefined}>
             <summary>
               <span class="dot" aria-hidden="true"></span>
-              <span class="source pipeline" title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span>
+              <span
+                class="source pipeline"
+                title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span
+              >
               <span class="kind">{pw.kind}</span>
               <span class="msg">{pw.message}</span>
               {#if hasFix}
@@ -1214,12 +1224,40 @@
     /* Two diagonal lines drawn as a corner glyph — matches the
        OS-native resize affordance. */
     background:
-      linear-gradient(135deg, transparent 45%, var(--text-muted) 45%, var(--text-muted) 55%, transparent 55%) center / 100% 100% no-repeat,
-      linear-gradient(135deg, transparent 70%, var(--text-muted) 70%, var(--text-muted) 80%, transparent 80%) center / 100% 100% no-repeat;
+      linear-gradient(
+          135deg,
+          transparent 45%,
+          var(--text-muted) 45%,
+          var(--text-muted) 55%,
+          transparent 55%
+        )
+        center / 100% 100% no-repeat,
+      linear-gradient(
+          135deg,
+          transparent 70%,
+          var(--text-muted) 70%,
+          var(--text-muted) 80%,
+          transparent 80%
+        )
+        center / 100% 100% no-repeat;
   }
   .panel .resize-handle:hover {
     background:
-      linear-gradient(135deg, transparent 45%, var(--text-strong) 45%, var(--text-strong) 55%, transparent 55%) center / 100% 100% no-repeat,
-      linear-gradient(135deg, transparent 70%, var(--text-strong) 70%, var(--text-strong) 80%, transparent 80%) center / 100% 100% no-repeat;
+      linear-gradient(
+          135deg,
+          transparent 45%,
+          var(--text-strong) 45%,
+          var(--text-strong) 55%,
+          transparent 55%
+        )
+        center / 100% 100% no-repeat,
+      linear-gradient(
+          135deg,
+          transparent 70%,
+          var(--text-strong) 70%,
+          var(--text-strong) 80%,
+          transparent 80%
+        )
+        center / 100% 100% no-repeat;
   }
 </style>

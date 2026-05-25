@@ -143,8 +143,7 @@
     if (e.key === 'ArrowDown') next = idx < 0 ? 0 : Math.min(items.length - 1, idx + cols);
     else if (e.key === 'ArrowUp') next = idx <= 0 ? 0 : Math.max(0, idx - cols);
     else if (e.key === 'ArrowRight') next = idx < 0 ? 0 : (idx + 1) % items.length;
-    else if (e.key === 'ArrowLeft')
-      next = idx <= 0 ? items.length - 1 : idx - 1;
+    else if (e.key === 'ArrowLeft') next = idx <= 0 ? items.length - 1 : idx - 1;
     else if (e.key === 'Home') next = 0;
     else if (e.key === 'End') next = items.length - 1;
     else return;

@@ -55,9 +55,7 @@
   function enqueue(err: ToastError) {
     const id = ++nextId;
     const isInternal = typeof err === 'object' && err?.kind === 'internal';
-    const timer = isInternal
-      ? null
-      : setTimeout(() => dismissById(id), AUTO_DISMISS_MS);
+    const timer = isInternal ? null : setTimeout(() => dismissById(id), AUTO_DISMISS_MS);
     queue.push({ id, error: err, timer });
   }
 
@@ -156,7 +154,9 @@
       <div class={`toast kind-${structured.kind}`} role="alert" data-testid="error-toast">
         <div class="head">
           <strong class="message">{structured.message}</strong>
-          <button type="button" class="dlg-close" onclick={dismissHead} aria-label="Dismiss">×</button>
+          <button type="button" class="dlg-close" onclick={dismissHead} aria-label="Dismiss"
+            >×</button
+          >
         </div>
         {#if structured.recovery_hint}
           <em class="hint" data-testid="error-hint">{structured.recovery_hint}</em>
@@ -193,7 +193,9 @@
       <div class="toast kind-misconfigured" role="alert" data-testid="error-legacy">
         <div class="head">
           <strong class="message legacy">{plain}</strong>
-          <button type="button" class="dlg-close" onclick={dismissHead} aria-label="Dismiss">×</button>
+          <button type="button" class="dlg-close" onclick={dismissHead} aria-label="Dismiss"
+            >×</button
+          >
         </div>
       </div>
     {/if}

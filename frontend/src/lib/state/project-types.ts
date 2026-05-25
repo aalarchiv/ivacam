@@ -13,7 +13,6 @@
 import type { ImportResponse } from '../api/types';
 import type { OpEntry, OpKind, ToolKind } from './op_types';
 
-
 export function prettyOpKind(kind: OpKind): string {
   switch (kind) {
     case 'profile':

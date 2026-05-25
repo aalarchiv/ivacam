@@ -51,8 +51,7 @@
   /// doesn't carry. Used by both the status chip and the inline
   /// 'Re-pick' shortcut on the row.
   function orphansFor(op: OpEntry): { objectIds: number[]; layers: string[] } {
-    const objectIds =
-      op.sourceObjects?.filter((id) => !importedObjectsSet.has(id)) ?? [];
+    const objectIds = op.sourceObjects?.filter((id) => !importedObjectsSet.has(id)) ?? [];
     const layers = op.sourceLayers?.filter((l) => !importedLayersSet.has(l)) ?? [];
     return { objectIds, layers };
   }
@@ -78,8 +77,7 @@
       return {
         label: '✓',
         tone: 'ok',
-        reason:
-          'Pause op — emits M0 at this slot. Operator presses Cycle Start to resume.',
+        reason: 'Pause op — emits M0 at this slot. Operator presses Cycle Start to resume.',
       };
     }
     if (!project.tools.find((t) => t.id === op.toolId)) {
@@ -243,7 +241,10 @@
   function onListKey(e: KeyboardEvent) {
     const ops = project.operations;
     if (ops.length === 0) return;
-    const curIdx = Math.max(0, ops.findIndex((o) => o.id === project.selectedOpId));
+    const curIdx = Math.max(
+      0,
+      ops.findIndex((o) => o.id === project.selectedOpId),
+    );
     let nextIdx = curIdx;
     if (e.key === 'ArrowDown') nextIdx = Math.min(ops.length - 1, curIdx + 1);
     else if (e.key === 'ArrowUp') nextIdx = Math.max(0, curIdx - 1);
@@ -264,9 +265,7 @@
     // Move focus onto the newly-selected row to match the tabindex flip.
     queueMicrotask(() => {
       (e.currentTarget as HTMLElement | null)
-        ?.querySelector<HTMLElement>(
-          `[data-op-row-id="${ops[nextIdx].id}"] [role="option"]`,
-        )
+        ?.querySelector<HTMLElement>(`[data-op-row-id="${ops[nextIdx].id}"] [role="option"]`)
         ?.focus();
     });
   }
@@ -285,7 +284,10 @@
   <div class="group-head" onclick={onActivate}>
     <button
       class="caret-btn"
-      onclick={(e) => { e.stopPropagation(); onActivate(); }}
+      onclick={(e) => {
+        e.stopPropagation();
+        onActivate();
+      }}
       title={active ? 'Collapse operations (return to previous panel)' : 'Expand operations panel'}
       aria-label={active ? 'Collapse operations panel' : 'Activate operations panel'}
     >
@@ -295,7 +297,11 @@
     <span class="group-count" title="Number of operations">{project.operations.length}</span>
     <button
       class="add-btn"
-      onclick={(e) => { e.stopPropagation(); if (!active) onActivate(); pickerOpen = !pickerOpen; }}
+      onclick={(e) => {
+        e.stopPropagation();
+        if (!active) onActivate();
+        pickerOpen = !pickerOpen;
+      }}
       title="Add operation"
       aria-label="Add operation"
     >
@@ -303,136 +309,136 @@
     </button>
   </div>
 
-{#if active}
-  {#if pickerOpen}
-    <div class="picker-host">
-      <OpKindPicker onPick={pick} />
-    </div>
-  {/if}
+  {#if active}
+    {#if pickerOpen}
+      <div class="picker-host">
+        <OpKindPicker onPick={pick} />
+      </div>
+    {/if}
 
-  {#if project.operations.length === 0}
-    <div class="empty-card">
-      <p class="empty-title">No operations yet</p>
-      <p class="empty-sub">
-        An operation tells the machine how to cut a region — pocket, contour, drill, engrave.
-      </p>
-      <button class="primary-cta" type="button" onclick={() => (pickerOpen = true)}>
-        + Add operation
-      </button>
-    </div>
-  {:else}
-    <ul role="listbox" class="ops-list" tabindex="-1" onkeydown={onListKey}>
-      {#each project.operations as op (op.id)}
-        {@const status = statusFor(op)}
-        {@const selected = project.selectedOpId === op.id}
-        {@const dragOver = dragOverId === op.id}
-        {@const orphans = orphansFor(op)}
-        {@const hasOrphans = orphans.objectIds.length > 0 || orphans.layers.length > 0}
-        <li
-          class:selected
-          class:drag-over={dragOver}
-          class:op-disabled={!op.enabled}
-          data-op-row-id={op.id}
-        >
-          <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-          <div
-            class="row"
-            ondragover={(e) => onDragOver(e, op.id)}
-            ondrop={(e) => onDrop(e, op.id)}
-            onclick={() => selectOp(op.id)}
-            onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') selectOp(op.id);
-            }}
-            role="option"
-            tabindex={selected ? 0 : -1}
-            aria-selected={selected}
+    {#if project.operations.length === 0}
+      <div class="empty-card">
+        <p class="empty-title">No operations yet</p>
+        <p class="empty-sub">
+          An operation tells the machine how to cut a region — pocket, contour, drill, engrave.
+        </p>
+        <button class="primary-cta" type="button" onclick={() => (pickerOpen = true)}>
+          + Add operation
+        </button>
+      </div>
+    {:else}
+      <ul role="listbox" class="ops-list" tabindex="-1" onkeydown={onListKey}>
+        {#each project.operations as op (op.id)}
+          {@const status = statusFor(op)}
+          {@const selected = project.selectedOpId === op.id}
+          {@const dragOver = dragOverId === op.id}
+          {@const orphans = orphansFor(op)}
+          {@const hasOrphans = orphans.objectIds.length > 0 || orphans.layers.length > 0}
+          <li
+            class:selected
+            class:drag-over={dragOver}
+            class:op-disabled={!op.enabled}
+            data-op-row-id={op.id}
           >
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span
-              class="grip"
-              draggable="true"
-              ondragstart={(e) => onDragStart(e, op.id)}
-              ondragend={onDragEnd}
-              title="Drag to reorder · Alt+Up / Alt+Down with the row focused does the same from the keyboard"
-              aria-hidden="true">⋮⋮</span
+            <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+            <div
+              class="row"
+              ondragover={(e) => onDragOver(e, op.id)}
+              ondrop={(e) => onDrop(e, op.id)}
+              onclick={() => selectOp(op.id)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') selectOp(op.id);
+              }}
+              role="option"
+              tabindex={selected ? 0 : -1}
+              aria-selected={selected}
             >
-            <input
-              type="checkbox"
-              checked={op.enabled}
-              onclick={(e) => e.stopPropagation()}
-              onchange={(e) =>
-                project.updateOperation(op.id, {
-                  enabled: (e.currentTarget as HTMLInputElement).checked,
-                })}
-            />
-            <span class="caret" aria-hidden="true">{selected ? '▾' : '▸'}</span>
-            <span
-              class="ico"
-              title={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
-              aria-label={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
-              >{KIND_ICON[op.kind]}</span
-            >
-            <span class="name">{op.name}</span>
-            <span class="tool">{op.kind === 'pause' ? '— pause —' : toolName(op.toolId)}</span>
-            {#if opHasPanelWarning(op)}
-              <button
-                type="button"
-                class="status {status.tone} status-btn"
-                title={`${status.reason}\n\n(click to show in the warnings panel)`}
-                aria-label={`Show warnings for ${op.name} in the warnings panel`}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  warningFocus.focus(op.id);
-                }}>{status.label}</button
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <span
+                class="grip"
+                draggable="true"
+                ondragstart={(e) => onDragStart(e, op.id)}
+                ondragend={onDragEnd}
+                title="Drag to reorder · Alt+Up / Alt+Down with the row focused does the same from the keyboard"
+                aria-hidden="true">⋮⋮</span
               >
-            {:else}
-              <span class="status {status.tone}" title={status.reason}>{status.label}</span>
-            {/if}
-            {#if hasOrphans}
+              <input
+                type="checkbox"
+                checked={op.enabled}
+                onclick={(e) => e.stopPropagation()}
+                onchange={(e) =>
+                  project.updateOperation(op.id, {
+                    enabled: (e.currentTarget as HTMLInputElement).checked,
+                  })}
+              />
+              <span class="caret" aria-hidden="true">{selected ? '▾' : '▸'}</span>
+              <span
+                class="ico"
+                title={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
+                aria-label={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
+                >{KIND_ICON[op.kind]}</span
+              >
+              <span class="name">{op.name}</span>
+              <span class="tool">{op.kind === 'pause' ? '— pause —' : toolName(op.toolId)}</span>
+              {#if opHasPanelWarning(op)}
+                <button
+                  type="button"
+                  class="status {status.tone} status-btn"
+                  title={`${status.reason}\n\n(click to show in the warnings panel)`}
+                  aria-label={`Show warnings for ${op.name} in the warnings panel`}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    warningFocus.focus(op.id);
+                  }}>{status.label}</button
+                >
+              {:else}
+                <span class="status {status.tone}" title={status.reason}>{status.label}</span>
+              {/if}
+              {#if hasOrphans}
+                <button
+                  class="repick"
+                  disabled={project.selectedObjects.size === 0}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    repickFromSelection(op.id);
+                  }}
+                  title={project.selectedObjects.size === 0
+                    ? `Source references ${orphans.objectIds.length} object id(s)${orphans.layers.length ? ` + ${orphans.layers.length} layer(s)` : ''} that no longer exist. Select objects on the canvas, then click Re-pick to attach them to this op.`
+                    : `Replace this op's source with the ${project.selectedObjects.size} currently-selected object${project.selectedObjects.size === 1 ? '' : 's'}.`}
+                  aria-label={`Re-pick source for operation ${op.name}`}
+                >
+                  Re-pick
+                </button>
+              {/if}
               <button
-                class="repick"
-                disabled={project.selectedObjects.size === 0}
+                class="dup"
                 onclick={(e) => {
                   e.stopPropagation();
-                  repickFromSelection(op.id);
+                  project.duplicateOperation(op.id);
                 }}
-                title={project.selectedObjects.size === 0
-                  ? `Source references ${orphans.objectIds.length} object id(s)${orphans.layers.length ? ` + ${orphans.layers.length} layer(s)` : ''} that no longer exist. Select objects on the canvas, then click Re-pick to attach them to this op.`
-                  : `Replace this op's source with the ${project.selectedObjects.size} currently-selected object${project.selectedObjects.size === 1 ? '' : 's'}.`}
-                aria-label={`Re-pick source for operation ${op.name}`}
+                title="Duplicate"
+                aria-label={`Duplicate operation ${op.name}`}>⎘</button
               >
-                Re-pick
-              </button>
-            {/if}
-            <button
-              class="dup"
-              onclick={(e) => {
-                e.stopPropagation();
-                project.duplicateOperation(op.id);
-              }}
-              title="Duplicate"
-              aria-label={`Duplicate operation ${op.name}`}>⎘</button
-            >
-            <button
-              class="del"
-              onclick={(e) => {
-                e.stopPropagation();
-                project.removeOperation(op.id);
-              }}
-              title="Delete operation"
-              aria-label={`Delete operation ${op.name}`}>×</button
-            >
-          </div>
-          {#if selected}
-            <div class="props">
-              <OpPropertiesPanel embedded />
+              <button
+                class="del"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  project.removeOperation(op.id);
+                }}
+                title="Delete operation"
+                aria-label={`Delete operation ${op.name}`}>×</button
+              >
             </div>
-          {/if}
-        </li>
-      {/each}
-    </ul>
+            {#if selected}
+              <div class="props">
+                <OpPropertiesPanel embedded />
+              </div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
-{/if}
 </div>
 
 <style>

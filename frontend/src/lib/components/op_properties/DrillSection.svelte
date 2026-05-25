@@ -1,4 +1,3 @@
-
 <script lang="ts">
   /// Drill op-properties fieldset. Shown only when op.kind === 'drill'.
   /// Owns the drill-cycle picker (G81 / G83 / G73), peck-step + dwell
@@ -28,10 +27,7 @@
     <select
       value={op.drillCycle?.kind ?? 'simple'}
       onchange={(e) => {
-        const v = (e.currentTarget as HTMLSelectElement).value as
-          | 'simple'
-          | 'peck'
-          | 'chip_break';
+        const v = (e.currentTarget as HTMLSelectElement).value as 'simple' | 'peck' | 'chip_break';
         const cur = op.drillCycle ?? ({ kind: 'simple', dwell_sec: 0 } as DrillCycle);
         const dwell = cur.dwell_sec ?? 0;
         const step = cur.kind === 'peck' || cur.kind === 'chip_break' ? cur.peck_step_mm : 1.0;
@@ -52,13 +48,8 @@
         }
       }}
     >
-      <option value="simple" title="G81 — single plunge to depth, retract.">
-        simple (G81)
-      </option>
-      <option
-        value="peck"
-        title="G83 — peck with full retract to clearance plane between pecks."
-      >
+      <option value="simple" title="G81 — single plunge to depth, retract."> simple (G81) </option>
+      <option value="peck" title="G83 — peck with full retract to clearance plane between pecks.">
         peck (G83)
       </option>
       <option

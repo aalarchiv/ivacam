@@ -236,8 +236,7 @@
                       value={layer.rotationDeg}
                       oninput={(e) =>
                         patch(layer.id, {
-                          rotationDeg:
-                            parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                          rotationDeg: parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
                         })}
                     />
                   </label>
@@ -263,8 +262,7 @@
                       max="200"
                       value={Math.round(layer.widthScale * 100)}
                       oninput={(e) => {
-                        const pct =
-                          parseFloat((e.currentTarget as HTMLInputElement).value) || 100;
+                        const pct = parseFloat((e.currentTarget as HTMLInputElement).value) || 100;
                         patch(layer.id, { widthScale: pct / 100 });
                       }}
                     />
@@ -289,8 +287,7 @@
                       value={layer.alignment}
                       onchange={(e) =>
                         patch(layer.id, {
-                          alignment: (e.currentTarget as HTMLSelectElement)
-                            .value as TextAlignment,
+                          alignment: (e.currentTarget as HTMLSelectElement).value as TextAlignment,
                         })}
                     >
                       <option value="left">left</option>

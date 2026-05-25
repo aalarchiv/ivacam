@@ -270,11 +270,7 @@ export type OpOfKind<K extends OpKind> = Extract<OpEntry, { kind: K }>;
 /// `chamferWidthMm` get filtered out. The conditional distributes
 /// the union before applying `keyof`, capturing every variant's
 /// keys.
-export type OpField = OpEntry extends infer T
-  ? T extends OpEntry
-    ? keyof T
-    : never
-  : never;
+export type OpField = OpEntry extends infer T ? (T extends OpEntry ? keyof T : never) : never;
 
 /// Value type for an OpEntry field across the variants that carry
 /// it. For shared fields (e.g. `'depth'`) the distribution collapses

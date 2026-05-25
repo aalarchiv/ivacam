@@ -65,12 +65,7 @@ describe('precomputeOSnapTargets', () => {
 
   it('collects endpoints, midpoints, and dedupes shared vertices', () => {
     // Closed square: 4 segments, 4 unique endpoints, 4 midpoints
-    const segs = [
-      line(0, 0, 10, 0),
-      line(10, 0, 10, 10),
-      line(10, 10, 0, 10),
-      line(0, 10, 0, 0),
-    ];
+    const segs = [line(0, 0, 10, 0), line(10, 0, 10, 10), line(10, 10, 0, 10), line(0, 10, 0, 0)];
     const t = precomputeOSnapTargets(imported(segs));
     expect(t.endpoints.length).toBe(4);
     expect(t.midpoints.length).toBe(4);
@@ -114,12 +109,7 @@ describe('precomputeOSnapTargets', () => {
 
 describe('findOSnap', () => {
   const square = precomputeOSnapTargets(
-    imported([
-      line(0, 0, 10, 0),
-      line(10, 0, 10, 10),
-      line(10, 10, 0, 10),
-      line(0, 10, 0, 0),
-    ]),
+    imported([line(0, 0, 10, 0), line(10, 0, 10, 10), line(10, 10, 0, 10), line(0, 10, 0, 0)]),
   );
 
   it('snaps to nearest endpoint inside tolerance', () => {

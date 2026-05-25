@@ -11,9 +11,20 @@ function base(): ReportData {
     estimatedTime: '00:12:34',
     tools: [{ name: '3mm flat', kind: 'endmill', diameterMm: 3 }],
     ops: [
-      { name: 'Profile', kind: 'profile', tool: '3mm flat', source: 'all geometry', depth: '-5.00 mm', status: 'ok' },
+      {
+        name: 'Profile',
+        kind: 'profile',
+        tool: '3mm flat',
+        source: 'all geometry',
+        depth: '-5.00 mm',
+        status: 'ok',
+      },
     ],
-    warnings: { bad: 1, warn: 2, top: [{ kind: 'tool_too_large', message: 'tool wider than slot' }] },
+    warnings: {
+      bad: 1,
+      warn: 2,
+      top: [{ kind: 'tool_too_large', message: 'tool wider than slot' }],
+    },
   };
 }
 
@@ -22,7 +33,9 @@ describe('buildReportMarkdown', () => {
     const md = buildReportMarkdown(base());
     expect(md.startsWith('---\n')).toBe(true);
     expect(md).toContain('title: "bracket.dxf"');
-    expect(md).toContain('generated_by: "wiaConstructor v0.0.0 (abc1234, built 2026-05-25T10:00:00Z)"');
+    expect(md).toContain(
+      'generated_by: "wiaConstructor v0.0.0 (abc1234, built 2026-05-25T10:00:00Z)"',
+    );
     expect(md).toContain('date: "2026-05-25T10:00:00.000Z"');
     expect(md).toContain('objects: 3');
     expect(md).toContain('enabled_ops: 2');

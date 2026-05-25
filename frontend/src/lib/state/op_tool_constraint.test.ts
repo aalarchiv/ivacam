@@ -84,9 +84,7 @@ describe('formatExpectedToolKinds', () => {
   });
 
   it('formats three+ items with Oxford-comma "or"', () => {
-    expect(formatExpectedToolKinds('pocket')).toBe(
-      'endmill, ball-nose, bull-nose, or compression',
-    );
+    expect(formatExpectedToolKinds('pocket')).toBe('endmill, ball-nose, bull-nose, or compression');
   });
 
   it('returns the empty string for op kinds with no constraint', () => {

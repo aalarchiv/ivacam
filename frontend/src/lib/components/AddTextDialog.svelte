@@ -262,9 +262,7 @@
               ...s,
               start: { ...s.start, x: posX + (s.start.x - posX) * xs },
               end: { ...s.end, x: posX + (s.end.x - posX) * xs },
-              ...(s.center
-                ? { center: { ...s.center, x: posX + (s.center.x - posX) * xs } }
-                : {}),
+              ...(s.center ? { center: { ...s.center, x: posX + (s.center.x - posX) * xs } } : {}),
             }));
       lastFontIsSingleLine = resp.single_line;
       lastFontFamily = resp.family_name ?? null;
@@ -336,7 +334,9 @@
       if (style !== 'plain') {
         const op = project.addOperation('engrave');
         const opName =
-          style === 'engraving' ? `Engrave ${layer.name}` : `${STYLE_TABLE[style].label} ${layer.name}`;
+          style === 'engraving'
+            ? `Engrave ${layer.name}`
+            : `${STYLE_TABLE[style].label} ${layer.name}`;
         project.updateOperation(op.id, {
           name: opName,
           toolId,
@@ -511,13 +511,9 @@
       <label title="Horizontal stretch (50–200 %). 100 % = the font's natural width.">
         <span>Width</span>
         <span class="field"
-          ><input
-            type="number"
-            bind:value={widthPct}
-            step="5"
-            min="50"
-            max="200"
-          /><span class="unit">%</span></span
+          ><input type="number" bind:value={widthPct} step="5" min="50" max="200" /><span
+            class="unit">%</span
+          ></span
         >
       </label>
       <label title="X-position of the text origin (left baseline) in stock coordinates.">

@@ -72,9 +72,7 @@ export interface OSnapTargets {
 /// segments to keep huge drawings responsive.
 const MAX_INTERSECTION_SCAN = 2_000;
 
-export function precomputeOSnapTargets(
-  imported: ImportResponse | null | undefined,
-): OSnapTargets {
+export function precomputeOSnapTargets(imported: ImportResponse | null | undefined): OSnapTargets {
   const empty: OSnapTargets = {
     endpoints: [],
     midpoints: [],
@@ -106,12 +104,7 @@ export function precomputeOSnapTargets(
   for (const s of imported.segments) {
     pushUnique(endpoints, seenEnd, s.start.x, s.start.y);
     pushUnique(endpoints, seenEnd, s.end.x, s.end.y);
-    pushUnique(
-      midpoints,
-      seenMid,
-      (s.start.x + s.end.x) / 2,
-      (s.start.y + s.end.y) / 2,
-    );
+    pushUnique(midpoints, seenMid, (s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2);
     if (s.center && (s.type === 'ARC' || s.type === 'CIRCLE')) {
       pushUnique(centers, seenCenter, s.center.x, s.center.y);
     }
@@ -126,17 +119,12 @@ export function precomputeOSnapTargets(
 /// segment count exceeds `MAX_INTERSECTION_SCAN`. Only LINE segments
 /// participate — arcs would need analytic intersections and aren't
 /// in scope today.
-function computeLineLineIntersections(
-  segments: readonly Segment[],
-): { x: number; y: number }[] {
+function computeLineLineIntersections(segments: readonly Segment[]): { x: number; y: number }[] {
   if (segments.length > MAX_INTERSECTION_SCAN) return [];
-  const lines: Segment[] = segments.filter(
-    (s) => s.type === 'LINE' && (s.bulge ?? 0) === 0,
-  );
+  const lines: Segment[] = segments.filter((s) => s.type === 'LINE' && (s.bulge ?? 0) === 0);
   const out: { x: number; y: number }[] = [];
   const seen = new Set<string>();
-  const key = (x: number, y: number): string =>
-    `${Math.round(x * 10000)},${Math.round(y * 10000)}`;
+  const key = (x: number, y: number): string => `${Math.round(x * 10000)},${Math.round(y * 10000)}`;
   for (let i = 0; i < lines.length; i++) {
     for (let j = i + 1; j < lines.length; j++) {
       const ip = segmentSegmentIntersection(lines[i], lines[j]);
@@ -153,10 +141,7 @@ function computeLineLineIntersections(
 /// Strict line-segment intersection: returns a point only when both
 /// segments cross within their endpoints (not extrapolated lines).
 /// Collinear / parallel segments report no intersection.
-function segmentSegmentIntersection(
-  a: Segment,
-  b: Segment,
-): { x: number; y: number } | null {
+function segmentSegmentIntersection(a: Segment, b: Segment): { x: number; y: number } | null {
   const x1 = a.start.x;
   const y1 = a.start.y;
   const x2 = a.end.x;

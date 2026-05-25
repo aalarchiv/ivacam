@@ -5,11 +5,7 @@
 /// at the stock corner lands inside the geometry footprint.
 
 import { describe, expect, it } from 'vitest';
-import {
-  defaultWorkOffset,
-  inferDefaultWorkOffset,
-  type WorkOffset,
-} from './project-types';
+import { defaultWorkOffset, inferDefaultWorkOffset, type WorkOffset } from './project-types';
 
 function bb(min_x: number, min_y: number, max_x: number, max_y: number) {
   return { min_x, min_y, max_x, max_y };

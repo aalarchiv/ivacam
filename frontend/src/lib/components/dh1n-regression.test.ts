@@ -68,9 +68,7 @@ function findEffectBodies(file: string): { line: number; body: string }[] {
 /// legitimately mention the banned patterns (e.g. "// don't call
 /// snapshotKey() here") and should not trigger the lint.
 function stripComments(s: string): string {
-  return s
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '');
+  return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 }
 
 describe('dh1n self-scheduling effect regression (p2c3)', () => {

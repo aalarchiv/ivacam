@@ -69,12 +69,7 @@
     if (!project.generated) return;
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName ?? '';
-    if (
-      tag === 'INPUT' ||
-      tag === 'TEXTAREA' ||
-      tag === 'SELECT' ||
-      t?.isContentEditable
-    ) {
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) {
       return;
     }
     e.preventDefault();

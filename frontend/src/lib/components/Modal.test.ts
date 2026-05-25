@@ -25,11 +25,7 @@ interface FakeButton {
 /// trap can tell inside-from-outside without a real DOM. Pass
 /// `containsActive: false` to simulate focus that's still on the trigger
 /// (outside the dialog).
-function makeBody(
-  buttons: FakeButton[],
-  active: FakeButton | null,
-  containsActive = true,
-) {
+function makeBody(buttons: FakeButton[], active: FakeButton | null, containsActive = true) {
   return {
     querySelectorAll: (sel: string) => {
       if (sel !== FOCUSABLE_SELECTOR) return [] as unknown as NodeListOf<HTMLElement>;

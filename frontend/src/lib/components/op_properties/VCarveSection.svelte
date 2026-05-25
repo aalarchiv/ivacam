@@ -20,7 +20,6 @@
     patch: <K extends OpField>(field: K, value: OpFieldValue<K>) => void;
   }
   let { op, patch }: Props = $props();
-
 </script>
 
 <fieldset>

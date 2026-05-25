@@ -57,8 +57,7 @@
   const CUT_DIRECTION_HELP: Record<string, string> = {
     conventional:
       'Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.',
-    climb:
-      'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
+    climb: 'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
   };
   const PLUNGE_HELP: Record<string, string> = {
     direct:
@@ -136,8 +135,7 @@
     op != null && op.plunge != null && op.plunge.kind === 'helix' && op.plunge.radius_mm === null,
   );
   const helixHasGeometry = $derived(
-    project.transformedImport != null &&
-      (project.transformedImport.segments?.length ?? 0) > 0,
+    project.transformedImport != null && (project.transformedImport.segments?.length ?? 0) > 0,
   );
   const helixHasSelection = $derived(op != null && (op.sourceObjects?.length ?? 0) > 0);
 
@@ -213,8 +211,8 @@
       />
     </label>
     <p class="hint hint-pause">
-      The pipeline emits <code>M5</code>, this message as a comment, <code>M0</code>,
-      and <code>M3</code> at this slot. Spindle stops; pressing Cycle Start resumes.
+      The pipeline emits <code>M5</code>, this message as a comment, <code>M0</code>, and
+      <code>M3</code> at this slot. Spindle stops; pressing Cycle Start resumes.
     </p>
   {:else}
     <label class="row">
@@ -227,8 +225,7 @@
     </label>
 
     {@const selectedTool = project.tools.find((t) => t.id === op.toolId)}
-    {@const toolKindOk =
-      selectedTool == null || isToolKindAcceptable(op.kind, selectedTool.kind)}
+    {@const toolKindOk = selectedTool == null || isToolKindAcceptable(op.kind, selectedTool.kind)}
     {#if selectedTool != null && !toolKindOk}
       <p
         class="warn-chip"
@@ -362,9 +359,7 @@
             <option value="auto" title={COMBINE_HELP.auto}>auto (containment)</option>
             <option value="union" title={COMBINE_HELP.union}>union</option>
             <option value="difference" title={COMBINE_HELP.difference}>difference</option>
-            <option value="intersection" title={COMBINE_HELP.intersection}
-              >intersection</option
-            >
+            <option value="intersection" title={COMBINE_HELP.intersection}>intersection</option>
             <option value="xor" title={COMBINE_HELP.xor}>xor</option>
             <option value="none" title={COMBINE_HELP.none}>none (per object)</option>
           </select>
@@ -558,11 +553,9 @@
                 ? 'Picking — click in canvas, ESC to finalize'
                 : 'Pick the approach point by clicking in the 2D canvas (Shift = disable snap)'}
               onclick={() => {
-                project.pickMode = pickActive
-                  ? null
-                  : { kind: 'approach-point', opId: op.id };
-              }}
-            >{pickActive ? 'picking…' : 'pick'}</button>
+                project.pickMode = pickActive ? null : { kind: 'approach-point', opId: op.id };
+              }}>{pickActive ? 'picking…' : 'pick'}</button
+            >
             {#if op.approachPoint}
               <button
                 type="button"
@@ -620,10 +613,7 @@
         </div>
       </label>
       {#if op.kind === 'profile' || op.kind === 'pocket'}
-        <label
-          class="row"
-          title={CUT_DIRECTION_HELP[op.cutDirection ?? 'conventional']}
-        >
+        <label class="row" title={CUT_DIRECTION_HELP[op.cutDirection ?? 'conventional']}>
           <span>Direction</span>
           <select
             value={op.cutDirection ?? 'conventional'}
@@ -636,10 +626,7 @@
             <option value="climb" title={CUT_DIRECTION_HELP.climb}>climb</option>
           </select>
         </label>
-        <label
-          class="row"
-          title={CUT_DIRECTION_HELP[op.finishCutDirection ?? 'conventional']}
-        >
+        <label class="row" title={CUT_DIRECTION_HELP[op.finishCutDirection ?? 'conventional']}>
           <span>Finish dir</span>
           <select
             value={op.finishCutDirection ?? 'conventional'}
@@ -859,85 +846,85 @@
               : 'tool defaults'}</span
           >
         </summary>
-      <fieldset class="optional-fieldset">
-        <legend>Feeds (overrides)</legend>
-        <label
-          class="row"
-          title="Override the tool's feed rate (mm/min) for this operation only. Leave empty to use the tool default."
-        >
-          <span>Feed rate</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="50"
-              min="0"
-              placeholder={toolFeedRate != null ? String(toolFeedRate) : 'tool default'}
-              value={op.feedRateOverride ?? ''}
-              onchange={(e) => {
-                const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-                patch('feedRateOverride', isNaN(v) || v <= 0 ? undefined : v);
-              }}
-            />
-            <span class="unit">mm/min</span>
-            {#if op.feedRateOverride !== undefined}
-              <button
-                type="button"
-                class="reset-link"
-                onclick={() => patch('feedRateOverride', undefined)}
-                title="Clear override and inherit from the tool's feed rate.">reset</button
-              >
-            {/if}
-          </div>
-        </label>
-        <label
-          class="row"
-          title="Override the tool's plunge rate (mm/min) for Z descents in this operation. Leave empty to use the tool default."
-        >
-          <span>Plunge rate</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="10"
-              min="0"
-              placeholder={toolPlungeRate != null ? String(toolPlungeRate) : 'tool default'}
-              value={op.plungeRateOverride ?? ''}
-              onchange={(e) => {
-                const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-                patch('plungeRateOverride', isNaN(v) || v <= 0 ? undefined : v);
-              }}
-            />
-            <span class="unit">mm/min</span>
-            {#if op.plungeRateOverride !== undefined}
-              <button
-                type="button"
-                class="reset-link"
-                onclick={() => patch('plungeRateOverride', undefined)}
-                title="Clear override and inherit from the tool's plunge rate.">reset</button
-              >
-            {/if}
-          </div>
-        </label>
-        <label
-          class="row"
-          title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns."
-        >
-          <span>Corner slow</span>
-          <div class="num-cell">
-            <input
-              type="number"
-              step="0.05"
-              min="0"
-              max="0.95"
-              value={op.cornerFeedReduction ?? 0}
-              onchange={(e) => {
-                const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-                patch('cornerFeedReduction', isNaN(v) ? 0 : Math.max(0, Math.min(0.95, v)));
-              }}
-            />
-            <span class="unit" title="Unitless fraction between 0 and 1.">fraction</span>
-          </div>
-        </label>
-      </fieldset>
+        <fieldset class="optional-fieldset">
+          <legend>Feeds (overrides)</legend>
+          <label
+            class="row"
+            title="Override the tool's feed rate (mm/min) for this operation only. Leave empty to use the tool default."
+          >
+            <span>Feed rate</span>
+            <div class="num-cell">
+              <input
+                type="number"
+                step="50"
+                min="0"
+                placeholder={toolFeedRate != null ? String(toolFeedRate) : 'tool default'}
+                value={op.feedRateOverride ?? ''}
+                onchange={(e) => {
+                  const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                  patch('feedRateOverride', isNaN(v) || v <= 0 ? undefined : v);
+                }}
+              />
+              <span class="unit">mm/min</span>
+              {#if op.feedRateOverride !== undefined}
+                <button
+                  type="button"
+                  class="reset-link"
+                  onclick={() => patch('feedRateOverride', undefined)}
+                  title="Clear override and inherit from the tool's feed rate.">reset</button
+                >
+              {/if}
+            </div>
+          </label>
+          <label
+            class="row"
+            title="Override the tool's plunge rate (mm/min) for Z descents in this operation. Leave empty to use the tool default."
+          >
+            <span>Plunge rate</span>
+            <div class="num-cell">
+              <input
+                type="number"
+                step="10"
+                min="0"
+                placeholder={toolPlungeRate != null ? String(toolPlungeRate) : 'tool default'}
+                value={op.plungeRateOverride ?? ''}
+                onchange={(e) => {
+                  const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                  patch('plungeRateOverride', isNaN(v) || v <= 0 ? undefined : v);
+                }}
+              />
+              <span class="unit">mm/min</span>
+              {#if op.plungeRateOverride !== undefined}
+                <button
+                  type="button"
+                  class="reset-link"
+                  onclick={() => patch('plungeRateOverride', undefined)}
+                  title="Clear override and inherit from the tool's plunge rate.">reset</button
+                >
+              {/if}
+            </div>
+          </label>
+          <label
+            class="row"
+            title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns."
+          >
+            <span>Corner slow</span>
+            <div class="num-cell">
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="0.95"
+                value={op.cornerFeedReduction ?? 0}
+                onchange={(e) => {
+                  const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+                  patch('cornerFeedReduction', isNaN(v) ? 0 : Math.max(0, Math.min(0.95, v)));
+                }}
+              />
+              <span class="unit" title="Unitless fraction between 0 and 1.">fraction</span>
+            </div>
+          </label>
+        </fieldset>
       </details>
     {/if}
 
@@ -958,7 +945,6 @@
          Cut section. The OpKind 'helix' value is no longer in the
          union so this branch is unreachable; kept as a comment for
          the eventual standalone-helix-emitter feature reintroduction. -->
-
 
     {#if op.kind === 'drill'}
       <details class="optional-section" open={op.pattern !== undefined && op.pattern !== null}>

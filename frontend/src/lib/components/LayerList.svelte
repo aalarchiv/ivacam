@@ -88,9 +88,7 @@
   }
   function focusFirstAddMenuItem(node: HTMLElement) {
     queueMicrotask(() => {
-      const first = node.querySelector<HTMLElement>(
-        'button[role="menuitem"]:not(:disabled)',
-      );
+      const first = node.querySelector<HTMLElement>('button[role="menuitem"]:not(:disabled)');
       first?.focus();
     });
   }

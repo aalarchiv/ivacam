@@ -75,7 +75,16 @@ describe('selection-geometry', () => {
       expect(pointInPolygon(square, 15, 5)).toBe(false);
     });
     it('returns false for degenerate polygons (< 3 vertices)', () => {
-      expect(pointInPolygon([[0, 0], [1, 1]], 0, 0)).toBe(false);
+      expect(
+        pointInPolygon(
+          [
+            [0, 0],
+            [1, 1],
+          ],
+          0,
+          0,
+        ),
+      ).toBe(false);
     });
   });
 
@@ -125,11 +134,7 @@ describe('selection-geometry', () => {
   });
 
   describe('selectionOrigin (245i)', () => {
-    const metas = [
-      meta(1, [5, 5, 10, 10]),
-      meta(2, [20, -3, 30, 4]),
-      meta(3, [-8, 12, -2, 18]),
-    ];
+    const metas = [meta(1, [5, 5, 10, 10]), meta(2, [20, -3, 30, 4]), meta(3, [-8, 12, -2, 18])];
 
     it('returns null for an empty selection', () => {
       expect(selectionOrigin(metas, new Set())).toBeNull();

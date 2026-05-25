@@ -83,9 +83,7 @@
       // open by default so the user sees `dragoff` / `cornerRadiusMm`
       // / T-slot neck dims without hunting for them. Other kinds
       // start collapsed.
-      expanded = new Set(
-        newDraft.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id),
-      );
+      expanded = new Set(newDraft.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id));
       // 1xgj: snapshot a deep clone so subsequent edits to nested
       // fields (e.g. `tool.holder.diameter_mm`) don't mutate the
       // pristine reference. structuredClone handles the nested
@@ -513,7 +511,9 @@
           <span>Kind</span>
           <span>⌀ <span class="unit-hdr">mm</span></span>
           <span>tip ⌀ <span class="unit-hdr">mm</span></span>
-          <span title="Full apex angle for V-bits / engravers — drives V-Carve depth.">tip ∠ <span class="unit-hdr">°</span></span>
+          <span title="Full apex angle for V-bits / engravers — drives V-Carve depth."
+            >tip ∠ <span class="unit-hdr">°</span></span
+          >
           <span>flutes</span>
           <span>speed <span class="unit-hdr">RPM</span></span>
           <span>feed <span class="unit-hdr">mm/min</span></span>
@@ -1202,11 +1202,7 @@
                     title="Estlcam Wirbelzusatzbreite — diameter (mm) by which the spiral overlay widens the cut. Empty / 0 ⇒ overlay disabled (Wirbeln is a no-op)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
-                      updateField(
-                        i,
-                        'wirbelnExtraWidthMm',
-                        v === '' ? undefined : parseFloat(v),
-                      );
+                      updateField(i, 'wirbelnExtraWidthMm', v === '' ? undefined : parseFloat(v));
                     }}
                   />
                 </label>

@@ -6,11 +6,7 @@
 /// cover the modifier semantics end-to-end without mounting Svelte.
 
 import { describe, expect, it } from 'vitest';
-import {
-  modeFromModifiers,
-  reduceCanvasClick,
-  type SelectionClick,
-} from './entity-selection';
+import { modeFromModifiers, reduceCanvasClick, type SelectionClick } from './entity-selection';
 
 const noMods = { shiftKey: false, ctrlKey: false, metaKey: false };
 

@@ -15,11 +15,7 @@
   import { tessellate } from '../scene3d/tessellate';
   import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
   import type { SimWarning } from '../api/types';
-  import {
-    previewSegmentsFor,
-    previewVersion,
-    requestPreview,
-  } from '../state/text_preview.svelte';
+  import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
 
   let host: HTMLDivElement;
   let renderer: THREE.WebGLRenderer | undefined;
@@ -1508,9 +1504,7 @@
     // tint. Falls back to ACI when no solid is showing.
     const previewMode = project.settings.previewMode;
     const solidVisible = previewMode === 'solid' || previewMode === 'both';
-    const contrastOverStock = solidVisible
-      ? new THREE.Color(project.settings.edgeColor)
-      : null;
+    const contrastOverStock = solidVisible ? new THREE.Color(project.settings.edgeColor) : null;
     // Lift the wireframe slightly above the stock top surface so it
     // doesn't Z-fight with the heightfield mesh (top_z = 0 in the
     // stock coord system). 0.1 mm is below the smallest carve step
@@ -1673,11 +1667,7 @@
       const opHue = opId === 0 ? 0.0 : opPalette(opId);
       const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
       const moveBoost =
-        seg.kind === 'rapid'
-          ? 0.5
-          : seg.kind === 'plunge' || seg.kind === 'retract'
-            ? 0.85
-            : 1.15;
+        seg.kind === 'rapid' ? 0.5 : seg.kind === 'plunge' || seg.kind === 'retract' ? 0.85 : 1.15;
       const r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
       const g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
       const b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
@@ -1697,9 +1687,7 @@
       const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (len > 0) lenSinceLastArrow += len;
       const arrowEligible =
-        len >= ARROW_MIN_LEN &&
-        lenSinceLastArrow >= ARROW_MIN_SPACING &&
-        seg.kind !== 'rapid';
+        len >= ARROW_MIN_LEN && lenSinceLastArrow >= ARROW_MIN_SPACING && seg.kind !== 'rapid';
       if (arrowEligible) {
         const A = Math.min(len * ARROW_SIZE_FRAC, ARROW_MAX_SIZE);
         const ux = dx / len;
@@ -1870,8 +1858,7 @@
     // Resolve which owner array to consult based on which LineSegments
     // produced the hit. Both buffers are pickable; closer wins (Three's
     // intersectObjects sorts by distance).
-    const owners =
-      hit.object === importedLinesObject ? importedLineOwners : toolpathLineOwners;
+    const owners = hit.object === importedLinesObject ? importedLineOwners : toolpathLineOwners;
     const owner = owners[Math.floor(hit.index / 2)];
     if (!owner) return;
     if (owner.kind === 'object') {

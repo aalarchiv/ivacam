@@ -37,7 +37,8 @@
   function onThemeKey(e: KeyboardEvent) {
     const cur = THEMES.indexOf(project.settings.theme as (typeof THEMES)[number]);
     let next = cur;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (cur - 1 + THEMES.length) % THEMES.length;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      next = (cur - 1 + THEMES.length) % THEMES.length;
     else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (cur + 1) % THEMES.length;
     else if (e.key === 'Home') next = 0;
     else if (e.key === 'End') next = THEMES.length - 1;
@@ -105,7 +106,6 @@
               >
             </div>
           </label>
-
         </div>
       </section>
 
@@ -328,9 +328,9 @@
         <p class="hint">
           <b>Max simulation cells</b> caps the WASM heightmap grid (and so the simulation accuracy).
           <b>Max render triangles</b> caps the 3D-sim preview's mesh size: the renderer automatically
-          drops to a coarser LOD level when zoomed out or when simulation cells exceed the budget.
-          Simulation accuracy is preserved; only the rendered mesh degrades. Stepped voxel mesh ≈
-          6 triangles per cell.
+          drops to a coarser LOD level when zoomed out or when simulation cells exceed the budget. Simulation
+          accuracy is preserved; only the rendered mesh degrades. Stepped voxel mesh ≈ 6 triangles per
+          cell.
         </p>
       </section>
 
@@ -355,7 +355,10 @@
             />
             <span>Auto-run sim on every project save</span>
           </label>
-          <label class="check" title="Debounces ~1.5 s after the last edit, then runs Generate G-code. Off by default so power users on big projects keep manual control.">
+          <label
+            class="check"
+            title="Debounces ~1.5 s after the last edit, then runs Generate G-code. Off by default so power users on big projects keep manual control."
+          >
             <input
               type="checkbox"
               checked={project.settings.autoRegenerate}
@@ -396,17 +399,13 @@
       <section>
         <h3>Snap to</h3>
         <div class="grid">
-          {#each [
-            { key: 'endpoint', label: 'Endpoint', help: 'Snap to segment endpoints.' },
-            { key: 'midpoint', label: 'Midpoint', help: 'Snap to the midpoint of each segment.' },
-            { key: 'intersection', label: 'Intersection', help: 'Snap to line / arc crossings.' },
-            { key: 'center', label: 'Center', help: 'Snap to circle / arc centers.' },
-            { key: 'grid', label: 'Grid', help: 'Snap to integer multiples of the grid step below.' },
-          ] as o (o.key)}
+          {#each [{ key: 'endpoint', label: 'Endpoint', help: 'Snap to segment endpoints.' }, { key: 'midpoint', label: 'Midpoint', help: 'Snap to the midpoint of each segment.' }, { key: 'intersection', label: 'Intersection', help: 'Snap to line / arc crossings.' }, { key: 'center', label: 'Center', help: 'Snap to circle / arc centers.' }, { key: 'grid', label: 'Grid', help: 'Snap to integer multiples of the grid step below.' }] as o (o.key)}
             <label class="check" title={o.help}>
               <input
                 type="checkbox"
-                checked={!!project.settings.osnap?.[o.key as 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid']}
+                checked={!!project.settings.osnap?.[
+                  o.key as 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid'
+                ]}
                 onchange={(e) =>
                   update('osnap', {
                     ...project.settings.osnap,

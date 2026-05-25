@@ -144,9 +144,7 @@ export function updateOperationCommand(opId: number, patch: Partial<OpEntry>): C
       // OpEntry variant tag because TS can't prove patch.kind matches
       // o.kind. Patches are constructed against a specific op id, so the
       // assertion is sound by callsite construction.
-      t.operations = t.operations.map((o) =>
-        o.id === opId ? ({ ...o, ...patch } as OpEntry) : o,
-      );
+      t.operations = t.operations.map((o) => (o.id === opId ? ({ ...o, ...patch } as OpEntry) : o));
       t.dirty = true;
     },
     revert: (s) => {
@@ -717,9 +715,7 @@ export function changeProfileOffsetCommand(opId: number, offset: ProfileOffset):
       // / VCarve / Thread id to this command. Guard at the boundary.
       if (!cur || !('offset' in cur)) return;
       prev = cur.offset;
-      t.operations = t.operations.map((o) =>
-        o.id === opId ? ({ ...o, offset } as OpEntry) : o,
-      );
+      t.operations = t.operations.map((o) => (o.id === opId ? ({ ...o, offset } as OpEntry) : o));
       t.dirty = true;
     },
     revert: (s) => {

@@ -27,11 +27,7 @@
            lands on the safer choice — accidentally hitting Enter on a
            freshly-opened discard prompt won't destroy work. -->
       <button type="button" class="btn-secondary" onclick={onCancel}>{p.cancelLabel}</button>
-      <button
-        type="button"
-        class={p.danger ? 'btn-danger' : 'btn-primary'}
-        onclick={onConfirm}
-      >
+      <button type="button" class={p.danger ? 'btn-danger' : 'btn-primary'} onclick={onConfirm}>
         {p.primaryLabel}
       </button>
     </div>

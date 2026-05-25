@@ -81,11 +81,7 @@ import type {
   Wcs,
   WorkOffset,
 } from './project-types';
-import {
-  defaultWorkOffset,
-  inferDefaultWorkOffset,
-  isDefaultWorkOffset,
-} from './project-types';
+import { defaultWorkOffset, inferDefaultWorkOffset, isDefaultWorkOffset } from './project-types';
 import {
   applyFileTransformToPoint,
   combineImports,
@@ -821,8 +817,7 @@ class ProjectState {
     // the old layout was for different geometry), and seed lastImportPath
     // from `sourcePath` when the caller provided one.
     const prev = this.data.imports[0];
-    const nextPath =
-      sourcePath !== undefined ? sourcePath : (prev?.lastImportPath ?? null);
+    const nextPath = sourcePath !== undefined ? sourcePath : (prev?.lastImportPath ?? null);
     this.data.imports = [
       {
         id: prev?.id ?? 1,
@@ -1368,14 +1363,8 @@ class ProjectState {
       layers,
       bbox,
     };
-    const after: ImportEntry[] = [
-      { ...seedEntry, source: afterSource },
-      ...before.slice(1),
-    ];
-    this.history.exec(
-      setImportsCommand(before, after, 'Add geometry'),
-      this.target(),
-    );
+    const after: ImportEntry[] = [{ ...seedEntry, source: afterSource }, ...before.slice(1)];
+    this.history.exec(setImportsCommand(before, after, 'Add geometry'), this.target());
     this.visibleLayers = new Set([...this.visibleLayers, layerName]);
 
     // Return the de-duplicated set of new object ids (in insertion order).
@@ -1726,16 +1715,10 @@ class ProjectState {
     // entries[1] gets N0+1..N0+N1, etc.).
     let idOffset = 0;
     for (let i = 0; i < idx; i++) {
-      const m = (imports[i].source.objects ?? []).reduce(
-        (max, id) => (id > max ? id : max),
-        0,
-      );
+      const m = (imports[i].source.objects ?? []).reduce((max, id) => (id > max ? id : max), 0);
       idOffset += m;
     }
-    const localMax = (imports[idx].source.objects ?? []).reduce(
-      (m, id) => (id > m ? id : m),
-      0,
-    );
+    const localMax = (imports[idx].source.objects ?? []).reduce((m, id) => (id > m ? id : m), 0);
     const lo = idOffset + 1;
     const hi = idOffset + localMax;
     const ownsId = (id: number) => id >= lo && id <= hi;
@@ -1776,9 +1759,7 @@ class ProjectState {
       // so t → 1-t per placement on this import's objects.
       const tabs = op.tabPlacements;
       if (mirrorParityChanged && Array.isArray(tabs) && tabs.length > 0) {
-        const flipped = tabs.map((tp) =>
-          ownsId(tp.objectId) ? { ...tp, t: 1 - tp.t } : tp,
-        );
+        const flipped = tabs.map((tp) => (ownsId(tp.objectId) ? { ...tp, t: 1 - tp.t } : tp));
         // Only emit when at least one placement actually flipped.
         if (flipped.some((tp, i) => tp.t !== tabs[i].t)) {
           patch.tabPlacements = flipped;
@@ -1796,10 +1777,7 @@ class ProjectState {
     const before = this.data.imports;
     const after = [...before];
     after[idx] = { ...after[idx], fileTransform: identityFileTransform() };
-    this.history.exec(
-      setImportsCommand(before, after, 'Reset file transform'),
-      this.target(),
-    );
+    this.history.exec(setImportsCommand(before, after, 'Reset file transform'), this.target());
   }
 }
 
@@ -1809,9 +1787,5 @@ export const project = new ProjectState();
 // `sim/warnings.ts` and `sim/playhead.ts` so vitest can import them
 // without booting the Svelte rune runtime. Re-exported here for
 // backwards-compat with existing call sites.
-export {
-  simWarningSeverity,
-  simWarningSegmentIdx,
-  simWarningSummary,
-} from '../sim/warnings';
+export { simWarningSeverity, simWarningSegmentIdx, simWarningSummary } from '../sim/warnings';
 export { playheadToSegment } from '../sim/playhead';

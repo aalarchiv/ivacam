@@ -87,12 +87,7 @@ describe('applyFileTransform', () => {
   it('rotate 90° around bbox center swaps axes (square)', () => {
     // 10x10 square: bbox center is (5, 5). Rotation around it maps
     // (0,0) → (10,0) for +90° (counter-clockwise).
-    const i = imp([
-      line(0, 0, 10, 0),
-      line(10, 0, 10, 10),
-      line(10, 10, 0, 10),
-      line(0, 10, 0, 0),
-    ]);
+    const i = imp([line(0, 0, 10, 0), line(10, 0, 10, 10), line(10, 10, 0, 10), line(0, 10, 0, 0)]);
     const out = applyFileTransform(i, tx({ rotateDeg: 90 }));
     // First segment was bottom edge (0,0)→(10,0). After +90° around
     // (5,5) it becomes the right edge (10,0)→(10,10).
@@ -138,12 +133,7 @@ describe('applyFileTransform', () => {
   });
 
   it('bbox recomputes after transform (rotated square stays 10x10)', () => {
-    const i = imp([
-      line(0, 0, 10, 0),
-      line(10, 0, 10, 10),
-      line(10, 10, 0, 10),
-      line(0, 10, 0, 0),
-    ]);
+    const i = imp([line(0, 0, 10, 0), line(10, 0, 10, 10), line(10, 10, 0, 10), line(0, 10, 0, 0)]);
     const out = applyFileTransform(i, tx({ rotateDeg: 45 }));
     // Rotated 45° around its center, the bbox of the diamond is ~14.14
     // on each side. Center stays at (5,5).
@@ -169,8 +159,20 @@ describe('applyFileTransform', () => {
     const base = imp(segs);
     base.objects = [1, 1, 1, 1, 2, 2, 2, 2];
     base.object_meta = [
-      { id: 1, closed: true, layer: '0', color: 7, bbox: { min_x: 0, min_y: 0, max_x: 1, max_y: 1 } },
-      { id: 2, closed: true, layer: '0', color: 7, bbox: { min_x: 20, min_y: 0, max_x: 21, max_y: 1 } },
+      {
+        id: 1,
+        closed: true,
+        layer: '0',
+        color: 7,
+        bbox: { min_x: 0, min_y: 0, max_x: 1, max_y: 1 },
+      },
+      {
+        id: 2,
+        closed: true,
+        layer: '0',
+        color: 7,
+        bbox: { min_x: 20, min_y: 0, max_x: 21, max_y: 1 },
+      },
     ];
     const out = applyFileTransform(base, tx({ translate: { x: 100, y: 50 } }));
     expect(out.object_meta[0].bbox).toEqual({ min_x: 100, min_y: 50, max_x: 101, max_y: 51 });
@@ -207,7 +209,13 @@ describe('applyFileTransform', () => {
     const base = imp([line(0, 0, 10, 0)]);
     base.objects = [0];
     base.object_meta = [
-      { id: 1, closed: false, layer: '0', color: 7, bbox: { min_x: -5, min_y: -5, max_x: 5, max_y: 5 } },
+      {
+        id: 1,
+        closed: false,
+        layer: '0',
+        color: 7,
+        bbox: { min_x: -5, min_y: -5, max_x: 5, max_y: 5 },
+      },
     ];
     const out = applyFileTransform(base, tx({ translate: { x: 100, y: 0 } }));
     // No segment tagged id=1, so the original bbox survives (not Infinity).

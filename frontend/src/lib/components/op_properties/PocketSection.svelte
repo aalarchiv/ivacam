@@ -1,4 +1,3 @@
-
 <script lang="ts">
   /// Pocket op-properties: frame (Pocket Outside) controls + strategy
   /// picker + per-strategy subsections (halfpipe profile, trochoidal
@@ -27,9 +26,8 @@
   <fieldset>
     <legend>Pocket Outside</legend>
     <p class="hint">
-      Convert this Pocket into a Pocket Outside operation: the pipeline auto-derives a frame
-      around the selection at generate time and carves the area BETWEEN the frame and the
-      selection.
+      Convert this Pocket into a Pocket Outside operation: the pipeline auto-derives a frame around
+      the selection at generate time and carves the area BETWEEN the frame and the selection.
     </p>
     <button
       type="button"
@@ -155,9 +153,7 @@
               patch('halfpipeProfile', {
                 kind: 'circular_arc',
                 radius_mm:
-                  op.halfpipeProfile?.kind === 'circular_arc'
-                    ? op.halfpipeProfile.radius_mm
-                    : 5,
+                  op.halfpipeProfile?.kind === 'circular_arc' ? op.halfpipeProfile.radius_mm : 5,
               });
             } else if (v === 'v_bottom') {
               patch('halfpipeProfile', {
@@ -243,10 +239,7 @@
             onchange={(e) => {
               const v = parseFloat((e.currentTarget as HTMLInputElement).value);
               if (!isNaN(v)) {
-                patch(
-                  'pocketZigzagAngleDeg',
-                  v === 0 ? undefined : Math.max(0, Math.min(180, v)),
-                );
+                patch('pocketZigzagAngleDeg', v === 0 ? undefined : Math.max(0, Math.min(180, v)));
               }
             }}
           />

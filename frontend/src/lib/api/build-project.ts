@@ -573,9 +573,7 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     // (1) so we don't bloat the wire payload for the common case.
     ...(t.pause !== undefined && t.pause !== 1 ? { pause: t.pause } : {}),
     ...(t.defaultStep !== undefined ? { default_step: t.defaultStep } : {}),
-    ...(t.defaultXyOverlap !== undefined
-      ? { default_xy_overlap: t.defaultXyOverlap }
-      : {}),
+    ...(t.defaultXyOverlap !== undefined ? { default_xy_overlap: t.defaultXyOverlap } : {}),
     ...(t.comment !== undefined && t.comment !== '' ? { comment: t.comment } : {}),
     ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),

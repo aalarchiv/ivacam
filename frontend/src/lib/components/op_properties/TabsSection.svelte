@@ -1,4 +1,3 @@
-
 <script lang="ts">
   /// Tabs op-properties fieldset. Shown only when op.kind is one of the
   /// closed-contour kinds (profile / pocket — the only ones that emit
@@ -48,8 +47,7 @@
     if (!imp) return 0;
     const liveIds = new Set<number>(imp.objects ?? []);
     const so = o.sourceObjects;
-    const allowed = (id: number) =>
-      liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
+    const allowed = (id: number) => liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
     return placements.filter((p) => !allowed(p.objectId)).length;
   }
 
@@ -60,8 +58,7 @@
     if (!imp) return;
     const liveIds = new Set<number>(imp.objects ?? []);
     const so = o.sourceObjects;
-    const allowed = (id: number) =>
-      liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
+    const allowed = (id: number) => liveIds.has(id) && (!so || so.length === 0 || so.includes(id));
     const next = (o.tabPlacements ?? []).filter((p) => allowed(p.objectId));
     project.updateOperation(o.id, { tabPlacements: next });
   }
@@ -111,10 +108,7 @@
     </div>
   </div>
   {#if op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed'}
-    <label
-      class="row"
-      title="Number of tabs to auto-place evenly around each closed contour."
-    >
+    <label class="row" title="Number of tabs to auto-place evenly around each closed contour.">
       <span>Count</span>
       <div class="num-cell">
         <input
@@ -123,10 +117,7 @@
           step="1"
           value={op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count}
           onchange={(e) => {
-            const n = Math.max(
-              1,
-              parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1,
-            );
+            const n = Math.max(1, parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1);
             if (op.tabMode?.kind === 'auto') patch('tabMode', { kind: 'auto', count: n });
             else if (op.tabMode?.kind === 'mixed')
               patch('tabMode', { kind: 'mixed', auto_count: n });

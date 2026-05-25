@@ -9,11 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { buildProject } from './build-project';
 import type { ImportResponse } from './types';
 import type { OpEntry } from '../state/op_types';
-import type {
-  MachineSettings,
-  ToolEntry,
-  WorkOffset,
-} from '../state/project-types';
+import type { MachineSettings, ToolEntry, WorkOffset } from '../state/project-types';
 
 function fakeImport(): ImportResponse {
   return {

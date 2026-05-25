@@ -131,9 +131,7 @@ describe('queryHit', () => {
   });
 
   it('falls back to a linear scan when the index is null', () => {
-    const data = source([
-      { start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, layer: '0' },
-    ]);
+    const data = source([{ start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, layer: '0' }]);
     expect(queryHit(data, null, 5, 0.1, 1.0, allLayers)).toBe(0);
     // Out of tolerance → null even on the linear path.
     expect(queryHit(data, null, 5, 5, 1.0, allLayers)).toBeNull();
@@ -142,9 +140,7 @@ describe('queryHit', () => {
   it('dedups segments that land in multiple cells', () => {
     // A diagonal seg crossing cell boundaries: only one hit
     // returned, not one-per-cell.
-    const data = source([
-      { start: { x: 0, y: 0 }, end: { x: 100, y: 100 }, layer: '0' },
-    ]);
+    const data = source([{ start: { x: 0, y: 0 }, end: { x: 100, y: 100 }, layer: '0' }]);
     const idx = buildHitIndex(data);
     // Cursor on the line — the seg lives in many cells but the
     // result is still a single index, not a list.

@@ -178,9 +178,7 @@ export class HeightfieldMesh {
         this.topZ,
       ),
     );
-    this.geometry.boundingSphere = this.geometry.boundingBox.getBoundingSphere(
-      new THREE.Sphere(),
-    );
+    this.geometry.boundingSphere = this.geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
 
     const isTransparent = opts.solidOpacity < 1;
     this.material = new THREE.MeshStandardMaterial({
@@ -597,7 +595,7 @@ export class HeightfieldMesh {
         // the original (non-expanded) AABB — the −X/−Y expansion is
         // there to pick up neighbor walls, not extra top-face writes.
         const inOriginal =
-          (!aabb || (ix >= aabb.ix0 && ix < aabb.ix1 && iy >= aabb.iy0 && iy < aabb.iy1));
+          !aabb || (ix >= aabb.ix0 && ix < aabb.ix1 && iy >= aabb.iy0 && iy < aabb.iy1);
         if (inOriginal) {
           this.writeTop(ix, iy, z);
           // v0no: refresh the per-cell floor too so cut-through
@@ -628,16 +626,10 @@ export class HeightfieldMesh {
     const cellsMaxVert = this.UP_BASE + highCellIdx * 4 + 4;
     this.positionAttr.addUpdateRange(cellsMinVert * 3, (cellsMaxVert - cellsMinVert) * 3);
     if (ix0 === 0) {
-      this.positionAttr.addUpdateRange(
-        (this.LEFT_BASE + iy0 * 4) * 3,
-        (iy1 - iy0) * 4 * 3,
-      );
+      this.positionAttr.addUpdateRange((this.LEFT_BASE + iy0 * 4) * 3, (iy1 - iy0) * 4 * 3);
     }
     if (iy0 === 0) {
-      this.positionAttr.addUpdateRange(
-        (this.BOTTOM_BASE + ix0 * 4) * 3,
-        (ix1 - ix0) * 4 * 3,
-      );
+      this.positionAttr.addUpdateRange((this.BOTTOM_BASE + ix0 * 4) * 3, (ix1 - ix0) * 4 * 3);
     }
     // v0no: per-cell floor region. Same dirty AABB as TOP / RIGHT /
     // UP — one range over the same low→high cell span.
@@ -946,13 +938,7 @@ export class HeightfieldMeshPyramid {
   /// MIN-pool L0 cells in `[ix0, ix1) × [iy0, iy1)` into the
   /// corresponding LOD-k cells of `pools[k]`. The LOD-cell range is the
   /// AABB ceiling-divided by `2^k`. Exposed-as-private only.
-  private poolRange(
-    k: number,
-    ix0: number,
-    iy0: number,
-    ix1: number,
-    iy1: number,
-  ): void {
+  private poolRange(k: number, ix0: number, iy0: number, ix1: number, iy1: number): void {
     const f = 1 << k;
     const cols_k = this.levelCols[k];
     const rows_k = this.levelRows[k];

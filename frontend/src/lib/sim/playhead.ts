@@ -94,8 +94,7 @@ export function planAdvance(
   if (total === 0) return null;
   if (targetSeg === appliedSeg && targetT === partialT) return null;
 
-  const backward =
-    targetSeg < appliedSeg || (targetSeg === appliedSeg && targetT < partialT);
+  const backward = targetSeg < appliedSeg || (targetSeg === appliedSeg && targetT < partialT);
 
   let curSeg = backward ? 0 : appliedSeg;
   let curT = backward ? 0 : partialT;

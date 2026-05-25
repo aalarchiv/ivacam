@@ -48,9 +48,7 @@ export async function wireSourceWatch(): Promise<() => void> {
 /// Install the desktop file-association listener: when the OS invokes
 /// the app via "Open with…", the Tauri main process forwards the path
 /// here. Returns a cleanup callback (no-op on web).
-export async function wireFileAssociationOpen(
-  onPath: (path: string) => void,
-): Promise<() => void> {
+export async function wireFileAssociationOpen(onPath: (path: string) => void): Promise<() => void> {
   if (!isTauri()) return () => {};
   try {
     const { listen } = await import('@tauri-apps/api/event');
@@ -70,9 +68,7 @@ export async function wireFileAssociationOpen(
 /// keep the window open; calling `confirmClose()` quits, calling
 /// nothing keeps the window open. Returns the unlisten callback
 /// (no-op on web — the browser tab close cannot be intercepted).
-export async function wireCloseRequested(
-  onRequested: () => void,
-): Promise<() => void> {
+export async function wireCloseRequested(onRequested: () => void): Promise<() => void> {
   if (!isTauri()) return () => {};
   try {
     const { listen } = await import('@tauri-apps/api/event');
@@ -127,4 +123,3 @@ export async function isDebugSession(): Promise<boolean> {
     return false;
   }
 }
-

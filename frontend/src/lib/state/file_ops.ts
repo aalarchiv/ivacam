@@ -481,9 +481,7 @@ async function pickAndReadJson(
   return new Promise<string | null>((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = filters
-      .flatMap((f) => f.extensions.map((e) => `.${e}`))
-      .join(',');
+    input.accept = filters.flatMap((f) => f.extensions.map((e) => `.${e}`)).join(',');
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) {
@@ -602,13 +600,10 @@ export async function saveMachine() {
     updated_at: new Date().toISOString(),
     payload: { ...project.machine },
   };
-  const fileBase =
-    (project.machine.name && project.machine.name.trim()) || 'machine';
-  await writeJson(
-    `${fileBase}.wiac-machine.json`,
-    JSON.stringify(envelope, null, 2),
-    [{ name: 'wiaConstructor machine', extensions: ['wiac-machine.json', 'json'] }],
-  );
+  const fileBase = (project.machine.name && project.machine.name.trim()) || 'machine';
+  await writeJson(`${fileBase}.wiac-machine.json`, JSON.stringify(envelope, null, 2), [
+    { name: 'wiaConstructor machine', extensions: ['wiac-machine.json', 'json'] },
+  ]);
 }
 
 /// Import a `.wiac-machine.json`. Replaces the active machine

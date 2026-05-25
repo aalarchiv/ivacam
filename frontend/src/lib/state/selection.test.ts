@@ -27,13 +27,13 @@ describe('selectionsEqual', () => {
 });
 
 describe('computeSelectionUpdate', () => {
-  it("replace mode lands the anchor on a single selected id", () => {
+  it('replace mode lands the anchor on a single selected id', () => {
     const r = computeSelectionUpdate(new Set([3, 7]), 7, [5], 'replace');
     expect([...r.selected]).toEqual([5]);
     expect(r.anchor).toBe(5);
   });
 
-  it("replace mode with multiple ids clears the anchor", () => {
+  it('replace mode with multiple ids clears the anchor', () => {
     const r = computeSelectionUpdate(new Set([3]), 3, [4, 5, 6], 'replace');
     expect([...r.selected].sort()).toEqual([4, 5, 6]);
     expect(r.anchor).toBeNull();

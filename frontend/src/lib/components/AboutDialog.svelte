@@ -19,8 +19,7 @@
   /// ISO-8601 UTC timestamp baked at vite-build time. Rendered in the
   /// user's locale below the build identifier so bug reports carry
   /// "this is the build I produced on date X" alongside the commit.
-  const buildDateIso =
-    typeof __WIAC_BUILD_DATE__ === 'string' ? __WIAC_BUILD_DATE__ : '';
+  const buildDateIso = typeof __WIAC_BUILD_DATE__ === 'string' ? __WIAC_BUILD_DATE__ : '';
   const buildDateDisplay = (() => {
     if (!buildDateIso) return '';
     const d = new Date(buildDateIso);
@@ -162,15 +161,18 @@
       {#if buildDateDisplay}
         <dt>Date</dt>
         <dd>
-          <span class="build-date" title="UTC timestamp the binary was produced at — for cross-timezone bug reports.">
+          <span
+            class="build-date"
+            title="UTC timestamp the binary was produced at — for cross-timezone bug reports."
+          >
             {buildDateDisplay}
           </span>
         </dd>
       {/if}
     </dl>
     <p class="hint">
-      Include the build identifier above when filing issues - it pins the report to the
-      exact binary you tested.
+      Include the build identifier above when filing issues - it pins the report to the exact binary
+      you tested.
     </p>
   </section>
 
@@ -186,8 +188,8 @@
       >.
     </p>
     <p>
-      The bundled license text ships in the repository as <code>LICENSE</code>; you also
-      have a copy in the install directory of your desktop build.
+      The bundled license text ships in the repository as <code>LICENSE</code>; you also have a copy
+      in the install directory of your desktop build.
     </p>
   </section>
 
@@ -196,18 +198,20 @@
     <ul class="acks">
       <li>
         <strong>
-          <a href="https://github.com/multigcs/viaconstructor" target="_blank" rel="noreferrer">viaConstructor</a>
+          <a href="https://github.com/multigcs/viaconstructor" target="_blank" rel="noreferrer"
+            >viaConstructor</a
+          >
         </strong> - the project that gave the idea. viaConstructor is a Python CAM tool with a similar
         scope; wiaConstructor reuses none of its code but stands on the shoulders of its UX exploration.
       </li>
       <li>
-        <strong>Estlcam</strong> - its feature catalogue inspired the CAM
-        primitives wiaConstructor implements. No Estlcam code is used; algorithms are
-        implemented from public literature. Estlcam is not free, but it is great software at reasonable price. Buy it!
+        <strong>Estlcam</strong> - its feature catalogue inspired the CAM primitives wiaConstructor implements.
+        No Estlcam code is used; algorithms are implemented from public literature. Estlcam is not free,
+        but it is great software at reasonable price. Buy it!
       </li>
       <li>
-        <strong>CNC + maker community</strong> - bug reports, test geometries, and the
-        machine quirks that turned synthetic test suites into real shop-floor coverage.
+        <strong>CNC + maker community</strong> - bug reports, test geometries, and the machine quirks
+        that turned synthetic test suites into real shop-floor coverage.
       </li>
     </ul>
   </section>
@@ -215,8 +219,8 @@
   <section>
     <h3>Third-party libraries</h3>
     <p class="hint">
-      wiaConstructor stands on the work of many open-source projects. The major runtime
-      dependencies are listed below; full transitive lists ship in <code>Cargo.lock</code>
+      wiaConstructor stands on the work of many open-source projects. The major runtime dependencies
+      are listed below; full transitive lists ship in <code>Cargo.lock</code>
       and <code>package-lock.json</code>.
     </p>
     <table class="libs">
@@ -228,7 +232,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each [...thirdParty].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) as lib (lib.name)}
+        {#each [...thirdParty].sort( (a, b) => a.name.localeCompare( b.name, undefined, { sensitivity: 'base' }, ), ) as lib (lib.name)}
           <tr>
             <td>
               <a href={lib.home} target="_blank" rel="noreferrer">{lib.name}</a>

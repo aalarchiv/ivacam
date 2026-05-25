@@ -38,12 +38,7 @@ export interface Footprint {
   maxY: number;
 }
 
-function lineSeg(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-): Segment {
+function lineSeg(x0: number, y0: number, x1: number, y1: number): Segment {
   return {
     type: 'LINE',
     start: { x: x0, y: y0 },

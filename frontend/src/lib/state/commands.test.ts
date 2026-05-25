@@ -431,9 +431,7 @@ describe('machine / stock', () => {
     expect(setWorkOffsetCommand({ x_mm: 1 }).coalesce_key).toBe('setWorkOffset:x_mm');
     expect(setWorkOffsetCommand({ wcs: 'G56' }).coalesce_key).toBe('setWorkOffset:wcs');
     // Multi-field patches sort their keys so the coalesce_key is stable.
-    expect(setWorkOffsetCommand({ y_mm: 1, x_mm: 2 }).coalesce_key).toBe(
-      'setWorkOffset:x_mm,y_mm',
-    );
+    expect(setWorkOffsetCommand({ y_mm: 1, x_mm: 2 }).coalesce_key).toBe('setWorkOffset:x_mm,y_mm');
   });
 });
 

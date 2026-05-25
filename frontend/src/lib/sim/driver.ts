@@ -47,12 +47,7 @@ interface SimulatorWasm {
   /// render frame so the heightfield destruction follows the cutter
   /// inside long segments (drill plunges) instead of popping at segment
   /// boundaries (pi8r).
-  partial_advance(
-    tool: unknown,
-    seg_idx: number,
-    t_start: number,
-    t_end: number,
-  ): Uint32Array;
+  partial_advance(tool: unknown, seg_idx: number, t_start: number, t_end: number): Uint32Array;
   set_fixtures(fixtures: unknown): void;
   set_toolpath(segments: unknown): number;
   clear_toolpath(): void;
@@ -334,11 +329,7 @@ export class HeightfieldDriver {
     // levels so total GPU memory stays predictable.
     const simCols = this.sim.cols();
     const simRows = this.sim.rows();
-    const minLevel = pickMinLodLevelForBudget(
-      simCols,
-      simRows,
-      input.settings.maxRenderTriangles,
-    );
+    const minLevel = pickMinLodLevelForBudget(simCols, simRows, input.settings.maxRenderTriangles);
     this.mesh = new HeightfieldMeshPyramid(
       {
         cols: simCols,

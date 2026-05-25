@@ -219,9 +219,8 @@
         <details class="full token-legend">
           <summary>Template tokens (click to expand)</summary>
           <p class="hint">
-            Tokens are case-insensitive <code>&lt;name&gt;</code> placeholders. Type them
-            verbatim into any template field (header / footer / tool-change). Unknown
-            tokens pass through unchanged.
+            Tokens are case-insensitive <code>&lt;name&gt;</code> placeholders. Type them verbatim into
+            any template field (header / footer / tool-change). Unknown tokens pass through unchanged.
           </p>
           <table class="legend-grid">
             <tbody>
@@ -233,8 +232,13 @@
               <tr><td><code>&lt;f&gt;</code></td><td>feed (mm/min)</td></tr>
               <tr><td><code>&lt;s&gt;</code></td><td>spindle (rpm)</td></tr>
               <tr><td><code>&lt;op&gt;</code></td><td>current operation name</td></tr>
-              <tr><td><code>&lt;tools&gt;</code></td><td>full tool-library listing (one per line)</td></tr>
-              <tr><td><code>&lt;project&gt;</code></td><td>project name (save-file basename)</td></tr>
+              <tr
+                ><td><code>&lt;tools&gt;</code></td><td>full tool-library listing (one per line)</td
+                ></tr
+              >
+              <tr
+                ><td><code>&lt;project&gt;</code></td><td>project name (save-file basename)</td></tr
+              >
               <tr><td><code>&lt;nl&gt;</code></td><td>explicit newline</td></tr>
             </tbody>
           </table>

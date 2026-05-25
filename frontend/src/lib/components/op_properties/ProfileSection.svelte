@@ -1,4 +1,3 @@
-
 <script lang="ts">
   /// Profile op-properties: Tool offset picker + lead-in / lead-out
   /// inputs. Shown only when op.kind === 'profile'.

@@ -62,8 +62,7 @@
   /// baked by vite.config.ts (audit qcvl), git-describe via
   /// `__WIAC_BUILD_VERSION__`. `document.title` updates on every
   /// paint that touches the effect, but it's cheap.
-  const pkgVersion =
-    typeof __WIAC_PKG_VERSION__ === 'string' ? __WIAC_PKG_VERSION__ : '0.0.0';
+  const pkgVersion = typeof __WIAC_PKG_VERSION__ === 'string' ? __WIAC_PKG_VERSION__ : '0.0.0';
   $effect(() => {
     if (buildVersion && buildVersion !== 'unknown') {
       document.title = `wiaConstructor v${pkgVersion} (${buildVersion})`;
@@ -662,9 +661,7 @@
   /// item — combined with `onMenuKey` above, arrow keys then walk items.
   function focusFirstMenuItemAction(node: HTMLElement) {
     queueMicrotask(() => {
-      const first = node.querySelector<HTMLElement>(
-        'button[role="menuitem"]:not(:disabled)',
-      );
+      const first = node.querySelector<HTMLElement>('button[role="menuitem"]:not(:disabled)');
       first?.focus();
     });
   }
@@ -732,8 +729,7 @@
     // having to reach across the DOM (was querySelector('button.download')
     // .click() — a 'a40m' audit item).
     const raw = workspace.get().last_post_processor;
-    const post: 'linuxcnc' | 'grbl' | 'hpgl' =
-      raw === 'grbl' || raw === 'hpgl' ? raw : 'linuxcnc';
+    const post: 'linuxcnc' | 'grbl' | 'hpgl' = raw === 'grbl' || raw === 'hpgl' ? raw : 'linuxcnc';
     await exportGeneratedGcode(post);
   }
 
@@ -828,8 +824,7 @@
   const tabPlacementForHint = $derived(
     !!selectedOpForHint &&
       (selectedOpForHint.kind === 'profile' || selectedOpForHint.kind === 'pocket') &&
-      (selectedOpForHint.tabMode?.kind === 'manual' ||
-        selectedOpForHint.tabMode?.kind === 'mixed'),
+      (selectedOpForHint.tabMode?.kind === 'manual' || selectedOpForHint.tabMode?.kind === 'mixed'),
   );
   const modalStatusHint = $derived.by<string | null>(() => {
     if (
@@ -918,7 +913,14 @@
       >
       {#if openMenu === 'file'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
+        <div
+          class="dropdown"
+          role="menu"
+          tabindex="-1"
+          onmouseleave={closeAllMenus}
+          onkeydown={onMenuKey}
+          use:focusFirstMenuItemAction
+        >
           <button role="menuitem" class="item" onclick={() => pickMenu(openFile)}>
             <span class="label">Open file…</span><span class="kbd">Ctrl+O</span>
           </button>
@@ -1002,7 +1004,14 @@
       >
       {#if openMenu === 'edit'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
+        <div
+          class="dropdown"
+          role="menu"
+          tabindex="-1"
+          onmouseleave={closeAllMenus}
+          onkeydown={onMenuKey}
+          use:focusFirstMenuItemAction
+        >
           <button
             role="menuitem"
             class="item"
@@ -1039,7 +1048,14 @@
       >
       {#if openMenu === 'view'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
+        <div
+          class="dropdown"
+          role="menu"
+          tabindex="-1"
+          onmouseleave={closeAllMenus}
+          onkeydown={onMenuKey}
+          use:focusFirstMenuItemAction
+        >
           <button
             role="menuitem"
             class="item"
@@ -1080,7 +1096,14 @@
       >
       {#if openMenu === 'tools'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
+        <div
+          class="dropdown"
+          role="menu"
+          tabindex="-1"
+          onmouseleave={closeAllMenus}
+          onkeydown={onMenuKey}
+          use:focusFirstMenuItemAction
+        >
           <button role="menuitem" class="item" onclick={() => pickMenu(() => (toolsOpen = true))}>
             <span class="label">Tool library…</span>
           </button>
@@ -1108,7 +1131,14 @@
       >
       {#if openMenu === 'help'}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown" role="menu" tabindex="-1" onmouseleave={closeAllMenus} onkeydown={onMenuKey} use:focusFirstMenuItemAction>
+        <div
+          class="dropdown"
+          role="menu"
+          tabindex="-1"
+          onmouseleave={closeAllMenus}
+          onkeydown={onMenuKey}
+          use:focusFirstMenuItemAction
+        >
           <button
             role="menuitem"
             class="item"
@@ -1116,11 +1146,7 @@
           >
             <span class="label">Keyboard shortcuts…</span><span class="kbd">?</span>
           </button>
-          <button
-            role="menuitem"
-            class="item"
-            onclick={() => pickMenu(() => (aboutOpen = true))}
-          >
+          <button role="menuitem" class="item" onclick={() => pickMenu(() => (aboutOpen = true))}>
             <span class="label">About wiaConstructor…</span>
           </button>
         </div>
@@ -1219,8 +1245,7 @@
         <input
           type="checkbox"
           checked={project.regionsVisible}
-          onchange={(e) =>
-            (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
+          onchange={(e) => (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
         />
         <span>Regions</span>
       </label>
@@ -1324,7 +1349,10 @@
         >
           <span class="caret">{activeSidebarPane === 'stock' ? '▾' : '▸'}</span>
           <span class="stock-name">Stock</span>
-          <span class="stock-dims" title="Current stock dimensions (Length × Width × Thickness) in mm">
+          <span
+            class="stock-dims"
+            title="Current stock dimensions (Length × Width × Thickness) in mm"
+          >
             {stockDimsLabel}
           </span>
         </button>
@@ -1337,7 +1365,7 @@
       <div class="layers-host" class:active={activeSidebarPane === 'layers'}>
         <LayerList
           active={activeSidebarPane === 'layers'}
-          onActivate={() => (activateSidebarPane('layers'))}
+          onActivate={() => activateSidebarPane('layers')}
           onOpenFileClick={() => openFile()}
           onAddTextClick={() => (addTextOpen = true)}
           {reopenPrompt}
@@ -1348,14 +1376,14 @@
       <div class="text-list-host" class:active={activeSidebarPane === 'text'}>
         <TextList
           active={activeSidebarPane === 'text'}
-          onActivate={() => (activateSidebarPane('text'))}
+          onActivate={() => activateSidebarPane('text')}
           onAddText={() => (addTextOpen = true)}
         />
       </div>
       <div class="ops-host" class:active={activeSidebarPane === 'operations'}>
         <OperationsList
           active={activeSidebarPane === 'operations'}
-          onActivate={() => (activateSidebarPane('operations'))}
+          onActivate={() => activateSidebarPane('operations')}
         />
       </div>
     </aside>
@@ -1397,10 +1425,7 @@
   {/if}
   <ConfirmPrompt />
 
-  <footer
-    class:footer-pick={modalStatusHint != null}
-    title={modalStatusHint ?? statusBarText}
-  >
+  <footer class:footer-pick={modalStatusHint != null} title={modalStatusHint ?? statusBarText}>
     {#if modalStatusHint}
       {modalStatusHint}
     {:else}

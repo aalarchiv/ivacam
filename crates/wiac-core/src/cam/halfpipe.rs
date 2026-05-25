@@ -129,6 +129,10 @@ pub fn depth_at(
 /// `tool_reach_z` (898l) is the ball-nose tool's flute length — the
 /// maximum |z| the cutting flutes can engage stock before the shank
 /// starts dragging. Passes `None` to skip the cap (test compat).
+/// Return of [`polyline_to_z`]: the per-sample `(x, y, z, width)` track
+/// plus `(depth_limited, tool_reach_limited)` flags.
+pub type HalfpipeZProfile = (Vec<(f64, f64, f64, f64)>, bool, bool);
+
 #[must_use]
 pub fn polyline_to_z(
     axis: &[VPoint],
@@ -136,7 +140,7 @@ pub fn polyline_to_z(
     z_cap: Option<f64>,
     tool_reach_z: Option<f64>,
     boundary: Option<&[(Point2, Point2)]>,
-) -> (Vec<(f64, f64, f64, f64)>, bool, bool) {
+) -> HalfpipeZProfile {
     let mut any_limited = false;
     let mut any_reach_limited = false;
     let mut out = Vec::with_capacity(axis.len());

@@ -326,7 +326,7 @@ impl ToolProfile {
     /// offset. The sweep can then skip both the sqrt and the `eval()`
     /// branch (audit-xnmp). 3oly: `TSlot`'s head bottom is flat too.
     /// pxv8: Compression's cross-section is identical to Endmill.
-    /// FormProfile / Engraver are NOT flat-bottom (per-r profile).
+    /// `FormProfile` / Engraver are NOT flat-bottom (per-r profile).
     #[must_use]
     pub fn is_flat_bottom(&self) -> bool {
         matches!(
@@ -363,13 +363,13 @@ impl ToolProfile {
     #[must_use]
     pub fn eval(&self, r: f32) -> Option<f32> {
         match self {
+            // pxv8: Compression has the same flat-bottom cross-section
+            // as Endmill — see ToolKind::Compression for the rationale.
             ToolProfile::Endmill { r: rr }
             | ToolProfile::Drill { r: rr }
             | ToolProfile::LaserBeam { r: rr }
-            | ToolProfile::DragKnife { r: rr, .. } => (r <= *rr).then_some(0.0),
-            // pxv8: Compression has the same flat-bottom cross-section
-            // as Endmill — see ToolKind::Compression for the rationale.
-            ToolProfile::Compression { r: rr } => (r <= *rr).then_some(0.0),
+            | ToolProfile::DragKnife { r: rr, .. }
+            | ToolProfile::Compression { r: rr } => (r <= *rr).then_some(0.0),
             ToolProfile::BallNose { r: rr } => {
                 let rr = *rr;
                 if r > rr {
@@ -975,7 +975,7 @@ mod tests {
         ));
     }
 
-    /// 6i9r: sample the BullNose profile at a fine grid of rims close
+    /// 6i9r: sample the `BullNose` profile at a fine grid of rims close
     /// to the cutter edge. The lip height must be uniform within 1e-5
     /// mm across every neighboring rim sample — previously f32 jitter
     /// at the boundary produced ~3e-4 mm speckle in close-up surface
@@ -1038,7 +1038,7 @@ mod tests {
 
     /// mmu8: laser kerf radius reads from `tool.kerf_mm` instead of
     /// being hard-coded to 0.15. Tools with different kerf widths
-    /// produce different sim radii; missing kerf_mm collapses to the
+    /// produce different sim radii; missing `kerf_mm` collapses to the
     /// legacy 0.15 mm default; near-zero kerf is floored at 0.05 mm
     /// so the sweep doesn't bail on a degenerate zero-radius cutter.
     #[test]
@@ -1075,11 +1075,11 @@ mod tests {
         }
     }
 
-    /// z0x0: BullNose with `corner_radius_mm >= diameter/2` collapses to
-    /// a BallNose at the same outer radius. The geometry is identical
+    /// z0x0: `BullNose` with `corner_radius_mm >= diameter/2` collapses to
+    /// a `BallNose` at the same outer radius. The geometry is identical
     /// (plateau width = 0; the corner-arc spans the whole cross-section)
-    /// but the BullNose eval routes through the f64-promoted corner-
-    /// fillet branch on every cell; BallNose hits the cheaper closed
+    /// but the `BullNose` eval routes through the f64-promoted corner-
+    /// fillet branch on every cell; `BallNose` hits the cheaper closed
     /// form. Pure perf — the carve shape stays the same.
     #[test]
     fn from_tool_bullnose_corner_eq_r_collapses_to_ballnose() {
@@ -1110,7 +1110,7 @@ mod tests {
     /// `tslot_neck_length_mm` previously degraded to a flat Endmill
     /// because `head_z_top` keyed off `tslot_neck_length_mm.map_or`.
     /// Now any neck-hint (diameter OR length) promotes the head/neck
-    /// split — head_z_top is derived from `flute_length_mm`.
+    /// split — `head_z_top` is derived from `flute_length_mm`.
     #[test]
     fn from_tool_tslot_neck_diameter_only_still_emits_tslot_profile() {
         let mut t = make_tool(ToolKind::TSlot, 16.0);

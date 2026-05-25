@@ -68,7 +68,7 @@ pub const LEAD_IN_ANGLE_DEG: f64 = 10.0;
 // progressive-deepening sweep into one state machine — extraction
 // would split tightly-coupled cut_z/path state across helpers.
 #[allow(clippy::too_many_lines)]
-pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<ZPolyline> {
+#[must_use] pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<ZPolyline> {
     ratchet_emit_with_lead_in(axis, depth_per_pass, LEAD_IN_ANGLE_DEG)
 }
 
@@ -408,11 +408,11 @@ mod tests {
     }
 
     /// pmpk: a straight medial-axis chain whose endpoint sits at R≈0
-    /// (target_z≈0) must not produce any segment with vertical drop
+    /// (`target_z≈0`) must not produce any segment with vertical drop
     /// > 0.05 mm at zero (or near-zero) horizontal travel. Before the
-    /// fix, the first cut move dropped Z by `dpp` while XY barely
-    /// moved — V-bit snap territory. The lead-in ramp now spreads the
-    /// drop over `dpp / tan(LEAD_IN_ANGLE_DEG)` mm of XY travel.
+    /// > fix, the first cut move dropped Z by `dpp` while XY barely
+    /// > moved — V-bit snap territory. The lead-in ramp now spreads the
+    /// > drop over `dpp / tan(LEAD_IN_ANGLE_DEG)` mm of XY travel.
     #[test]
     fn first_plunge_uses_angled_lead_in() {
         // 50 mm-long chain, target depth -3 mm at both ends → in
@@ -422,7 +422,7 @@ mod tests {
         // 0..lead_in_len mm of XY should ramp from 0 down to -dpp.
         let mut axis = vec![(0.0, 0.0, 0.0_f64, 0.0)];
         for i in 1..=50 {
-            let x = i as f64;
+            let x = f64::from(i);
             let z = if x < 5.0 { -3.0 * (x / 5.0) } else { -3.0 };
             axis.push((x, 0.0, z, 1.5));
         }
@@ -478,7 +478,7 @@ mod tests {
         );
     }
 
-    /// kagr: when the medial-axis chain has uncut sections (target_z
+    /// kagr: when the medial-axis chain has uncut sections (`target_z`
     /// stays at 0 across long stretches because the slot is shallower
     /// than DPP at those points), the ratchet must NOT emit position
     /// moves at z=0 that walk across the workpiece surface at feed
@@ -486,7 +486,7 @@ mod tests {
     /// caller can rapid (G0) between them at safe Z.
     ///
     /// Synthesize a chain that's deep at the middle and shallow
-    /// (target_z=0) at the ends — with DPP > end-depth, only the
+    /// (`target_z=0`) at the ends — with DPP > end-depth, only the
     /// middle is cut. The reverse / second-pass sweeps must skip the
     /// uncut ends. Each sub-polyline is allowed to BEGIN with a
     /// single z=0 waypoint (the lead-in ramp entry / re-entry XY);
@@ -495,7 +495,7 @@ mod tests {
     /// cap is `n_levels + 2`, derived up-front from `z_min / dpp`). A
     /// chain reaching -10 mm at dpp 0.5 mm has 20 levels; the cap
     /// guarantees the loop never spins for longer than that even if
-    /// floating-point noise on cut_z would otherwise keep `progressed`
+    /// floating-point noise on `cut_z` would otherwise keep `progressed`
     /// false for one extra pass.
     #[test]
     fn deep_polyline_terminates_under_iteration_cap() {
@@ -524,7 +524,7 @@ mod tests {
         // 20mm-long medial axis. Middle 6mm is target_z=-1, ends are 0.
         let mut axis: Vec<(f64, f64, f64, f64)> = Vec::new();
         for i in 0..=20 {
-            let x = i as f64;
+            let x = f64::from(i);
             // Shallow trough centered on x=10: target_z=-1 for 7<=x<=13, else 0.
             let z = if (7.0..=13.0).contains(&x) { -1.0 } else { 0.0 };
             axis.push((x, 0.0, z, 0.5));
@@ -560,7 +560,7 @@ mod tests {
         // at -1.
         let mut axis: Vec<(f64, f64, f64, f64)> = vec![(0.0, 0.0, 0.0, 0.0)];
         for i in 1..=50 {
-            let x = i as f64;
+            let x = f64::from(i);
             axis.push((x, 0.0, -3.0, 1.5));
         }
         let dpp = 1.0_f64;
@@ -605,7 +605,7 @@ mod tests {
     fn ot80_invalid_lead_in_angle_falls_back_to_default() {
         let mut axis: Vec<(f64, f64, f64, f64)> = vec![(0.0, 0.0, 0.0, 0.0)];
         for i in 1..=50 {
-            axis.push((i as f64, 0.0, -3.0, 1.5));
+            axis.push((f64::from(i), 0.0, -3.0, 1.5));
         }
         let dpp = 1.0_f64;
         let pl_legacy = ratchet_emit(&axis, dpp);

@@ -230,8 +230,8 @@ mod tests {
     use crate::pipeline::test_helpers::{endmill, profile_op, project_with};
     use crate::project::SourceCombine;
 
-    /// 7l0a: an OpSource::Objects id that doesn't map to any current
-    /// VcObject emits `op_source_missing_object` AND, when every id is
+    /// 7l0a: an `OpSource::Objects` id that doesn't map to any current
+    /// `VcObject` emits `op_source_missing_object` AND, when every id is
     /// missing, an `op_source_empty` critical warning.
     #[test]
     fn validate_op_source_missing_id_warns() {
@@ -249,17 +249,15 @@ mod tests {
             warnings.iter().any(|w| w.kind == "op_source_missing_object"
                 && w.op_id == Some(7)
                 && w.message.contains("42")),
-            "expected op_source_missing_object warning for id 42, got {:?}",
-            warnings
+            "expected op_source_missing_object warning for id 42, got {warnings:?}"
         );
         assert!(
             warnings.iter().any(|w| w.kind == "op_source_empty"),
-            "expected op_source_empty when EVERY id is missing, got {:?}",
-            warnings
+            "expected op_source_empty when EVERY id is missing, got {warnings:?}"
         );
     }
 
-    /// 7l0a: OpSource::All is never an "objects" source — no warnings
+    /// 7l0a: `OpSource::All` is never an "objects" source — no warnings
     /// are emitted regardless of the objects slice.
     #[test]
     fn validate_op_source_all_emits_no_warning() {
@@ -339,8 +337,7 @@ mod tests {
         assert!(
             warnings.iter().any(|w| w.kind == "op_source_missing_object"
                 && w.message.contains(" 0 ")),
-            "id=0 must surface as op_source_missing_object, got {:?}",
-            warnings
+            "id=0 must surface as op_source_missing_object, got {warnings:?}"
         );
     }
 
@@ -370,8 +367,7 @@ mod tests {
             warnings.iter().any(|w| w.kind == "op_source_missing_layer"
                 && w.op_id == Some(5)
                 && w.message.contains("TEXTT")),
-            "expected op_source_missing_layer for typo 'TEXTT', got {:?}",
-            warnings
+            "expected op_source_missing_layer for typo 'TEXTT', got {warnings:?}"
         );
         // One layer matches, so no op_source_empty.
         assert!(
@@ -401,13 +397,11 @@ mod tests {
         validate_op_source_layers(&op, &segs, &mut warnings);
         assert!(
             warnings.iter().any(|w| w.kind == "op_source_missing_layer"),
-            "expected op_source_missing_layer for 'GHOST', got {:?}",
-            warnings
+            "expected op_source_missing_layer for 'GHOST', got {warnings:?}"
         );
         assert!(
             warnings.iter().any(|w| w.kind == "op_source_empty"),
-            "expected op_source_empty when every layer is missing, got {:?}",
-            warnings
+            "expected op_source_empty when every layer is missing, got {warnings:?}"
         );
     }
 
@@ -458,7 +452,7 @@ mod tests {
         );
     }
 
-    /// 7l0a: project_with builds a project of given ops + tools so a
+    /// 7l0a: `project_with` builds a project of given ops + tools so a
     /// quick `run_pipeline` smoke test exercises the wiring without
     /// crashing.
     #[test]

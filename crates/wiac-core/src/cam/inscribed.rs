@@ -167,10 +167,10 @@ mod tests {
     ///
     /// Test setup: a SMALL 16x16 pocket whose medial axis hits its peak
     /// at the centre (8, 8) with r ≈ 8 (the inscribed disc of an 8 mm
-    /// half-pocket). Tool radius 2 → helix_radius = 8 - 2 - 0.5 = 5.5
+    /// half-pocket). Tool radius 2 → `helix_radius` = 8 - 2 - 0.5 = 5.5
     /// > 1.2 * 2 = 2.4, so the helix fits. Add an island whose nearest
-    /// wall sits 4 mm from the centre — required clearance = 5.5 + 2 =
-    /// 7.5, so 4 mm is too close and the candidate must reject.
+    /// > wall sits 4 mm from the centre — required clearance = 5.5 + 2 =
+    /// > 7.5, so 4 mm is too close and the candidate must reject.
     #[test]
     fn inscribed_circle_rejects_when_island_wall_too_close() {
         let outer = vec![

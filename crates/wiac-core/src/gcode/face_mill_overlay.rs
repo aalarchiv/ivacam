@@ -490,8 +490,8 @@ mod tests {
         let mut consumed = 0.0_f64;
         let mut out_split: Vec<(f64, f64, f64)> = Vec::new();
         for k in 0..10 {
-            let p0 = Point2::new(k as f64, 0.0);
-            let p1 = Point2::new((k + 1) as f64, 0.0);
+            let p0 = Point2::new(f64::from(k), 0.0);
+            let p1 = Point2::new(f64::from(k + 1), 0.0);
             walk_chord(
                 p0,
                 p1,

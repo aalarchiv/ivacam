@@ -753,9 +753,9 @@ mod tests {
     /// uksn regression: depth-2 nested polygons (outer with a hole that
     /// contains another outer, e.g. a plate with a window with a label
     /// boss in the middle) must emit TWO `CombinedRegion`s under
-    /// SourceCombine::Auto — one for the outer-with-window-as-hole, and
+    /// `SourceCombine::Auto` — one for the outer-with-window-as-hole, and
     /// one for the boss-with-no-holes (the boss is an even-depth nested
-    /// outer that gets its own machinable region). Pre-fix combine_auto
+    /// outer that gets its own machinable region). Pre-fix `combine_auto`
     /// flattened the boss into the outer's hole list, which meant the
     /// gcode pocketed straight through the boss.
     #[test]

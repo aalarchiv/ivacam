@@ -66,7 +66,7 @@ const DIR_EPS: f64 = 1e-6;
 /// post-finish dwell, and any other G4 P pause go through here.
 ///
 /// 746b: reads `machine.post_profile.dwell_unit` to know whether the
-/// emitted G4 P value is seconds (LinuxCNC, Smoothieware) or
+/// emitted G4 P value is seconds (`LinuxCNC`, Smoothieware) or
 /// milliseconds (Mach3/Mach4/Centroid and — despite a previous
 /// comment claiming otherwise — also GRBL when the profile opts in).
 /// The scanner divides ms by 1000 before summing so the dwell time
@@ -89,8 +89,8 @@ pub fn estimate_from_gcode(
 }
 
 /// 746b: pluck the post profile's `dwell_unit` from the machine
-/// config, defaulting to Seconds (LinuxCNC convention) when no
-/// profile or no dwell_unit is set.
+/// config, defaulting to Seconds (`LinuxCNC` convention) when no
+/// profile or no `dwell_unit` is set.
 fn dwell_unit_for(machine: &MachineConfig) -> DwellUnit {
     machine
         .post_profile
@@ -132,7 +132,7 @@ pub fn spindle_warmup_total_s(
 /// dwell command, returning a total in SECONDS.
 ///
 /// `dwell_unit` describes how the active post emits the P/X value:
-///   - `DwellUnit::Seconds` — LinuxCNC / Smoothieware convention.
+///   - `DwellUnit::Seconds` — `LinuxCNC` / Smoothieware convention.
 ///   - `DwellUnit::Milliseconds` — Mach3 / Mach4 / Centroid and GRBL
 ///     when the profile is configured for ms (the GRBL controller
 ///     actually reads P in MILLISECONDS — pre-746b code mis-summed
@@ -167,9 +167,8 @@ fn sum_g4_dwell_seconds(gcode: &str, dwell_unit: DwellUnit) -> f64 {
         }
         // Look for the P / X argument anywhere in the remainder.
         for tok in line.split_whitespace() {
-            let (head, rest) = match tok.split_at_checked(1) {
-                Some(s) => s,
-                None => continue,
+            let Some((head, rest)) = tok.split_at_checked(1) else {
+                continue;
             };
             if matches!(head, "P" | "p" | "X" | "x") {
                 if let Ok(v) = rest.parse::<f64>() {
@@ -197,9 +196,9 @@ fn sum_g4_dwell_seconds(gcode: &str, dwell_unit: DwellUnit) -> f64 {
 #[derive(Debug, Clone, Copy)]
 pub struct OpRates {
     pub op_id: u32,
-    /// Plunge feedrate (rate_v) for this op's tool, mm/min. 0 = use modal F.
+    /// Plunge feedrate (`rate_v`) for this op's tool, mm/min. 0 = use modal F.
     pub plunge_rate_mm_min: u32,
-    /// Cutting feedrate (rate_h) for this op's tool, mm/min. 0 = use modal F.
+    /// Cutting feedrate (`rate_h`) for this op's tool, mm/min. 0 = use modal F.
     pub feed_rate_mm_min: u32,
 }
 
@@ -1107,7 +1106,7 @@ mod tests {
         assert_eq!(feeds[3], 900.0, "modal F=900 carries past the F change");
     }
 
-    /// wox2: scan_modal_f must ignore negative / non-finite F values
+    /// wox2: `scan_modal_f` must ignore negative / non-finite F values
     /// (defensive — gcode shouldn't emit them but a corrupted file
     /// shouldn't poison the modal state).
     #[test]

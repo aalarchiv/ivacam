@@ -7,7 +7,7 @@
 //! by current `assert!(contains("G81"))`-style tests).
 //!
 //! The fixtures cover (audit brief 020s):
-//!  1. Drill + Stufenfase + ToolChange — verifies G81/G82 + the
+//!  1. Drill + Stufenfase + `ToolChange` — verifies G81/G82 + the
 //!     toolchange envelope (M5/M6/M3) + the rim chamfer revolution.
 //!  2. Profile with Rectangle tabs + helix entry — verifies the
 //!     tab lift sequence and the helical plunge.

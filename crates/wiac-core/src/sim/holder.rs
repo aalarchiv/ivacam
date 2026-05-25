@@ -30,7 +30,7 @@ impl HolderProfile {
     /// neither a holder nor a shank diameter is set: there's nothing
     /// above the cutting flutes to check against.
     ///
-    /// ityc: LaserBeam tools have no physical body — the "tool" is a
+    /// ityc: `LaserBeam` tools have no physical body — the "tool" is a
     /// focused beam, not a cutter / shank. Even when the user sets a
     /// shank/holder (because the laser shares a tool table with mill
     /// tools), there's no shaft to drag through tall walls. Return
@@ -257,7 +257,7 @@ impl HolderProfile {
 }
 
 /// 8g4w: max profile radius for a form cutter, mirroring the same fallback
-/// the `ToolProfile::FormProfile` builder uses (tip_diameter and diameter,
+/// the `ToolProfile::FormProfile` builder uses (`tip_diameter` and diameter,
 /// whichever is larger, capped at zero). Returns `None` for non-form tools
 /// so the regular `tool.diameter * 0.5` path keeps owning those cases.
 fn form_profile_max_radius(tool: &ToolEntry) -> Option<f64> {
@@ -518,7 +518,7 @@ mod tests {
     /// mismatch flagged carved cells `tip_r < r ≤ max_r` as wall
     /// collisions in the holder check. After 8g4w the holder's cutting
     /// envelope mirrors the carve envelope (the max profile radius) so
-    /// holder_check skips the same cells the sweep just lowered.
+    /// `holder_check` skips the same cells the sweep just lowered.
     #[test]
     fn form_profile_cutting_radius_matches_max_segment_radius() {
         // 2 mm tip, 8 mm base form bit. Without the fix, cutting_r = 1

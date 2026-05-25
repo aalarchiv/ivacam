@@ -3873,7 +3873,7 @@ mod tests {
         assert!(resp_b.warnings.iter().all(|w| w.kind != "step_unspecified"));
     }
 
-    /// 473k regression: under OpSource::All, two nested closed contours
+    /// 473k regression: under `OpSource::All`, two nested closed contours
     /// (outer rectangle + inner circle) should auto-build an annular
     /// (donut) pocket — the inner closed contour becomes an island
     /// without the user needing to flip `pocket_islands`. Pre-fix the
@@ -3881,9 +3881,9 @@ mod tests {
     ///
     /// We assert this by comparing the toolpath against a baseline
     /// where the inner circle is explicitly treated as an island
-    /// (pocket_islands=true) — the two should produce the same number
+    /// (`pocket_islands=true`) — the two should produce the same number
     /// of cut segments because the auto-annular detection now matches
-    /// the legacy pocket_islands behaviour.
+    /// the legacy `pocket_islands` behaviour.
     #[test]
     fn pocket_all_with_nested_closed_contours_builds_donut_by_default() {
         use crate::cam::setup::PlungeStrategy;
@@ -4070,9 +4070,9 @@ mod tests {
 
     /// c0pm regression: a single-pass Profile op is by definition the
     /// finishing wall pass — the tool's finish-set rates
-    /// (rate_h_finish / speed_finish / rate_v_finish) must drive the
+    /// (`rate_h_finish` / `speed_finish` / `rate_v_finish`) must drive the
     /// emitted gcode, not the rough-set rates. Pre-fix the Profile
-    /// branch never set is_finish=true on the offsets, so the gcode
+    /// branch never set `is_finish=true` on the offsets, so the gcode
     /// emitter substituted the rough feed even when the user
     /// configured distinct finish values.
     #[test]
@@ -4136,7 +4136,7 @@ mod tests {
         );
     }
 
-    /// 0tsy regression: pocket_nocontour=true + finish_xy_allowance_mm > 0
+    /// 0tsy regression: `pocket_nocontour=true` + `finish_xy_allowance_mm` > 0
     /// is a meaningless combination — there's no wall ring to absorb the
     /// allowance, so the rough cascade would walk `allowance` mm inboard
     /// of the wall and leave that stock behind forever. We fold allowance

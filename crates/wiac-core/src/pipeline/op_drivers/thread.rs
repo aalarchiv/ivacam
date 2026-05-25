@@ -55,7 +55,7 @@ pub(in crate::pipeline) fn thread_would_emit(op: &Op, objects: &[VcObject]) -> b
                     return true;
                 }
             }
-            _ => continue,
+            _ => {}
         }
     }
     false
@@ -357,7 +357,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
         // For internal threads, the tightest engagement is at the
         // FINAL pass (frac = 1.0) → bore_r - tool_r + thread_depth
         // (mniu: includes the radial bite past the bore wall).
-        for (_idx, obj) in objects.iter().enumerate() {
+        for obj in objects {
             if !obj.closed {
                 continue;
             }
@@ -611,7 +611,7 @@ mod tests {
         );
     }
 
-    /// mniu: thread_depth defaults to the ISO 60° formula
+    /// mniu: `thread_depth` defaults to the ISO 60° formula
     /// `0.6495 × pitch_mm` when the field is `None`. Verify the
     /// driver picks up the default instead of treating None as 0
     /// (which would reproduce the pre-mniu zero-engagement bug).
@@ -774,7 +774,7 @@ mod tests {
     /// produce three helices at scaled helix radii (75 %, 87.5 %,
     /// 100 %). Detect by counting how many distinct helical descents
     /// the gcode contains — each helix ends with a Z dive to bottom
-    /// followed by a G0 lift to fast_z.
+    /// followed by a G0 lift to `fast_z`.
     #[test]
     fn thread_op_emits_one_helix_per_radial_pass() {
         let center = Point2::new(0.0, 0.0);
@@ -833,10 +833,10 @@ mod tests {
     }
 
     /// zajd: feed compensation for outer-edge speed. M6 internal
-    /// thread, 3mm cutter (tool_r = 1.5). mniu: pinning
+    /// thread, 3mm cutter (`tool_r` = 1.5). mniu: pinning
     /// `thread_depth_mm = Some(1.5)` makes full-engagement
-    /// helix_r = bore - tool + depth = 3 - 1.5 + 1.5 = 3.0. Outer
-    /// edge at helix_r + tool_r = 4.5, so factor = 3.0 / 4.5 =
+    /// `helix_r` = bore - tool + depth = 3 - 1.5 + 1.5 = 3.0. Outer
+    /// edge at `helix_r` + `tool_r` = 4.5, so factor = 3.0 / 4.5 =
     /// 2/3 and compensated feed = 300 × 2/3 = 200 mm/min. The
     /// emitted F-line should be 200.
     #[test]
@@ -1003,8 +1003,8 @@ mod tests {
         );
     }
 
-    /// lo4j: a Thread op assigned a wrong-kind tool (Drill / DragKnife
-    /// / LaserBeam) must surface a `tool_kind_mismatch` warning. The
+    /// lo4j: a Thread op assigned a wrong-kind tool (Drill / `DragKnife`
+    /// / `LaserBeam`) must surface a `tool_kind_mismatch` warning. The
     /// thread driver routes tool-fit sanity through the shared
     /// `push_tool_fit_kind_warnings` helper at op entry; pre-fix the
     /// driver silently emitted a helix with whatever cutter the user

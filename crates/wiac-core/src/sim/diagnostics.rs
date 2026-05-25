@@ -62,7 +62,7 @@ pub enum SimWarning {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cells: Vec<crate::sim::holder_check::HolderCollisionCell>,
     },
-    /// wpzm: the simulator coarsened cell_size to fit the user's
+    /// wpzm: the simulator coarsened `cell_size` to fit the user's
     /// `maxSimulationCells` budget. Without this surfaced, tool-engagement
     /// issues and small features get silently smoothed away — the user has
     /// no signal that the sim accuracy dropped. The warning carries both
@@ -118,16 +118,16 @@ pub fn kind_str(w: &SimWarning) -> &'static str {
 ///
 /// The shape is deliberately minimal — counts only — so it
 /// survives JSON round-trip without dragging in the heightmap data.
-/// `warnings_by_kind_count` is a flat (kind_str -> count) map so the
+/// `warnings_by_kind_count` is a flat (`kind_str` -> count) map so the
 /// caller can compare counts without reflection over the discriminant.
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SimRunSummary {
     /// Cells whose Z was lowered at least once during the run
-    /// (heightmap.dirty_aabb cardinality at the end of the run is a
+    /// (`heightmap.dirty_aabb` cardinality at the end of the run is a
     /// usable upper bound; the caller may pass the exact lowered-count
-    /// from sweep_range when tracked).
+    /// from `sweep_range` when tracked).
     pub cells_carved: u64,
-    /// Per-warning-kind counts (kind_str -> count). Stable kind keys
+    /// Per-warning-kind counts (`kind_str` -> count). Stable kind keys
     /// match `kind_str(&SimWarning)` so downstream consumers can
     /// dispatch by kind.
     pub warnings_by_kind_count: std::collections::BTreeMap<String, u32>,
@@ -138,8 +138,8 @@ pub struct SimRunSummary {
 
 impl SimRunSummary {
     /// Compose a summary from a `SimDiagnostics` snapshot plus the
-    /// per-run aggregates the caller tracks externally (cells_carved
-    /// from the sweep loop, total_seconds from a wall clock).
+    /// per-run aggregates the caller tracks externally (`cells_carved`
+    /// from the sweep loop, `total_seconds` from a wall clock).
     #[must_use]
     pub fn from_diagnostics(
         diagnostics: &SimDiagnostics,
@@ -189,10 +189,10 @@ pub struct SimDiagnostics {
     /// warning gate in `sweep_segment_partial`. When the driver subdivides
     /// a segment finely near `t=0` (e.g. `[0, 1e-10]` then `[1e-10, 0.5]`),
     /// `lo <= 1e-9` is true on both chunks and the warning pass would
-    /// fire twice on the same segment. We stash the last segment_idx that
+    /// fire twice on the same segment. We stash the last `segment_idx` that
     /// fired the gate so the second-or-later chunk against the same
     /// segment is a no-op. Cleared implicitly when the driver moves on
-    /// to the next segment_idx.
+    /// to the next `segment_idx`.
     #[serde(default, skip)]
     pub last_partial_warn_segment_idx: Option<usize>,
 }
@@ -327,7 +327,7 @@ mod tests {
 
     /// 03zx: sim-run summary aggregates from a `SimDiagnostics`
     /// snapshot. Counts every kind correctly and passes through
-    /// cells_carved + total_seconds from the caller-tracked aggregates.
+    /// `cells_carved` + `total_seconds` from the caller-tracked aggregates.
     #[test]
     fn sim_run_summary_aggregates_diagnostics() {
         let mut d = SimDiagnostics::new();

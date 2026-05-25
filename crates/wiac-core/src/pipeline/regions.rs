@@ -64,8 +64,8 @@ pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> 
 /// pre-built ordered selection `[frame_idx, ...selection_idxs]`. The
 /// frame op's preview is `frame - selection`, which always produces an
 /// outer (the frame's footprint) plus N holes (each selection object
-/// the cutter must avoid). Today's FrameShape variants — Rectangle and
-/// RoundedRectangle — both flow through this path; future variants
+/// the cutter must avoid). Today's `FrameShape` variants — Rectangle and
+/// `RoundedRectangle` — both flow through this path; future variants
 /// (circle, polygon, hull) will too because the difference + hole-
 /// preserving conversion is shape-agnostic.
 fn frame_preview_regions(
@@ -81,6 +81,37 @@ fn frame_preview_regions(
             holes: r.holes,
         })
         .collect()
+}
+
+/// Build a synthetic [`VcObject`] from a [`CombinedRegion`]'s boundary
+/// so it can be fed into `pocket_for_object` (which is shaped around
+/// `VcObjects`). The region's holes are passed alongside as islands;
+/// only the outer boundary lives in this object.
+pub(super) fn synthesize_region_object(region: &CombinedRegion) -> VcObject {
+    let pts = &region.boundary;
+    let mut segments = Vec::with_capacity(pts.len());
+    for win in pts.windows(2) {
+        segments.push(Segment::line(
+            win[0],
+            win[1],
+            region.layer.clone(),
+            region.color,
+        ));
+    }
+    if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
+        if first.distance(*last) > 1e-6 {
+            segments.push(Segment::line(
+                *last,
+                *first,
+                region.layer.clone(),
+                region.color,
+            ));
+        }
+    }
+    let mut obj = VcObject::new(segments, true);
+    obj.layer.clone_from(&region.layer);
+    obj.color = region.color;
+    obj
 }
 
 #[cfg(test)]
@@ -136,7 +167,7 @@ mod tests {
         );
     }
 
-    /// nahx: same guarantee under a RoundedRectangle frame. The audit
+    /// nahx: same guarantee under a `RoundedRectangle` frame. The audit
     /// flagged this case because the difference call previously could
     /// have lost the hole boundary if the rounded outer collapsed or
     /// the polytree-to-region conversion ignored children.
@@ -166,35 +197,4 @@ mod tests {
             r.outer.len()
         );
     }
-}
-
-/// Build a synthetic [`VcObject`] from a [`CombinedRegion`]'s boundary
-/// so it can be fed into `pocket_for_object` (which is shaped around
-/// `VcObjects`). The region's holes are passed alongside as islands;
-/// only the outer boundary lives in this object.
-pub(super) fn synthesize_region_object(region: &CombinedRegion) -> VcObject {
-    let pts = &region.boundary;
-    let mut segments = Vec::with_capacity(pts.len());
-    for win in pts.windows(2) {
-        segments.push(Segment::line(
-            win[0],
-            win[1],
-            region.layer.clone(),
-            region.color,
-        ));
-    }
-    if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
-        if first.distance(*last) > 1e-6 {
-            segments.push(Segment::line(
-                *last,
-                *first,
-                region.layer.clone(),
-                region.color,
-            ));
-        }
-    }
-    let mut obj = VcObject::new(segments, true);
-    obj.layer.clone_from(&region.layer);
-    obj.color = region.color;
-    obj
 }

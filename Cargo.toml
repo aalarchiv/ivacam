@@ -25,7 +25,7 @@ default-members = [
 [workspace.package]
 version = "0.0.0"
 edition = "2021"
-rust-version = "1.78"
+rust-version = "1.80"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/wiaconstructor/wiaconstructor"
 authors = ["wiaConstructor contributors"]
@@ -41,6 +41,20 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+# Subjective-pedantic lints that fire pervasively on deliberate CAM /
+# geometry / numerics code where they're idiomatic (single-char x/y/r/t,
+# long math routines, many-arg emit helpers). Allowed in the same spirit
+# as the three above — keeps `-D warnings` meaningful for real issues.
+too_many_lines = "allow"
+too_many_arguments = "allow"
+similar_names = "allow"
+many_single_char_names = "allow"
+# Fires only on test fixtures (`let mut x = T::default(); x.f = …`) where
+# it's idiomatic, and on readable lib code where a helper fn/const after a
+# couple of statements is clearer than hoisting it. Both are commonly
+# allowed; keeps the gate focused on substantive lints.
+field_reassign_with_default = "allow"
+items_after_statements = "allow"
 
 [workspace.dependencies]
 # Core deps shared across crates

@@ -148,7 +148,7 @@ impl PipelineCache {
 ///
 /// Legacy callers that don't fold text-layer content into the key get an
 /// empty `text_layers` slice (back-compat — same hash as before for
-/// projects without text). Callers that DO consume text_layers should
+/// projects without text). Callers that DO consume `text_layers` should
 /// route through [`op_cache_key_with_finish`] directly so font / size /
 /// content / placement changes invalidate the cached gcode.
 #[must_use]
@@ -946,7 +946,7 @@ fn lead_kind_disc(k: LeadKind) -> u8 {
 
 /// sqa3: stable hash of a `TextLayer` so font / content / placement
 /// edits invalidate the per-op cache. Every persisted field is folded
-/// in — adding a new TextLayer field is a `PIPELINE_VERSION` bump and
+/// in — adding a new `TextLayer` field is a `PIPELINE_VERSION` bump and
 /// an entry here.
 fn hash_text_layer<H: Hasher>(t: &TextLayer, h: &mut H) {
     t.id.hash(h);
@@ -1379,10 +1379,10 @@ mod tests {
         assert_eq!(got.offset_count, v.offset_count);
     }
 
-    /// sqa3: editing a TextLayer (font, size, content) invalidates the
-    /// per-op cache. The op_cache_key wrapper passes an empty
-    /// text_layers slice; this test exercises the wider entry point
-    /// directly to assert that two different text_layers slices
+    /// sqa3: editing a `TextLayer` (font, size, content) invalidates the
+    /// per-op cache. The `op_cache_key` wrapper passes an empty
+    /// `text_layers` slice; this test exercises the wider entry point
+    /// directly to assert that two different `text_layers` slices
     /// produce two different keys.
     #[test]
     fn text_layer_change_changes_key() {
@@ -1414,7 +1414,7 @@ mod tests {
 
     /// ul60: changing `machine.name` / `work_area` / `capabilities`
     /// invalidates the per-op cache. These were missing from
-    /// hash_machine before the audit fix.
+    /// `hash_machine` before the audit fix.
     #[test]
     fn machine_name_changes_key() {
         let segs = square(20.0);
@@ -1461,7 +1461,7 @@ mod tests {
     // ─── scwx: hash_tool kerf / stickout / spindle_direction ────────
 
     /// scwx: editing a laser tool's kerf must invalidate the cache
-    /// (the heightmap carve radius depends on kerf_mm).
+    /// (the heightmap carve radius depends on `kerf_mm`).
     #[test]
     fn hash_tool_changes_when_kerf_mm_changes() {
         let segs = square(20.0);
@@ -1476,7 +1476,7 @@ mod tests {
         assert_ne!(k1, k2, "tool.kerf_mm should invalidate the cache");
     }
 
-    /// scwx: tool stickout_length_mm participates in holder/shank
+    /// scwx: tool `stickout_length_mm` participates in holder/shank
     /// clearance checks — editing it must invalidate the cache.
     #[test]
     fn hash_tool_changes_when_stickout_length_changes() {
@@ -1492,7 +1492,7 @@ mod tests {
         assert_ne!(k1, k2, "tool.stickout_length_mm should invalidate the cache");
     }
 
-    /// scwx + z1y0: flipping the tool's spindle_direction routes the
+    /// scwx + z1y0: flipping the tool's `spindle_direction` routes the
     /// post between M3 and M4 — emitted gcode changes verbatim, so
     /// the cache key must change.
     #[test]
@@ -1509,7 +1509,7 @@ mod tests {
 
     // ─── 75zr: hash_machine RPM clamps / dwells / park ─────────────
 
-    /// 3nnj: tweaking spindle_rpm_min or _max changes whether an
+    /// 3nnj: tweaking `spindle_rpm_min` or _max changes whether an
     /// emitted S<rpm> is clamped (and the matching warning fires),
     /// so the cache must invalidate on either bound.
     #[test]
@@ -1572,8 +1572,8 @@ mod tests {
         );
     }
 
-    /// syol: park_at_home toggles a G53 G0 X0 Y0 line into the
-    /// program_end footer.
+    /// syol: `park_at_home` toggles a G53 G0 X0 Y0 line into the
+    /// `program_end` footer.
     #[test]
     fn hash_machine_changes_when_park_at_home_toggles() {
         let segs = square(20.0);
@@ -1587,8 +1587,8 @@ mod tests {
         assert_ne!(k1, k2, "machine.park_at_home should invalidate the cache");
     }
 
-    /// syol: explicit park_xy overrides the home / work-zero
-    /// fallback in the program_end footer.
+    /// syol: explicit `park_xy` overrides the home / work-zero
+    /// fallback in the `program_end` footer.
     #[test]
     fn hash_machine_changes_when_park_xy_changes() {
         let segs = square(20.0);
@@ -1664,7 +1664,7 @@ mod tests {
 
     // ─── 3xxj: hash_operation_params stock_to_leave_mm ──────────────
 
-    /// 1mlv: stock_to_leave_mm bloats the tool offset radius in the
+    /// 1mlv: `stock_to_leave_mm` bloats the tool offset radius in the
     /// cascade builder. Output coordinates change verbatim.
     #[test]
     fn hash_op_changes_when_stock_to_leave_mm_changes() {

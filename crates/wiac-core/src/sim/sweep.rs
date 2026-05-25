@@ -1078,7 +1078,7 @@ mod tests {
         // depth (-0.5) — the ball-nose tip travels at -0.5 and lower
         // bilinear samples can read a touch deeper.
         assert!(
-            min_z <= -0.49 && min_z >= -0.51,
+            (-0.51..=-0.49).contains(&min_z),
             "tip depth {min_z} should be near -0.5",
         );
     }

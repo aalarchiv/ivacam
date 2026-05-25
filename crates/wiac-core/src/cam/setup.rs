@@ -139,7 +139,7 @@ pub struct ToolConfig {
     #[serde(default)]
     pub cut_height_mm: f64,
     /// zpuk: plasma pierce delay in seconds — torch dwells at
-    /// pierce_height while the arc pierces. Resolved from
+    /// `pierce_height` while the arc pierces. Resolved from
     /// [`crate::project::ToolEntry::pierce_delay_sec`] at synth
     /// time; 0.0 ⇒ defaults to 0.5 s at emit time.
     #[serde(default)]
@@ -162,7 +162,7 @@ impl ToolConfig {
     /// Axial distance from the FULL-diameter shoulder to the tip
     /// point. For a drill / V-bit (`tip_diameter_mm == 0`) this is
     /// `R / tan(apex / 2)`. Engravers (`tip_diameter_mm > 0`)
-    /// shorten it by their tip radius. Flat-bottom tools (tip_dia
+    /// shorten it by their tip radius. Flat-bottom tools (`tip_dia`
     /// == diameter) return 0.
     #[must_use]
     pub fn tip_cone_length(&self) -> f64 {
@@ -578,7 +578,7 @@ pub struct MachineConfig {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// h0tx: which op kinds the machine can run. Drives the
-    /// frontend's OpKindPicker filter — a laser-only machine
+    /// frontend's `OpKindPicker` filter — a laser-only machine
     /// doesn't show milling ops. `mode` (above) stays as the
     /// PRIMARY mode used by the gcode emitter; capabilities is the
     /// broader set so a multi-purpose machine can pick the right
@@ -600,9 +600,9 @@ pub struct MachineConfig {
     /// `None` disables the ceiling (default, back-compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm_max: Option<u32>,
-    /// syol: when true, the program_end footer adds a `G53 G0 X0 Y0`
+    /// syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0`
     /// retract-to-machine-home before the spindle-off + M30 sequence.
-    /// Most hobby controllers (LinuxCNC, Mach3) honor G53; GRBL accepts
+    /// Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts
     /// it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in
     /// the current WCS (the work zero) — still safer than leaving the
     /// spindle parked over the part. Both modes lift to `fast_move_z`
@@ -610,7 +610,7 @@ pub struct MachineConfig {
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub park_at_home: bool,
     /// syol: optional explicit park XY (mm, in WCS coordinates). When
-    /// `Some`, the program_end footer routes the head to this point
+    /// `Some`, the `program_end` footer routes the head to this point
     /// after the safe-Z lift, overriding the machine-home / work-zero
     /// fallback. Useful for a known tool-station / load-station that
     /// isn't (0, 0) in either frame.

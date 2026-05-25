@@ -927,10 +927,10 @@ mod tests {
         );
     }
 
-    /// lo7b: header_setup_for skips a leading Pause op so the header's
+    /// lo7b: `header_setup_for` skips a leading Pause op so the header's
     /// S<rpm> / F<feed> reflects the first ACTUAL cut. The Pause op
     /// has no tool / source of its own; falling back to it produced a
-    /// header that advertised whichever ToolEntry happened to share its
+    /// header that advertised whichever `ToolEntry` happened to share its
     /// id (often the previous op's tool, or a random one).
     #[test]
     fn header_setup_skips_leading_pause_op() {

@@ -236,7 +236,7 @@ pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOff
 /// convention: positive delta = LEFT of tangent. For CCW input that's
 /// inward; for CW input that's outward. Most callers should use
 /// `parallel_offset_inward` / `_outward` instead — they handle winding.
-pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset> {
+#[must_use] pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset> {
     if obj.segments.is_empty() {
         return Vec::new();
     }
@@ -861,9 +861,9 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
 /// cutter centerline keeps a tool-radius clearance from the raw island
 /// wall. The pocket emitters (`pocket_zigzag`, `pocket_cascade_with_islands`,
 /// `stitch_rings_to_polyline`) all document islands as
-/// "pre-inflated by tool_radius" — pipeline callers used to pass RAW
+/// "pre-inflated by `tool_radius`" — pipeline callers used to pass RAW
 /// holes / inner-object polygons, so the cutter edge ploughed into the
-/// island by tool_r at the boundary. This helper bridges the gap.
+/// island by `tool_r` at the boundary. This helper bridges the gap.
 ///
 /// Returns the inflated outer rings (clipper2 may merge overlapping
 /// islands, drop a degenerate one, or split one into multiple). On
@@ -929,7 +929,7 @@ fn inflate_islands_by_delta(
 
 /// sbtf: extra island inflation needed for the inward cascade when the
 /// per-pass `step` is smaller than `tool_radius` (high overlap, e.g. 80%
-/// engagement ⇒ step ≈ 0.2·tool_radius). Callers pass islands that are
+/// engagement ⇒ step ≈ `0.2·tool_radius`). Callers pass islands that are
 /// ALREADY pre-inflated by `tool_radius` (the knd4 contract); the
 /// cascade's first ring then offsets boundary+islands inward by `-step`.
 /// When `step < tool_radius`, the cutter centerline lands at `step` mm
@@ -941,9 +941,9 @@ fn inflate_islands_by_delta(
 /// apply an EXTRA `max(0, tool_r − step)` of outward inflation here.
 /// After the cascade's `-step`, the cutter centerline sits at
 /// `tool_r + (tool_r − step) − step = 2·(tool_r − step)` from the raw
-/// wall when step < tool_r; the cutter edge keeps a clean
+/// wall when step < `tool_r`; the cutter edge keeps a clean
 /// `tool_r − step` clearance from the raw wall (no intrusion). When
-/// step ≥ tool_r the extra inflation is zero and behaviour matches the
+/// step ≥ `tool_r` the extra inflation is zero and behaviour matches the
 /// pre-sbtf path.
 ///
 /// `islands` MUST already be the knd4-inflated polygons (the cascade /
@@ -1798,10 +1798,7 @@ pub(crate) fn stitch_rings_to_polyline(
                     break;
                 }
             }
-            match chosen {
-                Some(i) => i,
-                None => return None,
-            }
+            chosen?
         } else {
             0
         };
@@ -2385,7 +2382,7 @@ mod tests {
 
     /// hx74: a short (< 3 pts) ring inside the cascade was previously
     /// silently dropped, leaving the bridge from the previous ring's
-    /// last_end to the next ring's first vertex unverified — it could
+    /// `last_end` to the next ring's first vertex unverified — it could
     /// span the gap of the dropped ring and exit the pocket. The fix
     /// is to bail (return None) and let the caller fall back to
     /// non-bridged cascade emission. Verify by passing in a 3-ring
@@ -2469,8 +2466,7 @@ mod tests {
         // chosen vertex has x ∈ {8, 10}).
         assert!(
             stitched.iter().any(|pt| pt.x > 7.0 && pt.x < 11.0 && pt.y < 8.0),
-            "stitch should have picked a ring-1 start that avoids the island; got {:?}",
-            stitched,
+            "stitch should have picked a ring-1 start that avoids the island; got {stitched:?}",
         );
         // And no point in the stitched polyline should sit inside the
         // island (the cutter would gouge it).
@@ -2517,11 +2513,11 @@ mod tests {
 
     /// knd4 helper: `inflate_islands_by_tool_radius` produces an
     /// outward Minkowski-sum boundary around each island, i.e. a
-    /// polygon every point of which is ≥ tool_radius from the original
+    /// polygon every point of which is ≥ `tool_radius` from the original
     /// island wall. The pocket emitters (`pocket_zigzag`, the cascade
     /// inflater, the spiral stitcher) consume the inflated outline as
     /// the centerline safe boundary; passing the raw polygon used to
-    /// allow the cutter EDGE to bite tool_r into the original island.
+    /// allow the cutter EDGE to bite `tool_r` into the original island.
     #[test]
     fn inflate_islands_by_tool_radius_expands_outward() {
         // 10x10 axis-aligned square island centered at the origin.
@@ -2566,7 +2562,7 @@ mod tests {
     /// it pre-inflated polygons via `inflate_islands_by_tool_radius`.
     /// Verify the contract end-to-end: with a RAW island the cutter
     /// centerline ploughs straight up to the island wall (gouge); with
-    /// the INFLATED island it keeps a tool_radius clearance.
+    /// the INFLATED island it keeps a `tool_radius` clearance.
     #[test]
     fn pocket_zigzag_with_inflated_island_keeps_tool_radius_clearance() {
         let boundary = vec![p(0.0, 0.0), p(40.0, 0.0), p(40.0, 40.0), p(0.0, 40.0)];
@@ -3182,7 +3178,7 @@ mod tests {
     /// the 0.1 % floating-point slop band) still routes to drill — the
     /// cutter fills the hole; we'd rather emit a useful drill plunge
     /// than a silent drop. Above that band (radius > 1.001 *
-    /// tool_radius) the cascade owns the cut.
+    /// `tool_radius`) the cascade owns the cut.
     #[test]
     fn slightly_oversize_circle_drills_at_center_within_slop_band() {
         use crate::geometry::SegmentKind;
@@ -3364,7 +3360,7 @@ mod tests {
 
     /// z4t6 regression: the thread-local panic sink starts empty, and
     /// `take_parallel_offset_panics` returns its contents and clears the
-    /// sink. We can't easily synthesise a cavalier_contours panic in a
+    /// sink. We can't easily synthesise a `cavalier_contours` panic in a
     /// unit test (the assert is internal to the crate's offset
     /// machinery), so we test the API contract: stash a synthetic
     /// record via the public `take_parallel_offset_panics` round-trip.
@@ -3375,8 +3371,8 @@ mod tests {
         // just assert no panic record is returned twice (drain clears
         // the sink).
         assert!(drained.iter().all(|p| !p.layer.is_empty()) || drained.is_empty());
-        let _second = take_parallel_offset_panics();
-        assert!(_second.is_empty(), "sink must be empty after the first drain");
+        let second = take_parallel_offset_panics();
+        assert!(second.is_empty(), "sink must be empty after the first drain");
     }
 
     /// c6ej regression: a polygon whose top edge grazes a scanline at a
@@ -3411,12 +3407,12 @@ mod tests {
     /// 06m5 regression: a Pocket op with `nocontour=true` and the Zigzag
     /// strategy must NOT leave a tool-radius-wide ribbon of uncut stock
     /// along every wall. Pre-fix the rough boundary was already inset by
-    /// tool_r, then `pocket_zigzag` self-inset by another tool_r —
+    /// `tool_r`, then `pocket_zigzag` self-inset by another `tool_r` —
     /// without the wall ring (skipped on nocontour) the outermost
-    /// stroke sat 2·tool_r from the original wall. Post-fix:
+    /// stroke sat `2·tool_r` from the original wall. Post-fix:
     /// `pocket_zigzag` is invoked with `tool_diameter = 0` when
     /// `nocontour = true` so the outermost stroke reaches the
-    /// already-inset boundary edge (a tool_r from the original wall).
+    /// already-inset boundary edge (a `tool_r` from the original wall).
     #[test]
     fn pocket_zigzag_nocontour_reaches_inset_edge() {
         let obj = closed_square(40.0);
@@ -3462,8 +3458,7 @@ mod tests {
         let slop = 0.1;
         assert!(
             min_x <= tool_r + slop,
-            "outermost stroke min_x {min_x:.3} > inset edge ({:.3}) + slop {slop} — pre-fix double-inset bug",
-            tool_r
+            "outermost stroke min_x {min_x:.3} > inset edge ({tool_r:.3}) + slop {slop} — pre-fix double-inset bug"
         );
         assert!(
             max_x >= 40.0 - tool_r - slop,
@@ -3497,15 +3492,13 @@ mod tests {
         let boundary = vec![p(0.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(0.0, 10.0)];
         let coarse = pocket_zigzag(&boundary, &[], 0.5, 0.0);
         let fine = pocket_zigzag(&boundary, &[], 0.05, 0.0);
-        let coarse_strokes: usize = coarse.iter().map(|c| c.len()).sum();
-        let fine_strokes: usize = fine.iter().map(|c| c.len()).sum();
+        let coarse_strokes: usize = coarse.iter().map(std::vec::Vec::len).sum();
+        let fine_strokes: usize = fine.iter().map(std::vec::Vec::len).sum();
         // 10x coarser stride ⇒ roughly 10x fewer strokes. Pre-fix both
         // collapsed onto the 0.1 mm clamp and produced ~the same count.
         assert!(
             fine_strokes >= coarse_strokes * 5,
-            "fine-stride raster ({} strokes at 0.05 mm) should be much denser than coarse ({} at 0.5 mm) — pre-cpym both clamped to 0.1 mm",
-            fine_strokes,
-            coarse_strokes
+            "fine-stride raster ({fine_strokes} strokes at 0.05 mm) should be much denser than coarse ({coarse_strokes} at 0.5 mm) — pre-cpym both clamped to 0.1 mm"
         );
         // No degeneracy warning at 0.05 mm — that's well above the 1e-6
         // mm floor.
@@ -3544,7 +3537,7 @@ mod tests {
     /// Setup: 20-mm-tall pocket spanning x ∈ [0..20]. An island
     /// covering x ∈ [0..20] (full width) for y ∈ [5..15] — i.e. the
     /// island swallows several scanlines wholesale, producing
-    /// consecutive empty rows. With tool_diameter = 1 mm and
+    /// consecutive empty rows. With `tool_diameter` = 1 mm and
     /// stride = 1 mm, scanlines at y = 0.5, 1.5, … 19.5 each emit one
     /// stroke unless they fall inside the island band (5..15) — those
     /// rows emit zero strokes (the entire outer-pair gets swallowed by
@@ -3606,11 +3599,11 @@ mod tests {
         );
     }
 
-    /// sbtf regression: at high overlap (xy_step < tool_radius) the
+    /// sbtf regression: at high overlap (`xy_step` < `tool_radius`) the
     /// pre-fix cascade's first ring around an island sat too close to
-    /// the raw island wall — the cutter edge intruded by (tool_r −
+    /// the raw island wall — the cutter edge intruded by (`tool_r` −
     /// step) mm. With the over-inflation fix the cutter edge MUST stay
-    /// outside the raw island for any step ≤ tool_radius.
+    /// outside the raw island for any step ≤ `tool_radius`.
     #[test]
     fn pocket_cascade_high_overlap_keeps_island_clearance() {
         // 50 × 50 pocket, 10 × 10 island centered at (25, 25). Tool
@@ -3690,7 +3683,7 @@ mod tests {
             !near.is_empty(),
             "no cascade vertex sat near the island — test geometry mis-sized"
         );
-        let nearest = near.iter().cloned().fold(f64::INFINITY, f64::min);
+        let nearest = near.iter().copied().fold(f64::INFINITY, f64::min);
         // Cutter EDGE clearance = nearest_centerline_dist - tool_r.
         // Must be ≥ 0 (allowing FP slop). Pre-fix this would have been
         // ≈ step - tool_r = -1.6 mm.
@@ -3704,7 +3697,7 @@ mod tests {
     }
 
     /// fksa regression: at sub-mm scale (5 mm part, 0.3 mm endmill) the
-    /// pre-fix overcut's 0.25 mm perp_tol was wider than the entire
+    /// pre-fix overcut's 0.25 mm `perp_tol` was wider than the entire
     /// part bbox, picking the nearest WRONG wall as the overcut probe
     /// target. With the bbox-scaled tolerance the function either picks
     /// the right wall or makes no dip at all (rather than gouging an
@@ -3730,14 +3723,12 @@ mod tests {
         // tool_radius = 0.15 mm (0.3 mm endmill). A CCW polyline with
         // a reflex corner at the inner L joint.
         let r = 0.15_f64;
-        let off = vec![
-            p(r, r),
+        let off = [p(r, r),
             p(5.0 - r, r),
             p(5.0 - r, 2.5 - r),
             p(2.5 - r, 2.5 - r),
             p(2.5 - r, 5.0 - r),
-            p(r, 5.0 - r),
-        ];
+            p(r, 5.0 - r)];
         let mut offset = PolylineOffset {
             segments: vec![
                 Segment::line(off[0], off[1], "0", 7),

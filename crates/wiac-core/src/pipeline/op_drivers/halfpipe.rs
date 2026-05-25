@@ -139,11 +139,11 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
     // never engages stock. Fallback to tool radius when flute_length
     // isn't recorded — past that depth the shank starts to drag even
     // on a pointed bit if it's a long-thin cutter.
-    let tool_reach_z = Some(
-        tool.flute_length_mm
-            .filter(|v| *v > 0.0)
-            .unwrap_or(tool.diameter * 0.5),
-    );
+    let reach_z = tool
+        .flute_length_mm
+        .filter(|v| *v > 0.0)
+        .unwrap_or(tool.diameter * 0.5);
+    let tool_reach_z = Some(reach_z);
 
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut any_depth_limited = false;
@@ -233,7 +233,7 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
         });
     }
     if any_tool_reach_limited {
-        let reach = tool_reach_z.unwrap_or(0.0);
+        let reach = reach_z;
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
             kind: "halfpipe_tool_reach_exceeded".into(),
@@ -485,7 +485,7 @@ mod tests {
     }
 
     /// 898l: halfpipe with profile R larger than the cutter's flute
-    /// length must clamp Z to -flute_length and emit a
+    /// length must clamp Z to -`flute_length` and emit a
     /// `halfpipe_tool_reach_exceeded` warning.
     #[test]
     fn halfpipe_tool_reach_clamps_deep_profile() {

@@ -797,7 +797,7 @@
     /// Chamfer op (rt1.18): walks the source contour at the computed
     /// final Z from the V-bit cone math. A 60° V-bit + 1mm width
     /// gives ~1.732 mm depth; the final lap of gcode must contain
-    /// Z-1.732. With default DPP -1.0 (mill_default), the descent
+    /// Z-1.732. With default DPP -1.0 (`mill_default`), the descent
     /// also passes through an intermediate stepdown — see
     /// `chamfer_deep_chamfer_uses_multi_pass_stepdown` (00ia).
     #[test]
@@ -984,7 +984,7 @@
     }
 
     /// uo1t: a chamfer width that exceeds the V-bit's cone span gets
-    /// clamped to (diameter - tip_diameter) / 2 so the shank never
+    /// clamped to (diameter - `tip_diameter`) / 2 so the shank never
     /// engages stock. A 6.35 mm V-bit with 0.1 mm tip has cap 3.125
     /// mm; requesting 10 mm should warn and emit Z computed from the
     /// 3.125 mm clamp (3.125 / tan(30°) ≈ -5.413), not the raw
@@ -1689,7 +1689,7 @@
     /// k2ew: a two-op project with two different tools must emit T1
     /// M6 for the first op and T2 M6 between ops on a toolchange-
     /// capable machine. Pre-fix the program never asserted a tool —
-    /// only dual_tool / Stufenfase internal toolchanges fired M6.
+    /// only `dual_tool` / Stufenfase internal toolchanges fired M6.
     #[test]
     fn multi_op_different_tools_emit_m6_at_each_boundary() {
         let machine = MachineConfig {
@@ -1716,14 +1716,10 @@
             |_, _, _| {},
         )
         .unwrap();
-        let t1_pos = resp.gcode.find("T1 M6").expect(&format!(
-            "expected T1 M6 for first op (k2ew first-op M6):\n{}",
-            resp.gcode
-        ));
-        let t2_pos = resp.gcode.find("T2 M6").expect(&format!(
-            "expected T2 M6 at op boundary (k2ew):\n{}",
-            resp.gcode
-        ));
+        let t1_pos = resp.gcode.find("T1 M6").unwrap_or_else(|| panic!("expected T1 M6 for first op (k2ew first-op M6):\n{}",
+            resp.gcode));
+        let t2_pos = resp.gcode.find("T2 M6").unwrap_or_else(|| panic!("expected T2 M6 at op boundary (k2ew):\n{}",
+            resp.gcode));
         assert!(t1_pos < t2_pos, "T1 M6 must precede T2 M6");
         let op1_pos = resp.gcode.find("; OP 1").expect("OP 1 marker");
         let op2_pos = resp.gcode.find("; OP 2").expect("OP 2 marker");
@@ -1771,7 +1767,7 @@
         );
     }
 
-    /// k2ew: machine.supports_toolchange == false suppresses M6
+    /// k2ew: `machine.supports_toolchange` == false suppresses M6
     /// emission entirely. The Z shift still applies (it's a work-Z
     /// origin, not a toolchange artifact).
     #[test]
@@ -1960,17 +1956,13 @@
         let plunge_idx = lines
             .iter()
             .position(|l| l.contains("G1") && l.contains("Z0"))
-            .expect(&format!(
-                "expected a G1 ... Z0 plunge line in:\n{}",
-                resp.gcode
-            ));
+            .unwrap_or_else(|| panic!("expected a G1 ... Z0 plunge line in:\n{}",
+                resp.gcode));
         let dwell_idx = lines
             .iter()
             .position(|l| l.contains("G4") && l.contains("P0.4"))
-            .expect(&format!(
-                "expected a G4 P0.4 pierce dwell in:\n{}",
-                resp.gcode
-            ));
+            .unwrap_or_else(|| panic!("expected a G4 P0.4 pierce dwell in:\n{}",
+                resp.gcode));
         assert!(
             plunge_idx < dwell_idx,
             "G1 Z0 (idx {plunge_idx}) must precede G4 P0.4 (idx {dwell_idx}):\n{}",
@@ -2369,6 +2361,7 @@
     ///   * `G20` (inch pragma) is present
     ///   * the 20 mm square's emitted X coords land near 0.787 in
     ///   * the depth Z of -1 mm lands near -0.039 in
+    ///
     /// The previous behaviour was a silent 25.4× over-cut.
     #[test]
     fn inch_units_emit_scaled_numbers() {

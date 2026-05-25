@@ -17,7 +17,7 @@ use super::{op_includes_object, PipelineWarning};
 /// 8rik: minimum spacing factor between auto-placed tabs. If the
 /// contour's perimeter divided by `count` is shallower than
 /// `tab_width * SHORT_CONTOUR_SPACING_FACTOR`, the auto count is
-/// clamped down so each tab gets at least ~0.5×tab_width of cut
+/// clamped down so each tab gets at least ~`0.5×tab_width` of cut
 /// material between it and the next.
 const SHORT_CONTOUR_SPACING_FACTOR: f64 = 1.5;
 
@@ -127,7 +127,7 @@ pub(super) fn build_op_tabs_by_object(
             if obj.closed && perimeter > 1e-9 && tab_width > 1e-9 {
                 let shift_arc = tab_width * 0.5 + 1e-6;
                 let shift_t = (shift_arc / perimeter).min(0.49);
-                for t in auto_ts.iter_mut() {
+                for t in &mut auto_ts {
                     *t = (*t + shift_t).rem_euclid(1.0);
                 }
             }
@@ -270,9 +270,9 @@ mod tests {
     }
 
     /// a7rq: closed-contour auto tabs are phase-shifted by
-    /// tab_width/2 + ε of arc length so the first tab doesn't sit on
+    /// `tab_width/2` + ε of arc length so the first tab doesn't sit on
     /// the start vertex (which for a square IS a 90° corner). With
-    /// side=40, perimeter=160, tab_width=10 → phase shift ≈ 5/160 =
+    /// side=40, perimeter=160, `tab_width=10` → phase shift ≈ 5/160 =
     /// 0.03125; first tab t = 0 + 0.03125 = 0.03125, world point
     /// (5.+ε, 0) — well off the corner.
     #[test]
@@ -311,8 +311,8 @@ mod tests {
         }
     }
 
-    /// eylk: Mixed mode with auto_count=4 (t = 0, 0.25, 0.5, 0.75 pre-
-    /// shift) and a manual placement at t=0.26 (on object_id=1) must
+    /// eylk: Mixed mode with `auto_count=4` (t = 0, 0.25, 0.5, 0.75 pre-
+    /// shift) and a manual placement at t=0.26 (on `object_id=1`) must
     /// dedupe down to 4 tabs total, not 5: the manual displaces the
     /// nearby auto position.
     #[test]
@@ -348,7 +348,7 @@ mod tests {
     }
 
     /// eylk: Mixed mode where the manual placement is FAR from any
-    /// auto position (e.g. t=0.4 with auto_count=4 → nearest is 0.5,
+    /// auto position (e.g. t=0.4 with `auto_count=4` → nearest is 0.5,
     /// diff=0.1 > 0.25*0.25=0.0625) keeps both → 5 tabs total.
     #[test]
     fn mixed_mode_keeps_separate_manual_placement() {

@@ -547,7 +547,7 @@ mod tests {
         );
     }
 
-    /// ityc: a LaserBeam tool has no physical shank to drag through
+    /// ityc: a `LaserBeam` tool has no physical shank to drag through
     /// walls. Even when the user wires a shank diameter on the laser
     /// tool entry (because they share a project-wide tool table with
     /// mill tools), `HolderProfile::from_tool` must return `None` so

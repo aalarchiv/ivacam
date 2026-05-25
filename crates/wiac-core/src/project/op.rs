@@ -273,7 +273,7 @@ pub enum OpKind {
         /// engagement is too aggressive for hard materials; multi-
         /// pass schedules let the chipload soften. Default 1
         /// (single-pass; backward-compatible). Each pass cuts a deeper
-        /// helix at radius = lerp(start_radius_frac → 1.0, i/N).
+        /// helix at radius = `lerp(start_radius_frac` → 1.0, i/N).
         #[serde(default = "default_thread_radial_passes")]
         radial_passes: u32,
         /// 6uns: starting angle of the helix in radians, measured CCW
@@ -295,6 +295,7 @@ pub enum OpKind {
         ///   * external: cutter inner edge sits at
         ///     `stud_radius - thread_depth` (cuts the stud's flank by
         ///     `thread_depth`).
+        ///
         /// `None` ⇒ ISO 60° default. Set explicitly for non-ISO
         /// thread forms (UN, Whitworth, ACME, …). Older serialized
         /// projects without this field deserialize as `None` and pick

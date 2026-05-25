@@ -189,7 +189,7 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
 }
 
 /// Majority orientation over a chord chain: sum the signed area of
-/// each chord (p_k → p_{k+1}) around `center`. Positive ⇒ CCW.
+/// each chord (`p_k` → p_{k+1}) around `center`. Positive ⇒ CCW.
 ///
 /// Falls back to the single-chord (`direction_ccw(center, p0, p1)`)
 /// signal when the chain is degenerate (≤ 1 chord) or the accumulated

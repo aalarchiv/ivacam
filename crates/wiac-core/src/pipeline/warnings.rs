@@ -172,7 +172,7 @@ pub(super) fn push_op_order_warnings(
     }
 }
 
-/// Two ops "share source" when one's OpSource overlaps the other's:
+/// Two ops "share source" when one's `OpSource` overlaps the other's:
 /// either both `All`, intersecting `Layers` lists, or intersecting
 /// `Objects` id sets. `Objects` vs `Layers` cross-comparison is
 /// conservatively true (we don't know the chain→layer mapping without
@@ -438,8 +438,7 @@ mod tests {
         push_op_order_warnings(&project, &mut warnings);
         assert!(
             warnings.iter().all(|w| w.kind != "op_order_suspect"),
-            "no op_order_suspect expected in safe order, got {:?}",
-            warnings
+            "no op_order_suspect expected in safe order, got {warnings:?}"
         );
     }
 
@@ -502,8 +501,7 @@ mod tests {
             warnings
                 .iter()
                 .all(|w| w.kind != "stock_origin_outside_geometry_bbox"),
-            "no WCS warning expected, got {:?}",
-            warnings
+            "no WCS warning expected, got {warnings:?}"
         );
     }
 }

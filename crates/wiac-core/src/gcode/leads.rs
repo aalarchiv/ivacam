@@ -17,7 +17,7 @@ use crate::math;
 /// tangent roll-on arc adds tool-path length and a 90° sweep that
 /// the operator has no reason to want, and on small parts the arc's
 /// swept disk often collides with stock left of the entry point
-/// (which the arc_lead_fits check can't see — it only inspects the
+/// (which the `arc_lead_fits` check can't see — it only inspects the
 /// contour itself, not unmilled stock around it).
 fn is_closed_contour(segments: &[Segment]) -> bool {
     if segments.len() < 2 {
@@ -272,6 +272,171 @@ fn arc_lead_fits(segments: &[Segment], center: Point2, radius: f64, is_lead_in: 
     true
 }
 
+/// Shortest distance from `center` to a segment.
+///
+/// Lines: standard point-to-chord projection.
+///
+/// Arcs / Circles: u2u1 — the prior chord-based distance over-estimated
+/// safety by the sagitta. A bulgy contour wall could carve into the
+/// lead arc's swept disk while chord distance still reported "fits in
+/// available room"; the lead-in then arc'd straight into the just-cut
+/// surface. Use the true point-to-arc distance:
+///   * If `center` projects onto the arc's angular sweep, the closest
+///     point on the arc is `|distance(arc_center, center) - radius|`.
+///   * Otherwise the nearest point is one of the arc endpoints — fall
+///     back to the smaller endpoint distance.
+fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
+    use crate::geometry::SegmentKind;
+    let line_chord_distance = |sx: f64, sy: f64, ex: f64, ey: f64| {
+        let dx = ex - sx;
+        let dy = ey - sy;
+        let len_sq = dx * dx + dy * dy;
+        if len_sq < 1e-18 {
+            return (center.x - sx).hypot(center.y - sy);
+        }
+        let t = (((center.x - sx) * dx + (center.y - sy) * dy) / len_sq).clamp(0.0, 1.0);
+        let px = sx + t * dx;
+        let py = sy + t * dy;
+        (center.x - px).hypot(center.y - py)
+    };
+    match seg.kind {
+        SegmentKind::Line | SegmentKind::Point => {
+            line_chord_distance(seg.start.x, seg.start.y, seg.end.x, seg.end.y)
+        }
+        SegmentKind::Arc | SegmentKind::Circle => {
+            // Fall back to deriving the center from the bulge when
+            // the segment data didn't carry it — same convention as
+            // the surrounding arc-center derivations in this module.
+            let arc_center = seg.center.unwrap_or_else(|| {
+                math::bulge_to_arc(seg.start, seg.end, seg.bulge).0
+            });
+            let arc_radius =
+                (seg.start.x - arc_center.x).hypot(seg.start.y - arc_center.y);
+            if arc_radius < 1e-9 {
+                return line_chord_distance(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
+            }
+            // Full circle (no angular gating): the closest point lies
+            // along the radial line from `arc_center` toward `center`.
+            let dx = center.x - arc_center.x;
+            let dy = center.y - arc_center.y;
+            let d_to_arc_center = dx.hypot(dy);
+            let radial_dist = (d_to_arc_center - arc_radius).abs();
+            if matches!(seg.kind, SegmentKind::Circle) {
+                return radial_dist;
+            }
+            // Arc: check whether the radial foot falls inside the
+            // angular span. Same machinery as `arc_intersects_tab` in
+            // tabs.rs — sweep from theta_start through `4*atan(bulge)`.
+            let theta_start =
+                (seg.start.y - arc_center.y).atan2(seg.start.x - arc_center.x);
+            let sweep = 4.0 * seg.bulge.atan();
+            // Theta of the candidate foot on the circle (only well-
+            // defined when `center` isn't at the arc center; fall back
+            // to the endpoint distance if it is).
+            if d_to_arc_center < 1e-12 {
+                let de_s = (center.x - seg.start.x).hypot(center.y - seg.start.y);
+                let de_e = (center.x - seg.end.x).hypot(center.y - seg.end.y);
+                return de_s.min(de_e);
+            }
+            let theta_foot = dy.atan2(dx);
+            if arc_contains_angle(theta_start, sweep, theta_foot) {
+                radial_dist
+            } else {
+                // Foot lies outside the sweep — nearest point on the
+                // arc is one of the endpoints.
+                let de_s = (center.x - seg.start.x).hypot(center.y - seg.start.y);
+                let de_e = (center.x - seg.end.x).hypot(center.y - seg.end.y);
+                de_s.min(de_e)
+            }
+        }
+    }
+}
+
+/// Returns true when `theta` lies within the directed arc sweep from
+/// `theta_start` by `sweep` radians (signed: CCW positive, CW negative).
+/// Mirrors the same helper in `gcode/tabs.rs`; duplicated here so the
+/// leads module stays self-contained.
+fn arc_contains_angle(theta_start: f64, sweep: f64, theta: f64) -> bool {
+    let two_pi = std::f64::consts::TAU;
+    if sweep.abs() >= two_pi - 1e-9 {
+        return true;
+    }
+    let mut delta = theta - theta_start;
+    if sweep >= 0.0 {
+        while delta < -1e-12 {
+            delta += two_pi;
+        }
+        while delta >= two_pi - 1e-12 {
+            delta -= two_pi;
+        }
+        delta <= sweep + 1e-9
+    } else {
+        while delta > 1e-12 {
+            delta -= two_pi;
+        }
+        while delta <= -two_pi + 1e-12 {
+            delta += two_pi;
+        }
+        delta >= sweep - 1e-9
+    }
+}
+
+pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeometry {
+    if setup.leads.out == LeadKind::Off || segments.is_empty() {
+        return LeadGeometry::None;
+    }
+    let len = setup.leads.out_lenght.max(0.0);
+    if len < 1e-9 {
+        return LeadGeometry::None;
+    }
+    let last = segments.last().unwrap();
+    let Some((tx, ty)) = last_segment_end_tangent(last) else {
+        return LeadGeometry::None;
+    };
+    let free_left = lead_free_side_left(setup, segments);
+    let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
+    // xmwy: same closed-contour gate as lead_in_geometry — open
+    // contours roll off into free space; the arc sweep adds nothing.
+    let kind = if matches!(setup.leads.out, LeadKind::Arc) && !is_closed_contour(segments) {
+        LeadKind::Straight
+    } else {
+        setup.leads.out
+    };
+    match kind {
+        LeadKind::Straight => LeadGeometry::Straight {
+            from: Point2::new(last.end.x + len * px, last.end.y + len * py),
+        },
+        LeadKind::Arc => {
+            // Mirror of lead-in: cutter is at Pn moving along +t.
+            //   center  = Pn + perp_free * radius
+            //   arc_end = Pn + radius * (perp_free + tangent)
+            // Sweep direction = free_left (CCW iff free is on the left).
+            let radius = len;
+            let center = Point2::new(last.end.x + radius * px, last.end.y + radius * py);
+            let arc_end = Point2::new(
+                last.end.x + radius * (px + tx),
+                last.end.y + radius * (py + ty),
+            );
+            // 62pd: same fit check as lead-in — if the swept disk
+            // overlaps a non-adjacent contour wall, fall back to a
+            // straight lead-out so the cutter doesn't carve into the
+            // already-cut profile while rolling off.
+            if arc_lead_fits(segments, center, radius, false) {
+                LeadGeometry::Arc {
+                    entry_or_exit: arc_end,
+                    center,
+                    ccw: free_left,
+                }
+            } else {
+                LeadGeometry::Straight {
+                    from: Point2::new(last.end.x + len * px, last.end.y + len * py),
+                }
+            }
+        }
+        LeadKind::Off => LeadGeometry::None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,170 +683,5 @@ mod tests {
             matches!(g, LeadGeometry::Straight { .. }),
             "expected Straight fallback when no arc fits, got {g:?}",
         );
-    }
-}
-
-/// Shortest distance from `center` to a segment.
-///
-/// Lines: standard point-to-chord projection.
-///
-/// Arcs / Circles: u2u1 — the prior chord-based distance over-estimated
-/// safety by the sagitta. A bulgy contour wall could carve into the
-/// lead arc's swept disk while chord distance still reported "fits in
-/// available room"; the lead-in then arc'd straight into the just-cut
-/// surface. Use the true point-to-arc distance:
-///   * If `center` projects onto the arc's angular sweep, the closest
-///     point on the arc is `|distance(arc_center, center) - radius|`.
-///   * Otherwise the nearest point is one of the arc endpoints — fall
-///     back to the smaller endpoint distance.
-fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
-    use crate::geometry::SegmentKind;
-    let line_chord_distance = |sx: f64, sy: f64, ex: f64, ey: f64| {
-        let dx = ex - sx;
-        let dy = ey - sy;
-        let len_sq = dx * dx + dy * dy;
-        if len_sq < 1e-18 {
-            return (center.x - sx).hypot(center.y - sy);
-        }
-        let t = (((center.x - sx) * dx + (center.y - sy) * dy) / len_sq).clamp(0.0, 1.0);
-        let px = sx + t * dx;
-        let py = sy + t * dy;
-        (center.x - px).hypot(center.y - py)
-    };
-    match seg.kind {
-        SegmentKind::Line | SegmentKind::Point => {
-            line_chord_distance(seg.start.x, seg.start.y, seg.end.x, seg.end.y)
-        }
-        SegmentKind::Arc | SegmentKind::Circle => {
-            // Fall back to deriving the center from the bulge when
-            // the segment data didn't carry it — same convention as
-            // the surrounding arc-center derivations in this module.
-            let arc_center = seg.center.unwrap_or_else(|| {
-                math::bulge_to_arc(seg.start, seg.end, seg.bulge).0
-            });
-            let arc_radius =
-                (seg.start.x - arc_center.x).hypot(seg.start.y - arc_center.y);
-            if arc_radius < 1e-9 {
-                return line_chord_distance(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
-            }
-            // Full circle (no angular gating): the closest point lies
-            // along the radial line from `arc_center` toward `center`.
-            let dx = center.x - arc_center.x;
-            let dy = center.y - arc_center.y;
-            let d_to_arc_center = dx.hypot(dy);
-            let radial_dist = (d_to_arc_center - arc_radius).abs();
-            if matches!(seg.kind, SegmentKind::Circle) {
-                return radial_dist;
-            }
-            // Arc: check whether the radial foot falls inside the
-            // angular span. Same machinery as `arc_intersects_tab` in
-            // tabs.rs — sweep from theta_start through `4*atan(bulge)`.
-            let theta_start =
-                (seg.start.y - arc_center.y).atan2(seg.start.x - arc_center.x);
-            let sweep = 4.0 * seg.bulge.atan();
-            // Theta of the candidate foot on the circle (only well-
-            // defined when `center` isn't at the arc center; fall back
-            // to the endpoint distance if it is).
-            if d_to_arc_center < 1e-12 {
-                let de_s = (center.x - seg.start.x).hypot(center.y - seg.start.y);
-                let de_e = (center.x - seg.end.x).hypot(center.y - seg.end.y);
-                return de_s.min(de_e);
-            }
-            let theta_foot = dy.atan2(dx);
-            if arc_contains_angle(theta_start, sweep, theta_foot) {
-                radial_dist
-            } else {
-                // Foot lies outside the sweep — nearest point on the
-                // arc is one of the endpoints.
-                let de_s = (center.x - seg.start.x).hypot(center.y - seg.start.y);
-                let de_e = (center.x - seg.end.x).hypot(center.y - seg.end.y);
-                de_s.min(de_e)
-            }
-        }
-    }
-}
-
-/// Returns true when `theta` lies within the directed arc sweep from
-/// `theta_start` by `sweep` radians (signed: CCW positive, CW negative).
-/// Mirrors the same helper in `gcode/tabs.rs`; duplicated here so the
-/// leads module stays self-contained.
-fn arc_contains_angle(theta_start: f64, sweep: f64, theta: f64) -> bool {
-    let two_pi = std::f64::consts::TAU;
-    if sweep.abs() >= two_pi - 1e-9 {
-        return true;
-    }
-    let mut delta = theta - theta_start;
-    if sweep >= 0.0 {
-        while delta < -1e-12 {
-            delta += two_pi;
-        }
-        while delta >= two_pi - 1e-12 {
-            delta -= two_pi;
-        }
-        delta <= sweep + 1e-9
-    } else {
-        while delta > 1e-12 {
-            delta -= two_pi;
-        }
-        while delta <= -two_pi + 1e-12 {
-            delta += two_pi;
-        }
-        delta >= sweep - 1e-9
-    }
-}
-
-pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeometry {
-    if setup.leads.out == LeadKind::Off || segments.is_empty() {
-        return LeadGeometry::None;
-    }
-    let len = setup.leads.out_lenght.max(0.0);
-    if len < 1e-9 {
-        return LeadGeometry::None;
-    }
-    let last = segments.last().unwrap();
-    let Some((tx, ty)) = last_segment_end_tangent(last) else {
-        return LeadGeometry::None;
-    };
-    let free_left = lead_free_side_left(setup, segments);
-    let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
-    // xmwy: same closed-contour gate as lead_in_geometry — open
-    // contours roll off into free space; the arc sweep adds nothing.
-    let kind = if matches!(setup.leads.out, LeadKind::Arc) && !is_closed_contour(segments) {
-        LeadKind::Straight
-    } else {
-        setup.leads.out
-    };
-    match kind {
-        LeadKind::Straight => LeadGeometry::Straight {
-            from: Point2::new(last.end.x + len * px, last.end.y + len * py),
-        },
-        LeadKind::Arc => {
-            // Mirror of lead-in: cutter is at Pn moving along +t.
-            //   center  = Pn + perp_free * radius
-            //   arc_end = Pn + radius * (perp_free + tangent)
-            // Sweep direction = free_left (CCW iff free is on the left).
-            let radius = len;
-            let center = Point2::new(last.end.x + radius * px, last.end.y + radius * py);
-            let arc_end = Point2::new(
-                last.end.x + radius * (px + tx),
-                last.end.y + radius * (py + ty),
-            );
-            // 62pd: same fit check as lead-in — if the swept disk
-            // overlaps a non-adjacent contour wall, fall back to a
-            // straight lead-out so the cutter doesn't carve into the
-            // already-cut profile while rolling off.
-            if arc_lead_fits(segments, center, radius, false) {
-                LeadGeometry::Arc {
-                    entry_or_exit: arc_end,
-                    center,
-                    ccw: free_left,
-                }
-            } else {
-                LeadGeometry::Straight {
-                    from: Point2::new(last.end.x + len * px, last.end.y + len * py),
-                }
-            }
-        }
-        LeadKind::Off => LeadGeometry::None,
     }
 }

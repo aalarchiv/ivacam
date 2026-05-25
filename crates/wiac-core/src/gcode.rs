@@ -161,9 +161,9 @@ pub trait PostProcessor {
     /// AFTER the rapid + Z-drop has landed the head at the pierce point;
     /// the beam ramps up to cut power just before the pierce dwell so
     /// the rapid itself runs at zero power (see `laser_arm`).
-    /// LinuxCNC / GRBL override to emit `M3 S<power>` (dynamic-laser
+    /// `LinuxCNC` / GRBL override to emit `M3 S<power>` (dynamic-laser
     /// mode `M4` on GRBL is also acceptable, but `M3` matches what
-    /// Lightburn / T2Laser / Estlcam laser emit by default). HPGL
+    /// Lightburn / `T2Laser` / Estlcam laser emit by default). HPGL
     /// ignores. Default no-op so non-laser-aware posts keep working.
     fn laser_on(&mut self, _power: u32) {}
 
@@ -180,7 +180,7 @@ pub trait PostProcessor {
     /// 20y5: laser-off — drop the beam between cuts so the rapid
     /// traverse doesn't burn a stripe through the part. Called by
     /// `cut_tool_off` at the end of every cut block in Laser mode.
-    /// LinuxCNC / GRBL override to emit `M5` (which is `S0` modally
+    /// `LinuxCNC` / GRBL override to emit `M5` (which is `S0` modally
     /// for GRBL's laser mode). HPGL ignores. Default no-op.
     fn laser_off(&mut self) {}
 
@@ -204,7 +204,7 @@ pub trait PostProcessor {
     );
 
     /// pxyt: format a dwell `seconds` value for the post's `G4 P<...>`
-    /// word. Default returns seconds (LinuxCNC / Smoothieware reading).
+    /// word. Default returns seconds (`LinuxCNC` / Smoothieware reading).
     /// Posts that own a [`post_profile::PostProfile`] override this to
     /// honour `dwell_unit` — Mach3 / Mach4 / Centroid / most Fanuc
     /// derivatives read `P` in milliseconds, so a profile that opts in
@@ -219,7 +219,7 @@ pub trait PostProcessor {
 
     /// G81 simple drill: rapid to (x, y, r), feed plunge to z, dwell, retract to r.
     /// `rate_v` is the plunge feed in mm/min; the default impl emits an
-    /// F<rate_v> before each G1 plunge so the move lands at a known
+    /// F<`rate_v`> before each G1 plunge so the move lands at a known
     /// feed regardless of what the modal F was when the caller invoked
     /// us (o01e — non-canned posts must self-anchor their feed).
     fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, rate_v: u32, dwell_sec: f64) {
@@ -453,7 +453,7 @@ pub struct CapturedPostState {
     pub last_speed: Option<u32>,
     /// sulg: last commanded coolant state. Without this, an op that
     /// turned coolant off would have its M9 line cached, but the next
-    /// op's `coolant_flood` would see the live PostState's stale
+    /// op's `coolant_flood` would see the live `PostState`'s stale
     /// `last_coolant` and skip re-emitting the M8 — leaving the next
     /// cut dry. `Unknown` keeps pre-sulg cache entries (which deserialize
     /// via `Default`) compatible with the live default initial state.
@@ -1679,7 +1679,7 @@ pub fn fmt_num_dp(v: f64, sep: char, decimals: u8) -> String {
     let zero_eps = 0.5 * 10f64.powi(-i32::from(decimals));
     let v = if v.abs() < zero_eps { 0.0 } else { v };
     let dp = usize::from(decimals);
-    let s = format!("{v:.*}", dp);
+    let s = format!("{v:.dp$}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
     let base = if trimmed.is_empty() {
         "0".into()
@@ -2407,7 +2407,7 @@ mod tests {
 
     /// lyq6: the lead-in plunge must drop to `setup.mill.start_depth`,
     /// not a literal Z=0. Verifies the proud-stock case
-    /// (start_depth < 0) where Z=0 would crash the cutter.
+    /// (`start_depth` < 0) where Z=0 would crash the cutter.
     #[test]
     fn lead_in_plunge_uses_mill_start_depth() {
         let mut setup = Setup::default();
@@ -2696,21 +2696,21 @@ mod tests {
             lines.iter().position(|l| l.contains(needle))
         };
         let arm = pos("M3 S0")
-            .expect(&format!("`M3 S0` must arm the laser BEFORE the rapid\n{g}"));
+            .unwrap_or_else(|| panic!("`M3 S0` must arm the laser BEFORE the rapid\n{g}"));
         // The G0 rapid TRAVERSE to the entry XY (not the safe-Z lift
         // that program_begin already emitted). Match on `G0 X` so we
         // don't grab the leading `G0 Z5`.
         let g0_xy = lines
             .iter()
             .position(|l| l.starts_with("G0 X"))
-            .expect(&format!("missing G0 X rapid to entry\n{g}"));
+            .unwrap_or_else(|| panic!("missing G0 X rapid to entry\n{g}"));
         let full_power = pos("M3 S800")
-            .expect(&format!("`M3 S800` must ramp up before pierce\n{g}"));
+            .unwrap_or_else(|| panic!("`M3 S800` must ramp up before pierce\n{g}"));
         // First LATERAL cut — skip the G1 Z plunge that follows the rapid.
         let first_lateral = lines
             .iter()
             .position(|l| l.starts_with("G1 X") || l.starts_with("G1 Y"))
-            .expect(&format!("missing G1 X/Y cut motion\n{g}"));
+            .unwrap_or_else(|| panic!("missing G1 X/Y cut motion\n{g}"));
 
         assert!(
             arm < g0_xy,
@@ -2731,7 +2731,7 @@ mod tests {
         // and the first cut motion. Otherwise the cut starts before the
         // beam has burned through focused stock.
         let dwell = pos("G4 P0.5")
-            .expect(&format!("expected pierce dwell `G4 P0.5` after power ramp\n{g}"));
+            .unwrap_or_else(|| panic!("expected pierce dwell `G4 P0.5` after power ramp\n{g}"));
         assert!(
             full_power < dwell && dwell < first_lateral,
             "pierce dwell must sit between power ramp ({full_power}) and first lateral cut ({first_lateral}); dwell at {dwell}\n{g}",
@@ -2779,7 +2779,7 @@ mod tests {
     }
 
     /// 3kqo: G83 / G73 R-word must be above the stock surface, NOT at
-    /// `start_depth` when start_depth sits below the stock top. If R
+    /// `start_depth` when `start_depth` sits below the stock top. If R
     /// is below the stock surface, the canned cycle's rapid retract
     /// between pecks pulls the bit back into the chip-clogged hole
     /// instead of clearing the chips.
@@ -2843,10 +2843,10 @@ mod tests {
         );
     }
 
-    /// 3kqo: when start_depth sits ABOVE the stock surface (recessed
+    /// 3kqo: when `start_depth` sits ABOVE the stock surface (recessed
     /// work where the user explicitly raised the entry plane), R
-    /// follows start_depth — it would be wasteful to drop R to the
-    /// stock_top clearance because every peck rapid then has to
+    /// follows `start_depth` — it would be wasteful to drop R to the
+    /// `stock_top` clearance because every peck rapid then has to
     /// travel further down through air to get back to the previous
     /// peck depth.
     #[test]
@@ -2896,11 +2896,11 @@ mod tests {
         );
     }
 
-    /// vfpa: lead-in plunge (G1 Z-drop from fast_move_z to start_depth)
-    /// must execute at the plunge feed (rate_v), not the cut feed
-    /// (rate_h). Asserts the F-word sequence at the contour entry:
-    /// F<rate_v> → G1 Z<entry> → F<rate_h> → G1 X/Y (first cut).
-    /// Without the fix the cutter plunges at rate_h (8x faster) and
+    /// vfpa: lead-in plunge (G1 Z-drop from `fast_move_z` to `start_depth`)
+    /// must execute at the plunge feed (`rate_v`), not the cut feed
+    /// (`rate_h`). Asserts the F-word sequence at the contour entry:
+    /// F<`rate_v`> → G1 Z<entry> → F<`rate_h`> → G1 X/Y (first cut).
+    /// Without the fix the cutter plunges at `rate_h` (8x faster) and
     /// snaps non-center-cutting endmill tips.
     #[test]
     fn vfpa_lead_in_plunge_uses_plunge_feed_not_cut_feed() {
@@ -2947,7 +2947,7 @@ mod tests {
     }
 
     /// irg7: with the vfpa lead-plunge-feed fix in place, EVERY lead
-    /// arm (Arc / Straight / None) must restore F<rate_h> between
+    /// arm (Arc / Straight / None) must restore F<`rate_h`> between
     /// the plunge Z-drop and the first cut motion. The Arc arm got
     /// this via the 3o3n defensive re-emit historically; the Straight
     /// and None arms relied on the modal F set further upstream
@@ -3035,7 +3035,7 @@ mod tests {
         check_arm(LeadKind::Off, 0.0, "None");
     }
 
-    /// o1g3: final retract after lead-out (to fast_move_z) must be a
+    /// o1g3: final retract after lead-out (to `fast_move_z`) must be a
     /// rapid (G0), not a cut motion (G1). The lead-out already rolled
     /// the cutter into free space; retracting at cut feed multiplies
     /// cycle time across hundreds of contours with zero safety benefit.
@@ -3084,7 +3084,7 @@ mod tests {
 
     /// o01e: GRBL has no canned-cycle support, so a Peck drill uses the
     /// trait-default G0/G1 expansion. That default must self-anchor the
-    /// plunge feed (F<rate_v>) at entry AND after each rapid retract
+    /// plunge feed (F<`rate_v`>) at entry AND after each rapid retract
     /// so the G1 plunges land at the safe plunge feed regardless of
     /// what modal F a prior op left set.
     #[test]
@@ -3533,8 +3533,8 @@ mod tests {
     }
 
     /// zpuk: Plasma mode emits a two-step Z entry — rapid to
-    /// pierce_height, dwell pierce_delay_sec, then G1 to cut_height.
-    /// The cut proceeds at constant Z = cut_height (multi_pass
+    /// `pierce_height`, dwell `pierce_delay_sec`, then G1 to `cut_height`.
+    /// The cut proceeds at constant Z = `cut_height` (`multi_pass`
     /// collapses for Plasma the same way it collapses for Drag).
     #[test]
     fn plasma_mode_emits_pierce_then_cut_height_sequence() {
@@ -3601,12 +3601,10 @@ mod tests {
         );
         // No cut moves at the main depth (Z=-1) — plasma collapses
         // to one pass at cut_height. NO Z-negative G1 should appear.
-        for line in lines.iter() {
-            if line.starts_with("G1 ") && line.contains("Z-") {
-                panic!(
+        for line in &lines {
+            assert!(!(line.starts_with("G1 ") && line.contains("Z-")), 
                     "zpuk: plasma must not descend below stock top; got: {line}\n{g}"
                 );
-            }
         }
         // Torch on emit (laser_on path) — `M3 S100`.
         assert!(
@@ -3617,8 +3615,8 @@ mod tests {
 
     /// 6yhs: Drag-knife mode (machine.mode = Drag) must collapse to
     /// a single pass at `setup.mill.depth` even without the global
-    /// plot_mode_z flag. setup_resolver sets mode=Drag per-op for
-    /// DragKnife ops; before the fix, multi_pass walked the schedule
+    /// `plot_mode_z` flag. `setup_resolver` sets mode=Drag per-op for
+    /// `DragKnife` ops; before the fix, `multi_pass` walked the schedule
     /// N times at incrementally negative Z (knife wear + Z-axis wear
     /// + 3x cycle time).
     ///
@@ -3672,7 +3670,7 @@ mod tests {
                 if let Some(rest) = tok.strip_prefix('Z') {
                     if let Ok(z) = rest.parse::<f64>() {
                         if z < 0.0 {
-                            neg_z_values.insert(format!("{:.4}", z));
+                            neg_z_values.insert(format!("{z:.4}"));
                         }
                     }
                 }
@@ -3681,14 +3679,12 @@ mod tests {
         assert_eq!(
             neg_z_values.len(),
             1,
-            "6yhs: Drag mode must collapse to a single cut Z (got {:?}); gcode:\n{g}",
-            neg_z_values
+            "6yhs: Drag mode must collapse to a single cut Z (got {neg_z_values:?}); gcode:\n{g}"
         );
         // Only Z value should be -1.5 (the configured depth).
         assert!(
             neg_z_values.contains("-1.5000"),
-            "6yhs: expected single Z = -1.5 in Drag mode; got {:?}\n{g}",
-            neg_z_values
+            "6yhs: expected single Z = -1.5 in Drag mode; got {neg_z_values:?}\n{g}"
         );
     }
 
@@ -3758,7 +3754,7 @@ mod tests {
     /// dragging the first few mm of each sub-polyline through unmelted
     /// material. Mirror the gd2x ordering used by `emit_offset`.
     /// Asserts a `G4 P<pierce_sec>` appears between the plunge G1 Z
-    /// (to start_depth) and the first lateral G1 motion.
+    /// (to `start_depth`) and the first lateral G1 motion.
     #[test]
     fn md0m_vcarve_emit_dwells_pierce_sec_after_plunge() {
         let mut setup = Setup::default();

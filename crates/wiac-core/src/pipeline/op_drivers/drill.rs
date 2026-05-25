@@ -104,19 +104,16 @@ fn emit_spot_pre_pass<P: PostProcessor>(
     }
     // Resolve the spot tool. If it doesn't exist, warn and skip the
     // pre-pass (don't fail the whole op — the main drill still runs).
-    let spot_tool = match project.tools.iter().find(|t| t.id == spot.spot_tool_id) {
-        Some(t) => t,
-        None => {
-            warnings.push(PipelineWarning {
-                op_id: Some(op.id),
-                kind: "drill_spot_tool_missing".into(),
-                message: format!(
-                    "Drill op '{}': spot_first.spot_tool_id={} is not in the project's tool library; skipping the spot pre-pass.",
-                    op.name, spot.spot_tool_id
-                ),
-            });
-            return Ok(());
-        }
+    let Some(spot_tool) = project.tools.iter().find(|t| t.id == spot.spot_tool_id) else {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "drill_spot_tool_missing".into(),
+            message: format!(
+                "Drill op '{}': spot_first.spot_tool_id={} is not in the project's tool library; skipping the spot pre-pass.",
+                op.name, spot.spot_tool_id
+            ),
+        });
+        return Ok(());
     };
     // Synthesize a tiny synthetic op pointing at the spot tool so the
     // tool's feeds / RPMs / pierce settings flow through the regular
@@ -899,9 +896,7 @@ mod tests {
                     || l.starts_with("G83 ")
                     || l.starts_with("G73 ")
             })
-            .last()
-            .map(|(i, _)| i)
-            .unwrap_or_else(|| panic!("expected a drill cycle line in:\n{}", resp.gcode));
+            .next_back().map_or_else(|| panic!("expected a drill cycle line in:\n{}", resp.gcode), |(i, _)| i);
         assert!(
             g80_idx > last_drill_idx,
             "G80 (idx {g80_idx}) must come AFTER the last drill cycle (idx {last_drill_idx}):\n{}",
@@ -911,9 +906,7 @@ mod tests {
             .iter()
             .enumerate()
             .skip(last_drill_idx + 1)
-            .find(|(_, l)| l.starts_with("G0 "))
-            .map(|(i, _)| i)
-            .unwrap_or_else(|| panic!("expected a G0 after the drill block in:\n{}", resp.gcode));
+            .find(|(_, l)| l.starts_with("G0 ")).map_or_else(|| panic!("expected a G0 after the drill block in:\n{}", resp.gcode), |(i, _)| i);
         assert!(
             g80_idx < next_g0_after_drill,
             "G80 (idx {g80_idx}) must precede the next G0 (idx {next_g0_after_drill}):\n{}",
@@ -928,7 +921,7 @@ mod tests {
     /// `start_depth=0` to `chamfer_z` at the SAME XY as the first
     /// rim point — a vertical plunge that snaps sharp V-bit tips on
     /// hardwood / aluminum. The fix prepends a spiral lead-in
-    /// (LEAD_IN_ANGLE_DEG=10°) so the first G1 with a Z change also
+    /// (`LEAD_IN_ANGLE_DEG=10`°) so the first G1 with a Z change also
     /// moves in XY.
     #[test]
     fn stufenfase_first_g1_is_not_vertical_plunge_at_rim() {

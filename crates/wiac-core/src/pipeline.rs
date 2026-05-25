@@ -550,7 +550,7 @@ pub(super) fn cancelled(cancel: Option<&CancelToken>) -> bool {
 /// for the cache key, per-op feed rate seeding for the time estimator)
 /// previously did `project.tools.iter().find(...)` — O(tools) per
 /// hit, called O(ops) times. For projects with dozens of tools and
-/// dozens of ops that's a measurable cost. A HashMap collapses each
+/// dozens of ops that's a measurable cost. A `HashMap` collapses each
 /// lookup to O(1) at the cost of one allocation per Generate.
 fn build_tool_index(tools: &[ToolEntry]) -> HashMap<u32, &ToolEntry> {
     tools.iter().map(|t| (t.id, t)).collect()
@@ -625,7 +625,7 @@ fn op_can_emit_internal_swap(op: &Op) -> bool {
 
 /// keyl: spindle-warmup time accrues PER tool-change envelope, not per
 /// unique tool. The old implementation summed `tool.pause` once per
-/// distinct tool_id, which under-reports the duration for sequences
+/// distinct `tool_id`, which under-reports the duration for sequences
 /// like `A(tool1) -> B(tool2) -> C(tool1)`: that program physically
 /// loads tool1 twice (first and third op), so the operator-set
 /// `pause` runs twice. Walk the enabled op stream with the same
@@ -1379,10 +1379,10 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 1);
     }
 
-    /// vmm0: a Profile op with finish_tool_id set to a different tool
-    /// MUST NOT count an internal swap. The runtime dual_tool path
+    /// vmm0: a Profile op with `finish_tool_id` set to a different tool
+    /// MUST NOT count an internal swap. The runtime `dual_tool` path
     /// only synthesizes a finish setup for Pocket / drill-with-chamfer
-    /// ops (synthesize_finish_setup at pipeline.rs:1037); a Profile
+    /// ops (`synthesize_finish_setup` at pipeline.rs:1037); a Profile
     /// op falls through to single-emit with no envelope, so the actual
     /// M6 count is 1, not 2. Pre-fix the estimator added +1
     /// unconditionally on `finish_tool_id != tool_id`.
@@ -1398,10 +1398,10 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 1);
     }
 
-    /// vmm0: Pocket op WITH a distinct finish_tool_id still counts the
+    /// vmm0: Pocket op WITH a distinct `finish_tool_id` still counts the
     /// internal swap — Pocket is the canonical dual-tool path. The
     /// estimator slightly over-counts when the offsets cascade fails
-    /// to produce an is_finish ring (e.g. zero-size pocket), but that
+    /// to produce an `is_finish` ring (e.g. zero-size pocket), but that
     /// edge is intentionally pessimistic per the bug report — the
     /// alternative is running the full offsets cascade twice.
     #[test]

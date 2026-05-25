@@ -481,32 +481,31 @@ mod tests {
         let holder = HolderProfile::from_tool(&t).expect("holder set");
         let hm = build_pocket(60, 60, -30.0, 5.0);
         let s = seg((5.0, 30.0, -25.0), (55.0, 30.0, -25.0));
-        match check_segment_holder_against_walls(&hm, &s, &holder) {
-            HolderCheck::Collision { cells, .. } => {
-                assert!(
-                    cells.len() > 10,
-                    "expected many offending cells, got {}",
-                    cells.len()
-                );
-                // Sorted worst-first.
-                for w in cells.windows(2) {
-                    assert!(
-                        w[0].required_clearance_mm >= w[1].required_clearance_mm,
-                        "cells must be sorted worst-first, got {:?} then {:?}",
-                        w[0],
-                        w[1],
-                    );
-                }
-                // Every cell has positive required clearance (since they
-                // all passed the wall-vs-envelope test).
-                for c in &cells {
-                    assert!(
-                        c.required_clearance_mm > 0.0,
-                        "cell has zero required clearance: {c:?}",
-                    );
-                }
-            }
-            other => panic!("expected Collision, got {other:?}"),
+        let result = check_segment_holder_against_walls(&hm, &s, &holder);
+        let HolderCheck::Collision { cells, .. } = result else {
+            panic!("expected Collision, got {result:?}");
+        };
+        assert!(
+            cells.len() > 10,
+            "expected many offending cells, got {}",
+            cells.len()
+        );
+        // Sorted worst-first.
+        for w in cells.windows(2) {
+            assert!(
+                w[0].required_clearance_mm >= w[1].required_clearance_mm,
+                "cells must be sorted worst-first, got {:?} then {:?}",
+                w[0],
+                w[1],
+            );
+        }
+        // Every cell has positive required clearance (since they
+        // all passed the wall-vs-envelope test).
+        for c in &cells {
+            assert!(
+                c.required_clearance_mm > 0.0,
+                "cell has zero required clearance: {c:?}",
+            );
         }
     }
 

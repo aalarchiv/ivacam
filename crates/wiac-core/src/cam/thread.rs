@@ -412,7 +412,7 @@ mod tests {
 
     /// Multi-revolution descent (Z range = 4 mm, pitch = 1 mm) covers
     /// exactly the requested Z range. Both the helix end and the
-    /// retract waypoint sit at bottom_z.
+    /// retract waypoint sit at `bottom_z`.
     #[test]
     fn multi_revolution_descent_reaches_bottom() {
         let wps = helix_waypoints(

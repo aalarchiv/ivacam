@@ -73,7 +73,7 @@ impl Post {
 
     /// Same as `fmt` but converts mm → emit units (w9hd). Used for
     /// every value that represents a length / position in pipeline
-    /// (mm) coordinates — X/Y/Z/I/J/R/Q + machine_offsets + Z-shift.
+    /// (mm) coordinates — X/Y/Z/I/J/R/Q + `machine_offsets` + Z-shift.
     /// Coordinates already in emit units (e.g. dwell seconds) keep
     /// using `fmt` directly.
     fn fmt_len(&self, v_mm: f64) -> String {

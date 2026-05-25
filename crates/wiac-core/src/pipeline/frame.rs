@@ -165,7 +165,7 @@ mod tests {
             .fold(f64::INFINITY, f64::min)
     }
 
-    /// l8fz: lead-arc length 5 mm + frame_padding 2 mm should yield a
+    /// l8fz: lead-arc length 5 mm + `frame_padding` 2 mm should yield a
     /// frame that sits 7 mm outside the source contour (lead-arc adds to
     /// padding, not max with).
     #[test]
@@ -191,7 +191,7 @@ mod tests {
         );
     }
 
-    /// l8fz: finish_xy_allowance pushes the frame outward too.
+    /// l8fz: `finish_xy_allowance` pushes the frame outward too.
     #[test]
     fn frame_envelope_includes_finish_xy_allowance() {
         let op = pocket_frame_op(ContourParams::default(), Some(1.0), Some(3.0));

@@ -68,11 +68,11 @@ pub struct PostProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axes: Option<AxesConfig>,
     /// nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P.
-    /// LinuxCNC reads `P` in SECONDS; Mach3 / Mach4 / Centroid /
+    /// `LinuxCNC` reads `P` in SECONDS; Mach3 / Mach4 / Centroid /
     /// many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time
     /// scaling lives at the post boundary so the pipeline keeps
     /// passing seconds and the post multiplies by 1000 for ms posts.
-    /// `None` ⇒ Seconds (LinuxCNC default).
+    /// `None` ⇒ Seconds (`LinuxCNC` default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dwell_unit: Option<DwellUnit>,
     /// tsay: decimal places used by `fmt_num` when the project is in
@@ -86,9 +86,9 @@ pub struct PostProfile {
 }
 
 /// nxn0: which time unit the post emits for `P<value>` dwell words.
-/// LinuxCNC and Smoothieware read P in seconds; Mach3/Mach4/Centroid/
+/// `LinuxCNC` and Smoothieware read P in seconds; Mach3/Mach4/Centroid/
 /// most Fanuc-derived controllers read P in milliseconds. Defaulting
-/// to Seconds keeps the existing LinuxCNC golden snapshots stable.
+/// to Seconds keeps the existing `LinuxCNC` golden snapshots stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DwellUnit {

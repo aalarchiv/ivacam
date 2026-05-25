@@ -123,12 +123,12 @@ mod tests {
         assert_eq!(s, vec![-3.0]);
     }
 
-    /// 580k: negative finish_step normalizes to positive magnitude.
+    /// 580k: negative `finish_step` normalizes to positive magnitude.
     /// The caller (`multi_pass`) abs()-and-filters before reaching us,
     /// but the schedule builder itself must also be robust against a
     /// negative slipping through — otherwise a stale serialized
     /// project with `finish_step = -0.2` would either produce a
-    /// schedule that cuts above start_depth or duplicates the final
+    /// schedule that cuts above `start_depth` or duplicates the final
     /// pass.
     #[test]
     fn build_z_schedule_negative_finish_step_normalized() {

@@ -41,7 +41,7 @@ use crate::pipeline::CancelToken;
 /// 1ao5: structured record produced when the trochoidal emitter has to
 /// abandon the toolpath before the full centerline has been swept —
 /// typically because the loop disc at some vertex strayed outside the
-/// safe pocket interior (a narrow neck the loop_radius_factor can't
+/// safe pocket interior (a narrow neck the `loop_radius_factor` can't
 /// thread, or the very first vertex with no prior loop to fall back to).
 /// The per-op driver drains this into a `trochoidal_incomplete`
 /// `PipelineWarning` so the user sees that part of the pocket was left
@@ -326,7 +326,7 @@ fn subdivide_chords(pts: &[Point2], max_chord: f64) -> Vec<Point2> {
 
 /// True when the closed disc of radius `r` around `center` lies fully
 /// inside `outer` (the wall — the input pocket polygon, already inset
-/// by tool_r at the caller) and doesn't intersect any island. Sampled
+/// by `tool_r` at the caller) and doesn't intersect any island. Sampled
 /// at 12 boundary points + the center; not exact but catches the
 /// failure mode that matters here (loop center too close to a
 /// re-entrant corner or a narrow neck the cutter can't thread).

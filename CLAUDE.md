@@ -52,18 +52,48 @@ treat local commits as authoritative.
 
 ## Build & Test
 
-_Add your build and test commands here_
+Full setup + per-transport build instructions live in
+[`BUILDING.md`](./BUILDING.md). Quick reference:
 
 ```bash
-# Example:
-# npm install
-# npm test
+# Rust workspace (wiac-core + transports)
+cargo build --workspace
+cargo test --workspace --tests   # full Rust unit + integration suite
+cargo clippy --workspace --no-deps --release
+
+# Frontend (Svelte 5 + Vite)
+cd frontend
+pnpm install
+pnpm exec svelte-check         # type-check (0 errors/warnings expected)
+pnpm test --run                # vitest suite
+pnpm dev                       # dev server on http://localhost:5173
+
+# Desktop bundle (Tauri 2)
+cargo tauri build --bundles appimage
 ```
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full picture (crate
+layout, data flow, the schema seam, key patterns, and anti-patterns).
+In short: `wiac-core` holds all CAM/geometry/sim math; the `wiac-cli` /
+`-server` / `-tauri` / `-wasm` crates are thin transports over it; the
+Svelte frontend in `frontend/` talks to whichever transport is active
+through a generated TypeScript client (`schema/openapi.yaml` →
+`frontend/src/lib/api/generated.ts`).
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+See the "Key patterns" and "Anti-patterns" sections of
+[`ARCHITECTURE.md`](./ARCHITECTURE.md), and [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+for the end-to-end recipes (new op kind, new post-processor). Highlights:
+
+- Frontend state lives in `$state`-class slices under
+  `frontend/src/lib/state/`; mutations route through the command bus
+  for undo.
+- Never hand-edit `frontend/src/lib/api/generated.ts` — change the Rust
+  type and regenerate the schema.
+- Push post-processor dialect differences into trait methods, not inline
+  branches in the emit shells.
+- Tests co-locate with the code they cover; pure logic is extracted into
+  plain `.ts` / module files so it's testable without the rune runtime.

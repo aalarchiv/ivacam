@@ -78,7 +78,7 @@ needs. The viaConstructor checkout supplies DXF fixtures under
 
 ```sh
 cargo build --workspace
-cargo test --workspace --tests   # 56+ unit + integration tests
+cargo test --workspace --tests   # full Rust unit + integration suite
 ```
 
 ### Web frontend (browser)

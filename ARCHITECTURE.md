@@ -240,8 +240,10 @@ Each of these caused a real bug. Don't reintroduce them.
   assigning `$state`. See `MachineDialog.svelte`'s `$effect` for the
   fix shape.
 - **`window.confirm` in Tauri** (issue C10): WebKitGTK's native
-  `confirm` blocks the renderer and never returns. Use inline
-  two-step confirms in Svelte.
+  `confirm` blocks the renderer and never returns. Use the shared
+  styled prompt — `confirmStore.ask({…})` rendered by
+  `ConfirmPrompt.svelte` (see `confirmDiscardIfDirty` in
+  `lib/state/file_ops.ts` for the discard-before-load shape).
 - **`JSON.parse(JSON.stringify(proxy))` for clone** of Svelte 5
   `$state` objects: the proxy survives in the result and writes leak
   back. Use `structuredClone` instead.

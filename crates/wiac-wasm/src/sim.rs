@@ -406,6 +406,7 @@ mod tests {
             tip_diameter: None,
             tip_angle_deg: 60.0,
             dragoff: None,
+            drag_knife_self_align_angle_deg: None,
             flutes: 2,
             speed: 18_000,
             plunge_rate: 100,
@@ -441,6 +442,12 @@ mod tests {
             // core test fixture (sim/heightmap.rs) so WASM tests still
             // compile. Default is Cw, matches pre-spindle behavior.
             spindle_direction: SpindleDirection::default(),
+            // zpuk/r2af specialty fields — plasma pierce/cut heights +
+            // vcarve lead-in. None = inactive, matches a plain endmill.
+            pierce_height_mm: None,
+            cut_height_mm: None,
+            pierce_delay_sec: None,
+            vcarve_lead_in_angle_deg: None,
         }
     }
 
@@ -457,8 +464,11 @@ mod tests {
     #[test]
     fn new_initializes_heightmap_to_top_z() {
         let sim = Simulator::new(0.0, 0.0, 20.0, 20.0, 1.0, 0.0);
-        assert_eq!(sim.cols(), 20);
-        assert_eq!(sim.rows(), 20);
+        // ceil(width / cell) + 1 grid lines — the +1 fencepost (see
+        // Heightmap::from_bbox) so the bbox max-corner stays on-grid.
+        // 20 mm / 1 mm = 20 cells → 21 nodes per axis.
+        assert_eq!(sim.cols(), 21);
+        assert_eq!(sim.rows(), 21);
         assert!((sim.cell_size() - 1.0).abs() < 1e-9);
         assert!((sim.top_z() - 0.0).abs() < 1e-6);
         assert!(sim.heightmap().data.iter().all(|&z| (z - 0.0).abs() < 1e-6));

@@ -12,7 +12,14 @@
   let { onClose }: Props = $props();
 </script>
 
-<Modal {onClose} width="min(560px, 95vw)" maxHeight="90vh" ariaLabelledBy="shortcut-help-title">
+<Modal
+  {onClose}
+  persistKey="shortcuts"
+  width="min(560px, 95vw)"
+  draggable
+  resizable
+  ariaLabelledBy="shortcut-help-title"
+>
  <div class="shortcut-grid">
   <header>
     <h2 id="shortcut-help-title">Keyboard &amp; mouse shortcuts</h2>

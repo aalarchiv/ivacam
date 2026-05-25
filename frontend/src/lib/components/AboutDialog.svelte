@@ -131,7 +131,15 @@
   ];
 </script>
 
-<Modal {onClose} modalClass="about-modal" width="min(640px, 95vw)" ariaLabelledBy="about-title">
+<Modal
+  {onClose}
+  modalClass="about-modal"
+  persistKey="about"
+  width="min(640px, 95vw)"
+  draggable
+  resizable
+  ariaLabelledBy="about-title"
+>
   <header>
     <h2 id="about-title">About wiaConstructor</h2>
     <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>

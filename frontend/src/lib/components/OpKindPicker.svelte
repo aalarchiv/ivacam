@@ -13,6 +13,7 @@
     chamfer: 'Chamfer',
     engrave: 'Engrave',
     drag_knife: 'Drag-knife',
+    t_slot: 'T-Slot',
     vcarve: 'V-Carve',
     pause: 'Pause',
   };
@@ -24,6 +25,7 @@
     chamfer: '◇',
     engrave: '✎',
     drag_knife: '✁',
+    t_slot: '⊤',
     vcarve: '⌃',
     pause: '⏸',
   };
@@ -42,6 +44,7 @@
     'chamfer',
     'engrave',
     'drag_knife',
+    't_slot',
     'vcarve',
     'pause',
   ];
@@ -70,6 +73,8 @@
       'Drills holes at point geometry or small closed circles. Choose simple / peck / chip-break cycle.',
     engrave: 'Tool-on engraving along the source path. No offset.',
     drag_knife: 'Drag-knife cuts with trail-compensation arcs at corners.',
+    t_slot:
+      'Undercut pass along the source path at the floor depth with a T-slot cutter. Pre-cut a stem slot ≥ the neck width first; enter laterally (the wide head cannot plunge through the narrow stem).',
     vcarve:
       'Variable-depth medial-axis carving with a V-bit. Tip dips deepest where the region is widest.',
     chamfer:
@@ -112,6 +117,7 @@
     chamfer: ['mill'],
     engrave: ['mill', 'laser'],
     drag_knife: ['drag'],
+    t_slot: ['mill'],
     vcarve: ['mill'],
     // Pause carries no tool / motion — every machine can pause.
     pause: ['mill', 'laser', 'drag'],

@@ -55,6 +55,9 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // Dedicated kind — the post's pivot-arc compensation expects the
       // dragoff geometry.
       return ['drag_knife'];
+    case 't_slot':
+      // 3g6u: needs the undercut head + neck geometry of a T-slot cutter.
+      return ['t_slot'];
     case 'vcarve':
       // Depth-vs-radius math assumes a conical cutter with a known
       // tip angle.

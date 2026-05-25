@@ -356,7 +356,11 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
         OpKind::Pocket { .. } => ToolOffset::None,
-        OpKind::Engrave { .. } | OpKind::DragKnife { .. } => ToolOffset::On,
+        // 3g6u: T-slot rides ON the centerline like Engrave — the head's
+        // full diameter (not a radius offset) defines the undercut width.
+        OpKind::Engrave { .. } | OpKind::DragKnife { .. } | OpKind::TSlot { .. } => {
+            ToolOffset::On
+        }
         _ => ToolOffset::None,
     };
     // Trochoidal pockets demand a helical descent. If the user picked
@@ -537,6 +541,20 @@ pub(in crate::pipeline) fn synthesize_op_setup(
                 ),
             });
         }
+    }
+    // 3g6u: a T-slot op cuts the undercut in ONE pass at the floor Z. The
+    // cutting head sits at a single plane — there is no step-down (and it
+    // can't plunge through the narrow stem to reach intermediate levels
+    // anyway). Collapse the Z schedule to a single full-range pass so the
+    // emitter doesn't cascade the head through -1, -2, … like a Profile
+    // would (that head-at-every-depth cascade is exactly the bug this op
+    // kind fixes). Unlike Chamfer — which keeps the step-down so a V-bit
+    // ramps in gently — the T-slot head MUST arrive at the floor directly.
+    if matches!(op.kind, OpKind::TSlot { .. }) {
+        let span = setup.mill.depth - setup.mill.start_depth; // negative = downward
+        setup.mill.step = if span.abs() > 1e-9 { span } else { -1e-6 };
+        setup.mill.through_depth = 0.0;
+        setup.mill.depth_list = Vec::new();
     }
     Ok(setup)
 }

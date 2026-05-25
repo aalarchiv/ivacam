@@ -334,6 +334,7 @@ type WireOpKind =
   | { type: 'chamfer'; width_mm?: number; finish_pass?: boolean }
   | { type: 'engrave'; contour: WireContourParams }
   | { type: 'drag_knife'; contour: WireContourParams }
+  | { type: 't_slot'; contour: WireContourParams }
   | { type: 'helix' }
   | { type: 'v_carve'; carve: WireVCarveParams }
   | { type: 'pause'; message: string };
@@ -753,6 +754,8 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       return { type: 'engrave', contour: buildContourParams(op) } as WireOpKind;
     case 'drag_knife':
       return { type: 'drag_knife', contour: buildContourParams(op) } as WireOpKind;
+    case 't_slot':
+      return { type: 't_slot', contour: buildContourParams(op) } as WireOpKind;
     case 'chamfer':
       return {
         type: 'chamfer',

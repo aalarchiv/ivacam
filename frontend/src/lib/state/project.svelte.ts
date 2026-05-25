@@ -1436,7 +1436,7 @@ class ProjectState {
       depth: -2,
       startDepth: 0,
       step: -1,
-      offset: kind === 'engrave' || kind === 'drag_knife' ? 'on' : 'outside',
+      offset: kind === 'engrave' || kind === 'drag_knife' || kind === 't_slot' ? 'on' : 'outside',
       pocketStrategy: kind === 'pocket' ? 'cascade' : null,
       ...(kind === 'drill' ? { drillCycle: { kind: 'simple', dwell_sec: 0 } as DrillCycle } : {}),
       cutDirection: 'conventional',

@@ -34,6 +34,7 @@ export type OpKind =
   | 'chamfer'
   | 'engrave'
   | 'drag_knife'
+  | 't_slot'
   | 'vcarve'
   | 'pause';
 
@@ -224,6 +225,17 @@ export interface DragKnifeOp extends OpBase {
   offset: ProfileOffset;
 }
 
+/// 3g6u: T-slot / undercut op — drives a T-slot / keyway cutter along
+/// the source path as the slot centerline, at a single floor Z, so its
+/// wide head carves the undercut. `offset` is always `'on'`; the head
+/// width comes from the tool. Behaviorally a single-Z centerline follow
+/// (like Engrave). Requires a `t_slot` tool and a pre-cut stem slot ≥
+/// the neck width.
+export interface TSlotOp extends OpBase {
+  kind: 't_slot';
+  offset: ProfileOffset;
+}
+
 /// rt1.34: program-level optional-stop op. Emits M5 → M0 → M3 at the
 /// op's slot in the operations list, with the message rendered as a
 /// gcode comment. No tool, no source — the op exists purely to pause
@@ -250,6 +262,7 @@ export type OpEntry =
   | ThreadOp
   | EngraveOp
   | DragKnifeOp
+  | TSlotOp
   | PauseOp;
 
 /// Patch type for `project.updateOperation`. A patch covers the full
@@ -295,11 +308,14 @@ export function isContourOp(op: OpEntry): op is ProfileOp | PocketOp {
 /// Predicate / type guard: this op rides the boundary of selected
 /// objects rather than carving area / drilling points. Used by
 /// rendering / tooling that highlights cut paths but not fills.
-export function isPathOp(op: OpEntry): op is ProfileOp | EngraveOp | DragKnifeOp | VCarveOp {
+export function isPathOp(
+  op: OpEntry,
+): op is ProfileOp | EngraveOp | DragKnifeOp | TSlotOp | VCarveOp {
   return (
     op.kind === 'profile' ||
     op.kind === 'engrave' ||
     op.kind === 'drag_knife' ||
+    op.kind === 't_slot' ||
     op.kind === 'vcarve'
   );
 }

@@ -1327,7 +1327,10 @@ pub fn apply_cut_direction(
             | OpKind::Chamfer { .. }
             | OpKind::Helix
             | OpKind::Pause { .. }
-            | OpKind::VCarve { .. } => CutContext::Skip,
+            | OpKind::VCarve { .. }
+            // 3g6u: T-slot rides the centerline (no inside/outside winding
+            // to enforce) just like Engrave.
+            | OpKind::TSlot { .. } => CutContext::Skip,
         }
     };
     for offset in offsets.iter_mut() {

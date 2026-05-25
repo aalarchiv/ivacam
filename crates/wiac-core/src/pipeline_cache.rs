@@ -652,6 +652,11 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             h.write_u8(9);
             hash_vcarve_params(carve, h);
         }
+        // 3g6u: next free discriminant after Pause(10).
+        OpKind::TSlot { contour } => {
+            h.write_u8(11);
+            hash_contour_params(contour, h);
+        }
     }
 }
 

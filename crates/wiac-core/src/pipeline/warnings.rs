@@ -379,6 +379,12 @@ pub(super) fn push_tool_fit_kind_warnings(
         (OpKind::Thread { .. }, ToolKind::Drill) => {
             Some("thread op assigned a drill bit (drill cuts axially, not helically)")
         }
+        // 3g6u: a T-slot op needs a T-slot / undercut cutter — any other
+        // kind has no wide head to carve the undercut, so it would just
+        // cut a plain centerline groove of its nominal diameter.
+        (OpKind::TSlot { .. }, k) if k != ToolKind::TSlot => {
+            Some("t-slot op assigned a non-T-slot cutter (no undercut head)")
+        }
         _ => None,
     };
     if let Some(msg) = mismatch {
@@ -388,6 +394,26 @@ pub(super) fn push_tool_fit_kind_warnings(
             message: format!(
                 "{msg} — '{}' on op '{}'. Pick a different tool kind.",
                 tool.name, op.name
+            ),
+        });
+    }
+    // 3g6u: T-slot cuts ONLY the undercut at the floor Z. A T-slot cutter
+    // can't mill the narrow stem (its head is the widest part, at the
+    // tip), so the user must have cut a stem slot >= the neck width with
+    // a prior endmill op for the neck to ride in — and the head needs
+    // lateral clearance to reach the floor (lead in from outside the
+    // stock / a pre-bored clearance hole, not a vertical plunge through
+    // the narrow stem). Surface this as a non-blocking prerequisite note.
+    if matches!(op.kind, OpKind::TSlot { .. }) {
+        let neck = tool
+            .tslot_neck_diameter_mm
+            .map_or_else(|| "the neck".to_string(), |d| format!("{d:.2} mm (the neck width)"));
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "tslot_requires_stem_slot".into(),
+            message: format!(
+                "T-slot op '{}' cuts only the undercut at the floor depth. Cut a stem slot at least {neck} wide down to that depth with a prior endmill op first, and enter the cut laterally (lead-in from outside the stock or a pre-bored clearance hole) — the wide head can't plunge through the narrow stem.",
+                op.name
             ),
         });
     }

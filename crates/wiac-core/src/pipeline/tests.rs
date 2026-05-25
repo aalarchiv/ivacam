@@ -3017,3 +3017,129 @@
             resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
     }
+
+    /// 3g6u: a T-slot op cuts the undercut as a SINGLE pass at the floor
+    /// Z — it must NOT cascade through intermediate depth levels the way
+    /// a Profile/Pocket would (that head-at-every-depth cascade is the
+    /// bug this op kind fixes). Mirrors the plot-mode Engrave test.
+    fn tslot_tool(id: u32, head_dia: f64, neck_dia: f64) -> ToolEntry {
+        let mut t = endmill(id, head_dia);
+        t.kind = ToolKind::TSlot;
+        t.tslot_neck_diameter_mm = Some(neck_dia);
+        t.tslot_neck_length_mm = Some(5.0);
+        t
+    }
+
+    // `depth` is parametrized so each test builds a DISTINCT project —
+    // run_pipeline shares a process-global op cache (GLOBAL_CACHE), so two
+    // identical projects would collide and the second would hit the cache
+    // (skipping build_op_offsets + its warnings). A unique depth per test
+    // keeps every call a cache miss.
+    fn tslot_project(tool: ToolEntry, depth: f64) -> Project {
+        let mut params = OpParams::mill_default();
+        params.depth = depth; // a Profile/Pocket would cascade -1, -2, …
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        params.step = Some(-1.0);
+        Project {
+            segments: closed_square_offset(20.0, 30.0, 30.0),
+            machine: MachineConfig::default(),
+            tools: vec![tool],
+            operations: vec![Op {
+                id: 1,
+                name: "T-slot".into(),
+                enabled: true,
+                kind: OpKind::TSlot {
+                    contour: crate::project::ContourParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        }
+    }
+
+    #[test]
+    fn tslot_op_emits_single_floor_z_pass_not_a_depth_cascade() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: tslot_project(tslot_tool(1, 12.0, 6.0), -3.0),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("; OP 1"), "missing op marker:\n{}", resp.gcode);
+        let z_values: std::collections::HashSet<String> = resp
+            .gcode
+            .lines()
+            .flat_map(|l| {
+                l.split_whitespace()
+                    .filter_map(|t| t.strip_prefix('Z'))
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        // Only the safe Z (5), the surface pre-plunge (0), and the single
+        // floor Z (-3) may appear — never the cascade levels -1 / -2.
+        for z in &z_values {
+            assert!(
+                ["5", "-3", "0"].contains(&z.as_str()),
+                "T-slot emitted an unexpected Z {z} (depth cascade leaked?):\n{}",
+                resp.gcode
+            );
+        }
+        assert!(z_values.contains("-3"), "missing floor-Z undercut pass:\n{}", resp.gcode);
+        assert!(
+            !z_values.contains("-1") && !z_values.contains("-2"),
+            "T-slot cascaded through intermediate depths (the bug):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// 3g6u: a T-slot op always surfaces the stem-slot prerequisite note
+    /// (a T-slot cutter can't mill the narrow stem itself).
+    #[test]
+    fn tslot_op_emits_stem_slot_prerequisite_warning() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: tslot_project(tslot_tool(1, 12.0, 6.0), -7.0),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let hit = resp
+            .warnings
+            .iter()
+            .find(|w| w.kind == "tslot_requires_stem_slot")
+            .expect("expected tslot_requires_stem_slot warning");
+        assert!(
+            hit.message.contains("6.00 mm") && hit.message.contains("stem slot"),
+            "warning should name the neck width + stem-slot prerequisite: {}",
+            hit.message
+        );
+    }
+
+    /// 3g6u: a T-slot op with a non-T-slot cutter warns tool_kind_mismatch
+    /// (no undercut head ⇒ it would just cut a plain centerline groove).
+    #[test]
+    fn tslot_op_with_plain_endmill_warns_kind_mismatch() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: tslot_project(endmill(1, 6.0), -5.0),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"),
+            "expected tool_kind_mismatch for an endmill on a T-slot op; got {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
+        );
+    }

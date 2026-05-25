@@ -512,9 +512,14 @@ pub(super) fn build_op_offsets(
                     offsets.push(o);
                 }
             }
-            OpKind::Engrave { .. } | OpKind::DragKnife { .. } => {
-                // Both follow the source path with no offset; the gcode
-                // emitter handles drag-knife trail compensation per-op.
+            OpKind::Engrave { .. } | OpKind::DragKnife { .. } | OpKind::TSlot { .. } => {
+                // All three follow the source path with no offset. Engrave
+                // rides the centerline; drag-knife adds trail compensation
+                // in the emitter; 3g6u: T-slot rides the centerline too but
+                // at the op's floor Z, where the cutter's head sweeps the
+                // undercut (a single-Z pass — the multi-level cascade that
+                // a Profile/Pocket would run is exactly the
+                // head-at-every-depth bug this op kind fixes).
                 offsets.push(PolylineOffset {
                     segments: obj.segments.clone(),
                     closed: obj.closed,

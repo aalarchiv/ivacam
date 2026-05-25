@@ -1360,6 +1360,29 @@ components:
         required:
         - type
         type: object
+      - description: 'T-slot / undercut pass (3g6u). Drives a T-slot / keyway cutter (`ToolKind::TSlot`: wide cutting head at the tip, narrow neck above) along the source path as the slot centerline, at a single floor Z (= `params.depth`). The head sweeps its full diameter to carve the undercut "wings"; the neck rides in a stem slot that a prior endmill op must have cut to >= the neck width (a T-slot cutter physically cannot mill the narrow stem itself, since its head is the widest part). Behaviorally a single-Z centerline follow like `Engrave`; the dedicated kind exists so the op is discoverable, validates the tool kind, and carries the stem-slot prerequisite warning. Carries `contour` params for lead-in / cut direction (a lateral lead-in lets the head enter the floor plane without plunging through the narrow stem).'
+        properties:
+          contour:
+            allOf:
+            - $ref: '#/components/schemas/ContourParams'
+            default:
+              leads:
+                in: off
+                in_lenght: 5.0
+                out: off
+                out_lenght: 5.0
+              tabs:
+                active: false
+                height: 1.0
+                tab_type: rectangle
+                width: 10.0
+          type:
+            enum:
+            - t_slot
+            type: string
+        required:
+        - type
+        type: object
       - description: Helical entry into a closed contour. Reserved for future thread-mill style expansion; no params today.
         properties:
           type:

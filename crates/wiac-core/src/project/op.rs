@@ -46,7 +46,8 @@ impl Op {
             OpKind::Profile { contour, .. }
             | OpKind::Pocket { contour, .. }
             | OpKind::Engrave { contour }
-            | OpKind::DragKnife { contour } => Some(contour),
+            | OpKind::DragKnife { contour }
+            | OpKind::TSlot { contour } => Some(contour),
             _ => None,
         }
     }
@@ -57,7 +58,8 @@ impl Op {
             OpKind::Profile { contour, .. }
             | OpKind::Pocket { contour, .. }
             | OpKind::Engrave { contour }
-            | OpKind::DragKnife { contour } => Some(contour),
+            | OpKind::DragKnife { contour }
+            | OpKind::TSlot { contour } => Some(contour),
             _ => None,
         }
     }
@@ -331,6 +333,23 @@ pub enum OpKind {
     /// Drag-knife — emits trail-compensation moves. Carries `contour`
     /// params (mainly approach point + cut direction).
     DragKnife {
+        #[serde(default)]
+        contour: ContourParams,
+    },
+    /// T-slot / undercut pass (3g6u). Drives a T-slot / keyway cutter
+    /// (`ToolKind::TSlot`: wide cutting head at the tip, narrow neck
+    /// above) along the source path as the slot centerline, at a single
+    /// floor Z (= `params.depth`). The head sweeps its full diameter to
+    /// carve the undercut "wings"; the neck rides in a stem slot that a
+    /// prior endmill op must have cut to >= the neck width (a T-slot
+    /// cutter physically cannot mill the narrow stem itself, since its
+    /// head is the widest part). Behaviorally a single-Z centerline
+    /// follow like `Engrave`; the dedicated kind exists so the op is
+    /// discoverable, validates the tool kind, and carries the
+    /// stem-slot prerequisite warning. Carries `contour` params for
+    /// lead-in / cut direction (a lateral lead-in lets the head enter
+    /// the floor plane without plunging through the narrow stem).
+    TSlot {
         #[serde(default)]
         contour: ContourParams,
     },

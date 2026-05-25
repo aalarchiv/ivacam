@@ -105,6 +105,7 @@
     loadSample,
     saveProject,
     exportGeneratedGcode,
+    confirmDiscardIfDirty,
     SAMPLES,
   } from './lib/state/file_ops';
   import { onMount } from 'svelte';
@@ -359,13 +360,10 @@
     // when loadFromPath / loadProjectPath also vet it. `openFile` /
     // `openProject` do their own check; the path variants don't,
     // because the OS file-association launch + reopen banner cases
-    // intentionally skip the prompt.
-    if (project.dirty) {
-      const ok = window.confirm(
-        'Your project has unsaved changes. Continue and load the recent project? (Your unsaved work will be lost.)',
-      );
-      if (!ok) return;
-    }
+    // intentionally skip the prompt. npig: route through the shared
+    // styled ConfirmPrompt (same dialog as Open / Quit) rather than a
+    // native window.confirm.
+    if (!(await confirmDiscardIfDirty('load the recent project'))) return;
     const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
     if (isProjectFile) await loadProjectPath(path);
     else await loadFromPath(path);

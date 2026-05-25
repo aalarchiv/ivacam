@@ -111,8 +111,11 @@ export async function openFile() {
 ///
 /// Uses `confirmStore` for an in-app styled prompt — the previous
 /// `window.confirm` regressed against the Tauri C10 rule (WebKitGTK
-/// blocks the renderer and never returns).
-async function confirmDiscardIfDirty(action: string): Promise<boolean> {
+/// blocks the renderer and never returns). Exported so every
+/// destructive-load entry point (including App.svelte's Recent click)
+/// shares ONE confirmation dialog instead of a second native
+/// `window.confirm` (npig).
+export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   if (!project.dirty) return true;
   if (typeof window === 'undefined') return true;
   return confirmStore.ask({

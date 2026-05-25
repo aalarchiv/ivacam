@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { project, isContourOp } from '../state/project.svelte';
+  import { STOCK_OUTLINE_LAYER } from '../state/stock-outline';
   import {
     buildObjectPolylines,
     polylineAtT,
@@ -374,7 +375,9 @@
     const dataY = (offY - canvasY) / scale;
     const tolData = HIT_PIXEL_TOL / scale;
     return queryHit(data, hitIndex, dataX, dataY, tolData, (l) =>
-      project.visibleLayers.has(l),
+      // 8jce/vm3c: the synthetic stock-outline layer isn't in the
+      // user's visibleLayers set, but it must always be hittable.
+      l === STOCK_OUTLINE_LAYER || project.visibleLayers.has(l),
     );
   }
 
@@ -632,8 +635,9 @@
     const out: number[] = [];
     for (const m of meta) {
       // Layer-visibility filter so the user can't accidentally pick
-      // hidden chains.
-      if (!visibleLayers.has(m.layer)) continue;
+      // hidden chains. The synthetic stock-outline layer (vm3c) is
+      // always pickable — it isn't in the user's visibleLayers set.
+      if (m.layer !== STOCK_OUTLINE_LAYER && !visibleLayers.has(m.layer)) continue;
       const b = m.bbox;
       // Containment: every corner of the object's bbox must lie inside
       // the selection rectangle.
@@ -1300,6 +1304,7 @@
     // overlays (selection / hover / op-assignment halos) go on the
     // overlay canvas, so editing those does NOT invalidate this layer.
     const visibleLayersSnap = new Set(project.visibleLayers);
+    visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
     ctx.lineWidth = 1.25;
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
@@ -1347,6 +1352,7 @@
     const haloColor = themeVar('--text-strong', '#ffffff');
     const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
     const visibleLayersSnap = new Set(project.visibleLayers);
+    visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
     const selectedObjectsSnap = new Set(project.selectedObjects);
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];

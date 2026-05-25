@@ -5,6 +5,7 @@
   /// op (drives the inline OpPropertiesPanel). Drag the grip to
   /// reorder.
   import { project, type OpEntry } from '../state/project.svelte';
+  import { warningFocus } from '../state/warning-focus.svelte';
   import OpPropertiesPanel from './OpPropertiesPanel.svelte';
   import OpKindPicker, {
     KIND_ICON,
@@ -139,6 +140,15 @@
       return bad ? { label: '✘', tone: 'bad', reason } : { label: '⚠', tone: 'warn', reason };
     }
     return { label: '✓', tone: 'ok', reason: 'Up to date with the last Generate.' };
+  }
+
+  /// 4kzy: true when this op has at least one warning that's listed in
+  /// the warnings panel (pipeline `generated.warnings` keyed by op_id),
+  /// so the status badge can act as a "show it in the panel" button.
+  /// Status tones from non-panel reasons (missing tool, orphan source)
+  /// stay a plain tooltip — there's nothing to reveal in the panel.
+  function opHasPanelWarning(op: OpEntry): boolean {
+    return (project.generated?.warnings ?? []).some((w) => w.op_id === op.id);
   }
 
   function selectOp(id: number) {
@@ -364,7 +374,20 @@
             >
             <span class="name">{op.name}</span>
             <span class="tool">{op.kind === 'pause' ? '— pause —' : toolName(op.toolId)}</span>
-            <span class="status {status.tone}" title={status.reason}>{status.label}</span>
+            {#if opHasPanelWarning(op)}
+              <button
+                type="button"
+                class="status {status.tone} status-btn"
+                title={`${status.reason}\n\n(click to show in the warnings panel)`}
+                aria-label={`Show warnings for ${op.name} in the warnings panel`}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  warningFocus.focus(op.id);
+                }}>{status.label}</button
+              >
+            {:else}
+              <span class="status {status.tone}" title={status.reason}>{status.label}</span>
+            {/if}
             {#if hasOrphans}
               <button
                 class="repick"
@@ -593,6 +616,21 @@
   }
   .status.bad {
     color: var(--error);
+  }
+  /* 4kzy: status badge as a button when it links to a panel warning. */
+  .status-btn {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .status-btn:hover {
+    filter: brightness(1.25);
+  }
+  .status-btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: 2px;
   }
   .dup,
   .del {

@@ -22,6 +22,8 @@
   import GenerateProgress from './GenerateProgress.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { inferDefaultWorkOffset } from '../state/project-types';
+  import { warningFocus } from '../state/warning-focus.svelte';
+  import { tick } from 'svelte';
 
   // Format a duration in seconds as HH:MM:SS (always two digits per
   // unit). Negative / NaN inputs render as 00:00:00.
@@ -139,6 +141,31 @@
   }
   $effect(() => {
     if (warningPanelOpen) onWarningPanelOpen();
+  });
+
+  /// 4kzy: react to a per-op warning-focus request (set by the op
+  /// status badge in OperationsList). Open the warnings panel, then —
+  /// after the rows render — expand every <details> for that op and
+  /// scroll the first into view. Reads `seq` so repeat clicks on the
+  /// same op re-fire. Clearing `opId` re-runs this once more, no-op'd
+  /// by the early return.
+  $effect(() => {
+    const opId = warningFocus.opId;
+    void warningFocus.seq;
+    if (opId == null) return;
+    warningPanelOpen = true;
+    void tick().then(() => {
+      if (typeof document === 'undefined') return;
+      const panel = document.querySelector('[aria-label="Warnings"]');
+      const rows = panel?.querySelectorAll<HTMLDetailsElement>(
+        `details[data-op-id="${opId}"]`,
+      );
+      rows?.forEach((r, i) => {
+        r.open = true;
+        if (i === 0) r.scrollIntoView({ block: 'nearest' });
+      });
+      warningFocus.clear();
+    });
   });
 
   function wpHeaderPointerDown(e: PointerEvent) {
@@ -702,7 +729,7 @@
         {#each allPipelineWarnings as pw, i (`pipe-${i}`)}
           {@const sev = pipelineWarningSeverity(pw)}
           {@const hasFix = pw.kind === 'stock_origin_outside_geometry_bbox'}
-          <details class="row severity-{sev} pipeline">
+          <details class="row severity-{sev} pipeline" data-op-id={pw.op_id ?? undefined}>
             <summary>
               <span class="dot" aria-hidden="true"></span>
               <span class="source pipeline" title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span>

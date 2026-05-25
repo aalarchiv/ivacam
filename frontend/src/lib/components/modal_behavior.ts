@@ -5,6 +5,55 @@
 /// Survives close+reopen of the same dialog until the page reloads.
 export const __scrollCache = new Map<string, number>();
 
+/// Module-level cache of dragged/resized modal geometry, keyed by
+/// persistKey, so a draggable dialog reopens where the user left it
+/// (zi6p). null width/height means "not yet resized" → intrinsic size.
+export interface ModalGeom {
+  left: number;
+  top: number;
+  width: number | null;
+  height: number | null;
+}
+export const __geomCache = new Map<string, ModalGeom>();
+
+/// Centered top-left for a modal of size (w, h) in a viewport (vw, vh).
+/// Clamped to >= 0 so an oversized modal starts at the top-left corner
+/// rather than off-screen-negative (zi6p).
+export function centeredModalPosition(
+  w: number,
+  h: number,
+  vw: number,
+  vh: number,
+): { left: number; top: number } {
+  return {
+    left: Math.max(0, Math.round((vw - w) / 2)),
+    top: Math.max(0, Math.round((vh - h) / 2)),
+  };
+}
+
+/// Clamp a proposed modal top-left so the drag handle (header) stays
+/// grabbable: never let the header go above the viewport top or below
+/// its bottom, and always keep `edgeMargin` px of the modal reachable
+/// on each horizontal side (zi6p).
+export function clampModalPosition(
+  left: number,
+  top: number,
+  modalW: number,
+  vw: number,
+  vh: number,
+  headerH: number,
+  edgeMargin = 60,
+): { left: number; top: number } {
+  const margin = Math.min(edgeMargin, modalW);
+  const minLeft = margin - modalW;
+  const maxLeft = Math.max(minLeft, vw - margin);
+  const maxTop = Math.max(0, vh - Math.max(1, headerH));
+  return {
+    left: Math.min(maxLeft, Math.max(minLeft, left)),
+    top: Math.min(maxTop, Math.max(0, top)),
+  };
+}
+
 /// Selector for elements that should participate in the focus trap.
 export const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';

@@ -53,7 +53,14 @@
 </script>
 
 {#if open}
-  <Modal {onClose} width="min(540px, 95vw)" ariaLabelledBy="settings-title">
+  <Modal
+    {onClose}
+    persistKey="settings"
+    width="min(540px, 95vw)"
+    draggable
+    resizable
+    ariaLabelledBy="settings-title"
+  >
     <header>
       <h2 id="settings-title">Settings</h2>
       <button class="dlg-close" onclick={onClose} aria-label="Close">×</button>

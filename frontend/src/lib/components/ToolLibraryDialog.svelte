@@ -493,7 +493,14 @@
 </script>
 
 {#if open}
-  <Modal onClose={close} persistKey="tool-library" width="min(960px, 96vw)" ariaLabelledBy="tools-title">
+  <Modal
+    onClose={close}
+    persistKey="tool-library"
+    width="min(960px, 96vw)"
+    draggable
+    resizable
+    ariaLabelledBy="tools-title"
+  >
     <header>
       <h2 id="tools-title">Tool library</h2>
       <button class="dlg-close" onclick={close} aria-label="Close">×</button>

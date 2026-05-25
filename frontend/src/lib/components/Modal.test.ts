@@ -4,7 +4,14 @@
 /// hand-rolled stand-ins. The Svelte wrapper is a thin shell over these.
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { handleModalKey, __scrollCache, FOCUSABLE_SELECTOR } from './modal_behavior';
+import {
+  handleModalKey,
+  __scrollCache,
+  __geomCache,
+  centeredModalPosition,
+  clampModalPosition,
+  FOCUSABLE_SELECTOR,
+} from './modal_behavior';
 
 interface FakeButton {
   focus: ReturnType<typeof vi.fn>;
@@ -119,5 +126,55 @@ describe('Modal scroll cache', () => {
     __scrollCache.set('bar', 999);
     expect(__scrollCache.get('foo')).toBe(123);
     expect(__scrollCache.get('bar')).toBe(999);
+  });
+});
+
+describe('centeredModalPosition (zi6p)', () => {
+  it('centers a modal that fits the viewport', () => {
+    expect(centeredModalPosition(800, 600, 1920, 1080)).toEqual({ left: 560, top: 240 });
+  });
+
+  it('clamps to 0 when the modal is wider/taller than the viewport', () => {
+    expect(centeredModalPosition(2000, 1200, 1280, 800)).toEqual({ left: 0, top: 0 });
+  });
+});
+
+describe('clampModalPosition (zi6p)', () => {
+  const VW = 1280;
+  const VH = 800;
+  const W = 600;
+  const HH = 40;
+
+  it('passes through a position well inside the viewport', () => {
+    expect(clampModalPosition(300, 200, W, VW, VH, HH)).toEqual({ left: 300, top: 200 });
+  });
+
+  it('keeps the header from going above the top edge', () => {
+    expect(clampModalPosition(300, -50, W, VW, VH, HH).top).toBe(0);
+  });
+
+  it('keeps the header reachable at the bottom edge', () => {
+    // maxTop = vh - headerH
+    expect(clampModalPosition(300, 9999, W, VW, VH, HH).top).toBe(VH - HH);
+  });
+
+  it('keeps edgeMargin px reachable on the right (cannot drag fully off-screen)', () => {
+    // maxLeft = vw - margin (margin defaults to 60)
+    expect(clampModalPosition(99999, 100, W, VW, VH, HH).left).toBe(VW - 60);
+  });
+
+  it('keeps edgeMargin px reachable on the left (negative left allowed but bounded)', () => {
+    // minLeft = margin - modalW = 60 - 600 = -540
+    expect(clampModalPosition(-99999, 100, W, VW, VH, HH).left).toBe(60 - W);
+  });
+});
+
+describe('Modal geometry cache (zi6p)', () => {
+  beforeEach(() => __geomCache.clear());
+
+  it('stores and restores geometry by persistKey', () => {
+    __geomCache.set('machine', { left: 100, top: 50, width: 700, height: 500 });
+    expect(__geomCache.get('machine')).toEqual({ left: 100, top: 50, width: 700, height: 500 });
+    expect(__geomCache.get('tools')).toBeUndefined();
   });
 });

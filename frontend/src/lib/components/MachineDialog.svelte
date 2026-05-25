@@ -228,7 +228,15 @@
 </script>
 
 {#if open}
-  <Modal onClose={close} modalClass="machine-modal" width="min(880px, 96vw)" ariaLabelledBy="machine-title">
+  <Modal
+    onClose={close}
+    modalClass="machine-modal"
+    persistKey="machine"
+    width="min(880px, 96vw)"
+    draggable
+    resizable
+    ariaLabelledBy="machine-title"
+  >
     <header>
       <h2 id="machine-title">Machine</h2>
       <button class="dlg-close" onclick={close} aria-label="Close">×</button>

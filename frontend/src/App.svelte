@@ -117,6 +117,7 @@
     isDebugSession,
   } from './lib/state/desktop';
   import { computeFootprint } from './lib/sim/driver';
+  import { togglePane, revealPane, type SidebarPane } from './lib/state/sidebar-pane';
 
   /// Live label for the Stock panel summary — shows the current
   /// dimensions inline so the user sees the workpiece size at a glance
@@ -139,22 +140,24 @@
   /// take me back to Operations" flow. `activateSidebarPane(p)` swaps
   /// `prev` ↔ `active` when the same pane is clicked twice, so the
   /// pair toggles cleanly.
-  type SidebarPane = 'stock' | 'layers' | 'text' | 'operations';
+  // Pane-transition logic lives in lib/state/sidebar-pane.ts (pure +
+  // unit-tested). `activateSidebarPane` is the caret-click TOGGLE;
+  // `revealSidebarPane` is the non-toggling "show me this pane now"
+  // used by programmatic flows (ervd).
   let activeSidebarPane = $state<SidebarPane>('layers');
   /// Last non-current pane. Initial value matches "user hasn't
   /// switched yet but wants Operations" — the most likely return
   /// destination for a Layers-default startup.
   let prevSidebarPane = $state<SidebarPane>('operations');
   function activateSidebarPane(target: SidebarPane) {
-    if (target === activeSidebarPane) {
-      // Swap: collapse current, restore the previous pane.
-      const a = activeSidebarPane;
-      activeSidebarPane = prevSidebarPane;
-      prevSidebarPane = a;
-    } else {
-      prevSidebarPane = activeSidebarPane;
-      activeSidebarPane = target;
-    }
+    const next = togglePane({ active: activeSidebarPane, prev: prevSidebarPane }, target);
+    activeSidebarPane = next.active;
+    prevSidebarPane = next.prev;
+  }
+  function revealSidebarPane(target: SidebarPane) {
+    const next = revealPane({ active: activeSidebarPane, prev: prevSidebarPane }, target);
+    activeSidebarPane = next.active;
+    prevSidebarPane = next.prev;
   }
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.stock;
@@ -1262,7 +1265,7 @@
         <div class:pane-hidden={activePane !== '2d'} class="pane">
           <EntityCanvas2D
             onShowHelp={() => (shortcutHelpOpen = true)}
-            onActivateSidebarPane={activateSidebarPane}
+            onActivateSidebarPane={revealSidebarPane}
           />
         </div>
         {#if Scene3D}

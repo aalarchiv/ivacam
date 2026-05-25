@@ -241,11 +241,14 @@
   /* zi6p: a floating (draggable/resizable) modal is positioned by JS
      with position:fixed, so it ignores the overlay's flex centering.
      The overlay still covers the screen for the backdrop + click-to-
-     close. */
+     close. Laid out as a column so the header pins to the top and the
+     footer (action buttons) pins to the bottom (esjb). */
   .modal.floating {
     position: fixed;
     margin: 0;
     max-height: 92vh;
+    display: flex;
+    flex-direction: column;
   }
   .modal.resizable {
     resize: both;
@@ -253,6 +256,26 @@
     min-height: 200px;
     max-width: 96vw;
     max-height: 92vh;
+  }
+  /* esjb: keep the header (drag handle) glued to the top and the footer
+     (Cancel/OK/Save/Done) glued to the bottom of a floating dialog —
+     `margin-top:auto` pushes the footer down to fill a resized-taller
+     window, and `position:sticky` keeps both bars in view while long
+     content (e.g. the Tool library list) scrolls between them. Both
+     bars already carry an opaque `--bg-elevated` background, so scrolled
+     content doesn't bleed through. */
+  .modal.floating > :global(header) {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    flex: none;
+  }
+  .modal.floating > :global(footer) {
+    margin-top: auto;
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    flex: none;
   }
   /* The header doubles as the drag handle when draggable — signal it. */
   .modal.floating :global(.modal-drag-handle) {

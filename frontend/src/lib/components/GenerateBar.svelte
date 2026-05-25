@@ -210,7 +210,7 @@
     if (
       !project.settings.autoRegenerate ||
       !project.dirty ||
-      !project.transformedImport ||
+      !project.geometryView ||
       project.pipelineState === 'running' ||
       project.pipelineState === 'cancelling'
     ) {
@@ -223,7 +223,7 @@
       if (
         project.settings.autoRegenerate &&
         project.dirty &&
-        project.transformedImport &&
+        project.geometryView &&
         project.pipelineState !== 'running' &&
         project.pipelineState !== 'cancelling'
       ) {
@@ -336,7 +336,7 @@
   let isClean = $derived(totalWarningCount === 0 && pipelineCriticalCount === 0);
 
   async function run() {
-    if (!project.transformedImport) return;
+    if (!project.geometryView) return;
     if (project.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
       project.setError(
         `Sim has ${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} — fix or disable the safety check in Settings`,
@@ -528,7 +528,7 @@
   {:else}
     <button
       onclick={run}
-      disabled={!project.transformedImport || project.generating}
+      disabled={!project.geometryView || project.generating}
       class:stale={project.dirty && project.generated != null}
       title={project.dirty && project.generated != null
         ? 'The visible toolpath is stale — the project has changed since the last Generate. Click to refresh.'

@@ -165,6 +165,8 @@ export { isContourOp, isPathOp } from './op_types';
 // Pure 2D geometry primitives extracted to `lib/canvas/selection-geometry.ts`
 // so vitest specs can exercise them without mounting the canvas (audit y0ez).
 import { bboxOfSegments, lineCrossesBBox } from '../canvas/selection-geometry';
+import { computeFootprint } from '../sim/driver';
+import { augmentWithStockOutline } from './stock-outline';
 import { pickBestToolForOp } from './tool_picker';
 
 function isAbsolutePath(p: string): boolean {
@@ -254,6 +256,22 @@ class ProjectState {
   /// entries get the next range) so existing op references stay valid.
   transformedImport = $derived.by<ImportResponse | null>(() => {
     return combineImports(this.data.imports);
+  });
+
+  /// 8jce: geometry the canvas selects + the wire payload sends —
+  /// `transformedImport` plus a synthetic, selectable stock-outline
+  /// object when the stock is shown, so an op (chamfer/profile/…) can
+  /// target the workpiece edge. Returns the SAME object as
+  /// `transformedImport` when the stock is hidden or the footprint is
+  /// degenerate (referential identity), so the canvas / build path see
+  /// no change in the common case. Auto-stock sizing keeps reading the
+  /// raw `transformedImport` (see `computeFootprint` callers) — feeding
+  /// this back would loop (outline ← footprint ← bbox ← outline).
+  geometryView = $derived.by<ImportResponse | null>(() => {
+    const base = this.transformedImport;
+    if (!this.data.stock.visible) return base;
+    const fp = computeFootprint(base, this.data.stock, this.data.machine.workArea);
+    return augmentWithStockOutline(base, fp);
   });
 
   loading = $state(false);
@@ -917,7 +935,9 @@ class ProjectState {
     // so ops keyed by ids from OTHER imports still see their objects.
     // eb8.7's inline Re-pick chip on OperationsList rows surfaces the
     // affected ops; this warn keeps the dev console signal too.
-    const presentIds = new Set(this.transformedImport?.objects ?? []);
+    // Use the augmented view so an op targeting the synthetic stock
+    // outline (STOCK_OUTLINE_ID) isn't mistaken for an orphan (8jce).
+    const presentIds = new Set(this.geometryView?.objects ?? []);
     for (const op of this.operations) {
       if (!Array.isArray(op.sourceObjects) || op.sourceObjects.length === 0) continue;
       const orphans = op.sourceObjects.filter((id) => !presentIds.has(id));

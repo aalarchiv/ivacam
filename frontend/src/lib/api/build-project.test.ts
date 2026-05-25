@@ -327,3 +327,40 @@ describe('buildMachine — Round-3 spindle clamps & parking', () => {
     expect(m).not.toHaveProperty('park_at_home');
   });
 });
+
+describe('geometryView preference (8jce)', () => {
+  function importWith(seg: number): ImportResponse {
+    return {
+      ...fakeImport(),
+      segments: Array.from({ length: seg }, (_, i) => ({
+        type: 'LINE' as const,
+        start: { x: i, y: 0 },
+        end: { x: i + 1, y: 0 },
+        bulge: 0,
+        layer: '0',
+        color: 7,
+      })),
+    };
+  }
+
+  it('sends geometryView segments (with the stock outline) when present', () => {
+    const project = buildProject({
+      transformedImport: importWith(2),
+      geometryView: importWith(6), // 2 import + 4 outline
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.segments).toHaveLength(6);
+  });
+
+  it('falls back to transformedImport when geometryView is absent', () => {
+    const project = buildProject({
+      transformedImport: importWith(2),
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.segments).toHaveLength(2);
+  });
+});

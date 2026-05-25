@@ -159,7 +159,7 @@
   // glyphs. Hover and selection only retouch this layer.
 
   $effect(() => {
-    void project.transformedImport;
+    void project.geometryView;
     void project.visibleLayers;
     void project.regionsVisible;
     void project.generated;
@@ -175,7 +175,7 @@
   });
 
   $effect(() => {
-    void project.transformedImport;
+    void project.geometryView;
     void project.visibleLayers;
     void project.selectedObjects;
     void project.operations;
@@ -264,7 +264,7 @@
   /// imported geometry changes — never per pointermove. (64p.)
   const osnapTargets = $derived<OSnapTargets>(
     approachPickActive || approachDrag != null
-      ? precomputeOSnapTargets(project.transformedImport)
+      ? precomputeOSnapTargets(project.geometryView)
       : { endpoints: [], midpoints: [], intersections: [], centers: [] },
   );
 
@@ -362,12 +362,12 @@
   let hitIndex: HitIndex | null = null;
 
   $effect(() => {
-    void project.transformedImport;
-    hitIndex = buildHitIndexPure(project.transformedImport);
+    void project.geometryView;
+    hitIndex = buildHitIndexPure(project.geometryView);
   });
 
   function pixelHit(canvasX: number, canvasY: number): number | null {
-    const data = project.transformedImport;
+    const data = project.geometryView;
     if (!data || !lastTransform) return null;
     const { scale, offX, offY } = lastTransform;
     const dataX = (canvasX - offX) / scale;
@@ -616,7 +616,7 @@
   /// coordinates: we transform the rectangle once into data space and
   /// containment-test each object's bbox (audit-1dqh).
   function objectsInBox(x0: number, y0: number, x1: number, y1: number): number[] {
-    const data = project.transformedImport;
+    const data = project.geometryView;
     if (!data || !lastTransform) return [];
     const { scale, offX, offY } = lastTransform;
     const px2dx = (x: number) => (x - offX) / scale;
@@ -654,7 +654,7 @@
   let objectPolylinesCache: ObjectPolyline[] | null = null;
   let objectPolylinesCacheKey: unknown = null;
   function getObjectPolylines(): ObjectPolyline[] {
-    const imp = project.transformedImport;
+    const imp = project.geometryView;
     if (!imp) return [];
     if (objectPolylinesCacheKey !== imp) {
       objectPolylinesCache = buildObjectPolylines(imp);
@@ -1132,7 +1132,7 @@
     // resolves modifiers and emits the action list; we dispatch and
     // arm the box-select store.
     const hitObjectId =
-      idx == null ? null : (project.transformedImport?.objects?.[idx] ?? 0);
+      idx == null ? null : (project.geometryView?.objects?.[idx] ?? 0);
     const actions = reduceCanvasClick(
       {
         hitObjectId,
@@ -1194,7 +1194,7 @@
     canvasX: number,
     canvasY: number,
   ): { x: number; y: number } | null {
-    const data = project.transformedImport;
+    const data = project.geometryView;
     if (!data || !lastTransform) return null;
     const { scale, offX, offY } = lastTransform;
     const dataX = (canvasX - offX) / scale;
@@ -1273,7 +1273,7 @@
     ctx.fillStyle = themeVar('--bg-app', '#0d0d0d');
     ctx.fillRect(0, 0, w, h);
 
-    const data = project.transformedImport;
+    const data = project.geometryView;
     if (!data || data.segments.length === 0) {
       ctx.fillStyle = themeVar('--canvas-empty', '#555');
       ctx.font = '13px system-ui, sans-serif';
@@ -1331,7 +1331,7 @@
     // Transparent clear — bg shows through.
     ctx.clearRect(0, 0, w, h);
 
-    const data = project.transformedImport;
+    const data = project.geometryView;
     if (!data || data.segments.length === 0) return;
     const { scale, project2 } = computeTransform(data, w, h);
 

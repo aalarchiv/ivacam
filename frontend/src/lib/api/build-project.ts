@@ -436,6 +436,11 @@ interface ProjectStateView {
   /// The wire payload always sends this so the pipeline sees the same
   /// geometry the user sees on the canvas.
   transformedImport: ImportResponse | null;
+  /// 8jce: `transformedImport` plus the synthetic selectable stock
+  /// outline (when stock is shown). Preferred for the wire payload so an
+  /// op can cut the workpiece edge. Optional — falls back to
+  /// `transformedImport` (so existing tests / callers without it work).
+  geometryView?: ImportResponse | null;
   machine: MachineSettings;
   tools: FrontToolEntry[];
   operations: OpEntry[];
@@ -865,7 +870,10 @@ function buildWorkOffset(w: WorkOffset): WireWorkOffset | null {
 /// back to the legacy segments+setup path.
 export function buildProject(state: ProjectStateView): WireProject | null {
   if (state.operations.length === 0) return null;
-  const imp = state.transformedImport;
+  // 8jce: prefer the augmented view (imports + selectable stock outline)
+  // so an op targeting the stock edge is cut. Falls back to the raw
+  // import for callers/tests that don't supply geometryView.
+  const imp = state.geometryView ?? state.transformedImport;
   if (!imp) return null;
   const workOffset = state.workOffset ? buildWorkOffset(state.workOffset) : null;
   return {

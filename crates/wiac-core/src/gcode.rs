@@ -552,7 +552,7 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         if poly.len() < 2 {
             continue;
         }
-        let (sx, sy, _) = poly[0];
+        let (sx, sy, entry_z) = poly[0];
         // Travel: lift to safe Z, fly to the start XY, drop to start_depth.
         // 20y5: drop the laser BEFORE the inter-poly rapid traverse;
         // re-arm at the new start XY. Mill's spindle_off is NOT called
@@ -568,7 +568,20 @@ pub fn emit_vcarve_block<P: PostProcessor>(
             cut_tool_on(post, setup, setup.tool.speed);
         }
         post.feedrate(setup.tool.rate_v);
-        post.linear(None, None, Some(setup.mill.start_depth));
+        // n3hn: the pre-polyline plunge must never dive BELOW the
+        // polyline's own first Z. Medial-axis chains begin with an angled
+        // lead-in ramp anchored at z=0 (the stock surface — see
+        // vcarve_emit::ratchet_emit), so a vertical G1 to a negative
+        // `start_depth` (multi-pass / staged carve) would crash the V-bit
+        // straight into uncut stock before the ramp ever runs — the same
+        // failure mode pmpk fixed at the per-chain entry. Clamp the plunge
+        // to `max(start_depth, entry_z)`: it stops at the polyline's own
+        // entry plane and lets the ramp (or the ring's own descent) carry
+        // the cutter into material laterally. For the default V-carve case
+        // (`start_depth = 0`, ramp entry `z = 0`) this is a no-op, so
+        // existing output is byte-for-byte unchanged.
+        let plunge_z = setup.mill.start_depth.max(entry_z);
+        post.linear(None, None, Some(plunge_z));
         // md0m: laser-mode V-carve needs a pierce dwell at the cut
         // plane so the beam burns through stock before lateral motion
         // begins. gd2x added this to emit_offset; emit_vcarve_block
@@ -3809,6 +3822,72 @@ mod tests {
                 plunge_before,
                 "md0m: dwell at line {di} not preceded by plunge G1 Z within 10 lines:\n{g}",
             );
+        }
+    }
+
+    /// n3hn: with `start_depth < 0` (multi-pass / staged V-carve), the
+    /// pre-polyline plunge must NOT drive the V-bit vertically below the
+    /// surface into uncut stock. The medial-axis polyline already begins
+    /// with an angled lead-in ramp anchored at z=0; the entry plunge is
+    /// clamped to `max(start_depth, entry_z)` so it stops at the ramp's
+    /// own start (z=0) and the ramp carries the cutter down laterally.
+    #[test]
+    fn n3hn_negative_start_depth_no_vertical_plunge_into_stock() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 1.0;
+        setup.tool.tip_diameter_mm = 0.0;
+        setup.tool.speed = 0;
+        setup.tool.rate_v = 100;
+        setup.tool.rate_h = 800;
+        setup.tool.pierce_sec = 0.0;
+        setup.mill.depth = -2.0;
+        // The staged-carve / multi-pass case that exposed the bug.
+        setup.mill.start_depth = -1.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.machine.comments = false;
+
+        // A ratchet-style chain that begins at the surface (z=0) with an
+        // angled lead-in ramp (Z descends as XY advances), then deepens.
+        let polylines = vec![vec![
+            (0.0, 0.0, 0.0),
+            (5.0, 0.0, -1.0),
+            (10.0, 0.0, -2.0),
+        ]];
+        let mut post = linuxcnc::Post::new();
+        let mut last_pos = Point2::new(0.0, 0.0);
+        emit_vcarve_block(&setup, &polylines, &mut post, &mut last_pos);
+        let g = post.finish();
+
+        // Walk the emitted motion and assert no G1 drops Z below the
+        // surface (z<0) without simultaneous XY motion — that is exactly
+        // the V-bit-snapping vertical plunge into stock n3hn forbids.
+        let mut last_x = 0.0_f64;
+        let mut last_y = 0.0_f64;
+        let mut last_z = setup.mill.fast_move_z;
+        for line in g.lines() {
+            let l = line.trim_start();
+            if !(l.starts_with("G1 ") || l.starts_with("G0 ")) {
+                continue;
+            }
+            let word = |axis: char| -> Option<f64> {
+                l.split_whitespace().find_map(|tok| {
+                    tok.strip_prefix(axis).and_then(|n| n.parse::<f64>().ok())
+                })
+            };
+            let nx = word('X').unwrap_or(last_x);
+            let ny = word('Y').unwrap_or(last_y);
+            let nz = word('Z').unwrap_or(last_z);
+            if l.starts_with("G1 ") {
+                let xy_moved = (nx - last_x).hypot(ny - last_y) > 1e-9;
+                let z_drops_below_surface = nz < last_z - 1e-9 && nz < -1e-9;
+                assert!(
+                    !(z_drops_below_surface && !xy_moved),
+                    "n3hn: vertical-only G1 plunge into stock (z {last_z}→{nz}, no XY motion):\n{g}",
+                );
+            }
+            last_x = nx;
+            last_y = ny;
+            last_z = nz;
         }
     }
 }

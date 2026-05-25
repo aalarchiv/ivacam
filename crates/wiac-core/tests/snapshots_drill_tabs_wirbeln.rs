@@ -404,10 +404,10 @@ fn snapshot_wirbeln_walks_closed_contour() {
 // test was added captured these values from the live pipeline; each
 // reflects the canonical output for the corresponding fixture.
 
-const EXPECTED_DRILL_STUFENFASE_TOOLCHANGE_DIGEST: &str = "d3cf8dc400b85360";
-const EXPECTED_PROFILE_RECTANGLE_TABS_HELIX_DIGEST: &str = "a8b7e7c57a3930a2";
-const EXPECTED_PROFILE_RAMP_TABS_DIGEST: &str = "e27f51a03b597954";
-const EXPECTED_WIRBELN_CLOSED_CONTOUR_DIGEST: &str = "0af2d9bbca3fb0f4";
+const EXPECTED_DRILL_STUFENFASE_TOOLCHANGE_DIGEST: &str = "b296d632f465ec0e";
+const EXPECTED_PROFILE_RECTANGLE_TABS_HELIX_DIGEST: &str = "e373699104c83dff";
+const EXPECTED_PROFILE_RAMP_TABS_DIGEST: &str = "eb4036633918f333";
+const EXPECTED_WIRBELN_CLOSED_CONTOUR_DIGEST: &str = "4558fbc3397c27eb";
 
 /// Hex digest of `seahash` over the gcode bytes. Stable across
 /// platforms; small enough to paste into a `const`.

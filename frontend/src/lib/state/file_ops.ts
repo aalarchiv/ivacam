@@ -326,6 +326,36 @@ export async function saveProject() {
   URL.revokeObjectURL(url);
 }
 
+/// Save a project report as a Markdown file (vh6e). Desktop = native
+/// save dialog (.md); browser = anchor-tag download. Mirrors
+/// `saveProject`'s transport split.
+export async function saveReportMarkdown(markdown: string, baseName: string) {
+  const filename = `${baseName}.md`;
+  if (isTauri()) {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+    const path = await save({
+      defaultPath: filename,
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+    });
+    if (typeof path === 'string') {
+      try {
+        await writeTextFile(path, markdown);
+      } catch (e) {
+        project.setError(`save report: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return;
+  }
+  const blob = new Blob([markdown], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /// Fetch + import one of the bundled `public/samples/<x>.json` files.
 /// REPLACE semantics: loading a sample drops the current project to
 /// start fresh.

@@ -627,24 +627,11 @@
       {chipLabel()}
     </button>
   {/if}
-  {#if boundsScan}
-    <button
-      type="button"
-      class="sim-chip bounds"
-      onclick={() => (warningPanelOpen = !warningPanelOpen)}
-      aria-expanded={warningPanelOpen}
-      title="Click for details — the bounds findings are listed in the warnings panel alongside the pipeline / sim warnings."
-    >
-      <span class="glyph" aria-hidden="true">⚠</span>
-      {#if boundsScan.outWA > 0 && boundsScan.outStock > 0}
-        {boundsScan.outStock} out-of-stock · {boundsScan.outWA} out-of-machine
-      {:else if boundsScan.outWA > 0}
-        {boundsScan.outWA} cut move{boundsScan.outWA === 1 ? '' : 's'} outside work area
-      {:else}
-        {boundsScan.outStock} cut move{boundsScan.outStock === 1 ? '' : 's'} outside stock
-      {/if}
-    </button>
-  {/if}
+  <!-- 2ird: the separate 'bounds' chip was removed — its out-of-stock /
+       out-of-work-area findings are already folded into
+       `allPipelineWarnings` (synthesized as PipelineWarning rows), so
+       they're counted in `totalWarningCount`, listed in the panel, and
+       drive the single warnings chip's critical color. One button now. -->
 </div>
 
 <svelte:window onresize={onWindowResize} />

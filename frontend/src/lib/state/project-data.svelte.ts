@@ -92,7 +92,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // LOD level. Independent from `maxSimulationCells` so high sim
   // accuracy doesn't force a GPU stall.
   maxRenderTriangles: 2_000_000,
-  blockOnCriticalSimWarnings: false,
+  // v0ez: default the safety gate ON for the beta. Out of the box a
+  // program that exits the work-area / stock envelope (or trips a
+  // collision / rapid-through-stock sim warning) is blocked from
+  // generate + download until the user fixes it or explicitly disables
+  // the gate in Settings. Safer default for people running real
+  // machines; opt-out rather than opt-in.
+  blockOnCriticalSimWarnings: true,
   autoRegenerate: false,
   autoRunSimOnSave: true,
   autoReloadSources: true,

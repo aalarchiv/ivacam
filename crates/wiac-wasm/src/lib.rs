@@ -173,7 +173,7 @@ pub(crate) fn structured_error_to_js(err: wiac_core::Error) -> JsValue {
     serde_wasm_bindgen::to_value(&err).unwrap_or_else(|_| JsValue::from_str(&err.to_string()))
 }
 
-fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
+pub(crate) fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
     if let Some(s) = p.downcast_ref::<&str>() {
         (*s).to_string()
     } else if let Some(s) = p.downcast_ref::<String>() {

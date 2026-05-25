@@ -33,7 +33,7 @@ use wiac_core::sim::heightmap::{Heightmap, ToolProfile};
 use wiac_core::sim::holder::HolderProfile;
 use wiac_core::sim::sweep::{sweep_range, sweep_segment_partial};
 
-use crate::into_js_error;
+use crate::{into_js_error, panic_message, structured_error_to_js};
 
 /// Owns a `Heightmap` plus enough state to apply incremental sweeps.
 /// Constructed with a world-space stock bbox + cell size; the frontend
@@ -179,35 +179,42 @@ impl Simulator {
         to_idx: u32,
     ) -> Result<Vec<u32>, JsValue> {
         let tool_entry: ToolEntry = from_tool_value(tool)?;
-        // Inline the body that advance_inner provides for the test-only
-        // path. We need disjoint borrows of `self.toolpath` (read) and
-        // `self.heightmap` / `self.last_diagnostics` (mutate), which
-        // Rust's field-level split borrowing allows here.
-        self.heightmap.clear_dirty();
-        self.last_diagnostics = SimDiagnostics::new();
-        let profile = ToolProfile::from_tool(&tool_entry);
-        let holder = HolderProfile::from_tool(&tool_entry);
-        let touched = sweep_range(
-            &mut self.heightmap,
-            &self.toolpath,
-            from_idx as usize,
-            to_idx as usize,
-            &profile,
-            &self.fixtures,
-            holder.as_ref(),
-            &mut self.last_diagnostics,
-        );
-        // 03zx: emit a single tracing::info line per advance so the
-        // frontend (and post-mortem tooling) have a stable telemetry
-        // record of cells_carved + per-kind warning
-        // counts. `total_seconds` is left 0 here because advance()
-        // doesn't wall-clock itself — the JS driver can pair this
-        // with a Performance.now() delta when persisting.
-        SimRunSummary::from_diagnostics(&self.last_diagnostics, u64::from(touched), 0.0).log();
-        Ok(match self.heightmap.dirty_aabb() {
-            Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
-            None => Vec::new(),
-        })
+        // mg77: guard the sweep with catch_unwind so a panic inside the
+        // per-frame carve surfaces as a structured JS error rather than
+        // trapping (aborting) the whole wasm instance mid-playback —
+        // mirrors the pipeline `generate()` envelope.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Inline the body that advance_inner provides for the test-only
+            // path. We need disjoint borrows of `self.toolpath` (read) and
+            // `self.heightmap` / `self.last_diagnostics` (mutate), which
+            // Rust's field-level split borrowing allows here.
+            self.heightmap.clear_dirty();
+            self.last_diagnostics = SimDiagnostics::new();
+            let profile = ToolProfile::from_tool(&tool_entry);
+            let holder = HolderProfile::from_tool(&tool_entry);
+            let touched = sweep_range(
+                &mut self.heightmap,
+                &self.toolpath,
+                from_idx as usize,
+                to_idx as usize,
+                &profile,
+                &self.fixtures,
+                holder.as_ref(),
+                &mut self.last_diagnostics,
+            );
+            // 03zx: emit a single tracing::info line per advance so the
+            // frontend (and post-mortem tooling) have a stable telemetry
+            // record of cells_carved + per-kind warning
+            // counts. `total_seconds` is left 0 here because advance()
+            // doesn't wall-clock itself — the JS driver can pair this
+            // with a Performance.now() delta when persisting.
+            SimRunSummary::from_diagnostics(&self.last_diagnostics, u64::from(touched), 0.0).log();
+            match self.heightmap.dirty_aabb() {
+                Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
+                None => Vec::new(),
+            }
+        }));
+        result.map_err(|p| sweep_panic_to_js(&p))
     }
 
     /// Carve only the chunk `[t_start, t_end]` (parametric position) of
@@ -233,25 +240,30 @@ impl Simulator {
                 "partial_advance: seg_idx out of range for cached toolpath",
             ));
         }
-        self.heightmap.clear_dirty();
-        self.last_diagnostics = SimDiagnostics::new();
-        let profile = ToolProfile::from_tool(&tool_entry);
-        let holder = HolderProfile::from_tool(&tool_entry);
-        let _touched = sweep_segment_partial(
-            &mut self.heightmap,
-            &self.toolpath[idx],
-            &profile,
-            idx,
-            &self.fixtures,
-            holder.as_ref(),
-            &mut self.last_diagnostics,
-            t_start,
-            t_end,
-        );
-        Ok(match self.heightmap.dirty_aabb() {
-            Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
-            None => Vec::new(),
-        })
+        // mg77: same catch_unwind guard as advance() — a sweep panic in
+        // the per-frame partial carve must not trap the wasm module.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.heightmap.clear_dirty();
+            self.last_diagnostics = SimDiagnostics::new();
+            let profile = ToolProfile::from_tool(&tool_entry);
+            let holder = HolderProfile::from_tool(&tool_entry);
+            let _touched = sweep_segment_partial(
+                &mut self.heightmap,
+                &self.toolpath[idx],
+                &profile,
+                idx,
+                &self.fixtures,
+                holder.as_ref(),
+                &mut self.last_diagnostics,
+                t_start,
+                t_end,
+            );
+            match self.heightmap.dirty_aabb() {
+                Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
+                None => Vec::new(),
+            }
+        }));
+        result.map_err(|p| sweep_panic_to_js(&p))
     }
 
     /// Number of grid columns (X cells).
@@ -389,6 +401,16 @@ impl Simulator {
 fn from_tool_value(value: JsValue) -> Result<ToolEntry, JsValue> {
     let de = serde_wasm_bindgen::Deserializer::from(value);
     ToolEntry::deserialize(de).map_err(into_js_error)
+}
+
+/// mg77: convert a caught sweep panic into the same structured JS error
+/// shape the pipeline `generate()` envelope produces, so the frontend's
+/// `ErrorToast` renders it instead of the wasm instance trapping.
+fn sweep_panic_to_js(panic: &Box<dyn std::any::Any + Send>) -> JsValue {
+    structured_error_to_js(
+        wiac_core::Error::internal(format!("sim sweep panic: {}", panic_message(panic)))
+            .with_hint("Please report this bug — see the toast for details."),
+    )
 }
 
 #[cfg(test)]

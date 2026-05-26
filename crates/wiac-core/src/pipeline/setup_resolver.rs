@@ -356,11 +356,13 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
         OpKind::Pocket { .. } => ToolOffset::None,
-        // 3g6u: T-slot rides ON the centerline like Engrave — the head's
-        // full diameter (not a radius offset) defines the undercut width.
-        OpKind::Engrave { .. } | OpKind::DragKnife { .. } | OpKind::TSlot { .. } => {
-            ToolOffset::On
-        }
+        // 3g6u / b7qz: T-slot and dovetail both ride ON the centerline
+        // like Engrave — the cutter's own cross-section (not a radius
+        // offset) defines the undercut groove width.
+        OpKind::Engrave { .. }
+        | OpKind::DragKnife { .. }
+        | OpKind::TSlot { .. }
+        | OpKind::Dovetail { .. } => ToolOffset::On,
         _ => ToolOffset::None,
     };
     // Trochoidal pockets demand a helical descent. If the user picked
@@ -550,7 +552,11 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     // would (that head-at-every-depth cascade is exactly the bug this op
     // kind fixes). Unlike Chamfer — which keeps the step-down so a V-bit
     // ramps in gently — the T-slot head MUST arrive at the floor directly.
-    if matches!(op.kind, OpKind::TSlot { .. }) {
+    // b7qz: a dovetail op is the angled-wall sibling — same single-Z
+    // floor pass. The bit arrives at the floor (via the roughing
+    // channel) and traverses once; its flanks carve the undercut. No
+    // Z cascade for the same reason as T-slot.
+    if matches!(op.kind, OpKind::TSlot { .. } | OpKind::Dovetail { .. }) {
         let span = setup.mill.depth - setup.mill.start_depth; // negative = downward
         setup.mill.step = if span.abs() > 1e-9 { span } else { -1e-6 };
         setup.mill.through_depth = 0.0;

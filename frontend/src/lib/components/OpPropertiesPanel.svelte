@@ -829,7 +829,7 @@
       <DrillSection {op} {patch} />
     {/if}
 
-    {#if op.kind === 'profile' || op.kind === 'pocket' || op.kind === 'engrave' || op.kind === 'drag_knife' || op.kind === 't_slot'}
+    {#if op.kind === 'profile' || op.kind === 'pocket' || op.kind === 'engrave' || op.kind === 'drag_knife' || op.kind === 't_slot' || op.kind === 'dovetail'}
       <details
         class="optional-section"
         open={op.feedRateOverride !== undefined ||

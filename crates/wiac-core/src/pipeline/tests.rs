@@ -12,8 +12,8 @@
     use crate::cam::setup::{MachineConfig, ToolOffset};
     use crate::geometry::Segment;
     use crate::project::{
-        Op, OpKind, OpParams, OpSource, SourceCombine, TextAlignment, TextLayer, TextLayerKind,
-        ToolEntry, ToolKind,
+        FormProfileSample, Op, OpKind, OpParams, OpSource, SourceCombine, TextAlignment, TextLayer,
+        TextLayerKind, ToolEntry, ToolKind,
     };
 
     #[test]
@@ -3186,5 +3186,135 @@
             second.warnings.iter().any(|w| w.kind == "tslot_requires_stem_slot"),
             "cache HIT dropped tslot_requires_stem_slot; got {:?}",
             kinds(&second),
+        );
+    }
+
+    // ───────────────────────────── b7qz: dovetail op ──────────────────
+    /// A dovetail bit (FormProfile, widest at the bottom face). The
+    /// form-profile samples run tip → top; the narrowest sample is the
+    /// neck, which sets the roughing-channel width the op warns about.
+    fn dovetail_tool(id: u32, dia: f64) -> ToolEntry {
+        let mut t = endmill(id, dia);
+        t.kind = ToolKind::FormProfile;
+        // Widest (dia/2) at the tip, narrowing to dia/4 at the neck.
+        t.form_profile_mm = vec![
+            FormProfileSample { z_mm: 0.0, r_mm: dia / 2.0 },
+            FormProfileSample { z_mm: 9.5, r_mm: dia / 4.0 },
+        ];
+        t
+    }
+
+    // `depth` parametrized so each test builds a DISTINCT project — see
+    // `tslot_project` for why (the process-global op cache).
+    fn dovetail_project(tool: ToolEntry, depth: f64) -> Project {
+        let mut params = OpParams::mill_default();
+        params.depth = depth; // a Profile/Pocket would cascade -1, -2, …
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        params.step = Some(-1.0);
+        Project {
+            segments: closed_square_offset(20.0, 30.0, 30.0),
+            machine: MachineConfig::default(),
+            tools: vec![tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Dovetail".into(),
+                enabled: true,
+                kind: OpKind::Dovetail {
+                    contour: crate::project::ContourParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        }
+    }
+
+    /// b7qz: a dovetail op cuts the undercut as a SINGLE pass at the floor
+    /// Z — it must NOT cascade through intermediate depths the way a
+    /// Profile/Pocket would (the flank-at-every-depth cascade is the bug
+    /// this op kind fixes). Mirrors the T-slot sibling test.
+    #[test]
+    fn dovetail_op_emits_single_floor_z_pass_not_a_depth_cascade() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: dovetail_project(dovetail_tool(1, 12.0), -3.0),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(resp.gcode.contains("; OP 1"), "missing op marker:\n{}", resp.gcode);
+        let z_values: std::collections::HashSet<String> = resp
+            .gcode
+            .lines()
+            .flat_map(|l| {
+                l.split_whitespace()
+                    .filter_map(|t| t.strip_prefix('Z'))
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for z in &z_values {
+            assert!(
+                ["5", "-3", "0"].contains(&z.as_str()),
+                "dovetail emitted an unexpected Z {z} (depth cascade leaked?):\n{}",
+                resp.gcode
+            );
+        }
+        assert!(z_values.contains("-3"), "missing floor-Z undercut pass:\n{}", resp.gcode);
+        assert!(
+            !z_values.contains("-1") && !z_values.contains("-2"),
+            "dovetail cascaded through intermediate depths (the bug):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// b7qz: a dovetail op always surfaces the roughing-channel
+    /// prerequisite note (the angled flank can't be plunged through
+    /// solid stock), naming the profile's narrowest width.
+    #[test]
+    fn dovetail_op_emits_rough_channel_prerequisite_warning() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: dovetail_project(dovetail_tool(1, 12.0), -7.0),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let hit = resp
+            .warnings
+            .iter()
+            .find(|w| w.kind == "dovetail_requires_rough_channel")
+            .expect("expected dovetail_requires_rough_channel warning");
+        // Narrowest sample r = 12/4 = 3.0 ⇒ width 6.00 mm.
+        assert!(
+            hit.message.contains("6.00 mm") && hit.message.contains("channel"),
+            "warning should name the narrowest width + roughing-channel prerequisite: {}",
+            hit.message
+        );
+    }
+
+    /// b7qz: a dovetail op with a non-FormProfile cutter warns
+    /// tool_kind_mismatch (straight walls ⇒ no angled undercut flanks).
+    #[test]
+    fn dovetail_op_with_plain_endmill_warns_kind_mismatch() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: dovetail_project(endmill(1, 6.0), -5.0),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"),
+            "expected tool_kind_mismatch for an endmill on a dovetail op; got {:?}",
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
     }

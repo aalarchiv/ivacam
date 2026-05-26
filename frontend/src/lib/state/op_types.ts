@@ -35,6 +35,7 @@ export type OpKind =
   | 'engrave'
   | 'drag_knife'
   | 't_slot'
+  | 'dovetail'
   | 'vcarve'
   | 'pause';
 
@@ -236,6 +237,18 @@ export interface TSlotOp extends OpBase {
   offset: ProfileOffset;
 }
 
+/// b7qz: dovetail / form-profile undercut op — drives a `form_profile`
+/// cutter (e.g. a dovetail bit, widest at the bottom) along the source
+/// path as the groove centerline, at a single floor Z, so its angled
+/// flanks carve the undercut walls. `offset` is always `'on'`; the
+/// groove width comes from the tool profile. Behaviorally a single-Z
+/// centerline follow (like Engrave). Requires a `form_profile` tool and
+/// a pre-cut roughing channel ≥ the profile's narrowest width.
+export interface DovetailOp extends OpBase {
+  kind: 'dovetail';
+  offset: ProfileOffset;
+}
+
 /// rt1.34: program-level optional-stop op. Emits M5 → M0 → M3 at the
 /// op's slot in the operations list, with the message rendered as a
 /// gcode comment. No tool, no source — the op exists purely to pause
@@ -263,6 +276,7 @@ export type OpEntry =
   | EngraveOp
   | DragKnifeOp
   | TSlotOp
+  | DovetailOp
   | PauseOp;
 
 /// Patch type for `project.updateOperation`. A patch covers the full
@@ -310,12 +324,13 @@ export function isContourOp(op: OpEntry): op is ProfileOp | PocketOp {
 /// rendering / tooling that highlights cut paths but not fills.
 export function isPathOp(
   op: OpEntry,
-): op is ProfileOp | EngraveOp | DragKnifeOp | TSlotOp | VCarveOp {
+): op is ProfileOp | EngraveOp | DragKnifeOp | TSlotOp | DovetailOp | VCarveOp {
   return (
     op.kind === 'profile' ||
     op.kind === 'engrave' ||
     op.kind === 'drag_knife' ||
     op.kind === 't_slot' ||
+    op.kind === 'dovetail' ||
     op.kind === 'vcarve'
   );
 }

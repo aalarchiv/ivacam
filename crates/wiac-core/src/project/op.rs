@@ -47,7 +47,8 @@ impl Op {
             | OpKind::Pocket { contour, .. }
             | OpKind::Engrave { contour }
             | OpKind::DragKnife { contour }
-            | OpKind::TSlot { contour } => Some(contour),
+            | OpKind::TSlot { contour }
+            | OpKind::Dovetail { contour } => Some(contour),
             _ => None,
         }
     }
@@ -59,7 +60,8 @@ impl Op {
             | OpKind::Pocket { contour, .. }
             | OpKind::Engrave { contour }
             | OpKind::DragKnife { contour }
-            | OpKind::TSlot { contour } => Some(contour),
+            | OpKind::TSlot { contour }
+            | OpKind::Dovetail { contour } => Some(contour),
             _ => None,
         }
     }
@@ -350,6 +352,24 @@ pub enum OpKind {
     /// lead-in / cut direction (a lateral lead-in lets the head enter
     /// the floor plane without plunging through the narrow stem).
     TSlot {
+        #[serde(default)]
+        contour: ContourParams,
+    },
+    /// Dovetail / form-profile undercut pass (b7qz). Drives a form /
+    /// profile cutter (`ToolKind::FormProfile` — e.g. a dovetail bit,
+    /// widest at the bottom face) along the source path as the groove
+    /// centerline, at a single floor Z (= `params.depth`). The bit's
+    /// angled flanks carve the undercut walls in one pass; like the
+    /// T-slot sibling it does NOT cascade through intermediate Z levels
+    /// (that head-/flank-at-every-depth cascade is exactly the bug this
+    /// op fixes). The undercut flank cannot be plunged into safely, so
+    /// the op assumes a roughing channel (≈ the profile's neck width)
+    /// was cut to depth by a prior endmill op and warns about it.
+    /// Behaviorally a single-Z centerline follow like `Engrave`; the
+    /// dedicated kind exists so the op is discoverable, validates the
+    /// tool kind, and carries the roughing prerequisite. Carries
+    /// `contour` params for lead-in / cut direction.
+    Dovetail {
         #[serde(default)]
         contour: ContourParams,
     },

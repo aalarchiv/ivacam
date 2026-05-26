@@ -668,6 +668,11 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             h.write_u8(11);
             hash_contour_params(contour, h);
         }
+        // b7qz: next free discriminant after TSlot(11).
+        OpKind::Dovetail { contour } => {
+            h.write_u8(12);
+            hash_contour_params(contour, h);
+        }
     }
 }
 

@@ -385,6 +385,12 @@ pub(super) fn push_tool_fit_kind_warnings(
         (OpKind::TSlot { .. }, k) if k != ToolKind::TSlot => {
             Some("t-slot op assigned a non-T-slot cutter (no undercut head)")
         }
+        // b7qz: a dovetail op needs a form / profile cutter — any other
+        // kind has straight walls, so it would just cut a plain
+        // centerline groove of its nominal diameter (no undercut flanks).
+        (OpKind::Dovetail { .. }, k) if k != ToolKind::FormProfile => {
+            Some("dovetail op assigned a non-form-profile cutter (no angled undercut flanks)")
+        }
         _ => None,
     };
     if let Some(msg) = mismatch {
@@ -413,6 +419,32 @@ pub(super) fn push_tool_fit_kind_warnings(
             kind: "tslot_requires_stem_slot".into(),
             message: format!(
                 "T-slot op '{}' cuts only the undercut at the floor depth. Cut a stem slot at least {neck} wide down to that depth with a prior endmill op first, and enter the cut laterally (lead-in from outside the stock or a pre-bored clearance hole) — the wide head can't plunge through the narrow stem.",
+                op.name
+            ),
+        });
+    }
+    // b7qz: a dovetail op cuts ONLY the angled-flank undercut at the
+    // floor Z. The undercut flank can't be safely plunged into, so the
+    // user must rough a straight channel (≈ the profile's narrowest /
+    // neck width, taken from the form-profile samples) down to depth
+    // with a prior endmill op for the bit to drop into. Surface this as
+    // a non-blocking prerequisite note.
+    if matches!(op.kind, OpKind::Dovetail { .. }) {
+        let neck = tool
+            .form_profile_mm
+            .iter()
+            .map(|s| s.r_mm.max(0.0))
+            .fold(f64::INFINITY, f64::min);
+        let neck = if neck.is_finite() && neck > 0.0 {
+            format!("{:.2} mm (the profile's narrowest width)", neck * 2.0)
+        } else {
+            "the bit's neck".to_string()
+        };
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "dovetail_requires_rough_channel".into(),
+            message: format!(
+                "Dovetail op '{}' cuts only the angled-flank undercut at the floor depth. Rough a straight channel at least {neck} wide down to that depth with a prior endmill op first, then drop the dovetail bit into it — its angled flanks can't be plunged through solid stock.",
                 op.name
             ),
         });

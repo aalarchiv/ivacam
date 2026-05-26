@@ -25,6 +25,14 @@ describe('expectedToolKinds', () => {
     expect([...expectedToolKinds('drag_knife')]).toEqual(['drag_knife']);
   });
 
+  it('returns t_slot-only for T-Slot', () => {
+    expect([...expectedToolKinds('t_slot')]).toEqual(['t_slot']);
+  });
+
+  it('returns form_profile-only for Dovetail (b7qz)', () => {
+    expect([...expectedToolKinds('dovetail')]).toEqual(['form_profile']);
+  });
+
   it('returns flat-bottom cutters for Pocket', () => {
     expect([...expectedToolKinds('pocket')]).toEqual([
       'endmill',

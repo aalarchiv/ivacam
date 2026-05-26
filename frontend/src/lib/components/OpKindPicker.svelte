@@ -14,6 +14,7 @@
     engrave: 'Engrave',
     drag_knife: 'Drag-knife',
     t_slot: 'T-Slot',
+    dovetail: 'Dovetail',
     vcarve: 'V-Carve',
     pause: 'Pause',
   };
@@ -26,6 +27,7 @@
     engrave: '✎',
     drag_knife: '✁',
     t_slot: '⊤',
+    dovetail: '⋀',
     vcarve: '⌃',
     pause: '⏸',
   };
@@ -45,6 +47,7 @@
     'engrave',
     'drag_knife',
     't_slot',
+    'dovetail',
     'vcarve',
     'pause',
   ];
@@ -75,6 +78,8 @@
     drag_knife: 'Drag-knife cuts with trail-compensation arcs at corners.',
     t_slot:
       'Undercut pass along the source path at the floor depth with a T-slot cutter. Pre-cut a stem slot ≥ the neck width first; enter laterally (the wide head cannot plunge through the narrow stem).',
+    dovetail:
+      'Undercut pass along the source path at the floor depth with a form / dovetail cutter — its angled flanks carve the walls. Rough a straight channel ≥ the profile’s narrowest width to depth first, then drop the bit in.',
     vcarve:
       'Variable-depth medial-axis carving with a V-bit. Tip dips deepest where the region is widest.',
     chamfer:
@@ -118,6 +123,7 @@
     engrave: ['mill', 'laser'],
     drag_knife: ['drag'],
     t_slot: ['mill'],
+    dovetail: ['mill'],
     vcarve: ['mill'],
     // Pause carries no tool / motion — every machine can pause.
     pause: ['mill', 'laser', 'drag'],

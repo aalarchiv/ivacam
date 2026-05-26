@@ -854,6 +854,26 @@ export interface components {
             /** @enum {string} */
             type: "t_slot";
         } | {
+            /**
+             * @default {
+             *       "leads": {
+             *         "in": "off",
+             *         "in_lenght": 5,
+             *         "out": "off",
+             *         "out_lenght": 5
+             *       },
+             *       "tabs": {
+             *         "active": false,
+             *         "height": 1,
+             *         "tab_type": "rectangle",
+             *         "width": 10
+             *       }
+             *     }
+             */
+            contour: components["schemas"]["ContourParams"];
+            /** @enum {string} */
+            type: "dovetail";
+        } | {
             /** @enum {string} */
             type: "helix";
         } | {

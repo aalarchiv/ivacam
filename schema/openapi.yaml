@@ -1398,6 +1398,29 @@ components:
         required:
         - type
         type: object
+      - description: Dovetail / form-profile undercut pass (b7qz). Drives a form / profile cutter (`ToolKind::FormProfile` — e.g. a dovetail bit, widest at the bottom face) along the source path as the groove centerline, at a single floor Z (= `params.depth`). The bit's angled flanks carve the undercut walls in one pass; like the T-slot sibling it does NOT cascade through intermediate Z levels (that head-/flank-at-every-depth cascade is exactly the bug this op fixes). The undercut flank cannot be plunged into safely, so the op assumes a roughing channel (≈ the profile's neck width) was cut to depth by a prior endmill op and warns about it. Behaviorally a single-Z centerline follow like `Engrave`; the dedicated kind exists so the op is discoverable, validates the tool kind, and carries the roughing prerequisite. Carries `contour` params for lead-in / cut direction.
+        properties:
+          contour:
+            allOf:
+            - $ref: '#/components/schemas/ContourParams'
+            default:
+              leads:
+                in: off
+                in_lenght: 5.0
+                out: off
+                out_lenght: 5.0
+              tabs:
+                active: false
+                height: 1.0
+                tab_type: rectangle
+                width: 10.0
+          type:
+            enum:
+            - dovetail
+            type: string
+        required:
+        - type
+        type: object
       - description: Helical entry into a closed contour. Reserved for future thread-mill style expansion; no params today.
         properties:
           type:

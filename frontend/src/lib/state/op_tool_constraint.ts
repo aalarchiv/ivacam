@@ -58,6 +58,10 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
     case 't_slot':
       // 3g6u: needs the undercut head + neck geometry of a T-slot cutter.
       return ['t_slot'];
+    case 'dovetail':
+      // b7qz: needs the angled-flank cross-section of a form / profile
+      // (dovetail) cutter to carve the undercut walls.
+      return ['form_profile'];
     case 'vcarve':
       // Depth-vs-radius math assumes a conical cutter with a known
       // tip angle.

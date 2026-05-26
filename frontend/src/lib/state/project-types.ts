@@ -31,6 +31,8 @@ export function prettyOpKind(kind: OpKind): string {
       return 'Drag-knife';
     case 't_slot':
       return 'T-Slot';
+    case 'dovetail':
+      return 'Dovetail';
     case 'vcarve':
       return 'V-Carve';
     case 'pause':

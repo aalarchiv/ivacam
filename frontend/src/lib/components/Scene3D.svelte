@@ -21,7 +21,8 @@
   import { autoTabTs, buildObjectPolylines, polylineAtT } from '../cam/tabs';
   import { tessellate } from '../scene3d/tessellate';
   import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
-  import type { SimWarning } from '../api/types';
+  import type { SimWarning, ToolpathSegment } from '../api/types';
+  import type { ToolEntry } from '../state/project.svelte';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
 
@@ -667,6 +668,7 @@
     void project.playhead;
     void project.generated;
     void project.tools;
+    void project.operations; // op→tool assignment drives the cutter mesh
     void project.machine;
     void project.selectedOpId;
     updateTool();
@@ -698,6 +700,20 @@
   /// visibility (otherwise toggling solid → wireframe would only affect
   /// the buffer that was alive at the toggle moment).
   const wireVisible = $derived(project.settings.previewMode !== 'solid');
+
+  /// Build a per-segment tool resolver for the sim: each toolpath segment
+  /// is carved with ITS op's tool (looked up by op_id), so a multi-op
+  /// program (e.g. endmill profile then v-bit chamfer) carves each part
+  /// with the correct cutter cross-section instead of one tool for all.
+  function toolForSegment(segs: ToolpathSegment[]): (i: number) => ToolEntry {
+    const byOp = new Map<number, ToolEntry>();
+    for (const op of project.operations) {
+      const t = project.tools.find((tt) => tt.id === op.toolId);
+      if (t) byOp.set(op.id, t);
+    }
+    const fallback = project.tools[0];
+    return (i) => byOp.get(segs[i]?.op_id ?? -1) ?? fallback;
+  }
 
   $effect(() => {
     if (!scene) return;
@@ -790,7 +806,7 @@
           driver.advanceTo(
             project.playhead,
             generated.toolpath,
-            tool,
+            toolForSegment(generated.toolpath),
             project.toolpathCumLen,
             project.toolpathTotalLen,
           );
@@ -813,13 +829,11 @@
     void project.playhead;
     if (!driver) return;
     const generated = project.generated;
-    const firstOp = project.operations[0];
-    const tool = project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
-    if (!generated || !tool) return;
+    if (!generated || project.tools.length === 0) return;
     driver.advanceTo(
       project.playhead,
       generated.toolpath,
-      tool,
+      toolForSegment(generated.toolpath),
       project.toolpathCumLen,
       project.toolpathTotalLen,
     );
@@ -1520,14 +1534,17 @@
 
     const colorHex = tipColorByKind[seg.kind] ?? tipColorByKind.cut;
 
-    // Pick the tool: prefer the selected op's tool, else the active
-    // segment's op, else the first tool entry, else fallback.
+    // Pick the tool by the op actually cutting at the playhead (the
+    // segment's op), so the displayed cutter changes as the playhead
+    // crosses op boundaries. Fall back to the selected op, then the
+    // first op. (Previously this preferred the SELECTED op, which showed
+    // that op's tool throughout the whole program.)
     const segOp = project.operations.find((o) => o.id === seg.op_id);
     const selOp =
       project.selectedOpId == null
         ? null
         : (project.operations.find((o) => o.id === project.selectedOpId) ?? null);
-    const opForTool = selOp ?? segOp ?? project.operations[0];
+    const opForTool = segOp ?? selOp ?? project.operations[0];
     const tool = project.tools.find((t) => t.id === (opForTool?.toolId ?? 0)) ?? project.tools[0];
     const diameter = Math.max(0.2, tool?.diameter ?? 3);
     const mode = project.machine.mode;

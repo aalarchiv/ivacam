@@ -188,13 +188,20 @@ export function buildToolMesh(
     return new THREE.Mesh(geom, mat);
   }
   if (kind === 'v_bit' || kind === 'engraver') {
-    // Tapered cutter: cone with apex at the cutting tip. tipDiameter
-    // is 0 for true V-bits, >0 for engravers with a flat tip.
-    const len = Math.max(diameter * 4, 8);
-    const tipR = (tipDiameter ?? 0) * 0.5;
-    const geom = new THREE.CylinderGeometry(radius, Math.max(tipR, 0.05), len, 24);
+    // Tapered cutter: cone whose flank angle matches the bit's FULL apex
+    // angle (tipAngleDeg). The cone rises from the tip (radius tipR, 0
+    // for a true V-bit) to the full radius over a height of
+    // (radius − tipR) / tan(apex / 2) — so a 60° bit looks like a 60°
+    // bit. Previously the height was a fixed diameter×4, which drew the
+    // wrong angle for every V-bit. Honors the same convention as the
+    // V-Carve depth math (z = −R / tan(tipAngle / 2)).
+    const tipR = Math.max((tipDiameter ?? 0) * 0.5, 0);
+    const apexDeg = tipAngleDeg ?? 60;
+    const halfTan = Math.tan(((apexDeg * Math.PI) / 180) * 0.5);
+    const len = halfTan > 1e-6 ? (radius - tipR) / halfTan : Math.max(diameter * 4, 8);
+    const geom = new THREE.CylinderGeometry(radius, Math.max(tipR, 0.001), Math.max(len, 0.1), 24);
     geom.rotateX(Math.PI / 2);
-    geom.translate(0, 0, len / 2);
+    geom.translate(0, 0, Math.max(len, 0.1) / 2);
     return new THREE.Mesh(geom, mat);
   }
   if (kind === 'drill') {

@@ -414,10 +414,17 @@ export class HeightfieldDriver {
   advanceTo(
     headFraction: number,
     segments: ToolpathSegment[],
-    tool: ToolEntry,
+    /// Resolves the cutting tool for a given toolpath segment index. The
+    /// sim must carve each segment with ITS op's tool (a v-bit cuts a V,
+    /// an endmill a cylinder) — feeding one tool for the whole program
+    /// made multi-op runs carve with the wrong cross-section. A bare
+    /// ToolEntry is accepted for single-tool callers / tests.
+    toolForSeg: ToolEntry | ((segIdx: number) => ToolEntry),
     cumLen?: Float64Array | null,
     totalLen?: number,
   ): boolean {
+    const resolveTool =
+      typeof toolForSeg === 'function' ? toolForSeg : () => toolForSeg as ToolEntry;
     if (!this.sim || !this.mesh) return false;
     const total = segments.length;
     if (total === 0) return false;
@@ -455,7 +462,18 @@ export class HeightfieldDriver {
       if (this.heightView && this.mesh) this.mesh.updateHeights(this.heightView);
     }
 
-    const wireTool = toWireTool(tool);
+    // Wire-tool cache (by tool id) so a multi-segment run doesn't
+    // re-serialize the same tool spec repeatedly.
+    const wireCache = new Map<number, Record<string, unknown>>();
+    const wireFor = (segIdx: number): Record<string, unknown> => {
+      const t = resolveTool(segIdx);
+      let w = wireCache.get(t.id);
+      if (!w) {
+        w = toWireTool(t);
+        wireCache.set(t.id, w);
+      }
+      return w;
+    };
     // Defensive re-cache if the toolpath identity drifts from the
     // build()-time snapshot (e.g. a Generate response replaced
     // `project.generated.toolpath` without going through build()).
@@ -480,17 +498,27 @@ export class HeightfieldDriver {
 
     if (plan.finalizePartial) {
       const { segIdx: fIdx, fromT } = plan.finalizePartial;
-      unionWith(this.sim.partial_advance(wireTool, fIdx, fromT, 1));
+      unionWith(this.sim.partial_advance(wireFor(fIdx), fIdx, fromT, 1));
       this.collectDiagnostics();
     }
     if (plan.bulkAdvance) {
+      // Split the contiguous range into runs of consecutive segments that
+      // share a tool (ops are contiguous in the toolpath), advancing each
+      // run with its own tool so per-op cutter shapes carve correctly.
       const { from, to } = plan.bulkAdvance;
-      unionWith(this.sim.advance(wireTool, from, to));
+      let runStart = from;
+      while (runStart < to) {
+        const runToolId = resolveTool(runStart).id;
+        let runEnd = runStart + 1;
+        while (runEnd < to && resolveTool(runEnd).id === runToolId) runEnd++;
+        unionWith(this.sim.advance(wireFor(runStart), runStart, runEnd));
+        runStart = runEnd;
+      }
       this.collectDiagnostics();
     }
     if (plan.startPartial) {
       const { segIdx: sIdx, startT, endT } = plan.startPartial;
-      unionWith(this.sim.partial_advance(wireTool, sIdx, startT, endT));
+      unionWith(this.sim.partial_advance(wireFor(sIdx), sIdx, startT, endT));
       this.collectDiagnostics();
     }
 

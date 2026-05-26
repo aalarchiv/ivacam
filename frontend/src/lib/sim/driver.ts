@@ -133,6 +133,10 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
     feed_rate: t.feedRate,
     coolant: t.coolant,
     ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
+    ...(t.lengthMm !== undefined ? { length_mm: t.lengthMm } : {}),
+    ...(t.compressionTransitionMm !== undefined
+      ? { compression_transition_mm: t.compressionTransitionMm }
+      : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
     ...(t.holder !== undefined ? { holder: t.holder } : {}),
     // Per-kind sim/holder metadata so the heightfield simulator can

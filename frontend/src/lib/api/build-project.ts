@@ -147,6 +147,12 @@ interface WireToolEntry {
   default_xy_overlap?: number;
   comment?: string;
   flute_length_mm?: number;
+  /// dhh0: overall tool length (mm) — display/preview only. Omit when
+  /// undefined.
+  length_mm?: number;
+  /// dhh0: compression flute-transition height (mm). Honored only when
+  /// kind === 'compression'. Omit when undefined.
+  compression_transition_mm?: number;
   shank_diameter_mm?: number;
   /// q0kc: stickout between flute top and collet bottom (mm). Omit
   /// when 0 / undefined so the wire payload stays compact.
@@ -590,6 +596,10 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.defaultXyOverlap !== undefined ? { default_xy_overlap: t.defaultXyOverlap } : {}),
     ...(t.comment !== undefined && t.comment !== '' ? { comment: t.comment } : {}),
     ...(t.fluteLengthMm !== undefined ? { flute_length_mm: t.fluteLengthMm } : {}),
+    ...(t.lengthMm !== undefined ? { length_mm: t.lengthMm } : {}),
+    ...(t.compressionTransitionMm !== undefined
+      ? { compression_transition_mm: t.compressionTransitionMm }
+      : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
     // q0kc: stickout (mm). Skip on zero so the wire payload stays
     // compact for the legacy "collet sits on flutes" common case.

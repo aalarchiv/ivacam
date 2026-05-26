@@ -219,6 +219,24 @@ pub struct ToolEntry {
     /// Length of cutting flutes (mm). None = treat entire tool as cutting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flute_length_mm: Option<f64>,
+    /// dhh0: overall / usable tool length (mm), tip → where the shank
+    /// enters the collet (Estlcam `Length`). Display + 3D-preview only in
+    /// v1 — it does NOT affect emitted gcode (reach / collision is driven
+    /// by `flute_length_mm` + `stickout_length_mm` + `holder`). It sets
+    /// the preview mesh's total height so the rendered tool matches the
+    /// real tool's proportions. None = the preview falls back to its
+    /// diameter-derived heuristic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length_mm: Option<f64>,
+    /// dhh0: compression / up-down cutter flute-transition height (mm
+    /// above the tip) where the down-cut flutes flip to up-cut (Estlcam
+    /// `Obenunten`). Honored only when `kind == Compression`. Display +
+    /// preview marker in v1 — the carved cross-section is unchanged (a
+    /// compression cutter removes the same material as a plain endmill;
+    /// the split only affects which face the chips break toward). None =
+    /// the preview assumes the flute midpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression_transition_mm: Option<f64>,
     /// Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shank_diameter_mm: Option<f64>,
@@ -368,6 +386,8 @@ impl Default for ToolEntry {
             cut_height_mm: None,
             pierce_delay_sec: None,
             flute_length_mm: None,
+            length_mm: None,
+            compression_transition_mm: None,
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,

@@ -49,6 +49,8 @@ describe('tool_family capability table', () => {
     expect(attrApplies('cornerRadius', 'bull_nose')).toBe(true);
     expect(attrApplies('cornerRadius', 'ball_nose')).toBe(false);
     expect(attrApplies('tslotNeck', 't_slot')).toBe(true);
+    expect(attrApplies('compressionTransition', 'compression')).toBe(true);
+    expect(attrApplies('compressionTransition', 'endmill')).toBe(false);
     expect(attrApplies('formProfile', 'form_profile')).toBe(true);
     expect(attrApplies('laser', 'laser_beam')).toBe(true);
     expect(attrApplies('laser', 'endmill')).toBe(false);

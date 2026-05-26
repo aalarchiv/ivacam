@@ -51,6 +51,7 @@ export type ToolAttr =
   | 'dragoff' // drag-knife trailing offset
   | 'tslotNeck' // t-slot neck ⌀ / length
   | 'formProfile' // (z, r) sample table
+  | 'compressionTransition' // compression up/down flute-split height
   | 'laser'; // pierce / lead-in / kerf
 
 /// Kind → family. The authoritative classification; everything else
@@ -96,6 +97,7 @@ const FAMILY_BASE_ATTRS: Record<ToolFamily, readonly ToolAttr[]> = {
 /// Per-kind attributes beyond the family base.
 const KIND_EXTRA_ATTRS: Partial<Record<ToolKind, readonly ToolAttr[]>> = {
   bull_nose: ['cornerRadius'],
+  compression: ['compressionTransition'],
   t_slot: ['tslotNeck'],
   form_profile: ['formProfile'],
 };

@@ -1740,6 +1740,11 @@ export interface components {
         ToolEntry: {
             /** @description Free-text comment / description (rt1.31). Surfaced as the tooltip on the tool dropdown in `OpPropertiesPanel` and as an expandable text area in `ToolLibraryDialog`. Empty / None = no comment; doesn't affect any pipeline output. */
             comment?: string | null;
+            /**
+             * Format: double
+             * @description dhh0: compression / up-down cutter flute-transition height (mm above the tip) where the down-cut flutes flip to up-cut (Estlcam `Obenunten`). Honored only when `kind == Compression`. Display + preview marker in v1 — the carved cross-section is unchanged (a compression cutter removes the same material as a plain endmill; the split only affects which face the chips break toward). None = the preview assumes the flute midpoint.
+             */
+            compression_transition_mm?: number | null;
             coolant: components["schemas"]["Coolant"];
             /**
              * Format: double
@@ -1822,6 +1827,11 @@ export interface components {
              * @description Laser pierce time (rt1.29 / Estlcam `T_Pierce_Time)`: seconds the beam dwells at the start point BEFORE the cut begins so it burns through thick stock. Honored only when `kind == LaserBeam`. The post emits a `G4 P<seconds>` after the laser-on before each plunge. None = no pierce dwell.
              */
             laser_pierce_sec?: number | null;
+            /**
+             * Format: double
+             * @description dhh0: overall / usable tool length (mm), tip → where the shank enters the collet (Estlcam `Length`). Display + 3D-preview only in v1 — it does NOT affect emitted gcode (reach / collision is driven by `flute_length_mm` + `stickout_length_mm` + `holder`). It sets the preview mesh's total height so the rendered tool matches the real tool's proportions. None = the preview falls back to its diameter-derived heuristic.
+             */
+            length_mm?: number | null;
             name: string;
             /**
              * Format: uint32

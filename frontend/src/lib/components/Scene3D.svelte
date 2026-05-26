@@ -1555,12 +1555,13 @@
     const fluteLen = tool?.fluteLengthMm;
     const shankDia = tool?.shankDiameterMm;
     const holder = tool?.holder;
+    const lengthMm = tool?.lengthMm;
 
     // Cache key — anything that changes the geometry shape. Color is NOT
     // part of the key; we only mutate material.color on the cached mesh
     // for that. Holder fields are JSON-stringified so the key updates
     // whenever any part of the holder spec changes.
-    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${tipAngleDeg ?? ''}|${dragoff ?? ''}|${fluteLen ?? ''}|${shankDia ?? ''}|${holder ? JSON.stringify(holder) : ''}`;
+    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${tipAngleDeg ?? ''}|${dragoff ?? ''}|${fluteLen ?? ''}|${shankDia ?? ''}|${holder ? JSON.stringify(holder) : ''}|${lengthMm ?? ''}`;
     if (key !== toolMeshKey || !toolMesh) {
       if (toolMesh) {
         toolGroup.remove(toolMesh);
@@ -1577,6 +1578,7 @@
         shankDia,
         holder,
         tipAngleDeg,
+        lengthMm,
       );
       toolGroup.add(toolMesh);
       toolMeshKey = key;

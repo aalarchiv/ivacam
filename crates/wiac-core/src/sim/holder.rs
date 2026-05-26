@@ -320,6 +320,8 @@ mod tests {
             wirbeln_osc_mm: None,
             pause: 1,
             flute_length_mm: flute,
+            length_mm: None,
+            compression_transition_mm: None,
             shank_diameter_mm: shank,
             stickout_length_mm: None,
             holder,

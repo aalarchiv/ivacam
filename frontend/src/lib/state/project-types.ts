@@ -206,6 +206,15 @@ export interface ToolEntry {
   /// Length of cutting flutes in mm. Undefined = treat the entire tool
   /// as cutting (legacy behavior — no holder collision check is done).
   fluteLengthMm?: number;
+  /// dhh0: overall / usable tool length (mm), tip → collet (Estlcam
+  /// Length). Display + 3D-preview only — does NOT affect gcode. Sets the
+  /// preview mesh's total height. Undefined = diameter-derived heuristic.
+  lengthMm?: number;
+  /// dhh0: compression cutter flute-transition height (mm above the tip)
+  /// where down-cut flutes flip to up-cut (Estlcam Obenunten). Honored
+  /// only when kind === 'compression'. Display + preview marker only —
+  /// the carved cross-section is unchanged. Undefined = flute midpoint.
+  compressionTransitionMm?: number;
   /// Shank diameter in mm. Undefined = same as `diameter`
   /// (parallel-shank bit). Drives the holder/shank collision sweep.
   shankDiameterMm?: number;

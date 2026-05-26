@@ -71,9 +71,10 @@ export function buildEndmillStack(
   fluteLen?: number,
   shankDia?: number,
   holder?: HolderShape,
+  lengthMm?: number,
 ): THREE.Mesh {
   const radius = diameter * 0.5;
-  if (fluteLen === undefined && shankDia === undefined && !holder) {
+  if (fluteLen === undefined && shankDia === undefined && !holder && lengthMm === undefined) {
     const bodyLen = Math.max(diameter * 6, 8);
     const body = new THREE.CylinderGeometry(radius, radius, bodyLen, 24);
     body.rotateX(Math.PI / 2);
@@ -94,8 +95,15 @@ export function buildEndmillStack(
   // Shank: between top of flutes and bottom of holder. When the
   // holder is undefined, give the shank a sensible default length so
   // the user can still see "this is the non-cutting part" sticking
-  // out.
-  const shankLen = holder ? Math.max(diameter * 2, 4) : Math.max(diameter * 4, 6);
+  // out. dhh0: when an overall tool length is set, the shank fills the
+  // remainder up to that length (tip → collet) so the rendered tool
+  // matches the real proportions instead of the diameter heuristic.
+  const shankLen =
+    lengthMm !== undefined
+      ? Math.max(lengthMm - fLen, 0.5)
+      : holder
+        ? Math.max(diameter * 2, 4)
+        : Math.max(diameter * 4, 6);
   if (shankR > 0 && shankLen > 0) {
     const shank = new THREE.CylinderGeometry(shankR, shankR, shankLen, 18);
     shank.rotateX(Math.PI / 2);
@@ -165,6 +173,7 @@ export function buildToolMesh(
   shankDia?: number,
   holder?: HolderShape,
   tipAngleDeg?: number,
+  lengthMm?: number,
 ): THREE.Mesh {
   const radius = diameter * 0.5;
   const mat = new THREE.MeshBasicMaterial({
@@ -248,5 +257,5 @@ export function buildToolMesh(
     return new THREE.Mesh(merged, mat);
   }
   // Endmill / generic: stacked envelope (flutes + shank + holder).
-  return buildEndmillStack(diameter, mat, fluteLen, shankDia, holder);
+  return buildEndmillStack(diameter, mat, fluteLen, shankDia, holder, lengthMm);
 }

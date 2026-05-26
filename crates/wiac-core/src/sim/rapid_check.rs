@@ -472,6 +472,8 @@ mod tests {
             wirbeln_osc_mm: None,
             pause: 1,
             flute_length_mm: Some(25.0),
+            length_mm: None,
+            compression_transition_mm: None,
             shank_diameter_mm: Some(6.0),
             stickout_length_mm: None,
             holder: Some(HolderShape::Cylinder {
@@ -596,6 +598,8 @@ mod tests {
             // User accidentally / by-template set a shank + holder on
             // the laser entry — pre-fix this triggered the shank pass.
             flute_length_mm: None,
+            length_mm: None,
+            compression_transition_mm: None,
             shank_diameter_mm: Some(6.0),
             stickout_length_mm: None,
             holder: Some(HolderShape::Cylinder {
@@ -663,6 +667,8 @@ mod tests {
             wirbeln_osc_mm: None,
             pause: 0,
             flute_length_mm: None, // ← the bug: pre-fix shank started at z=0
+            length_mm: None,
+            compression_transition_mm: None,
             shank_diameter_mm: Some(3.0),
             stickout_length_mm: None,
             holder: None,
@@ -730,6 +736,8 @@ mod tests {
             wirbeln_osc_mm: None,
             pause: 0,
             flute_length_mm: None,
+            length_mm: None,
+            compression_transition_mm: None,
             shank_diameter_mm: Some(6.0),
             stickout_length_mm: None,
             holder: Some(HolderShape::Cylinder {

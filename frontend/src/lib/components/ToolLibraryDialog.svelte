@@ -816,6 +816,21 @@
                   />
                 </label>
                 <label>
+                  <span>Overall length (mm)</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="—"
+                    value={tool.lengthMm ?? ''}
+                    title="dhh0: overall / usable tool length (mm), tip to where the shank enters the collet (Estlcam Length). Display + 3D-preview only — it does NOT change the gcode (reach is driven by flute length + stickout + holder). Sets the preview tool's total height. Empty = diameter-derived heuristic."
+                    onchange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      updateField(i, 'lengthMm', v === '' ? undefined : parseFloat(v));
+                    }}
+                  />
+                </label>
+                <label>
                   <span>Shank ⌀ (mm)</span>
                   <input
                     type="number"
@@ -1327,6 +1342,36 @@
                       onchange={(e) => {
                         const v = (e.currentTarget as HTMLInputElement).value;
                         updateField(i, 'dragoff', v === '' ? undefined : parseFloat(v));
+                      }}
+                    />
+                  </label>
+                </div>
+              {/if}
+              {#if attrApplies('compressionTransition', tool.kind)}
+                <div class="holder-row pass-overrides">
+                  <span
+                    class="holder-label"
+                    title="Compression / up-down cutter: down-cut flutes on the upper part, up-cut on the lower, meeting at the transition height — clean edges on both faces of sheet stock."
+                    >Compression</span
+                  >
+                </div>
+                <div class="holder-row">
+                  <label>
+                    <span>Transition height (mm)</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      placeholder="flute midpoint"
+                      value={tool.compressionTransitionMm ?? ''}
+                      title="dhh0: height above the tip where the down-cut flutes flip to up-cut (Estlcam Obenunten). Set to your stock thickness so the flip lands at the bottom face. Display + preview only in v1 — it does NOT change the cut cross-section. Empty = the preview assumes the flute midpoint."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(
+                          i,
+                          'compressionTransitionMm',
+                          v === '' ? undefined : parseFloat(v),
+                        );
                       }}
                     />
                   </label>

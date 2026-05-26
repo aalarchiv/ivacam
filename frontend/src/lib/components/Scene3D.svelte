@@ -2,6 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  // Fat lines: WebGL caps LineBasicMaterial.linewidth to 1px, so the
+  // preview-line-width setting (68ab) drives Line2/LineMaterial instead,
+  // which renders width in screen pixels via a resolution uniform.
+  import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+  import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+  import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
   import {
     project,
     playheadToSegment,
@@ -176,9 +182,9 @@
   //     reapplied). Playhead fade + sim-warning tints mutate its color
   //     attribute in place.
   type LineOwner = { kind: 'object'; objectId: number } | { kind: 'toolpath'; segIdx: number };
-  let importedLinesObject: THREE.LineSegments | undefined;
+  let importedLinesObject: LineSegments2 | undefined;
   let importedLineOwners: LineOwner[] = [];
-  let toolpathLinesObject: THREE.LineSegments | undefined;
+  let toolpathLinesObject: LineSegments2 | undefined;
   /// Direction-indicator chevrons drawn on top of the toolpath
   /// wireframe. One pair of short line segments per qualifying
   /// toolpath segment (cut / plunge / retract / arc; rapids omitted
@@ -186,7 +192,7 @@
   /// moves). Decluttered by a min-length threshold + a cumulative
   /// spacing rule so a dense raster pocket doesn't drown the scene
   /// in arrowheads.
-  let toolpathArrowsObject: THREE.LineSegments | undefined;
+  let toolpathArrowsObject: LineSegments2 | undefined;
   let toolpathLineOwners: LineOwner[] = [];
   let sceneRadius = 100;
 
@@ -282,6 +288,34 @@
   /// `opHue` so the toolpath, the 3D source tint, and the 2D canvas all
   /// land on the SAME color for a given op.
   const opPalette = opHue;
+
+  /// Build a fat-line (Line2) object from flat per-segment position +
+  /// color arrays (6 floats per segment — the same layout the old
+  /// LineSegments buffers used, which is also exactly how
+  /// LineSegmentsGeometry stores its interleaved instance buffers, so
+  /// the playhead-fade / selection recolor offset math is unchanged).
+  /// `linewidth` is in screen pixels (worldUnits off); the `resolution`
+  /// uniform must track the canvas size — set here and on every resize.
+  function buildFatLines(positions: number[], colors: number[]): LineSegments2 {
+    const geom = new LineSegmentsGeometry();
+    geom.setPositions(new Float32Array(positions));
+    geom.setColors(new Float32Array(colors));
+    const mat = new LineMaterial({
+      vertexColors: true,
+      linewidth: Math.max(0.5, project.settings.previewLineWidth),
+      worldUnits: false,
+    });
+    mat.resolution.set(host?.clientWidth || 1, host?.clientHeight || 1);
+    return new LineSegments2(geom, mat);
+  }
+
+  /// Push the canvas pixel size into every fat-line material's
+  /// `resolution` uniform (they render wrong / invisible otherwise).
+  function updateLineResolution(w: number, h: number) {
+    for (const o of [importedLinesObject, toolpathLinesObject, toolpathArrowsObject]) {
+      (o?.material as LineMaterial | undefined)?.resolution.set(w, h);
+    }
+  }
 
   onMount(() => {
     scene = new THREE.Scene();
@@ -467,6 +501,7 @@
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    updateLineResolution(w, h);
     requestRender();
   }
 
@@ -506,8 +541,18 @@
     void project.generated;
     void project.operations;
     void project.settings.toolMoveArrowDensity; // arrow spacing
-    void project.settings.previewLineWidth; // fat-line thickness
     rebuildToolpathGeometry();
+    requestRender();
+  });
+
+  // Fat-line thickness (68ab): update the live materials in place rather
+  // than rebuilding geometry, so dragging the slider is cheap.
+  $effect(() => {
+    const lw = Math.max(0.5, project.settings.previewLineWidth);
+    for (const o of [importedLinesObject, toolpathLinesObject, toolpathArrowsObject]) {
+      const m = o?.material as LineMaterial | undefined;
+      if (m) m.linewidth = lw;
+    }
     requestRender();
   });
 
@@ -831,8 +876,14 @@
         ? Math.max(0, Math.min(total, Math.round(project.playhead * total)))
         : Math.max(0, Math.min(total, segIdx + 1));
     if (head === appliedHead) return;
-    const attr = toolpathLinesObject.geometry.attributes.color as THREE.BufferAttribute;
-    const arr = attr.array as Float32Array;
+    // LineSegmentsGeometry stores colors as one interleaved instance
+    // buffer (6 floats / segment: start-rgb, end-rgb) — the same layout
+    // the old flat color array used, so the `start * 3` offset math below
+    // is unchanged; only the buffer handle + dirty flag differ.
+    const colorAttr = toolpathLinesObject.geometry.getAttribute(
+      'instanceColorStart',
+    ) as THREE.InterleavedBufferAttribute;
+    const arr = colorAttr.array as Float32Array;
     const f = 0.25; // fade factor for future moves
     const fade_offset = 0.05;
     const lo = appliedHead < 0 ? 0 : Math.min(appliedHead, head);
@@ -861,14 +912,19 @@
       arr[off + 4] = g;
       arr[off + 5] = b;
     }
-    attr.needsUpdate = true;
+    colorAttr.data.needsUpdate = true;
     appliedHead = head;
   }
 
   function applySelectionDelta(next: Set<number>) {
     if (!importedLinesObject) return;
-    const attr = importedLinesObject.geometry.attributes.color as THREE.BufferAttribute;
-    const arr = attr.array as Float32Array;
+    // Interleaved instance color buffer (6 floats / segment); the
+    // ColorRange offsets (start = first vertex index = 2·firstSegment)
+    // index it identically to the old flat color attribute.
+    const colorAttr = importedLinesObject.geometry.getAttribute(
+      'instanceColorStart',
+    ) as THREE.InterleavedBufferAttribute;
+    const arr = colorAttr.array as Float32Array;
     const selectedColor = cssColor('--accent', 0x4a8df0);
     let touched = false;
     // Newly-selected objects: paint accent over their ranges.
@@ -903,7 +959,7 @@
       }
       touched = true;
     }
-    if (touched) attr.needsUpdate = true;
+    if (touched) colorAttr.data.needsUpdate = true;
     appliedSelection = new Set(next);
   }
 
@@ -1637,15 +1693,7 @@
     }
 
     if (positions.length > 0) {
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      // `linewidth` is widely ignored in WebGL LineBasicMaterial, but
-      // setting it lets the few platforms that DO honour it draw 2 px
-      // strokes. The contrast-over-stock tint above is the primary
-      // visibility win — see Scene3D's imported-line audit notes.
-      const mat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 });
-      importedLinesObject = new THREE.LineSegments(geom, mat);
+      importedLinesObject = buildFatLines(positions, colors);
       importedLinesObject.visible = wireVisible;
       geometryGroup.add(importedLinesObject);
     }
@@ -1788,20 +1836,12 @@
     }
 
     if (positions.length > 0) {
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      const mat = new THREE.LineBasicMaterial({ vertexColors: true });
-      toolpathLinesObject = new THREE.LineSegments(geom, mat);
+      toolpathLinesObject = buildFatLines(positions, colors);
       toolpathLinesObject.visible = wireVisible;
       geometryGroup.add(toolpathLinesObject);
     }
     if (arrowPositions.length > 0) {
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(arrowPositions, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(arrowColors, 3));
-      const mat = new THREE.LineBasicMaterial({ vertexColors: true });
-      toolpathArrowsObject = new THREE.LineSegments(geom, mat);
+      toolpathArrowsObject = buildFatLines(arrowPositions, arrowColors);
       toolpathArrowsObject.visible = wireVisible;
       // Render after the base line so the chevron sits on top.
       toolpathArrowsObject.renderOrder = 1;
@@ -1969,7 +2009,7 @@
   /// line.
   function handlePick(e: PointerEvent) {
     if (!camera || !renderer) return;
-    const targets: THREE.LineSegments[] = [];
+    const targets: LineSegments2[] = [];
     if (importedLinesObject) targets.push(importedLinesObject);
     if (toolpathLinesObject) targets.push(toolpathLinesObject);
     if (targets.length === 0) return;
@@ -1977,19 +2017,25 @@
     ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
-    raycaster.params.Line = { threshold: Math.max(0.5, sceneRadius * 0.01) };
+    // LineSegments2 raycasts in screen space against the line width;
+    // the threshold (px) widens the pick corridor so thin lines stay
+    // clickable.
+    raycaster.params.Line2 = { threshold: 8 };
     const hits = raycaster.intersectObjects(targets, false);
     if (hits.length === 0) {
       if (!e.shiftKey) project.clearSelection();
       return;
     }
     const hit = hits[0];
-    if (hit.index == null) return;
-    // Resolve which owner array to consult based on which LineSegments
-    // produced the hit. Both buffers are pickable; closer wins (Three's
+    // LineSegments2 reports the picked segment as `faceIndex`; the owner
+    // arrays hold one entry per segment, so it maps directly.
+    const segIndex = hit.faceIndex ?? (hit.index != null ? Math.floor(hit.index / 2) : null);
+    if (segIndex == null) return;
+    // Resolve which owner array to consult based on which line object
+    // produced the hit. Both are pickable; closer wins (Three's
     // intersectObjects sorts by distance).
     const owners = hit.object === importedLinesObject ? importedLineOwners : toolpathLineOwners;
-    const owner = owners[Math.floor(hit.index / 2)];
+    const owner = owners[segIndex];
     if (!owner) return;
     if (owner.kind === 'object') {
       if (owner.objectId > 0) project.toggleObject(owner.objectId, e.shiftKey);

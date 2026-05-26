@@ -10,6 +10,7 @@
     isContourOp,
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
+  import { opHue, opSourceHsl } from '../state/op-color';
   import { HeightfieldDriver, computeFootprint } from '../sim/driver';
   import { autoTabTs, buildObjectPolylines, polylineAtT } from '../cam/tabs';
   import { tessellate } from '../scene3d/tessellate';
@@ -277,12 +278,10 @@
     };
   }
 
-  /// Deterministic hue in [0, 1) per op id. Spread by the golden-ratio
-  /// conjugate so even close ids land far apart on the wheel.
-  function opPalette(opId: number): number {
-    const phi = 0.6180339887498949;
-    return (((opId * phi) % 1) + 1) % 1;
-  }
+  /// Deterministic hue in [0, 1) per op id. Delegates to the shared
+  /// `opHue` so the toolpath, the 3D source tint, and the 2D canvas all
+  /// land on the SAME color for a given op.
+  const opPalette = opHue;
 
   onMount(() => {
     scene = new THREE.Scene();
@@ -495,6 +494,8 @@
     void previewVersion.v;
     void project.generated; // affects fade for non-selected imports
     void project.settings.previewMode; // affects contrast-against-stock color
+    void project.operations; // op-source assignments drive the per-op tint
+    void project.selectedOpId; // selected op renders emphasized
     rebuildImportedGeometry();
     requestRender();
   });
@@ -1528,6 +1529,27 @@
     // but enough to win the depth test.
     const lineZ = solidVisible ? 0.1 : 0;
     const flat = !!project.generated;
+    // Source-assignment tint: objectId → op ids that reference it (mirror
+    // of EntityCanvas2D.objectToOps). An assigned object is drawn in its
+    // op's color — overriding the ACI / faded base so the assignment is
+    // visible even after Generate (when the wireframe otherwise fades to
+    // near-black). WebGL lines can't nest concentric outlines like the 2D
+    // canvas, so for objects in several ops we cycle the op colors across
+    // the object's source SEGMENTS (a 2-arc circle → two colored arcs, a
+    // rectangle → cycling sides) so every assigned op's color shows.
+    const objectToOps3d = new Map<number, number[]>();
+    for (const op of project.operations) {
+      const refs = op.sourceObjects;
+      if (!refs) continue;
+      for (const id of refs) {
+        if (id <= 0) continue;
+        const list = objectToOps3d.get(id);
+        if (list) list.push(op.id);
+        else objectToOps3d.set(id, [op.id]);
+      }
+    }
+    const selOpId = project.selectedOpId;
+    const objSegSeen = new Map<number, number>();
     let segIdx = 0;
     for (const seg of data.segments) {
       if (!project.visibleLayers.has(seg.layer)) {
@@ -1537,10 +1559,20 @@
       const objectId = data.objects?.[segIdx] ?? 0;
       const isSelected = objectId > 0 && project.selectedObjects.has(objectId);
       const points = tessellate(seg);
+      const assignedOps = objectId > 0 ? objectToOps3d.get(objectId) : undefined;
       let baseR: number;
       let baseG: number;
       let baseB: number;
-      if (contrastOverStock) {
+      if (assignedOps && assignedOps.length > 0) {
+        const seen = objSegSeen.get(objectId) ?? 0;
+        objSegSeen.set(objectId, seen + 1);
+        const opId = assignedOps[seen % assignedOps.length];
+        const [hh, ss, ll] = opSourceHsl(opId, opId === selOpId);
+        c.setHSL(hh, ss, ll);
+        baseR = c.r;
+        baseG = c.g;
+        baseB = c.b;
+      } else if (contrastOverStock) {
         baseR = contrastOverStock.r;
         baseG = contrastOverStock.g;
         baseB = contrastOverStock.b;

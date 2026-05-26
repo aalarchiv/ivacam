@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { project, isContourOp } from '../state/project.svelte';
+  import { opSourceCss } from '../state/op-color';
   import { STOCK_OUTLINE_LAYER } from '../state/stock-outline';
   import {
     buildObjectPolylines,
@@ -340,11 +341,6 @@
     }
     return out;
   });
-  /// Object ids the currently-selected op references (highlighted
-  /// brighter than other-op assignments).
-  const activeOpObjects = $derived<Set<number>>(
-    selectedOp?.sourceObjects ? new Set(selectedOp.sourceObjects) : new Set<number>(),
-  );
 
   /// Uniform-grid spatial index for segment hit testing. Without it,
   /// pixelHit() ran an O(N) scan on every pointermove — fine for tiny
@@ -1353,8 +1349,7 @@
 
     const accent = themeVar('--accent', '#2d6cdf');
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
-    const activeAssignColor = themeVar('--obj-assigned-active', '#39c75c');
-    const otherAssignColor = themeVar('--obj-assigned-other', '#2a6f3b');
+    const selOpId = project.selectedOpId;
     // Halo color = a high-contrast outline drawn UNDER selected /
     // hovered / op-assigned objects so the state stays visible even
     // when the underlying layer's ACI color happens to match the state
@@ -1372,31 +1367,58 @@
       if (objId === 0) continue;
       const selected = selectedObjectsSnap.has(objId);
       const hovered = objId === hoverObj;
-      const inActiveOp = activeOpObjects.has(objId);
-      const inAnyOp = !inActiveOp && objectToOps.has(objId);
-      if (!selected && !hovered && !inActiveOp && !inAnyOp) continue;
-      // Assignment-tint precedence (top wins):
-      //   selected → accent
-      //   hovered → hoverColor
-      //   in active op → bright green
-      //   in any other op → dim green
-      const baseWidth = selected ? 2.4 : hovered ? 1.8 : inActiveOp ? 1.6 : 1.4;
-      const haloAlpha = selected ? 0.6 : hovered ? 0.55 : inActiveOp ? 0.5 : 0.3;
-      const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = haloAlpha;
-      ctx.lineWidth = baseWidth + 3;
-      ctx.strokeStyle = haloColor;
-      drawSegment(ctx, seg, project2);
-      ctx.globalAlpha = prevAlpha;
-      ctx.lineWidth = baseWidth;
-      ctx.strokeStyle = selected
-        ? accent
-        : hovered
-          ? hoverColor
-          : inActiveOp
-            ? activeAssignColor
-            : otherAssignColor;
-      drawSegment(ctx, seg, project2);
+      const assignedOps = objectToOps.get(objId);
+      if (!selected && !hovered && !assignedOps) continue;
+
+      // Per-op assignment outlines (concentric rings, one band per op).
+      // Each assigned op gets the SAME hue here as its toolpath in 3D.
+      // When an object belongs to several ops we draw nested rings —
+      // widest (outermost) first so narrower bands paint on top:
+      // "outline, outline of outline, …". The selected op is ordered
+      // innermost and rendered brighter so it reads as the primary
+      // assignment without hiding the others.
+      if (assignedOps && assignedOps.length > 0) {
+        // Selected op last → drawn innermost / on top.
+        const ids = [...assignedOps].sort(
+          (a, b) => (a === selOpId ? 1 : 0) - (b === selOpId ? 1 : 0) || a - b,
+        );
+        const n = ids.length;
+        const step = 2.4;
+        const innerWidth = 2.0;
+        // Faint contrast halo behind the widest band.
+        const prevAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = innerWidth + (n - 1) * step + 3;
+        ctx.strokeStyle = haloColor;
+        drawSegment(ctx, seg, project2);
+        ctx.globalAlpha = prevAlpha;
+        for (let k = 0; k < n; k++) {
+          const opId = ids[k];
+          // k=0 is the outermost (widest) band; the last is innermost.
+          ctx.lineWidth = innerWidth + (n - 1 - k) * step;
+          ctx.strokeStyle = opSourceCss(opId, opId === selOpId);
+          drawSegment(ctx, seg, project2);
+        }
+      }
+
+      // Hover / selection strokes paint on top so they stay legible even
+      // over the assignment rings.
+      if (hovered && !selected) {
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = hoverColor;
+        drawSegment(ctx, seg, project2);
+      }
+      if (selected) {
+        const prevAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 2.4 + 3;
+        ctx.strokeStyle = haloColor;
+        drawSegment(ctx, seg, project2);
+        ctx.globalAlpha = prevAlpha;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = accent;
+        drawSegment(ctx, seg, project2);
+      }
     }
 
     drawFixtures(ctx, project2);

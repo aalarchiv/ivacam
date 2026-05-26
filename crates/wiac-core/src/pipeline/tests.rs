@@ -3318,3 +3318,115 @@
             resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
     }
+
+
+    /// ldu2: a Profile on a circle that arrives TESSELLATED (many short
+    /// LINE segments, as SVG/DXF imports usually do) must not explode. The
+    /// source line run is arc-fit back into true arcs before the offset
+    /// cascade, so cavalier offsets a clean arc and the emitter produces a
+    /// handful of G2/G3 — not one move per tessellation segment plus a
+    /// per-vertex round-join arc. Before the fix this emitted thousands of
+    /// lines; here we assert it stays tiny and uses arcs.
+    fn tessellated_circle(cx: f64, cy: f64, r: f64, n: usize) -> Vec<Segment> {
+        (0..n)
+            .map(|i| {
+                let a0 = std::f64::consts::TAU * (i as f64) / (n as f64);
+                let a1 = std::f64::consts::TAU * ((i + 1) as f64) / (n as f64);
+                Segment::line(
+                    crate::geometry::Point2::new(cx + r * a0.cos(), cy + r * a0.sin()),
+                    crate::geometry::Point2::new(cx + r * a1.cos(), cy + r * a1.sin()),
+                    "0",
+                    7,
+                )
+            })
+            .collect()
+    }
+
+    fn tessellated_circle_profile_project(arcs: bool) -> Project {
+        let mut params = OpParams::mill_default();
+        params.depth = -2.0;
+        params.start_depth = 0.0;
+        params.step = Some(-1.0);
+        let machine = MachineConfig { arcs, ..MachineConfig::default() };
+        Project {
+            segments: tessellated_circle(20.0, 20.0, 10.0, 180),
+            machine,
+            tools: vec![endmill(1, 3.0)],
+            operations: vec![Op {
+                id: 1,
+                name: "Profile".into(),
+                enabled: true,
+                kind: OpKind::Profile {
+                    offset: ToolOffset::Outside,
+                    contour: crate::project::ContourParams::default(),
+                    profile: crate::project::ProfileParams::default(),
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        }
+    }
+
+    #[test]
+    fn ldu2_tessellated_circle_profile_collapses_to_arcs() {
+        let resp = run_pipeline(
+            PipelineRequest {
+                project: tessellated_circle_profile_project(true),
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        let lines = resp.gcode.lines().count();
+        let arc_moves = resp
+            .gcode
+            .lines()
+            .filter(|l| l.starts_with("G2 ") || l.starts_with("G3 "))
+            .count();
+        // A 180-segment circle Profile (2 passes) collapses to a few arcs
+        // per pass. Pre-fix this was ~2000+ lines; a generous ceiling that
+        // still fails hard on the explosion:
+        assert!(
+            lines < 100,
+            "tessellated-circle Profile should collapse (got {lines} gcode lines):\n{}",
+            resp.gcode
+        );
+        assert!(
+            arc_moves >= 2,
+            "expected the fitted offset to emit G2/G3 arcs, got {arc_moves}:\n{}",
+            resp.gcode
+        );
+    }
+
+    /// ldu2 companion: the source fit is gated on `machine.arcs` (the same
+    /// flag as the emit-time fitter). With arcs off, the user opted into
+    /// pure-line output, so the tessellated circle is NOT collapsed and the
+    /// program stays large; with arcs on it collapses. Asserting the gap
+    /// (rather than brittle absolute counts) documents that the gate works.
+    #[test]
+    fn ldu2_source_fit_is_gated_on_arcs_flag() {
+        let count = |arcs: bool| {
+            run_pipeline(
+                PipelineRequest {
+                    project: tessellated_circle_profile_project(arcs),
+                    post_processor: Some(PostProcessorKind::Linuxcnc),
+                },
+                |_, _, _| {},
+            )
+            .unwrap()
+            .gcode
+            .lines()
+            .count()
+        };
+        let on = count(true);
+        let off = count(false);
+        assert!(
+            off > on * 4,
+            "arcs=off (no source fit) should be far larger than arcs=on (collapsed): off={off} on={on}",
+        );
+    }

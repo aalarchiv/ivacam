@@ -237,6 +237,43 @@ pub(super) fn build_op_offsets(
     // No clone — `&[VcObject]` borrow through the chain.
     let objects: &[VcObject] = frame_expanded.as_deref().unwrap_or(after_pattern);
 
+    // ldu2: arc-fit the SOURCE geometry before the offset cascade. When a
+    // circle (or any smooth curve) arrives tessellated as many short LINE
+    // segments — the usual shape of an SVG/DXF import — cavalier_contours
+    // offsets it with a tool-radius round join at EVERY vertex, producing
+    // a (line, arc, line, arc, …) path. The emit-time arc-fitter only
+    // collapses consecutive line runs, so each line wedged between corner
+    // arcs survives as its own move and the gcode explodes (a 360-segment
+    // circle Profile → ~4.4k lines instead of ~70). Collapsing the source
+    // line runs back into true arcs first lets cavalier offset a clean arc
+    // and emit a handful of G2/G3. `fit_line_runs` is a no-op when
+    // `machine.arcs` is off (the user opted into pure-line output) or when
+    // a run doesn't lie on a circle within `effective_arc_tolerance`
+    // (rectangles/polygons stay as lines). Only the path / offset-cascade
+    // ops consume `obj.segments` as a contour; Drill / Thread / Chamfer /
+    // VCarve derive their geometry differently, so leave them untouched.
+    let fit_source = setup.machine.arcs
+        && matches!(
+            effective_op.kind,
+            OpKind::Profile { .. }
+                | OpKind::Pocket { .. }
+                | OpKind::Engrave { .. }
+                | OpKind::DragKnife { .. }
+                | OpKind::TSlot { .. }
+                | OpKind::Dovetail { .. }
+        );
+    let fitted_storage: Option<Vec<VcObject>> = fit_source.then(|| {
+        objects
+            .iter()
+            .map(|o| {
+                let mut c = o.clone();
+                c.segments = crate::gcode::fit_line_runs(&o.segments, setup);
+                c
+            })
+            .collect()
+    });
+    let objects: &[VcObject] = fitted_storage.as_deref().unwrap_or(objects);
+
     // (Removed: `for obj in objects.iter_mut() { obj.tool_offset = setup.mill.offset; }`.
     //  `obj.tool_offset` has no production reader post-55o4 — only a test
     //  asserts on a frame's tool_offset, which `synthesize_pocket_outside_objects`

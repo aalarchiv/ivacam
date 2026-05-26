@@ -128,7 +128,11 @@ use entry::{
 use leads::{lead_in_geometry, lead_out_geometry, LeadGeometry};
 use order::{end_pos, order_offsets};
 use tabs::emit_path_with_tabs;
-use walk::{emit_cut_path, fit_line_runs};
+use walk::emit_cut_path;
+// ldu2: `fit_line_runs` is also reachable from the offset pipeline,
+// which arc-fits source geometry before offsetting so tessellated
+// (imported) circles don't explode into per-vertex round-join arcs.
+pub(crate) use walk::fit_line_runs;
 use z_schedule::{arc_length, build_z_schedule};
 
 /// Generic post-processor trait. Stateful — implementations track the last

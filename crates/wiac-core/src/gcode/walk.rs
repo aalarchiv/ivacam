@@ -70,7 +70,7 @@ pub(super) fn emit_cut_path<P: PostProcessor>(
 /// `effective_arc_tolerance()`. Pre-existing `Arc` / `Circle` / `Point`
 /// segments are passed through verbatim — only line runs are eligible.
 /// When `machine.arcs == false`, returns the input untouched.
-pub(super) fn fit_line_runs(segments: &[Segment], setup: &Setup) -> Vec<Segment> {
+pub(crate) fn fit_line_runs(segments: &[Segment], setup: &Setup) -> Vec<Segment> {
     if !setup.machine.arcs || segments.is_empty() {
         return segments.to_vec();
     }

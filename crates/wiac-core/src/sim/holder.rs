@@ -266,7 +266,15 @@ fn form_profile_max_radius(tool: &ToolEntry) -> Option<f64> {
     }
     let base_r = (tool.diameter * 0.5).max(0.0);
     let tip_r = tool.tip_diameter.map_or(base_r, |d| (d * 0.5).max(0.0));
-    Some(base_r.max(tip_r))
+    // 1wit: when a real profile is entered, the widest sample radius is
+    // the footprint the holder check must clear (the same value
+    // `ToolProfile::FormProfile` reports via `radius()`).
+    let sample_max = tool
+        .form_profile_mm
+        .iter()
+        .map(|s| s.r_mm.max(0.0))
+        .fold(0.0_f64, f64::max);
+    Some(base_r.max(tip_r).max(sample_max))
 }
 
 #[cfg(test)]
@@ -305,6 +313,7 @@ mod tests {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            form_profile_mm: Vec::new(),
             wirbeln: false,
             wirbeln_stepover_mm: None,
             wirbeln_extra_width_mm: None,

@@ -9,6 +9,7 @@
     type ToolKind,
     type CoolantMode,
     type HolderShape,
+    type FormProfileSample,
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
   import * as fileOps from '../state/file_ops';
@@ -97,7 +98,9 @@
   /// back to defaults that almost always produce wrong output.
   /// Auto-expanding the row keeps the field visible (k94n).
   function kindNeedsExpansion(kind: ToolKind): boolean {
-    return kind === 'drag_knife' || kind === 'bull_nose' || kind === 't_slot';
+    return (
+      kind === 'drag_knife' || kind === 'bull_nose' || kind === 't_slot' || kind === 'form_profile'
+    );
   }
 
   // 1xgj: was `JSON.stringify(draft) !== pristine` — fragile because
@@ -238,6 +241,58 @@
 
   function updateField<K extends keyof ToolEntry>(idx: number, key: K, value: ToolEntry[K]) {
     draft = draft.map((t, i) => (i === idx ? { ...t, [key]: value } : t));
+  }
+
+  // ───────────────────────── 1wit: form-profile editor ──────────────
+  // The (z, r) sample table is the source of truth (stored on the
+  // tool). The dovetail inputs below are a transient generator that
+  // fills the table; they're keyed by tool id and not persisted —
+  // re-deriving them from the table would be ambiguous for cove/ogee.
+  let dovetailDraft = $state<Record<number, { diaMm: number; angleDeg: number; heightMm: number }>>(
+    {},
+  );
+  function dovetailParamsFor(id: number) {
+    return dovetailDraft[id] ?? { diaMm: 12.7, angleDeg: 14, heightMm: 9.5 };
+  }
+  function setDovetailParam(id: number, key: 'diaMm' | 'angleDeg' | 'heightMm', v: number) {
+    dovetailDraft = { ...dovetailDraft, [id]: { ...dovetailParamsFor(id), [key]: v } };
+  }
+  const round3 = (v: number) => Math.round(v * 1000) / 1000;
+  // A dovetail bit is widest at the bottom (z=0) and narrows upward as
+  // the angled flank rises toward the neck: r(z) = D/2 − z·tan(angle).
+  // Clamp the neck radius to ≥0 so an over-deep height can't invert it.
+  function generateDovetail(idx: number, id: number) {
+    const { diaMm, angleDeg, heightMm } = dovetailParamsFor(id);
+    const rBottom = Math.max(diaMm / 2, 0);
+    const h = Math.max(heightMm, 0);
+    const rTop = Math.max(rBottom - h * Math.tan((angleDeg * Math.PI) / 180), 0);
+    const samples: FormProfileSample[] = [
+      { zMm: 0, rMm: round3(rBottom) },
+      { zMm: round3(h), rMm: round3(rTop) },
+    ];
+    updateField(idx, 'formProfileMm', samples);
+  }
+  function addProfileRow(idx: number, tool: ToolEntry) {
+    const rows = tool.formProfileMm ?? [];
+    const last = rows[rows.length - 1];
+    const next: FormProfileSample = last
+      ? { zMm: round3(last.zMm + 1), rMm: last.rMm }
+      : { zMm: 0, rMm: round3((tool.diameter ?? 0) / 2) };
+    updateField(idx, 'formProfileMm', [...rows, next]);
+  }
+  function updateProfileRow(
+    idx: number,
+    tool: ToolEntry,
+    row: number,
+    key: 'zMm' | 'rMm',
+    v: number,
+  ) {
+    const rows = (tool.formProfileMm ?? []).map((s, r) => (r === row ? { ...s, [key]: v } : s));
+    updateField(idx, 'formProfileMm', rows);
+  }
+  function removeProfileRow(idx: number, tool: ToolEntry, row: number) {
+    const rows = (tool.formProfileMm ?? []).filter((_, r) => r !== row);
+    updateField(idx, 'formProfileMm', rows);
   }
 
   /// Per-kind default fill-in on `kind` change. Pre-populates the
@@ -1334,6 +1389,131 @@
                   </label>
                 </div>
               {/if}
+              {#if tool.kind === 'form_profile'}
+                {@const dt = dovetailParamsFor(tool.id)}
+                {@const rows = tool.formProfileMm ?? []}
+                <div class="holder-row pass-overrides">
+                  <span
+                    class="holder-label"
+                    title="Form / profile cutter cross-section (cove / ogee / dovetail / custom). The (z, r) table — height above the tip vs radius — drives the simulator's cut shape. Needs ≥2 rows; otherwise the sim falls back to a tip→diameter taper."
+                    >Form profile</span
+                  >
+                </div>
+                <div class="holder-row dovetail-gen">
+                  <label>
+                    <span>Dovetail ⌀ (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={dt.diaMm}
+                      title="Widest cutting diameter (at the bottom face) of a dovetail bit."
+                      onchange={(e) =>
+                        setDovetailParam(
+                          tool.id,
+                          'diaMm',
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                        )}
+                    />
+                  </label>
+                  <label>
+                    <span>Angle (°)</span>
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="89"
+                      value={dt.angleDeg}
+                      title="Flank angle from the tool axis. The radius narrows by tan(angle) per mm of rise. 7°–14° typical."
+                      onchange={(e) =>
+                        setDovetailParam(
+                          tool.id,
+                          'angleDeg',
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                        )}
+                    />
+                  </label>
+                  <label>
+                    <span>Cut height (mm)</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={dt.heightMm}
+                      title="Flute / cutting height — how tall the angled profile is from the bottom face up to the neck."
+                      onchange={(e) =>
+                        setDovetailParam(
+                          tool.id,
+                          'heightMm',
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                        )}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="profile-btn"
+                    title="Overwrite the sample table below with a 2-row dovetail profile generated from these inputs."
+                    onclick={() => generateDovetail(i, tool.id)}>Generate dovetail</button
+                  >
+                </div>
+                <div class="profile-table">
+                  <div class="profile-table-head">
+                    <span>z above tip (mm)</span>
+                    <span>radius (mm)</span>
+                    <span></span>
+                  </div>
+                  {#each rows as row, r (r)}
+                    <div class="profile-row">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={row.zMm}
+                        aria-label="z above tip (mm)"
+                        onchange={(e) =>
+                          updateProfileRow(
+                            i,
+                            tool,
+                            r,
+                            'zMm',
+                            parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                          )}
+                      />
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={row.rMm}
+                        aria-label="radius (mm)"
+                        onchange={(e) =>
+                          updateProfileRow(
+                            i,
+                            tool,
+                            r,
+                            'rMm',
+                            parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                          )}
+                      />
+                      <button
+                        type="button"
+                        class="profile-btn del"
+                        title="Delete this sample row"
+                        onclick={() => removeProfileRow(i, tool, r)}>✕</button
+                      >
+                    </div>
+                  {/each}
+                  <div class="profile-actions">
+                    <button type="button" class="profile-btn" onclick={() => addProfileRow(i, tool)}
+                      >+ Add row</button
+                    >
+                    {#if rows.length < 2}
+                      <span class="profile-hint"
+                        >Add at least 2 rows (tip → top) for the sim to carve the real profile.</span
+                      >
+                    {/if}
+                  </div>
+                </div>
+              {/if}
               {#if tool.kind === 'laser_beam'}
                 <div class="holder-row pass-overrides">
                   <span
@@ -1686,5 +1866,52 @@
     color: var(--danger);
     font-size: 0.78rem;
     align-self: center;
+  }
+  /* 1wit: form-profile (z, r) sample editor + dovetail generator. */
+  .profile-btn {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+    align-self: flex-end;
+  }
+  .profile-btn.del {
+    padding: 0.2rem 0.4rem;
+    color: var(--text-muted);
+  }
+  .profile-table {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.3rem;
+  }
+  .profile-table-head,
+  .profile-row {
+    display: grid;
+    grid-template-columns: 8rem 8rem 2rem;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .profile-table-head span {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .profile-row input {
+    width: 100%;
+  }
+  .profile-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.2rem;
+  }
+  .profile-hint {
+    font-size: 0.7rem;
+    color: var(--text-muted);
   }
 </style>

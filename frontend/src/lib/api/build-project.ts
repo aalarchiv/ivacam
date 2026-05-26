@@ -132,6 +132,9 @@ interface WireToolEntry {
   corner_radius_mm?: number;
   tslot_neck_diameter_mm?: number;
   tslot_neck_length_mm?: number;
+  /// 1wit: form / profile cutter cross-section, tip → top. Omitted
+  /// unless ≥2 samples are set (and kind === 'form_profile').
+  form_profile_mm?: { z_mm: number; r_mm: number }[];
   wirbeln?: boolean;
   wirbeln_stepover_mm?: number;
   wirbeln_extra_width_mm?: number;
@@ -562,6 +565,11 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
       : {}),
     ...(t.tslotNeckLengthMm !== undefined && t.tslotNeckLengthMm > 0
       ? { tslot_neck_length_mm: t.tslotNeckLengthMm }
+      : {}),
+    // 1wit: form-profile samples. Emit only ≥2 rows (a single sample
+    // isn't an interpolation domain — the sim falls back to its taper).
+    ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
+      ? { form_profile_mm: t.formProfileMm.map((s) => ({ z_mm: s.zMm, r_mm: s.rMm })) }
       : {}),
     ...(t.wirbeln ? { wirbeln: true } : {}),
     ...(t.wirbelnStepoverMm !== undefined && t.wirbelnStepoverMm > 0

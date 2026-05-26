@@ -641,11 +641,23 @@ impl ToolProfile {
             // The UI for entering form profiles is a follow-up
             // (wiaconstructor-tfrm); the sim path is ready for it.
             ToolKind::FormProfile => {
+                // 1wit: when the tool library carries a user-entered
+                // cross-section (≥2 samples), carve the real profile —
+                // sorted tip → top, clamped to non-negative radius.
+                if tool.form_profile_mm.len() >= 2 {
+                    let mut segments: Vec<(f32, f32)> = tool
+                        .form_profile_mm
+                        .iter()
+                        .map(|s| (s.z_mm as f32, (s.r_mm as f32).max(0.0)))
+                        .collect();
+                    segments.sort_by(|a, b| a.0.total_cmp(&b.0));
+                    return ToolProfile::FormProfile { segments };
+                }
                 #[cfg(debug_assertions)]
                 eprintln!(
-                    "ToolKind::FormProfile sim model uses tip_diameter+diameter \
-                     2-segment fallback (full FormProfile sample list is a UI \
-                     follow-up — wiaconstructor-tfrm)."
+                    "ToolKind::FormProfile has no profile samples; using the \
+                     tip_diameter+diameter 2-segment taper fallback. Enter a \
+                     profile in the tool library (wiaconstructor-1wit)."
                 );
                 // Fallback: derive a minimal 2-sample profile from
                 // (tip_diameter, diameter, flute_length_mm). Tip flat at
@@ -666,7 +678,7 @@ impl ToolProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project::{Coolant, ToolEntry, ToolKind};
+    use crate::project::{Coolant, FormProfileSample, ToolEntry, ToolKind};
 
     const EPS: f32 = 1e-5;
 
@@ -705,6 +717,7 @@ mod tests {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            form_profile_mm: Vec::new(),
             wirbeln: false,
             wirbeln_stepover_mm: None,
             wirbeln_extra_width_mm: None,
@@ -1147,6 +1160,57 @@ mod tests {
             ToolProfile::from_tool(&t),
             ToolProfile::Endmill { .. }
         ));
+    }
+
+    /// 1wit: a FormProfile tool carrying a user-entered cross-section
+    /// carves the real sample list (sorted tip → top, radii clamped to
+    /// ≥0) instead of the 2-segment taper fallback.
+    #[test]
+    fn from_tool_form_profile_uses_user_samples() {
+        let mut t = make_tool(ToolKind::FormProfile, 12.0);
+        // Deliberately out of order + a negative radius to prove sort +
+        // clamp. A dovetail: wide at the tip (z=0), narrowing upward.
+        t.form_profile_mm = vec![
+            FormProfileSample { z_mm: 9.5, r_mm: 4.0 },
+            FormProfileSample { z_mm: 0.0, r_mm: 6.0 },
+            FormProfileSample { z_mm: 4.0, r_mm: -1.0 },
+        ];
+        match ToolProfile::from_tool(&t) {
+            ToolProfile::FormProfile { segments } => {
+                assert_eq!(segments.len(), 3);
+                // Sorted ascending by z.
+                assert!(approx(segments[0].0, 0.0));
+                assert!(approx(segments[1].0, 4.0));
+                assert!(approx(segments[2].0, 9.5));
+                assert!(approx(segments[0].1, 6.0));
+                // Negative radius clamped to 0.
+                assert!(approx(segments[1].1, 0.0));
+                assert!(approx(segments[2].1, 4.0));
+            }
+            other => panic!("expected FormProfile from user samples, got {other:?}"),
+        }
+        // radius() reports the widest sample (footprint the sweep covers).
+        assert!(approx(ToolProfile::from_tool(&t).radius(), 6.0));
+    }
+
+    /// 1wit companion: a FormProfile tool with fewer than two samples
+    /// still falls back to the `(tip_diameter, diameter)` 2-segment
+    /// taper — a single sample isn't a usable interpolation domain.
+    #[test]
+    fn from_tool_form_profile_one_sample_falls_back_to_taper() {
+        let mut t = make_tool(ToolKind::FormProfile, 12.0);
+        t.tip_diameter = Some(6.0);
+        t.flute_length_mm = Some(8.0);
+        t.form_profile_mm = vec![FormProfileSample { z_mm: 0.0, r_mm: 3.0 }];
+        match ToolProfile::from_tool(&t) {
+            ToolProfile::FormProfile { segments } => {
+                // Fallback taper: (0, tip_r=3) → (flute_top=8, r=6).
+                assert_eq!(segments.len(), 2);
+                assert!(approx(segments[0].0, 0.0) && approx(segments[0].1, 3.0));
+                assert!(approx(segments[1].0, 8.0) && approx(segments[1].1, 6.0));
+            }
+            other => panic!("expected taper fallback, got {other:?}"),
+        }
     }
 
     /// 4mp1: Engraver advertises a non-None `max_engagement_depth` so the

@@ -4,6 +4,21 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// 1wit: one cross-section sample of a form / profile cutter outline,
+/// measured up from the cutting tip. The cutter is treated as
+/// cylindrically symmetric, so a sorted list of these describes the
+/// full profile (cove / ogee / dovetail / custom). See
+/// [`ToolEntry::form_profile_mm`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FormProfileSample {
+    /// Height above the cutting tip (mm). 0 is the bottom face; the
+    /// list runs tip → top.
+    pub z_mm: f64,
+    /// Cutter radius at this height (mm), `diameter / 2` at the widest
+    /// point.
+    pub r_mm: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ToolEntry {
     pub id: u32,
@@ -138,6 +153,16 @@ pub struct ToolEntry {
     /// above the disk. mm, positive only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tslot_neck_length_mm: Option<f64>,
+    /// 1wit: form / profile cutter cross-section, tip → top. Each
+    /// sample is `(z_above_tip_mm, radius_mm)`; the sim carves at the
+    /// interpolated radius for each Z slice. Honored only when
+    /// `kind == FormProfile` and at least two samples are present —
+    /// otherwise the sim falls back to a `(tip_diameter, diameter)`
+    /// 2-segment taper. The tool-library UI generates these from a
+    /// dovetail (angle / tip ⌀ / cut height) preset or accepts raw
+    /// rows for cove / ogee / custom bits. Empty for every other kind.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_profile_mm: Vec<FormProfileSample>,
     /// Wirbeln (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning.
     /// When `true`, Pocket ops using this tool clamp their effective
     /// `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)`
@@ -327,6 +352,7 @@ impl Default for ToolEntry {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            form_profile_mm: Vec::new(),
             wirbeln: false,
             wirbeln_stepover_mm: None,
             wirbeln_extra_width_mm: None,

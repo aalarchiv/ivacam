@@ -97,6 +97,16 @@ export type CoolantMode = 'off' | 'mist' | 'flood';
 /// serde-`rename_all = "lowercase"`.
 export type SpindleDirection = 'cw' | 'ccw';
 
+/// 1wit: one cross-section sample of a form / profile cutter outline,
+/// measured up from the cutting tip. Mirror of
+/// `wiac_core::project::FormProfileSample`.
+export interface FormProfileSample {
+  /// Height above the cutting tip (mm). 0 is the bottom face.
+  zMm: number;
+  /// Cutter radius at this height (mm).
+  rMm: number;
+}
+
 export interface ToolEntry {
   id: number;
   name: string;
@@ -150,6 +160,13 @@ export interface ToolEntry {
   /// T-slot cutter neck length (rt1.28). Honored only when
   /// kind === 't_slot'.
   tslotNeckLengthMm?: number;
+  /// 1wit: form / profile cutter cross-section, tip → top. Each sample
+  /// is { zMm: height above the cutting tip, rMm: radius there }. The
+  /// sim carves the interpolated radius per Z slice when ≥2 samples are
+  /// present; otherwise it falls back to a tip→diameter taper. Honored
+  /// only when kind === 'form_profile'. Generated from a dovetail
+  /// preset or hand-entered for cove / ogee / custom bits.
+  formProfileMm?: FormProfileSample[];
   /// Spindle warmup pause (seconds). After each spindle_cw / spindle_ccw
   /// the post inserts a G4 P<pause> dwell so the spindle reaches
   /// commanded RPM before the cut starts. Critical for hand-controllers

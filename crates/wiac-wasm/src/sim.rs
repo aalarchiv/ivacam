@@ -451,6 +451,7 @@ mod tests {
             corner_radius_mm: None,
             tslot_neck_diameter_mm: None,
             tslot_neck_length_mm: None,
+            form_profile_mm: Vec::new(),
             wirbeln: false,
             wirbeln_stepover_mm: None,
             wirbeln_extra_width_mm: None,

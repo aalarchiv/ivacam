@@ -331,6 +331,19 @@ export interface components {
                 number
             ][];
         };
+        /** @description 1wit: one cross-section sample of a form / profile cutter outline, measured up from the cutting tip. The cutter is treated as cylindrically symmetric, so a sorted list of these describes the full profile (cove / ogee / dovetail / custom). See [`ToolEntry::form_profile_mm`]. */
+        FormProfileSample: {
+            /**
+             * Format: double
+             * @description Cutter radius at this height (mm), `diameter / 2` at the widest point.
+             */
+            r_mm: number;
+            /**
+             * Format: double
+             * @description Height above the cutting tip (mm). 0 is the bottom face; the list runs tip → top.
+             */
+            z_mm: number;
+        };
         /**
          * @description Shape of the synthetic frame built around a Pocket-Outside selection. Rectangle is a plain padded bbox; `RoundedRectangle` uses the same bbox with a quarter-arc bulge at each corner. Oval and `TightOutline` are deferred follow-ups (not yet implemented).
          * @enum {string}
@@ -1767,6 +1780,8 @@ export interface components {
             flute_length_mm?: number | null;
             /** Format: uint8 */
             flutes: number;
+            /** @description 1wit: form / profile cutter cross-section, tip → top. Each sample is `(z_above_tip_mm, radius_mm)`; the sim carves at the interpolated radius for each Z slice. Honored only when `kind == FormProfile` and at least two samples are present — otherwise the sim falls back to a `(tip_diameter, diameter)` 2-segment taper. The tool-library UI generates these from a dovetail (angle / tip ⌀ / cut height) preset or accepts raw rows for cove / ogee / custom bits. Empty for every other kind. */
+            form_profile_mm?: components["schemas"]["FormProfileSample"][];
             /** @description Holder geometry above the shank. None = no holder check. */
             holder?: components["schemas"]["HolderShape"] | null;
             /** Format: uint32 */

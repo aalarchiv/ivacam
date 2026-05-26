@@ -147,6 +147,61 @@ describe('buildTool — mqap audit fields', () => {
   });
 });
 
+describe('buildTool — 1wit form-profile samples', () => {
+  it('maps formProfileMm to snake_case wire samples when ≥2 rows', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [
+        baseTool({
+          kind: 'form_profile',
+          formProfileMm: [
+            { zMm: 0, rMm: 6.35 },
+            { zMm: 9.5, rMm: 4 },
+          ],
+        }),
+      ],
+      operations: [profileOp()],
+    });
+    expect(project!.tools[0]).toMatchObject({
+      form_profile_mm: [
+        { z_mm: 0, r_mm: 6.35 },
+        { z_mm: 9.5, r_mm: 4 },
+      ],
+    });
+  });
+
+  it('omits form_profile_mm with fewer than 2 samples (sim falls back to taper)', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool({ kind: 'form_profile', formProfileMm: [{ zMm: 0, rMm: 3 }] })],
+      operations: [profileOp()],
+    });
+    const tool = project!.tools[0] as unknown as Record<string, unknown>;
+    expect(tool).not.toHaveProperty('form_profile_mm');
+  });
+
+  it('omits form_profile_mm for non-form kinds even if samples linger', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [
+        baseTool({
+          kind: 'endmill',
+          formProfileMm: [
+            { zMm: 0, rMm: 3 },
+            { zMm: 5, rMm: 3 },
+          ],
+        }),
+      ],
+      operations: [profileOp()],
+    });
+    const tool = project!.tools[0] as unknown as Record<string, unknown>;
+    expect(tool).not.toHaveProperty('form_profile_mm');
+  });
+});
+
 describe('buildProject — j4tv work_offset wiring', () => {
   it('omits work_offset entirely when at default (all-zero @ G54)', () => {
     const project = buildProject({

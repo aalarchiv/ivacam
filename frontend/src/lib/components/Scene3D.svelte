@@ -16,6 +16,15 @@
   import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
   import type { SimWarning } from '../api/types';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
+  import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+
+  interface Props {
+    /// w5wx: mirrors EntityCanvas2D — after the right-click menu creates
+    /// an op from the selection, bounce the sidebar to Operations so the
+    /// new row is visible.
+    onActivateSidebarPane?: (pane: 'stock' | 'layers' | 'text' | 'operations') => void;
+  }
+  let { onActivateSidebarPane }: Props = $props();
 
   let host: HTMLDivElement;
   let renderer: THREE.WebGLRenderer | undefined;
@@ -230,6 +239,12 @@
   // pointerup as a click when the user barely moved the cursor between
   // down and up. 3px / 400ms is the same threshold the 2D pane uses.
   let pointerStart: { x: number; y: number; t: number } | null = null;
+  // w5wx: right-click context menu. `rightStart` records the right-button
+  // press so the `contextmenu` handler can tell a tap (open the menu)
+  // from an OrbitControls right-drag pan (don't). `ctxMenu` is the menu's
+  // host-relative position when open.
+  let rightStart: { x: number; y: number } | null = null;
+  let ctxMenu = $state<{ x: number; y: number } | null>(null);
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
 
@@ -282,6 +297,7 @@
     host.appendChild(renderer.domElement);
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     controls = new OrbitControls(camera, renderer.domElement);
     // Damping defaults to true on OrbitControls, which produced a ~30-
@@ -409,6 +425,7 @@
     if (renderer) {
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
     }
     controls?.removeEventListener('change', requestRender);
     controls?.removeEventListener('change', onCameraChanged);
@@ -1818,8 +1835,83 @@
   }
 
   function onPointerDown(e: PointerEvent) {
+    // w5wx: remember the right-button press position so `onContextMenu`
+    // can distinguish a tap (open the menu) from a right-drag pan.
+    if (e.button === 2) {
+      rightStart = { x: e.clientX, y: e.clientY };
+      return;
+    }
+    // Any other press dismisses an open context menu (click-away).
+    if (ctxMenu) ctxMenu = null;
     if (e.button !== 0) return;
     pointerStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+  }
+
+  /// w5wx: right-click → "New operation from selection" menu (parity with
+  /// the 2D pane). Only opens on a right-click TAP; a right-drag (which
+  /// OrbitControls uses to pan) moves past the 3px threshold and is left
+  /// to pan without popping the menu. Always preventDefault so the
+  /// browser's native menu never shows over the canvas.
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    if (rightStart) {
+      const moved = Math.hypot(e.clientX - rightStart.x, e.clientY - rightStart.y);
+      rightStart = null;
+      if (moved > 3) {
+        ctxMenu = null;
+        return;
+      }
+    }
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    // Clamp so the menu (≈16rem wide) stays inside the viewport even on a
+    // right-click near the right/bottom edge.
+    const x = Math.max(4, Math.min(e.clientX - rect.left, host.clientWidth - 260));
+    const y = Math.max(4, Math.min(e.clientY - rect.top, host.clientHeight - 220));
+    ctxMenu = { x, y };
+  }
+
+  /// Mirror of EntityCanvas2D.pickFromCtx: build a new op whose source is
+  /// the current 3D selection. `pocket_outside` gets the same frame +
+  /// difference-combine pre-fill as the 2D path.
+  function pickFromCtx(kind: PickerKind) {
+    const sel = [...project.selectedObjects];
+    if (sel.length === 0) {
+      ctxMenu = null;
+      return;
+    }
+    const label = `New ${PICKER_LABEL[kind]} from selection`;
+    project.history.beginTransaction(label);
+    try {
+      if (kind === 'pocket_outside') {
+        const endmill = project.tools.find((t) => t.kind === 'endmill') ?? project.tools[0];
+        const toolDiameter = endmill?.diameter ?? 3;
+        const op = project.addOperation('pocket');
+        project.updateOperation(op.id, {
+          name: 'Pocket Outside',
+          toolId: endmill?.id ?? op.toolId,
+          sourceLayers: null,
+          sourceObjects: sel,
+          sourceCombine: 'difference',
+          frameShape: 'rectangle',
+          framePaddingMm: 3 * toolDiameter,
+          frameCornerRadiusMm: undefined,
+        });
+      } else {
+        const op = project.addOperation(kind);
+        project.updateOperation(op.id, {
+          name: `${PICKER_LABEL[kind]} from selection`,
+          sourceLayers: null,
+          sourceObjects: sel,
+        });
+      }
+      project.history.commitTransaction();
+    } catch (err) {
+      project.cancelTransaction();
+      throw err;
+    }
+    onActivateSidebarPane?.('operations');
+    ctxMenu = null;
   }
 
   function onPointerUp(e: PointerEvent) {
@@ -1920,6 +2012,35 @@
       </div>
     </div>
   {/if}
+  {#if ctxMenu}
+    {@const hasObjsSelected = project.selectedObjects.size > 0}
+    {#if hasObjsSelected}
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="ctx-menu"
+        style:left={`${ctxMenu.x}px`}
+        style:top={`${ctxMenu.y}px`}
+        role="menu"
+        tabindex="-1"
+        onkeydown={(e) => {
+          if (e.key === 'Escape') ctxMenu = null;
+        }}
+      >
+        <div class="ctx-header">New operation from selection</div>
+        <OpKindPicker onPick={pickFromCtx} />
+      </div>
+    {:else}
+      <div
+        class="ctx-menu empty"
+        style:left={`${ctxMenu.x}px`}
+        style:top={`${ctxMenu.y}px`}
+        role="menu"
+      >
+        <p class="ctx-hint">Click geometry to select objects, then add an operation from them.</p>
+        <button type="button" onclick={() => (ctxMenu = null)}>Dismiss</button>
+      </div>
+    {/if}
+  {/if}
 </div>
 
 <style>
@@ -1929,6 +2050,49 @@
     height: 100%;
     overflow: hidden;
     background: var(--bg-app);
+  }
+  /* w5wx: right-click "New operation from selection" menu — visual twin
+     of EntityCanvas2D's .ctx-menu so the two panes match. */
+  .ctx-menu {
+    position: absolute;
+    min-width: 16rem;
+    max-width: 22rem;
+    background: var(--bg-panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px var(--shadow-modal);
+    z-index: var(--z-floating);
+    padding: 0.25rem;
+  }
+  .ctx-header {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.25rem 0.45rem 0.3rem;
+  }
+  .ctx-menu.empty {
+    padding: 0.4rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 14rem;
+  }
+  .ctx-hint {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+  .ctx-menu.empty button {
+    align-self: flex-end;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.74rem;
+    cursor: pointer;
   }
   /* 1ei2: manual fit-view trigger. Same overlay style as EntityCanvas2D's
      help-btn so the two stack visually consistently across the 2D / 3D

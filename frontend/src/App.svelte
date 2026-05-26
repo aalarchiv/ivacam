@@ -1294,7 +1294,7 @@
         {#if Scene3D}
           {@const C = Scene3D}
           <div class:pane-hidden={activePane !== '3d'} class="pane">
-            <C />
+            <C onActivateSidebarPane={revealSidebarPane} />
           </div>
         {:else if activePane === '3d'}
           <p class="loading-3d">Loading 3D…</p>

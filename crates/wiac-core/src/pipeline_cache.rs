@@ -47,6 +47,7 @@ use crate::cam::setup::{
 use crate::cam::source_combine::FrameShape;
 use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
+use crate::pipeline::PipelineWarning;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::{
     ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
@@ -95,6 +96,16 @@ pub struct OpCacheValue {
     /// next op to the finish id, causing the next same-rough-tool op
     /// to skip its M6 envelope and run with the wrong tool.
     pub internal_swap_emitted: bool,
+    /// my03: the per-op `PipelineWarning`s this op produced during its
+    /// fresh emit (tool-fit / tool-kind mismatch, trochoidal, ramp-arcs,
+    /// depth-limited, zero-rate, etc.). Re-attached verbatim on a cache
+    /// HIT so the second+ identical Generate still surfaces them —
+    /// otherwise `build_op_offsets` / the driver / `synthesize_op_setup`
+    /// never re-run and a critical warning (e.g. `tool_kind_mismatch`,
+    /// classified critical by the 94sf gate) would silently vanish.
+    /// Excludes the pre-cache-lookup `validate_op_source_*` warnings,
+    /// which already run on both paths.
+    pub warnings: Vec<PipelineWarning>,
 }
 
 #[derive(Debug)]
@@ -1350,6 +1361,7 @@ mod tests {
                     exit_state: CapturedPostState::default(),
                     exit_xy: (0.0, 0.0),
                     internal_swap_emitted: false,
+                    warnings: Vec::new(),
                 },
             );
         }
@@ -1378,6 +1390,7 @@ mod tests {
             exit_state: CapturedPostState::default(),
             exit_xy: (0.0, 0.0),
             internal_swap_emitted: false,
+            warnings: Vec::new(),
         };
         cache.put(OpCacheKey(42), v.clone());
         let got = cache.get(OpCacheKey(42)).expect("hit");

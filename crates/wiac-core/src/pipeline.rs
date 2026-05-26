@@ -892,6 +892,13 @@ where
                     .collect();
                 post.out_extend_lines(&lines);
                 post.restore_state(&cached.exit_state);
+                // my03: replay the op's planning warnings. build_op_offsets
+                // / the driver / synthesize_op_setup don't re-run on a hit,
+                // so without this their warnings (tool_kind_mismatch,
+                // tslot_requires_stem_slot, depth-limited, zero-rate, …)
+                // would vanish on the second+ identical Generate — and a
+                // critical one could let a program slip past the safety gate.
+                warnings.extend(cached.warnings.iter().cloned());
                 last_pos = Point2::new(cached.exit_xy.0, cached.exit_xy.1);
                 {
                     let mut s = stats.borrow_mut();
@@ -928,6 +935,12 @@ where
             }
         }
 
+        // my03: snapshot the warning count so everything this op pushes
+        // during its fresh emit (setup synthesis + the driver) can be
+        // captured into the cache value and replayed on a future hit. The
+        // pre-cache-lookup `validate_op_source_*` warnings sit below this
+        // mark, so they're never double-counted (they run on both paths).
+        let warn_start = warnings.len();
         let mut setup = synthesize_op_setup(op, project, warnings)?;
         resolve_auto_helix_radius(op, objects, &mut setup, warnings);
         let mut closed_count_emitted: usize = 0;
@@ -1011,6 +1024,10 @@ where
                     exit_state: post.capture_state(),
                     exit_xy: (last_pos.x, last_pos.y),
                     internal_swap_emitted,
+                    // my03: capture exactly the warnings this op produced
+                    // (everything pushed since `warn_start`) so a future
+                    // cache hit can replay them.
+                    warnings: warnings[warn_start..].to_vec(),
                 },
             );
         }

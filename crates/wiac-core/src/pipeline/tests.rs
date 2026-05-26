@@ -3143,3 +3143,48 @@
             resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
     }
+
+    /// my03: per-op planning warnings must survive a pipeline CACHE HIT.
+    /// run_pipeline uses a process-global op cache, so a second identical
+    /// Generate serves the op from cache (skipping build_op_offsets / the
+    /// driver / synthesize_op_setup). Before the fix the warnings those
+    /// produce — including the 94sf-critical `tool_kind_mismatch` — were
+    /// dropped on the hit. We run the SAME mis-tooled project twice and
+    /// assert the warning is present BOTH times.
+    #[test]
+    fn per_op_warnings_resurface_on_cache_hit() {
+        // Endmill on a T-slot op → tool_kind_mismatch (critical) plus the
+        // tslot_requires_stem_slot note. A unique depth + geometry keeps
+        // this project off every other test's cache key, so the first call
+        // is a guaranteed miss (populates the global cache) and the second
+        // a hit — no need to clear the shared cache (which would disturb
+        // parallel tests). Even if the entry were evicted between the two
+        // calls, the recompute would still raise the warning, so the test
+        // never false-fails; it only fails if the hit path drops it.
+        let mk = || PipelineRequest {
+            project: tslot_project(endmill(1, 6.0), -2.71),
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        };
+        let kinds = |r: &crate::pipeline::PipelineResponse| -> Vec<String> {
+            r.warnings.iter().map(|w| w.kind.clone()).collect()
+        };
+        let first = run_pipeline(mk(), |_, _, _| {}).unwrap();
+        assert!(
+            first.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"),
+            "first (cache-miss) run should raise tool_kind_mismatch; got {:?}",
+            kinds(&first),
+        );
+        // Second run is served from the cache for this op.
+        let second = run_pipeline(mk(), |_, _, _| {}).unwrap();
+        assert!(
+            second.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"),
+            "cache HIT dropped the per-op critical warning (my03); got {:?}",
+            kinds(&second),
+        );
+        // The non-critical prerequisite note must ride along too.
+        assert!(
+            second.warnings.iter().any(|w| w.kind == "tslot_requires_stem_slot"),
+            "cache HIT dropped tslot_requires_stem_slot; got {:?}",
+            kinds(&second),
+        );
+    }

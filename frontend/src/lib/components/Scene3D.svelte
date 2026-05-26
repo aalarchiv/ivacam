@@ -140,6 +140,14 @@
     // is renderer.render — we gate it on needsRender.
     controls?.update();
     if (needsRender && renderer && scene && camera) {
+      // 68ab: refresh fat-line resolution from the LIVE renderer size
+      // before every render. The 3D pane is `display:none` while the 2D
+      // tab is active, so geometry built then has clientWidth 0 and bakes
+      // a (1,1) resolution → hairline lines. Re-deriving it here makes the
+      // width correct the moment the pane becomes visible, regardless of
+      // build timing.
+      renderer.getSize(resVec);
+      if (resVec.x > 0 && resVec.y > 0) updateLineResolution(resVec.x, resVec.y);
       renderer.render(scene, camera);
       needsRender = false;
     }
@@ -254,6 +262,13 @@
   let ctxMenu = $state<{ x: number; y: number } | null>(null);
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
+  const resVec = new THREE.Vector2();
+  /// w5wx/68ab: per-op dashed overlays revealing multi-op source
+  /// assignments. One dashed Line2 per (multi-op object, op) — the dashes
+  /// of each op tile the object's path in distinct phases so all op
+  /// colors show as interleaved bands (a thin solid line can only show
+  /// one color). Decorative: not picked, not selection-recolored.
+  let assignmentOverlayObjects: LineSegments2[] = [];
 
   function cssVar(name: string, fallback: string): string {
     if (!host) return fallback;
@@ -314,6 +329,9 @@
   function updateLineResolution(w: number, h: number) {
     for (const o of [importedLinesObject, toolpathLinesObject, toolpathArrowsObject]) {
       (o?.material as LineMaterial | undefined)?.resolution.set(w, h);
+    }
+    for (const o of assignmentOverlayObjects) {
+      (o.material as LineMaterial).resolution.set(w, h);
     }
   }
 
@@ -553,6 +571,11 @@
       const m = o?.material as LineMaterial | undefined;
       if (m) m.linewidth = lw;
     }
+    // Overlays render a touch wider so the colored dashes sit proud of
+    // the base wireframe.
+    for (const o of assignmentOverlayObjects) {
+      (o.material as LineMaterial).linewidth = lw + 1;
+    }
     requestRender();
   });
 
@@ -686,6 +709,7 @@
     if (importedLinesObject) importedLinesObject.visible = wireVisible;
     if (toolpathLinesObject) toolpathLinesObject.visible = wireVisible;
     if (toolpathArrowsObject) toolpathArrowsObject.visible = wireVisible;
+    for (const o of assignmentOverlayObjects) o.visible = wireVisible;
     if (settings.previewMode === 'wireframe') {
       driver?.setVisible(false);
       requestRender();
@@ -1560,6 +1584,12 @@
       (importedLinesObject.material as THREE.Material).dispose();
       importedLinesObject = undefined;
     }
+    for (const o of assignmentOverlayObjects) {
+      geometryGroup.remove(o);
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    }
+    assignmentOverlayObjects = [];
     importedLineOwners = [];
     objectColorRanges = new Map();
     const data = project.transformedImport;
@@ -1591,10 +1621,11 @@
     // of EntityCanvas2D.objectToOps). An assigned object is drawn in its
     // op's color — overriding the ACI / faded base so the assignment is
     // visible even after Generate (when the wireframe otherwise fades to
-    // near-black). WebGL lines can't nest concentric outlines like the 2D
-    // canvas, so for objects in several ops we cycle the op colors across
-    // the object's source SEGMENTS (a 2-arc circle → two colored arcs, a
-    // rectangle → cycling sides) so every assigned op's color shows.
+    // near-black). The base wireframe carries the PRIMARY op's solid
+    // color (selected op if assigned, else the first); objects in several
+    // ops additionally get phase-staggered DASHED overlays (built below)
+    // so every assigned op's color shows as interleaved bands — a single
+    // thin/thick line can only carry one color at a time.
     const objectToOps3d = new Map<number, number[]>();
     for (const op of project.operations) {
       const refs = op.sourceObjects;
@@ -1607,7 +1638,11 @@
       }
     }
     const selOpId = project.selectedOpId;
-    const objSegSeen = new Map<number, number>();
+    // Per-object path points for the multi-op dashed overlays. Only
+    // populated for objects in ≥2 ops; each object's pairs are pushed in
+    // buffer (path) order so LineSegments2.computeLineDistances gives a
+    // cumulative distance → the dashes tile continuously along the path.
+    const overlayPosByObj = new Map<number, number[]>();
     let segIdx = 0;
     for (const seg of data.segments) {
       if (!project.visibleLayers.has(seg.layer)) {
@@ -1622,10 +1657,11 @@
       let baseG: number;
       let baseB: number;
       if (assignedOps && assignedOps.length > 0) {
-        const seen = objSegSeen.get(objectId) ?? 0;
-        objSegSeen.set(objectId, seen + 1);
-        const opId = assignedOps[seen % assignedOps.length];
-        const [hh, ss, ll] = opSourceHsl(opId, opId === selOpId);
+        // Primary op: the selected one if this object is among its
+        // sources, otherwise the first-assigned op.
+        const primaryOp =
+          selOpId != null && assignedOps.includes(selOpId) ? selOpId : assignedOps[0];
+        const [hh, ss, ll] = opSourceHsl(primaryOp, primaryOp === selOpId);
         c.setHSL(hh, ss, ll);
         baseR = c.r;
         baseG = c.g;
@@ -1649,12 +1685,21 @@
       const b = isSelected ? selectedColor.b : baseB;
       const startVertex = positions.length / 3;
       let pairCount = 0;
+      let overlayBuf: number[] | null = null;
+      if (assignedOps && assignedOps.length >= 2) {
+        overlayBuf = overlayPosByObj.get(objectId) ?? null;
+        if (!overlayBuf) {
+          overlayBuf = [];
+          overlayPosByObj.set(objectId, overlayBuf);
+        }
+      }
       for (let i = 0; i < points.length - 1; i++) {
         const [ax, ay] = points[i];
         const [bx, by] = points[i + 1];
         positions.push(ax, ay, lineZ, bx, by, lineZ);
         colors.push(r, g, b, r, g, b);
         importedLineOwners.push({ kind: 'object', objectId });
+        if (overlayBuf) overlayBuf.push(ax, ay, lineZ, bx, by, lineZ);
         pairCount++;
       }
       if (objectId > 0 && pairCount > 0) {
@@ -1699,7 +1744,45 @@
     }
     // Selection set is now baked into the imported color attribute.
     appliedSelection = new Set(project.selectedObjects);
-    updateSceneRadius();
+    updateSceneRadius(); // refresh sceneRadius before sizing dashes
+
+    // Multi-op dashed overlays. For an object in N ops we lay N dashed
+    // copies of its path, each in one op's color, with dashSize = L and
+    // gapSize = (N-1)·L so op i's dashes occupy slot i of an N·L period
+    // (dashOffset = -i·L). The slots tile the whole path → it reads as
+    // consecutive colored bands A B C A B C, every assigned op visible.
+    const lw = Math.max(0.5, project.settings.previewLineWidth);
+    const dash = Math.max(0.3, sceneRadius * 0.04);
+    const w0 = host?.clientWidth || 1;
+    const h0 = host?.clientHeight || 1;
+    for (const [objectId, pos] of overlayPosByObj) {
+      if (pos.length === 0) continue;
+      const ops = (objectToOps3d.get(objectId) ?? []).slice().sort((a, b) => a - b);
+      const n = ops.length;
+      if (n < 2) continue;
+      for (let i = 0; i < n; i++) {
+        const opId = ops[i];
+        const [hh, ss, ll] = opSourceHsl(opId, opId === selOpId);
+        const mat = new LineMaterial({
+          color: new THREE.Color().setHSL(hh, ss, ll).getHex(),
+          worldUnits: false,
+          linewidth: lw + 1,
+          dashed: true,
+          dashSize: dash,
+          gapSize: dash * (n - 1),
+        });
+        mat.dashOffset = -i * dash;
+        mat.resolution.set(w0, h0);
+        const geom = new LineSegmentsGeometry();
+        geom.setPositions(new Float32Array(pos));
+        const obj = new LineSegments2(geom, mat);
+        obj.computeLineDistances();
+        obj.renderOrder = 2; // sit on top of the base wireframe
+        obj.visible = wireVisible;
+        geometryGroup.add(obj);
+        assignmentOverlayObjects.push(obj);
+      }
+    }
   }
 
   /// Generated toolpath wireframe. Rebuilds on `generated` /

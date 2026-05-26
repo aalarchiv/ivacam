@@ -66,6 +66,7 @@ export const TOOL_FAMILY: Record<ToolKind, ToolFamily> = {
   compression: 'cylindrical',
   v_bit: 'conical',
   engraver: 'conical',
+  kegel: 'conical',
   drill: 'drill',
   drag_knife: 'drag_knife',
   t_slot: 'profile',

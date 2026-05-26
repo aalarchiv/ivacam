@@ -1926,7 +1926,7 @@ export interface components {
              */
             z_shift_mm?: number | null;
         };
-        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "t_slot" | "form_profile";
+        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "t_slot" | "form_profile" | "kegel";
         /** @enum {string} */
         ToolOffset: "none" | "outside" | "inside" | "on";
         ToolpathSegment: {

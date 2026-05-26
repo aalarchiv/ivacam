@@ -87,7 +87,8 @@ type WireToolKind =
   | 'bull_nose'
   | 'compression'
   | 't_slot'
-  | 'form_profile';
+  | 'form_profile'
+  | 'kegel';
 
 /// Wire-side holder shape. Mirrors `wiac_core::project::HolderShape`'s
 /// `#[serde(tag = "kind")]` discriminator.

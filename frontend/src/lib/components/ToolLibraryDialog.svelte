@@ -317,8 +317,13 @@
         if (next.flutes === 0 || next.flutes === undefined) next.flutes = 2;
         if (next.tipAngleDeg === undefined) next.tipAngleDeg = 118;
       }
-      if ((kind === 'v_bit' || kind === 'engraver') && next.tipAngleDeg === undefined) {
-        next.tipAngleDeg = 60;
+      if (
+        (kind === 'v_bit' || kind === 'engraver' || kind === 'kegel') &&
+        next.tipAngleDeg === undefined
+      ) {
+        // Kegel/tapered bits are commonly steeper than engraving V-bits;
+        // 30° is a sensible tapered-endmill default vs 60° for V/engrave.
+        next.tipAngleDeg = kind === 'kegel' ? 30 : 60;
       }
       touchedId = next.id;
       return next;
@@ -480,6 +485,7 @@
     compression: 'Compression',
     t_slot: 'T-slot',
     form_profile: 'Form / profile',
+    kegel: 'Kegel (tapered)',
   };
   const coolantLabels: Record<CoolantMode, string> = {
     off: 'Off',

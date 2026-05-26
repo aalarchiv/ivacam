@@ -528,7 +528,15 @@ impl ToolProfile {
                     max_engagement_depth,
                 }
             }
-            ToolKind::VBit => {
+            // 90hd: Kegel (tapered/conical endmill) shares the V-bit's
+            // conical cut cross-section — a cone rising from the tip
+            // radius to the full radius at the included tip angle. The
+            // difference from a V-bit is in which ops accept it and that
+            // it cuts along the whole flank (full-flute), not in the
+            // carved surface, so it reuses ToolProfile::VBit. A
+            // `tip_diameter > 0` gives the truncated-cone (Kegelstumpf)
+            // tip; 0 gives a pointed taper.
+            ToolKind::VBit | ToolKind::Kegel => {
                 let tip_r = (tool.tip_diameter.unwrap_or(0.0) * 0.5) as f32;
                 let included = if tool.tip_angle_deg > 0.0 && tool.tip_angle_deg < 180.0 {
                     tool.tip_angle_deg
@@ -944,6 +952,34 @@ mod tests {
         } else {
             panic!("expected VBit profile");
         }
+    }
+
+    /// 90hd: Kegel (tapered endmill) shares the V-bit conical profile.
+    /// A truncated cone (tip_diameter > 0) builds a `VBit` whose tip
+    /// radius is half the tip diameter and whose flank rises at the
+    /// included tip angle — so the proven V-carve sweep carves the
+    /// tapered flank correctly. `eval` at the tip is 0 and rises toward
+    /// the rim.
+    #[test]
+    fn from_tool_kegel_builds_truncated_cone_vbit() {
+        let mut t = make_tool(ToolKind::Kegel, 6.0);
+        t.tip_diameter = Some(1.0); // Kegelstumpf: 1 mm flat tip
+        t.tip_angle_deg = 30.0;
+        match ToolProfile::from_tool(&t) {
+            ToolProfile::VBit {
+                r,
+                tip_r,
+                half_angle_rad,
+            } => {
+                assert!(approx(r, 3.0));
+                assert!(approx(tip_r, 0.5));
+                assert!(approx(half_angle_rad, (15.0_f32).to_radians()));
+            }
+            other => panic!("expected VBit profile for Kegel, got {other:?}"),
+        }
+        // Kegel is the Conical family — drives the same constraints as a
+        // V-bit.
+        assert_eq!(ToolKind::Kegel.family(), crate::project::tool::ToolFamily::Conical);
     }
 
     /// rbl: `BullNose` with `corner_radius_mm` builds a fillet profile;

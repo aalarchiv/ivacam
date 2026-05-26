@@ -441,6 +441,15 @@ pub enum ToolKind {
     /// cross-section. v1 treats as an Endmill at the algorithm; the
     /// variant labels it.
     FormProfile,
+    /// Tapered / conical endmill (90hd / Estlcam Kegel). A cutter whose
+    /// flank tapers from a small tip (`tip_diameter`, 0 for a pointed
+    /// bit) up to the full `diameter` at the top of the flutes, at the
+    /// included `tip_angle_deg`. Unlike a V-bit it cuts along the whole
+    /// flank (full-flute) — used for tapered relief / 3D finishing and
+    /// for stiff small-tip engraving. A `tip_diameter > 0` makes it a
+    /// truncated cone (Kegelstumpf). Shares the conical cut profile with
+    /// the V-bit in the sim.
+    Kegel,
 }
 
 /// Geometry family — the "shared parent" a tool kind groups under. Kinds
@@ -478,7 +487,7 @@ impl ToolKind {
         match self {
             ToolKind::Endmill | ToolKind::Compression => ToolFamily::Cylindrical,
             ToolKind::BallNose | ToolKind::BullNose => ToolFamily::Radiused,
-            ToolKind::VBit | ToolKind::Engraver => ToolFamily::Conical,
+            ToolKind::VBit | ToolKind::Engraver | ToolKind::Kegel => ToolFamily::Conical,
             ToolKind::Drill => ToolFamily::Drill,
             ToolKind::DragKnife => ToolFamily::DragKnife,
             ToolKind::LaserBeam => ToolFamily::Laser,
@@ -612,6 +621,7 @@ mod tests {
             (ToolKind::LaserBeam, Laser),
             (ToolKind::TSlot, Profile),
             (ToolKind::FormProfile, Profile),
+            (ToolKind::Kegel, Conical),
         ];
         for (kind, fam) in cases {
             assert_eq!(kind.family(), fam, "family mismatch for {kind:?}");

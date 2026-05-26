@@ -3184,6 +3184,10 @@ components:
         enum:
         - form_profile
         type: string
+      - description: Tapered / conical endmill (90hd / Estlcam Kegel). A cutter whose flank tapers from a small tip (`tip_diameter`, 0 for a pointed bit) up to the full `diameter` at the top of the flutes, at the included `tip_angle_deg`. Unlike a V-bit it cuts along the whole flank (full-flute) — used for tapered relief / 3D finishing and for stiff small-tip engraving. A `tip_diameter > 0` makes it a truncated cone (Kegelstumpf). Shares the conical cut profile with the V-bit in the sim.
+        enum:
+        - kegel
+        type: string
     ToolOffset:
       enum:
       - none

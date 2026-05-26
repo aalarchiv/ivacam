@@ -345,6 +345,7 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
         ToolKind::Compression => 9,
         ToolKind::TSlot => 10,
         ToolKind::FormProfile => 11,
+        ToolKind::Kegel => 12,
     };
     h.write_u8(kind);
     hash_f64(t.diameter, h);

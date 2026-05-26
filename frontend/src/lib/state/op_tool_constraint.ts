@@ -43,8 +43,8 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // too — many users engrave with a 0.5 mm flat tool. Laser
       // engraving (raster or vector along curves) is the natural fit
       // when the machine has a laser head — same op kind, kerf width
-      // drives the line weight.
-      return ['v_bit', 'engraver', 'endmill', 'laser_beam'];
+      // drives the line weight. A tapered (Kegel) bit engraves too.
+      return ['v_bit', 'engraver', 'kegel', 'endmill', 'laser_beam'];
     case 'drag_knife':
       // Dedicated kind — the post's pivot-arc compensation expects the
       // dragoff geometry.
@@ -88,6 +88,7 @@ const KIND_LABELS: Record<ToolKind, string> = {
   compression: 'compression',
   t_slot: 'T-slot',
   form_profile: 'form profile',
+  kegel: 'tapered (Kegel)',
 };
 
 /// Human-readable list for the "needs X / Y / Z" warning chip.

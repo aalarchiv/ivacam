@@ -24,7 +24,8 @@ export type ToolKind =
   | 'bull_nose'
   | 'compression'
   | 't_slot'
-  | 'form_profile';
+  | 'form_profile'
+  | 'kegel';
 
 export type OpKind =
   | 'profile'

@@ -13,6 +13,7 @@
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
   import * as fileOps from '../state/file_ops';
+  import { attrApplies } from '../state/tool_family';
 
   interface Props {
     open: boolean;
@@ -98,8 +99,15 @@
   /// back to defaults that almost always produce wrong output.
   /// Auto-expanding the row keeps the field visible (k94n).
   function kindNeedsExpansion(kind: ToolKind): boolean {
+    // A kind needs auto-expansion when it has a load-bearing
+    // kind-specific attribute (without which the emitter falls back to
+    // wrong defaults). Derived from the shared capability table so the
+    // list can't drift from the section gates below.
     return (
-      kind === 'drag_knife' || kind === 'bull_nose' || kind === 't_slot' || kind === 'form_profile'
+      attrApplies('dragoff', kind) ||
+      attrApplies('cornerRadius', kind) ||
+      attrApplies('tslotNeck', kind) ||
+      attrApplies('formProfile', kind)
     );
   }
 
@@ -494,28 +502,24 @@
   /// mirrors Estlcam's c_Tools (`_TP`) which hides per-type rows.
   function fieldApplies(field: string, kind: ToolKind): boolean {
     switch (field) {
+      // These map 1:1 onto shared-table attributes (tool_family.ts), so
+      // the per-kind groupings live in exactly one place now.
       case 'flutes':
-        // Drills HAVE flutes (twist drills typically 2; some 3-/4-flute);
-        // Estlcam exposes the field for Bohrer-type tools too (_TP.Flutes).
-        return !['drag_knife', 'laser_beam'].includes(kind);
+        return attrApplies('flutes', kind);
       case 'tipDiameter':
-        return ['v_bit', 'engraver'].includes(kind);
+        return attrApplies('tipDiameter', kind);
       case 'speed':
-        return !['drag_knife', 'laser_beam'].includes(kind);
+        return attrApplies('speed', kind);
       case 'plunge':
-        return !['drag_knife', 'laser_beam', 'drill'].includes(kind);
+        return attrApplies('plunge', kind);
       case 'defaultStep':
-        // Drill has its own peck-step in the expanded section, not
-        // the generic Z step.
-        return !['drag_knife', 'laser_beam', 'drill'].includes(kind);
+        return attrApplies('defaultStep', kind);
       case 'tipAngleDeg':
-        // V-bits / engravers use the apex angle for V-Carve depth math;
-        // drills carry the conical-tip apex (typically 118°) for the
-        // 3D-preview mesh + a future drill-into-stock collision model.
-        return ['v_bit', 'engraver', 'drill'].includes(kind);
+        return attrApplies('tipAngleDeg', kind);
       case 'coolant':
         // Laser uses gas-assist (not implemented yet) — coolant
-        // dropdown still applies as a generic "assist" toggle.
+        // dropdown still applies as a generic "assist" toggle. Not a
+        // geometry attribute, so it stays outside the family table.
         return true;
       default:
         return true;
@@ -1296,7 +1300,7 @@
                   />
                 </label>
               </div>
-              {#if tool.kind === 'drag_knife'}
+              {#if attrApplies('dragoff', tool.kind)}
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
@@ -1322,7 +1326,7 @@
                   </label>
                 </div>
               {/if}
-              {#if tool.kind === 'bull_nose'}
+              {#if attrApplies('cornerRadius', tool.kind)}
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
@@ -1348,7 +1352,7 @@
                   </label>
                 </div>
               {/if}
-              {#if tool.kind === 't_slot'}
+              {#if attrApplies('tslotNeck', tool.kind)}
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
@@ -1389,7 +1393,7 @@
                   </label>
                 </div>
               {/if}
-              {#if tool.kind === 'form_profile'}
+              {#if attrApplies('formProfile', tool.kind)}
                 {@const dt = dovetailParamsFor(tool.id)}
                 {@const rows = tool.formProfileMm ?? []}
                 <div class="holder-row pass-overrides">
@@ -1514,7 +1518,7 @@
                   </div>
                 </div>
               {/if}
-              {#if tool.kind === 'laser_beam'}
+              {#if attrApplies('laser', tool.kind)}
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"

@@ -11,6 +11,7 @@
 /// because Pause carries no tool reference.
 
 import type { OpKind, ToolKind } from './op_types';
+import { kindsInFamily } from './tool_family';
 
 export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
   switch (op) {
@@ -19,20 +20,12 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // defined diameter works. Laser ablates along the outline at
       // constant Z and uses the kerf width as its effective cut
       // diameter, so it fits the same op kind. Drag-knife / drill
-      // don't.
-      return [
-        'endmill',
-        'ball_nose',
-        'bull_nose',
-        'compression',
-        't_slot',
-        'form_profile',
-        'laser_beam',
-      ];
+      // don't. (= every family except conical, drill, drag-knife.)
+      return kindsInFamily('cylindrical', 'radiused', 'profile', 'laser');
     case 'pocket':
       // Pocketing needs a flat or near-flat bottom. V-bits / engravers
       // taper, so they leave wedge-shaped residue across the floor.
-      return ['endmill', 'ball_nose', 'bull_nose', 'compression'];
+      return kindsInFamily('cylindrical', 'radiused');
     case 'drill':
       // Twist drill is the natural fit; endmills work for shallow
       // holes with poor chip evacuation. Anything else is wrong.
@@ -42,8 +35,9 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // until we add a dedicated kind).
       return ['endmill', 'form_profile'];
     case 'chamfer':
-      // 45° (or other apex) bevel along an edge — V-bit or engraver.
-      return ['v_bit', 'engraver'];
+      // 45° (or other apex) bevel along an edge — any conical cutter
+      // (V-bit / engraver).
+      return kindsInFamily('conical');
     case 'engrave':
       // Engraving uses V-bit / engraver. A small-diameter endmill works
       // too — many users engrave with a 0.5 mm flat tool. Laser

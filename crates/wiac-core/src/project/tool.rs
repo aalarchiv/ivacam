@@ -443,6 +443,50 @@ pub enum ToolKind {
     FormProfile,
 }
 
+/// Geometry family — the "shared parent" a tool kind groups under. Kinds
+/// in the same family carve with the same primitive cut profile and
+/// differ only by constraints / extra attributes. This is the Rust
+/// authority mirrored by `TOOL_FAMILY` in
+/// `frontend/src/lib/state/tool_family.ts`; keep the two in sync. Used to
+/// collapse the per-kind branching in the sim / cache as the family-model
+/// refactor (epic l9zn) lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolFamily {
+    /// Flat bottom, straight wall (Endmill, Compression).
+    Cylindrical,
+    /// Rounded bottom edge (`BallNose`, `BullNose`).
+    Radiused,
+    /// Cone from a tip radius to full radius (`VBit`, Engraver, and —
+    /// Phase 2 — Kegel/tapered).
+    Conical,
+    /// Arbitrary `(z, r)` cross-section (`FormProfile`, and — Phase 4 —
+    /// `TSlot` folded in as a preset).
+    Profile,
+    /// Conical point on a cylindrical body (Drill).
+    Drill,
+    /// Non-rotating trailing blade (`DragKnife`).
+    DragKnife,
+    /// Non-contact beam, no physical radius (`LaserBeam`).
+    Laser,
+}
+
+impl ToolKind {
+    /// The geometry family this kind belongs to. Mirror of `TOOL_FAMILY`
+    /// on the TS side.
+    #[must_use]
+    pub fn family(self) -> ToolFamily {
+        match self {
+            ToolKind::Endmill | ToolKind::Compression => ToolFamily::Cylindrical,
+            ToolKind::BallNose | ToolKind::BullNose => ToolFamily::Radiused,
+            ToolKind::VBit | ToolKind::Engraver => ToolFamily::Conical,
+            ToolKind::Drill => ToolFamily::Drill,
+            ToolKind::DragKnife => ToolFamily::DragKnife,
+            ToolKind::LaserBeam => ToolFamily::Laser,
+            ToolKind::TSlot | ToolKind::FormProfile => ToolFamily::Profile,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Coolant {
@@ -547,6 +591,30 @@ mod tests {
             }
             assert_eq!(back.flute_length_mm, Some(15.0));
             assert_eq!(back.shank_diameter_mm, Some(6.0));
+        }
+    }
+
+    #[test]
+    fn tool_kind_family_matches_ts_table() {
+        // Mirror of TOOL_FAMILY in frontend/src/lib/state/tool_family.ts.
+        // If this changes, update the TS table (and vice versa) — the
+        // sim / cache and the dialog must agree on family membership.
+        use ToolFamily::*;
+        let cases = [
+            (ToolKind::Endmill, Cylindrical),
+            (ToolKind::Compression, Cylindrical),
+            (ToolKind::BallNose, Radiused),
+            (ToolKind::BullNose, Radiused),
+            (ToolKind::VBit, Conical),
+            (ToolKind::Engraver, Conical),
+            (ToolKind::Drill, Drill),
+            (ToolKind::DragKnife, DragKnife),
+            (ToolKind::LaserBeam, Laser),
+            (ToolKind::TSlot, Profile),
+            (ToolKind::FormProfile, Profile),
+        ];
+        for (kind, fam) in cases {
+            assert_eq!(kind.family(), fam, "family mismatch for {kind:?}");
         }
     }
 

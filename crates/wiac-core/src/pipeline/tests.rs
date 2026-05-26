@@ -844,6 +844,99 @@
         );
     }
 
+    /// Regression for the user's "chamfer depth seems added to the
+    /// previous op" report: a chamfer op that runs AFTER a deep profile
+    /// op must still cut at its OWN computed cone-tip Z, independent of
+    /// the prior op's depth. (synthesize_op_setup builds a fresh Setup per
+    /// op, but this proves no cross-op depth bleed end-to-end.) Profile
+    /// cuts to -5; chamfer width 1mm with the 60deg/0.1mm-tip vbit must
+    /// land at -1.6454, NOT -6.6454 (= -5 + -1.6454) or any deeper value.
+    #[test]
+    fn chamfer_after_deep_profile_keeps_own_depth() {
+        let bit = vbit(); // id 1, VBit 60deg, tip 0.1
+        let mut em = endmill(2, 6.0); // id 2, endmill for the profile
+        em.id = 2;
+        let mut profile_params = OpParams::mill_default();
+        profile_params.depth = -5.0;
+        profile_params.start_depth = 0.0;
+        let project = Project {
+            segments: closed_square_offset(50.0, 0.0, 0.0),
+            machine: MachineConfig::default(),
+            tools: vec![bit, em],
+            operations: vec![
+                Op {
+                    id: 1,
+                    name: "Profile".into(),
+                    enabled: true,
+                    kind: OpKind::Profile {
+                        offset: ToolOffset::Outside,
+                        contour: crate::project::ContourParams::default(),
+                        profile: crate::project::ProfileParams::default(),
+                    },
+                    tool_id: 2,
+                    finish_tool_id: None,
+                    source: OpSource::All,
+                    params: profile_params,
+                },
+                Op {
+                    id: 2,
+                    name: "Chamfer".into(),
+                    enabled: true,
+                    kind: OpKind::Chamfer { width_mm: 1.0, finish_pass: false },
+                    tool_id: 1,
+                    finish_tool_id: None,
+                    source: OpSource::All,
+                    params: OpParams::mill_default(),
+                },
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest { project, post_processor: Some(PostProcessorKind::Linuxcnc) },
+            |_, _, _| {},
+        )
+        .unwrap();
+        // Isolate the chamfer op's gcode block (after the "; OP 2" marker).
+        let cham = resp
+            .gcode
+            .split("; OP 2")
+            .nth(1)
+            .expect("chamfer op section present");
+        // Collect every Z value emitted in the chamfer block.
+        let zs: Vec<f64> = cham
+            .lines()
+            .flat_map(|l| l.split_whitespace())
+            .filter_map(|t| t.strip_prefix('Z'))
+            .filter_map(|v| v.parse::<f64>().ok())
+            .collect();
+        let deepest = zs.iter().cloned().fold(f64::INFINITY, f64::min);
+        assert!(
+            (deepest - (-1.6454)).abs() < 0.01,
+            "chamfer should bottom at its own cone-tip Z -1.6454, got {deepest} (prior profile was -5). Z values: {zs:?}\n{}",
+            cham
+        );
+        // The chamfer's toolpath segments must carry op_id == 2 so the 3D
+        // driver's per-segment tool resolver feeds the v-bit (not a
+        // fallback to tools[0] = the endmill, which would carve the
+        // chamfer cylindrically — the reported symptom).
+        let cham_cuts: Vec<_> = resp
+            .toolpath
+            .iter()
+            .filter(|s| s.op_id == 2 && matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+            .collect();
+        assert!(!cham_cuts.is_empty(), "chamfer toolpath cut segments must carry op_id == 2");
+        let tp_deepest = cham_cuts
+            .iter()
+            .map(|s| s.from.z.min(s.to.z))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            (tp_deepest - (-1.6454)).abs() < 0.01,
+            "chamfer op_id=2 toolpath segments should bottom at -1.6454, got {tp_deepest}",
+        );
+    }
+
     /// Chamfer with `finish_pass=true` emits the source path twice —
     /// once at rough feed, once tagged `is_finish` so the finish-set
     /// feed wins. Verified by counting how many times the contour's

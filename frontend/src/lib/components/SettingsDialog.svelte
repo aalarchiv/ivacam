@@ -230,6 +230,58 @@
           </label>
 
           <label
+            >Preview line width
+            <div class="slider-row">
+              <input
+                type="range"
+                min="0.5"
+                max="6"
+                step="0.5"
+                value={project.settings.previewLineWidth}
+                onchange={(e) =>
+                  update(
+                    'previewLineWidth',
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.previewLineWidth,
+                      0.5,
+                      6,
+                    ),
+                  )}
+              />
+              <span class="num">{project.settings.previewLineWidth.toFixed(1)} px</span>
+            </div>
+          </label>
+
+          <label
+            >Tool-move arrow density
+            <div class="slider-row">
+              <input
+                type="range"
+                min="0"
+                max="3"
+                step="0.25"
+                value={project.settings.toolMoveArrowDensity}
+                onchange={(e) =>
+                  update(
+                    'toolMoveArrowDensity',
+                    toNumber(
+                      (e.currentTarget as HTMLInputElement).value,
+                      project.settings.toolMoveArrowDensity,
+                      0,
+                      3,
+                    ),
+                  )}
+              />
+              <span class="num"
+                >{project.settings.toolMoveArrowDensity === 0
+                  ? 'off'
+                  : `${project.settings.toolMoveArrowDensity.toFixed(2)}×`}</span
+              >
+            </div>
+          </label>
+
+          <label
             >Cell resolution
             <select
               value={project.settings.cellResolutionMode}

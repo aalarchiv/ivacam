@@ -442,6 +442,24 @@
 
       <div class="section-title">G-code formatting</div>
       <label
+        title="Output dialect for this machine's controller. LinuxCNC: standard RS-274 G-code. GRBL: hobby-CNC subset with manual tool-change prompts. HPGL: vinyl-cutter / plotter language (drag-knife mode)."
+      >
+        G-code dialect
+        <span class="field">
+          <select
+            value={draft.gcodeDialect ?? 'linuxcnc'}
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              draft.gcodeDialect = v === 'grbl' || v === 'hpgl' ? v : 'linuxcnc';
+            }}
+          >
+            <option value="linuxcnc">LinuxCNC</option>
+            <option value="grbl">GRBL</option>
+            <option value="hpgl">HPGL</option>
+          </select>
+        </span>
+      </label>
+      <label
         title="Some EU-locale Siemens / Heidenhain controllers require X1,5 instead of X1.5. Default is the period."
       >
         Decimal separator

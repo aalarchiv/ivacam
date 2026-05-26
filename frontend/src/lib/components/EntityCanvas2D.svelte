@@ -166,6 +166,7 @@
     void previewVersion.v;
     void project.machine.workArea;
     void project.stock;
+    void project.settings.previewLineWidth;
     void userZoom;
     void userPanX;
     void userPanY;
@@ -1312,7 +1313,7 @@
     // overlay canvas, so editing those does NOT invalidate this layer.
     const visibleLayersSnap = new Set(project.visibleLayers);
     visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
-    ctx.lineWidth = 1.25;
+    ctx.lineWidth = project.settings.previewLineWidth;
     for (let i = 0; i < data.segments.length; i++) {
       const seg = data.segments[i];
       if (!visibleLayersSnap.has(seg.layer)) continue;

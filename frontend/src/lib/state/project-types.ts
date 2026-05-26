@@ -282,6 +282,11 @@ export interface MachineSettings {
   /// G2/G3 on emit. Only consulted when `arcs == true`. undefined ⇒
   /// 0.01 mm (the backend default).
   arcFitToleranceMm?: number;
+  /// Output gcode dialect / post-processor. Chosen per-machine (a
+  /// controller speaks one dialect) rather than per-run. `linuxcnc` =
+  /// standard RS-274; `grbl` = hobby-CNC subset; `hpgl` = plotter /
+  /// drag-knife. Undefined ⇒ fall back to the last-used / linuxcnc.
+  gcodeDialect?: 'linuxcnc' | 'grbl' | 'hpgl';
   /// Decimal separator for emitted numbers (rt1.36). Default '.';
   /// switch to ',' for European Siemens / Heidenhain controllers.
   decimalSeparator?: '.' | ',';

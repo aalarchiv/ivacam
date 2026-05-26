@@ -69,6 +69,14 @@ export interface AppSettings {
   /// step. Persisted in localStorage so the user's snap preferences
   /// survive across sessions / projects.
   osnap: OSnapSettings;
+  /// Stroke width (px) for preview lines — the 2D canvas geometry and
+  /// the 3D toolpath / wireframe (the latter via fat Line2 lines, since
+  /// WebGL ignores plain line width). 1.5 ≈ the previous fixed look.
+  previewLineWidth: number;
+  /// 3D tool-move direction-arrow density. Scales the cumulative-path
+  /// spacing between arrows (higher = more arrows). 1 = default (~3 mm
+  /// spacing); 0 disables arrows.
+  toolMoveArrowDensity: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -104,6 +112,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadSources: true,
   showStockBox: true,
   osnap: { ...DEFAULT_OSNAP_SETTINGS },
+  previewLineWidth: 1.5,
+  toolMoveArrowDensity: 1,
 };
 
 /// Load persisted settings, deep-merging stored values over defaults so

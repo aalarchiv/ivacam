@@ -505,6 +505,8 @@
   $effect(() => {
     void project.generated;
     void project.operations;
+    void project.settings.toolMoveArrowDensity; // arrow spacing
+    void project.settings.previewLineWidth; // fat-line thickness
     rebuildToolpathGeometry();
     requestRender();
   });
@@ -1691,7 +1693,11 @@
     const ARROW_MAX_SIZE = 4.0; // mm; absolute cap on arrow size
     const ARROW_SIZE_FRAC = 0.2; // arrow size relative to segment length
     const ARROW_HALF_WING = Math.tan((30 * Math.PI) / 180); // ±30° wings
-    const ARROW_MIN_SPACING = 3.0; // mm of cumulative path between arrows
+    // Arrow spacing is user-tunable (Settings → arrow density): higher
+    // density packs arrows closer. density 0 ⇒ Infinity spacing ⇒ no
+    // segment ever qualifies, so arrows are disabled.
+    const arrowDensity = project.settings.toolMoveArrowDensity;
+    const ARROW_MIN_SPACING = arrowDensity > 0 ? 3.0 / arrowDensity : Infinity;
     let lenSinceLastArrow = ARROW_MIN_SPACING; // emit on first qualifying segment
     const moveTints: Record<string, THREE.Color> = {
       rapid: cssColor('--toolpath-rapid', 0x35a2ff),

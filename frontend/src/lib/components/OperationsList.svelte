@@ -5,6 +5,7 @@
   /// op (drives the inline OpPropertiesPanel). Drag the grip to
   /// reorder.
   import { project, type OpEntry } from '../state/project.svelte';
+  import { opSourceCss } from '../state/op-color';
   import { warningFocus } from '../state/warning-focus.svelte';
   import OpPropertiesPanel from './OpPropertiesPanel.svelte';
   import OpKindPicker, {
@@ -376,6 +377,7 @@
                 class="ico"
                 title={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
                 aria-label={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
+                style:color={op.kind === 'pause' ? null : opSourceCss(op.id, selected)}
                 >{KIND_ICON[op.kind]}</span
               >
               <span class="name">{op.name}</span>

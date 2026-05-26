@@ -60,7 +60,13 @@
   function coercePost(v: string): PostId {
     return v === 'grbl' || v === 'hpgl' ? v : 'linuxcnc';
   }
-  let post: PostId = $state(coercePost(workspace.get().last_post_processor));
+  // The gcode dialect is now a MACHINE setting (chosen in the Machine
+  // dialog) rather than a toolbar dropdown — a controller speaks one
+  // dialect. Derive from the machine, falling back to the last-used /
+  // persisted choice so existing projects without the field keep working.
+  const post = $derived<PostId>(
+    coercePost(project.machine.gcodeDialect ?? workspace.get().last_post_processor),
+  );
   /// Tracks which post-processor produced the currently cached `project.generated`
   /// gcode buffer. When the user flips the dropdown to a different dialect, the
   /// cached text is now wrong-dialect — exporting it via the Download button
@@ -531,15 +537,6 @@
 
 <div class="bar">
   <span class="title">Generate:</span>
-  <label
-    title="Output dialect. LinuxCNC: standard RS-274 G-code. GRBL: hobby-CNC subset with manual tool-change prompts. HPGL: vinyl-cutter / plotter language (drag-knife mode)."
-    >post
-    <select bind:value={post}>
-      <option value="linuxcnc">LinuxCNC</option>
-      <option value="grbl">GRBL</option>
-      <option value="hpgl">HPGL</option>
-    </select>
-  </label>
   {#if project.pipelineState === 'running' || project.pipelineState === 'cancelling'}
     <GenerateProgress onCancel={cancelRun} />
   {:else}
@@ -793,19 +790,6 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-size: 0.7rem;
-  }
-  label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  select {
-    background: var(--bg-input);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 0.18rem 0.3rem;
-    font-size: 0.78rem;
   }
   button {
     background: var(--accent);

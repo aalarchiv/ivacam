@@ -3,12 +3,7 @@
   import { project, isContourOp } from '../state/project.svelte';
   import { opSourceCss } from '../state/op-color';
   import { STOCK_OUTLINE_LAYER } from '../state/stock-outline';
-  import {
-    buildObjectPolylines,
-    polylineAtT,
-    polylineProject,
-    type ObjectPolyline,
-  } from '../cam/tabs';
+  import { buildObjectPolylines, polylineAtT, type ObjectPolyline } from '../cam/tabs';
   import type { Segment } from '../api/types';
   import {
     bboxOfSegments,
@@ -23,6 +18,7 @@
     type HitIndex,
   } from '../canvas/spatial-index';
   import { fixtureAt } from '../canvas/fixture-hit';
+  import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
   import {
     DEFAULT_OSNAP_SETTINGS,
@@ -508,7 +504,7 @@
     // renders when the projection is within ~6 px of the cursor
     // (screen-space) so we don't spam ghosts the user wasn't aiming at.
     if (tabPlacementActive && lastTransform) {
-      const ghost = projectGhostTab(cx, cy);
+      const ghost = ghostTabAt(cx, cy);
       if (
         !ghost ||
         !ghostTab ||
@@ -662,144 +658,24 @@
     return objectPolylinesCache ?? [];
   }
 
-  /// Project canvas-space (cx, cy) onto the closest source contour of
-  /// the selected op. Returns the ghost-tab position or null when no
-  /// contour is within 6 screen-px / the op has no closed source.
-  /// Snap precedence (1q3): vertex within 4 screen-px > midpoint
-  /// within 4 screen-px > existing tab on this op within 2 mm
-  /// data-space > raw contour projection within 6 screen-px. Alt
-  /// disables secondary snaps.
-  function projectGhostTab(
-    cx: number,
-    cy: number,
-  ): {
-    x: number;
-    y: number;
-    objectId: number;
-    t: number;
-    snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
-  } | null {
+  /// Thin reactive wrapper over the pure `projectGhostTab` geometry
+  /// (lib/canvas/ghost-tab.ts): pull the selected contour op, transform,
+  /// and osnap state out of component scope and assemble the context.
+  /// Returns null when there's no contour op selected or no transform yet.
+  function ghostTabAt(cx: number, cy: number): GhostTab | null {
     const op = selectedOp;
     if (!op || !isContourOp(op) || !lastTransform) return null;
-    const { scale, offX, offY } = lastTransform;
-    // Canvas → data XY (mirror of the draw transform).
-    const dataX = (cx - offX) / scale;
-    const dataY = (offY - cy) / scale;
-    const tolPx = 6;
-    const snapPx = 4;
-    const existingTabTolMm = 2;
-    const tolData = tolPx / scale;
-    const snapTolData = snapPx / scale;
-    // Op-source filter: only project onto contours the op actually consumes.
-    const allow = (id: number) => {
-      const so = op.sourceObjects;
-      if (so && so.length > 0) return so.includes(id);
-      // 'all' or layer-source: every chained object qualifies.
-      return true;
-    };
-    let best: {
-      x: number;
-      y: number;
-      objectId: number;
-      t: number;
-      d2: number;
-      snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
-    } | null = null;
-    for (const obj of getObjectPolylines()) {
-      if (!allow(obj.objectId)) continue;
-      const { t, snap, d2 } = polylineProject(obj.pts, { x: dataX, y: dataY }, obj.closed);
-      if (d2 > tolData * tolData) continue;
-      if (best && d2 >= best.d2) continue;
-      best = {
-        x: snap.x,
-        y: snap.y,
-        objectId: obj.objectId,
-        t,
-        d2,
-        snap: 'contour',
-      };
-    }
-    if (!best) return null;
-    if (altDown) {
-      // CAD-style escape hatch: bare contour projection only.
-      return best;
-    }
-    // Promote to vertex / midpoint / intersection via the shared OSnap
-    // engine so the tab path respects the user's per-kind toggles
-    // (li0m) and ALSO supports intersection snaps that the old
-    // vertexAndMidpointTs scanning never produced (ffhp). The OSnap
-    // result is in whole-drawing coordinates; project it back to
-    // (objectId, t) so the tab can stay attached to a specific
-    // contour through transforms.
-    const osnap = findOSnap(osnapTargets, dataX, dataY, snapTolData, osnapSettings);
-    let promoted: {
-      t: number;
-      x: number;
-      y: number;
-      snap: 'vertex' | 'midpoint' | 'existing';
-      d2: number;
-      objectId: number;
-    } | null = null;
-    if (osnap && osnap.kind !== 'grid') {
-      let proj: { objectId: number; t: number; x: number; y: number; d2: number } | null = null;
-      for (const o of getObjectPolylines()) {
-        if (!allow(o.objectId)) continue;
-        const { t, snap, d2 } = polylineProject(o.pts, osnap, o.closed);
-        if (proj && d2 >= proj.d2) continue;
-        proj = { objectId: o.objectId, t, x: snap.x, y: snap.y, d2 };
-      }
-      // The OSnap point has to actually lie on (or very near) an
-      // op-source contour for the tab to make sense — discard the
-      // snap when the user is hovering over a vertex that belongs
-      // to some other geometry the op doesn't touch.
-      if (proj && proj.d2 <= snapTolData * snapTolData) {
-        // 'intersection' collapses to 'vertex' in the tab snap-kind
-        // enum since both are discrete points (no separate visual).
-        const snapKind: 'vertex' | 'midpoint' = osnap.kind === 'midpoint' ? 'midpoint' : 'vertex';
-        promoted = {
-          t: proj.t,
-          x: osnap.x,
-          y: osnap.y,
-          snap: snapKind,
-          d2: 0,
-          objectId: proj.objectId,
-        };
-      }
-    }
-    // Existing-tab snap on the SAME op + object, within 2 mm data-space.
-    // Kept as a separate scan because tab placements aren't OSnap
-    // targets (they live on the op, not the imported geometry).
-    const targetObj = getObjectPolylines().find((o) => o.objectId === best!.objectId);
-    if (targetObj) {
-      for (const tp of op.tabPlacements ?? []) {
-        if (tp.objectId !== best.objectId) continue;
-        const wp = polylineAtT(targetObj.pts, tp.t, targetObj.closed).point;
-        const dx = wp.x - dataX;
-        const dy = wp.y - dataY;
-        const d2 = dx * dx + dy * dy;
-        if (d2 > existingTabTolMm * existingTabTolMm) continue;
-        if (promoted && d2 >= promoted.d2) continue;
-        promoted = {
-          t: tp.t,
-          x: wp.x,
-          y: wp.y,
-          snap: 'existing',
-          d2,
-          objectId: best.objectId,
-        };
-      }
-    }
-    if (promoted) {
-      return {
-        x: promoted.x,
-        y: promoted.y,
-        objectId: promoted.objectId,
-        t: promoted.t,
-        snap: promoted.snap,
-      };
-    }
-    return best;
+    return projectGhostTab(cx, cy, {
+      transform: lastTransform,
+      polylines: getObjectPolylines(),
+      sourceObjects: op.sourceObjects,
+      tabPlacements: op.tabPlacements ?? undefined,
+      altDown,
+      osnapTargets,
+      osnapSettings,
+    });
   }
+
   /// Right-click context menu. `null` = closed. Open menu lists the
   /// same op kinds as the Add-operation picker; clicking an entry
   /// creates an op whose source is the current canvas selection, all
@@ -1111,7 +987,7 @@
     // — Estlcam-style. ToleranceT picks the "is this near an existing
     // tab" threshold: ~3 px of contour length.
     if (tabPlacementActive && selectedOp) {
-      const ghost = projectGhostTab(cx, cy);
+      const ghost = ghostTabAt(cx, cy);
       if (!ghost) return;
       // Tolerance in t-units: ~3 px of contour length. Without an
       // exact polyline length we conservatively use 0.01 (1% of contour).

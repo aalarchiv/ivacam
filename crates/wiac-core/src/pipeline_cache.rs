@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 38;
+pub const PIPELINE_VERSION: u32 = 39;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -370,6 +370,11 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     hash_opt_f64(t.corner_radius_mm, h);
     // gm1u: thread pitch changes the helical Z-advance of a Thread op.
     hash_opt_f64(t.thread_pitch_mm, h);
+    // 4qeh: compression transition height now drives the
+    // `compression_transition_above_cut` planning warning (a pipeline
+    // output), so it's no longer display-only — fold it into the key so
+    // editing it refreshes the cached per-op warnings.
+    hash_opt_f64(t.compression_transition_mm, h);
     t.wirbeln.hash(h);
     hash_opt_f64(t.wirbeln_stepover_mm, h);
     hash_opt_f64(t.wirbeln_extra_width_mm, h);
@@ -1135,7 +1140,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0xa024_d215_2736_369b_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x61c7_3af0_e0bb_d738_u64, "got {:#018x}", key.0);
     }
 
     #[test]

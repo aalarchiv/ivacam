@@ -528,6 +528,36 @@ pub(super) fn push_tool_fit_kind_warnings(
             ),
         });
     }
+    // 4qeh / dhh0: a Compression (up/down-cut) bit cleans BOTH sheet faces
+    // in a single full-depth pass — the up-cut flutes (the bottom
+    // `compression_transition_mm` of the cutting length, above the tip)
+    // shear the bottom face clean, the down-cut flutes (above the
+    // transition) shear the top face clean. That only pays off if the
+    // transition sits INSIDE the engaged material. The carved heightmap is
+    // identical to a plain endmill (pxv8 — a 2.5D sim can't show surface
+    // finish), so we can't visualize the fray; surface it as a planning
+    // note instead. When the transition is at or above the top of the cut,
+    // the WHOLE engagement is in the up-cut zone: the top face frays and
+    // there's no compression benefit (it behaves like an up-cut endmill).
+    if tool.kind == ToolKind::Compression {
+        if let Some(transition) = tool.compression_transition_mm.filter(|t| *t > 0.0) {
+            // Engaged depth from the top of the cut (`start_depth`) down to
+            // the tip at full depth (`depth`, extended by `through_depth`).
+            // `depth` is a negative Z; `start_depth` the (>=) pass start.
+            let cut_depth =
+                (op.params.start_depth - op.params.depth).max(0.0) + op.params.through_depth.max(0.0);
+            if cut_depth > 0.0 && transition >= cut_depth - 1e-9 {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "compression_transition_above_cut".into(),
+                    message: format!(
+                        "Compression tool '{}': the up/down-cut transition sits {transition:.2} mm above the tip, but op '{}' cuts only {cut_depth:.2} mm deep — so the entire cut is in the lower (up-cut) flutes. The top face will fray and you get no compression benefit (it behaves like a plain up-cut endmill). Use stock at least as thick as the transition, lower the transition, or pick an up-cut bit.",
+                        tool.name, op.name
+                    ),
+                });
+            }
+        }
+    }
     let _ = setup; // reserved for future feed/speed sanity checks
 }
 
@@ -925,6 +955,58 @@ mod tests {
         assert!(
             w_in.is_empty(),
             "in-stock toolpath should not warn: {w_in:?}"
+        );
+    }
+
+    /// 4qeh: a Compression bit whose up/down-cut transition is taller than
+    /// the cut depth warns — the whole cut is in the up-cut zone so the top
+    /// face frays (no compression benefit). A transition that fits inside
+    /// the engaged depth does NOT warn, and a transition-less compression
+    /// bit (None) is silent (treated as a plain endmill).
+    #[test]
+    fn compression_transition_above_cut_warns_only_when_shallower_than_transition() {
+        use crate::project::ToolKind;
+        let mut comp = endmill(1, 6.0);
+        comp.kind = ToolKind::Compression;
+        comp.compression_transition_mm = Some(8.0);
+        let setup = crate::cam::setup::Setup::default();
+
+        // cut_depth = start_depth(0) - depth(-3) = 3 mm < 8 mm transition → warn.
+        let mut shallow = profile_op(1, 1, ToolOffset::Outside);
+        shallow.params.depth = -3.0;
+        let project = project_with_segments(closed_square(20.0), vec![shallow.clone()], vec![comp.clone()]);
+        let mut w = Vec::new();
+        push_tool_fit_kind_warnings(&shallow, &project, &setup, &mut w);
+        let hit = w.iter().find(|w| w.kind == "compression_transition_above_cut");
+        let hit = hit.expect("shallow cut under the transition should warn");
+        assert_eq!(hit.op_id, Some(1));
+        assert!(
+            hit.message.contains("3.00 mm deep") && hit.message.contains("8.00 mm above the tip"),
+            "message should name both depths: {}",
+            hit.message
+        );
+
+        // cut_depth = 12 mm > 8 mm transition → both flute zones engaged → no warn.
+        let mut deep = profile_op(1, 1, ToolOffset::Outside);
+        deep.params.depth = -12.0;
+        let project = project_with_segments(closed_square(20.0), vec![deep.clone()], vec![comp.clone()]);
+        let mut w2 = Vec::new();
+        push_tool_fit_kind_warnings(&deep, &project, &setup, &mut w2);
+        assert!(
+            !w2.iter().any(|w| w.kind == "compression_transition_above_cut"),
+            "deep cut spanning the transition should not warn: {w2:?}"
+        );
+
+        // No transition set → silent (display-only / endmill fallback).
+        let mut comp_none = comp.clone();
+        comp_none.compression_transition_mm = None;
+        let project =
+            project_with_segments(closed_square(20.0), vec![shallow.clone()], vec![comp_none]);
+        let mut w3 = Vec::new();
+        push_tool_fit_kind_warnings(&shallow, &project, &setup, &mut w3);
+        assert!(
+            !w3.iter().any(|w| w.kind == "compression_transition_above_cut"),
+            "transition-less compression bit should not warn: {w3:?}"
         );
     }
 

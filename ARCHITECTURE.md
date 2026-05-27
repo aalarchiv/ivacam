@@ -143,7 +143,6 @@ frontend/src/lib/
   cam/        front-end-side CAM helpers (preview math, no canvas)
   canvas/     pure 2D rendering helpers (spatial-index, fixture-hit, …)
   components/ Svelte UI (one component per .svelte file)
-  i18n.ts     translation loader; locales/en.json + de.json
   scene3d/    Three.js setup, lifecycle, voxel mesh
   sim/        front-end side toolpath simulation (animation runner)
   state/      reactive state — the interesting bit; see below
@@ -291,10 +290,11 @@ post-processor) end-to-end. The smaller recipes:
    Mirror `MachineDialog.svelte`'s `$effect` shape (pristine from
    local vars **before** writing `$state`).
 2. Inline two-step "discard changes?" confirm — never `window.confirm`.
-3. Triggered from `App.svelte`'s menu (until `tiu6` extracts that
-   into `lib/state/app-menu.ts`).
-4. Translations: at minimum, dialog title + the two confirm-step
-   strings in `en.json` and `de.json`.
+3. Triggered from `App.svelte`'s menu; the pure menu/shortcut decision
+   logic lives in `lib/state/app-menu.ts`.
+4. UI strings are hardcoded English (svelte-i18n was dropped in a9e1f27);
+   write them in plain English — no Estlcam German terms (Whirling, not
+   Wirbeln; Tapered, not Kegel).
 
 ### A new wire type
 

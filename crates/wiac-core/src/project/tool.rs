@@ -142,17 +142,6 @@ pub struct ToolEntry {
     /// nominal flat floor). mm, positive only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub corner_radius_mm: Option<f64>,
-    /// T-slot / keyway cutter neck diameter (rt1.28). Honored only
-    /// when `kind == TSlot`. The undercut cutter has a wide disk
-    /// (`diameter`) at the tip and a narrow neck of this diameter
-    /// above. mm, positive only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tslot_neck_diameter_mm: Option<f64>,
-    /// T-slot / keyway cutter neck length (rt1.28). Honored only
-    /// when `kind == TSlot`. The vertical extent of the narrow neck
-    /// above the disk. mm, positive only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tslot_neck_length_mm: Option<f64>,
     /// 1wit: form / profile cutter cross-section, tip → top. Each
     /// sample is `(z_above_tip_mm, radius_mm)`; the sim carves at the
     /// interpolated radius for each Z slice. Honored only when
@@ -368,8 +357,6 @@ impl Default for ToolEntry {
             laser_lead_in_mm: None,
             kerf_mm: None,
             corner_radius_mm: None,
-            tslot_neck_diameter_mm: None,
-            tslot_neck_length_mm: None,
             form_profile_mm: Vec::new(),
             wirbeln: false,
             wirbeln_stepover_mm: None,
@@ -451,15 +438,13 @@ pub enum ToolKind {
     /// Endmill at the cutting algorithm; the variant is here so the
     /// tool library can label it accurately for the user.
     Compression,
-    /// T-slot / keyway / undercut cutter (rt1.28): plunges vertically
-    /// down a narrow neck, then a wider disk at the tip cuts the
-    /// undercut slot. `ToolEntry.tslot_neck_diameter_mm` /
-    /// `tslot_neck_length_mm` carry the neck geometry.
-    TSlot,
     /// Form / profile cutter (rt1.28 / Estlcam Profil): bull-nose /
-    /// cove / ogee / dovetail / custom — a profile bit with a fixed
-    /// cross-section. v1 treats as an Endmill at the algorithm; the
-    /// variant labels it.
+    /// cove / ogee / dovetail / T-slot / custom — a profile bit with a
+    /// fixed `(z, r)` cross-section carried in
+    /// [`ToolEntry::form_profile_mm`]. The tool-library editor generates
+    /// the samples from dovetail / T-slot / cove presets or raw rows.
+    /// (z5yw: the former dedicated `TSlot` kind folded in here — a
+    /// T-slot is just a wide-disk-then-narrow-neck profile.)
     FormProfile,
     /// Tapered / conical endmill (90hd / Estlcam Kegel). A cutter whose
     /// flank tapers from a small tip (`tip_diameter`, 0 for a pointed
@@ -511,7 +496,7 @@ impl ToolKind {
             ToolKind::Drill => ToolFamily::Drill,
             ToolKind::DragKnife => ToolFamily::DragKnife,
             ToolKind::LaserBeam => ToolFamily::Laser,
-            ToolKind::TSlot | ToolKind::FormProfile => ToolFamily::Profile,
+            ToolKind::FormProfile => ToolFamily::Profile,
         }
     }
 }
@@ -639,7 +624,6 @@ mod tests {
             (ToolKind::Drill, Drill),
             (ToolKind::DragKnife, DragKnife),
             (ToolKind::LaserBeam, Laser),
-            (ToolKind::TSlot, Profile),
             (ToolKind::FormProfile, Profile),
             (ToolKind::Kegel, Conical),
         ];

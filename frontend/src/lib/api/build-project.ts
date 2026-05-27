@@ -86,7 +86,6 @@ type WireToolKind =
   | 'laser_beam'
   | 'bull_nose'
   | 'compression'
-  | 't_slot'
   | 'form_profile'
   | 'kegel';
 
@@ -131,8 +130,6 @@ interface WireToolEntry {
   laser_pierce_sec?: number;
   laser_lead_in_mm?: number;
   corner_radius_mm?: number;
-  tslot_neck_diameter_mm?: number;
-  tslot_neck_length_mm?: number;
   /// 1wit: form / profile cutter cross-section, tip → top. Omitted
   /// unless ≥2 samples are set (and kind === 'form_profile').
   form_profile_mm?: { z_mm: number; r_mm: number }[];
@@ -567,12 +564,6 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
       : {}),
     ...(t.cornerRadiusMm !== undefined && t.cornerRadiusMm > 0
       ? { corner_radius_mm: t.cornerRadiusMm }
-      : {}),
-    ...(t.tslotNeckDiameterMm !== undefined && t.tslotNeckDiameterMm > 0
-      ? { tslot_neck_diameter_mm: t.tslotNeckDiameterMm }
-      : {}),
-    ...(t.tslotNeckLengthMm !== undefined && t.tslotNeckLengthMm > 0
-      ? { tslot_neck_length_mm: t.tslotNeckLengthMm }
       : {}),
     // 1wit: form-profile samples. Emit only ≥2 rows (a single sample
     // isn't an interpolation domain — the sim falls back to its taper).

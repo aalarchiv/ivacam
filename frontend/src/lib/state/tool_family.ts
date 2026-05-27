@@ -49,8 +49,7 @@ export type ToolAttr =
   | 'defaultStep'
   | 'cornerRadius' // bull-nose corner radius
   | 'dragoff' // drag-knife trailing offset
-  | 'tslotNeck' // t-slot neck ⌀ / length
-  | 'formProfile' // (z, r) sample table
+  | 'formProfile' // (z, r) sample table (incl. folded-in T-slot, z5yw)
   | 'compressionTransition' // compression up/down flute-split height
   | 'laser'; // pierce / lead-in / kerf
 
@@ -70,7 +69,6 @@ export const TOOL_FAMILY: Record<ToolKind, ToolFamily> = {
   kegel: 'conical',
   drill: 'drill',
   drag_knife: 'drag_knife',
-  t_slot: 'profile',
   form_profile: 'profile',
   laser_beam: 'laser',
 };
@@ -98,7 +96,6 @@ const FAMILY_BASE_ATTRS: Record<ToolFamily, readonly ToolAttr[]> = {
 const KIND_EXTRA_ATTRS: Partial<Record<ToolKind, readonly ToolAttr[]>> = {
   bull_nose: ['cornerRadius'],
   compression: ['compressionTransition'],
-  t_slot: ['tslotNeck'],
   form_profile: ['formProfile'],
 };
 

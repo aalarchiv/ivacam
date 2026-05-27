@@ -106,7 +106,6 @@
     return (
       attrApplies('dragoff', kind) ||
       attrApplies('cornerRadius', kind) ||
-      attrApplies('tslotNeck', kind) ||
       attrApplies('formProfile', kind)
     );
   }
@@ -277,6 +276,36 @@
     const samples: FormProfileSample[] = [
       { zMm: 0, rMm: round3(rBottom) },
       { zMm: round3(h), rMm: round3(rTop) },
+    ];
+    updateField(idx, 'formProfileMm', samples);
+  }
+  // z5yw: T-slot preset — the former dedicated kind, now a form-profile.
+  // A wide cutting disk at the tip (headDia) of height headThickness,
+  // then a narrow neck (neckDia) up to the top of the neck. Transient
+  // generator inputs, keyed by tool id like the dovetail ones.
+  let tslotDraft = $state<
+    Record<number, { headDiaMm: number; headThickMm: number; neckDiaMm: number; neckLenMm: number }>
+  >({});
+  function tslotParamsFor(id: number) {
+    return tslotDraft[id] ?? { headDiaMm: 12.7, headThickMm: 3, neckDiaMm: 6, neckLenMm: 6 };
+  }
+  function setTslotParam(
+    id: number,
+    key: 'headDiaMm' | 'headThickMm' | 'neckDiaMm' | 'neckLenMm',
+    v: number,
+  ) {
+    tslotDraft = { ...tslotDraft, [id]: { ...tslotParamsFor(id), [key]: v } };
+  }
+  function generateTslot(idx: number, id: number) {
+    const { headDiaMm, headThickMm, neckDiaMm, neckLenMm } = tslotParamsFor(id);
+    const rHead = Math.max(headDiaMm / 2, 0);
+    const rNeck = Math.max(Math.min(neckDiaMm / 2, rHead), 0);
+    const hHead = Math.max(headThickMm, 0);
+    const samples: FormProfileSample[] = [
+      { zMm: 0, rMm: round3(rHead) },
+      { zMm: round3(hHead), rMm: round3(rHead) },
+      { zMm: round3(hHead), rMm: round3(rNeck) },
+      { zMm: round3(hHead + Math.max(neckLenMm, 0)), rMm: round3(rNeck) },
     ];
     updateField(idx, 'formProfileMm', samples);
   }
@@ -483,7 +512,6 @@
     laser_beam: 'Laser',
     bull_nose: 'Bull-nose (radius)',
     compression: 'Compression',
-    t_slot: 'T-slot',
     form_profile: 'Form / profile',
     kegel: 'Kegel (tapered)',
   };
@@ -1403,54 +1431,14 @@
                   </label>
                 </div>
               {/if}
-              {#if attrApplies('tslotNeck', tool.kind)}
-                <div class="holder-row pass-overrides">
-                  <span
-                    class="holder-label"
-                    title="T-slot cutter geometry: the neck connects the shank to the wider cutting head."
-                    >T-slot</span
-                  >
-                </div>
-                <div class="holder-row">
-                  <label>
-                    <span>Neck ⌀ (mm)</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      placeholder="—"
-                      value={tool.tslotNeckDiameterMm ?? ''}
-                      title="Diameter of the narrow neck above the cutting head. Must be smaller than the cutter ⌀ (otherwise it's a regular endmill)."
-                      onchange={(e) => {
-                        const v = (e.currentTarget as HTMLInputElement).value;
-                        updateField(i, 'tslotNeckDiameterMm', v === '' ? undefined : parseFloat(v));
-                      }}
-                    />
-                  </label>
-                  <label>
-                    <span>Neck length (mm)</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      placeholder="—"
-                      value={tool.tslotNeckLengthMm ?? ''}
-                      title="Length of the neck section from the top of the cutting head up to where the shank begins."
-                      onchange={(e) => {
-                        const v = (e.currentTarget as HTMLInputElement).value;
-                        updateField(i, 'tslotNeckLengthMm', v === '' ? undefined : parseFloat(v));
-                      }}
-                    />
-                  </label>
-                </div>
-              {/if}
               {#if attrApplies('formProfile', tool.kind)}
                 {@const dt = dovetailParamsFor(tool.id)}
+                {@const ts = tslotParamsFor(tool.id)}
                 {@const rows = tool.formProfileMm ?? []}
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
-                    title="Form / profile cutter cross-section (cove / ogee / dovetail / custom). The (z, r) table — height above the tip vs radius — drives the simulator's cut shape. Needs ≥2 rows; otherwise the sim falls back to a tip→diameter taper."
+                    title="Form / profile cutter cross-section (cove / ogee / dovetail / T-slot / custom). The (z, r) table — height above the tip vs radius — drives the simulator's cut shape. Needs ≥2 rows; otherwise the sim falls back to a tip→diameter taper. Use a preset below or edit rows directly."
                     >Form profile</span
                   >
                 </div>
@@ -1509,6 +1497,78 @@
                     class="profile-btn"
                     title="Overwrite the sample table below with a 2-row dovetail profile generated from these inputs."
                     onclick={() => generateDovetail(i, tool.id)}>Generate dovetail</button
+                  >
+                </div>
+                <div class="holder-row dovetail-gen">
+                  <label>
+                    <span>T-slot head ⌀ (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={ts.headDiaMm}
+                      title="Widest cutting-disk diameter at the tip of a T-slot / keyway cutter."
+                      onchange={(e) =>
+                        setTslotParam(
+                          tool.id,
+                          'headDiaMm',
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                        )}
+                    />
+                  </label>
+                  <label>
+                    <span>Head thick (mm)</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={ts.headThickMm}
+                      title="Height of the cutting disk (how tall the wide undercut head is)."
+                      onchange={(e) =>
+                        setTslotParam(
+                          tool.id,
+                          'headThickMm',
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                        )}
+                    />
+                  </label>
+                  <label>
+                    <span>Neck ⌀ (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={ts.neckDiaMm}
+                      title="Diameter of the narrow neck above the head — must be smaller than the head ⌀."
+                      onchange={(e) =>
+                        setTslotParam(
+                          tool.id,
+                          'neckDiaMm',
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                        )}
+                    />
+                  </label>
+                  <label>
+                    <span>Neck length (mm)</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={ts.neckLenMm}
+                      title="Length of the narrow neck above the head, up to where the shank begins."
+                      onchange={(e) =>
+                        setTslotParam(
+                          tool.id,
+                          'neckLenMm',
+                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                        )}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="profile-btn"
+                    title="Overwrite the sample table below with a 4-row T-slot profile (wide disk → narrow neck) generated from these inputs."
+                    onclick={() => generateTslot(i, tool.id)}>Generate T-slot</button
                   >
                 </div>
                 <div class="profile-table">

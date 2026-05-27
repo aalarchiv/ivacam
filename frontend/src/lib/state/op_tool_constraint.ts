@@ -50,8 +50,9 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // dragoff geometry.
       return ['drag_knife'];
     case 't_slot':
-      // 3g6u: needs the undercut head + neck geometry of a T-slot cutter.
-      return ['t_slot'];
+      // 3g6u / z5yw: needs the undercut wide-disk → narrow-neck profile,
+      // authored as a form-profile (z, r) cutter (T-slot preset).
+      return ['form_profile'];
     case 'dovetail':
       // b7qz: needs the angled-flank cross-section of a form / profile
       // (dovetail) cutter to carve the undercut walls.
@@ -86,7 +87,6 @@ const KIND_LABELS: Record<ToolKind, string> = {
   laser_beam: 'laser',
   bull_nose: 'bull-nose',
   compression: 'compression',
-  t_slot: 'T-slot',
   form_profile: 'form profile',
   kegel: 'tapered (Kegel)',
 };

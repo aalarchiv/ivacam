@@ -233,23 +233,6 @@ pub enum ToolProfile {
         /// `corner_r == r` reduces to a ball-nose.
         corner_r: f32,
     },
-    /// 3oly: T-slot / undercut cutter with a wide flat-bottom head at
-    /// the tip and a narrower neck above. The heightmap only models the
-    /// cut surface (the head's flat bottom), but the neck above is
-    /// represented here so the holder/collision check can see that
-    /// above `head_z_top` the cutter is narrower (`neck_r` instead of
-    /// `head_r`) — the slot kerf the head leaves is wider than the
-    /// neck, so the neck clears it when the cutter retracts.
-    TSlot {
-        /// Cutting head radius (= tool diameter / 2). This is what
-        /// the heightmap carves with.
-        head_r: f32,
-        /// Z height (above the tip) at the top of the head. Above
-        /// this, the cutter has radius `neck_r` instead of `head_r`.
-        head_z_top: f32,
-        /// Neck radius above the head — narrower than `head_r`.
-        neck_r: f32,
-    },
     /// pxv8: compression / up-down spiral endmill. Cross-section is
     /// uniform at `r` so the carved heightmap is visually identical to
     /// `Endmill { r }`. Distinguished from Endmill so the simulator can
@@ -302,11 +285,6 @@ impl ToolProfile {
             | ToolProfile::DragKnife { r, .. }
             | ToolProfile::BullNose { r, .. }
             | ToolProfile::Compression { r } => *r,
-            // 3oly: the head defines the XY footprint the cutter
-            // actually carves (the neck is narrower and sits above
-            // the head). The shank/holder check sees the neck via
-            // `HolderProfile`.
-            ToolProfile::TSlot { head_r, .. } => *head_r,
             // pxv8: form cutter — XY footprint is the largest sample
             // radius (conservative; the sweep AABB must cover the
             // whole cross-section).
@@ -321,12 +299,12 @@ impl ToolProfile {
     }
 
     /// True for flat-bottomed profiles (Endmill / Drill / Laser /
-    /// `DragKnife` / `TSlot` / `Compression`) — every cell within the
-    /// cutter radius carves to the same `cutter_pz`, no per-r profile
-    /// offset. The sweep can then skip both the sqrt and the `eval()`
-    /// branch (audit-xnmp). 3oly: `TSlot`'s head bottom is flat too.
-    /// pxv8: Compression's cross-section is identical to Endmill.
-    /// `FormProfile` / Engraver are NOT flat-bottom (per-r profile).
+    /// `DragKnife` / `Compression`) — every cell within the cutter
+    /// radius carves to the same `cutter_pz`, no per-r profile offset.
+    /// The sweep can then skip both the sqrt and the `eval()` branch
+    /// (audit-xnmp). pxv8: Compression's cross-section is identical to
+    /// Endmill. `FormProfile` / Engraver are NOT flat-bottom (per-r
+    /// profile) — a folded-in T-slot is a `FormProfile` now (z5yw).
     #[must_use]
     pub fn is_flat_bottom(&self) -> bool {
         matches!(
@@ -335,7 +313,6 @@ impl ToolProfile {
                 | ToolProfile::Drill { .. }
                 | ToolProfile::LaserBeam { .. }
                 | ToolProfile::DragKnife { .. }
-                | ToolProfile::TSlot { .. }
                 | ToolProfile::Compression { .. }
         )
     }
@@ -427,11 +404,6 @@ impl ToolProfile {
                     Some((cr64 - inside.sqrt()) as f32)
                 }
             }
-            // 3oly: head's flat bottom carves the slot floor; the
-            // heightmap eval returns 0 for every r ≤ head_r (no
-            // vertical profile inside the head). The neck above the
-            // head is non-cutting and handled by `HolderProfile`.
-            ToolProfile::TSlot { head_r, .. } => (r <= *head_r).then_some(0.0),
             // pxv8: FormProfile — linear-interp the (z, r) sample list
             // by RADIUS to recover the depth offset above the tip. The
             // sample list is monotone in z_above_tip from tip up; the
@@ -597,50 +569,10 @@ impl ToolProfile {
             // model in the warnings stream. Follow-up:
             // wiaconstructor-tcmp.
             ToolKind::Compression => ToolProfile::Compression { r },
-            // 3oly: T-slot / undercut cutter — wide head, narrow neck
-            // above. Heightmap carves with the head radius; the neck
-            // is encoded in HolderProfile so the collision pass sees
-            // it. When neck geometry is missing, fall back to a flat
-            // endmill at head_r (same observable cross-section, no
-            // false-negative regression vs the old code path).
-            ToolKind::TSlot => {
-                let neck_r = tool
-                    .tslot_neck_diameter_mm
-                    .map_or(f64::from(r), |d| (d * 0.5).max(0.0))
-                    as f32;
-                // ranj: flute_length doubles as head thickness whenever
-                // the tool advertises any neck geometry (diameter OR
-                // length). Previously we keyed the head_z_top derivation
-                // on `tslot_neck_length_mm.map_or` — a T-slot with a
-                // narrower neck diameter but no explicit neck-length
-                // (legacy projects with only one of the two fields set)
-                // silently degraded to a flat Endmill. Now ANY neck-
-                // diameter-or-length presence promotes the head_z_top
-                // to flute_length so the head/neck split survives, and
-                // the holder pass (which still needs BOTH fields to
-                // emit a neck segment) is free to keep its stricter
-                // requirement without dragging the heightmap profile
-                // down with it.
-                let has_neck_hint = tool.tslot_neck_diameter_mm.is_some()
-                    || tool.tslot_neck_length_mm.is_some();
-                let head_z_top = if has_neck_hint {
-                    tool.flute_length_mm.unwrap_or(0.0).max(0.0) as f32
-                } else {
-                    0.0
-                };
-                if neck_r < r && head_z_top > 0.0 {
-                    ToolProfile::TSlot {
-                        head_r: r,
-                        head_z_top,
-                        neck_r,
-                    }
-                } else {
-                    // No neck info — same as old behaviour (flat
-                    // endmill at head_r). Holder check still sees the
-                    // shank/holder above the flutes if those are set.
-                    ToolProfile::Endmill { r }
-                }
-            }
+            // z5yw: the former dedicated T-slot kind folded into
+            // FormProfile — a T-slot is authored as a wide-disk →
+            // narrow-neck (z, r) profile via the tool-library preset, so
+            // it takes the FormProfile arm below.
             // pxv8: FormProfile — non-uniform cross-section. When the
             // tool entry doesn't carry a sample list, fall back to a
             // single-point profile (flat endmill at head radius) and
@@ -723,8 +655,6 @@ mod tests {
             laser_lead_in_mm: None,
             kerf_mm: None,
             corner_radius_mm: None,
-            tslot_neck_diameter_mm: None,
-            tslot_neck_length_mm: None,
             form_profile_mm: Vec::new(),
             wirbeln: false,
             wirbeln_stepover_mm: None,
@@ -1157,47 +1087,28 @@ mod tests {
         ));
     }
 
-    /// ranj: T-slot cutter with a narrower neck diameter but no explicit
-    /// `tslot_neck_length_mm` previously degraded to a flat Endmill
-    /// because `head_z_top` keyed off `tslot_neck_length_mm.map_or`.
-    /// Now any neck-hint (diameter OR length) promotes the head/neck
-    /// split — `head_z_top` is derived from `flute_length_mm`.
+    /// z5yw: the former dedicated T-slot kind is folded into FormProfile.
+    /// A T-slot authored as a wide-disk → narrow-neck `(z, r)` profile
+    /// builds a FormProfile whose XY footprint is the head radius (the
+    /// widest sample) and whose flat disk bottom carves the slot floor.
     #[test]
-    fn from_tool_tslot_neck_diameter_only_still_emits_tslot_profile() {
-        let mut t = make_tool(ToolKind::TSlot, 16.0);
-        t.tslot_neck_diameter_mm = Some(4.0);
-        t.tslot_neck_length_mm = None;
-        t.flute_length_mm = Some(4.0);
-        match ToolProfile::from_tool(&t) {
-            ToolProfile::TSlot {
-                head_r,
-                head_z_top,
-                neck_r,
-            } => {
-                assert!(approx(head_r, 8.0));
-                assert!(approx(neck_r, 2.0));
-                assert!(
-                    approx(head_z_top, 4.0),
-                    "head_z_top should come from flute_length when only the neck diameter is set, got {head_z_top}",
-                );
-            }
-            other => panic!("expected TSlot profile, got {other:?}"),
-        }
-    }
-
-    /// ranj companion: legacy "no neck info at all" still falls back to
-    /// the flat Endmill model. Only the diameter-or-length-set hint
-    /// flips the head/neck split on.
-    #[test]
-    fn from_tool_tslot_no_neck_info_still_endmill() {
-        let mut t = make_tool(ToolKind::TSlot, 16.0);
-        t.tslot_neck_diameter_mm = None;
-        t.tslot_neck_length_mm = None;
-        t.flute_length_mm = Some(4.0);
-        assert!(matches!(
-            ToolProfile::from_tool(&t),
-            ToolProfile::Endmill { .. }
-        ));
+    fn from_tool_tslot_as_form_profile_carves_head_radius() {
+        let mut t = make_tool(ToolKind::FormProfile, 16.0);
+        // 16 mm head disk, 4 mm tall, then a 4 mm neck up to 12 mm.
+        t.form_profile_mm = vec![
+            FormProfileSample { z_mm: 0.0, r_mm: 8.0 },
+            FormProfileSample { z_mm: 4.0, r_mm: 8.0 },
+            FormProfileSample { z_mm: 4.0, r_mm: 2.0 },
+            FormProfileSample { z_mm: 12.0, r_mm: 2.0 },
+        ];
+        let profile = ToolProfile::from_tool(&t);
+        assert!(matches!(profile, ToolProfile::FormProfile { .. }));
+        // XY footprint = the widest (head) radius.
+        assert!(approx(profile.radius(), 8.0));
+        // The disk bottom carves flat (dz == 0) out to the head radius.
+        assert!(matches!(profile.eval(7.5), Some(dz) if approx(dz, 0.0)));
+        // Beyond the head the cutter doesn't reach.
+        assert!(profile.eval(9.0).is_none());
     }
 
     /// 1wit: a FormProfile tool carrying a user-entered cross-section

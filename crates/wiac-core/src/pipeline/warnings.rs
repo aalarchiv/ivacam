@@ -382,8 +382,8 @@ pub(super) fn push_tool_fit_kind_warnings(
         // 3g6u: a T-slot op needs a T-slot / undercut cutter — any other
         // kind has no wide head to carve the undercut, so it would just
         // cut a plain centerline groove of its nominal diameter.
-        (OpKind::TSlot { .. }, k) if k != ToolKind::TSlot => {
-            Some("t-slot op assigned a non-T-slot cutter (no undercut head)")
+        (OpKind::TSlot { .. }, k) if k != ToolKind::FormProfile => {
+            Some("t-slot op assigned a non-form-profile cutter (no undercut head — author a T-slot profile)")
         }
         // b7qz: a dovetail op needs a form / profile cutter — any other
         // kind has straight walls, so it would just cut a plain
@@ -411,9 +411,20 @@ pub(super) fn push_tool_fit_kind_warnings(
     // stock / a pre-bored clearance hole, not a vertical plunge through
     // the narrow stem). Surface this as a non-blocking prerequisite note.
     if matches!(op.kind, OpKind::TSlot { .. }) {
+        // z5yw: the neck width is the narrowest radius in the folded-in
+        // T-slot's (z, r) profile (the disk is the widest, the neck the
+        // narrowest). Falls back to a generic phrasing when the tool
+        // carries no profile samples.
         let neck = tool
-            .tslot_neck_diameter_mm
-            .map_or_else(|| "the neck".to_string(), |d| format!("{d:.2} mm (the neck width)"));
+            .form_profile_mm
+            .iter()
+            .map(|s| s.r_mm)
+            .fold(f64::INFINITY, f64::min);
+        let neck = if neck.is_finite() {
+            format!("{:.2} mm (the neck width)", neck * 2.0)
+        } else {
+            "the neck".to_string()
+        };
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
             kind: "tslot_requires_stem_slot".into(),

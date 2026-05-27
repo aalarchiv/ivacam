@@ -417,29 +417,25 @@
         );
     }
 
-    /// New `ToolKind` variants (rt1.28): `BullNose` / Compression /
-    /// `TSlot` / `FormProfile` all serialize + deserialize cleanly and
-    /// carry their geometry fields through round-trip.
+    /// New `ToolKind` variants (rt1.28 / z5yw): `BullNose` / Compression
+    /// / `FormProfile` all serialize + deserialize cleanly and carry
+    /// their geometry fields through round-trip. (T-slot was folded into
+    /// `FormProfile` — its undercut is a `(z, r)` profile now.)
     #[test]
     fn extended_tool_kinds_serde_round_trip() {
         for (kind, label) in [
             (ToolKind::BullNose, "bull_nose"),
             (ToolKind::Compression, "compression"),
-            (ToolKind::TSlot, "t_slot"),
             (ToolKind::FormProfile, "form_profile"),
         ] {
             let mut t = endmill(7, 6.0);
             t.kind = kind;
             t.corner_radius_mm = Some(0.5);
-            t.tslot_neck_diameter_mm = Some(3.0);
-            t.tslot_neck_length_mm = Some(8.0);
             let json = serde_json::to_string(&t).unwrap();
             assert!(json.contains(label), "expected '{label}' in {json}");
             let back: ToolEntry = serde_json::from_str(&json).unwrap();
             assert_eq!(back.kind, kind);
             assert_eq!(back.corner_radius_mm, Some(0.5));
-            assert_eq!(back.tslot_neck_diameter_mm, Some(3.0));
-            assert_eq!(back.tslot_neck_length_mm, Some(8.0));
         }
     }
 
@@ -3116,10 +3112,29 @@
     /// a Profile/Pocket would (that head-at-every-depth cascade is the
     /// bug this op kind fixes). Mirrors the plot-mode Engrave test.
     fn tslot_tool(id: u32, head_dia: f64, neck_dia: f64) -> ToolEntry {
+        use crate::project::FormProfileSample;
         let mut t = endmill(id, head_dia);
-        t.kind = ToolKind::TSlot;
-        t.tslot_neck_diameter_mm = Some(neck_dia);
-        t.tslot_neck_length_mm = Some(5.0);
+        // z5yw: a T-slot is a FormProfile now — a wide cutting disk at
+        // the tip narrowing to the neck above.
+        t.kind = ToolKind::FormProfile;
+        t.form_profile_mm = vec![
+            FormProfileSample {
+                z_mm: 0.0,
+                r_mm: head_dia / 2.0,
+            },
+            FormProfileSample {
+                z_mm: 3.0,
+                r_mm: head_dia / 2.0,
+            },
+            FormProfileSample {
+                z_mm: 3.0,
+                r_mm: neck_dia / 2.0,
+            },
+            FormProfileSample {
+                z_mm: 8.0,
+                r_mm: neck_dia / 2.0,
+            },
+        ];
         t
     }
 

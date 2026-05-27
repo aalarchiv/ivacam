@@ -141,14 +141,13 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
     ...(t.holder !== undefined ? { holder: t.holder } : {}),
     // Per-kind sim/holder metadata so the heightfield simulator can
     // pick the right cutter profile and holder-check uses the right
-    // shank dims. Bull-nose / T-slot collapse to Endmill in the sim
-    // for now (see ToolProfile::from_tool), but ship the fields so
-    // the data is there when the sim grows fillet / undercut support.
+    // shank dims. Bull-nose collapses to a fillet profile in the sim;
+    // form-profile (incl. the folded-in T-slot, z5yw) carves its (z, r)
+    // sample list when ≥2 rows are present.
     ...(t.cornerRadiusMm !== undefined ? { corner_radius_mm: t.cornerRadiusMm } : {}),
-    ...(t.tslotNeckDiameterMm !== undefined
-      ? { tslot_neck_diameter_mm: t.tslotNeckDiameterMm }
+    ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
+      ? { form_profile_mm: t.formProfileMm.map((s) => ({ z_mm: s.zMm, r_mm: s.rMm })) }
       : {}),
-    ...(t.tslotNeckLengthMm !== undefined ? { tslot_neck_length_mm: t.tslotNeckLengthMm } : {}),
     ...(t.zShiftMm !== undefined ? { z_shift_mm: t.zShiftMm } : {}),
   };
 }

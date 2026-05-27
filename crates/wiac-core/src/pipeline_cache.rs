@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 36;
+pub const PIPELINE_VERSION: u32 = 37;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -343,7 +343,7 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
         ToolKind::LaserBeam => 7,
         ToolKind::BullNose => 8,
         ToolKind::Compression => 9,
-        ToolKind::TSlot => 10,
+        // 10 retired (z5yw: ToolKind::TSlot folded into FormProfile)
         ToolKind::FormProfile => 11,
         ToolKind::Kegel => 12,
     };
@@ -367,8 +367,6 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     hash_opt_f64(t.laser_pierce_sec, h);
     hash_opt_f64(t.laser_lead_in_mm, h);
     hash_opt_f64(t.corner_radius_mm, h);
-    hash_opt_f64(t.tslot_neck_diameter_mm, h);
-    hash_opt_f64(t.tslot_neck_length_mm, h);
     t.wirbeln.hash(h);
     hash_opt_f64(t.wirbeln_stepover_mm, h);
     hash_opt_f64(t.wirbeln_extra_width_mm, h);
@@ -1068,8 +1066,6 @@ mod tests {
             laser_lead_in_mm: None,
             kerf_mm: None,
             corner_radius_mm: None,
-            tslot_neck_diameter_mm: None,
-            tslot_neck_length_mm: None,
             form_profile_mm: Vec::new(),
             wirbeln: false,
             wirbeln_stepover_mm: None,
@@ -1135,7 +1131,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0xca82_d6f9_9991_f394_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x019a_ee4b_450c_f16d_u64, "got {:#018x}", key.0);
     }
 
     #[test]

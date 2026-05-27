@@ -156,12 +156,6 @@ export interface ToolEntry {
   /// Bull-nose corner radius (rt1.28): rounded transition at the
   /// floor edge. Honored only when kind === 'bull_nose'.
   cornerRadiusMm?: number;
-  /// T-slot cutter neck diameter (rt1.28). Honored only when
-  /// kind === 't_slot'.
-  tslotNeckDiameterMm?: number;
-  /// T-slot cutter neck length (rt1.28). Honored only when
-  /// kind === 't_slot'.
-  tslotNeckLengthMm?: number;
   /// 1wit: form / profile cutter cross-section, tip → top. Each sample
   /// is { zMm: height above the cutting tip, rMm: radius there }. The
   /// sim carves the interpolated radius per Z slice when ≥2 samples are

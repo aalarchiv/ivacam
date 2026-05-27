@@ -23,7 +23,6 @@ export type ToolKind =
   | 'laser_beam'
   | 'bull_nose'
   | 'compression'
-  | 't_slot'
   | 'form_profile'
   | 'kegel';
 

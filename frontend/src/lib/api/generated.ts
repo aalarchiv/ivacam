@@ -1900,16 +1900,6 @@ export interface components {
             tip_diameter?: number | null;
             /**
              * Format: double
-             * @description T-slot / keyway cutter neck diameter (rt1.28). Honored only when `kind == TSlot`. The undercut cutter has a wide disk (`diameter`) at the tip and a narrow neck of this diameter above. mm, positive only.
-             */
-            tslot_neck_diameter_mm?: number | null;
-            /**
-             * Format: double
-             * @description T-slot / keyway cutter neck length (rt1.28). Honored only when `kind == TSlot`. The vertical extent of the narrow neck above the disk. mm, positive only.
-             */
-            tslot_neck_length_mm?: number | null;
-            /**
-             * Format: double
              * @description ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). pmpk originally hardcoded this to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the legacy 10° default so old projects round-trip unchanged.
              */
             vcarve_lead_in_angle_deg?: number | null;
@@ -1936,7 +1926,7 @@ export interface components {
              */
             z_shift_mm?: number | null;
         };
-        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "t_slot" | "form_profile" | "kegel";
+        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "form_profile" | "kegel";
         /** @enum {string} */
         ToolOffset: "none" | "outside" | "inside" | "on";
         ToolpathSegment: {

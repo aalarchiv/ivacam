@@ -25,8 +25,8 @@ describe('expectedToolKinds', () => {
     expect([...expectedToolKinds('drag_knife')]).toEqual(['drag_knife']);
   });
 
-  it('returns t_slot-only for T-Slot', () => {
-    expect([...expectedToolKinds('t_slot')]).toEqual(['t_slot']);
+  it('returns form_profile for T-Slot (folded into the profile family)', () => {
+    expect([...expectedToolKinds('t_slot')]).toEqual(['form_profile']);
   });
 
   it('returns form_profile-only for Dovetail (b7qz)', () => {

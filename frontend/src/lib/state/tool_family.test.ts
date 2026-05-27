@@ -12,7 +12,6 @@ const ALL_KINDS: ToolKind[] = [
   'laser_beam',
   'bull_nose',
   'compression',
-  't_slot',
   'form_profile',
   'kegel',
 ];
@@ -48,7 +47,6 @@ describe('tool_family capability table', () => {
     expect(attrApplies('dragoff', 'endmill')).toBe(false);
     expect(attrApplies('cornerRadius', 'bull_nose')).toBe(true);
     expect(attrApplies('cornerRadius', 'ball_nose')).toBe(false);
-    expect(attrApplies('tslotNeck', 't_slot')).toBe(true);
     expect(attrApplies('compressionTransition', 'compression')).toBe(true);
     expect(attrApplies('compressionTransition', 'endmill')).toBe(false);
     expect(attrApplies('formProfile', 'form_profile')).toBe(true);
@@ -68,6 +66,6 @@ describe('tool_family capability table', () => {
 
   it('toolFamily round-trips', () => {
     expect(toolFamily('v_bit')).toBe('conical');
-    expect(toolFamily('t_slot')).toBe('profile');
+    expect(toolFamily('form_profile')).toBe('profile');
   });
 });

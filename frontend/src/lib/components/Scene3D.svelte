@@ -21,6 +21,7 @@
   import { autoTabTs, buildObjectPolylines, polylineAtT } from '../cam/tabs';
   import { tessellate } from '../scene3d/tessellate';
   import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
+  import { pixelsPerCell } from '../scene3d/lod';
   import type { SimWarning, ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
@@ -105,17 +106,14 @@
     if (!driver || !camera || !controls || !renderer) return;
     const cellSize = driver.getCellSize();
     if (cellSize == null) return;
-    const distance = camera.position.distanceTo(controls.target);
-    if (distance <= 0) return;
-    const fovRad = (camera.fov * Math.PI) / 180;
-    const renderHeight = renderer.domElement.clientHeight;
-    if (renderHeight <= 0) return;
-    // Pixel-projection of a single L0 cell at the camera target.
-    // For a perspective camera with vertical FOV, a world-space length
-    // `L` at distance `d` projects to `L * (renderHeight / 2) /
-    // (d * tan(fov/2))` pixels.
-    const pixelsPerCell = (cellSize * renderHeight) / (2 * distance * Math.tan(fovRad / 2));
-    driver.setLodHint(pixelsPerCell, project.settings.maxRenderTriangles);
+    const ppc = pixelsPerCell({
+      cellSizeMm: cellSize,
+      cameraDistance: camera.position.distanceTo(controls.target),
+      fovDeg: camera.fov,
+      renderHeightPx: renderer.domElement.clientHeight,
+    });
+    if (ppc == null) return;
+    driver.setLodHint(ppc, project.settings.maxRenderTriangles);
   }
 
   /// Apply the saved camera pose, if any. Run once after the initial

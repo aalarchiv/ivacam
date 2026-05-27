@@ -96,7 +96,7 @@ describe('formatExpectedToolKinds', () => {
   });
 
   it('formats the conical family with Oxford-comma "or"', () => {
-    expect(formatExpectedToolKinds('chamfer')).toBe('V-bit, engraver, or tapered (Kegel)');
+    expect(formatExpectedToolKinds('chamfer')).toBe('V-bit, engraver, or tapered');
   });
 
   it('formats three+ items with Oxford-comma "or"', () => {

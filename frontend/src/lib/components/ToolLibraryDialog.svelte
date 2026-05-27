@@ -1797,6 +1797,26 @@
                       }}
                     />
                   </label>
+                  <label>
+                    <span>Kerf (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="—"
+                      value={tool.kerfMm ?? ''}
+                      title="Plasma cut width (kerf). The toolpath is offset by kerf/2 so the cut edge lands on the geometry — the same compensation a milling cutter gets from its diameter. Measure on your actual stock/amperage. Empty = no kerf compensation (cut on the nominal path)."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        if (v === '') {
+                          updateField(i, 'kerfMm', undefined);
+                          return;
+                        }
+                        const n = parseFloat(v);
+                        updateField(i, 'kerfMm', isNaN(n) || n <= 0 ? undefined : n);
+                      }}
+                    />
+                  </label>
                 </div>
               {/if}
             </div>

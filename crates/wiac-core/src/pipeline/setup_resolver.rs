@@ -353,6 +353,18 @@ pub(in crate::pipeline) fn synthesize_op_setup(
             tool.vcarve_lead_in_angle_deg,
         ),
     };
+    // 2606: plasma kerf compensation. In Plasma mode the cut width is the
+    // torch kerf, not a physical tool diameter — so override the effective
+    // cutting diameter to `kerf_mm`. The offset cascade then compensates
+    // the cut path by `kerf_mm / 2` (Profile Outside/Inside semantics
+    // handled by the same machinery as a milling tool's radius), instead
+    // of using the dummy tool diameter. Only when a kerf is configured;
+    // otherwise the nominal diameter stands.
+    if matches!(setup.machine.mode, MachineMode::Plasma) {
+        if let Some(kerf) = tool.kerf_mm.filter(|k| *k > 0.0) {
+            setup.tool.diameter = kerf;
+        }
+    }
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
         OpKind::Pocket { .. } => ToolOffset::None,
@@ -940,6 +952,42 @@ mod tests {
         let mut op = profile_op(1, 1, ToolOffset::Outside);
         op.params.step = Some(0.0);
         assert!(effective_step(&op, &tool).is_err());
+    }
+
+    /// 2606: in Plasma mode the effective cutting diameter the offset
+    /// cascade uses is the torch KERF (cut width), not the nominal /
+    /// dummy tool diameter — so a Profile cut is compensated by kerf/2.
+    /// No kerf configured ⇒ the nominal diameter stands. Mill mode is
+    /// never affected.
+    #[test]
+    fn plasma_kerf_overrides_effective_cut_diameter() {
+        use crate::cam::setup::MachineMode;
+        let mut tool = endmill(1, 10.0); // dummy 10 mm "tool" diameter
+        tool.kerf_mm = Some(2.0);
+        let op = profile_op(1, 1, ToolOffset::Outside);
+
+        // Mill mode: the nominal diameter is used (offset = 5 mm).
+        let mut project = project_with(vec![op.clone()], vec![tool.clone()]);
+        project.machine.mode = MachineMode::Mill;
+        let setup = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+        assert!((setup.tool.diameter - 10.0).abs() < 1e-9);
+
+        // Plasma mode: the kerf wins (offset = kerf/2 = 1 mm).
+        project.machine.mode = MachineMode::Plasma;
+        let setup_p = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+        assert!(
+            (setup_p.tool.diameter - 2.0).abs() < 1e-9,
+            "plasma kerf should override effective cut diameter, got {}",
+            setup_p.tool.diameter
+        );
+
+        // Plasma but no kerf configured: nominal diameter stands.
+        let mut tool_nk = endmill(1, 10.0);
+        tool_nk.kerf_mm = None;
+        let mut project_nk = project_with(vec![op.clone()], vec![tool_nk]);
+        project_nk.machine.mode = MachineMode::Plasma;
+        let setup_nk = synthesize_op_setup(&op, &project_nk, &mut Vec::new()).unwrap();
+        assert!((setup_nk.tool.diameter - 10.0).abs() < 1e-9);
     }
 
     #[test]

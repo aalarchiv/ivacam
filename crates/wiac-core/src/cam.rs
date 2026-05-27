@@ -26,6 +26,7 @@ pub mod offsets;
 pub mod setup;
 pub mod source_combine;
 pub mod surface;
+pub mod surface_mill;
 pub mod tabs;
 pub mod thread;
 pub mod trochoidal;

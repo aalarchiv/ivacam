@@ -748,76 +748,20 @@ where
         // from the cache. Exit state is captured/restored separately.
         post.reset_state();
 
-        // o3od: specialty drivers (VCarve / Thread / Halfpipe) all have
-        // structural "no output" cases (open source polylines, no closed
-        // circles, etc.) that produce ZERO cut moves. Without this
-        // pre-check the M6 envelope (M5+dwell → M6 → z-shift → M3+dwell)
-        // still fired for the no-output op — the operator hand-swapped
-        // the cutter, the spindle warmed up, then NOTHING happened.
-        // Probe the source for emit-ability and gate the envelope on it.
-        // The driver still runs (so any "no output" warning still
-        // surfaces); we just don't burn the tool-swap overhead on it.
-        let specialty_will_emit = match &op.kind {
-            OpKind::VCarve { .. } => vcarve_would_emit(op, objects),
-            OpKind::Thread { .. } => thread_would_emit(op, objects),
-            OpKind::Pocket {
-                strategy: PocketStrategy::Halfpipe { .. },
-                ..
-            } => halfpipe_would_emit(op, objects),
-            // f60x: relief surfacing emits only when its referenced source
-            // exists and is non-empty.
-            OpKind::ReliefMill { .. } => relief_would_emit(op, project),
-            // Non-specialty ops keep the existing behaviour — the
-            // standard-op offset cascade has its own emptiness guards
-            // and the M6 still helps surface intent on multi-tool
-            // programs even when the cascade produces nothing.
-            _ => true,
-        };
+        // o3od: specialty drivers have structural "no output" cases (open
+        // source polylines, no closed circles, missing relief source) that
+        // emit ZERO cut moves. Gate the M6 envelope on emit-ability so we
+        // don't warm up the spindle and burn a hand-swap on a no-output op.
+        // The driver still runs, so any "no output" warning still surfaces.
+        let will_emit = specialty_will_emit(op, project, objects);
 
-        // k2ew: emit M6 toolchange BEFORE body_marker so the M6 is
-        // NOT captured into the per-op cache body — the M6 decision
-        // depends on prev_tool_id which is runtime state, not op
-        // state. On cache hit we still get this block; on cache miss
-        // the body that follows starts at body_marker. Skip Pause ops
-        // entirely (no tool, no toolchange — and they don't reset
-        // prev_tool_id either).
-        if !matches!(op.kind, OpKind::Pause { .. }) && specialty_will_emit {
-            let tool_changes = prev_tool_id != Some(op.tool_id);
-            if tool_changes {
-                if let Some(tool) = tool_index.get(&op.tool_id).copied() {
-                    // Setup synthesis maps ToolEntry.id → ToolConfig.number
-                    // 1:1 (setup_resolver), so tool.id is the spindle
-                    // tool number we want here.
-                    //
-                    // bd eaeq/m8sq/rwv8/rfow: wrap the toolchange in the
-                    // safety envelope (safe-Z → M5+dwell → M6 → z-shift
-                    // → M3+dwell). The helper handles both the
-                    // toolchange-capable and manual-swap branches; the
-                    // tool's Z shift is applied as part of the envelope
-                    // so the work-Z=0 line still matches the newly-
-                    // loaded tool.
-                    let is_first_tool = prev_tool_id.is_none();
-                    if project.machine.supports_toolchange {
-                        post.comment(&format!(
-                            "toolchange: T{} ({}) for op {} ({})",
-                            tool.id, tool.name, op.id, op.name
-                        ));
-                    }
-                    emit_toolchange_envelope(
-                        post,
-                        &project.machine,
-                        header_setup,
-                        Some(tool),
-                        tool.id,
-                        is_first_tool,
-                        // Inter-op boundary: the next op's resolved cut
-                        // speed isn't synthesized at this site, so fall
-                        // back to the tool's library speed (liyy).
-                        None,
-                    );
-                }
-                prev_tool_id = Some(op.tool_id);
-            }
+        // k2ew: emit the M6 toolchange envelope BEFORE body_marker so it is
+        // NOT captured into the per-op cache body — the decision depends on
+        // prev_tool_id, which is runtime state, not op state. Pause ops have
+        // no tool and don't reset prev_tool_id; no-emit ops skip the swap.
+        if !matches!(op.kind, OpKind::Pause { .. }) && will_emit {
+            prev_tool_id =
+                emit_boundary_toolchange(op, project, header_setup, &tool_index, post, prev_tool_id);
         }
         let body_marker = post.out_lines_count();
 
@@ -916,22 +860,9 @@ where
                     s.0 += cached.closed_count;
                     s.1 += cached.offset_count;
                 }
-                // k2ew + nguf: end-of-op prev_tool_id update mirrors
-                // the fresh-emit path — only bias to finish_id when
-                // the cached body actually contained the internal
-                // toolchange envelope. A cached body for a dual-tool
-                // op that fell through to single-emit (no finish
-                // offsets) leaves prev_tool_id == op.tool_id so the
-                // next same-rough-tool op correctly elides its M6.
-                if cached.internal_swap_emitted {
-                    if let Some(finish_id) = op.finish_tool_id {
-                        if finish_id != op.tool_id {
-                            prev_tool_id = Some(finish_id);
-                        }
-                    }
-                } else {
-                    prev_tool_id = Some(op.tool_id);
-                }
+                // k2ew + nguf: end-of-op tool bookkeeping, shared with the
+                // fresh-emit path via next_prev_tool_id.
+                prev_tool_id = Some(next_prev_tool_id(op, cached.internal_swap_emitted));
                 emitted_ops += 1;
                 progress(
                     "gcode",
@@ -954,76 +885,25 @@ where
         let warn_start = warnings.len();
         let mut setup = synthesize_op_setup(op, project, warnings)?;
         resolve_auto_helix_radius(op, objects, &mut setup, warnings);
-        let mut closed_count_emitted: usize = 0;
-        let mut offset_count_emitted: usize = 0;
-        // nguf: tracks whether the kind-specific driver actually
-        // emitted an internal dual-tool envelope. Only set by the
-        // standard-op path (VCarve / Thread / Halfpipe don't dual-tool).
-        let mut internal_swap_emitted = false;
-        if matches!(op.kind, OpKind::VCarve { .. }) {
-            post.raw(&format!("; OP {}", op.id));
-            run_vcarve_op(
-                op,
-                project,
-                objects,
-                &setup,
-                post,
-                &mut last_pos,
-                warnings,
-                cancel,
-            )?;
-        } else if matches!(op.kind, OpKind::Thread { .. }) {
-            post.raw(&format!("; OP {}", op.id));
-            run_thread_op(
-                op,
-                project,
-                objects,
-                &setup,
-                post,
-                &mut last_pos,
-                warnings,
-                cancel,
-            )?;
-        } else if matches!(
-            op.kind,
-            OpKind::Pocket {
-                strategy: PocketStrategy::Halfpipe { .. },
-                ..
-            }
-        ) {
-            post.raw(&format!("; OP {}", op.id));
-            run_halfpipe_op(
-                op,
-                project,
-                objects,
-                &setup,
-                post,
-                &mut last_pos,
-                warnings,
-                cancel,
-            )?;
-        } else if matches!(op.kind, OpKind::ReliefMill { .. }) {
-            // f60x: 3-axis ball-nose relief surfacing — own drop-cutter
-            // driver, like Halfpipe/VCarve it emits XYZ blocks directly.
-            post.raw(&format!("; OP {}", op.id));
-            run_relief_op(op, project, &setup, post, &mut last_pos, warnings, cancel)?;
-        } else {
-            let (closed_count, offset_count, swapped) = run_standard_op(
-                op,
-                project,
-                objects,
-                &setup,
-                post,
-                &mut last_pos,
-                warnings,
-                cancel,
-            )?;
-            closed_count_emitted = closed_count;
-            offset_count_emitted = offset_count;
-            internal_swap_emitted = swapped;
+        // Dispatch to the per-kind driver. Specialty drivers (VCarve /
+        // Thread / Halfpipe / ReliefMill) emit XYZ blocks directly and
+        // report no offset stats; the standard cascade reports closed /
+        // offset counts and whether it emitted an internal dual-tool
+        // (rough→finish) swap (nguf).
+        let (closed_count_emitted, offset_count_emitted, internal_swap_emitted) = run_op_driver(
+            op,
+            project,
+            objects,
+            &setup,
+            post,
+            &mut last_pos,
+            warnings,
+            cancel,
+        )?;
+        {
             let mut s = stats.borrow_mut();
-            s.0 += closed_count;
-            s.1 += offset_count;
+            s.0 += closed_count_emitted;
+            s.1 += offset_count_emitted;
         }
         if let (Some(c), Some(key)) = (cache, cache_key) {
             let lines = post.out_lines_clone_from(body_marker);
@@ -1047,29 +927,8 @@ where
                 },
             );
         }
-        // k2ew + nguf: end-of-op prev_tool_id update. Only bias to
-        // the finish id when the driver actually emitted the internal
-        // rough→finish (or drill→chamfer) envelope. Otherwise — same
-        // tool, no finish_tool_id, or dual_tool fell through to
-        // single-emit (no finish offsets / chamfer_z ≈ 0) — keep
-        // prev_tool_id == op.tool_id so the next same-rough-tool op
-        // correctly elides its M6.
-        //
-        // The previous "pessimistic" bias to finish_id whenever
-        // finish_tool_id was set caused a real bug: if dual_tool
-        // skipped the swap, the next op asking for the rough tool
-        // saw prev_tool_id == finish_id, said "tool changes — skip",
-        // and ran the cutter with the wrong T number still in the
-        // spindle.
-        if internal_swap_emitted {
-            if let Some(finish_id) = op.finish_tool_id {
-                if finish_id != op.tool_id {
-                    prev_tool_id = Some(finish_id);
-                }
-            }
-        } else {
-            prev_tool_id = Some(op.tool_id);
-        }
+        // k2ew + nguf: end-of-op tool bookkeeping (see next_prev_tool_id).
+        prev_tool_id = Some(next_prev_tool_id(op, internal_swap_emitted));
         emitted_ops += 1;
         progress(
             "gcode",
@@ -1083,6 +942,131 @@ where
     }
     emit_program_end(header_setup, post);
     Ok(post.finish())
+}
+
+/// o3od: whether the op's kind-specific driver will emit any cut moves.
+/// Specialty drivers have structural "no output" cases; standard ops have
+/// their own emptiness guards downstream and always report `true` here so
+/// the inter-op M6 still surfaces intent on multi-tool programs.
+fn specialty_will_emit(op: &Op, project: &Project, objects: &[VcObject]) -> bool {
+    match &op.kind {
+        OpKind::VCarve { .. } => vcarve_would_emit(op, objects),
+        OpKind::Thread { .. } => thread_would_emit(op, objects),
+        OpKind::Pocket {
+            strategy: PocketStrategy::Halfpipe { .. },
+            ..
+        } => halfpipe_would_emit(op, objects),
+        // f60x: relief surfacing emits only when its referenced source exists.
+        OpKind::ReliefMill { .. } => relief_would_emit(op, project),
+        _ => true,
+    }
+}
+
+/// At an op boundary, emit the toolchange safety envelope (safe-Z →
+/// M5+dwell → M6 → z-shift → M3+dwell) when the primary tool changes, and
+/// return the updated `prev_tool_id`. When the tool is unknown we still
+/// advance `prev_tool_id` (matching the historical behaviour) but skip the
+/// envelope. Setup synthesis maps `ToolEntry.id` → `ToolConfig.number` 1:1,
+/// so `tool.id` is the spindle tool number. See eaeq / m8sq / rwv8 / rfow.
+fn emit_boundary_toolchange<P: PostProcessor>(
+    op: &Op,
+    project: &Project,
+    header_setup: &Setup,
+    tool_index: &HashMap<u32, &ToolEntry>,
+    post: &mut P,
+    prev_tool_id: Option<u32>,
+) -> Option<u32> {
+    if prev_tool_id == Some(op.tool_id) {
+        return prev_tool_id;
+    }
+    if let Some(tool) = tool_index.get(&op.tool_id).copied() {
+        let is_first_tool = prev_tool_id.is_none();
+        if project.machine.supports_toolchange {
+            post.comment(&format!(
+                "toolchange: T{} ({}) for op {} ({})",
+                tool.id, tool.name, op.id, op.name
+            ));
+        }
+        emit_toolchange_envelope(
+            post,
+            &project.machine,
+            header_setup,
+            Some(tool),
+            tool.id,
+            is_first_tool,
+            // Inter-op boundary: the next op's resolved cut speed isn't
+            // synthesized at this site, so fall back to the tool's library
+            // speed (liyy).
+            None,
+        );
+    }
+    Some(op.tool_id)
+}
+
+/// Dispatch one op to its kind-specific driver. Specialty drivers emit XYZ
+/// blocks directly (prefixed with the `; OP <id>` marker) and report no
+/// offset stats; the standard cascade returns `(closed_count, offset_count,
+/// internal_swap_emitted)`. `internal_swap_emitted` (nguf) is only ever set
+/// by the standard path — the specialty drivers don't dual-tool.
+#[allow(clippy::too_many_arguments)]
+fn run_op_driver<P: PostProcessor>(
+    op: &Op,
+    project: &Project,
+    objects: &[VcObject],
+    setup: &Setup,
+    post: &mut P,
+    last_pos: &mut Point2,
+    warnings: &mut Vec<PipelineWarning>,
+    cancel: Option<&CancelToken>,
+) -> Result<(usize, usize, bool), PipelineError> {
+    match &op.kind {
+        OpKind::VCarve { .. } => {
+            post.raw(&format!("; OP {}", op.id));
+            run_vcarve_op(op, project, objects, setup, post, last_pos, warnings, cancel)?;
+            Ok((0, 0, false))
+        }
+        OpKind::Thread { .. } => {
+            post.raw(&format!("; OP {}", op.id));
+            run_thread_op(op, project, objects, setup, post, last_pos, warnings, cancel)?;
+            Ok((0, 0, false))
+        }
+        OpKind::Pocket {
+            strategy: PocketStrategy::Halfpipe { .. },
+            ..
+        } => {
+            post.raw(&format!("; OP {}", op.id));
+            run_halfpipe_op(op, project, objects, setup, post, last_pos, warnings, cancel)?;
+            Ok((0, 0, false))
+        }
+        // f60x: 3-axis ball-nose relief surfacing — own drop-cutter driver,
+        // like Halfpipe/VCarve it emits XYZ blocks directly.
+        OpKind::ReliefMill { .. } => {
+            post.raw(&format!("; OP {}", op.id));
+            run_relief_op(op, project, setup, post, last_pos, warnings, cancel)?;
+            Ok((0, 0, false))
+        }
+        _ => run_standard_op(op, project, objects, setup, post, last_pos, warnings, cancel),
+    }
+}
+
+/// End-of-op tool bookkeeping: the tool id the spindle holds after this op,
+/// shared by the cache-hit and fresh-emit paths. Bias to the finish tool
+/// ONLY when the driver actually emitted the internal rough→finish (or
+/// drill→chamfer) envelope (nguf); otherwise keep the rough tool so the next
+/// same-tool op correctly elides its M6 (k2ew). The previous "pessimistic"
+/// bias to `finish_id` whenever `finish_tool_id` was set caused a real bug: a
+/// `dual_tool` op that skipped the swap left the held tool == `finish_id`, so
+/// the next op asking for the rough tool saw "tool changes — skip" and cut
+/// with the wrong T still in the spindle.
+fn next_prev_tool_id(op: &Op, internal_swap_emitted: bool) -> u32 {
+    if internal_swap_emitted {
+        if let Some(finish_id) = op.finish_tool_id {
+            if finish_id != op.tool_id {
+                return finish_id;
+            }
+        }
+    }
+    op.tool_id
 }
 
 // 56a: resolve_op_segments / ordered_selection / source_combine_mode /

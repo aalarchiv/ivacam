@@ -350,7 +350,7 @@
         (kind === 'v_bit' || kind === 'engraver' || kind === 'kegel') &&
         next.tipAngleDeg === undefined
       ) {
-        // Kegel/tapered bits are commonly steeper than engraving V-bits;
+        // Tapered bits are commonly steeper than engraving V-bits;
         // 30° is a sensible tapered-endmill default vs 60° for V/engrave.
         next.tipAngleDeg = kind === 'kegel' ? 30 : 60;
       }
@@ -519,7 +519,7 @@
     bull_nose: 'Bull-nose (radius)',
     compression: 'Compression',
     form_profile: 'Form / profile',
-    kegel: 'Kegel (tapered)',
+    kegel: 'Tapered',
     thread_mill: 'Thread mill',
   };
   const coolantLabels: Record<CoolantMode, string> = {
@@ -858,7 +858,7 @@
                     min="0"
                     placeholder="—"
                     value={tool.lengthMm ?? ''}
-                    title="dhh0: overall / usable tool length (mm), tip to where the shank enters the collet (Estlcam Length). Display + 3D-preview only — it does NOT change the gcode (reach is driven by flute length + stickout + holder). Sets the preview tool's total height. Empty = diameter-derived heuristic."
+                    title="Overall / usable tool length (mm), tip to where the shank enters the collet. Display + 3D-preview only — it does NOT change the gcode (reach is driven by flute length + stickout + holder). Sets the preview tool's total height. Empty = diameter-derived heuristic."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'lengthMm', v === '' ? undefined : parseFloat(v));
@@ -1291,8 +1291,8 @@
               <div class="holder-row pass-overrides">
                 <span
                   class="holder-label"
-                  title="szy0: Face-mill helical overlay (Estlcam Flooper, formerly labelled 'Wirbeln'). When enabled with an Extra width > 0, every cut move with this tool is subdivided and the cutter centerline spirals around the toolpath — bounded engagement at every point, for chip-thinning on hard material. NOTE: this is NOT thread-whirling (a lathe technique). To cut threads, use a Thread operation with a thread-mill tool. Set Extra width to the spiral diameter (Estlcam Wirbelzusatzbreite), Stride to the path distance per revolution, Osc to a small Z-wobble for chip clearance."
-                  >Face-mill overlay (Flooper)</span
+                  title="Whirling (orbital milling) overlay. When enabled with an Extra width > 0, every cut move with this tool is subdivided and the cutter orbits in a helical spiral around the toolpath — keeping radial engagement bounded at every point, for chip-thinning on hard material. This is milling whirling, not lathe thread-whirling; to cut threads use a Thread operation with a thread-mill tool. Set Extra width to the orbit diameter, Stride to the path distance per revolution, Z-wobble to a small dip for chip clearance."
+                  >Whirling</span
                 >
               </div>
               <div class="holder-row">
@@ -1314,7 +1314,7 @@
                     placeholder="0"
                     value={tool.wirbelnExtraWidthMm ?? ''}
                     disabled={!tool.wirbeln}
-                    title="Estlcam Wirbelzusatzbreite — diameter (mm) by which the spiral overlay widens the cut. Empty / 0 ⇒ overlay disabled (the face-mill overlay is a no-op)."
+                    title="Diameter (mm) by which the whirling orbit widens the cut. Empty / 0 ⇒ overlay disabled (whirling is a no-op)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'wirbelnExtraWidthMm', v === '' ? undefined : parseFloat(v));
@@ -1399,7 +1399,7 @@
                       min="0"
                       placeholder="flute midpoint"
                       value={tool.compressionTransitionMm ?? ''}
-                      title="dhh0: height above the tip where the down-cut flutes flip to up-cut (Estlcam Obenunten). Set to your stock thickness so the flip lands at the bottom face. Display + preview only in v1 — it does NOT change the cut cross-section. Empty = the preview assumes the flute midpoint."
+                      title="Height above the tip where the down-cut flutes flip to up-cut. Set to your stock thickness so the flip lands at the bottom face. Display + preview only in v1 — it does NOT change the cut cross-section. Empty = the preview assumes the flute midpoint."
                       onchange={(e) => {
                         const v = (e.currentTarget as HTMLInputElement).value;
                         updateField(
@@ -1416,7 +1416,7 @@
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
-                    title="Single-point thread mill (Estlcam Gewinde): cuts threads by helical interpolation. The tip ∠ in the main row is the thread flank angle (60° metric / 55° Whitworth)."
+                    title="Single-point thread mill: cuts threads by helical interpolation. The tip ∠ in the main row is the thread flank angle (60° metric / 55° Whitworth)."
                     >Thread mill</span
                   >
                 </div>
@@ -1429,7 +1429,7 @@
                       min="0"
                       placeholder="—"
                       value={tool.threadPitchMm ?? ''}
-                      title="gm1u: thread pitch (mm) — the axial advance per orbit (Estlcam Pitch). e.g. 1.0 for M6×1, 1.5 for M10×1.5. Drives the helical Z-advance of the Thread op."
+                      title="Thread pitch (mm) — the axial advance per orbit. e.g. 1.0 for M6×1, 1.5 for M10×1.5. Drives the helical Z-advance of the Thread op."
                       onchange={(e) => {
                         const v = (e.currentTarget as HTMLInputElement).value;
                         updateField(i, 'threadPitchMm', v === '' ? undefined : parseFloat(v));

@@ -118,6 +118,12 @@
   } from './lib/state/desktop';
   import { computeFootprint } from './lib/sim/driver';
   import { togglePane, revealPane, type SidebarPane } from './lib/state/sidebar-pane';
+  import {
+    resolveShortcut,
+    nextMenuItemIndex,
+    dragHasFiles,
+    type MenuId,
+  } from './lib/state/app-menu';
 
   /// Live label for the Stock panel summary — shows the current
   /// dimensions inline so the user sees the workpiece size at a glance
@@ -556,57 +562,36 @@
     else redoShakeAt = performance.now();
   }
 
-  function isTypingTarget(t: EventTarget | null): boolean {
-    const el = t as HTMLElement | null;
-    if (!el) return false;
-    const tag = el.tagName ?? '';
-    const editable = el.isContentEditable;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!editable;
-  }
-
+  // Keyboard shortcut dispatch. The decision ("which action?") is the pure
+  // `resolveShortcut` in lib/state/app-menu.ts (unit-tested); App.svelte is
+  // the shell that performs the component-coupled effect for each action.
   function onKeyDown(e: KeyboardEvent) {
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && !e.altKey) {
-      const k = e.key.toLowerCase();
-      if (k === 'z' && !e.shiftKey) {
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
+    const res = resolveShortcut(e);
+    if (!res) return;
+    if (res.preventDefault) e.preventDefault();
+    switch (res.action) {
+      case 'undo':
         if (!project.undo()) shake('undo');
-        return;
-      }
-      if ((k === 'y' && !e.shiftKey) || (k === 'z' && e.shiftKey)) {
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
+        break;
+      case 'redo':
         if (!project.redo()) shake('redo');
-        return;
-      }
-      if (k === 'o' && !e.shiftKey) {
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
+        break;
+      case 'open':
         void openFile();
-        return;
-      }
-      if (k === 's' && !e.shiftKey) {
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
+        break;
+      case 'save':
         void saveProject();
-        return;
-      }
-    }
-    if (e.key === 'Escape') {
-      if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
-      closeAllMenus();
-      return;
-    }
-    if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (isTypingTarget(e.target)) return;
-      addTextOpen = true;
-      e.preventDefault();
-    }
-    if ((e.key === '?' || e.key === 'F1') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (isTypingTarget(e.target)) return;
-      shortcutHelpOpen = true;
-      e.preventDefault();
+        break;
+      case 'escape':
+        if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
+        closeAllMenus();
+        break;
+      case 'add-text':
+        addTextOpen = true;
+        break;
+      case 'shortcut-help':
+        shortcutHelpOpen = true;
+        break;
     }
   }
 
@@ -616,7 +601,6 @@
   const canRedo = $derived(project.canRedo());
 
   // ---- Menu bar ---------------------------------------------------------
-  type MenuId = 'file' | 'edit' | 'view' | 'tools' | 'help';
   let openMenu = $state<MenuId | null>(null);
   function toggleMenu(id: MenuId) {
     openMenu = openMenu === id ? null : id;
@@ -643,15 +627,10 @@
     const items = Array.from(
       dropdown.querySelectorAll<HTMLElement>('button[role="menuitem"]:not(:disabled)'),
     );
-    if (items.length === 0) return;
     const active = document.activeElement as HTMLElement | null;
     const idx = active ? items.indexOf(active) : -1;
-    let next = idx;
-    if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
-    else if (e.key === 'ArrowUp') next = idx <= 0 ? items.length - 1 : idx - 1;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = items.length - 1;
-    else return;
+    const next = nextMenuItemIndex(e.key, idx, items.length);
+    if (next === null) return;
     e.preventDefault();
     items[next]?.focus();
   }
@@ -673,26 +652,23 @@
   // cursor crosses child elements.
   let dragOver = $state(false);
   let dragDepth = 0;
-  function hasFiles(e: DragEvent): boolean {
-    return !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
-  }
   function onDragEnter(e: DragEvent) {
-    if (!hasFiles(e)) return;
+    if (!dragHasFiles(e)) return;
     dragDepth += 1;
     dragOver = true;
   }
   function onDragOver(e: DragEvent) {
-    if (!hasFiles(e)) return;
+    if (!dragHasFiles(e)) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
   }
   function onDragLeave(e: DragEvent) {
-    if (!hasFiles(e)) return;
+    if (!dragHasFiles(e)) return;
     dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) dragOver = false;
   }
   async function onDrop(e: DragEvent) {
-    if (!hasFiles(e)) return;
+    if (!dragHasFiles(e)) return;
     e.preventDefault();
     dragOver = false;
     dragDepth = 0;

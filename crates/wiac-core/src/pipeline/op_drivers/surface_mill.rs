@@ -89,6 +89,15 @@ pub(in crate::pipeline) fn run_relief_op<P: PostProcessor>(
     if radius <= 0.0 {
         return Ok(());
     }
+    // izvd: a bull-nose surfaces with its corner-fillet tip (flat centre +
+    // rounded corner); a ball-nose is the full-hemisphere case (corner =
+    // radius). The drop-cutter + scallop use this corner radius.
+    let corner_radius = match tool.kind {
+        crate::project::ToolKind::BullNose => {
+            tool.corner_radius_mm.unwrap_or(0.0).clamp(0.0, radius)
+        }
+        _ => radius,
+    };
 
     // Ceiling: the shallowest of the two range ends, never above the stock
     // top. Floor: the deeper end, clamped to what the flutes can reach.
@@ -120,6 +129,7 @@ pub(in crate::pipeline) fn run_relief_op<P: PostProcessor>(
     );
     let params = SurfaceMillParams {
         tool_radius_mm: radius,
+        corner_radius_mm: corner_radius,
         scallop_height_mm: *scallop_height_mm,
         stepover_mm: *stepover_mm,
         along_step_mm: *along_step_mm,

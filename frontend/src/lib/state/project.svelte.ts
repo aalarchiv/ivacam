@@ -1431,7 +1431,8 @@ class ProjectState {
     // geometry — skip the offset/contour defaults. Prefer a ball-nose
     // tool; bind to the first loaded relief source (0 = none yet).
     if (kind === 'relief_mill') {
-      const ball = this.tools.find((t) => t.kind === 'ball_nose') ?? this.tools[0];
+      const ball =
+        this.tools.find((t) => t.kind === 'ball_nose' || t.kind === 'bull_nose') ?? this.tools[0];
       const reliefOp: OpEntry = {
         id: nextId,
         name: prettyOpKind(kind),

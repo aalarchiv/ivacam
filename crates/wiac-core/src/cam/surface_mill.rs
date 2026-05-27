@@ -66,8 +66,12 @@ pub enum ScanDirection {
 /// (`max(op.depth, -flute_reach)`), `z_top_mm` the ceiling (stock top, 0).
 #[derive(Debug, Clone, Copy)]
 pub struct SurfaceMillParams {
-    /// Ball-nose radius (mm). Must be > 0.
+    /// Cutting radius (mm). Must be > 0.
     pub tool_radius_mm: f64,
+    /// Tip corner radius (mm) — `tool_radius_mm` for a ball-nose, smaller
+    /// for a bull-nose, 0 for a flat endmill (izvd). Drives the tip drop
+    /// profile and the scallop stepover. Clamped to `[0, tool_radius_mm]`.
+    pub corner_radius_mm: f64,
     /// Target scallop height between adjacent passes (mm). Drives the
     /// stepover via [`stepover_from_scallop`] unless `stepover_mm` overrides.
     pub scallop_height_mm: f64,
@@ -87,17 +91,34 @@ pub struct SurfaceMillParams {
     pub z_top_mm: f64,
 }
 
-/// The ball's surface height above its tip at radial offset `d_mm`:
-/// `R − √(R² − d²)` for `d ≤ R`, and `R` (the equator height) beyond. This
-/// is the [`crate::sim::heightmap::ToolProfile::BallNose`] profile, lifted
-/// here so the drop-cutter and the sim agree on the cutter shape.
+/// A bull-nose / ball-nose tip's surface height above its lowest point at
+/// radial offset `d_mm` (izvd). The tip is flat across the center out to
+/// `radius − corner`, then a quarter-arc fillet of radius `corner` up to the
+/// full `radius`; beyond `radius` it saturates at `corner` (the fillet's
+/// equator). `corner` is clamped to `[0, radius]`, so:
+///   * `corner == radius` → a ball-nose: `R − √(R² − d²)` (matches the sim's
+///     `ToolProfile::BallNose`);
+///   * `corner == 0` → a flat endmill: `0` across the whole flat bottom;
+///   * `0 < corner < radius` → a true bull-nose.
+#[must_use]
+pub fn tip_drop_offset(radius_mm: f64, corner_radius_mm: f64, d_mm: f64) -> f64 {
+    let corner = corner_radius_mm.clamp(0.0, radius_mm);
+    let flat = radius_mm - corner;
+    if d_mm <= flat {
+        0.0
+    } else if d_mm >= radius_mm {
+        corner
+    } else {
+        let a = d_mm - flat;
+        corner - (corner * corner - a * a).max(0.0).sqrt()
+    }
+}
+
+/// Ball-nose drop profile — the `corner == radius` case of
+/// [`tip_drop_offset`]. Kept for callers / tests that model a pure ball.
 #[must_use]
 pub fn ball_drop_offset(radius_mm: f64, d_mm: f64) -> f64 {
-    if d_mm >= radius_mm {
-        radius_mm
-    } else {
-        radius_mm - (radius_mm * radius_mm - d_mm * d_mm).max(0.0).sqrt()
-    }
+    tip_drop_offset(radius_mm, radius_mm, d_mm)
 }
 
 /// Stepover (mm) that leaves a given scallop height between two adjacent
@@ -122,30 +143,41 @@ fn target_signed(field: &SurfaceField, ix: i64, iy: i64) -> f32 {
     }
 }
 
-/// Precomputed ball footprint: `(dx, dy, offset)` for every cell whose
-/// center lies within `R` of the axis.
-fn ball_kernel(radius_mm: f64, cell: f64) -> Vec<(i32, i32, f32)> {
+/// Precomputed tip footprint: `(dx, dy, offset)` for every cell whose
+/// center lies within `R` of the axis, using the bull-nose / ball-nose tip
+/// profile ([`tip_drop_offset`]).
+fn tip_kernel(radius_mm: f64, corner_radius_mm: f64, cell: f64) -> Vec<(i32, i32, f32)> {
     let kr = (radius_mm / cell).ceil() as i32;
     let mut k = Vec::with_capacity(((2 * kr + 1) * (2 * kr + 1)) as usize);
     for dy in -kr..=kr {
         for dx in -kr..=kr {
             let dmm = (((dx as f64) * cell).powi(2) + ((dy as f64) * cell).powi(2)).sqrt();
             if dmm <= radius_mm {
-                k.push((dx, dy, ball_drop_offset(radius_mm, dmm) as f32));
+                k.push((
+                    dx,
+                    dy,
+                    tip_drop_offset(radius_mm, corner_radius_mm, dmm) as f32,
+                ));
             }
         }
     }
     k
 }
 
-/// Compute the "dropped" field: tip Z at every cell such that a ball of
-/// `tool_radius_mm` touches the target but never gouges it. The result has
-/// the same grid as `field`; every cell satisfies `dropped ≥ target` (the
-/// `d = 0` kernel term, whose offset is 0). Panics if `tool_radius_mm ≤ 0`.
+/// Compute the "dropped" field: tip Z at every cell such that a tool of
+/// `tool_radius_mm` with the given `corner_radius_mm` (= radius for a ball-
+/// nose, < radius for a bull-nose, 0 for a flat endmill) touches the target
+/// but never gouges it. The result has the same grid as `field`; every cell
+/// satisfies `dropped ≥ target` (the `d = 0` kernel term, whose offset is
+/// 0). Panics if `tool_radius_mm ≤ 0`.
 #[must_use]
-pub fn drop_cutter(field: &SurfaceField, tool_radius_mm: f64) -> SurfaceField {
+pub fn drop_cutter(
+    field: &SurfaceField,
+    tool_radius_mm: f64,
+    corner_radius_mm: f64,
+) -> SurfaceField {
     assert!(tool_radius_mm > 0.0, "tool radius must be > 0");
-    let kernel = ball_kernel(tool_radius_mm, field.cell);
+    let kernel = tip_kernel(tool_radius_mm, corner_radius_mm, field.cell);
     let cols = field.cols as i64;
     let rows = field.rows as i64;
     let mut out = vec![SURFACE_TOP_Z; field.z.len()];
@@ -170,7 +202,14 @@ pub fn drop_cutter(field: &SurfaceField, tool_radius_mm: f64) -> SurfaceField {
 fn effective_stepover(field: &SurfaceField, p: &SurfaceMillParams) -> f64 {
     let s = match p.stepover_mm {
         Some(v) if v > 0.0 => v,
-        _ => stepover_from_scallop(p.tool_radius_mm, p.scallop_height_mm),
+        // izvd: the cusp left between adjacent passes on a sloped relief is
+        // governed by the tip's CURVATURE — the corner radius for a bull-
+        // nose (= full radius for a ball-nose), not the flat diameter.
+        _ => {
+            let tip_r = p.corner_radius_mm.clamp(0.0, p.tool_radius_mm);
+            let r = if tip_r > 0.0 { tip_r } else { p.tool_radius_mm };
+            stepover_from_scallop(r, p.scallop_height_mm)
+        }
     };
     s.max(field.cell * 0.5)
 }
@@ -204,7 +243,7 @@ fn axis_positions(lo: f64, hi: f64, step: f64) -> Vec<f64> {
 #[must_use]
 pub fn surface_mill(field: &SurfaceField, params: &SurfaceMillParams) -> Vec<Vec<(f64, f64, f64)>> {
     assert!(params.tool_radius_mm > 0.0, "tool radius must be > 0");
-    let dropped = drop_cutter(field, params.tool_radius_mm);
+    let dropped = drop_cutter(field, params.tool_radius_mm, params.corner_radius_mm);
     let step = effective_stepover(field, params);
     let along = params.along_step_mm.max(field.cell * 0.25).max(1e-3);
 
@@ -280,6 +319,88 @@ mod tests {
         approx(ball_drop_offset(3.0, 1.5), 3.0 - 6.75_f64.sqrt(), 1e-12);
     }
 
+    /// izvd: the bull-nose tip is flat across the center, then a corner arc.
+    /// R = 4, corner = 1 ⇒ flat out to d = 3, arc from 3..4.
+    #[test]
+    fn tip_drop_offset_bull_nose_flat_center_then_corner_arc() {
+        let r = 4.0;
+        let c = 1.0;
+        // Flat bottom: zero across the center disc (d ≤ R − corner = 3).
+        approx(tip_drop_offset(r, c, 0.0), 0.0, 1e-12);
+        approx(tip_drop_offset(r, c, 3.0), 0.0, 1e-12);
+        // Corner arc midway (d = 3.5, a = 0.5): 1 - sqrt(1 - 0.25).
+        approx(tip_drop_offset(r, c, 3.5), 1.0 - 0.75_f64.sqrt(), 1e-12);
+        // Full radius: corner height. Beyond: saturates at corner.
+        approx(tip_drop_offset(r, c, 4.0), 1.0, 1e-12);
+        approx(tip_drop_offset(r, c, 9.0), 1.0, 1e-12);
+        // corner == radius reduces to the ball; corner == 0 is a flat tip.
+        approx(
+            tip_drop_offset(3.0, 3.0, 1.5),
+            ball_drop_offset(3.0, 1.5),
+            1e-12,
+        );
+        approx(tip_drop_offset(3.0, 0.0, 2.9), 0.0, 1e-12);
+    }
+
+    /// In a concave valley the round ball dips closer to the floor than a
+    /// flatter bull-nose, which bridges the concavity. So the bull-nose
+    /// dropped field is everywhere ≥ the ball's (a smaller tip offset means
+    /// the tool can't reach as deep), strictly higher at the trough — and
+    /// the bull-nose path is still gouge-free.
+    #[test]
+    fn bull_nose_rides_higher_than_ball_in_a_concavity_and_is_gouge_free() {
+        // Symmetric V across X, deepest (-2) at the centre col, 0 at the rims.
+        let cols = 21u32;
+        let rows = 5u32;
+        let mut z = vec![0.0f32; (cols * rows) as usize];
+        for iy in 0..rows {
+            for ix in 0..cols {
+                let dx = ((ix as f32) - 10.0).abs();
+                z[(iy * cols + ix) as usize] = -2.0 + 0.2 * dx;
+            }
+        }
+        let field = SurfaceField::new(Point2::new(0.0, 0.0), 1.0, cols, rows, z);
+        let r = 3.0;
+        let ball = drop_cutter(&field, r, r); // corner == radius
+        let bull = drop_cutter(&field, r, 0.5); // small corner, big flat
+                                                // Bull never reaches below the ball anywhere (smaller offset ⇒
+                                                // higher tip).
+        for (b, a) in bull.z.iter().zip(ball.z.iter()) {
+            assert!(
+                *b + 1e-4 >= *a,
+                "bull-nose dipped below the ball: {b} < {a}"
+            );
+        }
+        // At the trough the round ball dips strictly closer to the floor.
+        let trough = (2 * cols + 10) as usize; // mid row, centre col
+        assert!(
+            ball.z[trough] < bull.z[trough] - 1e-3,
+            "ball should dip deeper into the V than the bull-nose: ball {} vs bull {}",
+            ball.z[trough],
+            bull.z[trough]
+        );
+        // Gouge-free invariant for the bull-nose against the corner profile.
+        for py in 0..rows as i64 {
+            for px in 0..cols as i64 {
+                let dp = target_signed(&bull, px, py);
+                let kr = (r / field.cell).ceil() as i64;
+                for dy in -kr..=kr {
+                    for dx in -kr..=kr {
+                        let dmm = (((dx as f64) * field.cell).powi(2)
+                            + ((dy as f64) * field.cell).powi(2))
+                        .sqrt();
+                        if dmm > r {
+                            continue;
+                        }
+                        let needed = target_signed(&field, px + dx, py + dy) as f64
+                            - tip_drop_offset(r, 0.5, dmm);
+                        assert!(dp as f64 + 1e-4 >= needed, "bull-nose gouge at ({px},{py})");
+                    }
+                }
+            }
+        }
+    }
+
     /// The dropped field never gouges: for every cell `p` and every cell `q`
     /// within the ball footprint, `dropped(p) ≥ target(q) − offset(|p−q|)`.
     /// In particular `dropped ≥ target` everywhere.
@@ -298,7 +419,7 @@ mod tests {
         z[(3 * cols + 3) as usize] = -20.0; // narrow pit
         let field = SurfaceField::new(Point2::new(0.0, 0.0), 1.0, cols, rows, z);
         let r = 2.0;
-        let dropped = drop_cutter(&field, r);
+        let dropped = drop_cutter(&field, r, r);
 
         for py in 0..rows as i64 {
             for px in 0..cols as i64 {
@@ -341,7 +462,7 @@ mod tests {
         let mut z = vec![0.0f32; (cols * rows) as usize];
         z[(4 * cols + 4) as usize] = -20.0;
         let field = SurfaceField::new(Point2::new(0.0, 0.0), 1.0, cols, rows, z);
-        let dropped = drop_cutter(&field, 3.0);
+        let dropped = drop_cutter(&field, 3.0, 3.0);
         // At the pit cell the tip is held up by the ring of 0-height
         // neighbours one cell away: best ≈ -offset(1mm), far above -20.
         let at_pit = dropped.at(4, 4);
@@ -359,7 +480,7 @@ mod tests {
         let rows = 20u32;
         let z = vec![-5.0f32; (cols * rows) as usize];
         let field = SurfaceField::new(Point2::new(0.0, 0.0), 1.0, cols, rows, z);
-        let dropped = drop_cutter(&field, 3.0);
+        let dropped = drop_cutter(&field, 3.0, 3.0);
         // A deep-interior cell, far from the (top-valued) off-grid edge.
         approx(dropped.at(10, 10) as f64, -5.0, 1e-4);
     }
@@ -373,6 +494,7 @@ mod tests {
         let field = SurfaceField::new(Point2::new(0.0, 0.0), 1.0, cols, rows, z);
         let params = SurfaceMillParams {
             tool_radius_mm: 2.0,
+            corner_radius_mm: 2.0,
             scallop_height_mm: 0.0,
             stepover_mm: Some(4.0),
             along_step_mm: 2.0,
@@ -403,6 +525,7 @@ mod tests {
         let field = SurfaceField::new(Point2::new(0.0, 0.0), 1.0, cols, rows, z);
         let params = SurfaceMillParams {
             tool_radius_mm: 1.0,
+            corner_radius_mm: 1.0,
             scallop_height_mm: 0.0,
             stepover_mm: Some(2.0),
             along_step_mm: 1.0,

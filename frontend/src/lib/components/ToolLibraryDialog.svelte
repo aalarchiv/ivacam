@@ -1291,8 +1291,8 @@
               <div class="holder-row pass-overrides">
                 <span
                   class="holder-label"
-                  title="Wirbeln helical-spiral overlay (3e5 / Estlcam Flooper). When enabled with an Extra width > 0, every cut move with this tool is subdivided and the cutter centerline spirals around the toolpath — bounded engagement at every point. Set Extra width to the spiral diameter (Estlcam Wirbelzusatzbreite), Stride to the path distance per revolution, Osc to a small Z-wobble for chip clearance."
-                  >Wirbeln (helical overlay)</span
+                  title="szy0: Face-mill helical overlay (Estlcam Flooper, formerly labelled 'Wirbeln'). When enabled with an Extra width > 0, every cut move with this tool is subdivided and the cutter centerline spirals around the toolpath — bounded engagement at every point, for chip-thinning on hard material. NOTE: this is NOT thread-whirling (a lathe technique). To cut threads, use a Thread operation with a thread-mill tool. Set Extra width to the spiral diameter (Estlcam Wirbelzusatzbreite), Stride to the path distance per revolution, Osc to a small Z-wobble for chip clearance."
+                  >Face-mill overlay (Flooper)</span
                 >
               </div>
               <div class="holder-row">
@@ -1314,7 +1314,7 @@
                     placeholder="0"
                     value={tool.wirbelnExtraWidthMm ?? ''}
                     disabled={!tool.wirbeln}
-                    title="Estlcam Wirbelzusatzbreite — diameter (mm) by which the spiral overlay widens the cut. Empty / 0 ⇒ overlay disabled (Wirbeln is a no-op)."
+                    title="Estlcam Wirbelzusatzbreite — diameter (mm) by which the spiral overlay widens the cut. Empty / 0 ⇒ overlay disabled (the face-mill overlay is a no-op)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'wirbelnExtraWidthMm', v === '' ? undefined : parseFloat(v));

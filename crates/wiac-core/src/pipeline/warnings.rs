@@ -544,8 +544,8 @@ pub(super) fn push_tool_fit_kind_warnings(
             // Engaged depth from the top of the cut (`start_depth`) down to
             // the tip at full depth (`depth`, extended by `through_depth`).
             // `depth` is a negative Z; `start_depth` the (>=) pass start.
-            let cut_depth =
-                (op.params.start_depth - op.params.depth).max(0.0) + op.params.through_depth.max(0.0);
+            let cut_depth = (op.params.start_depth - op.params.depth).max(0.0)
+                + op.params.through_depth.max(0.0);
             if cut_depth > 0.0 && transition >= cut_depth - 1e-9 {
                 warnings.push(PipelineWarning {
                     op_id: Some(op.id),
@@ -974,10 +974,16 @@ mod tests {
         // cut_depth = start_depth(0) - depth(-3) = 3 mm < 8 mm transition → warn.
         let mut shallow = profile_op(1, 1, ToolOffset::Outside);
         shallow.params.depth = -3.0;
-        let project = project_with_segments(closed_square(20.0), vec![shallow.clone()], vec![comp.clone()]);
+        let project = project_with_segments(
+            closed_square(20.0),
+            vec![shallow.clone()],
+            vec![comp.clone()],
+        );
         let mut w = Vec::new();
         push_tool_fit_kind_warnings(&shallow, &project, &setup, &mut w);
-        let hit = w.iter().find(|w| w.kind == "compression_transition_above_cut");
+        let hit = w
+            .iter()
+            .find(|w| w.kind == "compression_transition_above_cut");
         let hit = hit.expect("shallow cut under the transition should warn");
         assert_eq!(hit.op_id, Some(1));
         assert!(
@@ -989,11 +995,13 @@ mod tests {
         // cut_depth = 12 mm > 8 mm transition → both flute zones engaged → no warn.
         let mut deep = profile_op(1, 1, ToolOffset::Outside);
         deep.params.depth = -12.0;
-        let project = project_with_segments(closed_square(20.0), vec![deep.clone()], vec![comp.clone()]);
+        let project =
+            project_with_segments(closed_square(20.0), vec![deep.clone()], vec![comp.clone()]);
         let mut w2 = Vec::new();
         push_tool_fit_kind_warnings(&deep, &project, &setup, &mut w2);
         assert!(
-            !w2.iter().any(|w| w.kind == "compression_transition_above_cut"),
+            !w2.iter()
+                .any(|w| w.kind == "compression_transition_above_cut"),
             "deep cut spanning the transition should not warn: {w2:?}"
         );
 
@@ -1005,7 +1013,8 @@ mod tests {
         let mut w3 = Vec::new();
         push_tool_fit_kind_warnings(&shallow, &project, &setup, &mut w3);
         assert!(
-            !w3.iter().any(|w| w.kind == "compression_transition_above_cut"),
+            !w3.iter()
+                .any(|w| w.kind == "compression_transition_above_cut"),
             "transition-less compression bit should not warn: {w3:?}"
         );
     }

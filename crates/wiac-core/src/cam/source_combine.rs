@@ -330,11 +330,7 @@ fn combine_difference(
 /// Falls back to `selected[0]` when every input is degenerate — at that
 /// point the boolean op will return empty anyway, but we keep the
 /// signature stable.
-fn first_non_degenerate(
-    objects: &[VcObject],
-    selected: &[usize],
-    cache: &mut TessCache,
-) -> usize {
+fn first_non_degenerate(objects: &[VcObject], selected: &[usize], cache: &mut TessCache) -> usize {
     for &idx in selected {
         if let Some(obj) = objects.get(idx) {
             if obj.closed && cache.get(idx, obj).len() >= 3 {
@@ -741,7 +737,10 @@ mod tests {
         // exercised. We test union which actually returns a region.
         let _ = regions; // intersection may be empty; that's fine
         let regions = combine_source_regions(&objs, &selected, SourceCombine::Union);
-        assert!(!regions.is_empty(), "union of valid square should produce a region");
+        assert!(
+            !regions.is_empty(),
+            "union of valid square should produce a region"
+        );
         assert_eq!(
             regions[0].layer.as_ref(),
             "ExpectedLayer",
@@ -790,6 +789,10 @@ mod tests {
             .iter()
             .find(|r| polygon_area(&r.boundary) > 5000.0)
             .expect("expected an outer region with large area");
-        assert_eq!(outer.holes.len(), 1, "outer has the 60x60 as a hole, not the boss");
+        assert_eq!(
+            outer.holes.len(),
+            1,
+            "outer has the 60x60 as a hole, not the boss"
+        );
     }
 }

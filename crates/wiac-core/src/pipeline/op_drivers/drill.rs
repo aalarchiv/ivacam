@@ -280,12 +280,12 @@ fn emit_stufenfase<P: PostProcessor>(
         let needed_arc = chamfer_z.abs() / LEAD_IN_ANGLE_DEG.to_radians().tan();
         let lead_arc = needed_arc.min(circumference);
         let lead_angle = lead_arc / r; // radians swept by the ramp
-        // Lead-in resolution: enough samples to chord-tessellate the
-        // arc to ~1% of `r`. Compute from the angular sweep so short
-        // ramps don't over-sample.
+                                       // Lead-in resolution: enough samples to chord-tessellate the
+                                       // arc to ~1% of `r`. Compute from the angular sweep so short
+                                       // ramps don't over-sample.
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let lead_steps = ((lead_angle / std::f64::consts::TAU * (LEAD_RAMP_STEPS as f64))
-            .ceil() as usize)
+        let lead_steps = ((lead_angle / std::f64::consts::TAU * (LEAD_RAMP_STEPS as f64)).ceil()
+            as usize)
             .max(4);
         let mut ramp: Vec<(f64, f64, f64)> = Vec::with_capacity(lead_steps + 1);
         for i in 0..=lead_steps {
@@ -369,8 +369,8 @@ fn emit_stufenfase<P: PostProcessor>(
 #[cfg(test)]
 mod tests {
     use crate::cam::setup::MachineConfig;
-    use crate::geometry::Point2;
     use crate::cam::setup::ToolOffset;
+    use crate::geometry::Point2;
     use crate::pipeline::test_helpers::{
         closed_circle, closed_square_offset, drill_op, endmill, profile_op, vbit,
     };
@@ -394,6 +394,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -436,6 +437,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -480,6 +482,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -519,6 +522,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -554,6 +558,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -623,6 +628,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -674,6 +680,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -717,6 +724,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -769,6 +777,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -838,6 +847,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -878,6 +888,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -905,7 +916,11 @@ mod tests {
                     || l.starts_with("G83 ")
                     || l.starts_with("G73 ")
             })
-            .next_back().map_or_else(|| panic!("expected a drill cycle line in:\n{}", resp.gcode), |(i, _)| i);
+            .next_back()
+            .map_or_else(
+                || panic!("expected a drill cycle line in:\n{}", resp.gcode),
+                |(i, _)| i,
+            );
         assert!(
             g80_idx > last_drill_idx,
             "G80 (idx {g80_idx}) must come AFTER the last drill cycle (idx {last_drill_idx}):\n{}",
@@ -915,7 +930,11 @@ mod tests {
             .iter()
             .enumerate()
             .skip(last_drill_idx + 1)
-            .find(|(_, l)| l.starts_with("G0 ")).map_or_else(|| panic!("expected a G0 after the drill block in:\n{}", resp.gcode), |(i, _)| i);
+            .find(|(_, l)| l.starts_with("G0 "))
+            .map_or_else(
+                || panic!("expected a G0 after the drill block in:\n{}", resp.gcode),
+                |(i, _)| i,
+            );
         assert!(
             g80_idx < next_g0_after_drill,
             "G80 (idx {g80_idx}) must precede the next G0 (idx {next_g0_after_drill}):\n{}",
@@ -965,6 +984,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -976,10 +996,9 @@ mod tests {
         .unwrap();
         // Find the chamfer block — it's after the drill cycle's G80
         // cancel-canned-cycle marker.
-        let g80_idx = resp
-            .gcode
-            .find("\nG80")
-            .unwrap_or_else(|| panic!("expected G80 between drill and chamfer in:\n{}", resp.gcode));
+        let g80_idx = resp.gcode.find("\nG80").unwrap_or_else(|| {
+            panic!("expected G80 between drill and chamfer in:\n{}", resp.gcode)
+        });
         let chamfer = &resp.gcode[g80_idx..];
         // Locate the first G1 with a Z token AFTER any rapids /
         // straight-Z plunge to start_depth=0. That is the first
@@ -1064,6 +1083,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1076,10 +1096,9 @@ mod tests {
         // The chamfer block follows the drill's G80. Count G1 / G2 / G3
         // tokens AFTER G80 so the canned-cycle output (which doesn't
         // emit cut G1s) doesn't confuse the totals.
-        let g80_idx = resp
-            .gcode
-            .find("\nG80")
-            .unwrap_or_else(|| panic!("expected G80 between drill and chamfer in:\n{}", resp.gcode));
+        let g80_idx = resp.gcode.find("\nG80").unwrap_or_else(|| {
+            panic!("expected G80 between drill and chamfer in:\n{}", resp.gcode)
+        });
         let chamfer = &resp.gcode[g80_idx..];
         let g2_count = chamfer
             .lines()
@@ -1121,6 +1140,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1187,6 +1207,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1215,7 +1236,9 @@ mod tests {
             resp.gcode
         );
         // The main G81 still fires at the main depth -5.
-        let main_g81_at_main_depth = lines.iter().any(|l| l.starts_with("G81 ") && l.contains("Z-5"));
+        let main_g81_at_main_depth = lines
+            .iter()
+            .any(|l| l.starts_with("G81 ") && l.contains("Z-5"));
         assert!(
             main_g81_at_main_depth,
             "r2af: expected main G81 at Z-5; got:\n{}",
@@ -1223,11 +1246,7 @@ mod tests {
         );
         // T2 M6 fires once (main → spot) and T1 M6 fires twice
         // (program entry + spot → main).
-        let t2_m6 = resp
-            .gcode
-            .lines()
-            .filter(|l| l.contains("T2 M6"))
-            .count();
+        let t2_m6 = resp.gcode.lines().filter(|l| l.contains("T2 M6")).count();
         assert!(
             t2_m6 >= 1,
             "r2af: expected at least one T2 M6 for spot toolchange:\n{}",
@@ -1251,6 +1270,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {

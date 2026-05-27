@@ -9,7 +9,7 @@
 use crate::cam::offsets::PolylineOffset;
 use crate::cam::setup::{Setup, ToolOffset};
 use crate::cam::VcObject;
-use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project};
+use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project, StockConfig};
 
 use super::{op_includes_object, PipelineWarning};
 
@@ -27,10 +27,7 @@ use super::{op_includes_object, PipelineWarning};
 ///
 /// We accept a 0.001 mm slack so paths drawn EXACTLY to the origin
 /// edge don't warn (very common — "draw a square from 0,0 to 100,100").
-pub(super) fn push_wcs_origin_warning(
-    project: &Project,
-    warnings: &mut Vec<PipelineWarning>,
-) {
+pub(super) fn push_wcs_origin_warning(project: &Project, warnings: &mut Vec<PipelineWarning>) {
     if project.segments.is_empty() {
         return;
     }
@@ -132,6 +129,80 @@ pub(super) fn push_work_area_warning(
     });
 }
 
+/// vrrr: post-emit STOCK envelope scan — the second half of v0ez's
+/// envelope enforcement. `push_work_area_warning` moved the work-area
+/// check into the pipeline; the stock check stayed frontend-only because
+/// the core `Project` had no stock model. Now that `Project.stock`
+/// exists, this mirrors the old frontend scan (`GenerateBar.boundsScan`)
+/// so every transport — CLI / server / wasm called directly — gets an
+/// `out_of_stock` guard, and the frontend can drop its own synthesis.
+///
+/// Mirrors the frontend logic exactly so behavior is unchanged for FE
+/// users: scan Cut / Plunge / Arc segment END points against the
+/// resolved stock box X ∈ [origin.x, origin.x + width],
+/// Y ∈ [origin.y, origin.y + height], Z ∈ [-thickness, 0] (stock top at
+/// z = 0) with a 1e-6 mm slack. Rapids and retracts are excluded — they
+/// legitimately fly to clearance / park positions above the stock. Emits
+/// a single `out_of_stock` warning (the frontend classifies that kind as
+/// critical, so the block-on-critical gate refuses to ship the program).
+/// Skipped when no stock is modeled or any dimension is non-positive.
+pub(super) fn push_stock_warning(
+    toolpath: &[crate::gcode::preview::ToolpathSegment],
+    stock: Option<&StockConfig>,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    use crate::gcode::preview::MoveKind;
+    let Some(stock) = stock else {
+        return;
+    };
+    if !(stock.width_mm > 0.0 && stock.height_mm > 0.0 && stock.thickness_mm > 0.0) {
+        return;
+    }
+    let eps = 1e-6;
+    let min_x = stock.origin[0];
+    let max_x = stock.origin[0] + stock.width_mm;
+    let min_y = stock.origin[1];
+    let max_y = stock.origin[1] + stock.height_mm;
+    let stock_top = 0.0;
+    let stock_bottom = -stock.thickness_mm;
+    let mut count = 0usize;
+    let mut first_line = 0u32;
+    for seg in toolpath {
+        if !matches!(seg.kind, MoveKind::Cut | MoveKind::Plunge | MoveKind::Arc) {
+            continue;
+        }
+        let p = seg.to;
+        let outside = p.x < min_x - eps
+            || p.x > max_x + eps
+            || p.y < min_y - eps
+            || p.y > max_y + eps
+            || p.z < stock_bottom - eps
+            || p.z > stock_top + eps;
+        if outside {
+            count += 1;
+            if first_line == 0 {
+                first_line = seg.gcode_line;
+            }
+        }
+    }
+    if count == 0 {
+        return;
+    }
+    let plural = if count == 1 { "" } else { "s" };
+    let where_line = if first_line != 0 {
+        format!(" (first at gcode line {first_line})")
+    } else {
+        String::new()
+    };
+    warnings.push(PipelineWarning {
+        op_id: None,
+        kind: "out_of_stock".into(),
+        message: format!(
+            "{count} cut move{plural} outside the stock{where_line}. The controller will try to cut into air or below the stock — either re-zero the machine, expand the stock, or translate the geometry into the stock bbox."
+        ),
+    });
+}
+
 /// tnxu: scan the enabled-op sequence for obviously wrong orderings —
 /// the classic "Profile cuts the part free → Drill on the loose part
 /// fails" sequence. We don't auto-reorder (the user may have a real
@@ -151,10 +222,7 @@ pub(super) fn push_work_area_warning(
 /// Same-tool-back-to-back Profile or Pocket ops are NOT flagged —
 /// that's a common pattern for layered passes and the user
 /// frequently does it on purpose.
-pub(super) fn push_op_order_warnings(
-    project: &Project,
-    warnings: &mut Vec<PipelineWarning>,
-) {
+pub(super) fn push_op_order_warnings(project: &Project, warnings: &mut Vec<PipelineWarning>) {
     let enabled: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
     if enabled.len() < 2 {
         return;
@@ -631,8 +699,16 @@ mod tests {
         use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
         let machine = crate::cam::setup::MachineConfig::default(); // 200×300×50
         let seg = |fx, fy, fz, tx, ty, tz, kind, line| ToolpathSegment {
-            from: Pose3 { x: fx, y: fy, z: fz },
-            to: Pose3 { x: tx, y: ty, z: tz },
+            from: Pose3 {
+                x: fx,
+                y: fy,
+                z: fz,
+            },
+            to: Pose3 {
+                x: tx,
+                y: ty,
+                z: tz,
+            },
             kind,
             gcode_line: line,
             op_id: 0,
@@ -651,7 +727,11 @@ mod tests {
             .iter()
             .filter(|w| w.kind == "out_of_work_area")
             .collect();
-        assert_eq!(hits.len(), 1, "expected exactly one work-area warning: {warnings:?}");
+        assert_eq!(
+            hits.len(),
+            1,
+            "expected exactly one work-area warning: {warnings:?}"
+        );
         assert_eq!(hits[0].op_id, None, "work-area warning is project-wide");
         assert!(
             hits[0].message.contains("1 cut move") && hits[0].message.contains("gcode line 11"),
@@ -667,29 +747,185 @@ mod tests {
     fn work_area_scan_silent_when_in_bounds_or_unset() {
         use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
         let in_bounds = vec![ToolpathSegment {
-            from: Pose3 { x: 0.0, y: 0.0, z: 0.0 },
-            to: Pose3 { x: 10.0, y: 10.0, z: -1.0 },
+            from: Pose3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Pose3 {
+                x: 10.0,
+                y: 10.0,
+                z: -1.0,
+            },
             kind: MoveKind::Cut,
             gcode_line: 5,
             op_id: 0,
         }];
         let mut warnings = Vec::new();
-        push_work_area_warning(&in_bounds, &crate::cam::setup::MachineConfig::default(), &mut warnings);
-        assert!(warnings.is_empty(), "in-bounds toolpath should not warn: {warnings:?}");
+        push_work_area_warning(
+            &in_bounds,
+            &crate::cam::setup::MachineConfig::default(),
+            &mut warnings,
+        );
+        assert!(
+            warnings.is_empty(),
+            "in-bounds toolpath should not warn: {warnings:?}"
+        );
 
         // Same out-of-bounds cut but with a zeroed work area → skipped.
         let mut zeroed = crate::cam::setup::MachineConfig::default();
-        zeroed.work_area = crate::cam::setup::AxisLimits { x: 0.0, y: 0.0, z: 0.0 };
+        zeroed.work_area = crate::cam::setup::AxisLimits {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
         let wild = vec![ToolpathSegment {
-            from: Pose3 { x: 0.0, y: 0.0, z: 0.0 },
-            to: Pose3 { x: 9999.0, y: 9999.0, z: -9999.0 },
+            from: Pose3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Pose3 {
+                x: 9999.0,
+                y: 9999.0,
+                z: -9999.0,
+            },
             kind: MoveKind::Cut,
             gcode_line: 7,
             op_id: 0,
         }];
         let mut w2 = Vec::new();
         push_work_area_warning(&wild, &zeroed, &mut w2);
-        assert!(w2.is_empty(), "zeroed/unset work area should be skipped: {w2:?}");
+        assert!(
+            w2.is_empty(),
+            "zeroed/unset work area should be skipped: {w2:?}"
+        );
+    }
+
+    /// vrrr: a Cut endpoint that leaves the resolved stock box (past +X,
+    /// or below the stock bottom) emits exactly one project-wide
+    /// `out_of_stock` warning; an in-bounds cut and an out-of-bounds RAPID
+    /// are ignored. Mirrors the old frontend `GenerateBar.boundsScan`.
+    #[test]
+    fn stock_scan_flags_out_of_stock_cut() {
+        use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
+        // 100×80 stock anchored at (0,0), 10 mm thick → z ∈ [-10, 0].
+        let stock = StockConfig {
+            origin: [0.0, 0.0],
+            width_mm: 100.0,
+            height_mm: 80.0,
+            thickness_mm: 10.0,
+        };
+        let seg = |fx, fy, fz, tx, ty, tz, kind, line| ToolpathSegment {
+            from: Pose3 {
+                x: fx,
+                y: fy,
+                z: fz,
+            },
+            to: Pose3 {
+                x: tx,
+                y: ty,
+                z: tz,
+            },
+            kind,
+            gcode_line: line,
+            op_id: 0,
+        };
+        let toolpath = vec![
+            // In-bounds cut — fine.
+            seg(10.0, 10.0, 0.0, 50.0, 40.0, -5.0, MoveKind::Cut, 10),
+            // Cut ending 20 mm past +X — outside the stock footprint.
+            seg(50.0, 40.0, -5.0, 120.0, 40.0, -5.0, MoveKind::Cut, 11),
+            // Plunge below the stock bottom — outside in Z.
+            seg(50.0, 40.0, -5.0, 50.0, 40.0, -15.0, MoveKind::Plunge, 12),
+            // Rapid flying above the stock — excluded (clearance move).
+            seg(50.0, 40.0, -5.0, 999.0, 999.0, 5.0, MoveKind::Rapid, 13),
+        ];
+        let mut warnings = Vec::new();
+        push_stock_warning(&toolpath, Some(&stock), &mut warnings);
+        let hits: Vec<_> = warnings
+            .iter()
+            .filter(|w| w.kind == "out_of_stock")
+            .collect();
+        assert_eq!(
+            hits.len(),
+            1,
+            "expected exactly one stock warning: {warnings:?}"
+        );
+        assert_eq!(hits[0].op_id, None, "stock warning is project-wide");
+        assert!(
+            hits[0].message.contains("2 cut moves") && hits[0].message.contains("gcode line 11"),
+            "message should count two offending cuts, first at line 11: {}",
+            hits[0].message
+        );
+    }
+
+    /// vrrr: an in-stock toolpath produces no warning; `None` stock (no
+    /// model) and a zero-dimension stock are both skipped rather than
+    /// flagging every move — matching the work-area scan's unset guard.
+    #[test]
+    fn stock_scan_silent_when_in_bounds_or_unset() {
+        use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
+        let wild = vec![ToolpathSegment {
+            from: Pose3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Pose3 {
+                x: 9999.0,
+                y: 9999.0,
+                z: -9999.0,
+            },
+            kind: MoveKind::Cut,
+            gcode_line: 7,
+            op_id: 0,
+        }];
+        // No stock model → skipped even for a wild cut.
+        let mut w_none = Vec::new();
+        push_stock_warning(&wild, None, &mut w_none);
+        assert!(
+            w_none.is_empty(),
+            "unset stock should be skipped: {w_none:?}"
+        );
+
+        // Zero-dimension stock → skipped.
+        let zero = StockConfig::default();
+        let mut w_zero = Vec::new();
+        push_stock_warning(&wild, Some(&zero), &mut w_zero);
+        assert!(
+            w_zero.is_empty(),
+            "zero-dimension stock should be skipped: {w_zero:?}"
+        );
+
+        // Cut fully inside the box → no warning.
+        let in_bounds = vec![ToolpathSegment {
+            from: Pose3 {
+                x: 1.0,
+                y: 1.0,
+                z: 0.0,
+            },
+            to: Pose3 {
+                x: 10.0,
+                y: 10.0,
+                z: -1.0,
+            },
+            kind: MoveKind::Cut,
+            gcode_line: 5,
+            op_id: 0,
+        }];
+        let stock = StockConfig {
+            origin: [0.0, 0.0],
+            width_mm: 50.0,
+            height_mm: 50.0,
+            thickness_mm: 5.0,
+        };
+        let mut w_in = Vec::new();
+        push_stock_warning(&in_bounds, Some(&stock), &mut w_in);
+        assert!(
+            w_in.is_empty(),
+            "in-stock toolpath should not warn: {w_in:?}"
+        );
     }
 
     /// Origin-containing geometry produces NO WCS warning. (0..20 square

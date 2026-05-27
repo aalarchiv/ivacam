@@ -32,8 +32,7 @@
 )]
 
 use crate::cam::offsets::{
-    bridge_stays_inside_polygon, point_in_polygon_pts,
-    stitch_rings_to_polyline,
+    bridge_stays_inside_polygon, point_in_polygon_pts, stitch_rings_to_polyline,
 };
 use crate::geometry::{Point2, Segment};
 use crate::pipeline::CancelToken;

@@ -415,3 +415,65 @@ describe('geometryView preference (8jce)', () => {
     expect(project!.segments).toHaveLength(2);
   });
 });
+
+describe('stock box (vrrr)', () => {
+  it('resolves the auto-mode stock box from the transformedImport bbox + margin', () => {
+    // fakeImport bbox is 0..10 on each axis; auto + margin 5 → -5..15.
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+      stock: {
+        visible: true,
+        mode: 'auto',
+        margin: 5,
+        thickness: 3,
+        customX: 0,
+        customY: 0,
+      },
+    });
+    expect(project!.stock).toEqual({
+      origin: [-5, -5],
+      width_mm: 20,
+      height_mm: 20,
+      thickness_mm: 3,
+    });
+  });
+
+  it('sizes the stock from transformedImport, NOT the stock-augmented geometryView, and floors thickness', () => {
+    // geometryView's bbox is huge (it would include the stock outline).
+    // Stock must resolve against transformedImport (0..10) so the auto
+    // bbox does not balloon around the stock outline itself.
+    const hugeView: ImportResponse = {
+      ...fakeImport(),
+      bbox: { min_x: -500, min_y: -500, max_x: 500, max_y: 500 },
+    };
+    const project = buildProject({
+      transformedImport: fakeImport(), // bbox 0..10
+      geometryView: hugeView,
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+      stock: { visible: true, mode: 'auto', margin: 0, thickness: 0, customX: 0, customY: 0 },
+    });
+    // auto + margin 0 against the 0..10 bbox → exactly 10×10; thickness 0
+    // is floored to 0.01 mm (matching the old frontend boundsScan).
+    expect(project!.stock).toEqual({
+      origin: [0, 0],
+      width_mm: 10,
+      height_mm: 10,
+      thickness_mm: 0.01,
+    });
+  });
+
+  it('omits the stock key when no stock is modeled', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.stock).toBeUndefined();
+  });
+});

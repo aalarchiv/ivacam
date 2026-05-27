@@ -192,14 +192,13 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
             push_ring(h, &mut boundary_segs);
         }
         for axis in &axes {
-            let (z_axis, depth_limited, tool_reach_limited) =
-                crate::cam::halfpipe::polyline_to_z(
-                    axis,
-                    strategy,
-                    z_cap,
-                    tool_reach_z,
-                    Some(&boundary_segs),
-                );
+            let (z_axis, depth_limited, tool_reach_limited) = crate::cam::halfpipe::polyline_to_z(
+                axis,
+                strategy,
+                z_cap,
+                tool_reach_z,
+                Some(&boundary_segs),
+            );
             if depth_limited {
                 any_depth_limited = true;
             }
@@ -300,6 +299,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp_a = run_pipeline(
             PipelineRequest {
@@ -391,6 +391,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -466,6 +467,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -518,9 +520,7 @@ mod tests {
                 enabled: true,
                 kind: OpKind::Pocket {
                     strategy: crate::project::PocketStrategy::Halfpipe {
-                        profile: crate::project::HalfpipeProfile::CircularArc {
-                            radius_mm: 20.0,
-                        },
+                        profile: crate::project::HalfpipeProfile::CircularArc { radius_mm: 20.0 },
                     },
                     contour: crate::project::ContourParams::default(),
                     pocket: crate::project::PocketParams::default(),
@@ -533,6 +533,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {

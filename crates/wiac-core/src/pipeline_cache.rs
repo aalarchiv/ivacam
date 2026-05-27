@@ -47,8 +47,8 @@ use crate::cam::setup::{
 use crate::cam::source_combine::FrameShape;
 use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
-use crate::pipeline::PipelineWarning;
 use crate::geometry::{Point2, Segment, SegmentKind};
+use crate::pipeline::PipelineWarning;
 use crate::project::{
     ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
     OpKind, OpParams, OpSource, PatternConfig, PocketParams, PocketStrategy, ProfileParams,
@@ -1518,7 +1518,10 @@ mod tests {
         t2.stickout_length_mm = Some(10.0);
         let k1 = op_cache_key(&op, &t1, &machine, &segs, &[], 0);
         let k2 = op_cache_key(&op, &t2, &machine, &segs, &[], 0);
-        assert_ne!(k1, k2, "tool.stickout_length_mm should invalidate the cache");
+        assert_ne!(
+            k1, k2,
+            "tool.stickout_length_mm should invalidate the cache"
+        );
     }
 
     /// scwx + z1y0: flipping the tool's `spindle_direction` routes the
@@ -1533,7 +1536,10 @@ mod tests {
         t_ccw.spindle_direction = crate::project::SpindleDirection::Ccw;
         let k_cw = op_cache_key(&op, &endmill(), &machine, &segs, &[], 0);
         let k_ccw = op_cache_key(&op, &t_ccw, &machine, &segs, &[], 0);
-        assert_ne!(k_cw, k_ccw, "tool.spindle_direction should invalidate the cache");
+        assert_ne!(
+            k_cw, k_ccw,
+            "tool.spindle_direction should invalidate the cache"
+        );
     }
 
     // ─── 75zr: hash_machine RPM clamps / dwells / park ─────────────
@@ -1551,7 +1557,10 @@ mod tests {
         floored.spindle_rpm_min = Some(6_000);
         let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
         let k2 = op_cache_key(&op, &tool, &floored, &segs, &[], 0);
-        assert_ne!(k1, k2, "machine.spindle_rpm_min should invalidate the cache");
+        assert_ne!(
+            k1, k2,
+            "machine.spindle_rpm_min should invalidate the cache"
+        );
     }
 
     #[test]
@@ -1564,7 +1573,10 @@ mod tests {
         capped.spindle_rpm_max = Some(12_000);
         let k1 = op_cache_key(&op, &tool, &base, &segs, &[], 0);
         let k2 = op_cache_key(&op, &tool, &capped, &segs, &[], 0);
-        assert_ne!(k1, k2, "machine.spindle_rpm_max should invalidate the cache");
+        assert_ne!(
+            k1, k2,
+            "machine.spindle_rpm_max should invalidate the cache"
+        );
     }
 
     /// eaeq: the two spindle dwell knobs are emitted as G4 P<sec>
@@ -1783,10 +1795,8 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.x_mm = 50.0;
-        let k1 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.x_mm should invalidate the cache");
     }
 
@@ -1799,10 +1809,8 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.y_mm = -12.5;
-        let k1 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.y_mm should invalidate the cache");
     }
 
@@ -1815,10 +1823,8 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.z_mm = 3.0;
-        let k1 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.z_mm should invalidate the cache");
     }
 
@@ -1834,10 +1840,8 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.wcs = Wcs::G55;
-        let k1 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 =
-            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
+        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.wcs should invalidate the cache");
     }
 

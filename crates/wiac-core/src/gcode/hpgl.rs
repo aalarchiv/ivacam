@@ -334,7 +334,10 @@ mod tests {
         post.feedrate(600);
         let out = post.finish();
         let vs_count = out.matches("VS").count();
-        assert_eq!(vs_count, 1, "expected one VS emission, got {vs_count}: {out}");
+        assert_eq!(
+            vs_count, 1,
+            "expected one VS emission, got {vs_count}: {out}"
+        );
     }
 
     #[test]
@@ -345,7 +348,10 @@ mod tests {
         post.feedrate(6000); // 10 cm/s
         post.feedrate(600); // 1 cm/s
         let out = post.finish();
-        assert!(out.contains("VS10;"), "missing VS10 from initial fast feed: {out}");
+        assert!(
+            out.contains("VS10;"),
+            "missing VS10 from initial fast feed: {out}"
+        );
         assert!(out.contains("VS1;"), "missing VS1 from slow cut: {out}");
     }
 
@@ -355,10 +361,7 @@ mod tests {
         let mut post = Post::new();
         post.feedrate(0);
         let out = post.finish();
-        assert!(
-            !out.contains("VS"),
-            "rate=0 should not emit VS; got: {out}",
-        );
+        assert!(!out.contains("VS"), "rate=0 should not emit VS; got: {out}",);
     }
 
     #[test]
@@ -382,7 +385,10 @@ mod tests {
         );
         // Specific lines we expect.
         assert!(out.contains("IN;\n"), "IN; should be its own line: {out:?}");
-        assert!(out.contains("SP1;\n"), "SP1; should be its own line: {out:?}");
+        assert!(
+            out.contains("SP1;\n"),
+            "SP1; should be its own line: {out:?}"
+        );
         assert!(
             out.ends_with('\n'),
             "output must end with a newline: {out:?}",
@@ -412,9 +418,7 @@ mod tests {
         let approx_45_alt = "PA282,283;";
         let approx_45_alt2 = "PA283,282;";
         assert!(
-            out.contains(approx_45)
-                || out.contains(approx_45_alt)
-                || out.contains(approx_45_alt2),
+            out.contains(approx_45) || out.contains(approx_45_alt) || out.contains(approx_45_alt2),
             "expected a 45° midpoint waypoint near PA283,283; in: {out}",
         );
     }

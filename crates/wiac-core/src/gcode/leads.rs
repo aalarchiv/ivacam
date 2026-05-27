@@ -307,11 +307,10 @@ fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
             // Fall back to deriving the center from the bulge when
             // the segment data didn't carry it — same convention as
             // the surrounding arc-center derivations in this module.
-            let arc_center = seg.center.unwrap_or_else(|| {
-                math::bulge_to_arc(seg.start, seg.end, seg.bulge).0
-            });
-            let arc_radius =
-                (seg.start.x - arc_center.x).hypot(seg.start.y - arc_center.y);
+            let arc_center = seg
+                .center
+                .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
+            let arc_radius = (seg.start.x - arc_center.x).hypot(seg.start.y - arc_center.y);
             if arc_radius < 1e-9 {
                 return line_chord_distance(seg.start.x, seg.start.y, seg.end.x, seg.end.y);
             }
@@ -327,8 +326,7 @@ fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
             // Arc: check whether the radial foot falls inside the
             // angular span. Same machinery as `arc_intersects_tab` in
             // tabs.rs — sweep from theta_start through `4*atan(bulge)`.
-            let theta_start =
-                (seg.start.y - arc_center.y).atan2(seg.start.x - arc_center.x);
+            let theta_start = (seg.start.y - arc_center.y).atan2(seg.start.x - arc_center.x);
             let sweep = 4.0 * seg.bulge.atan();
             // Theta of the candidate foot on the circle (only well-
             // defined when `center` isn't at the arc center; fall back
@@ -465,7 +463,7 @@ mod tests {
         // Lead-in (skip first seg). Second segment is a wall close to
         // the arc envelope — should detect collision.
         let segments = vec![
-            segline(p(0.0, 0.0), p(20.0, 0.0)),  // first / adjacent — skipped
+            segline(p(0.0, 0.0), p(20.0, 0.0)),   // first / adjacent — skipped
             segline(p(20.0, 0.0), p(20.0, 10.0)), // far wall
             segline(p(20.0, 10.0), p(0.0, 10.0)), // ceiling at y=10
         ];
@@ -669,9 +667,9 @@ mod tests {
         // arc swept disk inevitably grazes one of the non-adjacent
         // walls regardless of free-side orientation.
         let segments = vec![
-            segline(p(0.0, 0.0), p(2.0, 0.0)),  // tiny floor
-            segline(p(2.0, 0.0), p(2.0, 3.0)),  // right wall
-            segline(p(2.0, 3.0), p(-3.0, 3.0)), // ceiling reaching across
+            segline(p(0.0, 0.0), p(2.0, 0.0)),    // tiny floor
+            segline(p(2.0, 0.0), p(2.0, 3.0)),    // right wall
+            segline(p(2.0, 3.0), p(-3.0, 3.0)),   // ceiling reaching across
             segline(p(-3.0, 3.0), p(-3.0, -3.0)), // far-left wall
             segline(p(-3.0, -3.0), p(0.0, -3.0)), // bottom-left segment
             segline(p(0.0, -3.0), p(0.0, 0.0)),   // back to start

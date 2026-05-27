@@ -12,7 +12,6 @@
   } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
   import { exportGeneratedGcode } from '../state/file_ops';
-  import { computeFootprint } from '../sim/driver';
   import type { SimWarning, TimeEstimate } from '../api/types';
   import {
     countCriticalPipelineWarnings,
@@ -280,77 +279,15 @@
   // didn't fit emitted zero toolpath, raised `tool_too_large`, and the
   // user's "block on critical" setting did NOT prevent the broken gcode
   // from shipping).
-  // `allPipelineWarnings` is defined after `boundsScan` / `boundsWarnings`
-  // so the synthesized stock-bounds row (out_of_stock) gets folded into
-  // the same severity classifier + warnings-panel render as the
-  // pipeline's own warnings (which now include the core-side
-  // out_of_work_area row — v0ez). The combined-count + critical-count
-  // derivations move down with it.
-
-  /// Post-Generate STOCK bounds scan — counts cut/plunge/arc segments
-  /// whose endpoints fall outside the stock box. Different from the
-  /// existing sim warnings (which catch rapid-through-stock / fixture
-  /// collision); this is purely an "is your gcode valid for this stock"
-  /// check.
-  ///
-  /// v0ez: the work-area half of this scan moved into the pipeline
-  /// (`crates/wiac-core/.../warnings.rs::push_work_area_warning`) so every
-  /// transport — not just this frontend — surfaces soft-limit risk. The
-  /// resulting `out_of_work_area` warning rides in on
-  /// `project.generated.warnings` → `pipelineWarnings`, so we must NOT
-  /// re-synthesize it here (that would double-count). The STOCK check
-  /// stays frontend-side because the core `Project` has no stock model —
-  /// stock dims live only in `project.stock` (StockConfig).
-  const boundsScan = $derived.by(() => {
-    const gen = project.generated;
-    if (!gen) return null;
-    const wa = project.machine.workArea;
-    const stockFp = computeFootprint(project.transformedImport, project.stock, wa);
-    const stockTop = 0;
-    const stockBottom = -Math.max(0.01, project.stock.thickness);
-    const isCut = (k: string) => k === 'cut' || k === 'plunge' || k === 'arc';
-    let outStock = 0;
-    let firstStockLine = 0;
-    for (const seg of gen.toolpath) {
-      if (!isCut(seg.kind)) continue;
-      const p = seg.to;
-      if (
-        p.x < stockFp.minX - 1e-6 ||
-        p.x > stockFp.maxX + 1e-6 ||
-        p.y < stockFp.minY - 1e-6 ||
-        p.y > stockFp.maxY + 1e-6 ||
-        p.z < stockBottom - 1e-6 ||
-        p.z > stockTop + 1e-6
-      ) {
-        outStock++;
-        if (firstStockLine === 0) firstStockLine = seg.gcode_line;
-      }
-    }
-    if (outStock === 0) return null;
-    return { outStock, firstStockLine };
-  });
-  /// Stock-bounds finding projected as a PipelineWarning-shaped row so it
-  /// renders in the warnings panel alongside the pipeline's own findings
-  /// (and participates in the same severity classifier + critical gate).
-  /// Returns 0 / 1 entries. The `out_of_work_area` row is emitted
-  /// pipeline-side now (see `boundsScan` note), so it's NOT synthesized
-  /// here.
-  const boundsWarnings = $derived.by<PipelineWarning[]>(() => {
-    const b = boundsScan;
-    if (!b) return [];
-    const out: PipelineWarning[] = [];
-    if (b.outStock > 0) {
-      out.push({
-        kind: 'out_of_stock',
-        message: `${b.outStock} cut move${b.outStock === 1 ? '' : 's'} outside the stock${b.firstStockLine ? ` (first at gcode line ${b.firstStockLine})` : ''}. The controller will try to cut into air or below the stock — either re-zero the machine, expand the stock, or translate the geometry into the stock bbox.`,
-      });
-    }
-    return out;
-  });
-  /// Pipeline warnings + the synthesized bounds rows, fed through the
-  /// same panel render + severity gate. Declared HERE (not next to
-  /// `pipelineWarnings`) so `boundsWarnings` above is initialized first.
-  let allPipelineWarnings = $derived<PipelineWarning[]>([...pipelineWarnings, ...boundsWarnings]);
+  // vrrr: both envelope checks are now pipeline-side. v0ez moved the
+  // work-area half (`out_of_work_area`); vrrr moves the STOCK half
+  // (`out_of_stock`, warnings.rs::push_stock_warning) now that the core
+  // `Project` carries a resolved stock box (sent by `buildProject` via
+  // `computeFootprint`). Both ride in on `project.generated.warnings` →
+  // `pipelineWarnings`, so the frontend no longer synthesizes either —
+  // doing so would double-count. `allPipelineWarnings` is now just the
+  // pipeline's own findings.
+  let allPipelineWarnings = $derived<PipelineWarning[]>(pipelineWarnings);
   let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(allPipelineWarnings));
   let criticalCount = $derived(
     warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,

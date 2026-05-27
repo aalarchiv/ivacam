@@ -44,7 +44,9 @@ pub(super) fn build_op_tabs_by_object(
     warnings: &mut Vec<PipelineWarning>,
 ) -> HashMap<usize, Vec<TabPoint>> {
     use crate::cam::segments_to_points;
-    use crate::cam::tabs::{auto_tab_ts, polyline_arc_lengths, polyline_at_t, resolve_tab_placements};
+    use crate::cam::tabs::{
+        auto_tab_ts, polyline_arc_lengths, polyline_at_t, resolve_tab_placements,
+    };
     use crate::project::TabPlacementMode;
 
     // kbx5 step 2: tabs come from ContourParams (Profile / Pocket /
@@ -135,19 +137,17 @@ pub(super) fn build_op_tabs_by_object(
             // positions on the same object. A manual placement within
             // `(1 / auto_count) * MIXED_MERGE_FRACTION_OF_SPACING` of
             // an auto position drops the auto and keeps manual.
-            let manual_ts_for_obj: Vec<f64> = if matches!(
-                contour.tab_mode,
-                TabPlacementMode::Mixed { .. }
-            ) {
-                contour
-                    .tab_placements
-                    .iter()
-                    .filter(|tp| (tp.object_id as usize).checked_sub(1) == Some(idx))
-                    .map(|tp| tp.t.rem_euclid(1.0))
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            let manual_ts_for_obj: Vec<f64> =
+                if matches!(contour.tab_mode, TabPlacementMode::Mixed { .. }) {
+                    contour
+                        .tab_placements
+                        .iter()
+                        .filter(|tp| (tp.object_id as usize).checked_sub(1) == Some(idx))
+                        .map(|tp| tp.t.rem_euclid(1.0))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             if !manual_ts_for_obj.is_empty() && effective_count > 0 {
                 let spacing = 1.0 / f64::from(effective_count);
                 let merge_tol = spacing * MIXED_MERGE_FRACTION_OF_SPACING;
@@ -242,7 +242,9 @@ mod tests {
         let out = build_op_tabs_by_object(&op, &objects, &mut warnings);
         assert_eq!(out.get(&0).map(Vec::len), Some(1));
         assert!(
-            warnings.iter().any(|w| w.kind == "tabs_count_clamped_short_contour"),
+            warnings
+                .iter()
+                .any(|w| w.kind == "tabs_count_clamped_short_contour"),
             "expected tabs_count_clamped_short_contour warning, got {:?}",
             warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
@@ -266,7 +268,9 @@ mod tests {
         let mut warnings = Vec::new();
         let out = build_op_tabs_by_object(&op, &objects, &mut warnings);
         assert_eq!(out.get(&0).map(Vec::len), Some(4));
-        assert!(!warnings.iter().any(|w| w.kind == "tabs_count_clamped_short_contour"));
+        assert!(!warnings
+            .iter()
+            .any(|w| w.kind == "tabs_count_clamped_short_contour"));
     }
 
     /// a7rq: closed-contour auto tabs are phase-shifted by

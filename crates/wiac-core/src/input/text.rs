@@ -431,7 +431,12 @@ fn transform_text_point(p: Point2, origin: Point2, cos: f64, sin: f64) -> Point2
     )
 }
 
-fn push_polyline_closed(pts: &[Point2], layer: &std::sync::Arc<str>, color: i32, out: &mut Vec<Segment>) {
+fn push_polyline_closed(
+    pts: &[Point2],
+    layer: &std::sync::Arc<str>,
+    color: i32,
+    out: &mut Vec<Segment>,
+) {
     for w in pts.windows(2) {
         if w[0].distance(w[1]) > 1e-6 {
             out.push(Segment::line(w[0], w[1], layer.clone(), color));
@@ -444,7 +449,12 @@ fn push_polyline_closed(pts: &[Point2], layer: &std::sync::Arc<str>, color: i32,
     }
 }
 
-fn push_polyline_unclosed(pts: &[Point2], layer: &std::sync::Arc<str>, color: i32, out: &mut Vec<Segment>) {
+fn push_polyline_unclosed(
+    pts: &[Point2],
+    layer: &std::sync::Arc<str>,
+    color: i32,
+    out: &mut Vec<Segment>,
+) {
     // For single-line fonts: emit segments without auto-closing the loop.
     // Walking the outline forwards already gives us the centerline; closing
     // it would draw the same path back on itself (the artifact we're

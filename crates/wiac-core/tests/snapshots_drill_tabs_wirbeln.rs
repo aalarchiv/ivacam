@@ -47,7 +47,9 @@ fn assert_snapshot(name: &str, actual: &str, expected: &str) {
             eprintln!("{escaped}\\n\\");
         }
         eprintln!("\";");
-        panic!("WIAC_UPDATE_SNAPSHOTS set — rerun without the env var after pasting the new baseline.");
+        panic!(
+            "WIAC_UPDATE_SNAPSHOTS set — rerun without the env var after pasting the new baseline."
+        );
     }
     assert_eq!(
         actual, expected,
@@ -187,6 +189,7 @@ fn snapshot_drill_with_stufenfase_and_toolchange() {
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
+        stock: None,
     };
     let actual = run_to_gcode(project);
     // Structural pin — the brief asks for a snapshot covering the op
@@ -202,7 +205,9 @@ fn snapshot_drill_with_stufenfase_and_toolchange() {
         "missing toolchange spindle envelope:\n{actual}",
     );
     assert!(
-        actual.lines().any(|l| l.starts_with("G1") && l.contains("Z-")),
+        actual
+            .lines()
+            .any(|l| l.starts_with("G1") && l.contains("Z-")),
         "missing rim chamfer G1 Z move:\n{actual}",
     );
     // Full-snapshot pin: capture a stable digest of the gcode so a
@@ -258,13 +263,16 @@ fn snapshot_profile_rectangle_tabs_and_helix_entry() {
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
+        stock: None,
     };
     let actual = run_to_gcode(project);
     assert!(actual.contains("; OP 1"), "missing op marker:\n{actual}");
     // Helix entry → at least one G2/G3 arc on the plunge before the
     // first straight cut.
     assert!(
-        actual.lines().any(|l| l.starts_with("G2 ") || l.starts_with("G3 ")),
+        actual
+            .lines()
+            .any(|l| l.starts_with("G2 ") || l.starts_with("G3 ")),
         "missing helix entry arc:\n{actual}",
     );
     // Rectangle tab → cutter lifts to tab Z then drops back.
@@ -321,6 +329,7 @@ fn snapshot_profile_ramp_tabs() {
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
+        stock: None,
     };
     let actual = run_to_gcode(project);
     assert!(actual.contains("; OP 1"), "missing op marker:\n{actual}");
@@ -378,6 +387,7 @@ fn snapshot_wirbeln_walks_closed_contour() {
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
+        stock: None,
     };
     let actual = run_to_gcode(project);
     assert!(actual.contains("; OP 1"), "missing op marker:\n{actual}");

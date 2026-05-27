@@ -138,9 +138,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     // gradient across the entire interior" workflow (think Aspire-style
     // relief). The two paths share tip-angle / tip-radius / reach-cap
     // / depth-cap math; only the traversal shape differs.
-    let full_medial = op
-        .vcarve_params()
-        .is_some_and(|v| v.full_medial_axis);
+    let full_medial = op.vcarve_params().is_some_and(|v| v.full_medial_axis);
     // rt1.7: optional pre-offset for the source region. Inlay plug side
     // sets this to the desired gap so the plug ends up `gap` mm smaller
     // per side than the pocket. None / 0 = identity (the common case).
@@ -217,11 +215,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             // chains that can never engage past the tip plateau). Without
             // this the cutter spends most of its time ratcheting into
             // micro-features that the bit physically can't carve.
-            let axes = crate::cam::vcarve::prune_medial_axis(
-                axes_raw,
-                tool_reach_r,
-                tip_radius_mm,
-            );
+            let axes = crate::cam::vcarve::prune_medial_axis(axes_raw, tool_reach_r, tip_radius_mm);
             // idne: track whether at least one chain produced a useful
             // (non-all-zero) toolpath. When every chain bottoms out at
             // z=0 the user is silently getting a no-op carve — surface
@@ -317,21 +311,15 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                     any_depth_limited = true;
                 }
             }
-            let rings = crate::cam::offsets::boundary_offset_inward(
-                boundary,
-                holes,
-                r_offset,
-            );
+            let rings = crate::cam::offsets::boundary_offset_inward(boundary, holes, r_offset);
             for ring in rings {
                 if ring.len() < 2 {
                     continue;
                 }
                 // Close the ring so the cutter returns to its start —
                 // perimeter passes are closed loops, not open polylines.
-                let mut path: Vec<(f64, f64, f64)> = ring
-                    .iter()
-                    .map(|p| (p.x, p.y, z_target))
-                    .collect();
+                let mut path: Vec<(f64, f64, f64)> =
+                    ring.iter().map(|p| (p.x, p.y, z_target)).collect();
                 let first = path[0];
                 let last = *path.last().expect("len >= 2");
                 if (first.0 - last.0).hypot(first.1 - last.1) > 1e-9 {
@@ -411,6 +399,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -470,6 +459,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -484,10 +474,7 @@ mod tests {
                 .iter()
                 .any(|w| w.kind == "vcarve_no_closed_region"),
             "expected vcarve_no_closed_region warning; got {:?}",
-            resp.warnings
-                .iter()
-                .map(|w| &w.kind)
-                .collect::<Vec<_>>(),
+            resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
     }
 
@@ -534,6 +521,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -543,11 +531,7 @@ mod tests {
             |_, _, _| {},
         )
         .expect("pipeline ran");
-        let z_min = resp
-            .toolpath
-            .iter()
-            .map(|s| s.to.z)
-            .fold(0.0_f64, f64::min);
+        let z_min = resp.toolpath.iter().map(|s| s.to.z).fold(0.0_f64, f64::min);
         // vbit() default is diameter 6.35mm, tip 60° → tool_reach_r = 3.175,
         // tan(30°) ≈ 0.5774, z_min_expected ≈ -5.50mm. The cone-floor
         // depth could only go that deep with the clamp; without it, the
@@ -604,6 +588,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -697,7 +682,8 @@ mod tests {
                 operations: vec![op],
                 fixtures: Vec::default(),
                 text_layers: Vec::default(),
-            work_offset: crate::project::WorkOffset::default(),
+                work_offset: crate::project::WorkOffset::default(),
+                stock: None,
             };
             run_pipeline(
                 PipelineRequest {
@@ -772,6 +758,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -790,9 +777,10 @@ mod tests {
         );
         // No deep cuts should have been emitted — only rapids and
         // surface (z=0) moves at most.
-        let has_deep_cut = resp.toolpath.iter().any(|s| {
-            s.to.z < -0.01 && !matches!(s.kind, crate::gcode::preview::MoveKind::Rapid)
-        });
+        let has_deep_cut = resp
+            .toolpath
+            .iter()
+            .any(|s| s.to.z < -0.01 && !matches!(s.kind, crate::gcode::preview::MoveKind::Rapid));
         assert!(
             !has_deep_cut,
             "idne: full-medial-axis silently emitted Z<0 cuts despite r-cap below tip",

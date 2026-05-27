@@ -83,6 +83,36 @@ pub struct Project {
     /// the field default to zeros and behave exactly as before.
     #[serde(default, skip_serializing_if = "WorkOffset::is_default")]
     pub work_offset: WorkOffset,
+
+    /// vrrr: physical stock envelope, resolved to an axis-aligned box in
+    /// the geometry frame. The frontend derives this from its auto/manual
+    /// stock UI (margin / custom dims / offset) via `computeFootprint`
+    /// and sends the resolved box; a CLI / server consumer sets the
+    /// dimensions directly. `None` (default) skips the `out_of_stock`
+    /// scan, so legacy projects — and any transport that doesn't model
+    /// stock — behave exactly as before this field existed. The stock
+    /// top sits at z = 0 (the WCS / geometry origin plane); the body
+    /// extends downward by `thickness_mm`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stock: Option<StockConfig>,
+}
+
+/// vrrr: resolved stock box. See [`Project::stock`]. Kept deliberately
+/// thin — the auto/manual/margin derivation lives frontend-side (it's a
+/// UI convenience for sizing the box to imported geometry); the core
+/// only needs the final axis-aligned envelope for the `out_of_stock`
+/// scan (and, in future, stock-aware sim / rapid / holder checks).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct StockConfig {
+    /// Min corner (x, y) of the stock box in the geometry frame (mm).
+    #[serde(default)]
+    pub origin: [f64; 2],
+    /// X extent of the stock box (mm).
+    pub width_mm: f64,
+    /// Y extent of the stock box (mm).
+    pub height_mm: f64,
+    /// Material thickness (mm). The stock body spans z ∈ [-thickness, 0].
+    pub thickness_mm: f64,
 }
 
 /// i5g4: program-level work-coordinate offset. Defaults to all

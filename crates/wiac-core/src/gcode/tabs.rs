@@ -320,7 +320,8 @@ fn arc_intersects_tab(
     let theta_start = (seg.start.y - center.y).atan2(seg.start.x - center.x);
     // Signed sweep (positive = CCW); matches bulge convention.
     let sweep = 4.0 * seg.bulge.atan();
-    arc_contains_angle(theta_start, sweep, theta_a) || arc_contains_angle(theta_start, sweep, theta_b)
+    arc_contains_angle(theta_start, sweep, theta_a)
+        || arc_contains_angle(theta_start, sweep, theta_b)
 }
 
 /// Returns true when `theta` lies within the directed arc sweep from

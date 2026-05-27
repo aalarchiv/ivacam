@@ -53,7 +53,9 @@ pub enum HolderCheck {
 /// how much extra clearance the holder would need at this cell for the
 /// envelope to fit; `wall_z` is the cell's current heightmap value (the
 /// top of the wall the holder is hitting).
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub struct HolderCollisionCell {
     pub cell_x: f64,
     pub cell_y: f64,

@@ -146,8 +146,7 @@ impl SimRunSummary {
         cells_carved: u64,
         total_seconds: f64,
     ) -> Self {
-        let mut counts: std::collections::BTreeMap<String, u32> =
-            std::collections::BTreeMap::new();
+        let mut counts: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
         for w in &diagnostics.warnings {
             *counts.entry(kind_str(w).to_string()).or_insert(0) += 1;
         }

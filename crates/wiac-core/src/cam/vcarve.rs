@@ -834,8 +834,16 @@ mod tests {
     #[test]
     fn prune_drops_short_chain() {
         let chain = vec![
-            VPoint { x: 0.0, y: 0.0, r: 0.5 },
-            VPoint { x: 0.1, y: 0.0, r: 0.5 },
+            VPoint {
+                x: 0.0,
+                y: 0.0,
+                r: 0.5,
+            },
+            VPoint {
+                x: 0.1,
+                y: 0.0,
+                r: 0.5,
+            },
         ];
         let pruned = prune_medial_axis(vec![chain], 5.0, 0.0);
         assert!(pruned.is_empty(), "0.1 mm branch should be pruned");

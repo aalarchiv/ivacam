@@ -695,9 +695,21 @@ pub fn emit_stufenfase_rim_block<P: PostProcessor>(
         let i_off = hole.center.x - lx;
         let j_off = hole.center.y - ly;
         if hole.ccw {
-            post.arc_ccw(Some(lx), Some(ly), Some(hole.flat_z), Some(i_off), Some(j_off));
+            post.arc_ccw(
+                Some(lx),
+                Some(ly),
+                Some(hole.flat_z),
+                Some(i_off),
+                Some(j_off),
+            );
         } else {
-            post.arc_cw(Some(lx), Some(ly), Some(hole.flat_z), Some(i_off), Some(j_off));
+            post.arc_cw(
+                Some(lx),
+                Some(ly),
+                Some(hole.flat_z),
+                Some(i_off),
+                Some(j_off),
+            );
         }
         *last_pos = Point2::new(lx, ly);
     }
@@ -791,15 +803,7 @@ pub fn emit_drill_block<P: PostProcessor>(
                 peck_step_mm,
                 dwell_sec,
             } => {
-                post.drill_chip_break(
-                    pt.x,
-                    pt.y,
-                    z,
-                    r,
-                    peck_step_mm,
-                    setup.tool.rate_v,
-                    dwell_sec,
-                );
+                post.drill_chip_break(pt.x, pt.y, z, r, peck_step_mm, setup.tool.rate_v, dwell_sec);
             }
         }
         *last_pos = pt;
@@ -1791,7 +1795,8 @@ mod tests {
         // substring match would otherwise alias on it. We only forbid
         // M3 followed by a space or S (the spindle-on word).
         assert!(
-            !g.lines().any(|l| l.starts_with("M3 ") || l == "M3" || l.starts_with("M3S")),
+            !g.lines()
+                .any(|l| l.starts_with("M3 ") || l == "M3" || l.starts_with("M3S")),
             "must not emit M3 (spindle CW) when spindle_direction = Ccw: {g}",
         );
     }
@@ -1837,7 +1842,10 @@ mod tests {
         // F must appear AFTER the G0, not before.
         let first_g0 = g.lines().position(|l| l.trim_start().starts_with("G0"));
         let first_f = g.lines().position(|l| l.trim_start().starts_with('F'));
-        let (g0, f) = (first_g0.expect("expected a G0"), first_f.expect("expected an F"));
+        let (g0, f) = (
+            first_g0.expect("expected a G0"),
+            first_f.expect("expected an F"),
+        );
         assert!(
             f > g0,
             "expected F to appear AFTER initial G0 (G0 ignores F); got F at line {f}, G0 at line {g0}\n{g}",
@@ -2370,7 +2378,8 @@ mod tests {
         let head: Vec<&str> = lines.iter().take(first_motion).copied().collect();
         for code in ["G17", "G40", "G94"] {
             assert!(
-                head.iter().any(|l| l == &code || l.starts_with(&format!("{code} "))),
+                head.iter()
+                    .any(|l| l == &code || l.starts_with(&format!("{code} "))),
                 "expected {code} in prologue (before first G0/G1) — got head:\n{}",
                 head.join("\n")
             );
@@ -2484,7 +2493,10 @@ mod tests {
         // The tail of the program must lift to Z5, traverse to (0,0),
         // THEN turn the spindle off.
         let lines: Vec<&str> = g.lines().collect();
-        let m5_idx = lines.iter().position(|l| l.contains("M5")).expect("M5 expected");
+        let m5_idx = lines
+            .iter()
+            .position(|l| l.contains("M5"))
+            .expect("M5 expected");
         // At least one of the lines before M5 must contain X0 Y0 (the work zero).
         let parks_before_m5 = lines[..m5_idx]
             .iter()
@@ -2664,10 +2676,7 @@ mod tests {
         // M3 S500 must appear AT LEAST TWICE — once per cut block —
         // because each cut_tool_off clears `last_speed`, forcing the
         // next cut_tool_on to re-emit the M3 word.
-        let m3_count = g
-            .lines()
-            .filter(|l| l.contains("M3 S500"))
-            .count();
+        let m3_count = g.lines().filter(|l| l.contains("M3 S500")).count();
         assert!(
             m3_count >= 2,
             "expected ≥2 `M3 S500` lines (one per cut block); got {m3_count}\n{g}",
@@ -2709,9 +2718,7 @@ mod tests {
         let g = emit_polylines(&setup, &offsets, &mut post);
         let lines: Vec<&str> = g.lines().collect();
 
-        let pos = |needle: &str| -> Option<usize> {
-            lines.iter().position(|l| l.contains(needle))
-        };
+        let pos = |needle: &str| -> Option<usize> { lines.iter().position(|l| l.contains(needle)) };
         let arm = pos("M3 S0")
             .unwrap_or_else(|| panic!("`M3 S0` must arm the laser BEFORE the rapid\n{g}"));
         // The G0 rapid TRAVERSE to the entry XY (not the safe-Z lift
@@ -2721,8 +2728,8 @@ mod tests {
             .iter()
             .position(|l| l.starts_with("G0 X"))
             .unwrap_or_else(|| panic!("missing G0 X rapid to entry\n{g}"));
-        let full_power = pos("M3 S800")
-            .unwrap_or_else(|| panic!("`M3 S800` must ramp up before pierce\n{g}"));
+        let full_power =
+            pos("M3 S800").unwrap_or_else(|| panic!("`M3 S800` must ramp up before pierce\n{g}"));
         // First LATERAL cut — skip the G1 Z plunge that follows the rapid.
         let first_lateral = lines
             .iter()
@@ -2811,9 +2818,9 @@ mod tests {
         setup.tool.speed = 12000;
         setup.tool.rate_v = 200;
         setup.tool.tip_diameter_mm = 3.0; // flat-bottom: no cone_extra
-        // Proud stock or recessed-feature edge: start_depth dips BELOW
-        // the stock surface (Z=0). The old code used this as R; the
-        // fix clamps R to stock_top + 0.5 mm.
+                                          // Proud stock or recessed-feature edge: start_depth dips BELOW
+                                          // the stock surface (Z=0). The old code used this as R; the
+                                          // fix clamps R to stock_top + 0.5 mm.
         setup.mill.start_depth = -1.0;
         setup.mill.depth = -5.0;
         setup.mill.fast_move_z = 10.0;
@@ -2948,7 +2955,9 @@ mod tests {
             .unwrap_or_else(|| panic!("expected F100 (rate_v) before lead-in plunge:\n{g}"));
         let g1_z_after_f100 = lines[f100_idx + 1..]
             .iter()
-            .position(|l| l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y'))
+            .position(|l| {
+                l.starts_with("G1 ") && l.contains('Z') && !l.contains('X') && !l.contains('Y')
+            })
             .unwrap_or_else(|| panic!("expected `G1 Z<entry>` right after F100:\n{g}"));
         let f800_after_plunge = lines[f100_idx + 1 + g1_z_after_f100..]
             .iter()
@@ -3163,7 +3172,9 @@ mod tests {
             let mut found_f: Option<&str> = None;
             for i in (0..g1_idx).rev() {
                 let trimmed = lines[i].trim();
-                if trimmed.starts_with('F') && trimmed[1..].chars().all(|c| c.is_ascii_digit() || c == '.') {
+                if trimmed.starts_with('F')
+                    && trimmed[1..].chars().all(|c| c.is_ascii_digit() || c == '.')
+                {
                     found_f = Some(trimmed);
                     break;
                 }
@@ -3253,7 +3264,9 @@ mod tests {
                     && l.contains("Y5")
                     && l.contains('I')
             })
-            .unwrap_or_else(|| panic!("expected the quarter-CCW cut arc (G3 X10 Y5 ...) in output:\n{g}"));
+            .unwrap_or_else(|| {
+                panic!("expected the quarter-CCW cut arc (G3 X10 Y5 ...) in output:\n{g}")
+            });
 
         // The swivel must come BEFORE the cut arc — search the prior
         // few lines (the corner sequence is at most ~4 lines deep:
@@ -3325,9 +3338,7 @@ mod tests {
         let next_motion = lines[last_arc_idx + 1..]
             .iter()
             .find(|l| l.starts_with("G0") || l.starts_with("G1"))
-            .unwrap_or_else(|| {
-                panic!("expected a motion line after the last helix arc:\n{g}")
-            });
+            .unwrap_or_else(|| panic!("expected a motion line after the last helix arc:\n{g}"));
         assert!(
             next_motion.starts_with("G0") && next_motion.contains('Z'),
             "post-helix lift must be G0 Z (rapid), got: {next_motion}\nfull gcode:\n{g}",
@@ -3619,9 +3630,10 @@ mod tests {
         // No cut moves at the main depth (Z=-1) — plasma collapses
         // to one pass at cut_height. NO Z-negative G1 should appear.
         for line in &lines {
-            assert!(!(line.starts_with("G1 ") && line.contains("Z-")), 
-                    "zpuk: plasma must not descend below stock top; got: {line}\n{g}"
-                );
+            assert!(
+                !(line.starts_with("G1 ") && line.contains("Z-")),
+                "zpuk: plasma must not descend below stock top; got: {line}\n{g}"
+            );
         }
         // Torch on emit (laser_on path) — `M3 S100`.
         assert!(
@@ -3800,7 +3812,10 @@ mod tests {
         let g = post.finish();
         // Two pierce dwells (one per sub-polyline). `G4 P0.7` is the
         // LinuxCNC dwell form.
-        let dwell_count = g.lines().filter(|l| l.trim_start().starts_with("G4 P0.7")).count();
+        let dwell_count = g
+            .lines()
+            .filter(|l| l.trim_start().starts_with("G4 P0.7"))
+            .count();
         assert_eq!(
             dwell_count, 2,
             "md0m: expected one `G4 P0.7` per V-carve sub-polyline (got {dwell_count}); pierce dwell missing — laser drags through unmelted stock:\n{g}",
@@ -3852,11 +3867,7 @@ mod tests {
 
         // A ratchet-style chain that begins at the surface (z=0) with an
         // angled lead-in ramp (Z descends as XY advances), then deepens.
-        let polylines = vec![vec![
-            (0.0, 0.0, 0.0),
-            (5.0, 0.0, -1.0),
-            (10.0, 0.0, -2.0),
-        ]];
+        let polylines = vec![vec![(0.0, 0.0, 0.0), (5.0, 0.0, -1.0), (10.0, 0.0, -2.0)]];
         let mut post = linuxcnc::Post::new();
         let mut last_pos = Point2::new(0.0, 0.0);
         emit_vcarve_block(&setup, &polylines, &mut post, &mut last_pos);
@@ -3874,9 +3885,8 @@ mod tests {
                 continue;
             }
             let word = |axis: char| -> Option<f64> {
-                l.split_whitespace().find_map(|tok| {
-                    tok.strip_prefix(axis).and_then(|n| n.parse::<f64>().ok())
-                })
+                l.split_whitespace()
+                    .find_map(|tok| tok.strip_prefix(axis).and_then(|n| n.parse::<f64>().ok()))
             };
             let nx = word('X').unwrap_or(last_x);
             let ny = word('Y').unwrap_or(last_y);

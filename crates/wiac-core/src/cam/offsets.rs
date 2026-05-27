@@ -236,7 +236,8 @@ pub fn parallel_offset_outward(obj: &VcObject, distance: f64) -> Vec<PolylineOff
 /// convention: positive delta = LEFT of tangent. For CCW input that's
 /// inward; for CW input that's outward. Most callers should use
 /// `parallel_offset_inward` / `_outward` instead — they handle winding.
-#[must_use] pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset> {
+#[must_use]
+pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset> {
     if obj.segments.is_empty() {
         return Vec::new();
     }
@@ -492,10 +493,7 @@ pub fn pocket_zigzag_angled(
         let dx = p.x - pivot.x;
         let dy = p.y - pivot.y;
         let s = sign * sin;
-        Point2::new(
-            pivot.x + dx * cos - dy * s,
-            pivot.y + dx * s + dy * cos,
-        )
+        Point2::new(pivot.x + dx * cos - dy * s, pivot.y + dx * s + dy * cos)
     };
     let rotated: Vec<Point2> = boundary.iter().map(|p| rotate(*p, -1.0)).collect();
     let rotated_islands: Vec<Vec<Point2>> = islands
@@ -552,9 +550,8 @@ pub fn pocket_zigzag(
     // than burying the toolpath silently.
     if !stride.is_finite() || stride < 1e-6 {
         ZIGZAG_STRIDE_DEGENERATE.with(|s| {
-            s.borrow_mut().push(ZigzagStrideDegenerate {
-                stride_mm: stride,
-            });
+            s.borrow_mut()
+                .push(ZigzagStrideDegenerate { stride_mm: stride });
         });
         return Vec::new();
     }
@@ -687,8 +684,8 @@ pub fn pocket_zigzag(
             if !needs_break {
                 if let Some(prev) = prev_end {
                     if prev.distance(a) > 1e-6 {
-                        let crosses_island = !islands.is_empty()
-                            && segment_crosses_any_polygon(prev, a, islands);
+                        let crosses_island =
+                            !islands.is_empty() && segment_crosses_any_polygon(prev, a, islands);
                         let leaves_outer = !bridge_stays_inside_polygon(prev, a, boundary);
                         if crosses_island || leaves_outer {
                             needs_break = true;
@@ -882,10 +879,7 @@ pub fn inflate_islands_by_tool_radius(
 /// Shared by [`inflate_islands_by_tool_radius`] and the cascade's
 /// over-inflate path (sbtf). Negative / non-finite deltas pass islands
 /// through unchanged.
-fn inflate_islands_by_delta(
-    islands: &[Vec<Point2>],
-    delta: f64,
-) -> Vec<Vec<Point2>> {
+fn inflate_islands_by_delta(islands: &[Vec<Point2>], delta: f64) -> Vec<Vec<Point2>> {
     if !delta.is_finite() || delta <= 1e-9 {
         return islands.to_vec();
     }
@@ -901,10 +895,7 @@ fn inflate_islands_by_delta(
         // of a closed polygon. The result is the Minkowski sum with a
         // disc of radius `delta`, i.e. the safe centerline boundary the
         // cutter must stay outside.
-        let path: PathD = island
-            .iter()
-            .map(|p| ClipperPoint::new(p.x, p.y))
-            .collect();
+        let path: PathD = island.iter().map(|p| ClipperPoint::new(p.x, p.y)).collect();
         let inflated = inflate_paths_d(
             &vec![path],
             delta,
@@ -1522,13 +1513,7 @@ pub fn pocket_for_object(
                 // a ZigzagStrideDegenerate event only when the stride is
                 // truly non-finite or below the FP working precision —
                 // the pipeline drains that into a user-visible warning.
-                let chains = pocket_zigzag_angled(
-                    &pts,
-                    islands,
-                    step,
-                    zigzag_tool_d,
-                    angle_deg,
-                );
+                let chains = pocket_zigzag_angled(&pts, islands, step, zigzag_tool_d, angle_deg);
                 for strokes in chains {
                     if strokes.is_empty() {
                         continue;
@@ -1558,7 +1543,9 @@ pub fn pocket_for_object(
                 // sbtf: pass the over-inflated islands so the first ring
                 // doesn't intrude when step < tool_radius (high overlap).
                 let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
-                    &pts, &cascade_islands, step,
+                    &pts,
+                    &cascade_islands,
+                    step,
                 );
                 if rings.is_empty() {
                     continue;
@@ -1640,7 +1627,9 @@ pub fn pocket_for_object(
         // step < tool_radius (high overlap). The over-inflation is a
         // no-op when step >= tool_radius (matches the pre-sbtf path).
         let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
-            &pts, &cascade_islands, step,
+            &pts,
+            &cascade_islands,
+            step,
         );
         // No silent fallback to zigzag here: the user picked cascade or
         // spiral explicitly, and substituting zigzag when no ring fits
@@ -1653,12 +1642,22 @@ pub fn pocket_for_object(
             }
             let mut segs = Vec::with_capacity(ring.len());
             for win in ring.windows(2) {
-                segs.push(Segment::line(win[0], win[1], offset.layer.clone(), offset.color));
+                segs.push(Segment::line(
+                    win[0],
+                    win[1],
+                    offset.layer.clone(),
+                    offset.color,
+                ));
             }
             // Close the ring.
             if let (Some(first), Some(last)) = (ring.first(), ring.last()) {
                 if first.distance(*last) > 1e-6 {
-                    segs.push(Segment::line(*last, *first, offset.layer.clone(), offset.color));
+                    segs.push(Segment::line(
+                        *last,
+                        *first,
+                        offset.layer.clone(),
+                        offset.color,
+                    ));
                 }
             }
             out.push(PolylineOffset {
@@ -1858,11 +1857,7 @@ pub(crate) fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point
 /// island, i.e. a sample on the interior of the segment lies inside an
 /// island polygon, or the segment intersects an island edge. Endpoints
 /// are excluded (they may legitimately sit on an inflated island ring).
-pub(crate) fn bridge_crosses_any_island(
-    a: Point2,
-    b: Point2,
-    islands: &[Vec<Point2>],
-) -> bool {
+pub(crate) fn bridge_crosses_any_island(a: Point2, b: Point2, islands: &[Vec<Point2>]) -> bool {
     if islands.is_empty() {
         return false;
     }
@@ -2422,8 +2417,20 @@ mod tests {
         // Ring 1 is a thin vertical band on the right (x≈40, y∈[22..28]) —
         // every line from (5, 25) to a (40, ≈25) vertex passes through
         // the island's x∈[20..30], y∈[22..28] footprint.
-        let ring0 = vec![p(5.0, 25.0), p(5.0, 5.0), p(45.0, 5.0), p(45.0, 45.0), p(5.0, 45.0)];
-        let ring1 = vec![p(40.0, 25.0), p(40.0, 22.0), p(40.0, 28.0), p(40.0, 24.0), p(40.0, 26.0)];
+        let ring0 = vec![
+            p(5.0, 25.0),
+            p(5.0, 5.0),
+            p(45.0, 5.0),
+            p(45.0, 45.0),
+            p(5.0, 45.0),
+        ];
+        let ring1 = vec![
+            p(40.0, 25.0),
+            p(40.0, 22.0),
+            p(40.0, 28.0),
+            p(40.0, 24.0),
+            p(40.0, 26.0),
+        ];
         let rings = vec![ring0, ring1];
         let island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
         // No islands → polyline stitches without complaint (sanity).
@@ -2451,10 +2458,16 @@ mod tests {
         // from (5, 25) is safe (y ≤ 25, below the island). Pre-fix:
         // returned None because the first candidate failed. Post-fix:
         // returns Some, picking (10, 5) as ring 1's start.
-        let ring0 = vec![p(5.0, 25.0), p(5.0, 5.0), p(45.0, 5.0), p(45.0, 45.0), p(5.0, 45.0)];
+        let ring0 = vec![
+            p(5.0, 25.0),
+            p(5.0, 5.0),
+            p(45.0, 5.0),
+            p(45.0, 45.0),
+            p(5.0, 45.0),
+        ];
         let ring1 = vec![
-            p(40.0, 25.0),   // closest to (5, 25) — bridge crosses island
-            p(10.0, 5.0),    // farther but bridge sits below the island, safe
+            p(40.0, 25.0), // closest to (5, 25) — bridge crosses island
+            p(10.0, 5.0),  // farther but bridge sits below the island, safe
             p(10.0, 7.0),
             p(8.0, 5.0),
         ];
@@ -2469,7 +2482,9 @@ mod tests {
         // segment ends (ring 0 vertices all sit on x∈{5, 45}, ring 1's
         // chosen vertex has x ∈ {8, 10}).
         assert!(
-            stitched.iter().any(|pt| pt.x > 7.0 && pt.x < 11.0 && pt.y < 8.0),
+            stitched
+                .iter()
+                .any(|pt| pt.x > 7.0 && pt.x < 11.0 && pt.y < 8.0),
             "stitch should have picked a ring-1 start that avoids the island; got {stitched:?}",
         );
         // And no point in the stitched polyline should sit inside the
@@ -2587,9 +2602,7 @@ mod tests {
                     // square): the cutter centerline got within
                     // <1e-3 of x=15 / x=25 on y∈[15..25] rows.
                     let inside_y = pt.y > 15.0 - 1.0 && pt.y < 25.0 + 1.0;
-                    if inside_y
-                        && ((pt.x - 15.0).abs() < 0.5 || (pt.x - 25.0).abs() < 0.5)
-                    {
+                    if inside_y && ((pt.x - 15.0).abs() < 0.5 || (pt.x - 25.0).abs() < 0.5) {
                         had_gouge_centerline = true;
                     }
                 }
@@ -2961,20 +2974,14 @@ mod tests {
             for s in chain {
                 for pt in [s.start, s.end] {
                     let inside = pt.x > 20.01 && pt.x < 29.99 && pt.y > 20.01 && pt.y < 29.99;
-                    assert!(
-                        !inside,
-                        "zigzag stroke endpoint inside island: {pt:?}",
-                    );
+                    assert!(!inside, "zigzag stroke endpoint inside island: {pt:?}",);
                 }
             }
         }
         // No single stroke crosses the island bbox horizontally.
         for chain in &chains {
             for s in chain {
-                if (s.start.y - s.end.y).abs() < 1e-6
-                    && s.start.y > 20.0
-                    && s.start.y < 30.0
-                {
+                if (s.start.y - s.end.y).abs() < 1e-6 && s.start.y > 20.0 && s.start.y < 30.0 {
                     let lo = s.start.x.min(s.end.x);
                     let hi = s.start.x.max(s.end.x);
                     assert!(
@@ -3125,7 +3132,10 @@ mod tests {
         };
         let obj = VcObject::new(vec![half1, half2], true);
         let drill = small_circle_drill(&obj, tool_radius);
-        assert!(drill.is_some(), "near-tool-radius circle must drill at center");
+        assert!(
+            drill.is_some(),
+            "near-tool-radius circle must drill at center"
+        );
         let drill = drill.unwrap();
         assert_eq!(drill.segments.len(), 1);
         assert!(matches!(drill.segments[0].kind, SegmentKind::Point));
@@ -3278,10 +3288,7 @@ mod tests {
         // (y ∈ [5..6]) crossing x in [5..15].
         for chain in &chains {
             for s in chain {
-                let mid = Point2::new(
-                    (s.start.x + s.end.x) * 0.5,
-                    (s.start.y + s.end.y) * 0.5,
-                );
+                let mid = Point2::new((s.start.x + s.end.x) * 0.5, (s.start.y + s.end.y) * 0.5);
                 // A horizontal stroke at y > cross-bar (y >= 5 + tool_r)
                 // that spans x ∈ [5..15] would be illegal — that's
                 // through the cross-bar region.
@@ -3376,7 +3383,10 @@ mod tests {
         // the sink).
         assert!(drained.iter().all(|p| !p.layer.is_empty()) || drained.is_empty());
         let second = take_parallel_offset_panics();
-        assert!(second.is_empty(), "sink must be empty after the first drain");
+        assert!(
+            second.is_empty(),
+            "sink must be empty after the first drain"
+        );
     }
 
     /// c6ej regression: a polygon whose top edge grazes a scanline at a
@@ -3619,16 +3629,18 @@ mod tests {
         let tool_r = 2.0_f64;
         let step = 0.4_f64; // < tool_r ⇒ pre-fix intrusion of 1.6 mm
         let knd4_islands = inflate_islands_by_tool_radius(&[raw_island.clone()], tool_r);
-        let over_inflated =
-            over_inflate_islands_for_high_overlap(&knd4_islands, tool_r, step);
+        let over_inflated = over_inflate_islands_for_high_overlap(&knd4_islands, tool_r, step);
         // The over-inflated boundary must sit MEASURABLY further from
         // the raw island wall than the bare knd4 inflation.
         let bbox = |pts: &[Point2]| {
-            let (mut mnx, mut mxx) =
-                (f64::INFINITY, f64::NEG_INFINITY);
+            let (mut mnx, mut mxx) = (f64::INFINITY, f64::NEG_INFINITY);
             for p in pts {
-                if p.x < mnx { mnx = p.x; }
-                if p.x > mxx { mxx = p.x; }
+                if p.x < mnx {
+                    mnx = p.x;
+                }
+                if p.x > mxx {
+                    mxx = p.x;
+                }
             }
             (mnx, mxx)
         };
@@ -3727,12 +3739,14 @@ mod tests {
         // tool_radius = 0.15 mm (0.3 mm endmill). A CCW polyline with
         // a reflex corner at the inner L joint.
         let r = 0.15_f64;
-        let off = [p(r, r),
+        let off = [
+            p(r, r),
             p(5.0 - r, r),
             p(5.0 - r, 2.5 - r),
             p(2.5 - r, 2.5 - r),
             p(2.5 - r, 5.0 - r),
-            p(r, 5.0 - r)];
+            p(r, 5.0 - r),
+        ];
         let mut offset = PolylineOffset {
             segments: vec![
                 Segment::line(off[0], off[1], "0", 7),

@@ -26,7 +26,11 @@ use super::PipelineWarning;
 /// falls outside the current `objects` set is silently skipped (e.g.
 /// after a prior op's pattern expansion replaced the chained set — the
 /// resulting empty segment list still hashes deterministically).
-pub(in crate::pipeline) fn resolve_op_segments(op: &Op, all: &[Segment], objects: &[VcObject]) -> Vec<Segment> {
+pub(in crate::pipeline) fn resolve_op_segments(
+    op: &Op,
+    all: &[Segment],
+    objects: &[VcObject],
+) -> Vec<Segment> {
     match &op.source {
         OpSource::All => all.to_vec(),
         OpSource::Layers { layers, .. } => all
@@ -335,8 +339,9 @@ mod tests {
         let mut warnings = Vec::new();
         validate_op_source_objects(&op, &[], &mut warnings);
         assert!(
-            warnings.iter().any(|w| w.kind == "op_source_missing_object"
-                && w.message.contains(" 0 ")),
+            warnings
+                .iter()
+                .any(|w| w.kind == "op_source_missing_object" && w.message.contains(" 0 ")),
             "id=0 must surface as op_source_missing_object, got {warnings:?}"
         );
     }
@@ -441,7 +446,9 @@ mod tests {
         )
         .unwrap();
         assert!(
-            resp.warnings.iter().any(|w| w.kind == "op_source_missing_layer"),
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "op_source_missing_layer"),
             "expected op_source_missing_layer from run_pipeline, got {:?}",
             resp.warnings
         );

@@ -263,9 +263,7 @@ fn sweep_chord_carve(
     // toolpaths would snap the bit in reality, so we refuse to model
     // the unphysical cut rather than letting the heightmap drop past
     // the cutter's reach.
-    let depth_floor_z = profile
-        .max_engagement_depth()
-        .map(|d| top_z - f64::from(d));
+    let depth_floor_z = profile.max_engagement_depth().map(|d| top_z - f64::from(d));
     let layout = HeightmapLayout::of(heightmap);
     let mut touched = 0u32;
     // `for_each_swept_cell` clamps (ix, iy) to the heightmap's cell
@@ -385,9 +383,7 @@ fn sweep_chord_carve_partial(
     let cell = layout.cell;
     let r_tool_sq = r_tool * r_tool;
     // 4mp1: engagement-depth clamp — same semantics as `sweep_chord_carve`.
-    let depth_floor_z = profile
-        .max_engagement_depth()
-        .map(|d| top_z - f64::from(d));
+    let depth_floor_z = profile.max_engagement_depth().map(|d| top_z - f64::from(d));
     let mut touched = 0u32;
     for iy in iy0..=iy1 {
         for ix in ix0..=ix1 {
@@ -1091,11 +1087,7 @@ mod tests {
         // synthetic chord whose endpoint clamp left false-deep marks
         // near the t=0.5 junction for non-flat profiles.
         let profile = ToolProfile::BallNose { r: 3.0 };
-        let s = seg(
-            MoveKind::Cut,
-            pose(5.0, 20.0, -1.0),
-            pose(35.0, 20.0, -3.0),
-        );
+        let s = seg(MoveKind::Cut, pose(5.0, 20.0, -1.0), pose(35.0, 20.0, -3.0));
         let mut full = fresh_map(40, 40);
         let mut df = diag();
         sweep_segment(&mut full, &s, &profile, 0, &[], None, &mut df);
@@ -1143,12 +1135,7 @@ mod tests {
             0.5,
             1.0,
         );
-        for (i, (a, b)) in full_e
-            .data
-            .iter()
-            .zip(split_e.data.iter())
-            .enumerate()
-        {
+        for (i, (a, b)) in full_e.data.iter().zip(split_e.data.iter()).enumerate() {
             let ix = (i as u32) % full_e.cols;
             let iy = (i as u32) / full_e.cols;
             assert!(
@@ -1387,11 +1374,7 @@ mod tests {
             cone_half_angle: 30f32.to_radians(),
             max_engagement_depth: 1.5,
         };
-        let s = seg(
-            MoveKind::Cut,
-            pose(5.0, 20.0, -3.0),
-            pose(35.0, 20.0, -3.0),
-        );
+        let s = seg(MoveKind::Cut, pose(5.0, 20.0, -3.0), pose(35.0, 20.0, -3.0));
         let mut full = fresh_map(40, 40);
         let mut df = diag();
         sweep_segment(&mut full, &s, &profile, 0, &[], None, &mut df);
@@ -1507,7 +1490,11 @@ mod tests {
             half_angle_rad: std::f32::consts::FRAC_PI_4,
         };
         // Cut along +x at y = 20.0, tip plunged to z = -3 (chamfer depth).
-        let s = seg(MoveKind::Cut, pose(10.0, 20.0, -3.0), pose(30.0, 20.0, -3.0));
+        let s = seg(
+            MoveKind::Cut,
+            pose(10.0, 20.0, -3.0),
+            pose(30.0, 20.0, -3.0),
+        );
         sweep_segment(&mut map, &s, &profile, 0, &[], None, &mut d);
 
         // Sample a column at x = 20 across rows moving away from the path.
@@ -1517,8 +1504,11 @@ mod tests {
         let z0 = cell(&map, 20, 20); // ~0.5 mm off axis
         let z1 = cell(&map, 20, 21); // ~1.5 mm
         let z2 = cell(&map, 20, 22); // ~2.5 mm
-        // Strictly shallower as we move off the axis — the V flank.
-        assert!(z0 < z1 && z1 < z2, "expected a V profile, got z0={z0} z1={z1} z2={z2}");
+                                     // Strictly shallower as we move off the axis — the V flank.
+        assert!(
+            z0 < z1 && z1 < z2,
+            "expected a V profile, got z0={z0} z1={z1} z2={z2}"
+        );
         // Slope ~1 (tan 45): ~1 mm rise per 1 mm out. A cylinder would give
         // z2 - z0 == 0 (flat). Demand a real rise.
         assert!(

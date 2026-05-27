@@ -55,8 +55,8 @@ impl HolderProfile {
         // touches — otherwise the cells the sweep just lowered get
         // flagged as walls the holder is colliding with (false-positive
         // HolderCollision warnings on form cutters).
-        let cutting_r = form_profile_max_radius(tool)
-            .unwrap_or_else(|| (tool.diameter * 0.5).max(0.0));
+        let cutting_r =
+            form_profile_max_radius(tool).unwrap_or_else(|| (tool.diameter * 0.5).max(0.0));
         // ityc: drills with no `flute_length_mm` set previously left the
         // shank starting at z=0 above the tip — so any wall above the
         // tip plane within the shank radius alarmed as a collision.
@@ -485,5 +485,4 @@ mod tests {
         let p_em = HolderProfile::from_tool(&endmill).expect("holder set");
         assert!((p_em.cutting_radius() - 3.0).abs() < 1e-9);
     }
-
 }

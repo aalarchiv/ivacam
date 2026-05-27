@@ -899,8 +899,7 @@ mod tests {
         // 20) = 2.75 s (≈ 6× too fast on the plunge). With the clamp
         // we're around 4 s + accel/decel; assert the run-time is in the
         // 3.5 .. 6 s window (well above 2.75).
-        let est_clamped =
-            estimate(&segs, &clamped, &machine(), 0, 0.0);
+        let est_clamped = estimate(&segs, &clamped, &machine(), 0, 0.0);
         let est_unclamped = estimate(&segs, &modal_feeds, &machine(), 0, 0.0);
         assert!(
             est_clamped.total_s > est_unclamped.total_s * 1.3,

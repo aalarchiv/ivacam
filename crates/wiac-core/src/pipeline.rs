@@ -498,6 +498,11 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // frontend — surfaces soft-limit / gantry-crash risk as a critical
     // `out_of_work_area` warning.
     warnings::push_work_area_warning(&toolpath, &project.machine, &mut warnings);
+    // vrrr: stock envelope scan — the other half of v0ez. Runs on the
+    // same assembled toolpath; emits a critical `out_of_stock` warning so
+    // CLI / server / wasm consumers get the same guard the frontend used
+    // to synthesize. No-op when `project.stock` is unset.
+    warnings::push_stock_warning(&toolpath, project.stock.as_ref(), &mut warnings);
     let regions = build_region_previews(&project, &objects);
     let tool_changes = count_tool_changes(&project);
     let spindle_warmup_s = spindle_warmup_seconds(&project);
@@ -1276,10 +1281,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
         // jog the new bit to the surface before the work-Z=0 line is
         // moved by G92.
         if let Some(t) = new_tool {
-            post.comment(&format!(
-                "pause: swap to tool {} ({})",
-                new_tool_id, t.name
-            ));
+            post.comment(&format!("pause: swap to tool {} ({})", new_tool_id, t.name));
         } else {
             post.comment(&format!("pause: swap to tool {new_tool_id}"));
         }
@@ -1426,10 +1428,7 @@ mod count_tool_changes_tests {
     fn profile_op_with_distinct_finish_tool_counts_one_change() {
         let mut op = profile_op(1, 1, crate::cam::setup::ToolOffset::Outside);
         op.finish_tool_id = Some(2);
-        let project = project_with(
-            vec![op],
-            vec![endmill(1, 3.0), endmill(2, 6.0)],
-        );
+        let project = project_with(vec![op], vec![endmill(1, 3.0), endmill(2, 6.0)]);
         // One load + zero internal swap (Profile op kind doesn't dual-tool).
         assert_eq!(count_tool_changes(&project), 1);
     }
@@ -1445,10 +1444,7 @@ mod count_tool_changes_tests {
         use crate::pipeline::test_helpers::pocket_op;
         let mut op = pocket_op(1, 1, crate::project::OpSource::All);
         op.finish_tool_id = Some(2);
-        let project = project_with(
-            vec![op],
-            vec![endmill(1, 6.0), endmill(2, 3.0)],
-        );
+        let project = project_with(vec![op], vec![endmill(1, 6.0), endmill(2, 3.0)]);
         // One load (tool 1) + one internal swap to tool 2.
         assert_eq!(count_tool_changes(&project), 2);
     }

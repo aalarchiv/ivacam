@@ -585,7 +585,9 @@ mod tests {
         );
         // Pass 1 outputs must be identical regardless (same initial state).
         assert_eq!(pass1_shared.len(), pass1_fresh.len());
-        for (i, ((xa, ya, _), (xb, yb, _))) in pass1_shared.iter().zip(pass1_fresh.iter()).enumerate() {
+        for (i, ((xa, ya, _), (xb, yb, _))) in
+            pass1_shared.iter().zip(pass1_fresh.iter()).enumerate()
+        {
             assert!(
                 (xa - xb).abs() < 1e-9 && (ya - yb).abs() < 1e-9,
                 "pass1 stride {i}: shared and fresh diverge",

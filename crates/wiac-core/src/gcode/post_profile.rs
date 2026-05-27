@@ -495,7 +495,16 @@ fn find_unknown_tokens(line: &str) -> Vec<String> {
     // Known token strings, lowercased (matches the case-insensitive
     // substitution path). Keep this list in sync with `substitute`.
     const KNOWN: &[&str] = &[
-        "<version>", "<unit>", "<t>", "<n>", "<d>", "<f>", "<s>", "<op>", "<tools>", "<project>",
+        "<version>",
+        "<unit>",
+        "<t>",
+        "<n>",
+        "<d>",
+        "<f>",
+        "<s>",
+        "<op>",
+        "<tools>",
+        "<project>",
         "<nl>",
     ];
     let bytes = line.as_bytes();

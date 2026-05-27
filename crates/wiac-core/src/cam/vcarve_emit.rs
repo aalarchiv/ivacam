@@ -68,7 +68,8 @@ pub const LEAD_IN_ANGLE_DEG: f64 = 10.0;
 // progressive-deepening sweep into one state machine — extraction
 // would split tightly-coupled cut_z/path state across helpers.
 #[allow(clippy::too_many_lines)]
-#[must_use] pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<ZPolyline> {
+#[must_use]
+pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<ZPolyline> {
     ratchet_emit_with_lead_in(axis, depth_per_pass, LEAD_IN_ANGLE_DEG)
 }
 
@@ -83,14 +84,12 @@ pub fn ratchet_emit_with_lead_in(
     depth_per_pass: f64,
     lead_in_angle_deg: f64,
 ) -> Vec<ZPolyline> {
-    let lead_in_angle = if lead_in_angle_deg.is_finite()
-        && lead_in_angle_deg > 0.0
-        && lead_in_angle_deg < 90.0
-    {
-        lead_in_angle_deg
-    } else {
-        LEAD_IN_ANGLE_DEG
-    };
+    let lead_in_angle =
+        if lead_in_angle_deg.is_finite() && lead_in_angle_deg > 0.0 && lead_in_angle_deg < 90.0 {
+            lead_in_angle_deg
+        } else {
+            LEAD_IN_ANGLE_DEG
+        };
     if axis.len() < 2 {
         return Vec::new();
     }

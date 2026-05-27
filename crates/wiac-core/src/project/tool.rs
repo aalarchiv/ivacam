@@ -200,10 +200,7 @@ pub struct ToolEntry {
     /// holders want `Ccw` (M4). Defaults to `Cw` so legacy projects
     /// round-trip unchanged. The default is skipped on serialize so
     /// the JSON stays small.
-    #[serde(
-        default,
-        skip_serializing_if = "is_default_spindle_direction"
-    )]
+    #[serde(default, skip_serializing_if = "is_default_spindle_direction")]
     pub spindle_direction: SpindleDirection,
     /// Length of cutting flutes (mm). None = treat entire tool as cutting.
     #[serde(default, skip_serializing_if = "Option::is_none")]

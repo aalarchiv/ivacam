@@ -66,8 +66,7 @@ pub fn check_segment_against_fixtures(
     // were previously invisible.
     let body_top_offset = holder.map_or(0.0, HolderProfile::total_length);
     let body_z_top = seg_z_max + body_top_offset;
-    let body_radius = holder
-        .map_or(tool_radius, |h| tool_radius.max(h.max_radius()));
+    let body_radius = holder.map_or(tool_radius, |h| tool_radius.max(h.max_radius()));
 
     for f in fixtures {
         // Z-range gate: the tool body sweeps [seg_z_min, seg_z_max +
@@ -631,9 +630,7 @@ mod tests {
                 assert_eq!(fixture_id, 11);
             }
             FixtureCheck::Clear => {
-                panic!(
-                    "expected shank/holder above tip to collide with high clamp, got Clear"
-                )
+                panic!("expected shank/holder above tip to collide with high clamp, got Clear")
             }
         }
     }

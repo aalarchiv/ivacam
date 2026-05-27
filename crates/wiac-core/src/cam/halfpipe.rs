@@ -258,8 +258,13 @@ mod tests {
         assert!((z_over - (-5.0)).abs() < 1e-9, "got {z_over}");
         assert!(lim, "r > R must report depth_limited");
         // r = R/√2 ≈ 3.5355: z = -(R - √(R² - r²)) = -(5 - √(25 - 12.5)) ≈ -1.464.
-        let (z_mid, lim, _) =
-            depth_at(&vp(0.0, 0.0, 5.0_f64 / std::f64::consts::SQRT_2), p, None, None, false);
+        let (z_mid, lim, _) = depth_at(
+            &vp(0.0, 0.0, 5.0_f64 / std::f64::consts::SQRT_2),
+            p,
+            None,
+            None,
+            false,
+        );
         assert!(
             (z_mid - (-1.464_466_094_067_261_9)).abs() < 1e-9,
             "got {z_mid}"

@@ -69,8 +69,7 @@ pub(in crate::pipeline) fn run_standard_op<P: PostProcessor>(
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
 ) -> Result<(usize, usize, bool), PipelineError> {
-    let (offsets, closed_count) =
-        build_op_offsets(op, project, objects, setup, warnings, cancel)?;
+    let (offsets, closed_count) = build_op_offsets(op, project, objects, setup, warnings, cancel)?;
     let offset_count = offsets.len();
     post.raw(&format!("; OP {}", op.id));
     let mut swapped = false;

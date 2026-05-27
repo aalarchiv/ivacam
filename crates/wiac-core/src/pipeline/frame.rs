@@ -86,10 +86,7 @@ pub(super) fn synthesize_pocket_outside_objects(
             }
         });
         let stock_allowance = pocket.finish_xy_allowance_mm.unwrap_or(0.0).max(0.0);
-        let outward = lead_in
-            .max(lead_out)
-            .max(tabs_outward)
-            .max(stock_allowance);
+        let outward = lead_in.max(lead_out).max(tabs_outward).max(stock_allowance);
         let padding = user_padding.max(tool_radius_mm.max(0.0)) + outward;
         build_frame(
             &frame_selection,

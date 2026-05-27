@@ -1285,6 +1285,8 @@ export interface components {
             operations: components["schemas"]["Op"][];
             /** @description Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained. */
             segments: components["schemas"]["Segment"][];
+            /** @description vrrr: physical stock envelope, resolved to an axis-aligned box in the geometry frame. The frontend derives this from its auto/manual stock UI (margin / custom dims / offset) via `computeFootprint` and sends the resolved box; a CLI / server consumer sets the dimensions directly. `None` (default) skips the `out_of_stock` scan, so legacy projects — and any transport that doesn't model stock — behave exactly as before this field existed. The stock top sits at z = 0 (the WCS / geometry origin plane); the body extends downward by `thickness_mm`. */
+            stock?: components["schemas"]["StockConfig"] | null;
             /** @description First-class editable text entities — content / font / size / position / rotation / spacing. The pipeline pre-pass renders each `TextLayer` to segments before any op runs so the existing `Engrave` (and friends) op can target the rendered geometry by layer name `__text_<id>`. Edits to a `TextLayer` re-run the pipeline; cache keys include `text_layers` content. */
             text_layers?: components["schemas"]["TextLayer"][];
             tools: components["schemas"]["ToolEntry"][];
@@ -1457,6 +1459,32 @@ export interface components {
              * @description Tool id (matches [`crate::project::ToolEntry::id`]) of the spot / centerdrill cutter. The driver emits a toolchange envelope between the spot and the main drill block when the spot tool differs from the main drill's tool.
              */
             spot_tool_id: number;
+        };
+        /** @description vrrr: resolved stock box. See [`Project::stock`]. Kept deliberately thin — the auto/manual/margin derivation lives frontend-side (it's a UI convenience for sizing the box to imported geometry); the core only needs the final axis-aligned envelope for the `out_of_stock` scan (and, in future, stock-aware sim / rapid / holder checks). */
+        StockConfig: {
+            /**
+             * Format: double
+             * @description Y extent of the stock box (mm).
+             */
+            height_mm: number;
+            /**
+             * @description Min corner (x, y) of the stock box in the geometry frame (mm).
+             * @default [
+             *       0,
+             *       0
+             *     ]
+             */
+            origin: number[];
+            /**
+             * Format: double
+             * @description Material thickness (mm). The stock body spans z ∈ [-thickness, 0].
+             */
+            thickness_mm: number;
+            /**
+             * Format: double
+             * @description X extent of the stock box (mm).
+             */
+            width_mm: number;
         };
         /** @description A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OpSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms. */
         TabPlacement: {

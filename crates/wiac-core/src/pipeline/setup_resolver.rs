@@ -331,9 +331,9 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         // direction (Estlcam's Einstellungen.Gleichlauf). Non-contour
         // kinds (Drill et al.) never reach the wirbeln overlay anyway,
         // so the default doesn't matter — pick `true` (climb).
-        wirbeln_climb: op
-            .contour_params()
-            .map_or(true, |c| matches!(c.cut_direction, crate::project::CutDirection::Climb)),
+        wirbeln_climb: op.contour_params().map_or(true, |c| {
+            matches!(c.cut_direction, crate::project::CutDirection::Climb)
+        }),
         default_xy_overlap: tool.default_xy_overlap,
         tip_angle_deg: tool.tip_angle_deg,
         tip_diameter_mm: effective_tip_diameter_mm(tool),
@@ -349,9 +349,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         // legacy 10° at emit time inside `ratchet_emit`. Clamp to the
         // physically meaningful open interval (0°, 90°); anything else
         // means "use the default".
-        vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(
-            tool.vcarve_lead_in_angle_deg,
-        ),
+        vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(tool.vcarve_lead_in_angle_deg),
     };
     // 2606: plasma kerf compensation. In Plasma mode the cut width is the
     // torch kerf, not a physical tool diameter — so override the effective

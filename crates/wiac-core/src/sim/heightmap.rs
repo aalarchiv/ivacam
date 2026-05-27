@@ -79,8 +79,12 @@ impl Heightmap {
         // sampleable region (cell-center grid math is unchanged; we
         // just guarantee at least a half-cell of slack past the
         // bbox max).
-        let cols = (((max_x - min_x) / cell).ceil() as u32).saturating_add(1).max(1);
-        let rows = (((max_y - min_y) / cell).ceil() as u32).saturating_add(1).max(1);
+        let cols = (((max_x - min_x) / cell).ceil() as u32)
+            .saturating_add(1)
+            .max(1);
+        let rows = (((max_y - min_y) / cell).ceil() as u32)
+            .saturating_add(1)
+            .max(1);
         Self::new(Point2::new(min_x, min_y), cell, cols, rows, top_z)
     }
 
@@ -288,10 +292,9 @@ impl ToolProfile {
             // pxv8: form cutter — XY footprint is the largest sample
             // radius (conservative; the sweep AABB must cover the
             // whole cross-section).
-            ToolProfile::FormProfile { segments } => segments
-                .iter()
-                .map(|(_, r)| *r)
-                .fold(0.0_f32, f32::max),
+            ToolProfile::FormProfile { segments } => {
+                segments.iter().map(|(_, r)| *r).fold(0.0_f32, f32::max)
+            }
             // legj: engraver — the XY footprint that actually carves
             // is the tip flat. The cone above is non-cutting.
             ToolProfile::Engraver { tip_r, .. } => *tip_r,
@@ -419,10 +422,7 @@ impl ToolProfile {
                     return (r <= 0.0).then_some(0.0);
                 }
                 // Largest radius along the profile.
-                let max_r = segments
-                    .iter()
-                    .map(|(_, rr)| *rr)
-                    .fold(0.0_f32, f32::max);
+                let max_r = segments.iter().map(|(_, rr)| *rr).fold(0.0_f32, f32::max);
                 if r > max_r {
                     return None;
                 }
@@ -492,8 +492,7 @@ impl ToolProfile {
                 // Reach into stock is bounded by flute length when set;
                 // otherwise default to a generous 5 mm — better to
                 // refuse very deep cuts than rubber-stamp them.
-                let max_engagement_depth =
-                    tool.flute_length_mm.map_or(5.0, |v| v.max(0.0)) as f32;
+                let max_engagement_depth = tool.flute_length_mm.map_or(5.0, |v| v.max(0.0)) as f32;
                 ToolProfile::Engraver {
                     tip_r,
                     cone_half_angle,
@@ -917,7 +916,10 @@ mod tests {
         }
         // Kegel is the Conical family — drives the same constraints as a
         // V-bit.
-        assert_eq!(ToolKind::Kegel.family(), crate::project::tool::ToolFamily::Conical);
+        assert_eq!(
+            ToolKind::Kegel.family(),
+            crate::project::tool::ToolFamily::Conical
+        );
     }
 
     /// gm1u: a thread mill cuts a side-wall thread by helical
@@ -1121,10 +1123,22 @@ mod tests {
         let mut t = make_tool(ToolKind::FormProfile, 16.0);
         // 16 mm head disk, 4 mm tall, then a 4 mm neck up to 12 mm.
         t.form_profile_mm = vec![
-            FormProfileSample { z_mm: 0.0, r_mm: 8.0 },
-            FormProfileSample { z_mm: 4.0, r_mm: 8.0 },
-            FormProfileSample { z_mm: 4.0, r_mm: 2.0 },
-            FormProfileSample { z_mm: 12.0, r_mm: 2.0 },
+            FormProfileSample {
+                z_mm: 0.0,
+                r_mm: 8.0,
+            },
+            FormProfileSample {
+                z_mm: 4.0,
+                r_mm: 8.0,
+            },
+            FormProfileSample {
+                z_mm: 4.0,
+                r_mm: 2.0,
+            },
+            FormProfileSample {
+                z_mm: 12.0,
+                r_mm: 2.0,
+            },
         ];
         let profile = ToolProfile::from_tool(&t);
         assert!(matches!(profile, ToolProfile::FormProfile { .. }));
@@ -1145,9 +1159,18 @@ mod tests {
         // Deliberately out of order + a negative radius to prove sort +
         // clamp. A dovetail: wide at the tip (z=0), narrowing upward.
         t.form_profile_mm = vec![
-            FormProfileSample { z_mm: 9.5, r_mm: 4.0 },
-            FormProfileSample { z_mm: 0.0, r_mm: 6.0 },
-            FormProfileSample { z_mm: 4.0, r_mm: -1.0 },
+            FormProfileSample {
+                z_mm: 9.5,
+                r_mm: 4.0,
+            },
+            FormProfileSample {
+                z_mm: 0.0,
+                r_mm: 6.0,
+            },
+            FormProfileSample {
+                z_mm: 4.0,
+                r_mm: -1.0,
+            },
         ];
         match ToolProfile::from_tool(&t) {
             ToolProfile::FormProfile { segments } => {
@@ -1175,7 +1198,10 @@ mod tests {
         let mut t = make_tool(ToolKind::FormProfile, 12.0);
         t.tip_diameter = Some(6.0);
         t.flute_length_mm = Some(8.0);
-        t.form_profile_mm = vec![FormProfileSample { z_mm: 0.0, r_mm: 3.0 }];
+        t.form_profile_mm = vec![FormProfileSample {
+            z_mm: 0.0,
+            r_mm: 3.0,
+        }];
         match ToolProfile::from_tool(&t) {
             ToolProfile::FormProfile { segments } => {
                 // Fallback taper: (0, tip_r=3) → (flute_top=8, r=6).

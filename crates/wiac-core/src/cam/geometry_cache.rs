@@ -220,7 +220,11 @@ mod tests {
             len_after_hit, 1,
             "second call should hit (no new entry; got {len_after_hit})"
         );
-        assert_eq!(v1.len(), v2.len(), "same region must return same chain count");
+        assert_eq!(
+            v1.len(),
+            v2.len(),
+            "same region must return same chain count"
+        );
     }
 
     #[test]

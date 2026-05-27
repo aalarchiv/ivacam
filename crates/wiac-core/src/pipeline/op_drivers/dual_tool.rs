@@ -16,7 +16,9 @@ use crate::cam::offsets::PolylineOffset;
 use crate::cam::setup::Setup;
 use crate::gcode::{emit_polylines_block, PostProcessor};
 use crate::geometry::Point2;
-use crate::pipeline::{emit_toolchange_envelope, synthesize_finish_setup, PipelineError, PipelineWarning};
+use crate::pipeline::{
+    emit_toolchange_envelope, synthesize_finish_setup, PipelineError, PipelineWarning,
+};
 use crate::project::{Op, Project};
 
 /// Returns `true` when the driver actually emitted an internal
@@ -140,6 +142,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -196,6 +199,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -224,6 +228,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -268,6 +273,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {

@@ -284,7 +284,8 @@ impl PostProcessor for Post {
         line_number_start: Option<u32>,
         unit: UnitSystem,
     ) {
-        self.inner.configure(decimal_separator, line_number_start, unit);
+        self.inner
+            .configure(decimal_separator, line_number_start, unit);
     }
     fn tool_z_shift(&mut self, shift_mm: f64) {
         // plau: GRBL's G92 semantics are firmware-revision-dependent —
@@ -392,10 +393,7 @@ mod tests {
             out.contains("; move to start"),
             "comment must move to a `;` line, got: {out}",
         );
-        assert!(
-            !out.contains('('),
-            "no paren should remain: {out}",
-        );
+        assert!(!out.contains('('), "no paren should remain: {out}",);
     }
 
     #[test]
@@ -412,7 +410,10 @@ mod tests {
             !out.contains('('),
             "GRBL output must not contain paren comments: {out}",
         );
-        assert!(out.contains("; my header"), "missing rewritten header: {out}");
+        assert!(
+            out.contains("; my header"),
+            "missing rewritten header: {out}"
+        );
     }
 
     #[test]

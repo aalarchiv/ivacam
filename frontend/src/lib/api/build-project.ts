@@ -13,6 +13,8 @@ import type {
   WorkOffset,
 } from '../state/project.svelte';
 import { isDefaultWorkOffset } from '../state/project-types';
+import type { StockConfig } from '../state/project-types';
+import { computeFootprint } from '../sim/footprint';
 import type {
   ChamferOp,
   ContourFields,
@@ -451,6 +453,22 @@ export interface WireProject {
   /// i5g4: program-level WCS offset. Omitted when default (all-zero @
   /// G54) so the Rust serde-default round-trip matches.
   work_offset?: WireWorkOffset;
+  /// vrrr: resolved stock box (mirror of `wiac_core::project::StockConfig`).
+  /// The frontend derives this from its auto/manual stock UI via
+  /// `computeFootprint` and sends it so the core `out_of_stock` scan
+  /// (warnings.rs::push_stock_warning) runs for every transport. Omitted
+  /// when no stock is modeled.
+  stock?: WireStock;
+}
+
+/// vrrr: wire shape of `wiac_core::project::StockConfig` — an
+/// axis-aligned stock box resolved in the geometry frame. `origin` is the
+/// min corner (x, y); the body spans z ∈ [-thickness_mm, 0].
+export interface WireStock {
+  origin: [number, number];
+  width_mm: number;
+  height_mm: number;
+  thickness_mm: number;
 }
 
 interface ProjectStateView {
@@ -471,6 +489,12 @@ interface ProjectStateView {
   /// i5g4 / j4tv: program-level WCS offset. Forwarded to the pipeline so
   /// the sim can align its heightmap to the WCS frame.
   workOffset?: WorkOffset;
+  /// vrrr: stock UI config. Resolved against `transformedImport` (NOT the
+  /// stock-augmented `geometryView` — that would balloon the auto-mode
+  /// bbox around the stock outline itself) + the machine work area into
+  /// the wire `stock` box. Optional so legacy callers / tests that don't
+  /// model stock simply omit the `out_of_stock` scan.
+  stock?: StockConfig;
 }
 
 /// Base64 → byte array. Used for embedded TTF/OTF font payloads on the
@@ -908,6 +932,24 @@ function buildWorkOffset(w: WorkOffset): WireWorkOffset | null {
   return out;
 }
 
+/// vrrr: resolve the frontend stock UI config into the wire stock box.
+/// Mirrors the old `GenerateBar.boundsScan` footprint exactly — resolved
+/// against `transformedImport` (the raw geometry, NOT the stock-augmented
+/// `geometryView`) + the machine work area, with the same
+/// `max(0.01, thickness)` floor. Returns null when no stock is modeled so
+/// the caller omits the key (the core then skips the `out_of_stock` scan).
+function buildStock(state: ProjectStateView): WireStock | null {
+  const stock = state.stock;
+  if (!stock) return null;
+  const fp = computeFootprint(state.transformedImport, stock, state.machine.workArea);
+  return {
+    origin: [fp.minX, fp.minY],
+    width_mm: fp.maxX - fp.minX,
+    height_mm: fp.maxY - fp.minY,
+    thickness_mm: Math.max(0.01, stock.thickness),
+  };
+}
+
 /// Construct the wire `project` field for PipelineRequest. Returns null
 /// if the frontend has no operations defined yet — caller should fall
 /// back to the legacy segments+setup path.
@@ -919,6 +961,7 @@ export function buildProject(state: ProjectStateView): WireProject | null {
   const imp = state.geometryView ?? state.transformedImport;
   if (!imp) return null;
   const workOffset = state.workOffset ? buildWorkOffset(state.workOffset) : null;
+  const stock = buildStock(state);
   return {
     segments: imp.segments,
     machine: buildMachine(state.machine),
@@ -929,6 +972,7 @@ export function buildProject(state: ProjectStateView): WireProject | null {
       ? { text_layers: state.textLayers.map(buildTextLayer) }
       : {}),
     ...(workOffset ? { work_offset: workOffset } : {}),
+    ...(stock ? { stock } : {}),
   };
 }
 

@@ -234,11 +234,7 @@ mod tests {
         assert!((sol.effective_width_mm - 3.0).abs() < 1e-9);
         assert!((sol.width_cap_mm - 3.0).abs() < 1e-9);
         // 3 / tan(30°) ≈ 5.196152
-        assert!(
-            (sol.z - (-5.196_152)).abs() < 1e-3,
-            "got {z}",
-            z = sol.z
-        );
+        assert!((sol.z - (-5.196_152)).abs() < 1e-3, "got {z}", z = sol.z);
         // Without the cap the user would have gotten a Z driving the
         // shank into stock: 10 / tan(30°) ≈ -17.32 mm.
         assert!(chamfer_depth(10.0, 60.0, 0.0) < sol.z - 1.0);

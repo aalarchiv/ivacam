@@ -264,8 +264,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
                 1.0
             } else {
                 THREAD_START_RADIUS_FRAC
-                    + (1.0 - THREAD_START_RADIUS_FRAC)
-                        * (f64::from(pass) / f64::from(n_passes - 1))
+                    + (1.0 - THREAD_START_RADIUS_FRAC) * (f64::from(pass) / f64::from(n_passes - 1))
             };
             // Lerp from zero-engagement (kiss) to full-engagement
             // (helix_radius). Works for both internal (helix > kiss)
@@ -516,6 +515,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -585,6 +585,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -649,6 +650,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -703,6 +705,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -755,6 +758,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -807,6 +811,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -875,6 +880,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -973,6 +979,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1045,6 +1052,7 @@ mod tests {
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
+            stock: None,
         };
         let resp = run_pipeline(
             PipelineRequest {

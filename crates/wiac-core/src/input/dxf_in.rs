@@ -341,8 +341,14 @@ impl ImportCtx<'_> {
         let step = self.opts.arc_max_step_or_default();
         if step >= std::f64::consts::TAU || bulge.abs() < 1e-9 {
             // Single segment with bulge — preferred for the CAM core.
-            self.segments
-                .push(Segment::arc(start, end, bulge, center, layer.clone(), color));
+            self.segments.push(Segment::arc(
+                start,
+                end,
+                bulge,
+                center,
+                layer.clone(),
+                color,
+            ));
             return;
         }
         let pts = math::tessellate_arc(start, end, bulge, step);
@@ -366,24 +372,48 @@ impl ImportCtx<'_> {
             let e = pts[i + 1];
             cumulative += per_step;
             let sub_bulge = (per_step * 0.25).tan();
-            self.segments
-                .push(Segment::arc(s, e, sub_bulge, center_known, layer.clone(), color));
+            self.segments.push(Segment::arc(
+                s,
+                e,
+                sub_bulge,
+                center_known,
+                layer.clone(),
+                color,
+            ));
         }
         let _ = cumulative; // appeasing the borrow checker on shadowed math
     }
 
-    fn emit_line(&mut self, line: &Line, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_line(
+        &mut self,
+        line: &Line,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         let s = xform.apply(line.p1.x, line.p1.y);
         let e = xform.apply(line.p2.x, line.p2.y);
         self.push_line(self.scale(s), self.scale(e), layer, color);
     }
 
-    fn emit_point(&mut self, p: &ModelPoint, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_point(
+        &mut self,
+        p: &ModelPoint,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         let pt = self.scale(xform.apply(p.location.x, p.location.y));
         self.segments.push(Segment::point(pt, layer.clone(), color));
     }
 
-    fn emit_circle(&mut self, circle: &Circle, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_circle(
+        &mut self,
+        circle: &Circle,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         let center_world = xform.apply(circle.center.x, circle.center.y);
         let center = self.scale(center_world);
         let radius = circle.radius * self.unit_scale * xform.uniform_scale_factor();
@@ -418,7 +448,13 @@ impl ImportCtx<'_> {
         self.segments.push(half2);
     }
 
-    fn emit_arc(&mut self, arc: &Arc, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_arc(
+        &mut self,
+        arc: &Arc,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         let center_world = xform.apply(arc.center.x, arc.center.y);
         let center = self.scale(center_world);
         let radius = arc.radius * self.unit_scale * xform.uniform_scale_factor();
@@ -444,14 +480,26 @@ impl ImportCtx<'_> {
         for _ in 0..n {
             let next = t + per;
             let (s, e, bulge) = math::arc_to_bulge(center, t, next, radius);
-            self.segments
-                .push(Segment::arc(s, e, bulge, Some(center), layer.clone(), color));
+            self.segments.push(Segment::arc(
+                s,
+                e,
+                bulge,
+                Some(center),
+                layer.clone(),
+                color,
+            ));
             t = next;
         }
         let _ = (xform, &mut a0); // silence unused warning patterns
     }
 
-    fn emit_ellipse(&mut self, e: &Ellipse, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_ellipse(
+        &mut self,
+        e: &Ellipse,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         // Parametric flattening: r(t) = center + cos(t)*major + sin(t)*minor,
         // t in [start, end].
         let center_world = xform.apply(e.center.x, e.center.y);
@@ -487,7 +535,13 @@ impl ImportCtx<'_> {
         }
     }
 
-    fn emit_lwpolyline(&mut self, poly: &LwPolyline, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_lwpolyline(
+        &mut self,
+        poly: &LwPolyline,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         let n = poly.vertices.len();
         if n < 2 {
             return;
@@ -510,7 +564,13 @@ impl ImportCtx<'_> {
         }
     }
 
-    fn emit_polyline(&mut self, poly: &Polyline, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_polyline(
+        &mut self,
+        poly: &Polyline,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         let vertices: Vec<&Vertex> = poly.vertices().collect();
         let n = vertices.len();
         if n < 2 {
@@ -537,7 +597,13 @@ impl ImportCtx<'_> {
     /// offsets at ±`scale_factor/2` along each vertex's miter direction. Style
     /// table support (per-element offsets, caps, joints) is intentionally
     /// out of scope; the typical 2-element default style emerges naturally.
-    fn emit_mline(&mut self, m: &MLine, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_mline(
+        &mut self,
+        m: &MLine,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         if m.vertices.len() < 2 {
             return;
         }
@@ -629,7 +695,13 @@ impl ImportCtx<'_> {
         });
     }
 
-    fn emit_spline(&mut self, spline: &Spline, layer: &std::sync::Arc<str>, color: i32, xform: &Transform2D) {
+    fn emit_spline(
+        &mut self,
+        spline: &Spline,
+        layer: &std::sync::Arc<str>,
+        color: i32,
+        xform: &Transform2D,
+    ) {
         let degree = spline.degree_of_curve as usize;
         let knots: Vec<f64> = spline.knot_values.clone();
         let cps: Vec<(f64, f64, f64)> = spline

@@ -284,10 +284,7 @@ fn sample_point(obj: &VcObject) -> Point2 {
                 // worse than the arc midpoint but matches the legacy
                 // behaviour for entities that lost their centre during
                 // a transform.
-                Point2::new(
-                    (s.start.x + s.end.x) * 0.5,
-                    (s.start.y + s.end.y) * 0.5,
-                )
+                Point2::new((s.start.x + s.end.x) * 0.5, (s.start.y + s.end.y) * 0.5)
             }
         }
         _ => {

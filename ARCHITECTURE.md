@@ -104,11 +104,15 @@ wiac-core/src/
   schema.rs         emits openapi.yaml from JsonSchema derives
 ```
 
-**The pipeline is a dispatcher**, not a god function. `run_per_op`
-checks `Op::kind` and routes to a driver in `pipeline/op_drivers/`. Each
-driver is a single file (`drill.rs`, `thread.rs`, `vcarve.rs`, etc.)
-that owns its emission strategy and its own tests. **Add an op kind by
-adding a driver, not by piling more code into `run_per_op`.**
+**The pipeline orchestrates; it doesn't compute.** `run_per_op` owns the
+per-op envelope that every kind shares — boundary tool-change (M6) state,
+the result cache (lookup / replay / store), pause handling, progress and
+event emission — and delegates the actual geometry to a driver. The
+kind→driver switch is a single `match` in the `run_op_driver` helper; each
+driver is a single file in `pipeline/op_drivers/` (`drill.rs`, `thread.rs`,
+`vcarve.rs`, etc.) that owns its emission strategy and its own tests.
+**Add an op kind by adding a driver and one `run_op_driver` arm — not by
+growing `run_per_op`'s shared envelope.**
 
 ### Transports (`wiac-cli` / `-server` / `-tauri` / `-wasm`)
 
@@ -148,11 +152,18 @@ frontend/src/lib/
 ### `frontend/src/lib/state/` (the slice layer)
 
 `ProjectState` (in `project.svelte.ts`) is the root of frontend state.
-It used to be a 1900-line god class; we split it into focused **slices**:
+It used to be a 1900-line god class; we split it into focused **slices**,
+each a `*.svelte.ts` class that `ProjectState` composes and re-exposes via
+proxy getters/setters:
 
 - `generated.svelte.ts` — pipeline output (gcode, toolpath, sim diagnostics, version, progress)
 - `selection.svelte.ts` — selectedObjects / hover / selectedOpId / …
-- `project.svelte.ts` — still owns imported geometry + ops + tools + machine (the heaviest slice; future split is tracked as `n5v5`)
+- `project-data.svelte.ts` — imported geometry + ops + tools + machine (extracted from the root slice in `n5v5`)
+- `workspace.svelte.ts` — view / camera / panel layout state
+- `text_preview.svelte.ts` — live text-entity preview
+- `warning-focus.svelte.ts` — which pipeline warning is focused
+- `confirm.svelte.ts` — the shared styled-confirm prompt store
+- `project.svelte.ts` — the root composer; owns what hasn't been peeled into a slice yet
 
 `ProjectState` keeps **proxy getters/setters** for every field that
 moved out, so call sites (`project.generated`, `project.selectedOpId`)
@@ -194,9 +205,10 @@ for the cleanest example.
 
 One file per op kind under `pipeline/op_drivers/`. Each exports a single
 `run_xxx_op` fn with `pub(in crate::pipeline)` visibility; `op_drivers.rs`
-re-exports them. The dispatcher in `pipeline.rs` is a 30-line `match` on
-`op.kind` — adding a kind means adding a driver file, not editing the
-dispatcher beyond one new arm.
+re-exports them. The `run_op_driver` helper in `pipeline.rs` is a single
+`match` on `op.kind` — adding a kind means adding a driver file and one
+arm. The surrounding `run_per_op` loop is the shared orchestrator (tool
+changes, cache, pause); resist the urge to add kind-specific logic there.
 
 ### 3. Post-processor trait (Rust)
 
@@ -294,14 +306,21 @@ post-processor) end-to-end. The smaller recipes:
 
 ## Where the audit issues live
 
-The architecture above is mostly the **target** state. The remaining
-god files (`gcode.rs`, `project.rs`) and the last state-slice split
-are tracked in bd:
+The architecture above describes the **current** state, not an aspiration:
+`project.rs` is split into the `project/` module, the `ProjectState` god
+class is decomposed into slices, and `gcode.rs` is the `PostProcessor`
+trait plus per-block emit shells (large, but factored — not a god
+function). Where the code still has known rough edges, they're tracked in
+bd rather than left as silent debt:
 
 ```bash
 bd ready                # see what's available
 bd list --status=in_progress   # current refactor wave
 ```
+
+The biggest files by line count (`offset_builder.rs`, `cam/offsets.rs`,
+`gcode.rs`) are mostly co-located tests — check the production half (the
+lines above the first `#[cfg(test)]`) before assuming a file is bloated.
 
 When you finish one, follow the patterns above. Don't invent a new one
 unless you can justify why the existing one didn't fit.

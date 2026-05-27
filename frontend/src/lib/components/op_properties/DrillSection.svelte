@@ -4,6 +4,7 @@
   /// inputs, and the Stufenfase chamfer-after-width field.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import {
+    project,
     type DrillCycle,
     type DrillOp,
     type OpField,
@@ -128,4 +129,64 @@
       <span class="unit">mm</span>
     </div>
   </label>
+  <label
+    class="row"
+    title="Spot pre-pass (r2af): before the main drill, the machine spots each hole with a shallow centre mark using a stiffer tool, so a twist drill doesn't walk on hard or polished stock. Drill, then T<n> M6 to the spot tool, spot every hole, then back to the drill."
+  >
+    <span>Spot pre-pass</span>
+    <input
+      type="checkbox"
+      checked={op.spotFirst !== undefined}
+      onchange={(e) => {
+        const on = (e.currentTarget as HTMLInputElement).checked;
+        if (!on) {
+          patch('spotFirst', undefined);
+          return;
+        }
+        const firstTool = project.tools[0]?.id ?? op.toolId;
+        patch('spotFirst', {
+          spotDepthMm: op.spotFirst?.spotDepthMm ?? -0.5,
+          spotToolId: op.spotFirst?.spotToolId ?? firstTool,
+        });
+      }}
+    />
+  </label>
+  {#if op.spotFirst}
+    <details class="subsection" open>
+      <summary>Spot options</summary>
+      <label class="row">
+        <span>Spot depth</span>
+        <div class="num-cell">
+          <input
+            type="number"
+            step="0.1"
+            max="0"
+            value={op.spotFirst.spotDepthMm}
+            title="Depth of the centre spot below the stock top. Negative number, mm — just deep enough to start the drill (e.g. -0.5)."
+            onchange={(e) => {
+              const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+              if (!isNaN(v) && v < 0 && op.spotFirst) {
+                patch('spotFirst', { ...op.spotFirst, spotDepthMm: v });
+              }
+            }}
+          />
+          <span class="unit">mm</span>
+        </div>
+      </label>
+      <label class="row">
+        <span>Spot tool</span>
+        <select
+          value={op.spotFirst.spotToolId}
+          onchange={(e) => {
+            const id = parseInt((e.currentTarget as HTMLSelectElement).value, 10);
+            if (op.spotFirst) patch('spotFirst', { ...op.spotFirst, spotToolId: id });
+          }}
+        >
+          {#each project.tools as t (t.id)}
+            <option value={t.id}>{t.id}: {t.name}</option>
+          {/each}
+        </select>
+      </label>
+    </details>
+  {/if}
 </fieldset>

@@ -113,8 +113,10 @@
   /// hides kinds whose required capability isn't in the machine's
   /// effective set (empty `machine.capabilities` ⇒ `[mode]` —
   /// back-compat for projects that predate the field).
-  const OP_REQUIRES: Record<PickerKind, ('mill' | 'laser' | 'drag')[]> = {
-    profile: ['mill', 'laser'],
+  const OP_REQUIRES: Record<PickerKind, ('mill' | 'laser' | 'drag' | 'plasma')[]> = {
+    // Plasma cuts outlines (and holes are inner profiles), so profile is
+    // plasma-capable; area-clearing / Z-aware ops stay mill/laser.
+    profile: ['mill', 'laser', 'plasma'],
     pocket: ['mill'],
     pocket_outside: ['mill'],
     drill: ['mill'],
@@ -126,9 +128,9 @@
     dovetail: ['mill'],
     vcarve: ['mill'],
     // Pause carries no tool / motion — every machine can pause.
-    pause: ['mill', 'laser', 'drag'],
+    pause: ['mill', 'laser', 'drag', 'plasma'],
   };
-  const machineCapabilities = $derived<('mill' | 'laser' | 'drag')[]>(
+  const machineCapabilities = $derived<('mill' | 'laser' | 'drag' | 'plasma')[]>(
     project.machine.capabilities && project.machine.capabilities.length > 0
       ? project.machine.capabilities
       : [project.machine.mode],

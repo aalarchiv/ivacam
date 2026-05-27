@@ -121,6 +121,12 @@ export interface ToolEntry {
   /// payload omits it when undefined and the Rust side defaults to 60°.
   tipAngleDeg?: number;
   dragoff?: number;
+  /// 0t9o: drag-knife self-align threshold (°). Corners whose tangent
+  /// change is below this skip the explicit swivel arc — real knives
+  /// self-align below ~30° via the trailing offset. Honored only with
+  /// dragoff set. Undefined ⇒ 30° default; 0 forces a swivel at every
+  /// corner (legacy).
+  dragKnifeSelfAlignAngleDeg?: number;
   flutes: number;
   speed: number;
   plungeRate: number;
@@ -153,6 +159,16 @@ export interface ToolEntry {
   /// kind === 'laser_beam'. (Wire field reserved; emit logic ships in
   /// a follow-up.)
   laserLeadInMm?: number;
+  /// sm59: plasma pierce height (mm above stock) where the arc is
+  /// established before dropping to the cut height. Honored when the
+  /// machine mode is 'plasma'. Undefined ⇒ the backend default (3.8 mm).
+  pierceHeightMm?: number;
+  /// sm59: plasma cut height (mm above stock, < pierce height) the torch
+  /// drops to for the actual cut. Undefined ⇒ backend default (1.5 mm).
+  cutHeightMm?: number;
+  /// sm59: plasma pierce delay (s) the torch dwells at pierce height
+  /// before dropping to cut height. Undefined ⇒ backend default (0.5 s).
+  pierceDelaySec?: number;
   /// Bull-nose corner radius (rt1.28): rounded transition at the
   /// floor edge. Honored only when kind === 'bull_nose'.
   cornerRadiusMm?: number;
@@ -263,9 +279,9 @@ export interface MachineSettings {
   /// OpKindPicker's filter — a laser-only machine doesn't show
   /// milling ops. Empty array = implicitly `[mode]` (back-compat
   /// for projects that predate this field).
-  capabilities?: ('mill' | 'laser' | 'drag')[];
+  capabilities?: ('mill' | 'laser' | 'drag' | 'plasma')[];
   unit: 'mm' | 'inch';
-  mode: 'mill' | 'laser' | 'drag';
+  mode: 'mill' | 'laser' | 'drag' | 'plasma';
   comments: boolean;
   arcs: boolean;
   supportsToolchange: boolean;

@@ -58,6 +58,7 @@ interface FlatOp extends OpBase, ContourFields {
   // DrillOp
   drillCycle?: DrillOp['drillCycle'];
   chamferAfterWidthMm?: number;
+  spotFirst?: DrillOp['spotFirst'];
   // ChamferOp
   chamferWidthMm?: ChamferOp['chamferWidthMm'];
   chamferFinishPass?: ChamferOp['chamferFinishPass'];
@@ -113,6 +114,7 @@ interface WireToolEntry {
   /// `z = -R / tan(tip_angle / 2)`. Default 60 in the Rust struct.
   tip_angle_deg?: number;
   dragoff?: number;
+  drag_knife_self_align_angle_deg?: number;
   flutes: number;
   speed: number;
   plunge_rate: number;
@@ -130,6 +132,10 @@ interface WireToolEntry {
   z_shift_mm?: number;
   laser_pierce_sec?: number;
   laser_lead_in_mm?: number;
+  /// sm59: plasma pierce/cut-height entry sequence (honored in plasma mode).
+  pierce_height_mm?: number;
+  cut_height_mm?: number;
+  pierce_delay_sec?: number;
   corner_radius_mm?: number;
   /// 1wit: form / profile cutter cross-section, tip → top. Omitted
   /// unless ≥2 samples are set (and kind === 'form_profile').
@@ -176,7 +182,7 @@ interface WireAxisLimits {
 
 interface WireMachine {
   unit: 'mm' | 'inch';
-  mode: 'mill' | 'laser' | 'drag';
+  mode: 'mill' | 'laser' | 'drag' | 'plasma';
   comments: boolean;
   arcs: boolean;
   supports_toolchange: boolean;
@@ -340,6 +346,7 @@ type WireOpKind =
       cycle: WireDrillCycle;
       chamfer_after_width_mm?: number;
       pattern?: WirePatternConfig;
+      spot_first?: { spot_depth_mm: number; spot_tool_id: number };
     }
   | { type: 'thread'; pitch_mm?: number; internal?: boolean; climb?: boolean }
   | { type: 'chamfer'; width_mm?: number; finish_pass?: boolean }
@@ -547,6 +554,9 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.tipDiameter !== undefined ? { tip_diameter: t.tipDiameter } : {}),
     ...(t.tipAngleDeg !== undefined ? { tip_angle_deg: t.tipAngleDeg } : {}),
     ...(t.dragoff !== undefined ? { dragoff: t.dragoff } : {}),
+    ...(t.dragKnifeSelfAlignAngleDeg !== undefined
+      ? { drag_knife_self_align_angle_deg: t.dragKnifeSelfAlignAngleDeg }
+      : {}),
     flutes: t.flutes,
     speed: t.speed,
     plunge_rate: t.plungeRate,
@@ -566,6 +576,10 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.laserLeadInMm !== undefined && t.laserLeadInMm > 0
       ? { laser_lead_in_mm: t.laserLeadInMm }
       : {}),
+    // sm59: plasma pierce/cut-height entry sequence.
+    ...(t.pierceHeightMm !== undefined ? { pierce_height_mm: t.pierceHeightMm } : {}),
+    ...(t.cutHeightMm !== undefined ? { cut_height_mm: t.cutHeightMm } : {}),
+    ...(t.pierceDelaySec !== undefined ? { pierce_delay_sec: t.pierceDelaySec } : {}),
     ...(t.cornerRadiusMm !== undefined && t.cornerRadiusMm > 0
       ? { corner_radius_mm: t.cornerRadiusMm }
       : {}),
@@ -761,6 +775,13 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       // Pattern repetition (kbx5: Drill-only now).
       if (op.pattern && (op.pattern as { kind?: string }).kind) {
         drill.pattern = op.pattern;
+      }
+      // r2af / u64o: spot-drill pre-pass.
+      if (op.spotFirst && op.spotFirst.spotToolId > 0) {
+        drill.spot_first = {
+          spot_depth_mm: op.spotFirst.spotDepthMm,
+          spot_tool_id: op.spotFirst.spotToolId,
+        };
       }
       return drill as WireOpKind;
     }

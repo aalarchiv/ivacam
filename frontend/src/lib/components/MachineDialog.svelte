@@ -276,13 +276,14 @@
         </select>
       </label>
       <label
-        title="Primary mode — drives the gcode emitter. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL. Adjust 'Capabilities' below if the machine can do more than this primary mode."
+        title="Primary mode — drives the gcode emitter. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL. Plasma: torch with a pierce/cut-height entry sequence. Adjust 'Capabilities' below if the machine can do more than this primary mode."
       >
         Mode
         <select bind:value={draft.mode}>
           <option value="mill">Mill (CNC)</option>
           <option value="laser">Laser</option>
           <option value="drag">Drag-knife / vinyl</option>
+          <option value="plasma">Plasma</option>
         </select>
       </label>
       <fieldset class="capabilities">
@@ -291,25 +292,33 @@
         >
           Capabilities
         </legend>
-        {#each ['mill', 'laser', 'drag'] as cap (cap)}
+        {#each ['mill', 'laser', 'drag', 'plasma'] as cap (cap)}
           <label class="cap-toggle">
             <input
               type="checkbox"
               checked={(draft.capabilities ?? [draft.mode]).includes(
-                cap as 'mill' | 'laser' | 'drag',
+                cap as 'mill' | 'laser' | 'drag' | 'plasma',
               )}
               onchange={(e) => {
                 const on = (e.currentTarget as HTMLInputElement).checked;
                 const cur = new Set(draft.capabilities ?? [draft.mode]);
-                if (on) cur.add(cap as 'mill' | 'laser' | 'drag');
-                else cur.delete(cap as 'mill' | 'laser' | 'drag');
+                if (on) cur.add(cap as 'mill' | 'laser' | 'drag' | 'plasma');
+                else cur.delete(cap as 'mill' | 'laser' | 'drag' | 'plasma');
                 // Always keep the primary mode in the set so the
                 // gcode emitter never targets a removed capability.
                 cur.add(draft.mode);
                 draft.capabilities = [...cur];
               }}
             />
-            <span>{cap === 'mill' ? 'Mill' : cap === 'laser' ? 'Laser' : 'Drag-knife'}</span>
+            <span
+              >{cap === 'mill'
+                ? 'Mill'
+                : cap === 'laser'
+                  ? 'Laser'
+                  : cap === 'drag'
+                    ? 'Drag-knife'
+                    : 'Plasma'}</span
+            >
           </label>
         {/each}
       </fieldset>

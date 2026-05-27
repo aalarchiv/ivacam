@@ -1380,6 +1380,26 @@
                       }}
                     />
                   </label>
+                  <label>
+                    <span>Self-align angle (°)</span>
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="60"
+                      placeholder="30"
+                      value={tool.dragKnifeSelfAlignAngleDeg ?? ''}
+                      title="Corners with a tangent change below this angle skip the explicit swivel arc — real drag knives self-align below ~30° via the trailing offset. Set to 0 to force a swivel at every corner (legacy behaviour). Empty = 30° default."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(
+                          i,
+                          'dragKnifeSelfAlignAngleDeg',
+                          v === '' ? undefined : parseFloat(v),
+                        );
+                      }}
+                    />
+                  </label>
                 </div>
               {/if}
               {#if attrApplies('compressionTransition', tool.kind)}
@@ -1718,6 +1738,62 @@
                         }
                         const n = parseFloat(v);
                         updateField(i, 'kerfMm', isNaN(n) || n <= 0 ? undefined : n);
+                      }}
+                    />
+                  </label>
+                </div>
+              {/if}
+              {#if project.machine.mode === 'plasma'}
+                <div class="holder-row pass-overrides">
+                  <span
+                    class="holder-label"
+                    title="Plasma torch entry sequence (active because the machine mode is Plasma). The torch pierces at the pierce height, dwells the pierce delay, then drops to the cut height for the cut."
+                    >Plasma</span
+                  >
+                </div>
+                <div class="holder-row">
+                  <label>
+                    <span>Pierce height (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="3.8"
+                      value={tool.pierceHeightMm ?? ''}
+                      title="Height above the stock where the arc is established before dropping to the cut height. Too low and the torch sticks to the slag; too high and the arc drops out. Typical 3–5 mm for 1–3 mm steel. Empty = 3.8 mm default."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'pierceHeightMm', v === '' ? undefined : parseFloat(v));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Cut height (mm)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="1.5"
+                      value={tool.cutHeightMm ?? ''}
+                      title="Height above the stock the torch drops to for the actual cut (below the pierce height). Typical 1.5–2.5 mm for thin steel. Empty = 1.5 mm default."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'cutHeightMm', v === '' ? undefined : parseFloat(v));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Pierce delay (s)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="0.5"
+                      value={tool.pierceDelaySec ?? ''}
+                      title="Seconds the torch dwells at the pierce height before dropping to the cut height — long enough to pierce the stock, short enough not to undercut the rim. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. Empty = 0.5 s default."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'pierceDelaySec', v === '' ? undefined : parseFloat(v));
                       }}
                     />
                   </label>

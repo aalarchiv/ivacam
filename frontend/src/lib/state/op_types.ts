@@ -158,6 +158,11 @@ export interface DrillOp extends OpBase {
   /// Dedicated chamfer tool for Stufenfase. When unset, the drill
   /// tool itself is used.
   finishToolId?: number;
+  /// r2af: optional spot-drill pre-pass — a shallow centre spot with a
+  /// stiffer tool before the main drill, to stop a twist drill walking
+  /// on hard / polished stock. Undefined = no spot pass. `spotDepthMm`
+  /// is negative (depth below stock).
+  spotFirst?: { spotDepthMm: number; spotToolId: number };
 }
 
 /// Chamfer op (rt1.18) — single-pass constant-Z bevel along the

@@ -11,6 +11,7 @@ import { confirmStore } from './confirm.svelte';
 import { isTauri } from '../api/env';
 import { defaultClient } from '../api/http';
 import { tryParseStructuredError } from '../api/client';
+import { migrateLegacyToolTerms } from './tool-migration';
 // `pushRecent` (from ../recent) was a parallel store the UI never read
 // — the File menu draws Recent Projects from workspace.recent_projects.
 // The two stores could diverge silently (audit zxee). Dropped; the
@@ -565,7 +566,7 @@ export async function loadToolset(mode: 'replace' | 'add') {
     project.setError('toolset load: not a .wiac-toolset.json file');
     return;
   }
-  const incoming = env.payload;
+  const incoming = env.payload.map(migrateLegacyToolTerms);
   if (mode === 'replace') {
     // Re-number ids 1..N so the new tools have a clean monotonic
     // sequence the project file can reference.

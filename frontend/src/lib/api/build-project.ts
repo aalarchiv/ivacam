@@ -611,7 +611,9 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
   return {
     id: t.id,
     name: t.name,
-    kind: t.kind,
+    // The cone tool kind keeps its German wire value `kegel` (the Rust
+    // ToolKind variant); only the frontend identifier is English.
+    kind: t.kind === 'cone' ? 'kegel' : t.kind,
     diameter: t.diameter,
     ...(t.tipDiameter !== undefined ? { tip_diameter: t.tipDiameter } : {}),
     ...(t.tipAngleDeg !== undefined ? { tip_angle_deg: t.tipAngleDeg } : {}),
@@ -650,15 +652,17 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
       ? { form_profile_mm: t.formProfileMm.map((s) => ({ z_mm: s.zMm, r_mm: s.rMm })) }
       : {}),
-    ...(t.wirbeln ? { wirbeln: true } : {}),
-    ...(t.wirbelnStepoverMm !== undefined && t.wirbelnStepoverMm > 0
-      ? { wirbeln_stepover_mm: t.wirbelnStepoverMm }
+    // Whirling overlay. The backend wire fields keep their German names
+    // (wirbeln*) — only the frontend identifiers are English.
+    ...(t.whirl ? { wirbeln: true } : {}),
+    ...(t.whirlStepoverMm !== undefined && t.whirlStepoverMm > 0
+      ? { wirbeln_stepover_mm: t.whirlStepoverMm }
       : {}),
-    ...(t.wirbelnExtraWidthMm !== undefined && t.wirbelnExtraWidthMm > 0
-      ? { wirbeln_extra_width_mm: t.wirbelnExtraWidthMm }
+    ...(t.whirlExtraWidthMm !== undefined && t.whirlExtraWidthMm > 0
+      ? { wirbeln_extra_width_mm: t.whirlExtraWidthMm }
       : {}),
-    ...(t.wirbelnOscMm !== undefined && t.wirbelnOscMm > 0
-      ? { wirbeln_osc_mm: t.wirbelnOscMm }
+    ...(t.whirlOscMm !== undefined && t.whirlOscMm > 0
+      ? { wirbeln_osc_mm: t.whirlOscMm }
       : {}),
     // Spindle warmup pause (seconds). Omit when at backend default
     // (1) so we don't bloat the wire payload for the common case.

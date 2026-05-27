@@ -147,6 +147,69 @@ describe('buildTool — mqap audit fields', () => {
   });
 });
 
+describe('buildTool — German wire contract (8njb)', () => {
+  // The frontend uses English identifiers (cone, whirl*) but the backend
+  // wire schema keeps the original German names. These lock that mapping
+  // so an accidental rename of the wire keys would fail the build, not
+  // silently desync the frontend from the Rust ToolKind / ToolEntry.
+  it('maps the cone tool kind to the German wire value kegel', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool({ kind: 'cone', tipAngleDeg: 30 })],
+      operations: [profileOp()],
+    });
+    expect(project!.tools[0]).toMatchObject({ kind: 'kegel' });
+  });
+
+  it('passes non-cone kinds through unchanged', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool({ kind: 'v_bit', tipAngleDeg: 60 })],
+      operations: [profileOp()],
+    });
+    expect(project!.tools[0]).toMatchObject({ kind: 'v_bit' });
+  });
+
+  it('emits whirl* fields under their German wirbeln_* wire keys', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [
+        baseTool({
+          whirl: true,
+          whirlStepoverMm: 0.75,
+          whirlExtraWidthMm: 3,
+          whirlOscMm: 0.2,
+        }),
+      ],
+      operations: [profileOp()],
+    });
+    expect(project!.tools[0]).toMatchObject({
+      wirbeln: true,
+      wirbeln_stepover_mm: 0.75,
+      wirbeln_extra_width_mm: 3,
+      wirbeln_osc_mm: 0.2,
+    });
+    const tool = project!.tools[0] as unknown as Record<string, unknown>;
+    expect(tool).not.toHaveProperty('whirl');
+    expect(tool).not.toHaveProperty('whirlStepoverMm');
+  });
+
+  it('omits the whirl wire fields when disabled / at default', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    const tool = project!.tools[0] as unknown as Record<string, unknown>;
+    expect(tool).not.toHaveProperty('wirbeln');
+    expect(tool).not.toHaveProperty('wirbeln_stepover_mm');
+  });
+});
+
 describe('buildTool — 1wit form-profile samples', () => {
   it('maps formProfileMm to snake_case wire samples when ≥2 rows', () => {
     const project = buildProject({

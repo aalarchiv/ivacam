@@ -39,6 +39,7 @@ import {
   type OpKind,
   type OpPatch,
 } from './op_types';
+import { migrateLegacyToolTerms } from './tool-migration';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs
 // and non-Svelte helpers can import them without booting the rune
@@ -1244,7 +1245,8 @@ class ProjectState {
       this.selectedEntities = new Set(file.selectedEntities);
     }
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
-    if (Array.isArray(file.tools) && file.tools.length > 0) this.tools = file.tools;
+    if (Array.isArray(file.tools) && file.tools.length > 0)
+      this.tools = file.tools.map(migrateLegacyToolTerms);
     if (file.machine) this.machine = { ...this.machine, ...file.machine };
     if (Array.isArray(file.operations)) this.operations = file.operations;
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];

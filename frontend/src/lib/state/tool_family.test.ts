@@ -13,7 +13,7 @@ const ALL_KINDS: ToolKind[] = [
   'bull_nose',
   'compression',
   'form_profile',
-  'kegel',
+  'cone',
   'thread_mill',
 ];
 
@@ -36,12 +36,12 @@ describe('tool_family capability table', () => {
       expect(attrApplies('defaultStep', k)).toBe(
         !['drag_knife', 'laser_beam', 'drill', 'thread_mill'].includes(k),
       );
-      // Conical family (v_bit, engraver, kegel) carries tip geometry; a
+      // Conical family (v_bit, engraver, cone) carries tip geometry; a
       // thread mill carries no tip ⌀ but uses tipAngleDeg as the flank
       // angle.
-      expect(attrApplies('tipDiameter', k)).toBe(['v_bit', 'engraver', 'kegel'].includes(k));
+      expect(attrApplies('tipDiameter', k)).toBe(['v_bit', 'engraver', 'cone'].includes(k));
       expect(attrApplies('tipAngleDeg', k)).toBe(
-        ['v_bit', 'engraver', 'kegel', 'drill', 'thread_mill'].includes(k),
+        ['v_bit', 'engraver', 'cone', 'drill', 'thread_mill'].includes(k),
       );
     }
   });
@@ -67,7 +67,7 @@ describe('tool_family capability table', () => {
       'bull_nose',
       'compression',
     ]);
-    expect(kindsInFamily('conical')).toEqual(['v_bit', 'engraver', 'kegel']);
+    expect(kindsInFamily('conical')).toEqual(['v_bit', 'engraver', 'cone']);
   });
 
   it('toolFamily round-trips', () => {

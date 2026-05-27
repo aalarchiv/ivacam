@@ -13,8 +13,8 @@ describe('expectedToolKinds', () => {
     expect(expectedToolKinds('vcarve')).toEqual(['v_bit']);
   });
 
-  it('returns the conical family (v_bit + engraver + kegel) for Chamfer', () => {
-    expect([...expectedToolKinds('chamfer')]).toEqual(['v_bit', 'engraver', 'kegel']);
+  it('returns the conical family (v_bit + engraver + cone) for Chamfer', () => {
+    expect([...expectedToolKinds('chamfer')]).toEqual(['v_bit', 'engraver', 'cone']);
   });
 
   it('returns drill + endmill for Drill', () => {
@@ -96,7 +96,7 @@ describe('formatExpectedToolKinds', () => {
   });
 
   it('formats the conical family with Oxford-comma "or"', () => {
-    expect(formatExpectedToolKinds('chamfer')).toBe('V-bit, engraver, or tapered');
+    expect(formatExpectedToolKinds('chamfer')).toBe('V-bit, engraver, or cone');
   });
 
   it('formats three+ items with Oxford-comma "or"', () => {

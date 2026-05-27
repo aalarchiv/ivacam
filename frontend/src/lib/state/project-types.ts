@@ -186,24 +186,22 @@ export interface ToolEntry {
   /// commanded RPM before the cut starts. Critical for hand-controllers
   /// without spindle-at-speed feedback. Default 1.
   pause?: number;
-  /// Wirbeln (rt1.25 / 3e5): per-tool helical-spiral overlay flag.
-  /// When enabled with `wirbelnExtraWidthMm > 0`, every cut move
-  /// using this tool is subdivided and the cutter centerline spirals
-  /// around the toolpath — engagement bounded at each point.
-  /// Default false.
-  wirbeln?: boolean;
-  /// Wirbeln spiral diameter (Estlcam Wirbelzusatzbreite, 3e5): mm.
-  /// Net cut width becomes `diameter + wirbelnExtraWidthMm`. None /
-  /// 0 ⇒ overlay disabled (Wirbeln is a no-op).
-  wirbelnExtraWidthMm?: number;
-  /// Wirbeln stride along the toolpath per full spiral revolution
-  /// (Estlcam T_Wirbel_Stepover, 3e5): mm. None ⇒ half the spiral
-  /// radius (one-revolution overlap).
-  wirbelnStepoverMm?: number;
-  /// Wirbeln Z-wobble amplitude (Estlcam T_Osc, 3e5): mm. Overlay
-  /// adds a `cos(3θ)·osc − osc` Z ripple between revolutions for
-  /// chip evacuation. None / 0 ⇒ flat.
-  wirbelnOscMm?: number;
+  /// Whirling (rt1.25 / 3e5): per-tool helical-spiral overlay flag.
+  /// When enabled with `whirlExtraWidthMm > 0`, every cut move using
+  /// this tool is subdivided and the cutter centerline spirals around
+  /// the toolpath — engagement bounded at each point. Default false.
+  /// (Serialized to the backend as the German `wirbeln` wire field.)
+  whirl?: boolean;
+  /// Whirling spiral diameter (3e5): mm. Net cut width becomes
+  /// `diameter + whirlExtraWidthMm`. None / 0 ⇒ overlay disabled.
+  whirlExtraWidthMm?: number;
+  /// Whirling stride along the toolpath per full spiral revolution
+  /// (3e5): mm. None ⇒ half the spiral radius (one-revolution overlap).
+  whirlStepoverMm?: number;
+  /// Whirling Z-wobble amplitude (3e5): mm. Overlay adds a
+  /// `cos(3θ)·osc − osc` Z ripple between revolutions for chip
+  /// evacuation. None / 0 ⇒ flat.
+  whirlOscMm?: number;
   /// Default depth-per-pass (negative, mm). Operations using this tool
   /// inherit this when their own `step` is unset.
   defaultStep?: number;

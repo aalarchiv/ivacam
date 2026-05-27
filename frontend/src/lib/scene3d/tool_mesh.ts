@@ -196,8 +196,8 @@ export function buildToolMesh(
     geom.translate(0, 0, beamLen / 2);
     return new THREE.Mesh(geom, mat);
   }
-  if (kind === 'v_bit' || kind === 'engraver' || kind === 'kegel') {
-    // Tapered cutter: cone whose flank angle matches the bit's FULL apex
+  if (kind === 'v_bit' || kind === 'engraver' || kind === 'cone') {
+    // Conical cutter: cone whose flank angle matches the bit's FULL apex
     // angle (tipAngleDeg). The cone rises from the tip (radius tipR, 0
     // for a true V-bit) to the full radius over a height of
     // (radius − tipR) / tan(apex / 2) — so a 60° bit looks like a 60°

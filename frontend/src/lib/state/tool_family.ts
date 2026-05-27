@@ -23,7 +23,7 @@ import type { ToolKind } from './op_types';
 ///   - cylindrical: flat bottom, straight wall (endmill, compression)
 ///   - radiused:    rounded bottom edge (ball-nose, bull-nose)
 ///   - conical:     cone from a tip radius to full radius (v-bit,
-///                  engraver, and — Phase 2 — kegel/tapered)
+///                  engraver, and — Phase 2 — cone)
 ///   - profile:     arbitrary (z, r) cross-section (form-profile, and
 ///                  — Phase 4 — t-slot + dovetail as presets)
 ///   - drill:       conical point on a cylindrical body
@@ -68,7 +68,7 @@ export const TOOL_FAMILY: Record<ToolKind, ToolFamily> = {
   compression: 'cylindrical',
   v_bit: 'conical',
   engraver: 'conical',
-  kegel: 'conical',
+  cone: 'conical',
   drill: 'drill',
   drag_knife: 'drag_knife',
   form_profile: 'profile',
@@ -83,7 +83,7 @@ const FAMILY_BASE_ATTRS: Record<ToolFamily, readonly ToolAttr[]> = {
   // controls, no tip geometry.
   cylindrical: ['flutes', 'speed', 'plunge', 'defaultStep'],
   radiused: ['flutes', 'speed', 'plunge', 'defaultStep'],
-  // Tapered cutters add tip ⌀ + apex angle (the V-Carve depth math).
+  // Conical cutters add tip ⌀ + apex angle (the V-Carve depth math).
   conical: ['flutes', 'speed', 'plunge', 'defaultStep', 'tipDiameter', 'tipAngleDeg'],
   profile: ['flutes', 'speed', 'plunge', 'defaultStep'],
   // Drill: feed IS the plunge (no separate plunge), peck-step replaces

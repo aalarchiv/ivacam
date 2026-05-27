@@ -347,12 +347,12 @@
         if (next.tipAngleDeg === undefined) next.tipAngleDeg = 118;
       }
       if (
-        (kind === 'v_bit' || kind === 'engraver' || kind === 'kegel') &&
+        (kind === 'v_bit' || kind === 'engraver' || kind === 'cone') &&
         next.tipAngleDeg === undefined
       ) {
-        // Tapered bits are commonly steeper than engraving V-bits;
-        // 30° is a sensible tapered-endmill default vs 60° for V/engrave.
-        next.tipAngleDeg = kind === 'kegel' ? 30 : 60;
+        // Cone bits are commonly steeper than engraving V-bits; 30° is a
+        // sensible cone default vs 60° for V/engrave.
+        next.tipAngleDeg = kind === 'cone' ? 30 : 60;
       }
       if (kind === 'thread_mill') {
         // Thread mill: tipAngleDeg is the thread flank angle (60° metric
@@ -519,7 +519,7 @@
     bull_nose: 'Bull-nose (radius)',
     compression: 'Compression',
     form_profile: 'Form / profile',
-    kegel: 'Tapered',
+    cone: 'Cone',
     thread_mill: 'Thread mill',
   };
   const coolantLabels: Record<CoolantMode, string> = {
@@ -1299,9 +1299,9 @@
                 <label class="radio">
                   <input
                     type="checkbox"
-                    checked={tool.wirbeln ?? false}
+                    checked={tool.whirl ?? false}
                     onchange={(e) =>
-                      updateField(i, 'wirbeln', (e.currentTarget as HTMLInputElement).checked)}
+                      updateField(i, 'whirl', (e.currentTarget as HTMLInputElement).checked)}
                   />
                   <span>Enable</span>
                 </label>
@@ -1312,12 +1312,12 @@
                     step="0.1"
                     min="0"
                     placeholder="0"
-                    value={tool.wirbelnExtraWidthMm ?? ''}
-                    disabled={!tool.wirbeln}
+                    value={tool.whirlExtraWidthMm ?? ''}
+                    disabled={!tool.whirl}
                     title="Diameter (mm) by which the whirling orbit widens the cut. Empty / 0 ⇒ overlay disabled (whirling is a no-op)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
-                      updateField(i, 'wirbelnExtraWidthMm', v === '' ? undefined : parseFloat(v));
+                      updateField(i, 'whirlExtraWidthMm', v === '' ? undefined : parseFloat(v));
                     }}
                   />
                 </label>
@@ -1329,13 +1329,13 @@
                     type="number"
                     step="0.1"
                     min="0.05"
-                    placeholder={((tool.wirbelnExtraWidthMm ?? 0) * 0.5).toFixed(2)}
-                    value={tool.wirbelnStepoverMm ?? ''}
-                    disabled={!tool.wirbeln}
+                    placeholder={((tool.whirlExtraWidthMm ?? 0) * 0.5).toFixed(2)}
+                    value={tool.whirlStepoverMm ?? ''}
+                    disabled={!tool.whirl}
                     title="Path distance per full spiral revolution. Empty = half the spiral radius (one-revolution overlap)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
-                      updateField(i, 'wirbelnStepoverMm', v === '' ? undefined : parseFloat(v));
+                      updateField(i, 'whirlStepoverMm', v === '' ? undefined : parseFloat(v));
                     }}
                   />
                 </label>
@@ -1346,12 +1346,12 @@
                     step="0.05"
                     min="0"
                     placeholder="0"
-                    value={tool.wirbelnOscMm ?? ''}
-                    disabled={!tool.wirbeln}
+                    value={tool.whirlOscMm ?? ''}
+                    disabled={!tool.whirl}
                     title="Z ripple amplitude. The cutter dips up to 2·osc below the cut plane between revolutions, improving chip evacuation. Empty / 0 ⇒ flat (no Z motion from the overlay)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
-                      updateField(i, 'wirbelnOscMm', v === '' ? undefined : parseFloat(v));
+                      updateField(i, 'whirlOscMm', v === '' ? undefined : parseFloat(v));
                     }}
                   />
                 </label>

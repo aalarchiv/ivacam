@@ -308,6 +308,38 @@ pub(super) fn push_op_order_warnings(project: &Project, warnings: &mut Vec<Pipel
     }
 }
 
+/// f60x-E: a relief (3D ball-nose) op is a FINISH pass — it shaves the
+/// surface in tiny scallop steps. Running it on raw stock (no prior bulk
+/// clearance) means the ball-nose has to remove the full relief depth one
+/// scallop at a time: brutally slow and hard on a small-diameter tool that
+/// isn't built for heavy axial engagement. The canonical workflow roughs
+/// the bulk with a flat endmill (a Pocket pass) first. Warn — non-critical,
+/// a workflow note — when an enabled `ReliefMill` has no enabled Pocket
+/// anywhere before it in the program order. (Pocket is the bulk-clearance
+/// signal; Profile cuts outlines, not area, so it doesn't count.)
+pub(super) fn push_relief_roughing_warnings(
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    let mut seen_pocket = false;
+    for op in project.operations.iter().filter(|o| o.enabled) {
+        match &op.kind {
+            OpKind::Pocket { .. } => seen_pocket = true,
+            OpKind::ReliefMill { .. } if !seen_pocket => {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "relief_missing_roughing".into(),
+                    message: format!(
+                        "Relief op '{}' runs with no prior roughing pass — the ball-nose must remove the full relief depth in scallop-sized bites, which is slow and overloads the cutter. Add a Pocket (flat endmill) roughing op before it to clear the bulk, leaving only the finish for the ball-nose.",
+                        op.name
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Two ops "share source" when one's `OpSource` overlaps the other's:
 /// either both `All`, intersecting `Layers` lists, or intersecting
 /// `Objects` id sets. `Objects` vs `Layers` cross-comparison is
@@ -1022,6 +1054,69 @@ mod tests {
             !w3.iter()
                 .any(|w| w.kind == "compression_transition_above_cut"),
             "transition-less compression bit should not warn: {w3:?}"
+        );
+    }
+
+    /// f60x-E: a relief op with no preceding Pocket warns
+    /// `relief_missing_roughing`; a Pocket before it silences the note; a
+    /// Pocket AFTER it does not (the bulk is still uncleared at finish time).
+    #[test]
+    fn relief_roughing_warns_without_a_prior_pocket() {
+        use crate::cam::surface_mill::ScanDirection;
+        use crate::project::{OpParams, OpSource};
+        let relief = |id: u32| Op {
+            id,
+            name: format!("Relief {id}"),
+            enabled: true,
+            kind: OpKind::ReliefMill {
+                source_id: 1,
+                z_min_mm: -2.0,
+                z_max_mm: 0.0,
+                invert: false,
+                scallop_height_mm: 0.05,
+                stepover_mm: None,
+                scan_direction: ScanDirection::AlongX,
+                along_step_mm: 0.5,
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+        };
+        let tools = vec![endmill(1, 6.0)];
+
+        // Relief alone → warns.
+        let p1 = project_with_segments(closed_square(20.0), vec![relief(1)], tools.clone());
+        let mut w1 = Vec::new();
+        push_relief_roughing_warnings(&p1, &mut w1);
+        let hit = w1.iter().find(|w| w.kind == "relief_missing_roughing");
+        assert!(hit.is_some(), "relief with no roughing should warn: {w1:?}");
+        assert_eq!(hit.unwrap().op_id, Some(1));
+
+        // Pocket BEFORE relief → silent.
+        let p2 = project_with_segments(
+            closed_square(20.0),
+            vec![pocket_op(1, 1, OpSource::All), relief(2)],
+            tools.clone(),
+        );
+        let mut w2 = Vec::new();
+        push_relief_roughing_warnings(&p2, &mut w2);
+        assert!(
+            !w2.iter().any(|w| w.kind == "relief_missing_roughing"),
+            "a prior Pocket should satisfy the roughing check: {w2:?}"
+        );
+
+        // Pocket AFTER relief → still warns (too late to rough).
+        let p3 = project_with_segments(
+            closed_square(20.0),
+            vec![relief(1), pocket_op(2, 1, OpSource::All)],
+            tools,
+        );
+        let mut w3 = Vec::new();
+        push_relief_roughing_warnings(&p3, &mut w3);
+        assert!(
+            w3.iter().any(|w| w.kind == "relief_missing_roughing"),
+            "a Pocket after the relief should not satisfy the check: {w3:?}"
         );
     }
 

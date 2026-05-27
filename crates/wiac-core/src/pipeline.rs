@@ -426,6 +426,8 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // 94sf safety gate downgrades the program when an `op_order_suspect`
     // surfaces, so the user has to acknowledge before the gcode ships.
     warnings::push_op_order_warnings(&project, &mut warnings);
+    // f60x-E: nudge users to rough the bulk before a ball-nose relief finish.
+    warnings::push_relief_roughing_warnings(&project, &mut warnings);
     // i5g4 MVP: warn when geometry bbox doesn't contain (0,0). Full
     // WCS / G54..G59 support is a feature on the roadmap; this loud
     // warning closes the silent-misalignment case the audit caught

@@ -104,36 +104,61 @@ An "operation kind" is one row in the `OpKindPicker` (Profile / Pocket /
 Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
 (Engrave) to mirror:
 
-1. **Rust enum variant** — `crates/wiac-core/src/project.rs`, the
-   `OperationKind` enum (around `pub enum OperationKind {`). Add a
-   variant. If the kind carries per-kind data, embed it in the variant
-   (see `Thread { pitch_mm, internal, climb }`). If not, a unit variant
-   like `Engrave` is fine.
-2. **Pipeline dispatch** — `crates/wiac-core/src/pipeline.rs`. Either:
+1. **Rust enum variant** — `crates/wiac-core/src/project/op.rs`, the
+   `OpKind` enum (around `pub enum OpKind {`). Add a variant. If the kind
+   carries per-kind data, embed it in the variant (see
+   `Thread { pitch_mm, internal, climb }`). If not, a unit variant like
+   `Engrave` is fine. If the kind needs bulk out-of-band data (a grid, an
+   image), store it at PROJECT level referenced by id — see
+   `Project.relief_sources` / `ReliefSource` (f60x) — not inline in the op,
+   which gets cloned and hashed.
+2. **Fix the exhaustive matches** — adding a variant breaks a few
+   `match`es that have no `_` arm; the compiler points at each. Known
+   ones: `pipeline_cache.rs::hash_operation_kind` (assign the next free
+   discriminant and hash every field that changes the output),
+   `cam/offsets.rs::context_for`, and `pipeline/offset_builder.rs`'s
+   per-kind `match` (specialty kinds that bypass the cascade go in the
+   `Skip` / no-op arm). The frontend has matching exhaustive maps — see
+   step 5.
+3. **Pipeline dispatch** — `crates/wiac-core/src/pipeline.rs`. Either:
    - Let it route through the standard offset-cascade path (no edit
      needed) if your kind cuts along an offset of the source path
      (Profile / Engrave / DragKnife behave this way), **or**
    - Add a special-case driver to `crates/wiac-core/src/pipeline/op_drivers.rs`
-     and dispatch from `run_per_op` (see `run_vcarve_op`, `run_thread_op`).
-3. **Frontend type** — `frontend/src/lib/state/op_types.ts`. Add the
+     and dispatch from `run_per_op` (see `run_vcarve_op`, `run_thread_op`,
+     `run_relief_op`). Specialty drivers emit XYZ blocks via
+     `emit_vcarve_block` and add a `*_would_emit` Level-1 gate.
+   Either way the per-op output is CACHED: any project-level data your kind
+   reads (a relief source) must fold into `op_cache_key_with_finish` like
+   `text_layers` / `relief_sources` do, and a `hash_tool` / op-shape change
+   means bumping `PIPELINE_VERSION` and re-pinning the `stable_hash_regression`
+   test.
+5. **Frontend type** — `frontend/src/lib/state/op_types.ts`. Add the
    string to the `OpKind` union, add a per-kind interface that extends
    `OpBase`, add the variant to the `OpEntry` discriminated union, and
-   update `isPathOp` / similar predicates if applicable.
-4. **Picker metadata** — `frontend/src/lib/components/OpKindPicker.svelte`.
-   Add entries to `KIND_LABEL`, `KIND_ICON`, `ALL_PICKER_KINDS`, and
-   `PICKER_HELP`. Each is a `Record<OpKind, …>` so the compiler will
-   flag the missing entry.
-5. **Properties panel routing** — `frontend/src/lib/components/OpPropertiesPanel.svelte`.
+   update `isPathOp` / similar predicates if applicable. Then mirror it
+   through the seam: `project-types.ts` (`prettyOpKind`, plus any
+   project-level collection like `reliefSources`), `op_tool_constraint.ts`
+   (`expectedToolKinds`), the `addOperation` factory + save/load in
+   `state/project.svelte.ts`, and the wire mapping in
+   `api/build-project.ts` (`FlatOp` fields, `WireOpKind` variant,
+   `buildOpKind` case). `svelte-check` flags every exhaustive map you miss.
+6. **Picker metadata** — `frontend/src/lib/components/OpKindPicker.svelte`.
+   Add entries to `KIND_LABEL`, `KIND_ICON`, `ALL_PICKER_KINDS`,
+   `PICKER_HELP`, and `OP_REQUIRES`. Each is a `Record<OpKind, …>` so the
+   compiler flags the missing entry.
+7. **Properties panel routing** — `frontend/src/lib/components/OpPropertiesPanel.svelte`.
    Add the kind to the appropriate `{#if op.kind === '…' || …}` block
-   so the right sections render. If the kind needs bespoke fields,
-   create `frontend/src/lib/components/op_properties/<Kind>Section.svelte`
-   (mirror `VCarveSection.svelte`) and render it.
-6. **Translations** — `frontend/src/lib/locales/en.json` and `de.json`.
-   At minimum: the picker label / help / icon strings and any new
-   field labels from step 5.
-7. **Schema regen** — `cargo xtask schema && (cd frontend && pnpm run codegen)`.
-   The pre-commit hook will refuse the commit otherwise.
-8. **Tests** — add a unit test in `crates/wiac-core/src/pipeline.rs`
+   so the right sections render (or a dedicated `{:else if}` branch when
+   the kind doesn't use the shared source/geometry UI — see `relief_mill`).
+   If the kind needs bespoke fields, create
+   `frontend/src/lib/components/op_properties/<Kind>Section.svelte`
+   (mirror `VCarveSection.svelte` / `ReliefMillSection.svelte`) and render it.
+8. **Schema regen** — `cargo xtask schema && (cd frontend && pnpm run codegen)`.
+   CI's codegen drift guard fails if the checked-in `generated.ts` differs
+   from a fresh run (it stays raw `openapi-typescript` output, not
+   prettier-formatted).
+9. **Tests** — add a unit test in `crates/wiac-core/src/pipeline/tests.rs`
    (search for `#[test]` near the bottom) that emits a tiny program
    with one op of the new kind. The corpus smoke test
    (`crates/wiac-core/tests/golden_corpus.rs`) doesn't exercise new

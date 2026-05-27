@@ -6,13 +6,6 @@
   import { buildObjectPolylines, polylineAtT, type ObjectPolyline } from '../cam/tabs';
   import type { Segment } from '../api/types';
   import {
-    bboxOfSegments,
-    clamp,
-    distanceToSegment,
-    pointInPolygon,
-    projectOntoSegment,
-  } from '../canvas/selection-geometry';
-  import {
     buildHitIndex as buildHitIndexPure,
     queryHit,
     type HitIndex,
@@ -1072,21 +1065,6 @@
     return fixtureAt(project.fixtures, dataX, dataY);
   }
 
-  function closestPointOnSegment(
-    segmentIdx: number,
-    canvasX: number,
-    canvasY: number,
-  ): { x: number; y: number } | null {
-    const data = project.geometryView;
-    if (!data || !lastTransform) return null;
-    const { scale, offX, offY } = lastTransform;
-    const dataX = (canvasX - offX) / scale;
-    const dataY = (offY - canvasY) / scale;
-    const s = data.segments[segmentIdx];
-    if (!s) return null;
-    return projectOntoSegment(s.start, s.end, dataX, dataY);
-  }
-
   function colorFor(c: number): string {
     if (c === 7 || c === 256) return themeVar('--text-strong', '#e6e6e6');
     if (c === 8) return themeVar('--text-muted', '#888');
@@ -1455,7 +1433,6 @@
     _hoverColor: string,
     haloColor: string,
   ) {
-    const activeColor = themeVar('--obj-assigned-active', '#39c75c');
     const idleColor = themeVar('--obj-assigned-other', '#2a6f3b');
     for (const layer of project.textLayers) {
       const segs = previewSegmentsFor(layer.id);

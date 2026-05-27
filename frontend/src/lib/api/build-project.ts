@@ -22,7 +22,6 @@ import type {
   OpBase,
   OpKind,
   PocketOp,
-  ProfileOp,
   ProfileOffset,
   ReliefMillOp,
   ThreadOp,

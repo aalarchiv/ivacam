@@ -175,7 +175,6 @@ describe('History transactions', () => {
 
   it('empty transaction does not push', () => {
     const h = new History();
-    const s = freshState();
     h.beginTransaction('empty');
     h.commitTransaction();
     expect(h.undoSize).toBe(0);

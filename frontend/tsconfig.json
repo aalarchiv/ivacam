@@ -9,7 +9,14 @@
     "noEmit": true,
     "allowJs": true,
     "checkJs": true,
-    "moduleDetection": "force"
+    "moduleDetection": "force",
+
+    /* Linting — these previously lived only in tsconfig.node.json (which
+       covers just vite.config.ts), leaving app source under src/** with
+       no dead-code or fallthrough detection. See zizn. */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]
 }

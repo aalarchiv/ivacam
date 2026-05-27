@@ -14,7 +14,6 @@
 
   import { onMount } from 'svelte';
   import { wireFileAssociationOpen } from '../state/desktop';
-  import { project } from '../state/project.svelte';
   import {
     importDroppedFile,
     loadFile,

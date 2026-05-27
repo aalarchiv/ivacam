@@ -10,14 +10,8 @@
     type OpEntry,
     type OpField,
     type OpFieldValue,
-    type ProfileOp,
-    type PocketOp,
-    type ProfileOffset,
-    type PocketStrategy,
     type SourceCombine,
     type CutDirection,
-    type DrillCycle,
-    type FrameShape,
   } from '../state/project.svelte';
   import { defaultClient } from '../api/http';
   import type { HelixRadiusResponse } from '../api/types';

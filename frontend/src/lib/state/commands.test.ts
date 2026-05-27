@@ -39,7 +39,7 @@ import type {
   TextLayer,
   ToolEntry,
 } from './project.svelte';
-import type { PocketOp, ProfileOp } from './op_types';
+import type { ProfileOp } from './op_types';
 
 function sampleTextLayer(id: number, text = 'Hello'): TextLayer {
   return {

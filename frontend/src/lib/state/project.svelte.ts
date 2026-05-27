@@ -5,11 +5,8 @@ import type {
   GenerateResponse,
   ImportResponse,
   ImportedObject,
-  Point2,
   Segment,
   SimDiagnostics,
-  SimWarning,
-  SimSeverity,
   WiacError,
 } from '../api/types';
 import { History } from './history';
@@ -41,8 +38,6 @@ import {
   type OpEntry,
   type OpKind,
   type OpPatch,
-  type ReliefMillOp,
-  type ScanDirection,
 } from './op_types';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs

@@ -98,8 +98,6 @@
       generatedPost = null;
     }
   });
-  let progressMsg = $state<string>('');
-  let progressFrac = $state<number>(0);
   let warningPanelOpen = $state(false);
   let abortController: AbortController | null = null;
 
@@ -304,8 +302,6 @@
       return;
     }
     project.beginGenerate();
-    progressMsg = '';
-    progressFrac = 0;
     abortController = new AbortController();
     try {
       const opProject = buildProject(project);
@@ -332,28 +328,17 @@
         r = await client.generateStreaming(
           req,
           (ev) => {
+            // Live progress is read from project.pipelineProgress, which
+            // notePipelineEvent maintains; the bar binds to that.
             project.notePipelineEvent(ev);
-            if (ev.kind === 'op_started') {
-              progressMsg = ev.name;
-              progressFrac = ev.idx / Math.max(1, ev.total);
-            } else if (ev.kind === 'op_progress') {
-              progressMsg = ev.message;
-            } else if (ev.kind === 'op_completed') {
-              if (project.pipelineProgress) {
-                progressFrac =
-                  project.pipelineProgress.opIdx / Math.max(1, project.pipelineProgress.opTotal);
-              }
-            } else if (ev.kind === 'done') {
-              progressFrac = 1;
-            }
           },
           abortController.signal,
         );
       } else if (client.generateStream) {
-        r = await client.generateStream(req, (ev) => {
-          progressMsg = ev.message;
-          progressFrac = ev.fraction;
-        });
+        // Coarse-grained streaming fallback (no per-op events). The bar
+        // shows an indeterminate running state via project.pipelineState;
+        // there's no fraction to surface here, so the callback is a no-op.
+        r = await client.generateStream(req, () => {});
       } else {
         r = await client.generate(req);
       }
@@ -372,8 +357,6 @@
     } finally {
       project.endGenerate();
       abortController = null;
-      progressMsg = '';
-      progressFrac = 0;
     }
   }
 

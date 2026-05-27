@@ -137,6 +137,7 @@ function toWireTool(t: ToolEntry): Record<string, unknown> {
     ...(t.compressionTransitionMm !== undefined
       ? { compression_transition_mm: t.compressionTransitionMm }
       : {}),
+    ...(t.threadPitchMm !== undefined ? { thread_pitch_mm: t.threadPitchMm } : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
     ...(t.holder !== undefined ? { holder: t.holder } : {}),
     // Per-kind sim/holder metadata so the heightfield simulator can

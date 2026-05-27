@@ -29,6 +29,10 @@ describe('expectedToolKinds', () => {
     expect([...expectedToolKinds('t_slot')]).toEqual(['form_profile']);
   });
 
+  it('prefers a thread mill (with endmill/form_profile fallback) for Thread', () => {
+    expect([...expectedToolKinds('thread')]).toEqual(['thread_mill', 'endmill', 'form_profile']);
+  });
+
   it('returns form_profile-only for Dovetail (b7qz)', () => {
     expect([...expectedToolKinds('dovetail')]).toEqual(['form_profile']);
   });

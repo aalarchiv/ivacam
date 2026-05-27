@@ -31,9 +31,9 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // holes with poor chip evacuation. Anything else is wrong.
       return ['drill', 'endmill'];
     case 'thread':
-      // Single-point thread mill (modeled as endmill or form_profile
-      // until we add a dedicated kind).
-      return ['endmill', 'form_profile'];
+      // gm1u: a dedicated thread mill is the natural fit; an endmill or
+      // form-profile still works as a fallback single-point cutter.
+      return ['thread_mill', 'endmill', 'form_profile'];
     case 'chamfer':
       // 45° (or other apex) bevel along an edge — any conical cutter
       // (V-bit / engraver).
@@ -89,6 +89,7 @@ const KIND_LABELS: Record<ToolKind, string> = {
   compression: 'compression',
   form_profile: 'form profile',
   kegel: 'tapered (Kegel)',
+  thread_mill: 'thread mill',
 };
 
 /// Human-readable list for the "needs X / Y / Z" warning chip.

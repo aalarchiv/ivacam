@@ -87,7 +87,8 @@ type WireToolKind =
   | 'bull_nose'
   | 'compression'
   | 'form_profile'
-  | 'kegel';
+  | 'kegel'
+  | 'thread_mill';
 
 /// Wire-side holder shape. Mirrors `wiac_core::project::HolderShape`'s
 /// `#[serde(tag = "kind")]` discriminator.
@@ -150,6 +151,9 @@ interface WireToolEntry {
   /// dhh0: compression flute-transition height (mm). Honored only when
   /// kind === 'compression'. Omit when undefined.
   compression_transition_mm?: number;
+  /// gm1u: thread pitch (mm). Honored only when kind === 'thread_mill'.
+  /// Omit when undefined.
+  thread_pitch_mm?: number;
   shank_diameter_mm?: number;
   /// q0kc: stickout between flute top and collet bottom (mm). Omit
   /// when 0 / undefined so the wire payload stays compact.
@@ -591,6 +595,7 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.compressionTransitionMm !== undefined
       ? { compression_transition_mm: t.compressionTransitionMm }
       : {}),
+    ...(t.threadPitchMm !== undefined ? { thread_pitch_mm: t.threadPitchMm } : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
     // q0kc: stickout (mm). Skip on zero so the wire payload stays
     // compact for the legacy "collet sits on flutes" common case.

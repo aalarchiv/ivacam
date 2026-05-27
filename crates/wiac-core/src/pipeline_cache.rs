@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 37;
+pub const PIPELINE_VERSION: u32 = 38;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -346,6 +346,7 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
         // 10 retired (z5yw: ToolKind::TSlot folded into FormProfile)
         ToolKind::FormProfile => 11,
         ToolKind::Kegel => 12,
+        ToolKind::ThreadMill => 13,
     };
     h.write_u8(kind);
     hash_f64(t.diameter, h);
@@ -367,6 +368,8 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     hash_opt_f64(t.laser_pierce_sec, h);
     hash_opt_f64(t.laser_lead_in_mm, h);
     hash_opt_f64(t.corner_radius_mm, h);
+    // gm1u: thread pitch changes the helical Z-advance of a Thread op.
+    hash_opt_f64(t.thread_pitch_mm, h);
     t.wirbeln.hash(h);
     hash_opt_f64(t.wirbeln_stepover_mm, h);
     hash_opt_f64(t.wirbeln_extra_width_mm, h);
@@ -1075,6 +1078,7 @@ mod tests {
             flute_length_mm: None,
             length_mm: None,
             compression_transition_mm: None,
+            thread_pitch_mm: None,
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
@@ -1131,7 +1135,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x019a_ee4b_450c_f16d_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0xa024_d215_2736_369b_u64, "got {:#018x}", key.0);
     }
 
     #[test]

@@ -226,6 +226,12 @@ pub struct ToolEntry {
     /// the preview assumes the flute midpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression_transition_mm: Option<f64>,
+    /// gm1u: thread pitch (mm) for a thread mill (Estlcam `Pitch`) — the
+    /// axial advance per orbit. Honored only when `kind == ThreadMill`.
+    /// Drives the helical Z-advance of the Thread op and a label in the
+    /// tool library. None = the Thread op must specify its own pitch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_pitch_mm: Option<f64>,
     /// Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shank_diameter_mm: Option<f64>,
@@ -375,6 +381,7 @@ impl Default for ToolEntry {
             flute_length_mm: None,
             length_mm: None,
             compression_transition_mm: None,
+            thread_pitch_mm: None,
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
@@ -455,6 +462,15 @@ pub enum ToolKind {
     /// truncated cone (Kegelstumpf). Shares the conical cut profile with
     /// the V-bit in the sim.
     Kegel,
+    /// Single-point thread mill (gm1u / Estlcam Gewinde). A small cutter
+    /// with a thread-form tooth (the `tip_angle_deg` is the thread flank
+    /// angle — 60° metric / 55° Whitworth) that cuts internal or external
+    /// threads by helical interpolation, advancing one `thread_pitch_mm`
+    /// per orbit. The cut is a side-wall thread, not representable in the
+    /// 2.5D heightmap, so the sim treats the envelope as a plain cylinder
+    /// at `diameter`; the thread geometry lives in the Thread op + the
+    /// per-tool `thread_pitch_mm`.
+    ThreadMill,
 }
 
 /// Geometry family — the "shared parent" a tool kind groups under. Kinds
@@ -482,6 +498,9 @@ pub enum ToolFamily {
     DragKnife,
     /// Non-contact beam, no physical radius (`LaserBeam`).
     Laser,
+    /// Single-point thread mill (`ThreadMill`) — cuts threads by helical
+    /// interpolation; carries a thread pitch + flank angle.
+    Thread,
 }
 
 impl ToolKind {
@@ -497,6 +516,7 @@ impl ToolKind {
             ToolKind::DragKnife => ToolFamily::DragKnife,
             ToolKind::LaserBeam => ToolFamily::Laser,
             ToolKind::FormProfile => ToolFamily::Profile,
+            ToolKind::ThreadMill => ToolFamily::Thread,
         }
     }
 }
@@ -626,6 +646,7 @@ mod tests {
             (ToolKind::LaserBeam, Laser),
             (ToolKind::FormProfile, Profile),
             (ToolKind::Kegel, Conical),
+            (ToolKind::ThreadMill, Thread),
         ];
         for (kind, fam) in cases {
             assert_eq!(kind.family(), fam, "family mismatch for {kind:?}");

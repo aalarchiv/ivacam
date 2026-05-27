@@ -354,6 +354,12 @@
         // 30° is a sensible tapered-endmill default vs 60° for V/engrave.
         next.tipAngleDeg = kind === 'kegel' ? 30 : 60;
       }
+      if (kind === 'thread_mill') {
+        // Thread mill: tipAngleDeg is the thread flank angle (60° metric
+        // / 55° Whitworth); seed a 1 mm pitch and the metric flank.
+        if (next.tipAngleDeg === undefined) next.tipAngleDeg = 60;
+        if (next.threadPitchMm === undefined) next.threadPitchMm = 1.0;
+      }
       touchedId = next.id;
       return next;
     });
@@ -514,6 +520,7 @@
     compression: 'Compression',
     form_profile: 'Form / profile',
     kegel: 'Kegel (tapered)',
+    thread_mill: 'Thread mill',
   };
   const coolantLabels: Record<CoolantMode, string> = {
     off: 'Off',
@@ -1400,6 +1407,32 @@
                           'compressionTransitionMm',
                           v === '' ? undefined : parseFloat(v),
                         );
+                      }}
+                    />
+                  </label>
+                </div>
+              {/if}
+              {#if attrApplies('threadPitch', tool.kind)}
+                <div class="holder-row pass-overrides">
+                  <span
+                    class="holder-label"
+                    title="Single-point thread mill (Estlcam Gewinde): cuts threads by helical interpolation. The tip ∠ in the main row is the thread flank angle (60° metric / 55° Whitworth)."
+                    >Thread mill</span
+                  >
+                </div>
+                <div class="holder-row">
+                  <label>
+                    <span>Pitch (mm)</span>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      placeholder="—"
+                      value={tool.threadPitchMm ?? ''}
+                      title="gm1u: thread pitch (mm) — the axial advance per orbit (Estlcam Pitch). e.g. 1.0 for M6×1, 1.5 for M10×1.5. Drives the helical Z-advance of the Thread op."
+                      onchange={(e) => {
+                        const v = (e.currentTarget as HTMLInputElement).value;
+                        updateField(i, 'threadPitchMm', v === '' ? undefined : parseFloat(v));
                       }}
                     />
                   </label>

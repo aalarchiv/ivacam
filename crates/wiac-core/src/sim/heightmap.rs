@@ -569,6 +569,11 @@ impl ToolProfile {
             // model in the warnings stream. Follow-up:
             // wiaconstructor-tcmp.
             ToolKind::Compression => ToolProfile::Compression { r },
+            // gm1u: thread mill — the thread is cut on a side wall by
+            // helical interpolation, which a 2.5D heightmap can't model.
+            // Treat the envelope as a plain cylinder at the cutter
+            // diameter for collision / preview (no spurious V-carve).
+            ToolKind::ThreadMill => ToolProfile::Endmill { r },
             // z5yw: the former dedicated T-slot kind folded into
             // FormProfile — a T-slot is authored as a wide-disk →
             // narrow-neck (z, r) profile via the tool-library preset, so
@@ -664,6 +669,7 @@ mod tests {
             flute_length_mm: None,
             length_mm: None,
             compression_transition_mm: None,
+            thread_pitch_mm: None,
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
@@ -912,6 +918,25 @@ mod tests {
         // Kegel is the Conical family — drives the same constraints as a
         // V-bit.
         assert_eq!(ToolKind::Kegel.family(), crate::project::tool::ToolFamily::Conical);
+    }
+
+    /// gm1u: a thread mill cuts a side-wall thread by helical
+    /// interpolation — not representable in a 2.5D heightmap — so its
+    /// sim envelope is a plain cylinder at the cutter diameter (no
+    /// spurious V-carve from the thread-form tooth).
+    #[test]
+    fn from_tool_thread_mill_is_cylinder_envelope() {
+        let mut t = make_tool(ToolKind::ThreadMill, 6.0);
+        t.tip_angle_deg = 60.0; // thread flank angle — irrelevant to the envelope
+        t.thread_pitch_mm = Some(1.0);
+        assert!(matches!(
+            ToolProfile::from_tool(&t),
+            ToolProfile::Endmill { r } if approx(r, 3.0)
+        ));
+        assert_eq!(
+            ToolKind::ThreadMill.family(),
+            crate::project::tool::ToolFamily::Thread
+        );
     }
 
     /// rbl: `BullNose` with `corner_radius_mm` builds a fillet profile;

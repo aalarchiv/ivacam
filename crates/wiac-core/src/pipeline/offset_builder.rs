@@ -2658,6 +2658,7 @@ mod tests {
             flute_length_mm: None,
             length_mm: None,
             compression_transition_mm: None,
+            thread_pitch_mm: None,
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,

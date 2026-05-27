@@ -209,6 +209,9 @@ export interface ToolEntry {
   /// only when kind === 'compression'. Display + preview marker only —
   /// the carved cross-section is unchanged. Undefined = flute midpoint.
   compressionTransitionMm?: number;
+  /// gm1u: thread pitch (mm) for a thread mill (Estlcam Pitch) — axial
+  /// advance per orbit. Honored only when kind === 'thread_mill'.
+  threadPitchMm?: number;
   /// Shank diameter in mm. Undefined = same as `diameter`
   /// (parallel-shank bit). Drives the holder/shank collision sweep.
   shankDiameterMm?: number;

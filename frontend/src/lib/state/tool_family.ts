@@ -36,7 +36,8 @@ export type ToolFamily =
   | 'profile'
   | 'drill'
   | 'drag_knife'
-  | 'laser';
+  | 'laser'
+  | 'thread';
 
 /// The gateable attributes a tool row can expose. Each maps to one or
 /// more inputs / sub-sections in ToolLibraryDialog.
@@ -51,6 +52,7 @@ export type ToolAttr =
   | 'dragoff' // drag-knife trailing offset
   | 'formProfile' // (z, r) sample table (incl. folded-in T-slot, z5yw)
   | 'compressionTransition' // compression up/down flute-split height
+  | 'threadPitch' // thread-mill pitch
   | 'laser'; // pierce / lead-in / kerf
 
 /// Kind → family. The authoritative classification; everything else
@@ -71,6 +73,7 @@ export const TOOL_FAMILY: Record<ToolKind, ToolFamily> = {
   drag_knife: 'drag_knife',
   form_profile: 'profile',
   laser_beam: 'laser',
+  thread_mill: 'thread',
 };
 
 /// Base attribute set implied by each family. Per-kind extras are
@@ -90,6 +93,10 @@ const FAMILY_BASE_ATTRS: Record<ToolFamily, readonly ToolAttr[]> = {
   drag_knife: ['dragoff'],
   // Laser has no flutes / RPM / plunge — power + pierce/lead/kerf.
   laser: ['laser'],
+  // Thread mill: flutes + RPM + a ramp-in plunge, the thread flank
+  // angle (tipAngleDeg), and the pitch. No generic Z step — depth is
+  // the thread, advanced helically by the op.
+  thread: ['flutes', 'speed', 'plunge', 'tipAngleDeg', 'threadPitch'],
 };
 
 /// Per-kind attributes beyond the family base.

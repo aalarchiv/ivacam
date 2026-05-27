@@ -1889,6 +1889,11 @@ export interface components {
             stickout_length_mm?: number | null;
             /**
              * Format: double
+             * @description gm1u: thread pitch (mm) for a thread mill (Estlcam `Pitch`) — the axial advance per orbit. Honored only when `kind == ThreadMill`. Drives the helical Z-advance of the Thread op and a label in the tool library. None = the Thread op must specify its own pitch.
+             */
+            thread_pitch_mm?: number | null;
+            /**
+             * Format: double
              * @description V-bit full included tip angle in degrees (apex angle of the cone). Drives the V-Carve depth-from-width relationship `z = -R / tan(tip_angle / 2)`. Validated to (0, 180); defaults to 60° for the most common engraving V-bit.
              * @default 60
              */
@@ -1926,7 +1931,7 @@ export interface components {
              */
             z_shift_mm?: number | null;
         };
-        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "form_profile" | "kegel";
+        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "form_profile" | "kegel" | "thread_mill";
         /** @enum {string} */
         ToolOffset: "none" | "outside" | "inside" | "on";
         ToolpathSegment: {

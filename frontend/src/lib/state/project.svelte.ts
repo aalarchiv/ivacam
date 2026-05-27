@@ -36,7 +36,14 @@ export { DEFAULT_SETTINGS };
 export type { AppSettings };
 // Bring the union types into scope locally; project-types and op_types
 // re-export them through this module for back-compat callers.
-import { isContourOp, type OpEntry, type OpKind, type OpPatch } from './op_types';
+import {
+  isContourOp,
+  type OpEntry,
+  type OpKind,
+  type OpPatch,
+  type ReliefMillOp,
+  type ScanDirection,
+} from './op_types';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs
 // and non-Svelte helpers can import them without booting the rune
@@ -70,6 +77,7 @@ import type {
   PocketStrategy,
   PostProfile,
   ProjectFile,
+  ReliefSource,
   SpindleDirection,
   StockConfig,
   TabPlacement,
@@ -119,6 +127,7 @@ export type {
   PocketStrategy,
   PostProfile,
   ProjectFile,
+  ReliefSource,
   SpindleDirection,
   StockConfig,
   TabPlacement,
@@ -152,6 +161,8 @@ export type {
   PocketOp,
   ProfileOffset,
   ProfileOp,
+  ReliefMillOp,
+  ScanDirection,
   SourceCombine,
   TabType,
   ThreadOp,
@@ -200,9 +211,11 @@ function loadDefaultFontBytesB64(): Promise<string | null> {
 import {
   addFixtureCommand,
   addOperationCommand,
+  addReliefSourceCommand,
   addTextLayerCommand,
   addToolCommand,
   deleteOperationCommand,
+  deleteReliefSourceCommand,
   deleteTextLayerCommand,
   deleteToolCommand,
   duplicateOperationCommand,
@@ -217,6 +230,7 @@ import {
   toggleTabPlacementCommand,
   updateFixtureCommand,
   updateOperationCommand,
+  updateReliefSourceCommand,
   updateTextLayerCommand,
   type CommandTarget,
 } from './commands';
@@ -459,6 +473,13 @@ class ProjectState {
     this.sel.selectedOpId = v;
   }
 
+  get reliefSources(): ReliefSource[] {
+    return this.data.reliefSources;
+  }
+  set reliefSources(v: ReliefSource[]) {
+    this.data.reliefSources = v;
+  }
+
   get textLayers(): TextLayer[] {
     return this.data.textLayers;
   }
@@ -563,6 +584,7 @@ class ProjectState {
     this.operations = [];
     this.fixtures = [];
     this.textLayers = [];
+    this.reliefSources = [];
     this.stock = { ...this.stock };
     // j4tv: workOffset is per-project (the user pre-zeros their machine
     // at a different point per drawing), so reset to default like ops.
@@ -1190,6 +1212,7 @@ class ProjectState {
       operations: this.operations,
       fixtures: this.fixtures,
       textLayers: this.textLayers,
+      ...(this.reliefSources.length > 0 ? { reliefSources: this.reliefSources } : {}),
       // i5g4 / j4tv: only persist work_offset when non-default so legacy
       // / unset projects keep their compact .wiac-project payloads. The
       // restore() side defaults to defaultWorkOffset() when absent.
@@ -1231,6 +1254,7 @@ class ProjectState {
     if (Array.isArray(file.operations)) this.operations = file.operations;
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
     this.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
+    this.reliefSources = Array.isArray(file.reliefSources) ? file.reliefSources : [];
     // j4tv: restore the program-level WCS offset. Legacy files lack
     // this field — fall back to all-zero @ G54, which matches the
     // pre-i5g4 behavior (geometry origin = WCS origin).
@@ -1403,6 +1427,35 @@ class ProjectState {
       this.selectedOpId = pauseOp.id;
       return pauseOp;
     }
+    // f60x: relief surfacing follows a target Z-surface, not source
+    // geometry — skip the offset/contour defaults. Prefer a ball-nose
+    // tool; bind to the first loaded relief source (0 = none yet).
+    if (kind === 'relief_mill') {
+      const ball = this.tools.find((t) => t.kind === 'ball_nose') ?? this.tools[0];
+      const reliefOp: OpEntry = {
+        id: nextId,
+        name: prettyOpKind(kind),
+        enabled: true,
+        kind: 'relief_mill',
+        toolId: ball?.id ?? this.tools[0]?.id ?? 1,
+        sourceCombine: 'auto',
+        sourceLayers: null,
+        depth: -2,
+        startDepth: 0,
+        step: -1,
+        sourceId: this.reliefSources[0]?.id ?? 0,
+        zMinMm: -2,
+        zMaxMm: 0,
+        invert: false,
+        scallopHeightMm: 0.05,
+        stepoverMm: null,
+        scanDirection: 'along_x',
+        alongStepMm: 0.5,
+      } as OpEntry;
+      this.history.exec(addOperationCommand(reliefOp), this.target());
+      this.selectedOpId = reliefOp.id;
+      return reliefOp;
+    }
     // When the user has objects selected on the canvas, pin the new op
     // to that exact set. Most users select first, click "+ Pocket"
     // expecting the op to apply to what they highlighted — the
@@ -1474,6 +1527,29 @@ class ProjectState {
     const layer: TextLayer = { ...seed, id: nextId, name: seed.name ?? defaultName };
     this.history.exec(addTextLayerCommand(layer), this.target());
     return layer;
+  }
+
+  /// f60x: insert a relief surface source (e.g. a decoded grayscale
+  /// image). `id` is assigned if absent. Returns the inserted source.
+  /// Undoable.
+  addReliefSource(
+    seed: Omit<ReliefSource, 'id'> & Partial<Pick<ReliefSource, 'id'>>,
+  ): ReliefSource {
+    const nextId = seed.id ?? this.reliefSources.reduce((m, s) => Math.max(m, s.id), 0) + 1;
+    const source: ReliefSource = { ...seed, id: nextId };
+    this.history.exec(addReliefSourceCommand(source), this.target());
+    return source;
+  }
+
+  updateReliefSource(id: number, patch: Partial<ReliefSource>) {
+    if (Object.keys(patch).length === 0) return;
+    if (!this.reliefSources.some((s) => s.id === id)) return;
+    this.history.exec(updateReliefSourceCommand(id, patch), this.target());
+  }
+
+  removeReliefSource(id: number) {
+    if (!this.reliefSources.some((s) => s.id === id)) return;
+    this.history.exec(deleteReliefSourceCommand(id), this.target());
   }
 
   updateTextLayer(id: number, patch: Partial<TextLayer>) {

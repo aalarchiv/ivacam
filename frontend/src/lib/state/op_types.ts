@@ -38,7 +38,10 @@ export type OpKind =
   | 't_slot'
   | 'dovetail'
   | 'vcarve'
-  | 'pause';
+  | 'pause'
+  | 'relief_mill';
+
+export type ScanDirection = 'along_x' | 'along_y';
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
 export type SourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
@@ -267,6 +270,32 @@ export interface PauseOp extends OpBase {
   message: string;
 }
 
+/// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
+/// surface (a `ReliefSource` referenced by `sourceId`, e.g. a grayscale
+/// image) with a ball-nose cutter. The source's brightness maps to Z in
+/// `[zMinMm, zMaxMm]`; `scallopHeightMm` drives the stepover unless
+/// `stepoverMm` overrides. Has no source-geometry / offset semantics —
+/// the surface comes from the relief source, not the imported chains.
+export interface ReliefMillOp extends OpBase {
+  kind: 'relief_mill';
+  /// Id of the `ReliefSource` (in `project.reliefSources`) this op cuts.
+  sourceId: number;
+  /// Deepest cut Z (mm, negative) — where the darkest pixels map.
+  zMinMm: number;
+  /// Shallowest cut Z (mm) — where the brightest pixels map (usually 0).
+  zMaxMm: number;
+  /// Invert the brightness→Z mapping (dark = high instead of low).
+  invert: boolean;
+  /// Target scallop height between adjacent passes (mm).
+  scallopHeightMm: number;
+  /// Explicit stepover override (mm). null = derive from scallop.
+  stepoverMm: number | null;
+  /// Raster scanline direction.
+  scanDirection: ScanDirection;
+  /// Sampling pitch along each scanline (mm).
+  alongStepMm: number;
+}
+
 /// Tagged-union over every op kind. TypeScript narrows the variant
 /// on `op.kind === '<value>'` so reads of kind-specific fields are
 /// only valid inside the matching branch — wrong-kind reads (e.g.
@@ -283,7 +312,8 @@ export type OpEntry =
   | DragKnifeOp
   | TSlotOp
   | DovetailOp
-  | PauseOp;
+  | PauseOp
+  | ReliefMillOp;
 
 /// Patch type for `project.updateOperation`. A patch covers the full
 /// variant-specific shape — callers may pass `{ depth: -3 }` against

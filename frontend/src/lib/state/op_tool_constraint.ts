@@ -64,6 +64,10 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
     case 'pause':
       // No tool reference — accept anything (Op.tool_id may be 0).
       return [];
+    case 'relief_mill':
+      // f60x: the drop-cutter surface follow (and the sim) assume a
+      // hemispherical tip — relief surfacing needs a ball-nose.
+      return ['ball_nose'];
     default:
       return [];
   }

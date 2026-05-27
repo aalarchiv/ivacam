@@ -32,6 +32,7 @@
   import TabsSection from './op_properties/TabsSection.svelte';
   import ProfileSection from './op_properties/ProfileSection.svelte';
   import PocketSection from './op_properties/PocketSection.svelte';
+  import ReliefMillSection from './op_properties/ReliefMillSection.svelte';
   // d0mr: shared op-property styling lives in a plain CSS module so we
   // don't need 53 :global(.props X) rules in the scoped style block
   // below. Vite static-imports this once; the .props prefix keeps the
@@ -214,6 +215,56 @@
       The pipeline emits <code>M5</code>, this message as a comment, <code>M0</code>, and
       <code>M3</code> at this slot. Spindle stops; pressing Cycle Start resumes.
     </p>
+  {:else if op.kind === 'relief_mill'}
+    <!-- f60x: relief surfacing follows an image-derived Z-surface, not
+         source geometry — name + tool + the relief section only. -->
+    <label class="row">
+      <span>Name</span>
+      <input
+        type="text"
+        value={op.name}
+        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
+      />
+    </label>
+    {@const reliefTool = project.tools.find((t) => t.id === op.toolId)}
+    {#if reliefTool != null && !isToolKindAcceptable(op.kind, reliefTool.kind)}
+      <p
+        class="warn-chip"
+        title={`This op typically uses ${formatExpectedToolKinds(op.kind)}; running it with the assigned tool will likely produce unexpected gcode.`}
+      >
+        Tool kind mismatch — {prettyOpKind(op.kind)} expects {formatExpectedToolKinds(op.kind)}.
+      </p>
+    {/if}
+    <label
+      class="row"
+      title="Ball-nose tool from the project library — its radius drives the scallop + the surface follow."
+    >
+      <span>Tool</span>
+      <div class="tool-cell">
+        <select
+          value={op.toolId}
+          onchange={(e) =>
+            patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
+        >
+          {#each project.tools as t (t.id)}
+            <option value={t.id} title={t.comment ?? ''}
+              >#{t.id} {t.name} ({formatLength(t.diameter, project.machine.unit)})</option
+            >
+          {/each}
+        </select>
+        <button
+          type="button"
+          class="tool-edit"
+          title="Edit this tool in the Tool library"
+          aria-label="Edit this tool in the Tool library"
+          onclick={(e) => {
+            e.stopPropagation();
+            project.toolsDialogFocusId = op.toolId;
+          }}>⚙</button
+        >
+      </div>
+    </label>
+    <ReliefMillSection {op} {patch} />
   {:else}
     <label class="row">
       <span>Name</span>

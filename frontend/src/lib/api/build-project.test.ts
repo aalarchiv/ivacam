@@ -477,3 +477,77 @@ describe('stock box (vrrr)', () => {
     expect(project!.stock).toBeUndefined();
   });
 });
+
+describe('relief mill (f60x-D)', () => {
+  it('maps a relief_mill op + relief source to the wire shape', () => {
+    const reliefOp = {
+      id: 1,
+      name: 'Relief',
+      enabled: true,
+      kind: 'relief_mill',
+      toolId: 1,
+      sourceLayers: null,
+      depth: -3,
+      startDepth: 0,
+      step: -1,
+      sourceId: 5,
+      zMinMm: -3,
+      zMaxMm: 0,
+      invert: true,
+      scallopHeightMm: 0.1,
+      stepoverMm: null,
+      scanDirection: 'along_y',
+      alongStepMm: 0.4,
+    } as unknown as OpEntry;
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool({ kind: 'ball_nose' })],
+      operations: [reliefOp],
+      reliefSources: [
+        {
+          id: 5,
+          name: 'pic.png',
+          origin: { x: 2, y: 3 },
+          cell: 0.5,
+          cols: 4,
+          rows: 4,
+          brightness: new Array(16).fill(0.5),
+        },
+      ],
+    });
+    const op = project!.operations[0];
+    expect(op.kind).toEqual({
+      type: 'relief_mill',
+      source_id: 5,
+      z_min_mm: -3,
+      z_max_mm: 0,
+      invert: true,
+      scallop_height_mm: 0.1,
+      // stepover_mm omitted when null (auto)
+      scan_direction: 'along_y',
+      along_step_mm: 0.4,
+    });
+    expect(project!.relief_sources).toEqual([
+      {
+        id: 5,
+        name: 'pic.png',
+        origin: [2, 3], // object → tuple
+        cell: 0.5,
+        cols: 4,
+        rows: 4,
+        brightness: new Array(16).fill(0.5),
+      },
+    ]);
+  });
+
+  it('omits relief_sources when none are present', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.relief_sources).toBeUndefined();
+  });
+});

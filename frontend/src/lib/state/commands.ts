@@ -15,6 +15,7 @@ import type {
   ImportEntry,
   MachineSettings,
   OpEntry,
+  ReliefSource,
   StockConfig,
   TabPlacement,
   TextLayer,
@@ -52,6 +53,7 @@ export interface CommandTarget {
   stock: StockConfig;
   settings: AppSettings;
   textLayers: TextLayer[];
+  reliefSources: ReliefSource[];
   workOffset: WorkOffset;
   dirty: boolean;
 }
@@ -422,6 +424,73 @@ function coalesceKeyForTextPatch(id: number, patch: Partial<TextLayer>): string 
   const keys = Object.keys(patch);
   if (keys.length !== 1) return undefined;
   return `text:${id}:${keys[0]}`;
+}
+
+// ── relief sources (f60x) ────────────────────────────────────────────
+
+export function addReliefSourceCommand(source: ReliefSource): Command {
+  return {
+    label: 'Add relief source',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      t.reliefSources = [...t.reliefSources, clone(source)];
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.reliefSources = t.reliefSources.filter((rs) => rs.id !== source.id);
+      t.dirty = true;
+    },
+  };
+}
+
+export function deleteReliefSourceCommand(id: number): Command {
+  let savedIdx = -1;
+  let saved: ReliefSource | undefined;
+  return {
+    label: 'Delete relief source',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      savedIdx = t.reliefSources.findIndex((rs) => rs.id === id);
+      if (savedIdx >= 0) {
+        saved = clone(t.reliefSources[savedIdx]);
+        t.reliefSources = t.reliefSources.filter((rs) => rs.id !== id);
+        t.dirty = true;
+      }
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      if (savedIdx >= 0 && saved) {
+        const next = [...t.reliefSources];
+        next.splice(savedIdx, 0, clone(saved));
+        t.reliefSources = next;
+        t.dirty = true;
+      }
+    },
+  };
+}
+
+export function updateReliefSourceCommand(id: number, patch: Partial<ReliefSource>): Command {
+  let prevPatch: Partial<ReliefSource> = {};
+  return {
+    label: 'Edit relief source',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      const cur = t.reliefSources.find((rs) => rs.id === id);
+      if (!cur) return;
+      prevPatch = {};
+      for (const k of Object.keys(patch) as (keyof ReliefSource)[]) {
+        (prevPatch as Record<string, unknown>)[k as string] = cur[k];
+      }
+      t.reliefSources = t.reliefSources.map((rs) => (rs.id === id ? { ...rs, ...patch } : rs));
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.reliefSources = t.reliefSources.map((rs) => (rs.id === id ? { ...rs, ...prevPatch } : rs));
+      t.dirty = true;
+    },
+  };
 }
 
 // ── tabs (rt1.10) ─────────────────────────────────────────────────────

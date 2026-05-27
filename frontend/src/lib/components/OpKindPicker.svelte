@@ -17,6 +17,7 @@
     dovetail: 'Dovetail',
     vcarve: 'V-Carve',
     pause: 'Pause',
+    relief_mill: 'Relief (3D)',
   };
   export const KIND_ICON: Record<OpKind, string> = {
     profile: '▢',
@@ -30,6 +31,7 @@
     dovetail: '⋀',
     vcarve: '⌃',
     pause: '⏸',
+    relief_mill: '⛰',
   };
   // Helix is omitted intentionally: it's an OperationKind in the
   // schema but the dedicated standalone helix-op emitter isn't shipped
@@ -49,6 +51,7 @@
     't_slot',
     'dovetail',
     'vcarve',
+    'relief_mill',
     'pause',
   ];
 
@@ -88,6 +91,8 @@
       'Single-point thread milling inside a circular bore (internal) or around a stud (external). Requires a closed-circle selection.',
     pause:
       'Optional-stop: emits M0 with an operator message at this slot. The machine halts so the operator can change tools manually, inspect the cut, or flip the stock. Press Cycle Start to resume.',
+    relief_mill:
+      '3D relief surfacing from a grayscale image with a ball-nose cutter. Brightness becomes height; load an image, set the depth range and scallop. Rough the bulk first with a flat endmill.',
   };
 </script>
 
@@ -127,6 +132,7 @@
     t_slot: ['mill'],
     dovetail: ['mill'],
     vcarve: ['mill'],
+    relief_mill: ['mill'],
     // Pause carries no tool / motion — every machine can pause.
     pause: ['mill', 'laser', 'drag', 'plasma'],
   };

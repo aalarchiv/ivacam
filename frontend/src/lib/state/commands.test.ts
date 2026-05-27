@@ -82,6 +82,7 @@ function blankTarget(): CommandTarget {
     } as StockConfig,
     settings: {} as CommandTarget['settings'],
     textLayers: [],
+    reliefSources: [],
     imports: [],
     workOffset: { x_mm: 0, y_mm: 0, z_mm: 0, wcs: 'G54' },
     dirty: false,

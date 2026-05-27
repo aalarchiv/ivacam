@@ -13,7 +13,7 @@ import type {
   WorkOffset,
 } from '../state/project.svelte';
 import { isDefaultWorkOffset } from '../state/project-types';
-import type { StockConfig } from '../state/project-types';
+import type { StockConfig, ReliefSource } from '../state/project-types';
 import { computeFootprint } from '../sim/footprint';
 import type {
   ChamferOp,
@@ -24,6 +24,7 @@ import type {
   PocketOp,
   ProfileOp,
   ProfileOffset,
+  ReliefMillOp,
   ThreadOp,
   VCarveOp,
 } from '../state/op_types';
@@ -77,6 +78,15 @@ interface FlatOp extends OpBase, ContourFields {
   threadPitchMm?: ThreadOp['threadPitchMm'];
   threadInternal?: ThreadOp['threadInternal'];
   threadClimb?: ThreadOp['threadClimb'];
+  // ReliefMillOp (f60x)
+  sourceId?: ReliefMillOp['sourceId'];
+  zMinMm?: ReliefMillOp['zMinMm'];
+  zMaxMm?: ReliefMillOp['zMaxMm'];
+  invert?: ReliefMillOp['invert'];
+  scallopHeightMm?: ReliefMillOp['scallopHeightMm'];
+  stepoverMm?: ReliefMillOp['stepoverMm'];
+  scanDirection?: ReliefMillOp['scanDirection'];
+  alongStepMm?: ReliefMillOp['alongStepMm'];
 }
 
 type WireToolKind =
@@ -358,7 +368,18 @@ type WireOpKind =
   | { type: 'dovetail'; contour: WireContourParams }
   | { type: 'helix' }
   | { type: 'v_carve'; carve: WireVCarveParams }
-  | { type: 'pause'; message: string };
+  | { type: 'pause'; message: string }
+  | {
+      type: 'relief_mill';
+      source_id: number;
+      z_min_mm: number;
+      z_max_mm: number;
+      invert: boolean;
+      scallop_height_mm: number;
+      stepover_mm?: number;
+      scan_direction: 'along_x' | 'along_y';
+      along_step_mm: number;
+    };
 
 type WireSourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
 type WireSource =
@@ -459,6 +480,21 @@ export interface WireProject {
   /// (warnings.rs::push_stock_warning) runs for every transport. Omitted
   /// when no stock is modeled.
   stock?: WireStock;
+  /// f60x: relief surface sources referenced by `relief_mill` ops. Omitted
+  /// when none are loaded.
+  relief_sources?: WireReliefSource[];
+}
+
+/// f60x: wire shape of `wiac_core::project::ReliefSource`. `origin` is the
+/// min corner [x, y]; `brightness` is row-major normalized [0, 1].
+export interface WireReliefSource {
+  id: number;
+  name: string;
+  origin: [number, number];
+  cell: number;
+  cols: number;
+  rows: number;
+  brightness: number[];
 }
 
 /// vrrr: wire shape of `wiac_core::project::StockConfig` — an
@@ -495,6 +531,9 @@ interface ProjectStateView {
   /// the wire `stock` box. Optional so legacy callers / tests that don't
   /// model stock simply omit the `out_of_stock` scan.
   stock?: StockConfig;
+  /// f60x: relief surface sources forwarded so `relief_mill` ops can
+  /// resolve their target surface. Optional.
+  reliefSources?: ReliefSource[];
 }
 
 /// Base64 → byte array. Used for embedded TTF/OTF font payloads on the
@@ -838,6 +877,18 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       } as WireOpKind;
     case 'pause':
       return { type: 'pause', message: op.message ?? '' } as WireOpKind;
+    case 'relief_mill':
+      return {
+        type: 'relief_mill',
+        source_id: op.sourceId ?? 0,
+        z_min_mm: op.zMinMm ?? -2,
+        z_max_mm: op.zMaxMm ?? 0,
+        invert: op.invert ?? false,
+        scallop_height_mm: op.scallopHeightMm ?? 0.05,
+        ...(op.stepoverMm != null && op.stepoverMm > 0 ? { stepover_mm: op.stepoverMm } : {}),
+        scan_direction: op.scanDirection ?? 'along_x',
+        along_step_mm: op.alongStepMm ?? 0.5,
+      } as WireOpKind;
   }
 }
 
@@ -950,6 +1001,20 @@ function buildStock(state: ProjectStateView): WireStock | null {
   };
 }
 
+/// f60x: map a frontend ReliefSource to its wire shape (origin object →
+/// `[x, y]` tuple; everything else passes through).
+function buildReliefSource(rs: ReliefSource): WireReliefSource {
+  return {
+    id: rs.id,
+    name: rs.name,
+    origin: [rs.origin.x, rs.origin.y],
+    cell: rs.cell,
+    cols: rs.cols,
+    rows: rs.rows,
+    brightness: rs.brightness,
+  };
+}
+
 /// Construct the wire `project` field for PipelineRequest. Returns null
 /// if the frontend has no operations defined yet — caller should fall
 /// back to the legacy segments+setup path.
@@ -973,6 +1038,9 @@ export function buildProject(state: ProjectStateView): WireProject | null {
       : {}),
     ...(workOffset ? { work_offset: workOffset } : {}),
     ...(stock ? { stock } : {}),
+    ...(state.reliefSources && state.reliefSources.length > 0
+      ? { relief_sources: state.reliefSources.map(buildReliefSource) }
+      : {}),
   };
 }
 

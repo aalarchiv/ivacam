@@ -18,6 +18,7 @@ import {
   type Fixture,
   type ImportEntry,
   type MachineSettings,
+  type ReliefSource,
   type StockConfig,
   type TextLayer,
   type ToolEntry,
@@ -246,6 +247,11 @@ export class ProjectDataState {
   /// editing a TextLayer field re-runs the renderer, and a future
   /// `text_engrave` op references one by id.
   textLayers = $state<TextLayer[]>([]);
+
+  /// f60x: relief / 3-axis surfacing sources (target Z(x,y) surfaces a
+  /// `relief_mill` op finishes), referenced by op `sourceId`. Each holds a
+  /// normalized-brightness grid decoded from a grayscale image.
+  reliefSources = $state<ReliefSource[]>([]);
 
   /// True when the in-memory project differs from the gcode currently
   /// shown in `generated`. Set by op edits/reorders/enable toggles;

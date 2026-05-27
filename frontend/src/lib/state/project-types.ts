@@ -37,6 +37,8 @@ export function prettyOpKind(kind: OpKind): string {
       return 'V-Carve';
     case 'pause':
       return 'Pause';
+    case 'relief_mill':
+      return 'Relief (3D)';
   }
 }
 
@@ -661,10 +663,32 @@ export interface ProjectFile {
   operations?: OpEntry[];
   fixtures?: Fixture[];
   textLayers?: TextLayer[];
+  /// f60x: relief / 3-axis surfacing sources (target Z(x,y) surfaces that
+  /// `relief_mill` ops finish). Referenced by op `sourceId`.
+  reliefSources?: ReliefSource[];
   /// i5g4: program-level WCS offset. Undefined / all-zero @ G54 means
   /// "geometry origin = WCS origin" (the legacy default; round-trips
   /// for legacy files lacking the field).
   workOffset?: WorkOffset;
+}
+
+/// f60x: a target surface source for relief / ball-nose surfacing. Mirror
+/// of `wiac_core::project::ReliefSource`. Holds a row-major
+/// normalized-brightness grid (each value in [0, 1]) plus its world
+/// placement; the depth mapping (brightness → Z) lives on the `relief_mill`
+/// op so depth retunes without re-decoding the image. Produced by
+/// `decodeImageToReliefSource` from a loaded grayscale image.
+export interface ReliefSource {
+  id: number;
+  name: string;
+  /// World XY of the grid's min corner.
+  origin: { x: number; y: number };
+  /// Cell size in mm (pixel pitch in world units).
+  cell: number;
+  cols: number;
+  rows: number;
+  /// Row-major normalized brightness in [0, 1], length cols * rows.
+  brightness: number[];
 }
 
 /// Persistent text entity — editable text + typography + transform.

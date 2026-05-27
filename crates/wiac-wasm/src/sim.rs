@@ -131,7 +131,8 @@ impl Simulator {
         // Replace any existing sticky CellSizeCoarsened — only the most
         // recent coarsening matters (a rebuild with different cell
         // counts overrides the prior decision).
-        self.sticky_warnings.retain(|w| !matches!(w, SimWarning::CellSizeCoarsened { .. }));
+        self.sticky_warnings
+            .retain(|w| !matches!(w, SimWarning::CellSizeCoarsened { .. }));
         let warn = SimWarning::CellSizeCoarsened {
             original_cell_size_mm,
             coarsened_cell_size_mm,

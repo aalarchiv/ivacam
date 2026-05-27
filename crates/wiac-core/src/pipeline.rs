@@ -65,8 +65,8 @@ pub(in crate::pipeline) use selection::{
 mod test_helpers;
 
 use op_drivers::{
-    halfpipe_would_emit, run_halfpipe_op, run_standard_op, run_thread_op, run_vcarve_op,
-    thread_would_emit, vcarve_would_emit,
+    halfpipe_would_emit, relief_would_emit, run_halfpipe_op, run_relief_op, run_standard_op,
+    run_thread_op, run_vcarve_op, thread_would_emit, vcarve_would_emit,
 };
 use regions::build_region_previews;
 pub use setup_resolver::fit_helix_radius_for_selection;
@@ -762,6 +762,9 @@ where
                 strategy: PocketStrategy::Halfpipe { .. },
                 ..
             } => halfpipe_would_emit(op, objects),
+            // f60x: relief surfacing emits only when its referenced source
+            // exists and is non-empty.
+            OpKind::ReliefMill { .. } => relief_would_emit(op, project),
             // Non-specialty ops keep the existing behaviour — the
             // standard-op offset cascade has its own emptiness guards
             // and the M6 still helps surface intent on multi-tool
@@ -883,6 +886,7 @@ where
                 &resolve_op_segments(op, &project.segments, objects),
                 &project.fixtures,
                 &project.text_layers,
+                &project.relief_sources,
                 &project.work_offset,
                 post_tag,
             ))
@@ -996,6 +1000,11 @@ where
                 warnings,
                 cancel,
             )?;
+        } else if matches!(op.kind, OpKind::ReliefMill { .. }) {
+            // f60x: 3-axis ball-nose relief surfacing — own drop-cutter
+            // driver, like Halfpipe/VCarve it emits XYZ blocks directly.
+            post.raw(&format!("; OP {}", op.id));
+            run_relief_op(op, project, &setup, post, &mut last_pos, warnings, cancel)?;
         } else {
             let (closed_count, offset_count, swapped) = run_standard_op(
                 op,

@@ -1322,7 +1322,10 @@ pub fn apply_cut_direction(
             // 3g6u/b7qz: T-slot and dovetail ride the centerline (no
             // inside/outside winding to enforce) just like Engrave.
             | OpKind::TSlot { .. }
-            | OpKind::Dovetail { .. } => CutContext::Skip,
+            | OpKind::Dovetail { .. }
+            // f60x: relief surfacing has its own drop-cutter driver and
+            // never enters the offset cascade — no winding to enforce.
+            | OpKind::ReliefMill { .. } => CutContext::Skip,
         }
     };
     for offset in offsets.iter_mut() {

@@ -1458,6 +1458,56 @@ components:
         required:
         - type
         type: object
+      - description: 'f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y) surface (a [`crate::project::ReliefSource`] referenced by `source_id`, e.g. a grayscale-image relief) with a ball-nose cutter: the drop-cutter engine (`cam::surface_mill`) produces gouge-free raster scanlines whose Z follows the surface. This is a FINISH pass — the bulk should be roughed first (constant-Z endmill). The source''s normalized brightness is mapped to Z in `[z_min_mm, z_max_mm]` at planning time, so depth is a cheap op-level knob (no image re-upload).'
+        properties:
+          along_step_mm:
+            default: 0.5
+            description: Sampling pitch along each scanline (mm). Finer = smoother path.
+            format: double
+            type: number
+          invert:
+            default: false
+            description: Invert the brightness→Z mapping (dark = high instead of low).
+            type: boolean
+          scallop_height_mm:
+            default: 0.05
+            description: Target scallop height between adjacent passes (mm) — drives the stepover unless `stepover_mm` overrides.
+            format: double
+            type: number
+          scan_direction:
+            allOf:
+            - $ref: '#/components/schemas/ScanDirection'
+            default: along_x
+            description: Raster scanline direction.
+          source_id:
+            description: Id of the [`crate::project::ReliefSource`] (in `Project.relief_sources`) this op surfaces. No matching source ⇒ the op emits nothing.
+            format: uint32
+            minimum: 0.0
+            type: integer
+          stepover_mm:
+            description: Explicit stepover override (mm). `Some(s > 0)` wins over the scallop computation.
+            format: double
+            type:
+            - number
+            - 'null'
+          type:
+            enum:
+            - relief_mill
+            type: string
+          z_max_mm:
+            default: 0.0
+            description: Shallowest cut Z (mm) — where the brightest pixels map. Usually 0 (stock top).
+            format: double
+            type: number
+          z_min_mm:
+            default: 0.0
+            description: Deepest cut Z (mm, negative) — where the darkest pixels map.
+            format: double
+            type: number
+        required:
+        - source_id
+        - type
+        type: object
     OpParams:
       description: |-
         Universal per-op parameters — fields that apply to **every** op kind. Kind-specific config lives in the matching variant struct embedded in [`super::op::OpKind`]:
@@ -2126,6 +2176,11 @@ components:
           items:
             $ref: '#/components/schemas/Op'
           type: array
+        relief_sources:
+          description: 'f60x: relief / 3-axis surfacing sources — the target Z(x,y) surfaces that [`OpKind::ReliefMill`] ops finish. Stored at project level (like `text_layers`) and referenced by `source_id`, not embedded in the op, because a surface grid is large and ops get cloned + hashed. Each carries a normalized-brightness grid; the op maps it to Z at planning time. Default empty: projects with no relief ops are unchanged.'
+          items:
+            $ref: '#/components/schemas/ReliefSource'
+          type: array
         segments:
           description: Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained.
           items:
@@ -2181,6 +2236,48 @@ components:
       required:
       - op_id
       - outer
+      type: object
+    ReliefSource:
+      description: 'f60x: a target surface source for relief / ball-nose surfacing. Holds a row-major normalized-brightness grid (each value in `[0, 1]`) plus its world placement; the depth mapping (brightness → Z) lives on the [`OpKind::ReliefMill`] op so the user can retune depth without re-uploading the image. The first producer (f60x-D) decodes a grayscale image frontend-side; a future STL rasterizer would populate the same grid. The driver turns it into a [`crate::cam::surface::SurfaceField`] via `SurfaceField::from_grayscale`.'
+      properties:
+        brightness:
+          description: Row-major normalized brightness in `[0, 1]`. Length must be `cols * rows`.
+          items:
+            format: float
+            type: number
+          type: array
+        cell:
+          description: Cell size in mm (square cells / pixel pitch in world units).
+          format: double
+          type: number
+        cols:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        id:
+          description: Stable id referenced by [`OpKind::ReliefMill::source_id`].
+          format: uint32
+          minimum: 0.0
+          type: integer
+        name:
+          default: ''
+          description: Human-readable label (e.g. the source filename). Optional.
+          type: string
+        origin:
+          allOf:
+          - $ref: '#/components/schemas/Point2'
+          description: World XY of the grid's min corner (the (0,0) cell's lower-left).
+        rows:
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - brightness
+      - cell
+      - cols
+      - id
+      - origin
+      - rows
       type: object
     RenderTextLayerResponse:
       description: Live-preview response — the rendered `TextLayer` segments plus the cached single-line classification. The pipeline produces the same segments at Generate time; this endpoint lets the frontend show the text on the 2D canvas without round-tripping a full pipeline run.
@@ -2248,6 +2345,12 @@ components:
       - segments
       - single_line
       type: object
+    ScanDirection:
+      description: Direction the parallel finishing scanlines run. `AlongX` lines sweep in X and step over in Y; `AlongY` is the transpose. (Diagonal raster is a future addition — X/Y cover the common cases and keep coverage math simple.)
+      enum:
+      - along_x
+      - along_y
+      type: string
     Segment:
       description: |-
         A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).

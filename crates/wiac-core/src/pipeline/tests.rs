@@ -16,6 +16,133 @@ use crate::project::{
     TextLayerKind, ToolEntry, ToolKind,
 };
 
+/// f60x-C: a ReliefMill op with a brightness ramp + a ball-nose tool emits
+/// a varying-Z surfacing toolpath end-to-end (no source geometry needed —
+/// the surface comes from the project's relief source). A wrong tool kind
+/// surfaces `tool_kind_mismatch`.
+#[test]
+fn pipeline_relief_mill_emits_varying_z_ballnose_surface() {
+    use crate::cam::surface_mill::ScanDirection;
+    use crate::geometry::Point2;
+    use crate::project::ReliefSource;
+
+    // 6x6 brightness ramp: dark (deep) at x=0 → bright (top) at x=max.
+    let cols = 6u32;
+    let rows = 6u32;
+    let mut brightness = Vec::new();
+    for _iy in 0..rows {
+        for ix in 0..cols {
+            brightness.push(ix as f32 / (cols as f32 - 1.0));
+        }
+    }
+    let source = ReliefSource {
+        id: 7,
+        name: "ramp".into(),
+        origin: Point2::new(0.0, 0.0),
+        cell: 2.0,
+        cols,
+        rows,
+        brightness,
+    };
+    let mut ball = endmill(1, 4.0);
+    ball.kind = ToolKind::BallNose;
+    ball.flute_length_mm = Some(20.0);
+    let relief = |tool_id: u32| Op {
+        id: 1,
+        name: "Relief".into(),
+        enabled: true,
+        kind: OpKind::ReliefMill {
+            source_id: 7,
+            z_min_mm: -5.0,
+            z_max_mm: 0.0,
+            invert: false,
+            scallop_height_mm: 0.0,
+            stepover_mm: Some(2.0),
+            scan_direction: ScanDirection::AlongX,
+            along_step_mm: 1.0,
+        },
+        tool_id,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+    };
+    let project = Project {
+        segments: Vec::new(),
+        machine: MachineConfig::default(),
+        tools: vec![ball],
+        operations: vec![relief(1)],
+        fixtures: Vec::default(),
+        text_layers: Vec::new(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: vec![source.clone()],
+    };
+    let resp = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .expect("relief pipeline should run end-to-end");
+    assert!(resp.gcode.contains("; OP 1"), "no op marker for relief op");
+    // Cut segments exist and their Z varies (the ramp surface), staying
+    // within the configured [-5, 0] range.
+    let cut_zs: Vec<f64> = resp
+        .toolpath
+        .iter()
+        .filter(|s| s.op_id == 1 && matches!(s.kind, crate::gcode::preview::MoveKind::Cut))
+        .map(|s| s.to.z)
+        .collect();
+    assert!(!cut_zs.is_empty(), "relief op emitted no cut moves");
+    let zmin = cut_zs.iter().cloned().fold(f64::INFINITY, f64::min);
+    let zmax = cut_zs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        zmax - zmin > 0.5,
+        "relief Z should vary across the ramp (got span {zmin}..{zmax})"
+    );
+    assert!(
+        zmin >= -5.0 - 1e-6 && zmax <= 1e-6,
+        "relief Z out of range: {zmin}..{zmax}"
+    );
+    assert!(
+        !resp.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"),
+        "ball-nose relief should not warn tool_kind_mismatch: {:?}",
+        resp.warnings
+    );
+
+    // Wrong tool kind → tool_kind_mismatch.
+    let mut flat = endmill(2, 4.0); // Endmill, not BallNose
+    flat.id = 2;
+    let project2 = Project {
+        segments: Vec::new(),
+        machine: MachineConfig::default(),
+        tools: vec![flat],
+        operations: vec![relief(2)],
+        fixtures: Vec::default(),
+        text_layers: Vec::new(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: vec![source],
+    };
+    let resp2 = run_pipeline(
+        PipelineRequest {
+            project: project2,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .expect("relief pipeline (flat tool) should still run");
+    assert!(
+        resp2
+            .warnings
+            .iter()
+            .any(|w| w.kind == "tool_kind_mismatch"),
+        "non-ball-nose relief should warn tool_kind_mismatch: {:?}",
+        resp2.warnings
+    );
+}
+
 #[test]
 fn pipeline_renders_text_layers_and_routes_via_synthetic_layer() {
     // Engrave op pointing at the synthetic `__text_1` layer.
@@ -57,6 +184,7 @@ fn pipeline_renders_text_layers_and_routes_via_synthetic_layer() {
         text_layers: vec![text_layer],
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -193,6 +321,7 @@ fn post_profile_overrides_program_start_and_end() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -262,6 +391,7 @@ fn post_profile_axes_config_drives_axis_emission() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -340,6 +470,7 @@ fn post_profile_disabled_axis_drops_the_word() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -387,6 +518,7 @@ fn post_profile_without_axes_keeps_legacy_output() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp_a = run_pipeline(
         PipelineRequest {
@@ -478,6 +610,7 @@ fn plot_mode_emits_only_two_z_values() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -570,6 +703,7 @@ fn laser_op_emits_pierce_dwell_before_cut() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -606,6 +740,7 @@ fn non_laser_tool_ignores_pierce_field() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -638,6 +773,7 @@ fn first_tool_z_shift_emits_g92_after_program_begin() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -666,6 +802,7 @@ fn no_z_shift_emits_no_g92() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -699,6 +836,7 @@ fn comma_decimal_separator_emits_commas_in_numbers() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -744,6 +882,7 @@ fn line_numbering_prefixes_every_line() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -785,6 +924,7 @@ fn no_line_numbering_by_default() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -833,6 +973,7 @@ fn chamfer_op_emits_constant_z_pass_at_computed_depth() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -906,6 +1047,7 @@ fn chamfer_after_deep_profile_keeps_own_depth() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -987,6 +1129,7 @@ fn chamfer_finish_pass_emits_second_pass_at_finish_feed() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -1025,6 +1168,7 @@ fn chamfer_with_non_vbit_warns() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -1068,6 +1212,7 @@ fn chamfer_deep_chamfer_uses_multi_pass_stepdown() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -1129,6 +1274,7 @@ fn chamfer_oversize_width_clamped_to_tool_reach() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -1249,6 +1395,7 @@ fn generate_streaming_emits_op_events_in_order() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let cancel = CancelToken::new();
     let mut events: Vec<PipelineEvent> = Vec::new();
@@ -1299,6 +1446,7 @@ fn generate_streaming_done_event_carries_aggregated_stats() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let cancel = CancelToken::new();
     let mut last: Option<PipelineEvent> = None;
@@ -1367,6 +1515,7 @@ fn generate_streaming_cancellation() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let cancel = CancelToken::new();
     let cancel_clone = cancel.clone();
@@ -1450,6 +1599,7 @@ fn regenerate_with_no_edits_hits_cache() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     clear_pipeline_cache();
     let first = collect_cached_flags(project.clone());
@@ -1491,6 +1641,7 @@ fn edit_one_op_misses_only_that() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     clear_pipeline_cache();
     let first = collect_cached_flags(project.clone());
@@ -1535,6 +1686,7 @@ fn cache_hit_produces_identical_response() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     clear_pipeline_cache();
     let req = || PipelineRequest {
@@ -1666,6 +1818,7 @@ fn pipeline_emits_m0_for_pause_op() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -1733,6 +1886,7 @@ fn pause_op_skips_tool_validation() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -1833,6 +1987,7 @@ fn multi_op_different_tools_emit_m6_at_each_boundary() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -1883,6 +2038,7 @@ fn multi_op_same_tool_emits_at_most_one_m6() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -1921,6 +2077,7 @@ fn no_toolchange_machine_omits_m6() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -1986,6 +2143,7 @@ fn rectangle_tab_drop_uses_plunge_feedrate() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2076,6 +2234,7 @@ fn laser_pierce_dwells_at_cut_z() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2134,6 +2293,7 @@ fn multi_op_toolchange_envelope_has_m5_before_m6_and_m3_after() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2197,6 +2357,7 @@ fn dual_tool_internal_change_uses_full_envelope() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2279,6 +2440,7 @@ fn drill_stufenfase_change_uses_full_envelope() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2333,6 +2495,7 @@ fn coolant_off_before_spindle_off_in_inter_op_toolchange() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2384,6 +2547,7 @@ fn first_tool_envelope_omits_leading_coolant_off() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2424,6 +2588,7 @@ fn same_tool_consecutive_ops_skip_envelope_entirely() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2467,6 +2632,7 @@ fn non_toolchange_machine_pauses_for_manual_swap() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2522,6 +2688,7 @@ fn inch_units_emit_scaled_numbers() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -2602,6 +2769,7 @@ fn toolchange_envelope_routes_ccw_tool_through_m4() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -2656,6 +2824,7 @@ fn toolchange_envelope_keeps_m3_for_default_cw_tool() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -2728,6 +2897,7 @@ fn prev_tool_id_stays_unchanged_when_dual_tool_skips_finish() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -2855,6 +3025,7 @@ fn prev_tool_id_unchanged_after_drill_skips_chamfer_swap() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -2930,6 +3101,7 @@ fn pause_op_does_not_lock_spindle_direction() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -3020,6 +3192,7 @@ fn laser_mode_toolchange_envelope_emits_no_spindle_commands() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
@@ -3127,6 +3300,7 @@ fn run_pipeline_flags_cuts_outside_work_area() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -3159,6 +3333,7 @@ fn run_pipeline_no_work_area_warning_when_in_bounds() {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     };
     let resp = run_pipeline(
         PipelineRequest {
@@ -3237,6 +3412,7 @@ fn tslot_project(tool: ToolEntry, depth: f64) -> Project {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     }
 }
 
@@ -3432,6 +3608,7 @@ fn dovetail_project(tool: ToolEntry, depth: f64) -> Project {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     }
 }
 
@@ -3581,6 +3758,7 @@ fn tessellated_circle_profile_project(arcs: bool) -> Project {
         text_layers: Vec::default(),
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
+        relief_sources: Vec::new(),
     }
 }
 

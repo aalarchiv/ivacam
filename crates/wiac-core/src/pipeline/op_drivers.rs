@@ -20,10 +20,12 @@
 mod drill;
 mod dual_tool;
 mod halfpipe;
+mod surface_mill;
 mod thread;
 mod vcarve;
 
 pub(in crate::pipeline) use halfpipe::{halfpipe_would_emit, run_halfpipe_op};
+pub(in crate::pipeline) use surface_mill::{relief_would_emit, run_relief_op};
 pub(in crate::pipeline) use thread::{run_thread_op, thread_would_emit};
 pub(in crate::pipeline) use vcarve::{run_vcarve_op, vcarve_would_emit};
 

@@ -894,6 +894,53 @@ export interface components {
             message: string;
             /** @enum {string} */
             type: "pause";
+        } | {
+            /**
+             * Format: double
+             * @description Sampling pitch along each scanline (mm). Finer = smoother path.
+             * @default 0.5
+             */
+            along_step_mm: number;
+            /**
+             * @description Invert the brightness→Z mapping (dark = high instead of low).
+             * @default false
+             */
+            invert: boolean;
+            /**
+             * Format: double
+             * @description Target scallop height between adjacent passes (mm) — drives the stepover unless `stepover_mm` overrides.
+             * @default 0.05
+             */
+            scallop_height_mm: number;
+            /**
+             * @description Raster scanline direction.
+             * @default along_x
+             */
+            scan_direction: components["schemas"]["ScanDirection"];
+            /**
+             * Format: uint32
+             * @description Id of the [`crate::project::ReliefSource`] (in `Project.relief_sources`) this op surfaces. No matching source ⇒ the op emits nothing.
+             */
+            source_id: number;
+            /**
+             * Format: double
+             * @description Explicit stepover override (mm). `Some(s > 0)` wins over the scallop computation.
+             */
+            stepover_mm?: number | null;
+            /** @enum {string} */
+            type: "relief_mill";
+            /**
+             * Format: double
+             * @description Shallowest cut Z (mm) — where the brightest pixels map. Usually 0 (stock top).
+             * @default 0
+             */
+            z_max_mm: number;
+            /**
+             * Format: double
+             * @description Deepest cut Z (mm, negative) — where the darkest pixels map.
+             * @default 0
+             */
+            z_min_mm: number;
         };
         /**
          * @description Universal per-op parameters — fields that apply to **every** op kind. Kind-specific config lives in the matching variant struct embedded in [`super::op::OpKind`]:
@@ -1283,6 +1330,8 @@ export interface components {
             fixtures?: components["schemas"]["Fixture"][];
             machine: components["schemas"]["MachineConfig"];
             operations: components["schemas"]["Op"][];
+            /** @description f60x: relief / 3-axis surfacing sources — the target Z(x,y) surfaces that [`OpKind::ReliefMill`] ops finish. Stored at project level (like `text_layers`) and referenced by `source_id`, not embedded in the op, because a surface grid is large and ops get cloned + hashed. Each carries a normalized-brightness grid; the op maps it to Z at planning time. Default empty: projects with no relief ops are unchanged. */
+            relief_sources?: components["schemas"]["ReliefSource"][];
             /** @description Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained. */
             segments: components["schemas"]["Segment"][];
             /** @description vrrr: physical stock envelope, resolved to an axis-aligned box in the geometry frame. The frontend derives this from its auto/manual stock UI (margin / custom dims / offset) via `computeFootprint` and sends the resolved box; a CLI / server consumer sets the dimensions directly. `None` (default) skips the `out_of_stock` scan, so legacy projects — and any transport that doesn't model stock — behave exactly as before this field existed. The stock top sits at z = 0 (the WCS / geometry origin plane); the body extends downward by `thickness_mm`. */
@@ -1304,6 +1353,32 @@ export interface components {
             /** Format: uint32 */
             op_id: number;
             outer: components["schemas"]["Point2"][];
+        };
+        /** @description f60x: a target surface source for relief / ball-nose surfacing. Holds a row-major normalized-brightness grid (each value in `[0, 1]`) plus its world placement; the depth mapping (brightness → Z) lives on the [`OpKind::ReliefMill`] op so the user can retune depth without re-uploading the image. The first producer (f60x-D) decodes a grayscale image frontend-side; a future STL rasterizer would populate the same grid. The driver turns it into a [`crate::cam::surface::SurfaceField`] via `SurfaceField::from_grayscale`. */
+        ReliefSource: {
+            /** @description Row-major normalized brightness in `[0, 1]`. Length must be `cols * rows`. */
+            brightness: number[];
+            /**
+             * Format: double
+             * @description Cell size in mm (square cells / pixel pitch in world units).
+             */
+            cell: number;
+            /** Format: uint32 */
+            cols: number;
+            /**
+             * Format: uint32
+             * @description Stable id referenced by [`OpKind::ReliefMill::source_id`].
+             */
+            id: number;
+            /**
+             * @description Human-readable label (e.g. the source filename). Optional.
+             * @default
+             */
+            name: string;
+            /** @description World XY of the grid's min corner (the (0,0) cell's lower-left). */
+            origin: components["schemas"]["Point2"];
+            /** Format: uint32 */
+            rows: number;
         };
         /** @description Live-preview response — the rendered `TextLayer` segments plus the cached single-line classification. The pipeline produces the same segments at Generate time; this endpoint lets the frontend show the text on the 2D canvas without round-tripping a full pipeline run. */
         RenderTextLayerResponse: {
@@ -1335,6 +1410,11 @@ export interface components {
             /** @description True if the font is a single-line / engraving / Hershey-port style font. Drives the dialog's "use a single-line font" chip. */
             single_line: boolean;
         };
+        /**
+         * @description Direction the parallel finishing scanlines run. `AlongX` lines sweep in X and step over in Y; `AlongY` is the transpose. (Diagonal raster is a future addition — X/Y cover the common cases and keep coverage math simple.)
+         * @enum {string}
+         */
+        ScanDirection: "along_x" | "along_y";
         /**
          * @description A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
          *

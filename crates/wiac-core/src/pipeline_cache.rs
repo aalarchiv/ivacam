@@ -52,13 +52,13 @@ use crate::pipeline::PipelineWarning;
 use crate::project::{
     ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
     OpKind, OpParams, OpSource, PatternConfig, PocketParams, PocketStrategy, ProfileParams,
-    SourceCombine, SpindleDirection, TextAlignment, TextLayer, TextLayerKind, ToolEntry, ToolKind,
-    VCarveParams, Wcs, WorkOffset,
+    ReliefSource, SourceCombine, SpindleDirection, TextAlignment, TextLayer, TextLayerKind,
+    ToolEntry, ToolKind, VCarveParams, Wcs, WorkOffset,
 };
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 39;
+pub const PIPELINE_VERSION: u32 = 40;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -179,6 +179,7 @@ pub fn op_cache_key(
         selected_segments,
         fixtures,
         &[],
+        &[],
         &WorkOffset::default(),
         post_processor_tag,
     )
@@ -199,6 +200,7 @@ pub fn op_cache_key_with_finish(
     selected_segments: &[Segment],
     fixtures: &[Fixture],
     text_layers: &[TextLayer],
+    relief_sources: &[ReliefSource],
     work_offset: &WorkOffset,
     post_processor_tag: u8,
 ) -> OpCacheKey {
@@ -235,6 +237,14 @@ pub fn op_cache_key_with_finish(
     for tl in text_layers {
         hash_text_layer(tl, &mut h);
     }
+    // f60x: fold relief surface sources into the key like text_layers —
+    // editing the source image (brightness grid) must invalidate the
+    // cached relief toolpath. Conservative (hash all, not just the one the
+    // op references); cheap relative to the emit.
+    h.write_usize(relief_sources.len());
+    for rs in relief_sources {
+        hash_relief_source(rs, &mut h);
+    }
     // ls7y: project work_offset (xyz + WCS selector) is consulted by
     // sim alignment + the WCS-origin warning today, and on the roadmap
     // it will drive G10 L20 / G54..G59 emission. Hash it now so that
@@ -243,6 +253,20 @@ pub fn op_cache_key_with_finish(
     // 3 f64s + 1 discriminant byte per op.
     hash_work_offset(work_offset, &mut h);
     OpCacheKey(h.finish())
+}
+
+#[inline]
+fn hash_relief_source<H: Hasher>(rs: &ReliefSource, h: &mut H) {
+    h.write_u32(rs.id);
+    hash_f64(rs.origin.x, h);
+    hash_f64(rs.origin.y, h);
+    hash_f64(rs.cell, h);
+    h.write_u32(rs.cols);
+    h.write_u32(rs.rows);
+    h.write_usize(rs.brightness.len());
+    for &b in &rs.brightness {
+        h.write_u32(b.to_bits());
+    }
 }
 
 #[inline]
@@ -679,6 +703,33 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
         OpKind::Dovetail { contour } => {
             h.write_u8(12);
             hash_contour_params(contour, h);
+        }
+        // f60x: relief surfacing. All fields change the emitted toolpath
+        // (depth mapping, scallop/stepover, scan direction, sampling) so
+        // every one hashes in. The referenced ReliefSource content is
+        // folded in separately at the op_cache_key level (like text_layers).
+        OpKind::ReliefMill {
+            source_id,
+            z_min_mm,
+            z_max_mm,
+            invert,
+            scallop_height_mm,
+            stepover_mm,
+            scan_direction,
+            along_step_mm,
+        } => {
+            h.write_u8(13);
+            h.write_u32(*source_id);
+            hash_f64(*z_min_mm, h);
+            hash_f64(*z_max_mm, h);
+            invert.hash(h);
+            hash_f64(*scallop_height_mm, h);
+            hash_opt_f64(*stepover_mm, h);
+            h.write_u8(match scan_direction {
+                crate::cam::surface_mill::ScanDirection::AlongX => 0,
+                crate::cam::surface_mill::ScanDirection::AlongY => 1,
+            });
+            hash_f64(*along_step_mm, h);
         }
     }
 }
@@ -1140,7 +1191,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x61c7_3af0_e0bb_d738_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x053d_7e5e_2f16_3504_u64, "got {:#018x}", key.0);
     }
 
     #[test]
@@ -1441,8 +1492,10 @@ mod tests {
         let mut tl2 = tl1.clone();
         tl2.text = "WORLD".into();
         let wo = WorkOffset::default();
-        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl1], &wo, 0);
-        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl2], &wo, 0);
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl1], &[], &wo, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl2], &[], &wo, 0);
         assert_ne!(k1, k2, "text content change must invalidate the cache key");
     }
 
@@ -1800,8 +1853,10 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.x_mm = 50.0;
-        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.x_mm should invalidate the cache");
     }
 
@@ -1814,8 +1869,10 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.y_mm = -12.5;
-        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.y_mm should invalidate the cache");
     }
 
@@ -1828,8 +1885,10 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.z_mm = 3.0;
-        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.z_mm should invalidate the cache");
     }
 
@@ -1845,8 +1904,10 @@ mod tests {
         let wo_a = WorkOffset::default();
         let mut wo_b = WorkOffset::default();
         wo_b.wcs = Wcs::G55;
-        let k1 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_a, 0);
-        let k2 = op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &wo_b, 0);
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_a, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[], &wo_b, 0);
         assert_ne!(k1, k2, "work_offset.wcs should invalidate the cache");
     }
 

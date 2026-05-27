@@ -400,6 +400,52 @@ pub enum OpKind {
         #[serde(default)]
         message: String,
     },
+    /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
+    /// surface (a [`crate::project::ReliefSource`] referenced by
+    /// `source_id`, e.g. a grayscale-image relief) with a ball-nose cutter:
+    /// the drop-cutter engine (`cam::surface_mill`) produces gouge-free
+    /// raster scanlines whose Z follows the surface. This is a FINISH pass —
+    /// the bulk should be roughed first (constant-Z endmill). The source's
+    /// normalized brightness is mapped to Z in `[z_min_mm, z_max_mm]` at
+    /// planning time, so depth is a cheap op-level knob (no image re-upload).
+    ReliefMill {
+        /// Id of the [`crate::project::ReliefSource`] (in
+        /// `Project.relief_sources`) this op surfaces. No matching source ⇒
+        /// the op emits nothing.
+        source_id: u32,
+        /// Deepest cut Z (mm, negative) — where the darkest pixels map.
+        #[serde(default)]
+        z_min_mm: f64,
+        /// Shallowest cut Z (mm) — where the brightest pixels map. Usually
+        /// 0 (stock top).
+        #[serde(default)]
+        z_max_mm: f64,
+        /// Invert the brightness→Z mapping (dark = high instead of low).
+        #[serde(default)]
+        invert: bool,
+        /// Target scallop height between adjacent passes (mm) — drives the
+        /// stepover unless `stepover_mm` overrides.
+        #[serde(default = "default_relief_scallop")]
+        scallop_height_mm: f64,
+        /// Explicit stepover override (mm). `Some(s > 0)` wins over the
+        /// scallop computation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stepover_mm: Option<f64>,
+        /// Raster scanline direction.
+        #[serde(default)]
+        scan_direction: crate::cam::surface_mill::ScanDirection,
+        /// Sampling pitch along each scanline (mm). Finer = smoother path.
+        #[serde(default = "default_relief_along_step")]
+        along_step_mm: f64,
+    },
+}
+
+fn default_relief_scallop() -> f64 {
+    0.05
+}
+
+fn default_relief_along_step() -> f64 {
+    0.5
 }
 
 fn default_chamfer_width() -> f64 {

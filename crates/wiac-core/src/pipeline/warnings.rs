@@ -459,6 +459,12 @@ pub(super) fn push_tool_fit_kind_warnings(
         (OpKind::Dovetail { .. }, k) if k != ToolKind::FormProfile => {
             Some("dovetail op assigned a non-form-profile cutter (no angled undercut flanks)")
         }
+        // f60x: relief surfacing needs a ball-nose — the drop-cutter math
+        // (and the sim) assume a hemispherical tip. A flat / V / other tool
+        // would leave the wrong floor shape and the gouge guarantee breaks.
+        (OpKind::ReliefMill { .. }, k) if k != ToolKind::BallNose => {
+            Some("relief (3D surfacing) op assigned a non-ball-nose cutter (the surface follow assumes a ball tip)")
+        }
         _ => None,
     };
     if let Some(msg) = mismatch {

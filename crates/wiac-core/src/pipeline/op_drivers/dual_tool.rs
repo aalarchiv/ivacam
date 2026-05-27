@@ -143,6 +143,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -200,6 +201,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -229,6 +231,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -274,6 +277,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {

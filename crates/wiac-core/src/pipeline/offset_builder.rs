@@ -675,6 +675,10 @@ pub(super) fn build_op_offsets(
                 // call here doesn't crash the program — the dedicated
                 // dispatcher already produced the toolpath.
             }
+            OpKind::ReliefMill { .. } => {
+                // f60x: relief surfacing runs through `run_relief_op` (its
+                // own drop-cutter driver), never the offset cascade. Skip.
+            }
             OpKind::Pause { .. } => {
                 // rt1.34: Pause is emitted inline by the pipeline op
                 // loop (M5 + M0 + M3) before this offset-cascade path
@@ -909,6 +913,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -987,6 +992,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1045,6 +1051,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1121,6 +1128,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1192,6 +1200,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1256,6 +1265,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1377,6 +1387,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1430,6 +1441,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1466,6 +1478,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1498,6 +1511,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1538,6 +1552,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1608,6 +1623,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1651,6 +1667,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1695,6 +1712,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1736,6 +1754,7 @@ mod tests {
                 text_layers: Vec::default(),
                 work_offset: crate::project::WorkOffset::default(),
                 stock: None,
+                relief_sources: Vec::new(),
             };
             let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
                 toolpath
@@ -1807,6 +1826,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1951,6 +1971,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         for offset in [ToolOffset::Outside, ToolOffset::Inside] {
             let resp = run_pipeline(
@@ -1994,6 +2015,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let cut_max_x = |toolpath: &[crate::gcode::preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -2082,6 +2104,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let annulus_project = Project {
             segments,
@@ -2099,6 +2122,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let baseline = run_pipeline(
             PipelineRequest {
@@ -2178,6 +2202,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2251,6 +2276,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2339,6 +2365,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2439,6 +2466,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2523,6 +2551,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2630,6 +2659,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2727,6 +2757,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2770,6 +2801,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2837,6 +2869,7 @@ mod tests {
                 text_layers: Vec::default(),
                 work_offset: crate::project::WorkOffset::default(),
                 stock: None,
+                relief_sources: Vec::new(),
             };
             run_pipeline(
                 PipelineRequest {
@@ -2890,6 +2923,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -2963,6 +2997,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3022,6 +3057,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3079,6 +3115,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3121,6 +3158,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3169,6 +3207,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3284,6 +3323,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3332,6 +3372,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3400,6 +3441,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3476,6 +3518,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3525,6 +3568,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let mut spiral_project = cascade_project.clone();
         spiral_project.operations[0].kind = OpKind::Pocket {
@@ -3609,6 +3653,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let gcode = run_pipeline(
             PipelineRequest {
@@ -3692,6 +3737,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let strategies = [
             PocketStrategy::Cascade,
@@ -3782,6 +3828,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let cut_total = |toolpath: &[preview::ToolpathSegment]| -> f64 {
             toolpath
@@ -3874,6 +3921,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -3925,6 +3973,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4022,6 +4071,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let auto = run_pipeline(
             PipelineRequest {
@@ -4121,6 +4171,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4209,6 +4260,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -4283,6 +4335,7 @@ mod tests {
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
+            relief_sources: Vec::new(),
         };
         // Baseline: nocontour + allowance=0.
         let baseline = run_pipeline(

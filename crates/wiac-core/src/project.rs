@@ -95,6 +95,41 @@ pub struct Project {
     /// extends downward by `thickness_mm`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stock: Option<StockConfig>,
+
+    /// f60x: relief / 3-axis surfacing sources — the target Z(x,y) surfaces
+    /// that [`OpKind::ReliefMill`] ops finish. Stored at project level (like
+    /// `text_layers`) and referenced by `source_id`, not embedded in the op,
+    /// because a surface grid is large and ops get cloned + hashed. Each
+    /// carries a normalized-brightness grid; the op maps it to Z at planning
+    /// time. Default empty: projects with no relief ops are unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relief_sources: Vec<ReliefSource>,
+}
+
+/// f60x: a target surface source for relief / ball-nose surfacing. Holds a
+/// row-major normalized-brightness grid (each value in `[0, 1]`) plus its
+/// world placement; the depth mapping (brightness → Z) lives on the
+/// [`OpKind::ReliefMill`] op so the user can retune depth without
+/// re-uploading the image. The first producer (f60x-D) decodes a grayscale
+/// image frontend-side; a future STL rasterizer would populate the same
+/// grid. The driver turns it into a [`crate::cam::surface::SurfaceField`]
+/// via `SurfaceField::from_grayscale`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ReliefSource {
+    /// Stable id referenced by [`OpKind::ReliefMill::source_id`].
+    pub id: u32,
+    /// Human-readable label (e.g. the source filename). Optional.
+    #[serde(default)]
+    pub name: String,
+    /// World XY of the grid's min corner (the (0,0) cell's lower-left).
+    pub origin: crate::geometry::Point2,
+    /// Cell size in mm (square cells / pixel pitch in world units).
+    pub cell: f64,
+    pub cols: u32,
+    pub rows: u32,
+    /// Row-major normalized brightness in `[0, 1]`. Length must be
+    /// `cols * rows`.
+    pub brightness: Vec<f32>,
 }
 
 /// vrrr: resolved stock box. See [`Project::stock`]. Kept deliberately

@@ -88,7 +88,7 @@ interface FlatOp extends OpBase, ContourFields {
   alongStepMm?: ReliefMillOp['alongStepMm'];
 }
 
-type WireToolKind =
+export type WireToolKind =
   | 'endmill'
   | 'ball_nose'
   | 'v_bit'
@@ -101,6 +101,16 @@ type WireToolKind =
   | 'form_profile'
   | 'kegel'
   | 'thread_mill';
+
+/// Frontend ToolKind → wire (Rust ToolKind variant) value. The German
+/// `kegel` wire name lives on for backend compatibility; the frontend
+/// uses `cone` everywhere else (8njb). Apply this at EVERY seam where a
+/// tool kind crosses into Rust — build-project's `buildTool` AND the
+/// WASM sim driver, the two we know of. A regression test sits next to
+/// each call site; if you add a third seam, add a third test.
+export function toWireToolKind(kind: import('../state/op_types').ToolKind): WireToolKind {
+  return kind === 'cone' ? 'kegel' : kind;
+}
 
 /// Wire-side holder shape. Mirrors `wiac_core::project::HolderShape`'s
 /// `#[serde(tag = "kind")]` discriminator.
@@ -612,8 +622,9 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     id: t.id,
     name: t.name,
     // The cone tool kind keeps its German wire value `kegel` (the Rust
-    // ToolKind variant); only the frontend identifier is English.
-    kind: t.kind === 'cone' ? 'kegel' : t.kind,
+    // ToolKind variant); only the frontend identifier is English. Apply
+    // via `toWireToolKind` so every wire seam shares the mapping.
+    kind: toWireToolKind(t.kind),
     diameter: t.diameter,
     ...(t.tipDiameter !== undefined ? { tip_diameter: t.tipDiameter } : {}),
     ...(t.tipAngleDeg !== undefined ? { tip_angle_deg: t.tipAngleDeg } : {}),

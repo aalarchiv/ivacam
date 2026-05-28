@@ -23,6 +23,7 @@ import type {
   ToolpathSegment,
 } from '../api/types';
 import type { AppSettings, Fixture, ToolEntry } from '../state/project.svelte';
+import { toWireToolKind } from '../api/build-project';
 
 interface SimulatorWasm {
   // wasm-bindgen produces a constructor on the generated class; this
@@ -125,11 +126,17 @@ async function loadWasm(): Promise<WasmHandle> {
 
 /// Project-state-shaped tool spec the WASM Simulator expects. Mirrors
 /// what wiac_core::project::ToolEntry deserializes from (snake_case).
-function toWireTool(t: ToolEntry): Record<string, unknown> {
+///
+/// IMPORTANT: this is the SECOND wire seam after `buildTool`, both of
+/// them feeding the same Rust `ToolKind` deserializer. The kind name
+/// must go through `toWireToolKind` so the frontend `cone` becomes the
+/// backend `kegel` (8njb / regression filed and fixed after the first
+/// rollout missed this seam).
+export function toWireTool(t: ToolEntry): Record<string, unknown> {
   return {
     id: t.id,
     name: t.name,
-    kind: t.kind,
+    kind: toWireToolKind(t.kind),
     diameter: t.diameter,
     ...(t.tipDiameter !== undefined ? { tip_diameter: t.tipDiameter } : {}),
     ...(t.tipAngleDeg !== undefined ? { tip_angle_deg: t.tipAngleDeg } : {}),

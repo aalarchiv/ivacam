@@ -5,9 +5,10 @@
 /// build instead.
 
 import { describe, expect, it } from 'vitest';
-import { computeFootprint } from './driver';
+import { computeFootprint, toWireTool } from './driver';
 import { planAdvance } from './playhead';
 import type { ImportResponse } from '../api/types';
+import type { ToolEntry } from '../state/project-types';
 
 function importedWithBbox(
   min_x: number,
@@ -153,5 +154,38 @@ describe('planAdvance', () => {
     const p = planAdvance(5, 0, 5, 0.3, 10);
     expect(p!.bulkAdvance).toBeNull();
     expect(p!.startPartial).toEqual({ segIdx: 5, startT: 0, endT: 0.3 });
+  });
+});
+
+// Regression: 8njb missed this second wire seam. The sim driver also
+// ships a tool spec to the WASM `Simulator`, which deserializes through
+// the SAME Rust `ToolKind` enum that expects the German `kegel` for the
+// cone variant. Without this mapping, picking a cone tool for any op
+// fails Generate with "unknown variant `cone`".
+describe('toWireTool — German wire contract (8njb regression)', () => {
+  function tool(over: Partial<ToolEntry> = {}): ToolEntry {
+    const raw: Record<string, unknown> = {
+      id: 1,
+      name: 'T1',
+      kind: 'endmill',
+      diameter: 6,
+      flutes: 2,
+      speed: 18000,
+      plungeRate: 200,
+      feedRate: 1200,
+      coolant: 'off',
+      ...over,
+    };
+    return raw as unknown as ToolEntry;
+  }
+
+  it('maps the cone tool kind to the German wire value kegel', () => {
+    expect(toWireTool(tool({ kind: 'cone' })).kind).toBe('kegel');
+  });
+
+  it('passes non-cone kinds through unchanged', () => {
+    expect(toWireTool(tool({ kind: 'v_bit' })).kind).toBe('v_bit');
+    expect(toWireTool(tool({ kind: 'endmill' })).kind).toBe('endmill');
+    expect(toWireTool(tool({ kind: 'drag_knife' })).kind).toBe('drag_knife');
   });
 });

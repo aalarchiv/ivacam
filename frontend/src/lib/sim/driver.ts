@@ -68,6 +68,10 @@ interface SimulatorWasm {
   origin_y(): number;
   top_z(): number;
   data_ptr(): number;
+  /// 9c34: serialize the carved heightfield as a binary STL. The mesh
+  /// drops to `stock_bottom_z` at every perimeter sample so the result
+  /// is watertight.
+  export_stl(stock_bottom_z: number): Uint8Array;
   free(): void;
 }
 
@@ -187,6 +191,18 @@ export interface DriverOptions {
   requestRender: () => void;
 }
 
+/// 9c34: module-level reference to the live driver, set by Scene3D on
+/// mount / cleared on dispose. Lets file_ops trigger an STL export
+/// without circular imports or threading a driver handle through every
+/// component. There is only ever one Scene3D in the app.
+let currentDriver: HeightfieldDriver | null = null;
+
+/// Active driver, or `null` when no Scene3D is mounted. Used by the
+/// "Export simulated stock as STL..." flow in file_ops.
+export function getCurrentDriver(): HeightfieldDriver | null {
+  return currentDriver;
+}
+
 export class HeightfieldDriver {
   readonly group: THREE.Group;
   private sim: SimulatorWasm | null = null;
@@ -233,6 +249,9 @@ export class HeightfieldDriver {
     this.group = new THREE.Group();
     this.group.visible = false;
     opts.scene.add(this.group);
+    // 9c34: register as the live driver so file_ops can reach it.
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- singleton registry
+    currentDriver = this;
   }
 
   async init(): Promise<void> {
@@ -593,6 +612,14 @@ export class HeightfieldDriver {
     return this.sim ? this.sim.cell_size() : null;
   }
 
+  /// 9c34: serialize the carved heightfield as a binary STL. Returns
+  /// `null` when there is no live simulator (no project loaded yet, or
+  /// the driver was disposed). Walls drop to `stockBottomZ` at every
+  /// perimeter sample for a watertight mesh.
+  exportStl(stockBottomZ: number): Uint8Array | null {
+    return this.sim ? this.sim.export_stl(stockBottomZ) : null;
+  }
+
   dispose() {
     if (this.mesh) {
       this.group.remove(this.mesh.group);
@@ -620,6 +647,8 @@ export class HeightfieldDriver {
     }
     this.dispose();
     this.opts.scene.remove(this.group);
+    // 9c34: deregister so a stale handle can't be reached.
+    if (currentDriver === this) currentDriver = null;
   }
 
   private collectDiagnostics() {

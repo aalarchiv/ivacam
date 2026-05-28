@@ -303,6 +303,15 @@ impl Simulator {
         self.heightmap.top_z
     }
 
+    /// 9c34: serialize the carved heightfield as a binary STL. The mesh
+    /// drops to `stock_bottom_z` at every perimeter sample so the result
+    /// is watertight. Wired up via the File menu's "Export simulated
+    /// stock as STL..." entry.
+    #[must_use]
+    pub fn export_stl(&self, stock_bottom_z: f32) -> Vec<u8> {
+        wiac_core::sim::stl::heightmap_to_stl_binary(&self.heightmap, stock_bottom_z)
+    }
+
     /// Pointer to the f32 heightmap buffer. JS wraps it as
     /// `new Float32Array(wasm.memory.buffer, sim.data_ptr(),
     /// sim.cols() * sim.rows())`.

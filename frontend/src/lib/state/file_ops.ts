@@ -418,6 +418,53 @@ export async function exportGeneratedGcode(
   URL.revokeObjectURL(url);
 }
 
+/// 9c34: export the live simulated stock as a binary STL — exactly the
+/// carved heightfield the 3D scene is rendering, serialized to a mesh
+/// you can open in any STL viewer or diff against a reference. Walls
+/// drop to the stock's underside (top minus thickness) for a watertight
+/// mesh. No-op when there's no live sim (Generate hasn't run yet).
+export async function exportSimulatedStockStl(): Promise<void> {
+  const { getCurrentDriver } = await import('../sim/driver');
+  const driver = getCurrentDriver();
+  if (!driver) {
+    project.setError('No simulated stock to export — run Generate first.');
+    return;
+  }
+  const stock = project.stock;
+  const topZ = 0; // stock top sits at WCS Z=0 by the project convention
+  const stockBottomZ = topZ - Math.max(stock.thickness, 0);
+  const bytes = driver.exportStl(stockBottomZ);
+  if (!bytes) {
+    project.setError('No simulated stock to export — run Generate first.');
+    return;
+  }
+  const base = project.transformedImport?.filename?.replace(/\.[^.]+$/, '') ?? 'stock';
+  const filename = `${base}.stl`;
+  if (isTauri()) {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const { writeFile } = await import('@tauri-apps/plugin-fs');
+    const path = await save({
+      defaultPath: filename,
+      filters: [{ name: 'STL', extensions: ['stl'] }],
+    });
+    if (typeof path === 'string') {
+      try {
+        await writeFile(path, bytes);
+      } catch (e) {
+        project.setError(`stl export: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return;
+  }
+  const blob = new Blob([bytes as BlobPart], { type: 'model/stl' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /// Combined sample + pre-generated gcode load. Driven by query string
 /// `?sample=X&gen=Y` at startup so demo links can land users on a
 /// fully-loaded project.

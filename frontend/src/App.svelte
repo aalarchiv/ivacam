@@ -104,6 +104,7 @@
     loadSample,
     saveProject,
     exportGeneratedGcode,
+    exportSimulatedStockStl,
     confirmDiscardIfDirty,
     SAMPLES,
   } from './lib/state/file_ops';
@@ -917,6 +918,15 @@
             onclick={() => pickMenu(exportGcode)}
           >
             <span class="label">Export G-code…</span>
+          </button>
+          <button
+            role="menuitem"
+            class="item"
+            disabled={!project.generated}
+            onclick={() => pickMenu(exportSimulatedStockStl)}
+            title="Save the carved simulated stock as a binary STL. Run Generate first so the heightfield reflects the planned cuts."
+          >
+            <span class="label">Export simulated stock as STL…</span>
           </button>
           <button
             role="menuitem"

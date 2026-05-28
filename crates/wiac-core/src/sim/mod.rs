@@ -23,6 +23,7 @@ pub mod heightmap;
 pub mod holder;
 pub mod holder_check;
 pub mod rapid_check;
+pub mod stl;
 pub mod sweep;
 pub mod timing;
 

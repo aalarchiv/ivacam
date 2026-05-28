@@ -760,8 +760,14 @@ where
         // prev_tool_id, which is runtime state, not op state. Pause ops have
         // no tool and don't reset prev_tool_id; no-emit ops skip the swap.
         if !matches!(op.kind, OpKind::Pause { .. }) && will_emit {
-            prev_tool_id =
-                emit_boundary_toolchange(op, project, header_setup, &tool_index, post, prev_tool_id);
+            prev_tool_id = emit_boundary_toolchange(
+                op,
+                project,
+                header_setup,
+                &tool_index,
+                post,
+                prev_tool_id,
+            );
         }
         let body_marker = post.out_lines_count();
 
@@ -1022,12 +1028,16 @@ fn run_op_driver<P: PostProcessor>(
     match &op.kind {
         OpKind::VCarve { .. } => {
             post.raw(&format!("; OP {}", op.id));
-            run_vcarve_op(op, project, objects, setup, post, last_pos, warnings, cancel)?;
+            run_vcarve_op(
+                op, project, objects, setup, post, last_pos, warnings, cancel,
+            )?;
             Ok((0, 0, false))
         }
         OpKind::Thread { .. } => {
             post.raw(&format!("; OP {}", op.id));
-            run_thread_op(op, project, objects, setup, post, last_pos, warnings, cancel)?;
+            run_thread_op(
+                op, project, objects, setup, post, last_pos, warnings, cancel,
+            )?;
             Ok((0, 0, false))
         }
         OpKind::Pocket {
@@ -1035,7 +1045,9 @@ fn run_op_driver<P: PostProcessor>(
             ..
         } => {
             post.raw(&format!("; OP {}", op.id));
-            run_halfpipe_op(op, project, objects, setup, post, last_pos, warnings, cancel)?;
+            run_halfpipe_op(
+                op, project, objects, setup, post, last_pos, warnings, cancel,
+            )?;
             Ok((0, 0, false))
         }
         // f60x: 3-axis ball-nose relief surfacing — own drop-cutter driver,
@@ -1045,7 +1057,9 @@ fn run_op_driver<P: PostProcessor>(
             run_relief_op(op, project, setup, post, last_pos, warnings, cancel)?;
             Ok((0, 0, false))
         }
-        _ => run_standard_op(op, project, objects, setup, post, last_pos, warnings, cancel),
+        _ => run_standard_op(
+            op, project, objects, setup, post, last_pos, warnings, cancel,
+        ),
     }
 }
 

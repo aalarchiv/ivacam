@@ -892,7 +892,7 @@ mod tests {
     }
 
     /// 90hd: Kegel (tapered endmill) shares the V-bit conical profile.
-    /// A truncated cone (tip_diameter > 0) builds a `VBit` whose tip
+    /// A truncated cone (`tip_diameter` > 0) builds a `VBit` whose tip
     /// radius is half the tip diameter and whose flank rises at the
     /// included tip angle — so the proven V-carve sweep carves the
     /// tapered flank correctly. `eval` at the tip is 0 and rises toward
@@ -1114,9 +1114,9 @@ mod tests {
         ));
     }
 
-    /// z5yw: the former dedicated T-slot kind is folded into FormProfile.
+    /// z5yw: the former dedicated T-slot kind is folded into `FormProfile`.
     /// A T-slot authored as a wide-disk → narrow-neck `(z, r)` profile
-    /// builds a FormProfile whose XY footprint is the head radius (the
+    /// builds a `FormProfile` whose XY footprint is the head radius (the
     /// widest sample) and whose flat disk bottom carves the slot floor.
     #[test]
     fn from_tool_tslot_as_form_profile_carves_head_radius() {
@@ -1150,7 +1150,7 @@ mod tests {
         assert!(profile.eval(9.0).is_none());
     }
 
-    /// 1wit: a FormProfile tool carrying a user-entered cross-section
+    /// 1wit: a `FormProfile` tool carrying a user-entered cross-section
     /// carves the real sample list (sorted tip → top, radii clamped to
     /// ≥0) instead of the 2-segment taper fallback.
     #[test]
@@ -1190,7 +1190,7 @@ mod tests {
         assert!(approx(ToolProfile::from_tool(&t).radius(), 6.0));
     }
 
-    /// 1wit companion: a FormProfile tool with fewer than two samples
+    /// 1wit companion: a `FormProfile` tool with fewer than two samples
     /// still falls back to the `(tip_diameter, diameter)` 2-segment
     /// taper — a single sample isn't a usable interpolation domain.
     #[test]

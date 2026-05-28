@@ -16,7 +16,7 @@ use crate::project::{
     TextLayerKind, ToolEntry, ToolKind,
 };
 
-/// f60x-C: a ReliefMill op with a brightness ramp + a ball-nose tool emits
+/// f60x-C: a `ReliefMill` op with a brightness ramp + a ball-nose tool emits
 /// a varying-Z surfacing toolpath end-to-end (no source geometry needed —
 /// the surface comes from the project's relief source). A wrong tool kind
 /// surfaces `tool_kind_mismatch`.
@@ -95,8 +95,8 @@ fn pipeline_relief_mill_emits_varying_z_ballnose_surface() {
         .map(|s| s.to.z)
         .collect();
     assert!(!cut_zs.is_empty(), "relief op emitted no cut moves");
-    let zmin = cut_zs.iter().cloned().fold(f64::INFINITY, f64::min);
-    let zmax = cut_zs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let zmin = cut_zs.iter().copied().fold(f64::INFINITY, f64::min);
+    let zmax = cut_zs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     assert!(
         zmax - zmin > 0.5,
         "relief Z should vary across the ramp (got span {zmin}..{zmax})"
@@ -998,7 +998,7 @@ fn chamfer_op_emits_constant_z_pass_at_computed_depth() {
 /// Regression for the user's "chamfer depth seems added to the
 /// previous op" report: a chamfer op that runs AFTER a deep profile
 /// op must still cut at its OWN computed cone-tip Z, independent of
-/// the prior op's depth. (synthesize_op_setup builds a fresh Setup per
+/// the prior op's depth. (`synthesize_op_setup` builds a fresh Setup per
 /// op, but this proves no cross-op depth bleed end-to-end.) Profile
 /// cuts to -5; chamfer width 1mm with the 60deg/0.1mm-tip vbit must
 /// land at -1.6454, NOT -6.6454 (= -5 + -1.6454) or any deeper value.
@@ -1070,11 +1070,10 @@ fn chamfer_after_deep_profile_keeps_own_depth() {
         .filter_map(|t| t.strip_prefix('Z'))
         .filter_map(|v| v.parse::<f64>().ok())
         .collect();
-    let deepest = zs.iter().cloned().fold(f64::INFINITY, f64::min);
+    let deepest = zs.iter().copied().fold(f64::INFINITY, f64::min);
     assert!(
             (deepest - (-1.6454)).abs() < 0.01,
-            "chamfer should bottom at its own cone-tip Z -1.6454, got {deepest} (prior profile was -5). Z values: {zs:?}\n{}",
-            cham
+            "chamfer should bottom at its own cone-tip Z -1.6454, got {deepest} (prior profile was -5). Z values: {zs:?}\n{cham}"
         );
     // The chamfer's toolpath segments must carry op_id == 2 so the 3D
     // driver's per-segment tool resolver feeds the v-bit (not a
@@ -3486,7 +3485,7 @@ fn tslot_op_emits_stem_slot_prerequisite_warning() {
     );
 }
 
-/// 3g6u: a T-slot op with a non-T-slot cutter warns tool_kind_mismatch
+/// 3g6u: a T-slot op with a non-T-slot cutter warns `tool_kind_mismatch`
 /// (no undercut head ⇒ it would just cut a plain centerline groove).
 #[test]
 fn tslot_op_with_plain_endmill_warns_kind_mismatch() {
@@ -3506,9 +3505,9 @@ fn tslot_op_with_plain_endmill_warns_kind_mismatch() {
 }
 
 /// my03: per-op planning warnings must survive a pipeline CACHE HIT.
-/// run_pipeline uses a process-global op cache, so a second identical
-/// Generate serves the op from cache (skipping build_op_offsets / the
-/// driver / synthesize_op_setup). Before the fix the warnings those
+/// `run_pipeline` uses a process-global op cache, so a second identical
+/// Generate serves the op from cache (skipping `build_op_offsets` / the
+/// driver / `synthesize_op_setup`). Before the fix the warnings those
 /// produce — including the 94sf-critical `tool_kind_mismatch` — were
 /// dropped on the hit. We run the SAME mis-tooled project twice and
 /// assert the warning is present BOTH times.
@@ -3560,7 +3559,7 @@ fn per_op_warnings_resurface_on_cache_hit() {
 }
 
 // ───────────────────────────── b7qz: dovetail op ──────────────────
-/// A dovetail bit (FormProfile, widest at the bottom face). The
+/// A dovetail bit (`FormProfile`, widest at the bottom face). The
 /// form-profile samples run tip → top; the narrowest sample is the
 /// neck, which sets the roughing-channel width the op warns about.
 fn dovetail_tool(id: u32, dia: f64) -> ToolEntry {
@@ -3687,7 +3686,7 @@ fn dovetail_op_emits_rough_channel_prerequisite_warning() {
 }
 
 /// b7qz: a dovetail op with a non-FormProfile cutter warns
-/// tool_kind_mismatch (straight walls ⇒ no angled undercut flanks).
+/// `tool_kind_mismatch` (straight walls ⇒ no angled undercut flanks).
 #[test]
 fn dovetail_op_with_plain_endmill_warns_kind_mismatch() {
     let resp = run_pipeline(

@@ -3895,7 +3895,7 @@ mod tests {
                 let xy_moved = (nx - last_x).hypot(ny - last_y) > 1e-9;
                 let z_drops_below_surface = nz < last_z - 1e-9 && nz < -1e-9;
                 assert!(
-                    !(z_drops_below_surface && !xy_moved),
+                    !z_drops_below_surface || xy_moved,
                     "n3hn: vertical-only G1 plunge into stock (z {last_z}→{nz}, no XY motion):\n{g}",
                 );
             }

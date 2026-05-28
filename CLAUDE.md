@@ -47,6 +47,19 @@ doesn't exist.
 **IF A REMOTE IS LATER ADDED:** restore the push step
 (`git pull --rebase && git push`) between steps 4 and 5. Until then,
 treat local commits as authoritative.
+
+### Pre-release ritual (bb8q)
+
+Since `ci.yml` never fires (no remote, by design), run
+[`scripts/pre-release.sh`](./scripts/pre-release.sh) before tagging a
+release or handing an AppImage to a tester. It mirrors `ci.yml`
+step-for-step: fmt, clippy `-D warnings`, `cargo test --workspace`,
+xtask schema-check, codegen drift guard, then frontend lint / check /
+test / build. Optional `wasm-pack` and `cargo-deny` gates fire if
+those binaries are on `$PATH`. Fail-fast — only ship when every gate
+reports green. This is the local stand-in for CI, not a per-commit
+hook (the routine session-completion "run quality gates" step above
+is the lighter check).
 <!-- END BEADS INTEGRATION (block edited locally — wiaconstructor-uqvd; bd init may regenerate, re-apply the no-remote workflow if so) -->
 
 

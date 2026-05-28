@@ -31,7 +31,7 @@ use std::fs;
 
 use wiac_core::cam::setup::MachineConfig;
 use wiac_core::gcode::preview::ToolpathSegment;
-use wiac_core::geometry::{Point2, Segment};
+use wiac_core::geometry::{Point2, Segment, SegmentKind};
 use wiac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
 use wiac_core::project::{
     Coolant, Op, OpKind, OpParams, OpSource, Project, SpindleDirection, StockConfig, ToolEntry,
@@ -108,6 +108,24 @@ pub fn endmill_tool(id: u32, diameter_mm: f64) -> ToolEntry {
         ToolKind::Endmill,
         diameter_mm,
     )
+}
+
+/// Twist drill of the given diameter and full included tip angle (the
+/// classic split-point twist drill is 118°). The pipeline drives the
+/// drill `r / tan(tip_angle / 2)` past the requested shoulder depth so
+/// the cone tip clears the hole bottom; the sim treats
+/// `ToolKind::Drill` as a flat-bottomed cylinder, so the carved hole
+/// is a clean cylinder reaching to that tip Z. Use [`drill_volume`]
+/// to model the resulting cylinder volume.
+pub fn drill_tool(id: u32, diameter_mm: f64, tip_angle_deg: f64) -> ToolEntry {
+    let mut t = base_tool(
+        id,
+        &format!("{diameter_mm}mm {tip_angle_deg}° drill"),
+        ToolKind::Drill,
+        diameter_mm,
+    );
+    t.tip_angle_deg = tip_angle_deg;
+    t
 }
 
 /// V-bit. `tip_angle_deg` is the full included angle (apex of the cone).
@@ -191,6 +209,43 @@ pub fn line(from: (f64, f64), to: (f64, f64)) -> Vec<Segment> {
         "0",
         7,
     )]
+}
+
+/// Closed circle: two semicircle `Circle`-kind segments joined at the
+/// horizontal diameter. Mirrors the pipeline `test_helpers` fixture.
+pub fn closed_circle(cx: f64, cy: f64, radius: f64) -> Vec<Segment> {
+    let center = Point2::new(cx, cy);
+    let p_right = Point2::new(cx + radius, cy);
+    let p_left = Point2::new(cx - radius, cy);
+    vec![
+        Segment {
+            kind: SegmentKind::Circle,
+            start: p_right,
+            end: p_left,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        },
+        Segment {
+            kind: SegmentKind::Circle,
+            start: p_left,
+            end: p_right,
+            bulge: 1.0,
+            center: Some(center),
+            layer: "0".into(),
+            color: 7,
+        },
+    ]
+}
+
+/// One `SegmentKind::Point` per (x, y) — the source format the Drill
+/// op consumes.
+pub fn points(coords: &[(f64, f64)]) -> Vec<Segment> {
+    coords
+        .iter()
+        .map(|&(x, y)| Segment::point(Point2::new(x, y), "0", 7))
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -286,6 +341,35 @@ pub fn pocket_rect_volume(width: f64, height: f64, depth: f64, tool_radius: f64)
     let uncut_per_corner = tool_radius * tool_radius * (1.0 - PI * 0.25);
     let carved_area = width * height - 4.0 * uncut_per_corner;
     carved_area * depth
+}
+
+/// Outside-profile-of-circle expected volume (mm³): tool centerline
+/// rides at radius `R + r`, sweeping the annulus from the source
+/// radius `R` outward to `R + 2r`. Annular area is
+/// `π · ((R + 2r)² − R²)`.
+#[must_use]
+pub fn profile_outside_circle_volume(source_radius: f64, tool_radius: f64, depth: f64) -> f64 {
+    let outer = source_radius + 2.0 * tool_radius;
+    let area = PI * (outer * outer - source_radius * source_radius);
+    area * depth
+}
+
+/// Drill volume for `n_holes` cylinders of radius `tool_radius`.
+/// `hole_depth_mm` is the user-requested shoulder depth (positive);
+/// the pipeline plunges an extra `r / tan(tip_angle/2)` so the cone
+/// tip clears that plane, so the sim carves a cylinder of that
+/// extended depth.
+#[must_use]
+pub fn drill_volume(
+    n_holes: usize,
+    tool_radius: f64,
+    hole_depth_mm: f64,
+    tip_angle_deg: f64,
+) -> f64 {
+    let half_angle_rad = (tip_angle_deg * 0.5).to_radians();
+    let tip_extra = tool_radius / half_angle_rad.tan();
+    let cylinder_depth = hole_depth_mm + tip_extra;
+    (n_holes as f64) * PI * tool_radius * tool_radius * cylinder_depth
 }
 
 // ─────────────────────────────────────────────────────────────────────

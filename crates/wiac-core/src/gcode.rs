@@ -128,7 +128,7 @@ use entry::{
 use leads::{lead_in_geometry, lead_out_geometry, LeadGeometry};
 use order::{end_pos, order_offsets};
 use tabs::emit_path_with_tabs;
-use walk::emit_cut_path;
+use walk::{emit_cut_path, reverse_chain};
 // ldu2: `fit_line_runs` is also reachable from the offset pipeline,
 // which arc-fits source geometry before offsetting so tessellated
 // (imported) circles don't explode into per-vertex round-join arcs.
@@ -1361,8 +1361,26 @@ fn multi_pass<P: PostProcessor>(
     if z_schedule.is_empty() {
         return;
     }
-    for &z in &z_schedule {
+    for (pass_idx, &z) in z_schedule.iter().enumerate() {
         let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
+        // oulh: for an OPEN polyline, the cascade alternates walk
+        // direction so consecutive passes pick up where the
+        // previous one ended — pass 0 forward (start→end), pass 1
+        // reversed (end→start), pass 2 forward, ... Closed paths
+        // naturally land at their starting point each pass, so the
+        // alternation only fires for `!closed_path`. The helix
+        // branches below are unreachable for open paths
+        // (`helix = helix_mode && closed_path`,
+        // `helix_entry = plan_helix_entry(...closed paths only...)`),
+        // so they always see the original `segments`.
+        let reverse_this_pass = !closed_path && pass_idx % 2 == 1;
+        let pass_segments_owned: Vec<Segment>;
+        let pass_segments: &[Segment] = if reverse_this_pass {
+            pass_segments_owned = reverse_chain(segments);
+            &pass_segments_owned
+        } else {
+            segments
+        };
         if let (true, Some(pz)) = (helix, prev_z) {
             // Spiral from prev_z down to z while tracing the segments.
             post.feedrate(rate_h);
@@ -1429,7 +1447,7 @@ fn multi_pass<P: PostProcessor>(
             };
             if ramp_length > 1e-6 && total_path_len >= ramp_length {
                 post.feedrate(rate_h);
-                emit_ramp_pass(segments, pz, z, ramp_length, post);
+                emit_ramp_pass(pass_segments, pz, z, ramp_length, post);
             } else {
                 // Path too short for the ramp → fall back to straight
                 // plunge so the user still gets a valid program.
@@ -1437,7 +1455,7 @@ fn multi_pass<P: PostProcessor>(
                 post.linear(None, None, Some(z));
                 post.feedrate(rate_h);
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-                let fitted = fit_line_runs(segments, setup);
+                let fitted = fit_line_runs(pass_segments, setup);
                 emit_cut_path(
                     &fitted,
                     setup,
@@ -1454,6 +1472,10 @@ fn multi_pass<P: PostProcessor>(
             post.linear(None, None, Some(z));
             post.feedrate(rate_h);
             if pass_uses_tabs {
+                // Tabs are a closed-path feature; open paths don't
+                // generate tab points so this branch isn't reached on
+                // the open-cascade fix path. Forward `segments` to
+                // keep the tabs walker's positioning math intact.
                 emit_path_with_tabs(
                     segments,
                     tabs,
@@ -1467,7 +1489,7 @@ fn multi_pass<P: PostProcessor>(
                 );
             } else {
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-                let fitted = fit_line_runs(segments, setup);
+                let fitted = fit_line_runs(pass_segments, setup);
                 emit_cut_path(
                     &fitted,
                     setup,
@@ -1498,7 +1520,22 @@ fn multi_pass<P: PostProcessor>(
     if needs_ramp_cleanup {
         post.feedrate(rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-        let fitted = fit_line_runs(segments, setup);
+        // oulh: for the open-polyline alternating cascade, the cleanup
+        // walks from wherever the LAST pass ended so the controller
+        // doesn't backtrack at cut feedrate across the entire path. With
+        // pass 0 forward / pass 1 reversed / …, pass index N-1 is
+        // reversed when N is even — tool at original start, cleanup
+        // walks forward. When N is odd the last pass was forward — tool
+        // at end, cleanup walks reversed. Closed paths land at their
+        // start every pass and the cleanup direction is irrelevant.
+        let cleanup_segments_owned: Vec<Segment>;
+        let cleanup_segments: &[Segment] = if !closed_path && z_schedule.len() % 2 == 1 {
+            cleanup_segments_owned = reverse_chain(segments);
+            &cleanup_segments_owned
+        } else {
+            segments
+        };
+        let fitted = fit_line_runs(cleanup_segments, setup);
         emit_cut_path(
             &fitted,
             setup,

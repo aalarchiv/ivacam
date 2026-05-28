@@ -58,18 +58,30 @@ pub(super) fn emit_cut_path<P: PostProcessor>(
     );
 }
 
-/// Emit segments with optional drag-knife trailing offset. When
-/// `dragoff > 0`, every line→line corner is preceded by an arc that swivels
-/// the blade around the corner point so the trail aligns with the new
-/// direction. Mirrors `viaconstructor.machine_cmd.segment2machine_cmd`.
-/// Walk `segments` like `emit_path_with_dragoff` but reduce the feed
-/// at sharp line-line corners by `corner_reduction` (a fraction in
-/// Polyline → arc collapse on emit. When `machine.arcs == true`, walks
-/// `segments` and replaces consecutive `Line` runs (≥3 points) with the
-/// fewest G2/G3 arcs that approximate the chord chain within
-/// `effective_arc_tolerance()`. Pre-existing `Arc` / `Circle` / `Point`
-/// segments are passed through verbatim — only line runs are eligible.
-/// When `machine.arcs == false`, returns the input untouched.
+/// oulh: reverse a polyline chain end-to-end so the cascade can
+/// walk it back instead of plunging in place at the trailing
+/// endpoint. Mirrors `cam::offsets::reverse_offset`'s arc handling
+/// (swap endpoints and negate `bulge`) but operates on a borrowed
+/// slice — the caller owns the returned Vec. Direction-sensitive
+/// fields (layer, color, kind) pass through unchanged.
+#[must_use]
+pub(super) fn reverse_chain(segments: &[Segment]) -> Vec<Segment> {
+    let mut rev: Vec<Segment> = segments.to_vec();
+    rev.reverse();
+    for s in &mut rev {
+        std::mem::swap(&mut s.start, &mut s.end);
+        s.bulge = -s.bulge;
+    }
+    rev
+}
+
+/// Polyline → arc collapse on emit. When `machine.arcs == true`,
+/// walks `segments` and replaces consecutive `Line` runs (≥3 points)
+/// with the fewest G2/G3 arcs that approximate the chord chain
+/// within `effective_arc_tolerance()`. Pre-existing `Arc` / `Circle`
+/// / `Point` segments are passed through verbatim — only line runs
+/// are eligible. When `machine.arcs == false`, returns the input
+/// untouched.
 pub(crate) fn fit_line_runs(segments: &[Segment], setup: &Setup) -> Vec<Segment> {
     if !setup.machine.arcs || segments.is_empty() {
         return segments.to_vec();
@@ -398,5 +410,62 @@ fn emit_path_with_dragoff<P: PostProcessor>(
                 last_motion = Some(ty.atan2(tx));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reverse_chain;
+    use crate::geometry::{Point2, Segment};
+
+    /// oulh: open-path cascade reversal needs `reverse_chain` to
+    /// invert the polyline end-to-end so the next pass starts at
+    /// the previous pass's exit. Three-segment chain: pre-reverse
+    /// flows A→B→C→D; post-reverse flows D→C→B→A with each
+    /// segment's endpoints swapped.
+    #[test]
+    fn reverse_chain_flips_endpoints_and_order() {
+        let a = Point2::new(0.0, 0.0);
+        let b = Point2::new(10.0, 0.0);
+        let c = Point2::new(10.0, 5.0);
+        let d = Point2::new(20.0, 5.0);
+        let chain = vec![
+            Segment::line(a, b, "0", 7),
+            Segment::line(b, c, "0", 7),
+            Segment::line(c, d, "0", 7),
+        ];
+        let rev = reverse_chain(&chain);
+        assert_eq!(rev.len(), 3);
+        assert_eq!(rev[0].start, d);
+        assert_eq!(rev[0].end, c);
+        assert_eq!(rev[1].start, c);
+        assert_eq!(rev[1].end, b);
+        assert_eq!(rev[2].start, b);
+        assert_eq!(rev[2].end, a);
+    }
+
+    /// oulh: arc bulges must NEGATE on reversal — a CCW arc traversed
+    /// backwards is a CW arc. Mirrors `cam::offsets::reverse_offset`'s
+    /// arc handling.
+    #[test]
+    fn reverse_chain_negates_arc_bulge() {
+        let a = Point2::new(0.0, 0.0);
+        let b = Point2::new(10.0, 0.0);
+        let mut arc = Segment::line(a, b, "0", 7);
+        arc.kind = crate::geometry::SegmentKind::Arc;
+        arc.bulge = 0.5;
+        arc.center = Some(Point2::new(5.0, 4.33));
+        let chain = vec![arc];
+        let rev = reverse_chain(&chain);
+        assert_eq!(rev[0].start, b);
+        assert_eq!(rev[0].end, a);
+        assert!((rev[0].bulge + 0.5).abs() < 1e-12);
+    }
+
+    /// Empty chain reverses to empty.
+    #[test]
+    fn reverse_chain_empty_is_empty() {
+        let rev = reverse_chain(&[]);
+        assert!(rev.is_empty());
     }
 }

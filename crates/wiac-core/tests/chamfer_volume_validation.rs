@@ -175,17 +175,14 @@ fn chamfer_closed_rectangle_volume_matches_closed_form() {
 
 /// Chamfer one edge of the rectangle as an OPEN line segment. With
 /// `step = -1 mm` (the default) and a 4 mm cone-tip depth, the
-/// pipeline should emit a lateral cut at each of the four scheduled
-/// Z levels (-1, -2, -3, -4). It currently only cuts at Z=-1;
-/// passes 2-4 plunge at the end-of-segment XY but never walk back.
-/// See oulh.
-///
-/// Ignored until oulh is fixed — `multi_pass` must retract-and-rapid
-/// back to `segments[0].start` between open-path passes, or reverse
-/// segment direction for alternating passes. Re-enable by removing
-/// `#[ignore]` when oulh closes.
+/// pipeline emits a lateral cut at each of the four scheduled Z
+/// levels (-1, -2, -3, -4). Before oulh's fix, only the first pass
+/// at Z=-1 cut laterally; passes 2-4 plunged at the segment's
+/// trailing endpoint without ever walking back. The fix has
+/// `multi_pass` alternate walk direction between passes for open
+/// polylines, so the trailing endpoint becomes the next pass's
+/// starting point — no XY retract / rapid needed.
 #[test]
-#[ignore = "regression pin for oulh — open-polyline multi_pass cascade bug"]
 fn chamfer_open_edge_emits_lateral_cut_at_each_pass() {
     assert_cone_math_is_4mm_at_z_minus_4();
     let tool = vbit_tool(1, TOOL_DIA, TIP_ANGLE_DEG, 0.0);

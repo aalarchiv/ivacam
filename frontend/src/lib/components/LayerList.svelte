@@ -77,7 +77,7 @@
     if (items.length === 0) return;
     const active = document.activeElement as HTMLElement | null;
     const idx = active ? items.indexOf(active) : -1;
-    let next = idx;
+    let next: number;
     if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
     else if (e.key === 'ArrowUp') next = idx <= 0 ? items.length - 1 : idx - 1;
     else if (e.key === 'Home') next = 0;
@@ -197,7 +197,6 @@
           + Add
         </button>
         {#if addMenuOpen}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="add-dropdown"
             role="menu"

@@ -661,9 +661,7 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.whirlExtraWidthMm !== undefined && t.whirlExtraWidthMm > 0
       ? { wirbeln_extra_width_mm: t.whirlExtraWidthMm }
       : {}),
-    ...(t.whirlOscMm !== undefined && t.whirlOscMm > 0
-      ? { wirbeln_osc_mm: t.whirlOscMm }
-      : {}),
+    ...(t.whirlOscMm !== undefined && t.whirlOscMm > 0 ? { wirbeln_osc_mm: t.whirlOscMm } : {}),
     // Spindle warmup pause (seconds). Omit when at backend default
     // (1) so we don't bloat the wire payload for the common case.
     ...(t.pause !== undefined && t.pause !== 1 ? { pause: t.pause } : {}),

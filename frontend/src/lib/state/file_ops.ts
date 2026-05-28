@@ -539,7 +539,7 @@ export async function saveToolset() {
 ///   * `'add'`     — append; tools whose `name` already exists are
 ///                   skipped (the user's existing entries win).
 export async function loadToolset(mode: 'replace' | 'add') {
-  let text: string | null = null;
+  let text: string | null;
   try {
     text = await pickAndReadJson([
       { name: 'wiaConstructor toolset', extensions: ['wiac-toolset.json', 'json'] },
@@ -610,7 +610,7 @@ export async function saveMachine() {
 /// Import a `.wiac-machine.json`. Replaces the active machine
 /// config wholesale.
 export async function loadMachine() {
-  let text: string | null = null;
+  let text: string | null;
   try {
     text = await pickAndReadJson([
       { name: 'wiaConstructor machine', extensions: ['wiac-machine.json', 'json'] },

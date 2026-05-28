@@ -266,7 +266,7 @@
           <p>{warningsBySeverity.bad} critical · {warningsBySeverity.warn} non-critical</p>
           {#if warningsBySeverity.top.length > 0}
             <ul class="rb-warn-list">
-              {#each warningsBySeverity.top as w}
+              {#each warningsBySeverity.top as w, i (i)}
                 <li><strong>{w.kind}</strong> — {w.message}</li>
               {/each}
             </ul>

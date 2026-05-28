@@ -344,6 +344,10 @@
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
+    // The WebGL canvas is a THREE-owned child of `host`; Svelte's
+    // reconciler doesn't touch it (no template renders into host beyond
+    // the bind:this div itself), so appending it directly is safe.
+    // eslint-disable-next-line svelte/no-dom-manipulating
     host.appendChild(renderer.domElement);
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
@@ -507,6 +511,9 @@
     onThemeChange = undefined;
     themeMo?.disconnect();
     if (renderer && host?.contains(renderer.domElement)) {
+      // Counterpart to the appendChild above — Svelte didn't render this
+      // child, so we own its removal too. See the mount comment.
+      // eslint-disable-next-line svelte/no-dom-manipulating
       host.removeChild(renderer.domElement);
     }
   });
@@ -2199,7 +2206,6 @@
   {#if ctxMenu}
     {@const hasObjsSelected = project.selectedObjects.size > 0}
     {#if hasObjsSelected}
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         class="ctx-menu"
         style:left={`${ctxMenu.x}px`}

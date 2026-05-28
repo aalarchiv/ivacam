@@ -60,9 +60,9 @@
   /// `getComputedStyle(container).getPropertyValue(name)` on every
   /// lookup, which fires a synchronous style recalc — and `draw()`
   /// invokes it 15-20× per frame. We memoise per CSS var until the
-  /// theme observer (onMount) bumps `themeCacheToken` to invalidate.
+  /// Theme-observed CSS-var cache. `resetThemeCache()` clears it when
+  /// the MutationObserver in onMount sees a `data-theme` change.
   let themeCache = new Map<string, string>();
-  let themeCacheToken = 0;
   function themeVar(name: string, fallback: string): string {
     if (!container) return fallback;
     const cached = themeCache.get(name);
@@ -73,7 +73,6 @@
   }
   function resetThemeCache() {
     themeCache = new Map();
-    themeCacheToken++;
   }
 
   /// Trigger both canvas layers — used by resize / theme / mount paths

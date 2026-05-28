@@ -202,7 +202,7 @@ export function combineImports(entries: readonly ImportEntry[]): ImportResponse 
   const layerByName = new Map<string, ImportResponse['layers'][number]>();
   let idOffset = 0;
   let mergedBbox: BBox | null = null;
-  let filenameParts: string[] = [];
+  const filenameParts: string[] = [];
   for (const entry of entries) {
     const t = applyFileTransform(entry.source, entry.fileTransform);
     segments.push(...t.segments);

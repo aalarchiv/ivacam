@@ -108,7 +108,7 @@
   function onPanelKey(e: KeyboardEvent) {
     if (lines.length === 0) return;
     const cur = focusedLine ?? activeLine ?? 1;
-    let next = cur;
+    let next: number;
     if (e.key === 'ArrowDown') next = Math.min(lines.length, cur + 1);
     else if (e.key === 'ArrowUp') next = Math.max(1, cur - 1);
     else if (e.key === 'PageDown') next = Math.min(lines.length, cur + 25);

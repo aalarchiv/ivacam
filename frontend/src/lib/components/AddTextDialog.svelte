@@ -459,7 +459,6 @@
               <ul class="font-dd-list" role="listbox">
                 {#each BUNDLED_FONTS as f (f.path)}
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
                   <li
                     role="option"
                     aria-selected={f.path === bundledFontPath}

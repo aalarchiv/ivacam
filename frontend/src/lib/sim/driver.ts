@@ -25,6 +25,12 @@ import type {
 import type { AppSettings, Fixture, ToolEntry } from '../state/project.svelte';
 
 interface SimulatorWasm {
+  // wasm-bindgen produces a constructor on the generated class; this
+  // interface stands in for both the constructor signature and the
+  // instance shape so we can `new SimulatorWasm(...)` without importing
+  // the generated d.ts type. The no-misused-new lint would prefer a
+  // class — wasm-bindgen owns the actual class definition.
+  // eslint-disable-next-line @typescript-eslint/no-misused-new
   new (
     minX: number,
     minY: number,

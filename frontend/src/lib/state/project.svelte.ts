@@ -33,12 +33,7 @@ export { DEFAULT_SETTINGS };
 export type { AppSettings };
 // Bring the union types into scope locally; project-types and op_types
 // re-export them through this module for back-compat callers.
-import {
-  isContourOp,
-  type OpEntry,
-  type OpKind,
-  type OpPatch,
-} from './op_types';
+import { isContourOp, type OpEntry, type OpKind, type OpPatch } from './op_types';
 import { migrateLegacyToolTerms } from './tool-migration';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs

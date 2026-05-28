@@ -3,3 +3,5 @@ node_modules
 .svelte-kit
 .vite
 pnpm-lock.yaml
+# Codegen output — regenerated from schema/openapi.yaml. Don't reformat.
+src/lib/api/generated.ts

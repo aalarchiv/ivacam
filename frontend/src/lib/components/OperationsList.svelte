@@ -246,13 +246,10 @@
       0,
       ops.findIndex((o) => o.id === project.selectedOpId),
     );
-    let nextIdx = curIdx;
-    if (e.key === 'ArrowDown') nextIdx = Math.min(ops.length - 1, curIdx + 1);
-    else if (e.key === 'ArrowUp') nextIdx = Math.max(0, curIdx - 1);
-    else if (e.key === 'Home') nextIdx = 0;
-    else if (e.key === 'End') nextIdx = ops.length - 1;
-    else if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-      // Alt + Arrow: reorder — keyboard counterpart to drag-grip.
+    // Alt + Arrow: reorder — keyboard counterpart to drag-grip. Checked
+    // BEFORE the bare-arrow navigation branches below, because both keys
+    // overlap and the bare branches would otherwise swallow the event.
+    if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       const dir = e.key === 'ArrowDown' ? 1 : -1;
       const dest = Math.max(0, Math.min(ops.length - 1, curIdx + dir));
       if (dest !== curIdx) {
@@ -260,7 +257,13 @@
         e.preventDefault();
       }
       return;
-    } else return;
+    }
+    let nextIdx = curIdx;
+    if (e.key === 'ArrowDown') nextIdx = Math.min(ops.length - 1, curIdx + 1);
+    else if (e.key === 'ArrowUp') nextIdx = Math.max(0, curIdx - 1);
+    else if (e.key === 'Home') nextIdx = 0;
+    else if (e.key === 'End') nextIdx = ops.length - 1;
+    else return;
     e.preventDefault();
     selectOp(ops[nextIdx].id);
     // Move focus onto the newly-selected row to match the tabindex flip.
@@ -341,7 +344,6 @@
             class:op-disabled={!op.enabled}
             data-op-row-id={op.id}
           >
-            <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
             <div
               class="row"
               ondragover={(e) => onDragOver(e, op.id)}
@@ -354,7 +356,6 @@
               tabindex={selected ? 0 : -1}
               aria-selected={selected}
             >
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <span
                 class="grip"
                 draggable="true"

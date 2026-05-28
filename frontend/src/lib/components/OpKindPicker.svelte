@@ -159,7 +159,7 @@
     if (items.length === 0) return;
     const idx = items.indexOf(document.activeElement as HTMLElement);
     const cols = 2;
-    let next = idx;
+    let next: number;
     if (e.key === 'ArrowDown') next = idx < 0 ? 0 : Math.min(items.length - 1, idx + cols);
     else if (e.key === 'ArrowUp') next = idx <= 0 ? 0 : Math.max(0, idx - cols);
     else if (e.key === 'ArrowRight') next = idx < 0 ? 0 : (idx + 1) % items.length;
@@ -178,7 +178,6 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="picker" role="menu" tabindex="-1" onkeydown={onPickerKey} use:autoFocusFirst>
   {#each visibleKinds as k (k)}
     {@const disabled = k === 'pocket_outside' && pocketOutsideDisabled}

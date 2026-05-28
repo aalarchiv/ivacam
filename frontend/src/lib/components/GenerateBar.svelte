@@ -590,7 +590,6 @@
     style:width="{wpW}px"
     style:height="{wpH}px"
   >
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <header
       role="toolbar"
       tabindex="-1"
@@ -613,7 +612,6 @@
         {#each warnings as w, i (`sim-${i}`)}
           {@const sev = simWarningSeverity(w)}
           {@const summary = simWarningSummary(w)}
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <details class="row severity-{sev}">
             <summary>
               <span class="dot" aria-hidden="true"></span>
@@ -680,7 +678,6 @@
     <!-- Bottom-right resize handle. svg corner-glyph repeats the
          convention used by every other floating-resizable widget on
          the platform. -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="resize-handle"
       onpointerdown={wpResizePointerDown}

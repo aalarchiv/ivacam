@@ -888,7 +888,6 @@
         aria-expanded={openMenu === 'file'}>File</button
       >
       {#if openMenu === 'file'}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="dropdown"
           role="menu"
@@ -979,7 +978,6 @@
         aria-expanded={openMenu === 'edit'}>Edit</button
       >
       {#if openMenu === 'edit'}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="dropdown"
           role="menu"
@@ -1023,7 +1021,6 @@
         aria-expanded={openMenu === 'view'}>View</button
       >
       {#if openMenu === 'view'}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="dropdown"
           role="menu"
@@ -1071,7 +1068,6 @@
         aria-expanded={openMenu === 'tools'}>Tools</button
       >
       {#if openMenu === 'tools'}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="dropdown"
           role="menu"
@@ -1106,7 +1102,6 @@
         aria-expanded={openMenu === 'help'}>Help</button
       >
       {#if openMenu === 'help'}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="dropdown"
           role="menu"

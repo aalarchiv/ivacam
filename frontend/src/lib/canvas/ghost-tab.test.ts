@@ -50,7 +50,11 @@ describe('projectGhostTab', () => {
 
   it('promotes to a vertex snap when an endpoint osnap target is within 4 px', () => {
     // Cursor at data (2, 0); endpoint target at the (0,0) corner.
-    const g = projectGhostTab(2, 0, ctx({ osnapTargets: { ...NO_TARGETS, endpoints: [{ x: 0, y: 0 }] } }));
+    const g = projectGhostTab(
+      2,
+      0,
+      ctx({ osnapTargets: { ...NO_TARGETS, endpoints: [{ x: 0, y: 0 }] } }),
+    );
     expect(g!.snap).toBe('vertex');
     expect(g!.x).toBeCloseTo(0);
     expect(g!.y).toBeCloseTo(0);

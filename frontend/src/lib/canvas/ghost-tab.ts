@@ -45,8 +45,15 @@ export interface GhostTabContext {
 /// contour projection within 6 screen-px. `altDown` disables every
 /// secondary snap, leaving the bare contour projection.
 export function projectGhostTab(cx: number, cy: number, ctx: GhostTabContext): GhostTab | null {
-  const { transform, polylines, sourceObjects, tabPlacements, altDown, osnapTargets, osnapSettings } =
-    ctx;
+  const {
+    transform,
+    polylines,
+    sourceObjects,
+    tabPlacements,
+    altDown,
+    osnapTargets,
+    osnapSettings,
+  } = ctx;
   const { scale, offX, offY } = transform;
   // Canvas → data XY (mirror of the draw transform).
   const dataX = (cx - offX) / scale;

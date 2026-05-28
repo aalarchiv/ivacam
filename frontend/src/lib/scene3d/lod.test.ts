@@ -14,8 +14,18 @@ describe('pixelsPerCell', () => {
   });
 
   it('shrinks as the camera pulls back (coarser LOD when far away)', () => {
-    const near = pixelsPerCell({ cellSizeMm: 1, cameraDistance: 50, fovDeg: 60, renderHeightPx: 800 })!;
-    const far = pixelsPerCell({ cellSizeMm: 1, cameraDistance: 500, fovDeg: 60, renderHeightPx: 800 })!;
+    const near = pixelsPerCell({
+      cellSizeMm: 1,
+      cameraDistance: 50,
+      fovDeg: 60,
+      renderHeightPx: 800,
+    })!;
+    const far = pixelsPerCell({
+      cellSizeMm: 1,
+      cameraDistance: 500,
+      fovDeg: 60,
+      renderHeightPx: 800,
+    })!;
     expect(near).toBeGreaterThan(far);
     // Inverse-distance: 10× the distance ⇒ ~1/10 the pixels.
     expect(far).toBeCloseTo(near / 10);

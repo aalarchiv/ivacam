@@ -396,7 +396,7 @@
                 <span>Format</span>
                 <span>Scale</span>
               </div>
-              {#each [{ key: 'x' as const, label: 'X' }, { key: 'y' as const, label: 'Y' }, { key: 'z' as const, label: 'Z' }, { key: 'i' as const, label: 'I (arc)' }, { key: 'j' as const, label: 'J (arc)' }, { key: 'feed' as const, label: 'Feed' }, { key: 'speed' as const, label: 'Spindle' }] as row}
+              {#each [{ key: 'x' as const, label: 'X' }, { key: 'y' as const, label: 'Y' }, { key: 'z' as const, label: 'Z' }, { key: 'i' as const, label: 'I (arc)' }, { key: 'j' as const, label: 'J (arc)' }, { key: 'feed' as const, label: 'Feed' }, { key: 'speed' as const, label: 'Spindle' }] as row (row.key)}
                 {@const af = axes[row.key]}
                 {@const def = AXIS_DEFAULTS[row.key]}
                 <div class="axes-row" class:dimmed={!af.enabled}>

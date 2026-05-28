@@ -36,7 +36,7 @@
   const THEMES: Array<'auto' | 'light' | 'dark'> = ['auto', 'light', 'dark'];
   function onThemeKey(e: KeyboardEvent) {
     const cur = THEMES.indexOf(project.settings.theme as (typeof THEMES)[number]);
-    let next = cur;
+    let next: number;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
       next = (cur - 1 + THEMES.length) % THEMES.length;
     else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (cur + 1) % THEMES.length;

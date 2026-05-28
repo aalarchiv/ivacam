@@ -127,3 +127,21 @@ export function attrApplies(attr: ToolAttr, kind: ToolKind): boolean {
   const extra = KIND_EXTRA_ATTRS[kind];
   return extra ? extra.includes(attr) : false;
 }
+
+/// User-facing display label for each tool kind. Single source of truth
+/// shared between the kind-selector dropdown, the disabled-field tooltip
+/// reasons, and any other UI surface that names a tool kind.
+export const KIND_DISPLAY_LABELS: Record<ToolKind, string> = {
+  endmill: 'Endmill',
+  ball_nose: 'Ball-nose',
+  v_bit: 'V-bit',
+  engraver: 'Engraver',
+  drag_knife: 'Drag-knife',
+  drill: 'Drill',
+  laser_beam: 'Laser',
+  bull_nose: 'Bull-nose (radius)',
+  compression: 'Compression',
+  form_profile: 'Form / profile',
+  cone: 'Cone',
+  thread_mill: 'Thread mill',
+};

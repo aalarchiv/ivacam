@@ -13,7 +13,17 @@
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
   import * as fileOps from '../state/file_ops';
-  import { attrApplies } from '../state/tool_family';
+  import { attrApplies, KIND_DISPLAY_LABELS } from '../state/tool_family';
+  import {
+    diameterInvalid,
+    speedInvalid,
+    feedInvalid,
+    plungeInvalid,
+    rowInvalid,
+    fieldApplies,
+    fieldDisabledReason,
+    kindNeedsExpansion,
+  } from '../state/tool_validation';
 
   interface Props {
     open: boolean;
@@ -96,70 +106,15 @@
 
   /// Kinds whose kind-specific block in the expanded row is
   /// LOAD-BEARING — without those fields the gcode emitter falls
-  /// back to defaults that almost always produce wrong output.
-  /// Auto-expanding the row keeps the field visible (k94n).
-  function kindNeedsExpansion(kind: ToolKind): boolean {
-    // A kind needs auto-expansion when it has a load-bearing
-    // kind-specific attribute (without which the emitter falls back to
-    // wrong defaults). Derived from the shared capability table so the
-    // list can't drift from the section gates below.
-    return (
-      attrApplies('dragoff', kind) ||
-      attrApplies('cornerRadius', kind) ||
-      attrApplies('formProfile', kind)
-    );
-  }
-
   // 1xgj: was `JSON.stringify(draft) !== pristine` — fragile because
   // a Svelte 5 $state proxy could in principle iterate keys in a
   // different order than the source object, falsely flagging the
   // dialog as dirty. Deep-equal is invariant to key order.
   let isDirty = $derived.by(() => open && !deepEqual(draft, pristine));
 
-  /// jkgj: numeric-field validation. Before, every input on a row used
-  /// `parseFloat(...) || 0` with no `min` attribute, so 0 or a
-  /// negative diameter / RPM / feed silently committed and the
-  /// pipeline produced zero-rate gcode (zero_rate_emitted) or worse.
-  /// These predicates classify each row as invalid so:
-  ///   * the input gets `.invalid` (red border, same pattern as
-  ///     `defaultStep`),
-  ///   * OK is disabled while any row is broken.
-  ///
-  /// Per-field rule:
-  ///   * diameter:  must be > 0 (mm) when the kind cuts at all
-  ///   * speed:     must be ≥ 1 RPM when fieldApplies('speed')
-  ///   * feedRate:  must be ≥ 1 mm/min (always required)
-  ///   * plungeRate: must be ≥ 1 mm/min when fieldApplies('plunge')
-  ///
-  /// Disabled fields (drag-knife speed, laser plunge, etc.) are
-  /// excluded — fieldApplies() already says they're not used.
-  function diameterInvalid(t: ToolEntry): boolean {
-    // HTML min="0.01" is the actual floor — flag anything below it as
-    // invalid so the user gets the red border (the prior `> 0` accepted
-    // 0.005 mm which is below the HTML constraint and gets clamped /
-    // ignored downstream without surface feedback).
-    return !(t.diameter >= 0.01);
-  }
-  function speedInvalid(t: ToolEntry): boolean {
-    if (!fieldApplies('speed', t.kind)) return false;
-    return !(t.speed >= 1);
-  }
-  function feedInvalid(t: ToolEntry): boolean {
-    return !(t.feedRate >= 1);
-  }
-  function plungeInvalid(t: ToolEntry): boolean {
-    if (!fieldApplies('plunge', t.kind)) return false;
-    return !(t.plungeRate >= 1);
-  }
-  function rowInvalid(t: ToolEntry): boolean {
-    return (
-      diameterInvalid(t) ||
-      speedInvalid(t) ||
-      feedInvalid(t) ||
-      plungeInvalid(t) ||
-      (t.defaultStep !== undefined && t.defaultStep >= 0)
-    );
-  }
+  // jkgj: numeric-field validation, fieldApplies, and the per-kind
+  // disabled-reason tooltips all live in lib/state/tool_validation.ts;
+  // the dialog wires them in via the imports up top.
   let hasInvalidRow = $derived(draft.some(rowInvalid));
 
   /// Two-step close-on-dirty: first attempt arms `confirmingDiscard`
@@ -508,20 +463,10 @@
     draft = draft.map((t, i) => (i === idx ? { ...t, holder: updated } : t));
   }
 
-  const kindLabels: Record<ToolKind, string> = {
-    endmill: 'Endmill',
-    ball_nose: 'Ball-nose',
-    v_bit: 'V-bit',
-    engraver: 'Engraver',
-    drag_knife: 'Drag-knife',
-    drill: 'Drill',
-    laser_beam: 'Laser',
-    bull_nose: 'Bull-nose (radius)',
-    compression: 'Compression',
-    form_profile: 'Form / profile',
-    cone: 'Cone',
-    thread_mill: 'Thread mill',
-  };
+  // Display labels for the kind dropdown live in tool_family.ts so the
+  // dialog, the disabled-reason tooltips, and any other UI surface that
+  // names a tool kind read from the same source.
+  const kindLabels = KIND_DISPLAY_LABELS;
   const coolantLabels: Record<CoolantMode, string> = {
     off: 'Off',
     mist: 'Mist',
@@ -536,58 +481,6 @@
     stepped: 'Stepped',
   };
   const holderKindOptions: HolderKind[] = ['none', 'cylinder', 'cone', 'stepped'];
-
-  /// Whether a given main-row field is meaningful for the tool kind.
-  /// Inapplicable fields are kept in the grid (so the row layout
-  /// stays stable) but disabled with a tooltip explaining why —
-  /// mirrors Estlcam's c_Tools (`_TP`) which hides per-type rows.
-  function fieldApplies(field: string, kind: ToolKind): boolean {
-    switch (field) {
-      // These map 1:1 onto shared-table attributes (tool_family.ts), so
-      // the per-kind groupings live in exactly one place now.
-      case 'flutes':
-        return attrApplies('flutes', kind);
-      case 'tipDiameter':
-        return attrApplies('tipDiameter', kind);
-      case 'speed':
-        return attrApplies('speed', kind);
-      case 'plunge':
-        return attrApplies('plunge', kind);
-      case 'defaultStep':
-        return attrApplies('defaultStep', kind);
-      case 'tipAngleDeg':
-        return attrApplies('tipAngleDeg', kind);
-      case 'coolant':
-        // Laser uses gas-assist (not implemented yet) — coolant
-        // dropdown still applies as a generic "assist" toggle. Not a
-        // geometry attribute, so it stays outside the family table.
-        return true;
-      default:
-        return true;
-    }
-  }
-
-  function fieldReasonForKind(field: string, kind: ToolKind): string {
-    const k = kindLabels[kind];
-    if (field === 'flutes' && kind === 'drag_knife') return `Drag-knife doesn't cut by rotation.`;
-    if (field === 'flutes' && kind === 'laser_beam') return `Laser has no cutting edges.`;
-    if (field === 'flutes') return `Flutes not used for ${k.toLowerCase()}.`;
-    if (field === 'tipDiameter') return `Tip ⌀ only applies to V-bits / engravers.`;
-    if (field === 'speed' && kind === 'drag_knife') return `Drag-knife doesn't spin.`;
-    if (field === 'speed' && kind === 'laser_beam')
-      return `Laser uses power (set in machine config), not RPM.`;
-    if (field === 'plunge' && kind === 'drag_knife') return `Drag-knife stays at cut depth.`;
-    if (field === 'plunge' && kind === 'laser_beam') return `Laser cuts at constant Z.`;
-    if (field === 'plunge' && kind === 'drill')
-      return `Drill uses the cut feed as its plunge rate.`;
-    if (field === 'defaultStep' && kind === 'drill')
-      return `Drill uses the peck step in the expanded section, not the generic Z step.`;
-    if (field === 'defaultStep' && kind === 'drag_knife') return `Drag-knife runs at fixed depth.`;
-    if (field === 'defaultStep' && kind === 'laser_beam') return `Laser cuts at constant Z.`;
-    if (field === 'tipAngleDeg')
-      return `Tip angle drives V-Carve depth math (V-bits / engravers) and the drill-tip 3D preview.`;
-    return '';
-  }
 </script>
 
 {#if open}
@@ -679,7 +572,7 @@
               disabled={!fieldApplies('tipDiameter', tool.kind)}
               class:invalid={tool.tipDiameter !== undefined && tool.tipDiameter < 0}
               title={!fieldApplies('tipDiameter', tool.kind)
-                ? fieldReasonForKind('tipDiameter', tool.kind)
+                ? fieldDisabledReason('tipDiameter', tool.kind)
                 : tool.tipDiameter !== undefined && tool.tipDiameter < 0
                   ? 'Tip ⌀ must be ≥ 0 mm — the V-Carve depth math (z = -(r - tip_r) / tan(angle / 2)) silently clamps negative values to 0, hiding the typo.'
                   : ''}
@@ -708,7 +601,7 @@
               disabled={!fieldApplies('tipAngleDeg', tool.kind)}
               title={fieldApplies('tipAngleDeg', tool.kind)
                 ? 'Full apex angle of the V cone in degrees. Drives V-Carve depth (z = -(r - tip_r) / tan(angle / 2)) and Chamfer width. Common values: 30°, 45°, 60°, 90°.'
-                : fieldReasonForKind('tipAngleDeg', tool.kind)}
+                : fieldDisabledReason('tipAngleDeg', tool.kind)}
               onchange={(e) => {
                 const v = (e.currentTarget as HTMLInputElement).value;
                 updateField(i, 'tipAngleDeg', v === '' ? undefined : parseFloat(v));
@@ -722,7 +615,7 @@
               disabled={!fieldApplies('flutes', tool.kind)}
               title={fieldApplies('flutes', tool.kind)
                 ? ''
-                : fieldReasonForKind('flutes', tool.kind)}
+                : fieldDisabledReason('flutes', tool.kind)}
               onchange={(e) =>
                 updateField(
                   i,
@@ -738,7 +631,7 @@
               disabled={!fieldApplies('speed', tool.kind)}
               class:invalid={speedInvalid(tool)}
               title={!fieldApplies('speed', tool.kind)
-                ? fieldReasonForKind('speed', tool.kind)
+                ? fieldDisabledReason('speed', tool.kind)
                 : speedInvalid(tool)
                   ? 'Spindle speed must be ≥ 1 RPM — zero / negative values emit no S word and the controller may refuse.'
                   : ''}
@@ -775,7 +668,7 @@
               disabled={!fieldApplies('plunge', tool.kind)}
               class:invalid={plungeInvalid(tool)}
               title={!fieldApplies('plunge', tool.kind)
-                ? fieldReasonForKind('plunge', tool.kind)
+                ? fieldDisabledReason('plunge', tool.kind)
                 : plungeInvalid(tool)
                   ? 'Plunge rate must be ≥ 1 mm/min — zero / negative values cause the controller to refuse the move.'
                   : ''}
@@ -797,7 +690,7 @@
                 ? tool.defaultStep !== undefined && tool.defaultStep >= 0
                   ? 'Default step must be NEGATIVE (mm down per pass) — values ≥ 0 are ignored and treated as unset.'
                   : "Operations using this tool inherit this when they don't specify their own. Negative number, mm."
-                : fieldReasonForKind('defaultStep', tool.kind)}
+                : fieldDisabledReason('defaultStep', tool.kind)}
               class:invalid={tool.defaultStep !== undefined && tool.defaultStep >= 0}
               onchange={(e) => {
                 const v = (e.currentTarget as HTMLInputElement).value;

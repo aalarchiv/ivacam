@@ -22,6 +22,8 @@
   import { tessellate } from '../scene3d/tessellate';
   import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
   import { pixelsPerCell } from '../scene3d/lod';
+  import { warningPosition } from '../scene3d/warning_position';
+  import { opIncludesObject } from '../state/op_source';
   import type { SimWarning, ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
@@ -1031,25 +1033,6 @@
       : cssColor('--warn', 0xf0c020);
   }
 
-  function warningPosition(w: SimWarning): { x: number; y: number; z: number } | null {
-    if (w.kind === 'rapid_through_material') {
-      return { x: w.worst_x, y: w.worst_y, z: w.worst_cell_z };
-    }
-    if (w.kind === 'fixture_collision') {
-      return { x: w.nearest_x, y: w.nearest_y, z: 0 };
-    }
-    if (w.kind === 'holder_collision') {
-      return { x: w.worst_x, y: w.worst_y, z: w.wall_z };
-    }
-    // Engagement / dragging are span-shaped, not point-shaped — fall
-    // back to the toolpath segment endpoint so the marker still appears.
-    const segIdx = simWarningSegmentIdx(w);
-    const tp = project.generated?.toolpath;
-    const seg = tp ? tp[segIdx] : undefined;
-    if (!seg) return null;
-    return { x: seg.from.x, y: seg.from.y, z: seg.from.z };
-  }
-
   function rebuildWarningMarkers() {
     if (!scene) return;
     if (!warningGroup) {
@@ -1071,7 +1054,7 @@
     const radius = Math.max(0.5, sceneRadius * 0.012);
     const geom = new THREE.TetrahedronGeometry(radius, 0);
     for (const w of warnings) {
-      const pos = warningPosition(w);
+      const pos = warningPosition(w, project.generated?.toolpath);
       if (!pos) continue;
       const mat = new THREE.MeshBasicMaterial({
         color: warningMarkerColor(w),
@@ -1463,32 +1446,6 @@
     const dot = new THREE.Mesh(dotGeom, dotMat);
     dot.position.set(x, y, 0);
     approachGroup.add(dot);
-  }
-
-  /// Mirror of `wiac_core::pipeline::op_includes_object`. Tells us
-  /// whether an op's source filter (All / Layers / Objects) selects
-  /// the given 1-based object id, so the 3D scene's auto-tab walk
-  /// honors the same rules as the backend.
-  function opIncludesObject(
-    op: { sourceLayers: string[] | null; sourceObjects?: number[] },
-    objectId: number,
-    imp: import('../api/types').ImportResponse,
-  ): boolean {
-    if (op.sourceObjects && op.sourceObjects.length > 0) {
-      return op.sourceObjects.includes(objectId);
-    }
-    if (op.sourceLayers && op.sourceLayers.length > 0) {
-      // Look up this object's layer via the first segment that maps
-      // to it (objects[] is per-segment; layers come from segments[]).
-      for (let i = 0; i < (imp.objects?.length ?? 0); i++) {
-        if (imp.objects?.[i] === objectId) {
-          const layer = imp.segments[i]?.layer ?? '';
-          return op.sourceLayers.includes(layer);
-        }
-      }
-      return false;
-    }
-    return true;
   }
 
   /// Tool-tip cone: a small inverted cone whose apex sits at the current

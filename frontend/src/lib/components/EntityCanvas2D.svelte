@@ -13,6 +13,8 @@
   import { fixtureAt } from '../canvas/fixture-hit';
   import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
+  import { computeViewportTransform } from '../canvas/viewport';
+  import { objectsContainedInBox } from '../canvas/box_select';
   import {
     DEFAULT_OSNAP_SETTINGS,
     findOSnap,
@@ -604,30 +606,16 @@
   function objectsInBox(x0: number, y0: number, x1: number, y1: number): number[] {
     const data = project.geometryView;
     if (!data || !lastTransform) return [];
-    const { scale, offX, offY } = lastTransform;
-    const px2dx = (x: number) => (x - offX) / scale;
-    const px2dy = (y: number) => (offY - y) / scale;
-    const minX = Math.min(px2dx(x0), px2dx(x1));
-    const maxX = Math.max(px2dx(x0), px2dx(x1));
-    // Canvas Y is inverted relative to data Y, so the data-space min
-    // comes from the LOWER pixel y.
-    const minY = Math.min(px2dy(y0), px2dy(y1));
-    const maxY = Math.max(px2dy(y0), px2dy(y1));
-    const meta = data.object_meta ?? [];
-    const visibleLayers = project.visibleLayers;
-    const out: number[] = [];
-    for (const m of meta) {
-      // Layer-visibility filter so the user can't accidentally pick
-      // hidden chains. The synthetic stock-outline layer (vm3c) is
-      // always pickable — it isn't in the user's visibleLayers set.
-      if (m.layer !== STOCK_OUTLINE_LAYER && !visibleLayers.has(m.layer)) continue;
-      const b = m.bbox;
-      // Containment: every corner of the object's bbox must lie inside
-      // the selection rectangle.
-      if (b.min_x < minX || b.max_x > maxX || b.min_y < minY || b.max_y > maxY) continue;
-      out.push(m.id);
-    }
-    return out;
+    return objectsContainedInBox(
+      data.object_meta ?? [],
+      project.visibleLayers,
+      lastTransform,
+      x0,
+      y0,
+      x1,
+      y1,
+      STOCK_OUTLINE_LAYER,
+    );
   }
   function onPointerLeave() {
     hoverIdx = null;
@@ -1097,6 +1085,10 @@
   /// Auto-fit transform compute. Reads bbox + user pan/zoom and writes
   /// `lastTransform` / `lastBaseTransform` so the pointer handlers + the
   /// overlay layer see the same projection as the bg layer.
+  /// Thin reactive wrapper over `computeViewportTransform` (lib/canvas/
+  /// viewport.ts): pulls the live user pan/zoom out of $state, computes
+  /// the active transform, and caches both the base and active values
+  /// so hit-tests can read them without recomputing.
   function computeTransform(
     data: import('../api/types').ImportResponse,
     w: number,
@@ -1107,24 +1099,14 @@
     offY: number;
     project2: (x: number, y: number) => [number, number];
   } {
-    const { min_x, min_y, max_x, max_y } = data.bbox;
-    const dataW = Math.max(max_x - min_x, 1e-6);
-    const dataH = Math.max(max_y - min_y, 1e-6);
-    const margin = 32;
-    const baseScale = Math.min((w - 2 * margin) / dataW, (h - 2 * margin) / dataH);
-    const baseOffX = margin - min_x * baseScale + (w - 2 * margin - dataW * baseScale) / 2;
-    // Y flipped: DXF y-up, canvas y-down.
-    const baseOffY = h - margin - -min_y * baseScale - (h - 2 * margin - dataH * baseScale) / 2;
-    lastBaseTransform = { scale: baseScale, offX: baseOffX, offY: baseOffY };
-    const scale = baseScale * userZoom;
-    const offX = baseOffX + userPanX;
-    const offY = baseOffY + userPanY;
-    lastTransform = { scale, offX, offY };
-    const project2 = (px: number, py: number): [number, number] => [
-      px * scale + offX,
-      offY - py * scale,
-    ];
-    return { scale, offX, offY, project2 };
+    const t = computeViewportTransform(
+      data.bbox,
+      { w, h },
+      { zoom: userZoom, panX: userPanX, panY: userPanY },
+    );
+    lastBaseTransform = { scale: t.baseScale, offX: t.baseOffX, offY: t.baseOffY };
+    lastTransform = { scale: t.scale, offX: t.offX, offY: t.offY };
+    return { scale: t.scale, offX: t.offX, offY: t.offY, project2: t.project2 };
   }
 
   /// Heavy static layer — repaints only on geometry / layout / theme /

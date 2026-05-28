@@ -2369,6 +2369,283 @@ fn building_block_ops_round_trip_through_serde() {
     }
 }
 
+/// rxm9: `GcodeInclude` splices the op's `content` into the program
+/// stream, substituting `{x}` / `{y}` / `{z}` / `{f}` / `{s}` /
+/// `{safe_z}` against the post's live state. Run a Profile op first
+/// so the post's `last_x` / `last_y` / `last_z` are non-None when
+/// the include block executes.
+#[test]
+fn pipeline_emits_gcode_include_with_variable_expansion() {
+    let profile = Op {
+        id: 1,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+    };
+    let include = Op {
+        id: 2,
+        name: "Return home".into(),
+        enabled: true,
+        kind: OpKind::GcodeInclude {
+            path: "/tmp/return_home.nc".into(),
+            content: "G0 X{x} Y{y}\nG0 Z{safe_z}\nG0 X0 Y0\n".into(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            fast_move_z: 12.5,
+            ..OpParams::mill_default()
+        },
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(8.0, 6.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![profile, include],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let gcode = &resp.gcode;
+    // Path is surfaced in the OP comment.
+    assert!(
+        gcode.contains("; OP 2 (gcode include: /tmp/return_home.nc)"),
+        "expected include header line with path; got:\n{gcode}"
+    );
+    // Substituted X / Y come from the Profile op's last move. The
+    // Profile-Outside with a 3 mm-Ø tool offsets the centerline by
+    // r=1.5 mm from the source segment (0,0)→(8,6); the cut end lands
+    // at the offset-segment's end (8.9, 4.8). That value is what the
+    // post tracked in last_x / last_y at the boundary, and what the
+    // include block sees.
+    let line_with_xy = gcode
+        .lines()
+        .skip_while(|l| !l.contains("; OP 2 (gcode include"))
+        .find(|l| l.starts_with("G0 X") && l.contains(" Y"))
+        .expect("first XY line of include block present");
+    assert!(
+        line_with_xy.starts_with("G0 X8.9000 Y4.8000"),
+        "expected G0 X8.9 Y4.8 from {{x}}/{{y}} (Profile-Outside end position), got `{line_with_xy}` in:\n{gcode}"
+    );
+    // `{safe_z}` resolves from the INCLUDE op's params.fast_move_z (12.5), not the previous op's.
+    assert!(
+        gcode.contains("G0 Z12.5000"),
+        "expected expanded `G0 Z12.5` from {{safe_z}}; got:\n{gcode}"
+    );
+    // Verbatim line passes through unchanged.
+    assert!(
+        gcode.contains("G0 X0 Y0"),
+        "expected verbatim `G0 X0 Y0`; got:\n{gcode}"
+    );
+    // The not-simulated warning fires every Generate so the user
+    // never forgets the carve isn't modeled.
+    assert!(
+        resp.warnings
+            .iter()
+            .any(|w| w.kind == "gcode_include_not_simulated" && w.op_id == Some(2)),
+        "expected gcode_include_not_simulated warning; got {:?}",
+        resp.warnings,
+    );
+}
+
+/// rxm9: unknown `{tokens}` in an include block pass through as
+/// literal text AND surface a `gcode_include_unknown_variable`
+/// warning per distinct name. The user spots typos without the
+/// program shipping a half-substituted line.
+#[test]
+fn gcode_include_unknown_variable_warns_and_passes_through() {
+    let include = Op {
+        id: 1,
+        name: "Bad macro".into(),
+        enabled: true,
+        kind: OpKind::GcodeInclude {
+            path: String::new(),
+            content: "G0 X{xx} Y{nope}\n".into(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![include, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let gcode = &resp.gcode;
+    assert!(
+        gcode.contains("G0 X{xx} Y{nope}"),
+        "expected verbatim unknown-token line; got:\n{gcode}"
+    );
+    let unknown_warnings: Vec<&crate::pipeline::PipelineWarning> = resp
+        .warnings
+        .iter()
+        .filter(|w| w.kind == "gcode_include_unknown_variable")
+        .collect();
+    assert_eq!(
+        unknown_warnings.len(),
+        2,
+        "expected 2 unknown-variable warnings (one each for xx and nope); got {unknown_warnings:?}"
+    );
+}
+
+/// rxm9: empty `content` emits a `gcode_include_empty` warning so
+/// the user notices a forgotten file-pick instead of shipping a
+/// silently no-op slot.
+#[test]
+fn gcode_include_empty_content_warns() {
+    let include = Op {
+        id: 1,
+        name: "Forgot to pick a file".into(),
+        enabled: true,
+        kind: OpKind::GcodeInclude {
+            path: String::new(),
+            content: String::new(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![include, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    assert!(
+        resp.warnings
+            .iter()
+            .any(|w| w.kind == "gcode_include_empty"),
+        "expected gcode_include_empty warning; got {:?}",
+        resp.warnings,
+    );
+}
+
+/// rxm9: round-trip a `GcodeInclude` op through serde JSON.
+#[test]
+fn gcode_include_round_trips_through_serde() {
+    let kind = OpKind::GcodeInclude {
+        path: "/some/file.nc".into(),
+        content: "G0 X{x}\n".into(),
+    };
+    let json = serde_json::to_string(&kind).expect("serialize");
+    assert!(json.contains("\"gcode_include\""), "expected tag in {json}");
+    let back: OpKind = serde_json::from_str(&json).expect("deserialize");
+    let back_json = serde_json::to_string(&back).unwrap();
+    assert_eq!(
+        json, back_json,
+        "round-trip mismatch: {json} vs {back_json}"
+    );
+}
+
 /// rt1.34: Pause op round-trips through serde JSON (`snake_case` tag).
 #[test]
 fn pause_op_round_trips_through_serde() {

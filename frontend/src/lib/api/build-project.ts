@@ -79,6 +79,9 @@ interface FlatOp extends OpBase, ContourFields {
   feedMmMin?: number;
   // 8n4k: CycleMarkerOp
   label?: string;
+  // rxm9: GcodeIncludeOp
+  path?: string;
+  content?: string;
   // PocketOp (rt1.9)
   pocketZigzagAngleDeg?: number;
   // ThreadOp
@@ -389,6 +392,7 @@ type WireOpKind =
   | { type: 'homing'; retract_to_safe_z: boolean }
   | { type: 'probe'; axis: 'x' | 'y' | 'z'; distance_mm: number; feed_mm_min: number }
   | { type: 'cycle_marker'; label: string }
+  | { type: 'gcode_include'; path: string; content: string }
   | {
       type: 'relief_mill';
       source_id: number;
@@ -916,6 +920,12 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       return {
         type: 'cycle_marker',
         label: op.label ?? '',
+      } as WireOpKind;
+    case 'gcode_include':
+      return {
+        type: 'gcode_include',
+        path: op.path ?? '',
+        content: op.content ?? '',
       } as WireOpKind;
     case 'relief_mill':
       return {

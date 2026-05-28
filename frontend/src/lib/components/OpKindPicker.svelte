@@ -20,6 +20,7 @@
     homing: 'Homing',
     probe: 'Probe',
     cycle_marker: 'Marker',
+    gcode_include: 'G-code include',
     relief_mill: 'Relief (3D)',
   };
   export const KIND_ICON: Record<OpKind, string> = {
@@ -37,6 +38,7 @@
     homing: '⌂',
     probe: '⇣',
     cycle_marker: '◈',
+    gcode_include: '⎙',
     relief_mill: '⛰',
   };
   // Helix is omitted intentionally: it's an OperationKind in the
@@ -62,6 +64,7 @@
     'homing',
     'probe',
     'cycle_marker',
+    'gcode_include',
   ];
 
   export const PICKER_LABEL: Record<PickerKind, string> = {
@@ -106,6 +109,8 @@
       'Touch-probe move (G38.2) along the chosen axis. Used at program start to zero the WCS Z against the stock top, between ops to re-establish a reference, or as a sanity check.',
     cycle_marker:
       'Comment-only marker. Emits a wrapped label at this slot — pendants index by program line so the operator can jump here.',
+    gcode_include:
+      'Splices an external G-code file into the program at this slot. Supports {x} / {y} / {z} / {f} / {s} / {safe_z} variable substitution. The sim does not model the included block — inspect canned cycles by hand.',
     relief_mill:
       '3D relief surfacing from a grayscale image with a ball-nose cutter. Brightness becomes height; load an image, set the depth range and scallop. Rough the bulk first with a flat endmill.',
   };
@@ -156,6 +161,7 @@
     homing: ['mill', 'laser', 'drag', 'plasma'],
     probe: ['mill', 'laser', 'drag', 'plasma'],
     cycle_marker: ['mill', 'laser', 'drag', 'plasma'],
+    gcode_include: ['mill', 'laser', 'drag', 'plasma'],
   };
   const machineCapabilities = $derived<('mill' | 'laser' | 'drag' | 'plasma')[]>(
     project.machine.capabilities && project.machine.capabilities.length > 0

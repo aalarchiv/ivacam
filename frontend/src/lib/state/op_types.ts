@@ -42,6 +42,7 @@ export type OpKind =
   | 'homing'
   | 'probe'
   | 'cycle_marker'
+  | 'gcode_include'
   | 'relief_mill';
 
 /// 8n4k: axis selector for ProbeOp. Wire is the bare lowercase
@@ -316,6 +317,23 @@ export interface CycleMarkerOp extends OpBase {
   label: string;
 }
 
+/// rxm9: external G-code include block. Splices an externally-
+/// authored gcode file into the program stream at the op's slot,
+/// with `{x}` / `{y}` / `{z}` / `{f}` / `{s}` / `{safe_z}` token
+/// substitution against the post's live state. Program-only kind —
+/// no tool, no source, no Z schedule. The sim doesn't model the
+/// included block (v1); a `gcode_include_not_simulated` warning
+/// fires so the user knows.
+export interface GcodeIncludeOp extends OpBase {
+  kind: 'gcode_include';
+  /// Display-only path the file was loaded from. Empty string is
+  /// allowed (the user can edit `content` by hand).
+  path: string;
+  /// The G-code body to splice in, verbatim except for `{name}`
+  /// variable substitution at emit time.
+  content: string;
+}
+
 /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
 /// surface (a `ReliefSource` referenced by `sourceId`, e.g. a grayscale
 /// image) with a ball-nose cutter. The source's brightness maps to Z in
@@ -362,6 +380,7 @@ export type OpEntry =
   | HomingOp
   | ProbeOp
   | CycleMarkerOp
+  | GcodeIncludeOp
   | ReliefMillOp;
 
 /// Patch type for `project.updateOperation`. A patch covers the full

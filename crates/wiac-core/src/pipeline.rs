@@ -586,6 +586,80 @@ fn build_tool_index(tools: &[ToolEntry]) -> HashMap<u32, &ToolEntry> {
 ///     bias the end-of-op tool to the finish id, matching the
 ///     `run_per_op` invariant — back-to-back same-finish-tool ops
 ///     emit at most one extra change.
+// rxm9: Expand `{name}` tokens in an `OpKind::GcodeInclude` payload
+// against the post's live state. Returns the expanded body plus the
+// list of distinct unknown variable names encountered (so the caller
+// can fan them into per-variable warnings).
+//
+// Supported variables (case-insensitive — gcode is conventionally
+// case-insensitive too):
+//   * `{x}` / `{y}` / `{z}` — last commanded XYZ, formatted to 4
+//     decimal places; "0" if the post hasn't moved yet.
+//   * `{f}` — last feedrate (mm / min); "0" if not yet set.
+//   * `{s}` — last spindle RPM; "0" if not yet set.
+//   * `{safe_z}` — the op's `fast_move_z` (always present), 4
+//     decimal places.
+//
+// Unterminated `{` (no closing brace on the same line) is left as
+// literal text — the caller's program ships unchanged. Unknown
+// variable names pass through bracketed (`{xyz}`) AND get added to
+// the returned list so the caller surfaces them as warnings.
+fn expand_gcode_include_vars(
+    content: &str,
+    state: &crate::gcode::CapturedPostState,
+    safe_z: f64,
+) -> (String, Vec<String>) {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(content.len());
+    let mut unknown: Vec<String> = Vec::new();
+    let mut chars = content.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '{' {
+            out.push(c);
+            continue;
+        }
+        // Collect up to a closing `}` on the same line.
+        let mut name = String::new();
+        let mut closed = false;
+        while let Some(&p) = chars.peek() {
+            if p == '}' {
+                chars.next();
+                closed = true;
+                break;
+            }
+            if p == '\n' {
+                break;
+            }
+            name.push(p);
+            chars.next();
+        }
+        if !closed {
+            // Unterminated brace — emit verbatim and continue.
+            out.push('{');
+            out.push_str(&name);
+            continue;
+        }
+        let key = name.to_ascii_lowercase();
+        match key.as_str() {
+            "x" => write!(out, "{:.4}", state.last_x.unwrap_or(0.0)).expect("string write"),
+            "y" => write!(out, "{:.4}", state.last_y.unwrap_or(0.0)).expect("string write"),
+            "z" => write!(out, "{:.4}", state.last_z.unwrap_or(0.0)).expect("string write"),
+            "f" => write!(out, "{}", state.last_rate.unwrap_or(0)).expect("string write"),
+            "s" => write!(out, "{}", state.last_speed.unwrap_or(0)).expect("string write"),
+            "safe_z" => write!(out, "{safe_z:.4}").expect("string write"),
+            _ => {
+                out.push('{');
+                out.push_str(&name);
+                out.push('}');
+                if !unknown.iter().any(|u| u.eq_ignore_ascii_case(&name)) {
+                    unknown.push(name);
+                }
+            }
+        }
+    }
+    (out, unknown)
+}
+
 fn count_tool_changes(project: &Project) -> u32 {
     let mut n = 0u32;
     let mut prev_tool_id: Option<u32> = None;
@@ -745,6 +819,13 @@ where
             name: op.name.clone(),
         });
 
+        // rxm9: snapshot the live state BEFORE the per-op reset so
+        // the GcodeInclude variable-expansion path can read
+        // `{x}`/`{y}`/`{z}`/`{f}`/`{s}` against the previous op's
+        // exit position. The reset below clears these to None for
+        // delta-encoding determinism; the include block needs the
+        // pre-reset values.
+        let state_before_reset = post.capture_state();
         // Reset the post's delta-encoding state at every op boundary so
         // the captured body lines are independent of whatever state the
         // previous op (cached or fresh) left behind. Both fresh-emit
@@ -886,6 +967,72 @@ where
                 "gcode",
                 gcode_progress(emitted_ops, n_ops),
                 &format!("emitted op {} (cycle marker)", op.id),
+            );
+            sink(PipelineEvent::OpCompleted {
+                op_id: op.id,
+                cached: false,
+            });
+            continue;
+        }
+
+        // rxm9: GcodeInclude — substitute `{x}`/`{y}`/`{z}`/`{f}`/
+        // `{s}`/`{safe_z}` against the post's live state, then emit
+        // each line via `post.raw()`. Unknown variables pass through
+        // as literal text and surface a warning. The sim doesn't
+        // model the included block; a `gcode_include_not_simulated`
+        // warning makes that explicit so the user can sanity-check
+        // the canned cycle by hand.
+        if let OpKind::GcodeInclude { path, content } = &op.kind {
+            let header = if path.is_empty() {
+                format!("; OP {} (gcode include)", op.id)
+            } else {
+                format!("; OP {} (gcode include: {path})", op.id)
+            };
+            post.raw(&header);
+            let safe_z = op.params.fast_move_z;
+            let (expanded, unknown) =
+                expand_gcode_include_vars(content, &state_before_reset, safe_z);
+            for name in &unknown {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "gcode_include_unknown_variable".into(),
+                    message: format!(
+                        "Op '{}': unknown variable `{{{name}}}` in included G-code passed through verbatim — fix or remove to silence.",
+                        op.name,
+                    ),
+                });
+            }
+            if expanded.trim().is_empty() {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "gcode_include_empty".into(),
+                    message: format!(
+                        "Op '{}': included G-code is empty — no lines emitted at this slot.",
+                        op.name,
+                    ),
+                });
+            }
+            for line in expanded.lines() {
+                post.raw(line);
+            }
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "gcode_include_not_simulated".into(),
+                message: format!(
+                    "Op '{}': the sim doesn't model the included G-code block — the carved stock state across this slot may not match the controller's actual behavior. Inspect the included file by hand.",
+                    op.name,
+                ),
+            });
+            // Reset post state — we have no idea where the included
+            // block left the spindle. The next op re-emits all its
+            // targets explicitly so subsequent moves are still
+            // correct.
+            post.reset_state();
+            emitted_ops += 1;
+            progress(
+                "gcode",
+                gcode_progress(emitted_ops, n_ops),
+                &format!("emitted op {} (gcode include)", op.id),
             );
             sink(PipelineEvent::OpCompleted {
                 op_id: op.id,

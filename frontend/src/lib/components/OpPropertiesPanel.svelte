@@ -293,6 +293,66 @@
     <p class="hint hint-pause">
       The pipeline emits <code>G38.2 {(op.axis ?? 'z').toUpperCase()}{op.distanceMm ?? -10} F{op.feedMmMin ?? 100}</code>. The controller halts at the trigger.
     </p>
+  {:else if op.kind === 'gcode_include'}
+    <!-- rxm9: file-picker + path display + content textarea.
+         Variable cheat-sheet hint shows the supported tokens. -->
+    <label class="row">
+      <span>Name</span>
+      <input
+        type="text"
+        value={op.name}
+        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
+      />
+    </label>
+    <label
+      class="row"
+      title="Pick a .nc / .ngc / .gcode file. Its contents are loaded into the op (project stays self-contained); the path is kept as a label so you can see what was picked."
+    >
+      <span>File</span>
+      <input
+        type="file"
+        accept=".nc,.ngc,.gcode,.tap,.cnc,text/plain"
+        onchange={async (e) => {
+          const f = (e.currentTarget as HTMLInputElement).files?.[0];
+          if (!f) return;
+          const text = await f.text();
+          patch('path', f.name);
+          patch('content', text);
+          // Reset the input so re-picking the same filename re-fires onchange.
+          (e.currentTarget as HTMLInputElement).value = '';
+        }}
+      />
+    </label>
+    {#if op.path}
+      <p class="hint">
+        Loaded from <code>{op.path}</code> · {op.content?.length ?? 0} characters,
+        {op.content?.split('\n').length ?? 0} lines.
+      </p>
+    {/if}
+    <label
+      class="row"
+      title="The G-code that ships in the program. Edit by hand if you need to tweak after loading. Variable tokens are substituted at Generate time."
+    >
+      <span>Content</span>
+      <textarea
+        rows="10"
+        spellcheck="false"
+        value={op.content ?? ''}
+        placeholder="G-code text — edit by hand or pick a file above."
+        oninput={(e) => patch('content', (e.currentTarget as HTMLTextAreaElement).value)}
+        style="font-family: ui-monospace, monospace; white-space: pre;"
+      ></textarea>
+    </label>
+    <p class="hint hint-pause">
+      The pipeline emits the content verbatim at this slot after substituting these tokens:
+      <code>{'{x}'}</code> <code>{'{y}'}</code> <code>{'{z}'}</code>
+      (last commanded XYZ),
+      <code>{'{f}'}</code> (last feed),
+      <code>{'{s}'}</code> (last spindle RPM),
+      <code>{'{safe_z}'}</code> (this op's fast-Z).
+      Unknown <code>{'{tokens}'}</code> pass through and surface a warning.
+      The sim doesn't model the included block — inspect canned cycles by hand.
+    </p>
   {:else if op.kind === 'cycle_marker'}
     <!-- 8n4k: comment-only marker. Pendants and gcode viewers that
          index by program line can jump to the next marker. -->

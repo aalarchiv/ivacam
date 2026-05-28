@@ -169,6 +169,7 @@ impl OpKind {
                 | OpKind::Homing { .. }
                 | OpKind::Probe { .. }
                 | OpKind::CycleMarker { .. }
+                | OpKind::GcodeInclude { .. }
         )
     }
 }
@@ -481,6 +482,46 @@ pub enum OpKind {
         /// out among the cut-block comments above and below.
         #[serde(default)]
         label: String,
+    },
+    /// rxm9: external G-code include block. Splices a user-provided
+    /// gcode file's contents into the program stream at this op's
+    /// slot — manufacturer pierce / probe canned cycles, hand-tuned
+    /// safety preambles, return-to-position macros, post-processed
+    /// subroutines. Program-only kind (like the other building
+    /// blocks): no tool, no source, no cut schedule.
+    ///
+    /// Variable expansion: `{name}` tokens in `content` are
+    /// substituted at emit time against the post's live state.
+    /// Supported variables today:
+    ///
+    /// * `{x}`, `{y}`, `{z}` — machine position right before the
+    ///   block (last X / Y / Z the post commanded; "0" if none).
+    /// * `{f}` — last commanded feedrate, mm/min.
+    /// * `{s}` — last commanded spindle RPM.
+    /// * `{safe_z}` — the op's `params.fast_move_z`.
+    ///
+    /// Unknown `{tokens}` pass through as literal `{name}` text
+    /// AND emit a `gcode_include_unknown_variable` warning so a
+    /// typo doesn't silently leave a half-substituted line in the
+    /// shipped program.
+    ///
+    /// Sim coverage is intentionally conservative for v1: the
+    /// heightmap-side simulator emits a `gcode_include_not_simulated`
+    /// warning at this op's slot — the carved stock state across
+    /// the included block isn't modeled. Full interpret-and-apply
+    /// is a follow-up.
+    GcodeInclude {
+        /// Display-only path the user picked the file from. The
+        /// file's CONTENTS live in `content` so the project round-
+        /// trips even when the file moves. Empty allowed.
+        #[serde(default)]
+        path: String,
+        /// The G-code text to splice in, verbatim except for
+        /// variable substitution. Lines are emitted via `post.raw()`
+        /// so the delta encoder doesn't reformat them. Trailing
+        /// newline is optional.
+        #[serde(default)]
+        content: String,
     },
     /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
     /// surface (a [`crate::project::ReliefSource`] referenced by

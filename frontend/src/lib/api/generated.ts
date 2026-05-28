@@ -930,6 +930,19 @@ export interface components {
             type: "cycle_marker";
         } | {
             /**
+             * @description The G-code text to splice in, verbatim except for variable substitution. Lines are emitted via `post.raw()` so the delta encoder doesn't reformat them. Trailing newline is optional.
+             * @default
+             */
+            content: string;
+            /**
+             * @description Display-only path the user picked the file from. The file's CONTENTS live in `content` so the project round- trips even when the file moves. Empty allowed.
+             * @default
+             */
+            path: string;
+            /** @enum {string} */
+            type: "gcode_include";
+        } | {
+            /**
              * Format: double
              * @description Sampling pitch along each scanline (mm). Finer = smoother path.
              * @default 0.5

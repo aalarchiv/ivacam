@@ -682,12 +682,14 @@ pub(super) fn build_op_offsets(
             OpKind::Pause { .. }
             | OpKind::Homing { .. }
             | OpKind::Probe { .. }
-            | OpKind::CycleMarker { .. } => {
-                // rt1.34 / 8n4k: program-only kinds are emitted inline
-                // by the pipeline op loop (M5 + M0, G28, G38.2, raw
-                // comment) before this offset-cascade path ever runs.
-                // Reach here means a programming error upstream; skip
-                // silently to keep the program intact.
+            | OpKind::CycleMarker { .. }
+            | OpKind::GcodeInclude { .. } => {
+                // rt1.34 / 8n4k / rxm9: program-only kinds are emitted
+                // inline by the pipeline op loop (M5 + M0, G28, G38.2,
+                // raw comment, included G-code) before this offset-
+                // cascade path ever runs. Reach here means a
+                // programming error upstream; skip silently to keep
+                // the program intact.
             }
         }
     }

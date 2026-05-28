@@ -1469,6 +1469,25 @@ class ProjectState {
       this.selectedOpId = op.id;
       return op;
     }
+    // rxm9: external G-code include. Same program-only skeleton.
+    // path + content default to empty — the user picks a file via
+    // OpPropertiesPanel which reads the bytes and sets both fields.
+    if (kind === 'gcode_include') {
+      const op: OpEntry = {
+        id: nextId,
+        name: prettyOpKind(kind),
+        enabled: true,
+        kind: 'gcode_include',
+        toolId: 0,
+        sourceCombine: 'auto',
+        sourceLayers: null,
+        path: '',
+        content: '',
+      } as OpEntry;
+      this.history.exec(addOperationCommand(op), this.target());
+      this.selectedOpId = op.id;
+      return op;
+    }
     // f60x: relief surfacing follows a target Z-surface, not source
     // geometry — skip the offset/contour defaults. Prefer a ball-nose
     // tool; bind to the first loaded relief source (0 = none yet).

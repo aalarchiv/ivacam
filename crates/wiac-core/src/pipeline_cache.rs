@@ -754,6 +754,12 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             h.write_u8(16);
             label.hash(h);
         }
+        // rxm9: next free discriminant after CycleMarker(16).
+        OpKind::GcodeInclude { path, content } => {
+            h.write_u8(17);
+            path.hash(h);
+            content.hash(h);
+        }
     }
 }
 

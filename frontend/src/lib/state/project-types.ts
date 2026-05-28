@@ -43,6 +43,8 @@ export function prettyOpKind(kind: OpKind): string {
       return 'Probe';
     case 'cycle_marker':
       return 'Marker';
+    case 'gcode_include':
+      return 'G-code include';
     case 'relief_mill':
       return 'Relief (3D)';
   }

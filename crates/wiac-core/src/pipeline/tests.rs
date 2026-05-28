@@ -1243,6 +1243,72 @@ fn chamfer_deep_chamfer_uses_multi_pass_stepdown() {
     }
 }
 
+/// u1yq: when the user sets per-pass step LARGER (in magnitude) than the
+/// chamfer cone-tip Z, the schedule must collapse to a single pass at the
+/// chamfer Z — NEVER drive the cutter past it. Reported by a user who
+/// picked a 60° vbit with width 1mm (depth ≈ -1.6454) and step = -3.0;
+/// the cutter went deeper than the cone math.
+#[test]
+fn chamfer_step_larger_than_depth_clamps_to_chamfer_z() {
+    let vbit = vbit();
+    let mut params = OpParams::mill_default();
+    // The bug-trigger: |step| > |chamfer_depth|.
+    params.step = Some(-3.0);
+    let project = Project {
+        segments: closed_square_offset(50.0, 0.0, 0.0),
+        machine: MachineConfig::default(),
+        tools: vec![vbit],
+        operations: vec![Op {
+            id: 1,
+            name: "Chamfer".into(),
+            enabled: true,
+            kind: OpKind::Chamfer {
+                width_mm: 1.0,
+                finish_pass: false,
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params,
+        }],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap();
+    // Final Z must land at the cone math depth, not the user-set step.
+    assert!(
+        resp.gcode.contains("Z-1.6454") || resp.gcode.contains("Z-1.645"),
+        "expected final chamfer depth Z-1.6454 in gcode:\n{}",
+        resp.gcode
+    );
+    // No Z value should exceed (be deeper than) the chamfer depth.
+    // Walk every Z<value> token; -1.65 and below would be the bug.
+    for line in resp.gcode.lines() {
+        if let Some(idx) = line.find("Z-") {
+            let tail = &line[idx + 2..];
+            let end = tail
+                .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+                .unwrap_or(tail.len());
+            let z: f64 = tail[..end].parse().unwrap_or(0.0);
+            assert!(
+                z <= 1.6454 + 1e-3,
+                "Z-{z} in `{line}` exceeds chamfer cone depth 1.6454 — overshoot bug:\n{}",
+                resp.gcode
+            );
+        }
+    }
+}
+
 /// uo1t: a chamfer width that exceeds the V-bit's cone span gets
 /// clamped to (diameter - `tip_diameter`) / 2 so the shank never
 /// engages stock. A 6.35 mm V-bit with 0.1 mm tip has cap 3.125

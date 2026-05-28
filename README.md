@@ -13,9 +13,15 @@ fully client-side WebAssembly mode.
 
 Alpha. The Rust core (DXF + SVG import, CAM math, gcode emit), HTTP +
 Tauri + WASM transports, and the Svelte frontend (2D entity canvas + 3D
-toolpath preview, schema-driven setup tree, tab placement, theme + i18n
-toggles, project save/load) are all in place. See the issue tracker
+toolpath preview, schema-driven setup tree, tab placement, theme
+toggle, project save/load) are all in place. See the issue tracker
 (`bd ready`) for current work.
+
+## I just want to use it
+
+If you're here to _run_ wiaConstructor and turn a drawing into G-code,
+read [`QUICKSTART.md`](./QUICKSTART.md) — the rest of this README
+covers what the project is and how to build it from source.
 
 ## Why a rewrite
 

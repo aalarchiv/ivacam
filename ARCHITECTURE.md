@@ -239,6 +239,30 @@ in the driver's own `#[cfg(test)] mod tests` block; shared fixtures
 live in `pipeline/test_helpers.rs` with `pub(in crate::pipeline)`
 visibility. **Don't** put tests for `gcode/grbl.rs` in `pipeline.rs`.
 
+### 7. Reactive collections — build fresh, assign
+
+Plain `Map` and `Set` are fine for `$state<Set>(…)` / `$state<Map>(…)`
+fields **as long as you replace, never mutate in place**:
+
+```ts
+// ✓ reactive — assigning the $state field triggers $effects
+const next = new Set(this.selected);
+next.add(id);
+this.selected = next;
+
+// ✗ NOT reactive with plain Set — silently no-op
+this.selected.add(id);
+```
+
+The selection slice, layer-visibility, fixture map, and every other
+reactive-collection field in the frontend follows this convention. If
+you need in-place mutation (e.g. a hot path), reach for
+`SvelteSet`/`SvelteMap` from `svelte/reactivity` instead — but the
+build-fresh pattern is the default and the
+`svelte/prefer-svelte-reactivity` ESLint rule is intentionally off for
+that reason (tvjy review found all 39 baseline sites were already
+correct under this convention).
+
 ## Anti-patterns (don't do these)
 
 Each of these caused a real bug. Don't reintroduce them.

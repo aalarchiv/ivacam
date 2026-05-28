@@ -48,13 +48,15 @@ export default [
       // structural casts; turn the warning into an opt-in we can revisit
       // rather than a blanket error.
       '@typescript-eslint/no-explicit-any': 'warn',
-      // Svelte 5 reactivity opinion: plain Map/Set instances aren't
-      // reactive — components that need reactive collections should use
-      // SvelteMap/SvelteSet. Most current uses are intentional non-
-      // reactive caches; surfacing as a warning so they show up without
-      // blocking the gate. Migrating reactive call sites is tracked as
-      // a separate follow-up.
-      'svelte/prefer-svelte-reactivity': 'warn',
+      // svelte/prefer-svelte-reactivity disabled: the rule fires on every
+      // `new Map/Set` in a Svelte file, but the project's universal
+      // convention (tvjy review, 2026-05-28) is "build fresh, assign to
+      // $state" — never mutate the collection in place. That pattern is
+      // reactive (Svelte 5 re-runs $effect on a reassigned $state field),
+      // so SvelteMap/SvelteSet would only add proxy overhead. The 39
+      // baseline sites were all builders, pure helpers, or replace-not-
+      // mutate state writes. See ARCHITECTURE.md "State convention".
+      'svelte/prefer-svelte-reactivity': 'off',
       // Pointer-capture release/acquire genuinely needs a silent
       // try/catch: the call throws if the pointer is no longer captured,
       // which is the success state. Don't force noise on every site.

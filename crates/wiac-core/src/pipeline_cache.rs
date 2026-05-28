@@ -731,6 +731,29 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             });
             hash_f64(*along_step_mm, h);
         }
+        // 8n4k: next free discriminant after ReliefMill(13).
+        OpKind::Homing { retract_to_safe_z } => {
+            h.write_u8(14);
+            retract_to_safe_z.hash(h);
+        }
+        OpKind::Probe {
+            axis,
+            distance_mm,
+            feed_mm_min,
+        } => {
+            h.write_u8(15);
+            h.write_u8(match axis {
+                crate::project::ProbeAxis::X => 0,
+                crate::project::ProbeAxis::Y => 1,
+                crate::project::ProbeAxis::Z => 2,
+            });
+            hash_f64(*distance_mm, h);
+            h.write_u32(*feed_mm_min);
+        }
+        OpKind::CycleMarker { label } => {
+            h.write_u8(16);
+            label.hash(h);
+        }
     }
 }
 

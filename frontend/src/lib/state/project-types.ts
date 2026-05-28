@@ -37,6 +37,12 @@ export function prettyOpKind(kind: OpKind): string {
       return 'V-Carve';
     case 'pause':
       return 'Pause';
+    case 'homing':
+      return 'Homing';
+    case 'probe':
+      return 'Probe';
+    case 'cycle_marker':
+      return 'Marker';
     case 'relief_mill':
       return 'Relief (3D)';
   }

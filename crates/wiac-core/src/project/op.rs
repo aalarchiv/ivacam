@@ -145,6 +145,32 @@ impl Op {
             _ => None,
         }
     }
+
+    /// 8n4k: program-only ops carry no tool, no source, and no Z
+    /// schedule — they emit raw program scaffolding (toolchange
+    /// pauses, machine homing, touch probes, navigation markers)
+    /// and are skipped by every machinery that reads tool / source
+    /// / cut state. `is_program_only()` is the single predicate
+    /// every such guard site reads; adding a future program-only
+    /// kind only needs to extend this match.
+    #[must_use]
+    pub fn is_program_only(&self) -> bool {
+        self.kind.is_program_only()
+    }
+}
+
+impl OpKind {
+    /// 8n4k: see [`Op::is_program_only`].
+    #[must_use]
+    pub fn is_program_only(&self) -> bool {
+        matches!(
+            self,
+            OpKind::Pause { .. }
+                | OpKind::Homing { .. }
+                | OpKind::Probe { .. }
+                | OpKind::CycleMarker { .. }
+        )
+    }
 }
 
 impl Default for Op {
@@ -400,6 +426,62 @@ pub enum OpKind {
         #[serde(default)]
         message: String,
     },
+    /// 8n4k: machine-home building block. Emits `G28` (move to the
+    /// predefined machine-home position), optionally followed by a
+    /// rapid Z retract to the program's safe Z so the NEXT op's
+    /// rapid traversal starts from a known clearance. Like `Pause`,
+    /// it carries no tool, no source, and no Z schedule — it's a
+    /// program-only building block so a project can scaffold shop
+    /// workflow (start of program, between two-sided ops, end of
+    /// program) without hand-written G-code.
+    Homing {
+        /// When `true`, follow the `G28` with a rapid `G0 Z<safe>`
+        /// using the op's `params.fast_move_z`. Most controllers
+        /// leave the spindle wherever machine zero puts it after
+        /// `G28` — rarely what the next op expects, so the default
+        /// is `true`.
+        #[serde(default = "default_true")]
+        retract_to_safe_z: bool,
+    },
+    /// 8n4k: touch-probe building block. Emits `G38.2 <axis><distance>
+    /// F<feed>` — a probing-feed move along the chosen axis that
+    /// stops as soon as the probe trips. Used at program start
+    /// (zero the WCS Z to the stock top), between ops (verify a
+    /// tool-length reference after a manual tool change), or as a
+    /// repeatability sanity check. Probe tooling / electrical
+    /// hookup is out of scope here; the op just emits the canned
+    /// motion. No project tool / source needed — `tool_id` is
+    /// ignored.
+    Probe {
+        /// Axis to probe along.
+        #[serde(default = "default_probe_axis")]
+        axis: ProbeAxis,
+        /// Maximum search distance in mm. Sign convention follows
+        /// the controller: NEGATIVE Z to probe DOWN into stock, the
+        /// usual case; positive X / Y for an edge-finder cycle from
+        /// outside the workpiece. The controller halts at the
+        /// trigger; the magnitude here is the search limit.
+        distance_mm: f64,
+        /// Probe feedrate in mm/min. Typical 50–200 mm/min for a
+        /// touch-trigger probe (slow enough to trip repeatably; fast
+        /// enough that the run doesn't take forever).
+        feed_mm_min: u32,
+    },
+    /// 8n4k: program navigation marker. Emits ONLY an operator-
+    /// readable comment line at its slot in the op stream — the
+    /// cutter doesn't move and no controller state changes.
+    /// Pendants and gcode-viewer UIs that index by program line
+    /// use comment markers as jump targets so the operator can
+    /// pause mid-program, navigate to the next marker, and continue
+    /// from there. Also useful as a long-form note ("Flip stock
+    /// NOW for second-op") preserved across gcode regenerations.
+    CycleMarker {
+        /// Label text. Empty string is allowed but pointless.
+        /// The post wraps the label with `--- … ---` so it stands
+        /// out among the cut-block comments above and below.
+        #[serde(default)]
+        label: String,
+    },
     /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
     /// surface (a [`crate::project::ReliefSource`] referenced by
     /// `source_id`, e.g. a grayscale-image relief) with a ball-nose cutter:
@@ -462,6 +544,40 @@ fn default_thread_internal() -> bool {
 
 fn default_thread_radial_passes() -> u32 {
     1
+}
+
+/// 8n4k: serde default for `OpKind::Homing::retract_to_safe_z`.
+fn default_true() -> bool {
+    true
+}
+
+/// 8n4k: serde default for `OpKind::Probe::axis`. Z is the overwhelmingly
+/// common case (zero the WCS Z against the stock top).
+fn default_probe_axis() -> ProbeAxis {
+    ProbeAxis::Z
+}
+
+/// 8n4k: axis selector for `OpKind::Probe`. Serializes as the bare
+/// lowercase letter (`"x"` / `"y"` / `"z"`) for a wire-friendly
+/// payload that drops straight into the G38.2 word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ProbeAxis {
+    X,
+    Y,
+    Z,
+}
+
+impl ProbeAxis {
+    /// Uppercase axis letter for the gcode word (`X` / `Y` / `Z`).
+    #[must_use]
+    pub fn letter(self) -> char {
+        match self {
+            Self::X => 'X',
+            Self::Y => 'Y',
+            Self::Z => 'Z',
+        }
+    }
 }
 
 /// Drill-cycle picker for [`OpKind::Drill`]. Mirrors the canned

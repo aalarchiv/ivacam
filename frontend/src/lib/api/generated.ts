@@ -896,6 +896,40 @@ export interface components {
             type: "pause";
         } | {
             /**
+             * @description When `true`, follow the `G28` with a rapid `G0 Z<safe>` using the op's `params.fast_move_z`. Most controllers leave the spindle wherever machine zero puts it after `G28` — rarely what the next op expects, so the default is `true`.
+             * @default true
+             */
+            retract_to_safe_z: boolean;
+            /** @enum {string} */
+            type: "homing";
+        } | {
+            /**
+             * @description Axis to probe along.
+             * @default z
+             */
+            axis: components["schemas"]["ProbeAxis"];
+            /**
+             * Format: double
+             * @description Maximum search distance in mm. Sign convention follows the controller: NEGATIVE Z to probe DOWN into stock, the usual case; positive X / Y for an edge-finder cycle from outside the workpiece. The controller halts at the trigger; the magnitude here is the search limit.
+             */
+            distance_mm: number;
+            /**
+             * Format: uint32
+             * @description Probe feedrate in mm/min. Typical 50–200 mm/min for a touch-trigger probe (slow enough to trip repeatably; fast enough that the run doesn't take forever).
+             */
+            feed_mm_min: number;
+            /** @enum {string} */
+            type: "probe";
+        } | {
+            /**
+             * @description Label text. Empty string is allowed but pointless. The post wraps the label with `--- … ---` so it stands out among the cut-block comments above and below.
+             * @default
+             */
+            label: string;
+            /** @enum {string} */
+            type: "cycle_marker";
+        } | {
+            /**
              * Format: double
              * @description Sampling pitch along each scanline (mm). Finer = smoother path.
              * @default 0.5
@@ -1307,6 +1341,11 @@ export interface components {
             /** @description `TOOL_CHANGE` template. Replaces the `T<n> M6` toolchange line. Substitution context exposes the FUTURE tool's metadata. */
             tool_change?: string | null;
         };
+        /**
+         * @description 8n4k: axis selector for `OpKind::Probe`. Serializes as the bare lowercase letter (`"x"` / `"y"` / `"z"`) for a wire-friendly payload that drops straight into the G38.2 word.
+         * @enum {string}
+         */
+        ProbeAxis: "x" | "y" | "z";
         /** @description Parameters specific to [`super::op::OpKind::Profile`]. (kbx5 step 1.) */
         ProfileParams: {
             /**

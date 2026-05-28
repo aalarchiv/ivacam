@@ -679,11 +679,15 @@ pub(super) fn build_op_offsets(
                 // f60x: relief surfacing runs through `run_relief_op` (its
                 // own drop-cutter driver), never the offset cascade. Skip.
             }
-            OpKind::Pause { .. } => {
-                // rt1.34: Pause is emitted inline by the pipeline op
-                // loop (M5 + M0 + M3) before this offset-cascade path
-                // ever runs. Reach here means a programming error
-                // upstream; skip silently to keep the program intact.
+            OpKind::Pause { .. }
+            | OpKind::Homing { .. }
+            | OpKind::Probe { .. }
+            | OpKind::CycleMarker { .. } => {
+                // rt1.34 / 8n4k: program-only kinds are emitted inline
+                // by the pipeline op loop (M5 + M0, G28, G38.2, raw
+                // comment) before this offset-cascade path ever runs.
+                // Reach here means a programming error upstream; skip
+                // silently to keep the program intact.
             }
         }
     }

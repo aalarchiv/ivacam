@@ -17,6 +17,9 @@
     dovetail: 'Dovetail',
     vcarve: 'V-Carve',
     pause: 'Pause',
+    homing: 'Homing',
+    probe: 'Probe',
+    cycle_marker: 'Marker',
     relief_mill: 'Relief (3D)',
   };
   export const KIND_ICON: Record<OpKind, string> = {
@@ -31,6 +34,9 @@
     dovetail: '⋀',
     vcarve: '⌃',
     pause: '⏸',
+    homing: '⌂',
+    probe: '⇣',
+    cycle_marker: '◈',
     relief_mill: '⛰',
   };
   // Helix is omitted intentionally: it's an OperationKind in the
@@ -53,6 +59,9 @@
     'vcarve',
     'relief_mill',
     'pause',
+    'homing',
+    'probe',
+    'cycle_marker',
   ];
 
   export const PICKER_LABEL: Record<PickerKind, string> = {
@@ -91,6 +100,12 @@
       'Single-point thread milling inside a circular bore (internal) or around a stud (external). Requires a closed-circle selection.',
     pause:
       'Optional-stop: emits M0 with an operator message at this slot. The machine halts so the operator can change tools manually, inspect the cut, or flip the stock. Press Cycle Start to resume.',
+    homing:
+      'Sends the machine to its predefined home position with G28, optionally followed by a rapid retract to safe Z. No tool, no cut — program scaffolding.',
+    probe:
+      'Touch-probe move (G38.2) along the chosen axis. Used at program start to zero the WCS Z against the stock top, between ops to re-establish a reference, or as a sanity check.',
+    cycle_marker:
+      'Comment-only marker. Emits a wrapped label at this slot — pendants index by program line so the operator can jump here.',
     relief_mill:
       '3D relief surfacing from a grayscale image with a ball-nose cutter. Brightness becomes height; load an image, set the depth range and scallop. Rough the bulk first with a flat endmill.',
   };
@@ -135,6 +150,12 @@
     relief_mill: ['mill'],
     // Pause carries no tool / motion — every machine can pause.
     pause: ['mill', 'laser', 'drag', 'plasma'],
+    // 8n4k: program-only building blocks (Homing / Probe / CycleMarker)
+    // emit raw G-code and don't depend on a cutter mode. Show them on
+    // every machine.
+    homing: ['mill', 'laser', 'drag', 'plasma'],
+    probe: ['mill', 'laser', 'drag', 'plasma'],
+    cycle_marker: ['mill', 'laser', 'drag', 'plasma'],
   };
   const machineCapabilities = $derived<('mill' | 'laser' | 'drag' | 'plasma')[]>(
     project.machine.capabilities && project.machine.capabilities.length > 0

@@ -2004,6 +2004,371 @@ fn zigzag_strategy_angled_round_trip() {
     }
 }
 
+/// 8n4k: Homing op emits a comment + `G28` and (by default) a rapid
+/// retract to the op's safe Z. The cutter doesn't move along XY and
+/// the program proceeds with the next op afterwards. The op carries
+/// no tool / source — `tool_id = 0` is fine.
+#[test]
+fn pipeline_emits_g28_for_homing_op() {
+    let homing = Op {
+        id: 1,
+        name: "Home".into(),
+        enabled: true,
+        kind: OpKind::Homing {
+            retract_to_safe_z: true,
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: 0.0,
+            start_depth: 0.0,
+            step: None,
+            fast_move_z: 7.5,
+            ..OpParams::default()
+        },
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![homing, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let gcode = &resp.gcode;
+    assert!(gcode.contains("\nG28\n"), "expected G28 line in:\n{gcode}");
+    // Safe-Z retract should land at op.params.fast_move_z = 7.5.
+    assert!(
+        gcode.contains("G0 Z7.5") || gcode.contains("G0Z7.5"),
+        "expected post-G28 retract to Z=7.5 in:\n{gcode}"
+    );
+    // Comment marker is present.
+    assert!(
+        gcode.contains("(homing)") || gcode.contains("; OP 1 (homing)"),
+        "expected homing marker comment in:\n{gcode}"
+    );
+}
+
+/// 8n4k: Homing with `retract_to_safe_z = false` emits ONLY `G28` —
+/// no follow-up G0 Z line.
+#[test]
+fn pipeline_homing_without_retract_skips_safe_z_move() {
+    let homing = Op {
+        id: 1,
+        name: "Home".into(),
+        enabled: true,
+        kind: OpKind::Homing {
+            retract_to_safe_z: false,
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![homing, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let mut project = project;
+    project.machine.supports_toolchange = true;
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let gcode = &resp.gcode;
+    // Scope: just the homing op's own lines, cut off at the next op's
+    // boundary toolchange envelope (`(toolchange: …)`) or `; OP 2`.
+    // The boundary envelope emits its own safe-Z lift; not ours.
+    let after_homing = gcode
+        .split_once("; OP 1 (homing)")
+        .expect("homing comment")
+        .1;
+    let block_end = after_homing
+        .find("(toolchange:")
+        .or_else(|| after_homing.find("; OP 2"))
+        .unwrap_or(after_homing.len());
+    let homing_block = &after_homing[..block_end];
+    assert!(homing_block.contains("G28"), "G28 missing: {homing_block}");
+    // Without retract_to_safe_z the only motion line should be G28.
+    for line in homing_block.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with(';') || t == "G28" {
+            continue;
+        }
+        panic!("unexpected line in homing-without-retract block: {line:?}");
+    }
+}
+
+/// 8n4k: Probe op emits `G38.2 <axis><distance> F<feed>`.
+#[test]
+fn pipeline_emits_g38_2_for_probe_op() {
+    let probe = Op {
+        id: 1,
+        name: "Probe Z".into(),
+        enabled: true,
+        kind: OpKind::Probe {
+            axis: crate::project::ProbeAxis::Z,
+            distance_mm: -15.0,
+            feed_mm_min: 100,
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![probe, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let gcode = &resp.gcode;
+    assert!(
+        gcode.contains("G38.2 Z-15.0000 F100"),
+        "expected G38.2 Z-15 F100 line in:\n{gcode}"
+    );
+    assert!(
+        gcode.contains("(probe)"),
+        "expected probe marker comment in:\n{gcode}"
+    );
+}
+
+/// 8n4k: `CycleMarker` emits ONLY a wrapped comment line. No G-code
+/// motion or modal change.
+#[test]
+fn pipeline_emits_comment_only_for_cycle_marker_op() {
+    let marker = Op {
+        id: 1,
+        name: "Step 1 complete".into(),
+        enabled: true,
+        kind: OpKind::CycleMarker {
+            label: "FINISHED ROUGHING — INSPECT NOW".into(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![marker, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let mut project = project;
+    project.machine.supports_toolchange = true;
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let gcode = &resp.gcode;
+    assert!(
+        gcode.contains("; --- FINISHED ROUGHING — INSPECT NOW ---"),
+        "expected wrapped marker line in:\n{gcode}"
+    );
+    // The marker op's own lines end at the next op's boundary
+    // toolchange envelope or the next op's `; OP 2` marker. Inside
+    // that scope nothing but comments may appear.
+    let after_marker = gcode
+        .split_once("; OP 1 (cycle marker)")
+        .expect("marker comment")
+        .1;
+    let block_end = after_marker
+        .find("(toolchange:")
+        .or_else(|| after_marker.find("; OP 2"))
+        .unwrap_or(after_marker.len());
+    let marker_block = &after_marker[..block_end];
+    for line in marker_block.lines() {
+        let t = line.trim_start();
+        assert!(
+            t.starts_with(';') || t.is_empty(),
+            "unexpected non-comment in cycle-marker block: {line:?}"
+        );
+    }
+}
+
+/// 8n4k: round-trip Homing / Probe / `CycleMarker` through serde JSON
+/// at the `snake_case` `type` discriminator.
+#[test]
+fn building_block_ops_round_trip_through_serde() {
+    let cases: Vec<(&str, OpKind)> = vec![
+        (
+            "\"homing\"",
+            OpKind::Homing {
+                retract_to_safe_z: true,
+            },
+        ),
+        (
+            "\"probe\"",
+            OpKind::Probe {
+                axis: crate::project::ProbeAxis::Z,
+                distance_mm: -10.0,
+                feed_mm_min: 80,
+            },
+        ),
+        (
+            "\"cycle_marker\"",
+            OpKind::CycleMarker {
+                label: "Halfway point".into(),
+            },
+        ),
+    ];
+    for (tag, kind) in cases {
+        let json = serde_json::to_string(&kind).expect("serialize");
+        assert!(json.contains(tag), "expected discriminator {tag} in {json}");
+        let back: OpKind = serde_json::from_str(&json).expect("deserialize");
+        // Round-trip equality check via re-serialize so we don't have
+        // to derive PartialEq on OpKind (it's not).
+        let back_json = serde_json::to_string(&back).unwrap();
+        assert_eq!(json, back_json, "round-trip mismatch for {tag}");
+    }
+}
+
 /// rt1.34: Pause op round-trips through serde JSON (`snake_case` tag).
 #[test]
 fn pause_op_round_trips_through_serde() {

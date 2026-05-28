@@ -672,7 +672,11 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
     if let Some(op) = project
         .operations
         .iter()
-        .find(|o| o.enabled && !matches!(o.kind, OpKind::Pause { .. }))
+        // 8n4k: skip every program-only op so the header's S<rpm> /
+        // F<feed> reflect the first ACTUAL cut, not whatever the
+        // resolver would invent for a Homing / Probe / CycleMarker
+        // op that doesn't carry a tool.
+        .find(|o| o.enabled && !o.is_program_only())
     {
         if let Some(tool) = project.tools.iter().find(|t| t.id == op.tool_id) {
             let main_pass = if matches!(op.kind, OpKind::Drill { .. }) {

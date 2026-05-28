@@ -1419,6 +1419,56 @@ class ProjectState {
       this.selectedOpId = pauseOp.id;
       return pauseOp;
     }
+    // 8n4k: program-only building blocks. Same skeleton as Pause —
+    // no tool, no geometry, no Z schedule — but each carries its
+    // own kind-specific fields with sensible defaults.
+    if (kind === 'homing') {
+      const op: OpEntry = {
+        id: nextId,
+        name: prettyOpKind(kind),
+        enabled: true,
+        kind: 'homing',
+        toolId: 0,
+        sourceCombine: 'auto',
+        sourceLayers: null,
+        retractToSafeZ: true,
+      } as OpEntry;
+      this.history.exec(addOperationCommand(op), this.target());
+      this.selectedOpId = op.id;
+      return op;
+    }
+    if (kind === 'probe') {
+      const op: OpEntry = {
+        id: nextId,
+        name: prettyOpKind(kind),
+        enabled: true,
+        kind: 'probe',
+        toolId: 0,
+        sourceCombine: 'auto',
+        sourceLayers: null,
+        axis: 'z',
+        distanceMm: -10,
+        feedMmMin: 100,
+      } as OpEntry;
+      this.history.exec(addOperationCommand(op), this.target());
+      this.selectedOpId = op.id;
+      return op;
+    }
+    if (kind === 'cycle_marker') {
+      const op: OpEntry = {
+        id: nextId,
+        name: prettyOpKind(kind),
+        enabled: true,
+        kind: 'cycle_marker',
+        toolId: 0,
+        sourceCombine: 'auto',
+        sourceLayers: null,
+        label: '',
+      } as OpEntry;
+      this.history.exec(addOperationCommand(op), this.target());
+      this.selectedOpId = op.id;
+      return op;
+    }
     // f60x: relief surfacing follows a target Z-surface, not source
     // geometry — skip the offset/contour defaults. Prefer a ball-nose
     // tool; bind to the first loaded relief source (0 = none yet).

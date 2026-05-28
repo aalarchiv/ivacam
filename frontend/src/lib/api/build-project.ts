@@ -71,6 +71,14 @@ interface FlatOp extends OpBase, ContourFields {
   sourceInsetMm?: VCarveOp['sourceInsetMm'];
   // PauseOp
   message?: string;
+  // 8n4k: HomingOp
+  retractToSafeZ?: boolean;
+  // 8n4k: ProbeOp
+  axis?: 'x' | 'y' | 'z';
+  distanceMm?: number;
+  feedMmMin?: number;
+  // 8n4k: CycleMarkerOp
+  label?: string;
   // PocketOp (rt1.9)
   pocketZigzagAngleDeg?: number;
   // ThreadOp
@@ -378,6 +386,9 @@ type WireOpKind =
   | { type: 'helix' }
   | { type: 'v_carve'; carve: WireVCarveParams }
   | { type: 'pause'; message: string }
+  | { type: 'homing'; retract_to_safe_z: boolean }
+  | { type: 'probe'; axis: 'x' | 'y' | 'z'; distance_mm: number; feed_mm_min: number }
+  | { type: 'cycle_marker'; label: string }
   | {
       type: 'relief_mill';
       source_id: number;
@@ -889,6 +900,23 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       } as WireOpKind;
     case 'pause':
       return { type: 'pause', message: op.message ?? '' } as WireOpKind;
+    case 'homing':
+      return {
+        type: 'homing',
+        retract_to_safe_z: op.retractToSafeZ ?? true,
+      } as WireOpKind;
+    case 'probe':
+      return {
+        type: 'probe',
+        axis: op.axis ?? 'z',
+        distance_mm: op.distanceMm ?? -10,
+        feed_mm_min: op.feedMmMin ?? 100,
+      } as WireOpKind;
+    case 'cycle_marker':
+      return {
+        type: 'cycle_marker',
+        label: op.label ?? '',
+      } as WireOpKind;
     case 'relief_mill':
       return {
         type: 'relief_mill',

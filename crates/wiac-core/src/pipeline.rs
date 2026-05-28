@@ -590,7 +590,10 @@ fn count_tool_changes(project: &Project) -> u32 {
     let mut n = 0u32;
     let mut prev_tool_id: Option<u32> = None;
     for op in project.operations.iter().filter(|o| o.enabled) {
-        if matches!(op.kind, OpKind::Pause { .. }) {
+        // 8n4k: program-only ops (Pause, Homing, Probe, CycleMarker)
+        // don't carry a tool — they neither cause nor break a
+        // toolchange envelope.
+        if op.is_program_only() {
             continue;
         }
         if prev_tool_id != Some(op.tool_id) {
@@ -655,7 +658,9 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
     let mut total = 0.0;
     let mut prev_tool_id: Option<u32> = None;
     for op in project.operations.iter().filter(|o| o.enabled) {
-        if matches!(op.kind, OpKind::Pause { .. }) {
+        // 8n4k: program-only ops never load a tool, so they don't
+        // contribute to spindle warmup time.
+        if op.is_program_only() {
             continue;
         }
         if prev_tool_id != Some(op.tool_id) {
@@ -759,7 +764,8 @@ where
         // NOT captured into the per-op cache body — the decision depends on
         // prev_tool_id, which is runtime state, not op state. Pause ops have
         // no tool and don't reset prev_tool_id; no-emit ops skip the swap.
-        if !matches!(op.kind, OpKind::Pause { .. }) && will_emit {
+        // 8n4k: program-only ops bypass the M6 toolchange envelope.
+        if !op.is_program_only() && will_emit {
             prev_tool_id = emit_boundary_toolchange(
                 op,
                 project,
@@ -799,6 +805,87 @@ where
                 "gcode",
                 gcode_progress(emitted_ops, n_ops),
                 &format!("emitted op {} (pause)", op.id),
+            );
+            sink(PipelineEvent::OpCompleted {
+                op_id: op.id,
+                cached: false,
+            });
+            continue;
+        }
+
+        // 8n4k: Homing op — emit a comment + `G28`, optionally
+        // followed by a rapid retract to the op's safe Z so the next
+        // op starts from a known clearance. Like Pause we don't
+        // touch tool state, but unlike Pause we DO call
+        // `post.reset_state()` because some controllers reset
+        // modal state at G28 too.
+        if let OpKind::Homing { retract_to_safe_z } = &op.kind {
+            post.raw(&format!("; OP {} (homing)", op.id));
+            post.raw("G28");
+            if *retract_to_safe_z {
+                post.move_to(None, None, Some(op.params.fast_move_z));
+            }
+            post.reset_state();
+            emitted_ops += 1;
+            progress(
+                "gcode",
+                gcode_progress(emitted_ops, n_ops),
+                &format!("emitted op {} (homing)", op.id),
+            );
+            sink(PipelineEvent::OpCompleted {
+                op_id: op.id,
+                cached: false,
+            });
+            continue;
+        }
+
+        // 8n4k: Probe op — emit a comment + `G38.2 <axis><dist> F<feed>`.
+        // The controller halts at the trigger; we re-set state so the
+        // delta-encoder doesn't think the tool stayed at the probe XYZ
+        // — the next move re-emits its targets explicitly.
+        if let OpKind::Probe {
+            axis,
+            distance_mm,
+            feed_mm_min,
+        } = &op.kind
+        {
+            post.raw(&format!("; OP {} (probe)", op.id));
+            post.raw(&format!(
+                "G38.2 {}{:.4} F{}",
+                axis.letter(),
+                distance_mm,
+                feed_mm_min,
+            ));
+            post.reset_state();
+            emitted_ops += 1;
+            progress(
+                "gcode",
+                gcode_progress(emitted_ops, n_ops),
+                &format!("emitted op {} (probe)", op.id),
+            );
+            sink(PipelineEvent::OpCompleted {
+                op_id: op.id,
+                cached: false,
+            });
+            continue;
+        }
+
+        // 8n4k: CycleMarker — emit ONLY a comment line marking the
+        // operator-readable label, no controller motion or state
+        // change. Wrap the label with `--- … ---` so it stands out
+        // among the cut-block comments above and below.
+        if let OpKind::CycleMarker { label } = &op.kind {
+            post.raw(&format!("; OP {} (cycle marker)", op.id));
+            if label.is_empty() {
+                post.raw("; ---");
+            } else {
+                post.raw(&format!("; --- {label} ---"));
+            }
+            emitted_ops += 1;
+            progress(
+                "gcode",
+                gcode_progress(emitted_ops, n_ops),
+                &format!("emitted op {} (cycle marker)", op.id),
             );
             sink(PipelineEvent::OpCompleted {
                 op_id: op.id,

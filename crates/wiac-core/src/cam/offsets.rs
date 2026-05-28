@@ -1317,7 +1317,15 @@ pub fn apply_cut_direction(
             | OpKind::Thread { .. }
             | OpKind::Chamfer { .. }
             | OpKind::Helix
+            // 8n4k: program-only kinds (Pause / Homing / Probe /
+            // CycleMarker) never reach this winding pass — they
+            // emit inline above run_per_op's body marker — but list
+            // them explicitly so a future kind doesn't fall through
+            // to a stale arm.
             | OpKind::Pause { .. }
+            | OpKind::Homing { .. }
+            | OpKind::Probe { .. }
+            | OpKind::CycleMarker { .. }
             | OpKind::VCarve { .. }
             // 3g6u/b7qz: T-slot and dovetail ride the centerline (no
             // inside/outside winding to enforce) just like Engrave.

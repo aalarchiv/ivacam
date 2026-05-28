@@ -39,7 +39,14 @@ export type OpKind =
   | 'dovetail'
   | 'vcarve'
   | 'pause'
+  | 'homing'
+  | 'probe'
+  | 'cycle_marker'
   | 'relief_mill';
+
+/// 8n4k: axis selector for ProbeOp. Wire is the bare lowercase
+/// letter for direct concatenation into the G38.2 word.
+export type ProbeAxis = 'x' | 'y' | 'z';
 
 export type ScanDirection = 'along_x' | 'along_y';
 
@@ -270,6 +277,45 @@ export interface PauseOp extends OpBase {
   message: string;
 }
 
+/// 8n4k: machine-home building block. Emits `G28` then (by default) a
+/// rapid retract to the op's safe Z. No tool / source / cut schedule —
+/// program-only scaffolding so a project can express its shop
+/// workflow (start of program, mid-program parking, end of program)
+/// without writing G-code by hand.
+export interface HomingOp extends OpBase {
+  kind: 'homing';
+  /// When true, the post follows `G28` with a rapid `G0 Z<safe>` to
+  /// the op's `fastMoveZ`. Default true; most controllers don't end
+  /// up at a useful Z after G28.
+  retractToSafeZ: boolean;
+}
+
+/// 8n4k: touch-probe building block. Emits a single `G38.2 <axis>
+/// <distance> F<feed>` line — probing move that halts when the
+/// trigger fires. Used at program start (zero WCS Z to the stock
+/// top), between ops, or as a repeatability sanity check.
+export interface ProbeOp extends OpBase {
+  kind: 'probe';
+  axis: ProbeAxis;
+  /// Search distance in mm. Sign convention follows the controller —
+  /// NEGATIVE Z to probe down into stock, positive X / Y for an
+  /// edge-finder cycle from outside.
+  distanceMm: number;
+  /// Probe feedrate in mm/min. Typical 50–200 for a touch-trigger probe.
+  feedMmMin: number;
+}
+
+/// 8n4k: navigation marker. Emits ONLY a wrapped comment line at the
+/// op's slot — no controller motion, no modal change. Pendants and
+/// gcode viewers that index by program line can jump to the next
+/// marker; also useful as a long-form note ("Flip stock NOW") that
+/// survives gcode regeneration.
+export interface CycleMarkerOp extends OpBase {
+  kind: 'cycle_marker';
+  /// Label text. Empty string is allowed but pointless.
+  label: string;
+}
+
 /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
 /// surface (a `ReliefSource` referenced by `sourceId`, e.g. a grayscale
 /// image) with a ball-nose cutter. The source's brightness maps to Z in
@@ -313,6 +359,9 @@ export type OpEntry =
   | TSlotOp
   | DovetailOp
   | PauseOp
+  | HomingOp
+  | ProbeOp
+  | CycleMarkerOp
   | ReliefMillOp;
 
 /// Patch type for `project.updateOperation`. A patch covers the full

@@ -21,7 +21,7 @@
 //!
 //! For a `cols × rows` heightmap: `2 * (cols-1) * (rows-1)` top triangles
 //! + `4 * (cols + rows - 2)` perimeter triangles + 2 bottom triangles.
-//! At 50 bytes/tri the binary STL fits in ~1 MB per 200×200 grid.
+//!   At 50 bytes/tri the binary STL fits in ~1 MB per 200×200 grid.
 
 use crate::sim::heightmap::Heightmap;
 
@@ -32,6 +32,16 @@ use crate::sim::heightmap::Heightmap;
 /// `stock_bottom_z` is the absolute Z of the stock's underside (typically
 /// `top_z - stock_thickness`). Edge walls of the mesh drop from the
 /// height at each perimeter sample down to this plane.
+// STL is an f32 mesh format; the cast site below downcasts heightmap
+// world coords (f64) and cell indices (usize) to f32 by design — the
+// truncation / precision loss is the format's contract, not a bug. The
+// grid is bounded by `Heightmap::MAX_CELLS` (a few M cells), well below
+// f32's 23-bit mantissa breakdown.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 #[must_use]
 pub fn heightmap_to_stl_binary(hm: &Heightmap, stock_bottom_z: f32) -> Vec<u8> {
     let cols = hm.cols as usize;
@@ -230,8 +240,9 @@ mod tests {
     #[test]
     fn carved_cells_show_up_in_vertex_data() {
         let mut hm = Heightmap::new(Point2::new(0.0, 0.0), 1.0, 3, 3, 0.0);
-        // Carve the centre cell down to -2.5 mm.
-        hm.data[1 * 3 + 1] = -2.5;
+        // Carve the centre cell down to -2.5 mm. Index is `row*cols+col`
+        // with row=1, col=1 on a 3×3 grid.
+        hm.data[3 + 1] = -2.5;
         let bytes = heightmap_to_stl_binary(&hm, -10.0);
         let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
         let mut saw_carved_z = false;
@@ -248,6 +259,9 @@ mod tests {
                 }
             }
         }
-        assert!(saw_carved_z, "carved Z (-2.5) should appear in some triangle's vertex list");
+        assert!(
+            saw_carved_z,
+            "carved Z (-2.5) should appear in some triangle's vertex list"
+        );
     }
 }

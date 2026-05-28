@@ -458,12 +458,24 @@
             {#if fontDropdownOpen && !useUserFont}
               <ul class="font-dd-list" role="listbox">
                 {#each BUNDLED_FONTS as f (f.path)}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <li
                     role="option"
+                    tabindex="0"
                     aria-selected={f.path === bundledFontPath}
                     class:active={f.path === bundledFontPath}
                     onclick={() => pickBundledFont(f.path)}
+                    onkeydown={(e) => {
+                      // Keyboard-accessible font picker: Enter / Space
+                      // commits the option, Escape closes the dropdown.
+                      // Tab moves between options natively via the
+                      // tabindex="0" on each li.
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        pickBundledFont(f.path);
+                      } else if (e.key === 'Escape') {
+                        fontDropdownOpen = false;
+                      }
+                    }}
                   >
                     <span
                       class="font-dd-sample"

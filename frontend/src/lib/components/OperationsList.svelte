@@ -283,6 +283,12 @@
        audit o1od: shape now matches TextList/Stock .group-head — grid
        layout with accent-tinted bg + border so the three accordion
        panels read as one design language. -->
+  <!-- a11y note (hmrc): the wrapper div is a mouse-convenience click
+       area for the whole header row. Keyboard activation lives on the
+       inner .caret-btn (focusable <button> that calls onActivate); this
+       wrapper is intentionally not in the Tab sequence — per the audit-
+       xc3a comment above — so it doesn't create a duplicate Tab stop or
+       Enter shortcut that overlaps with the caret's own activation. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="group-head" onclick={onActivate}>

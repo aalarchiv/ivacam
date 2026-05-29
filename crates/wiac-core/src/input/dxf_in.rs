@@ -369,8 +369,9 @@ impl ImportCtx<'_> {
         }
         let pts = math::tessellate_arc(start, end, bulge, step);
         // Decompose each subdivision into a small bulge arc preserving curvature.
+        // Every sub-arc spans an equal slice of the total sweep, so they all
+        // share one bulge value (`tan(per_step / 4)`).
         let (_c, a0, a1, _r) = math::bulge_to_arc(start, end, bulge);
-        let mut cumulative = a0;
         let total_sweep = {
             let mut s = a1 - a0;
             if bulge > 0.0 && s < 0.0 {
@@ -382,22 +383,18 @@ impl ImportCtx<'_> {
             s
         };
         let per_step = total_sweep / (pts.len() - 1) as f64;
+        let sub_bulge = (per_step * 0.25).tan();
         let center_known = center.or_else(|| Some(math::bulge_to_arc(start, end, bulge).0));
         for i in 0..pts.len() - 1 {
-            let s = pts[i];
-            let e = pts[i + 1];
-            cumulative += per_step;
-            let sub_bulge = (per_step * 0.25).tan();
             self.segments.push(Segment::arc(
-                s,
-                e,
+                pts[i],
+                pts[i + 1],
                 sub_bulge,
                 center_known,
                 layer.clone(),
                 color,
             ));
         }
-        let _ = cumulative; // appeasing the borrow checker on shadowed math
     }
 
     fn emit_line(

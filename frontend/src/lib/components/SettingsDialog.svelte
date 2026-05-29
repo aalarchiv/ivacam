@@ -385,11 +385,14 @@
           cell.
         </p>
 
-        <!-- 27ng: exact-3D-rewind toggle. Default off (cheap path:
-             heightfield retains deepest-ever cuts; backstep does
-             NOT undo prior carves). Power users who need time-
-             accurate backstep flip it on, accepting the replay
-             cost on long programs. -->
+        <!-- 27ng / rpas: exact 3D rewind toggle. Default ON
+             because the post-Generate `playhead = 1.0` hop means
+             the user lands at the END-OF-PROGRAM state right
+             after Generate — without exact rewind, dragging the
+             scrubber back leaves the terrain stuck at end-state.
+             Users on enormous programs can flip it off for
+             responsive scrubbing at the price of time-accurate
+             terrain. -->
         <label class="check">
           <input
             type="checkbox"
@@ -401,21 +404,20 @@
         </label>
         <p class="hint">
           The 3D heightfield is a forward-only carve simulator: cells
-          can only get deeper. <b>When off</b> (default), stepping the
-          playhead backward leaves the displayed cuts alone — the
-          heightfield shows the deepest cut at each point so far,
-          which is the most useful for &ldquo;will my program clear
-          this region?&rdquo; questions. <b>When on</b>, every backstep
-          resets the sim and replays the carve from t = 0 to the new
-          playhead so the heightfield reflects the cuts <em>as of
-          that playhead position</em> in time. Note the difference:
-          if your program cuts the front half first and the back
-          half last, exact rewind at playhead 50&nbsp;% will show
-          the front half cut and the back half pristine (that's
-          correct — the back half wouldn't have been cut yet). Cheap
-          mode would show both halves cut. Replay cost scales with
-          the number of segments replayed; on programs with tens of
-          thousands of segments scrubbing can stutter.
+          can only get deeper. <b>When on</b> (default), every
+          backstep resets the sim and replays the carve from t = 0 to
+          the new playhead so the heightfield exactly tracks the
+          playhead's position in time. Replay cost scales with the
+          number of segments replayed; on programs with tens of
+          thousands of segments scrubbing can stutter. <b>When
+          off</b>, backstep is a no-op for the sim — the heightfield
+          retains the deepest cut at each XY from the last time the
+          playhead reached that segment. Useful for fast scrubbing
+          on huge programs when you don't need time-accurate
+          rewind, BUT note: after every Generate the playhead jumps
+          to 1.0 so warnings surface, which means the off setting
+          lands the heightfield at end-of-program until you
+          re-scrub forward.
         </p>
       </section>
 

@@ -78,16 +78,21 @@ export interface AppSettings {
   /// spacing between arrows (higher = more arrows). 1 = default (~3 mm
   /// spacing); 0 disables arrows.
   toolMoveArrowDensity: number;
-  /// 27ng: when true, scrubbing the playhead BACKWARD triggers a full
-  /// sim reset followed by a forward replay from t=0 to the new
-  /// position. The heightfield then exactly reflects the carve state
-  /// at the new playhead. When false (the default) backstep does
-  /// nothing to the heightfield — cells retain their deepest-ever
-  /// cuts. Subsequent forward advances continue to deepen the same
-  /// cells, so future destruction stays correct; only the
-  /// during-rewind visual differs. Default off because the replay
-  /// can be slow on long programs and (5w9z) currently produces a
-  /// half-pristine / half-deep visual artifact on big projects.
+  /// 27ng / rpas: when true (the default), scrubbing the playhead
+  /// BACKWARD triggers a full sim reset followed by a forward
+  /// replay from t=0 to the new position so the heightfield
+  /// exactly reflects the carve state at the new playhead. When
+  /// false, backstep is a no-op for the sim — cells retain
+  /// whatever the deepest cut at each XY was the last time the
+  /// playhead reached that segment. Combined with the post-
+  /// Generate `playhead = 1.0` hop (so warnings surface
+  /// immediately), the false case shows the END-OF-PROGRAM
+  /// state regardless of where the user drags the scrubber back
+  /// to — which is the rpas regression. Default true tracks the
+  /// playhead at the cost of a replay per backstep; users on
+  /// programs with tens of thousands of segments can flip it off
+  /// to keep scrubbing responsive at the price of time-accurate
+  /// rewind.
   exactSimRewind: boolean;
 }
 
@@ -126,10 +131,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   osnap: { ...DEFAULT_OSNAP_SETTINGS },
   previewLineWidth: 1.5,
   toolMoveArrowDensity: 1,
-  // 27ng: cheap-default for backstep — don't reset+replay, keep
-  // deepest-ever cuts. Power users flip this on in Settings when
-  // they need exact rewind and accept the cost.
-  exactSimRewind: false,
+  // rpas: default ON so the 3D heightfield tracks the playhead
+  // exactly — the only sane interaction with the post-Generate
+  // `playhead = 1.0` hop. Users on long programs who'd rather
+  // have responsive scrubbing than time-accurate terrain flip
+  // this off in Settings → Performance.
+  exactSimRewind: true,
 };
 
 /// Load persisted settings, deep-merging stored values over defaults so
@@ -144,6 +151,18 @@ function loadSettings(): AppSettings {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AppSettings> | null;
       if (parsed && typeof parsed === 'object') {
+        // rpas: one-shot migration — the 27ng default of
+        // `exactSimRewind: false` interacted badly with the
+        // post-Generate `playhead = 1.0` hop (terrain stuck at
+        // end-of-program). Any persisted `false` we see now is
+        // almost certainly the 27ng default, not a user choice
+        // (the toggle shipped same-day with the buggy default).
+        // Drop the field so the new default kicks in. Users on
+        // huge programs who legitimately want the off semantic
+        // re-flip the toggle once.
+        if (parsed.exactSimRewind === false) {
+          delete (parsed as Record<string, unknown>).exactSimRewind;
+        }
         merged = { ...merged, ...parsed };
         // Deep-merge `osnap` so a future-added knob falls back to its
         // DEFAULT instead of being undefined when the user's stored

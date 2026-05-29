@@ -190,6 +190,13 @@ pub fn pocket_trochoidal_cancellable(
     // toolpath instead of bridging.
     let mut prev_exit: Option<Point2> = None;
     let mut emitted_any_loop = false;
+    // g9so: track the last case-(a) bail so that if EVERY centerline
+    // vertex fails the disc guard (narrow pocket / large
+    // loop_radius_factor), we can still surface a `trochoidal_incomplete`
+    // warning instead of silently returning an empty (entirely uncut)
+    // toolpath. Case (b) records inline and breaks; this covers the
+    // never-emitted-a-loop tail.
+    let mut last_pre_first_bail: Option<usize> = None;
 
     for i in 0..centerline.len() {
         if is_cancelled() {
@@ -256,6 +263,7 @@ pub fn pocket_trochoidal_cancellable(
                 break;
             }
             // case (a): pre-first-loop bail, advance without emitting.
+            last_pre_first_bail = Some(i);
             continue;
         }
 
@@ -289,6 +297,22 @@ pub fn pocket_trochoidal_cancellable(
         ));
         prev_exit = Some(exit);
         emitted_any_loop = true;
+    }
+
+    // g9so: every centerline vertex failed the disc guard — the boundary
+    // is left entirely uncut. Surface the same `trochoidal_incomplete`
+    // signal case (b) uses so the user learns the pocket needs a smaller
+    // loop_radius_factor / engagement angle (or a separate finishing op)
+    // rather than getting a silently-empty result.
+    if let Some(bail_index) = last_pre_first_bail.filter(|_| !emitted_any_loop) {
+        TROCHOIDAL_INCOMPLETES.with(|s| {
+            s.borrow_mut().push(TrochoidalIncomplete {
+                centerline_total: centerline.len(),
+                bail_index,
+                r_loop,
+                engagement_angle_deg: engagement_angle_deg.clamp(5.0, 90.0),
+            });
+        });
     }
 
     Some(out)

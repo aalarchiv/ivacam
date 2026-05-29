@@ -133,7 +133,7 @@ Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
    `text_layers` / `relief_sources` do, and a `hash_tool` / op-shape change
    means bumping `PIPELINE_VERSION` and re-pinning the `stable_hash_regression`
    test.
-5. **Frontend type** — `frontend/src/lib/state/op_types.ts`. Add the
+4. **Frontend type** — `frontend/src/lib/state/op_types.ts`. Add the
    string to the `OpKind` union, add a per-kind interface that extends
    `OpBase`, add the variant to the `OpEntry` discriminated union, and
    update `isPathOp` / similar predicates if applicable. Then mirror it
@@ -143,22 +143,22 @@ Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
    `state/project.svelte.ts`, and the wire mapping in
    `api/build-project.ts` (`FlatOp` fields, `WireOpKind` variant,
    `buildOpKind` case). `svelte-check` flags every exhaustive map you miss.
-6. **Picker metadata** — `frontend/src/lib/components/OpKindPicker.svelte`.
+5. **Picker metadata** — `frontend/src/lib/components/OpKindPicker.svelte`.
    Add entries to `KIND_LABEL`, `KIND_ICON`, `ALL_PICKER_KINDS`,
    `PICKER_HELP`, and `OP_REQUIRES`. Each is a `Record<OpKind, …>` so the
    compiler flags the missing entry.
-7. **Properties panel routing** — `frontend/src/lib/components/OpPropertiesPanel.svelte`.
+6. **Properties panel routing** — `frontend/src/lib/components/OpPropertiesPanel.svelte`.
    Add the kind to the appropriate `{#if op.kind === '…' || …}` block
    so the right sections render (or a dedicated `{:else if}` branch when
    the kind doesn't use the shared source/geometry UI — see `relief_mill`).
    If the kind needs bespoke fields, create
    `frontend/src/lib/components/op_properties/<Kind>Section.svelte`
    (mirror `VCarveSection.svelte` / `ReliefMillSection.svelte`) and render it.
-8. **Schema regen** — `cargo xtask schema && (cd frontend && pnpm run codegen)`.
+7. **Schema regen** — `cargo xtask schema && (cd frontend && pnpm run codegen)`.
    CI's codegen drift guard fails if the checked-in `generated.ts` differs
    from a fresh run (it stays raw `openapi-typescript` output, not
    prettier-formatted).
-9. **Tests** — add a unit test in `crates/wiac-core/src/pipeline/tests.rs`
+8. **Tests** — add a unit test in `crates/wiac-core/src/pipeline/tests.rs`
    (search for `#[test]` near the bottom) that emits a tiny program
    with one op of the new kind. The corpus smoke test
    (`crates/wiac-core/tests/golden_corpus.rs`) doesn't exercise new
@@ -183,7 +183,7 @@ HPGL today). Mirror the simplest existing one (GRBL):
    the help text and the match arm that picks the impl.
 5. **Frontend dropdown** — `frontend/src/lib/components/GenerateBar.svelte`.
    Extend the `PostId` union, update `coercePost`, and add an
-   `<option>` element. Update the en/de locales for the dropdown label.
+   `<option>` element with its label.
 6. **Schema regen** — `cargo xtask schema && (cd frontend && pnpm run codegen)`.
 7. **Tests** — at minimum, a unit test in your new `<name>.rs` that
    verifies a one-line program round-trips through `Post::header` +

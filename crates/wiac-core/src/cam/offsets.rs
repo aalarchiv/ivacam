@@ -1981,7 +1981,19 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
         let start = Point2::new(v0.x, v0.y);
         let end = Point2::new(v1.x, v1.y);
         if v0.bulge.abs() > 1e-12 {
-            out.push(Segment::arc(start, end, v0.bulge, None, layer, color));
+            // bt65: populate the arc center at emit time. The offsetter
+            // already has everything needed to derive it; carrying it on the
+            // Segment spares every downstream consumer (leads, chaining,
+            // tabs) from re-deriving it via bulge_to_arc on each access.
+            let center = crate::math::bulge_to_arc(start, end, v0.bulge).0;
+            out.push(Segment::arc(
+                start,
+                end,
+                v0.bulge,
+                Some(center),
+                layer,
+                color,
+            ));
         } else {
             out.push(Segment::line(start, end, layer, color));
         }

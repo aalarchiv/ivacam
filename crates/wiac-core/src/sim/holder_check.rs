@@ -73,7 +73,11 @@ pub struct HolderCollisionCell {
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,
     clippy::cast_lossless,
-    clippy::cast_possible_wrap
+    clippy::cast_possible_wrap,
+    // juvx: holder-vs-wall sweep walks segment chord + holder cone +
+    // heightmap rasterization inline; splitting would force shared
+    // mutable `warnings` + per-cell state across helpers.
+    clippy::too_many_lines
 )]
 pub fn check_segment_holder_against_walls(
     heightmap: &Heightmap,

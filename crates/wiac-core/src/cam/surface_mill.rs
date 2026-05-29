@@ -169,7 +169,11 @@ fn tip_kernel(radius_mm: f64, corner_radius_mm: f64, cell: f64) -> Vec<(i32, i32
 /// nose, < radius for a bull-nose, 0 for a flat endmill) touches the target
 /// but never gouges it. The result has the same grid as `field`; every cell
 /// satisfies `dropped ≥ target` (the `d = 0` kernel term, whose offset is
-/// 0). Panics if `tool_radius_mm ≤ 0`.
+/// 0).
+///
+/// # Panics
+///
+/// Panics if `tool_radius_mm <= 0`.
 #[must_use]
 pub fn drop_cutter(
     field: &SurfaceField,
@@ -240,6 +244,10 @@ fn axis_positions(lo: f64, hi: f64, step: f64) -> Vec<f64> {
 /// The paths sweep the cell-center region of the field; sampling the
 /// dropped field bilinearly between cells is safe because dilation smooths
 /// the surface (the dropped field's slope is bounded by the ball).
+///
+/// # Panics
+///
+/// Panics if `params.tool_radius_mm <= 0`.
 #[must_use]
 pub fn surface_mill(field: &SurfaceField, params: &SurfaceMillParams) -> Vec<Vec<(f64, f64, f64)>> {
     assert!(params.tool_radius_mm > 0.0, "tool radius must be > 0");

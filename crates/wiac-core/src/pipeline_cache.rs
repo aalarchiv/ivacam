@@ -114,6 +114,12 @@ pub struct PipelineCache {
 }
 
 impl PipelineCache {
+    /// # Panics
+    ///
+    /// Never in practice: `capacity.max(1)` is always `>= 1`, which
+    /// satisfies `NonZeroUsize::new`. The `expect` is a defensive
+    /// sentinel; if it ever fires, the `NonZeroUsize::new` contract
+    /// itself is broken.
     #[must_use]
     pub fn new(capacity: usize) -> Self {
         let cap = NonZeroUsize::new(capacity.max(1)).expect("non-zero capacity");
@@ -587,6 +593,11 @@ fn hash_operation<H: Hasher>(op: &Op, h: &mut H) {
     hash_operation_params(&op.params, h);
 }
 
+// juvx: per-variant hash dispatch — every OpKind variant gets its
+// own arm with explicit discriminant + field-hash list so the cache
+// key stays stable. Splitting would scatter the discriminants and
+// invite drift.
+#[allow(clippy::too_many_lines)]
 fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
     match k {
         OpKind::Profile {
@@ -1626,6 +1637,10 @@ mod tests {
     /// scwx + z1y0: flipping the tool's `spindle_direction` routes the
     /// post between M3 and M4 — emitted gcode changes verbatim, so
     /// the cache key must change.
+    // juvx: `k_cw`/`k_ccw` are an intentional pair — same key
+    // computation for cw vs ccw spindle. The cache-test convention
+    // reuses this naming throughout the file.
+    #[allow(clippy::similar_names)]
     #[test]
     fn hash_tool_changes_when_spindle_direction_changes() {
         let segs = square(20.0);

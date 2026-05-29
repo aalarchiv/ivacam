@@ -241,7 +241,14 @@ pub trait PostProcessor {
     /// G83 peck: as G81 but pecks `q` mm at a time, fully retracting to r each peck.
     /// `rate_v` is the plunge feed (see [`PostProcessor::drill_simple`]).
     /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
+    // juvx: `RE_ENTRY_CLEARANCE_MM` const lives near its sole use site
+    // mid-loop so the co8b rationale comment sits next to the value.
+    #[allow(clippy::items_after_statements)]
     fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, rate_v: u32, dwell_sec: f64) {
+        // co8b: small clearance above the previous peck depth before each
+        // re-entry plunge (kept here so the value is visible at the top
+        // of the routine even though the use site is mid-loop).
+        const RE_ENTRY_CLEARANCE_MM: f64 = 0.5;
         let q = q.abs();
         if q < 1e-9 {
             self.drill_simple(x, y, z, r, rate_v, dwell_sec);
@@ -277,7 +284,6 @@ pub trait PostProcessor {
             // depth lets the cutter slam straight into chip-clogged
             // material — fine on a slow Z servo, but it chips tips on
             // a fast Z.
-            const RE_ENTRY_CLEARANCE_MM: f64 = 0.5;
             let re_entry_z = current_z + RE_ENTRY_CLEARANCE_MM;
             self.move_to(None, None, Some(re_entry_z));
             // o01e: re-anchor the plunge feed after every rapid retract.
@@ -530,6 +536,12 @@ pub fn emit_polylines_block<P: PostProcessor>(
 /// emits them as G1 cuts, with G0 lifts to safe Z between polylines.
 /// `start_depth` is honored as the plunge entry plane; per-point Z is
 /// already absolute.
+///
+/// # Panics
+///
+/// Never panics in practice: `poly.last().unwrap()` runs inside a
+/// `for poly in polylines` loop guarded by `poly.len() < 2`, so the
+/// polyline is non-empty when accessed.
 pub fn emit_vcarve_block<P: PostProcessor>(
     setup: &Setup,
     polylines: &[Vec<(f64, f64, f64)>],
@@ -648,6 +660,12 @@ pub struct StufenfaseHole {
 /// sq8z: replaces the previous "build a 64-point polyline and feed it
 /// to `emit_vcarve_block`" path; rim revolutions now emit as a single
 /// arc move rather than 64 chord G1s.
+///
+/// # Panics
+///
+/// Never panics in practice: `hole.ramp.last().unwrap()` is reached
+/// only after the `hole.ramp.len() < 2` early-continue guard, so the
+/// ramp has at least two points when accessed.
 pub fn emit_stufenfase_rim_block<P: PostProcessor>(
     setup: &Setup,
     holes: &[StufenfaseHole],
@@ -724,6 +742,10 @@ pub fn emit_stufenfase_rim_block<P: PostProcessor>(
 /// `setup.mill.depth`        → drill bottom Z (typically negative).
 /// `setup.mill.start_depth`  → R (clearance plane just above the workpiece).
 /// `setup.mill.fast_move_z`  → safe Z for rapid moves between drill sites.
+// juvx: `DRILL_R_CLEARANCE_MM` const lives near its use site so the
+// canned-cycle R-plane derivation reads top-to-bottom; hoisting it
+// would force a forward reference for a one-call value.
+#[allow(clippy::items_after_statements)]
 pub fn emit_drill_block<P: PostProcessor>(
     setup: &Setup,
     offsets: &[PolylineOffset],
@@ -731,6 +753,11 @@ pub fn emit_drill_block<P: PostProcessor>(
     post: &mut P,
     last_pos: &mut Point2,
 ) {
+    // 3kqo: match the co8b re-entry clearance value (0.5 mm) so the
+    // canned-cycle path uses the same air-gap budget as the trait-
+    // default manual peck loop. Used to compute the canned-cycle R
+    // retract plane below.
+    const DRILL_R_CLEARANCE_MM: f64 = 0.5;
     let order = order_offsets(setup, offsets, *last_pos);
     // Drill final Z. `setup.mill.depth` is the nominal bore floor;
     // `through_depth` extends it deeper to clear minor stock-
@@ -751,10 +778,7 @@ pub fn emit_drill_block<P: PostProcessor>(
     // top (project convention) and add a small clearance so chips
     // clear; never let R drop below start_depth (recessed work where
     // start_depth > 0 — there the user explicitly said "stock surface
-    // is at start_depth"). Match the co8b re-entry clearance value
-    // (0.5 mm) so the canned-cycle path uses the same air-gap budget
-    // as the trait-default manual peck loop.
-    const DRILL_R_CLEARANCE_MM: f64 = 0.5;
+    // is at start_depth").
     let stock_top_z = 0.0_f64;
     let r = setup
         .mill

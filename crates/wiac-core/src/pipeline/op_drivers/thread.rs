@@ -64,7 +64,14 @@ pub(in crate::pipeline) fn thread_would_emit(op: &Op, objects: &[VcObject]) -> b
 // Thread driver runs the per-circle helix walker; rather than threading
 // state through five helpers, the per-revolution Z table lives inline.
 // 55o4 tracks the broader pipeline split.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+// juvx: `THREAD_START_RADIUS_FRAC` and `MIN_BORE_RADIUS_MM` consts
+// live near their use sites so each carries its rationale comment
+// inline.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::items_after_statements
+)]
 pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
     op: &Op,
     project: &Project,

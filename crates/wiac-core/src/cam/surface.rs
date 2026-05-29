@@ -51,8 +51,12 @@ pub struct SurfaceField {
 }
 
 impl SurfaceField {
-    /// Build a field from an explicit Z grid. Panics if `cell <= 0`,
-    /// either dimension is 0, or `z.len() != cols * rows`.
+    /// Build a field from an explicit Z grid.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `cell <= 0`, either dimension is 0, the `cols * rows`
+    /// product overflows `usize`, or `z.len() != cols * rows`.
     #[must_use]
     pub fn new(origin: Point2, cell: f64, cols: u32, rows: u32, z: Vec<f32>) -> Self {
         assert!(cell > 0.0, "SurfaceField cell size must be > 0");
@@ -82,7 +86,11 @@ impl SurfaceField {
     /// shallowest; they're sorted internally so callers can't invert the
     /// span by accident. Brightness values are clamped to `[0, 1]`.
     ///
-    /// Panics under the same dimension rules as [`SurfaceField::new`].
+    /// # Panics
+    ///
+    /// Panics under the same dimension rules as [`SurfaceField::new`]:
+    /// `cell` must be > 0, both dimensions must be > 0, and
+    /// `brightness.len()` must equal `cols * rows`.
     #[must_use]
     pub fn from_grayscale(
         origin: Point2,

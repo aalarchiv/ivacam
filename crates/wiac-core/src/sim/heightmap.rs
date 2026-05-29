@@ -32,6 +32,10 @@ pub struct Heightmap {
 }
 
 impl Heightmap {
+    /// # Panics
+    ///
+    /// Panics on a non-positive `cell`, zero `cols` / `rows`, or a
+    /// `cols * rows` product that overflows `usize` (eexa).
     #[must_use]
     pub fn new(origin: Point2, cell: f64, cols: u32, rows: u32, top_z: f32) -> Self {
         assert!(cell > 0.0, "Heightmap cell size must be > 0");
@@ -54,6 +58,10 @@ impl Heightmap {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics on a non-positive `cell` or an empty bbox
+    /// (`max_x <= min_x` or `max_y <= min_y`).
     #[must_use]
     pub fn from_bbox(
         min_x: f64,
@@ -340,6 +348,11 @@ impl ToolProfile {
         }
     }
 
+    // juvx: `r_f64` / `rr_f64` are deliberately parallel — same
+    // f32→f64 promotion of the tool-profile radius and the query
+    // radius for the 6i9r corner-radius math. Renaming would
+    // obscure the parallel structure.
+    #[allow(clippy::similar_names)]
     #[must_use]
     pub fn eval(&self, r: f32) -> Option<f32> {
         match self {

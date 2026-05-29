@@ -16,6 +16,11 @@
 //! JS task queue.
 
 #![forbid(unsafe_code)]
+// juvx: every #[wasm_bindgen] entry returns `JsValue` errors that surface
+// to JS as a thrown Error with the message attached. The Rust-side
+// `# Errors` doc would be redundant — the JS caller already sees the
+// message via the standard try/catch. Whole crate gets the allow.
+#![allow(clippy::missing_errors_doc)]
 
 use serde::Serialize;
 use wasm_bindgen::prelude::*;

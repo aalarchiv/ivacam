@@ -202,6 +202,9 @@ impl Post {
 /// arc is a normal partial sweep, or when start / target / center
 /// aren't well-defined (no prior position, missing target / I / J,
 /// or a degenerate zero-radius circle).
+// juvx: local `const EPS` lives near its use; hoisting would split
+// the same-point-check block that documents the tolerance choice.
+#[allow(clippy::items_after_statements)]
 fn full_circle_midpoint(
     state: &PostState,
     x: Option<f64>,
@@ -209,6 +212,9 @@ fn full_circle_midpoint(
     i: Option<f64>,
     j: Option<f64>,
 ) -> Option<(f64, f64)> {
+    // 1e-6 mm — well below CAM precision; squared to avoid a hypot
+    // call below.
+    const EPS_SQ: f64 = 1e-6 * 1e-6;
     let last_x = state.last_x?;
     let last_y = state.last_y?;
     // Target XY: explicit value or "same as previous" (modal). When
@@ -217,19 +223,16 @@ fn full_circle_midpoint(
     let target_y = y.unwrap_or(last_y);
     let i = i?;
     let j = j?;
-    // Same-point check: start XY ≈ target XY within a generous
-    // tolerance (1e-6 mm — well below CAM precision). Compared
-    // squared to avoid a hypot call.
-    const EPS: f64 = 1e-6;
+    // Same-point check: start XY ≈ target XY within tolerance.
     let dx = target_x - last_x;
     let dy = target_y - last_y;
-    if dx * dx + dy * dy > EPS * EPS {
+    if dx * dx + dy * dy > EPS_SQ {
         return None;
     }
     // Trivial I/J (no offset to center) → degenerate "arc" with
     // zero radius; nothing to split. The post would emit a
     // syntactically valid but geometrically meaningless line anyway.
-    if i * i + j * j < EPS * EPS {
+    if i * i + j * j < EPS_SQ {
         return None;
     }
     // Midpoint: start + 2·(I, J) lands diametrically opposite on the

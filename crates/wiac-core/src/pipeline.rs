@@ -221,6 +221,13 @@ impl PipelineError {
 /// as `Error::internal(...)` so the frontend gets a structured error
 /// rather than a renderer crash. Cancellation is preserved as `None` to
 /// match the existing transport-layer pattern matching.
+///
+/// # Errors
+///
+/// Returns `Err(Some(Error))` on a pipeline failure (gcode emit
+/// error, cache miss recovery failure, panic caught from the
+/// underlying [`run_pipeline`]), or `Err(None)` when the run was
+/// cancelled. Otherwise `Ok(PipelineResponse)`.
 pub fn run_pipeline_safe(
     request: PipelineRequest,
 ) -> std::result::Result<PipelineResponse, Option<crate::Error>> {
@@ -323,6 +330,12 @@ pub fn clear_pipeline_cache() {
 /// Run the full CAM pipeline. `progress(phase, fraction, message)` is
 /// called at each phase boundary; pass a no-op closure for non-streaming
 /// callers.
+///
+/// # Errors
+///
+/// Returns `PipelineError` on any phase failure: offset cascade
+/// collapse, gcode emit failure, or an invalid project (missing
+/// tool, source-segment selection drift).
 pub fn run_pipeline<F: Fn(&str, f64, &str)>(
     req: PipelineRequest,
     progress: F,
@@ -336,6 +349,12 @@ pub fn run_pipeline<F: Fn(&str, f64, &str)>(
 /// (and inside long inner loops). On cancellation, emits
 /// `PipelineEvent::Cancelled` and returns `Err(PipelineError::Cancelled)`
 /// — partial work is discarded.
+///
+/// # Errors
+///
+/// Returns `PipelineError::Cancelled` when the cancel token fires,
+/// or the same per-phase failures `run_pipeline` does (offset
+/// collapse, gcode emit failure, invalid project).
 pub fn generate_streaming(
     request: PipelineRequest,
     cancel: &CancelToken,
@@ -694,11 +713,11 @@ pub(crate) struct GcodeIncludeClassification {
     pub skipped: Vec<SkippedIncludeLine>,
 }
 
-/// Classify each line of an expanded GcodeInclude body. The blanket
+/// Classify each line of an expanded `GcodeInclude` body. The blanket
 /// `gcode_include_not_simulated` warning (pre-yhen) lied to the user
 /// for the common case of a hand-rolled return-home block that's
 /// 100 % G0/G1/G2/G3 — the sim DOES already carve those, because the
-/// unified `preview::interpret_with_index` at run_pipeline's tail
+/// unified `preview::interpret_with_index` at `run_pipeline`'s tail
 /// ingests them via `post.raw()`. This classifier lets the caller
 /// emit a counted, accurate "X of Y lines skipped" summary instead.
 fn classify_gcode_include_body(expanded: &str) -> GcodeIncludeClassification {
@@ -814,7 +833,7 @@ fn classify_gcode_include_line(raw: &str) -> GcodeIncludeLineClass {
     }
 }
 
-/// In-line comment stripper for classify_gcode_include_line. Mirrors
+/// In-line comment stripper for `classify_gcode_include_line`. Mirrors
 /// `gcode::preview::strip_comment` (parens-delimited inline AND
 /// trailing `;` to EOL) but lives here as a private duplicate to
 /// avoid widening the gcode module's public surface.

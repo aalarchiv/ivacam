@@ -1,9 +1,9 @@
 //! dpah (4re9-d): closed-form volume-validation for a `GcodeInclude`
 //! op. Proves end-to-end that the heightmap-side sim DOES model the
 //! included block when its content is all supported G-codes — i.e.
-//! the yhen claim "the unified preview::interpret_with_index pass
+//! the yhen claim "the unified `preview::interpret_with_index` pass
 //! already tessellates G0/G1/G2/G3 + canned cycles into
-//! ToolpathSegments that the sim already sweeps" is testable, not
+//! `ToolpathSegments` that the sim already sweeps" is testable, not
 //! just plausible.
 //!
 //! Fixture: a project with a single `GcodeInclude` op whose body
@@ -18,7 +18,7 @@
 //!       ≈ 92.566 mm³
 //!
 //! Sim measurement: build the heightmap, sweep the pipeline's
-//! interpreted toolpath into it, sum (top_z − h) over every cell.
+//! interpreted toolpath into it, sum (`top_z` − h) over every cell.
 //! Assert within 2 % of the closed-form expected — same tolerance
 //! band the chamfer/profile/drill tests use.
 
@@ -40,9 +40,9 @@ use super::common::{
 };
 
 /// 4mm flat endmill carving a 20 mm horizontal line at Z = -1, all
-/// authored by hand in the GcodeInclude body. The pipeline emits
-/// the body verbatim; preview::interpret reads it back and produces
-/// ToolpathSegments; the sim sweeps them; we measure the carved
+/// authored by hand in the `GcodeInclude` body. The pipeline emits
+/// the body verbatim; `preview::interpret` reads it back and produces
+/// `ToolpathSegments`; the sim sweeps them; we measure the carved
 /// volume and compare against the closed-form stadium-prism.
 #[test]
 fn gcode_include_g1_slot_volume_matches_closed_form() {

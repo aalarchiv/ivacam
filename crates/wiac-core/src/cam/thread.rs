@@ -150,6 +150,12 @@ pub fn helix_waypoints(
 /// Variant of [`helix_waypoints`] that takes an explicit chord
 /// density (segments per revolution). Lower numbers produce coarser
 /// polylines; higher numbers produce smoother but bigger gcode.
+///
+/// # Panics
+///
+/// Never panics in practice: `out.last().expect(..)` runs only after
+/// the `0..=total_steps` loop pushes at least one point, and the
+/// `total_steps == 0` early-return guards against the empty case.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn helix_waypoints_with_density(

@@ -63,6 +63,12 @@ pub fn polyline_arc_lengths(pts: &[Point2]) -> (Vec<f64>, f64) {
 /// `t = 0.0` corresponds to `pts[0]`; `t = 1.0` would be one full
 /// traversal back to `pts[0]` (for closed loops) or to `pts.last()`
 /// for open polylines.
+///
+/// # Panics
+///
+/// Never panics in practice: every `.unwrap()` on `pts.last()` and on
+/// `best` is gated by the early-return short-vec / zero-length checks
+/// at the top, so the slice is non-empty when those calls execute.
 #[must_use]
 pub fn polyline_project(pts: &[Point2], q: Point2, closed: bool) -> (f64, Point2) {
     if pts.len() < 2 {
@@ -118,6 +124,12 @@ pub fn polyline_project(pts: &[Point2], q: Point2, closed: bool) -> (f64, Point2
 /// point + the unit tangent direction at that point (forward along
 /// the polyline). Tangent stays well-defined at vertices by picking
 /// the OUTGOING segment.
+///
+/// # Panics
+///
+/// Never panics in practice: `pts.last().unwrap()` is reached only on
+/// the `closed` branch after the `pts.len() < 2` short-vec check, so
+/// the slice has at least one element when it executes.
 #[must_use]
 pub fn polyline_at_t(pts: &[Point2], t: f64, closed: bool) -> (Point2, (f64, f64)) {
     if pts.len() < 2 {

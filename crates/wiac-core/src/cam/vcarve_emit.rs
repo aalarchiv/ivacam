@@ -78,6 +78,13 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<Z
 /// back to the legacy 10° default — this is the kernel of the
 /// configurable lead-in ramp; the per-tool setting flows through
 /// `ToolEntry::vcarve_lead_in_angle_deg` → `ToolConfig` → here.
+///
+/// # Panics
+///
+/// Never panics in practice: the `partial_cmp(...).unwrap()` on the
+/// `levels` sort sees only finite f64 values built from `depth_per_pass`
+/// and `z_min` (both guarded against NaN by the early-return short-vec
+/// check and the `dpp.abs().max(...)` floor).
 #[allow(clippy::too_many_lines)]
 pub fn ratchet_emit_with_lead_in(
     axis: &[(f64, f64, f64, f64)],

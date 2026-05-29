@@ -79,6 +79,10 @@ fn cone_tool(id: u32, diameter_mm: f64, tip_angle_deg: f64) -> wiac_core::projec
 /// cone-tip Z (≈ -1.21 mm) sits well above the pocket floor, so the
 /// post-chamfer heightmap must not have any cell below -2 mm. Any
 /// dip below -2 is the v5az "cone tip below surrounding floor" bug.
+// juvx: pocket-then-chamfer end-to-end + heightmap sweep + STL dump
+// + assertion block; splitting would scatter the sentinel constants
+// across helpers and obscure the v5az contract.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
     // ── Cone math sanity ─────────────────────────────────────────────

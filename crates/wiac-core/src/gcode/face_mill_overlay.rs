@@ -543,6 +543,10 @@ mod tests {
     /// spiral phase continues from where the first ended. Reset state
     /// (a fresh `WirbelnState::default()` for each call) restarts the
     /// phase at zero — that's the pre-qm9x flat-spot bug.
+    // juvx: `sx_shared`/`sy_shared` vs `sx_fresh`/`sy_fresh` are an
+    // intentional pair — same XY component, two different state-carry
+    // scenarios. The shared prefix is the test contract.
+    #[allow(clippy::similar_names)]
     #[test]
     fn cross_pass_state_continues_phase_across_apply_wirbeln_calls() {
         // 11 mm line × 2 mm stepover: total winkel after pass1 ≈ 5.5·TAU

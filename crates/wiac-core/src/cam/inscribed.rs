@@ -67,6 +67,10 @@ pub fn inscribed_circle(region: &VcRegion, tool_radius: f64) -> Option<(f64, f64
 /// Minimum line-segment distance from `p` to the closed polyline
 /// `verts`. Used by the island-clearance check above; segment distance
 /// (not vertex distance) is essential for long flat island walls.
+// juvx: math convention — `p`/`a`/`b` are point bindings, `n` /
+// `t` are scalar accumulators in the standard projection identity.
+// Renaming would obscure the formula vs the textbook.
+#[allow(clippy::many_single_char_names)]
 fn min_distance_to_polyline(p: &Point2, verts: &[Point2]) -> f64 {
     let n = verts.len();
     if n < 2 {

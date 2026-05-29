@@ -64,6 +64,12 @@ fn fuzzy_for_segments(segments: &[Segment]) -> f64 {
 
 /// Group `segments` into [`VcObject`]s (chains) by walking neighbor endpoints.
 /// Closed chains (last endpoint matches first) get `closed = true`.
+///
+/// # Panics
+///
+/// Never panics in practice: the `.unwrap()` calls on `chain.last()` /
+/// `chain.first()` are guarded by the seed insertion that runs before the
+/// loop starts, so the chain is non-empty whenever they execute.
 #[must_use]
 pub fn segments_to_objects(segments: &[Segment]) -> Vec<VcObject> {
     let fuzzy = fuzzy_for_segments(segments);

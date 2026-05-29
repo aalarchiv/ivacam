@@ -1523,7 +1523,7 @@ components:
 
           Unknown `{tokens}` pass through as literal `{name}` text AND emit a `gcode_include_unknown_variable` warning so a typo doesn't silently leave a half-substituted line in the shipped program.
 
-          Sim coverage (yhen): the heightmap-side simulator classifies the included body line-by-line. Lines that map to G0/G1/G2/G3 + canned cycles G73/G81/G82/G83 are carved by the unified preview-interpret pass at run_pipeline's tail; everything else fires a counted `gcode_include_lines_skipped` summary warning so the user knows the carve is incomplete. When `verbose_unsim_warnings` is set (xi2g), the summary is followed by one `gcode_include_unsim_line` warning per skipped line for users debugging an exotic block.
+          Sim coverage (yhen): the heightmap-side simulator classifies the included body line-by-line. Lines that map to G0, G1, G2, G3 or canned cycles G73 / G81 / G82 / G83 are carved by the unified preview-interpret pass at `run_pipeline`'s tail. Everything else fires a counted `gcode_include_lines_skipped` summary warning so the user knows the carve is incomplete. When `verbose_unsim_warnings` is set (xi2g), the summary is followed by one `gcode_include_unsim_line` warning per skipped line for users debugging an exotic block.
         properties:
           content:
             default: ''
@@ -1607,7 +1607,7 @@ components:
           description: |-
             Final cut depth (negative number — a depth, not a height).
 
-            4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+            4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
           format: double
           type: number
         depth_list:
@@ -1689,7 +1689,7 @@ components:
           description: |-
             Final cut depth (negative number — a depth, not a height).
 
-            4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+            4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
           format: double
           type: number
         depth_list:

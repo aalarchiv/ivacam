@@ -40,6 +40,12 @@ const MIN_DIST: f64 = 1e-4;
 const CAMCFG_LAYER: &str = "_CAMCFG";
 
 /// Top-level entry: read a DXF file from disk and tessellate to segments.
+///
+/// # Errors
+///
+/// Returns `Error::io` if the file can't be opened / read, or the
+/// underlying error from [`import_dxf_bytes`] if the DXF content is
+/// malformed.
 pub fn import_dxf_path(path: &Path, opts: &ImportOptions) -> crate::Result<ImportOutput> {
     let bytes = std::fs::read(path).map_err(|e| {
         Error::io(format!("read {}: {e}", path.display()))
@@ -57,6 +63,11 @@ pub fn import_dxf_path(path: &Path, opts: &ImportOptions) -> crate::Result<Impor
 /// for the entities it natively supports, then text-mode-scan the same
 /// buffer for HATCH entities (which dxf-rs 0.6 silently swallows) and
 /// append their boundary geometry to the result.
+///
+/// # Errors
+///
+/// Returns `Error::bad_input` if the bytes don't parse as a DXF
+/// drawing, or propagates any error from [`import_drawing`].
 pub fn import_dxf_bytes(
     filename: String,
     bytes: &[u8],
@@ -101,6 +112,11 @@ pub fn import_dxf_bytes(
 
 /// Importer entry point that takes an already-parsed `Drawing`. Useful for
 /// tests and for the bytes-based import path.
+///
+/// # Errors
+///
+/// Returns `Error::bad_input` if the drawing has no extractable
+/// entities or its CAMCFG MTEXT entries fail to parse.
 pub fn import_drawing(
     drawing: &Drawing,
     filename: String,

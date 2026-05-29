@@ -32,6 +32,13 @@ use crate::BBox;
 const SVG_LAYER: &str = "svg";
 const SVG_COLOR: i32 = 7;
 
+/// Parse SVG bytes into `ImportOutput` segments.
+///
+/// # Errors
+///
+/// Returns `Error::bad_input` if the bytes fail to parse as SVG, or
+/// `Error::misconfigured` if the SVG has no extractable path
+/// geometry.
 pub fn import_svg_bytes(
     filename: String,
     bytes: &[u8],

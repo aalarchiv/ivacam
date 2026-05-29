@@ -152,6 +152,9 @@ pub fn heightmap_to_stl_binary(hm: &Heightmap, stock_bottom_z: f32) -> Vec<u8> {
 
 /// Right-hand-rule normal of a triangle. Degenerate (zero-area) triangles
 /// fall back to +Z so an STL viewer doesn't paint them black.
+// juvx: standard vector-math letters (a, b, c vertices; u, v edges;
+// n cross product). Renaming would obscure the textbook formula.
+#[allow(clippy::many_single_char_names)]
 fn triangle_normal(tri: &[[f32; 3]; 3]) -> [f32; 3] {
     let a = tri[0];
     let b = tri[1];

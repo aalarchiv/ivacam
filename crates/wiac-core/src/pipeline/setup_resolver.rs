@@ -653,6 +653,10 @@ pub fn fit_helix_radius_for_selection(
 /// first enabled op so `machine.unit`, `mill.fast_move_z`,
 /// `tool.rate_h` pick up the user's actual values rather than struct
 /// defaults.
+// juvx: long sequential field-set walk; splitting would scatter the
+// "pick first matching enabled op for X" decisions across helpers
+// and hide their precedence.
+#[allow(clippy::too_many_lines)]
 pub(super) fn header_setup_for(project: &Project) -> Setup {
     let mut setup = Setup {
         machine: project.machine.clone(),

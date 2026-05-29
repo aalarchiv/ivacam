@@ -1008,7 +1008,7 @@ export interface components {
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
              *
-             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
              * @default 0
              */
             depth: number;
@@ -1080,7 +1080,7 @@ export interface components {
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
              *
-             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
              * @default 0
              */
             depth: number;

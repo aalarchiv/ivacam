@@ -520,7 +520,7 @@ pub enum OpKind {
     /// Sim coverage (yhen): the heightmap-side simulator classifies
     /// the included body line-by-line. Lines that map to G0, G1, G2,
     /// G3 or canned cycles G73 / G81 / G82 / G83 are carved by the
-    /// unified preview-interpret pass at run_pipeline's tail.
+    /// unified preview-interpret pass at `run_pipeline`'s tail.
     /// Everything else fires a counted `gcode_include_lines_skipped`
     /// summary warning so the user knows the carve is incomplete.
     /// When `verbose_unsim_warnings` is set (xi2g), the summary is

@@ -200,7 +200,13 @@ fn emit_spot_pre_pass<P: PostProcessor>(
 /// chamfer width. Honors `op.finish_tool_id` for dual-tool
 /// drill+chamfer setups. Returns `true` when an actual drill→chamfer
 /// toolchange envelope was emitted (nguf).
-#[allow(clippy::too_many_arguments)]
+// juvx: small consts live near their use sites; the chamfer-after-
+// drill flow has natural top-to-bottom math that hoisting splits.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::items_after_statements
+)]
 fn emit_stufenfase<P: PostProcessor>(
     op: &Op,
     project: &Project,

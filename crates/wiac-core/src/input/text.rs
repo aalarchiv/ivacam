@@ -87,6 +87,12 @@ pub struct RenderTextLayerResponse {
 /// [`TextLayer`] (with embedded font bytes) and returns the same
 /// segments the pipeline pre-pass would produce, plus the
 /// single-line / family-name metadata the UI uses to label the layer.
+///
+/// # Errors
+///
+/// Returns `Error::misconfigured` if the embedded font bytes don't
+/// parse (neither as SVG 1.1 nor TTF/OTF), or if rendering the
+/// requested text fails (missing glyphs, zero-size geometry).
 pub fn render_text_layer_api(layer: &TextLayer) -> crate::Result<RenderTextLayerResponse> {
     // e3kg: dispatch on the font-bytes header — SVG 1.1 single-line
     // fonts and TTF / OTF travel through the same `font_bytes`
@@ -120,6 +126,11 @@ pub fn render_text_layer_api(layer: &TextLayer) -> crate::Result<RenderTextLayer
 /// structured [`Error`] (kind=Misconfigured) when the bytes don't parse
 /// as a font — the user can recover by picking a different font or
 /// installing one.
+///
+/// # Errors
+///
+/// Returns `Error::misconfigured` if the font bytes don't parse or
+/// the text can't be rendered (empty glyph outlines, bad font tables).
 pub fn render_text_api(req: &RenderTextRequest) -> crate::Result<RenderTextResponse> {
     // e3kg: SVG 1.1 single-line font dispatch (same sniff every
     // text-render entry uses).
@@ -281,6 +292,11 @@ impl OutlineBuilder for Walker<'_> {
 /// Render a string as flat segments at `origin` (the bottom-left of the
 /// first glyph's baseline) at `height` mm. `layer` and `color` decorate the
 /// output segments.
+///
+/// # Errors
+///
+/// Returns `Error::misconfigured` if the font bytes don't parse or
+/// the text can't be tessellated to outlines.
 pub fn render_text(
     font_bytes: &[u8],
     text: &str,
@@ -348,6 +364,12 @@ pub fn render_text(
 /// alignment, letter spacing, line spacing, and a rotation pivot at the
 /// layer's `origin`. The output segments live on the synthetic layer
 /// `__text_<id>` so ops can target them via `OpSource::Layers`.
+///
+/// # Errors
+///
+/// Returns `Error::misconfigured` if the embedded font bytes don't
+/// parse, or if the text fails to lay out (empty glyphs, oversize
+/// layer that exceeds workspace bounds).
 pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
     // e3kg: SVG 1.1 single-line fonts ride the same `font_bytes`
     // channel. Sniff the prefix; route to the SVG renderer when it

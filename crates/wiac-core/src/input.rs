@@ -123,6 +123,11 @@ pub struct ImportedObject {
 }
 
 /// Dispatch to the right importer based on file extension.
+///
+/// # Errors
+///
+/// Returns `Error::unsupported` for unknown extensions and
+/// propagates any per-format importer error (`dxf_in` / `svg_in`).
 pub fn import_path(path: &Path, opts: &ImportOptions) -> Result<ImportOutput> {
     let suffix = path
         .extension()
@@ -148,6 +153,11 @@ pub fn import_path(path: &Path, opts: &ImportOptions) -> Result<ImportOutput> {
 
 /// Bytes-based dispatch — used by transports that don't have a filesystem
 /// (browser WASM) or that already hold the upload buffer in memory.
+///
+/// # Errors
+///
+/// Returns `Error::unsupported` for unknown extensions and
+/// propagates any per-format importer error.
 pub fn import_bytes(filename: &str, bytes: &[u8], opts: &ImportOptions) -> Result<ImportOutput> {
     let suffix = std::path::Path::new(filename)
         .extension()

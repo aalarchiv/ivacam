@@ -46,6 +46,10 @@ impl Post {
     /// emitted as a zero-length move (start == end), a quarter-arc
     /// from (10, 0) to (0, 10) became a straight diagonal. Drag knives
     /// cut a triangle where the operator drew a curve.
+    // juvx: local `const TAU` lives near its use so the tessellation
+    // math reads top-to-bottom without scrolling. Hoisting it would
+    // split the related step + sweep + dtheta block.
+    #[allow(clippy::items_after_statements)]
     fn tessellated_arc(
         &mut self,
         x: Option<f64>,
@@ -79,22 +83,21 @@ impl Post {
         }
         let theta_start = (sy - cy).atan2(sx - cx);
         let theta_end = (ey - cy).atan2(ex - cx);
-        const TAU: f64 = std::f64::consts::TAU;
         let mut sweep = theta_end - theta_start;
         let coincident = (sx - ex).abs() < 1e-9 && (sy - ey).abs() < 1e-9;
         if cw {
             // G2 = CW = decreasing theta
             if coincident {
-                sweep = -TAU;
+                sweep = -std::f64::consts::TAU;
             } else if sweep >= -1e-9 {
-                sweep -= TAU;
+                sweep -= std::f64::consts::TAU;
             }
         } else {
             // G3 = CCW = increasing theta
             if coincident {
-                sweep = TAU;
+                sweep = std::f64::consts::TAU;
             } else if sweep <= 1e-9 {
-                sweep += TAU;
+                sweep += std::f64::consts::TAU;
             }
         }
         // ~5° per chord; min 8 chords (so even tiny arcs draw curved).

@@ -2055,6 +2055,10 @@ pub fn apply_overcut_to_offsets(
 /// outward bisector and stop at the first boundary endpoint that lies on the
 /// ray. The dip length is `dist_to_boundary - tool_radius`; the inserted
 /// vertex pattern is `corner, dip, corner` so the cutter swings out and back.
+// juvx: linear reflex-corner walk; splitting into helpers would force a
+// shared mutable cursor + parallel index lookups across them. Read
+// top-to-bottom as one state machine.
+#[allow(clippy::too_many_lines)]
 pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment], tool_radius: f64) {
     use std::f64::consts::FRAC_PI_4;
     if !offset.closed || offset.segments.len() < 3 {

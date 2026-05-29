@@ -406,15 +406,14 @@
           The 3D heightfield is a forward-only carve simulator: cells can only get deeper. <b
             >When on</b
           >
-          (default), every backstep resets the sim and replays the carve from t = 0 to the new
-          playhead so the heightfield exactly tracks the playhead's position in time. Replay cost
-          scales with the number of segments replayed; on programs with tens of thousands of
-          segments scrubbing can stutter. <b>When off</b>, backstep is a no-op for the sim — the
-          heightfield retains the deepest cut at each XY from the last time the playhead reached
-          that segment. Useful for fast scrubbing on huge programs when you don't need time-accurate
-          rewind, BUT note: after every Generate the playhead jumps to 1.0 so warnings surface,
-          which means the off setting lands the heightfield at end-of-program until you re-scrub
-          forward.
+          (default), every backstep resets the sim and replays the carve from t = 0 to the new playhead
+          so the heightfield exactly tracks the playhead's position in time. Replay cost scales with the
+          number of segments replayed; on programs with tens of thousands of segments scrubbing can stutter.
+          <b>When off</b>, backstep is a no-op for the sim — the heightfield retains the deepest cut
+          at each XY from the last time the playhead reached that segment. Useful for fast scrubbing
+          on huge programs when you don't need time-accurate rewind, BUT note: after every Generate
+          the playhead jumps to 1.0 so warnings surface, which means the off setting lands the
+          heightfield at end-of-program until you re-scrub forward.
         </p>
       </section>
 

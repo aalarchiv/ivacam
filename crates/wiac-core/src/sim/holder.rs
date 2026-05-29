@@ -167,6 +167,12 @@ impl HolderProfile {
     /// Linearly-interpolated tool radius at `z_above_tip` mm above the
     /// cutting tip. Returns `None` once `z_above_tip` is past the top of
     /// the holder.
+    ///
+    /// # Panics
+    ///
+    /// Never in practice: the trailing `self.points.last().unwrap()` is
+    /// guarded by the early-return on `self.points.is_empty()` at the
+    /// top of the function.
     #[must_use]
     pub fn radius_at(&self, z_above_tip: f64) -> Option<f64> {
         if self.points.is_empty() {

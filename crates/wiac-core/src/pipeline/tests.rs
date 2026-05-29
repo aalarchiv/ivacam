@@ -20,6 +20,10 @@ use crate::project::{
 /// a varying-Z surfacing toolpath end-to-end (no source geometry needed —
 /// the surface comes from the project's relief source). A wrong tool kind
 /// surfaces `tool_kind_mismatch`.
+// juvx: end-to-end relief-mill assertion — pipeline build + sweep
+// + per-cell heightmap check live in the same fn so the brightness
+// → Z mapping reads top-to-bottom with the assertions.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn pipeline_relief_mill_emits_varying_z_ballnose_surface() {
     use crate::cam::surface_mill::ScanDirection;
@@ -2401,6 +2405,9 @@ fn building_block_ops_round_trip_through_serde() {
 /// `{safe_z}` against the post's live state. Run a Profile op first
 /// so the post's `last_x` / `last_y` / `last_z` are non-None when
 /// the include block executes.
+// juvx: long fixture-builder + multi-stage assert; splitting would
+// fragment the variable-expansion narrative across helpers.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn pipeline_emits_gcode_include_with_variable_expansion() {
     let profile = Op {
@@ -3261,7 +3268,7 @@ fn op_group_round_trips_through_serde() {
 /// between the two cutting op bodies.
 ///
 /// Build the project programmatically so we don't have to hand-roll
-/// the full JSON for every nested struct (MachineConfig, ToolEntry,
+/// the full JSON for every nested struct (`MachineConfig`, `ToolEntry`,
 /// etc.). Then serialize → strip the Pause's depth fields → deserialize
 /// to exercise the actual failure-mode wire shape.
 #[test]

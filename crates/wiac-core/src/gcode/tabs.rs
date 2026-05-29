@@ -261,6 +261,8 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
 ///    circle and the tab circle, then check whether either lands
 ///    inside the arc's angular sweep — OR whether either of the
 ///    arc's endpoints sits inside the disc (tangential graze case).
+// math convention: dx/dy components share the `d`-prefix.
+#[allow(clippy::similar_names)]
 fn arc_intersects_tab(
     seg: &Segment,
     center: Point2,

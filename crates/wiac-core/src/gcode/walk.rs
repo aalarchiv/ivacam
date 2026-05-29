@@ -330,6 +330,8 @@ fn emit_dragoff_swivel<P: PostProcessor>(
     }
 }
 
+// math convention: rx_start / ry_start share the radius prefix.
+#[allow(clippy::similar_names)]
 fn emit_path_with_dragoff<P: PostProcessor>(
     segments: &[Segment],
     dragoff: f64,

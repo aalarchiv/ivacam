@@ -38,6 +38,10 @@ const MIXED_MERGE_FRACTION_OF_SPACING: f64 = 0.25;
 /// spacing so they don't sit on the start vertex; Mixed-mode merges
 /// any manual placement that lands within `1/auto_count *
 /// MIXED_MERGE_FRACTION_OF_SPACING` of an auto position (manual wins).
+// juvx: walk over (object, mode) crosses every TabPlacementMode arm
+// inline; splitting per mode would duplicate the warning-push +
+// dedupe-merge logic across branches.
+#[allow(clippy::too_many_lines)]
 pub(super) fn build_op_tabs_by_object(
     op: &Op,
     objects: &[VcObject],

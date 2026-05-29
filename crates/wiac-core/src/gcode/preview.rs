@@ -339,10 +339,10 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
 /// Extract the op id from a `; OP <n>` or `(OP <n>)` marker. Returns
 /// `None` for non-marker lines.
 ///
-/// Program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude)
-/// emit headers of the form `; OP <n> (<label>)` — e.g.
-/// `; OP 2 (gcode include: /tmp/return_home.nc)`. We must accept the
-/// trailing parenthesized label, otherwise the active_op switch is
+/// Program-only ops (`Pause`, `Homing`, `Probe`, `CycleMarker`,
+/// `GcodeInclude`) emit headers of the form `; OP <n> (<label>)` —
+/// e.g. `; OP 2 (gcode include: /tmp/return_home.nc)`. We must accept the
+/// trailing parenthesized label, otherwise the `active_op` switch is
 /// missed and every segment born from the program-only block silently
 /// inherits the previous CAM op's id (qls1). We take the first
 /// whitespace-separated token after `OP` and parse THAT — the label
@@ -566,9 +566,9 @@ mod tests {
         assert_eq!(segs[2].op_id, 2);
     }
 
-    /// qls1: program-only ops (Pause, Homing, Probe, CycleMarker,
-    /// GcodeInclude) emit `; OP <n> (<label>)` headers — the trailing
-    /// parenthesized label must not block the active_op switch.
+    /// qls1: program-only ops (Pause, Homing, Probe, `CycleMarker`,
+    /// `GcodeInclude`) emit `; OP <n> (<label>)` headers — the trailing
+    /// parenthesized label must not block the `active_op` switch.
     /// Before the fix, `parse_op_marker` ran `parse::<u32>` against the
     /// whole `"<n> (label)"` rest and returned `None`, so every
     /// segment from the program-only block silently inherited the

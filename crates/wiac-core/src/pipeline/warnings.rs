@@ -434,6 +434,10 @@ pub(super) fn push_trochoidal_warnings(op: &Op, warnings: &mut Vec<PipelineWarni
 
 /// Sanity warnings that don't depend on whether the offset cascade
 /// succeeded. Run before the heavy work.
+// juvx: long per-warning-category cascade; each block is a tiny
+// inline check that doesn't deserve its own helper, and splitting
+// would require shared `warnings` mutability across them.
+#[allow(clippy::too_many_lines)]
 pub(super) fn push_tool_fit_kind_warnings(
     op: &Op,
     project: &Project,

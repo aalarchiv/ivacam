@@ -76,6 +76,11 @@ pub struct Glyph {
 /// Parse an SVG 1.1 font file. Returns `Error::misconfigured` when the
 /// input doesn't look like an SVG font — the caller can fall through
 /// to the ttf-parser path.
+///
+/// # Errors
+///
+/// Returns `Error::misconfigured` on non-UTF8 input, missing
+/// `<font>` / `<font-face>` markup, or malformed glyph path data.
 pub fn parse(bytes: &[u8]) -> Result<SvgFont> {
     let src = std::str::from_utf8(bytes).map_err(|e| {
         Error::misconfigured(format!("SVG font: not UTF-8 ({e})"))
@@ -363,7 +368,10 @@ fn next_flag(tokens: &[Token], i: &mut usize, d: &str) -> Result<bool> {
 /// Math follows W3C SVG 1.1 Appendix F.6.5: endpoint-form → center-form,
 /// then sample uniformly in arc-parameter `θ` with the chord count
 /// chosen to keep the chord-error under `tolerance`.
-#[allow(clippy::too_many_arguments)]
+// juvx: W3C Appendix F.6.5 names — `rx_in`/`ry_in`, `cxp`/`cyp`,
+// `ux`/`uy`/`vx`/`vy` follow the spec exactly; renaming for clippy
+// would obscure the algorithm vs the source standard.
+#[allow(clippy::too_many_arguments, clippy::similar_names)]
 fn tessellate_arc(
     start: Point2,
     end: Point2,
@@ -445,6 +453,8 @@ fn tessellate_arc(
 
 /// SVG-spec angle: signed angle from (ux, uy) to (vx, vy). Returns in
 /// `(-π, π]`.
+// juvx: W3C F.6.5.4 vector names.
+#[allow(clippy::similar_names)]
 fn angle_between(ux: f64, uy: f64, vx: f64, vy: f64) -> f64 {
     let dot = ux * vx + uy * vy;
     let det = ux * vy - uy * vx;

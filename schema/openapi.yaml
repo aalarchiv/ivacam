@@ -1603,7 +1603,11 @@ components:
         (kbx5 step 3: the flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
       properties:
         depth:
-          description: Final cut depth (negative number — a depth, not a height).
+          default: 0.0
+          description: |-
+            Final cut depth (negative number — a depth, not a height).
+
+            4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
           format: double
           type: number
         depth_list:
@@ -1613,7 +1617,11 @@ components:
             type: number
           type: array
         fast_move_z:
-          description: Z for rapid moves between cuts.
+          default: 0.0
+          description: |-
+            Z for rapid moves between cuts.
+
+            4dxb: defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
           format: double
           type: number
         feed_rate_override:
@@ -1646,7 +1654,11 @@ components:
           - integer
           - 'null'
         start_depth:
-          description: Z at which the first pass starts.
+          default: 0.0
+          description: |-
+            Z at which the first pass starts.
+
+            4dxb: same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
           format: double
           type: number
         step:
@@ -1663,10 +1675,6 @@ components:
           description: Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
           format: double
           type: number
-      required:
-      - depth
-      - fast_move_z
-      - start_depth
       type: object
     OpParamsCommon:
       description: |-
@@ -1677,7 +1685,11 @@ components:
         (kbx5 step 3: the flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
       properties:
         depth:
-          description: Final cut depth (negative number — a depth, not a height).
+          default: 0.0
+          description: |-
+            Final cut depth (negative number — a depth, not a height).
+
+            4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
           format: double
           type: number
         depth_list:
@@ -1687,7 +1699,11 @@ components:
             type: number
           type: array
         fast_move_z:
-          description: Z for rapid moves between cuts.
+          default: 0.0
+          description: |-
+            Z for rapid moves between cuts.
+
+            4dxb: defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
           format: double
           type: number
         feed_rate_override:
@@ -1720,7 +1736,11 @@ components:
           - integer
           - 'null'
         start_depth:
-          description: Z at which the first pass starts.
+          default: 0.0
+          description: |-
+            Z at which the first pass starts.
+
+            4dxb: same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
           format: double
           type: number
         step:
@@ -1737,10 +1757,6 @@ components:
           description: Cut past the nominal `depth` by this much (positive number — gets subtracted from the working depth). Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom even with minor stock thickness variation. 0.0 = no extension.
           format: double
           type: number
-      required:
-      - depth
-      - fast_move_z
-      - start_depth
       type: object
     OpSource:
       oneOf:

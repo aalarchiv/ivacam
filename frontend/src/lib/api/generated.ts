@@ -1007,6 +1007,9 @@ export interface components {
             /**
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
+             *
+             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+             * @default 0
              */
             depth: number;
             /** @description Explicit list of Z depths for each pass, overriding the `step+finish_step` schedule. Useful for non-linear schedules (shallower at start for tough material, deeper later, slow finish at the end). Each entry is an absolute Z (negative number); the cutter visits them in order. Empty = use the step-down loop. */
@@ -1014,6 +1017,9 @@ export interface components {
             /**
              * Format: double
              * @description Z for rapid moves between cuts.
+             *
+             *     4dxb: defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
+             * @default 0
              */
             fast_move_z: number;
             /**
@@ -1041,6 +1047,9 @@ export interface components {
             /**
              * Format: double
              * @description Z at which the first pass starts.
+             *
+             *     4dxb: same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
+             * @default 0
              */
             start_depth: number;
             /**
@@ -1070,6 +1079,9 @@ export interface components {
             /**
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
+             *
+             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+             * @default 0
              */
             depth: number;
             /** @description Explicit list of Z depths for each pass, overriding the `step+finish_step` schedule. Useful for non-linear schedules (shallower at start for tough material, deeper later, slow finish at the end). Each entry is an absolute Z (negative number); the cutter visits them in order. Empty = use the step-down loop. */
@@ -1077,6 +1089,9 @@ export interface components {
             /**
              * Format: double
              * @description Z for rapid moves between cuts.
+             *
+             *     4dxb: defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
+             * @default 0
              */
             fast_move_z: number;
             /**
@@ -1104,6 +1119,9 @@ export interface components {
             /**
              * Format: double
              * @description Z at which the first pass starts.
+             *
+             *     4dxb: same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
+             * @default 0
              */
             start_depth: number;
             /**

@@ -215,8 +215,20 @@ pub struct VCarveParams {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct OpParamsCommon {
     /// Final cut depth (negative number — a depth, not a height).
+    ///
+    /// 4dxb: `#[serde(default)]` so program-only ops (Pause, Homing,
+    /// Probe, CycleMarker, GcodeInclude) — which have no meaningful
+    /// depth schedule and whose FE constructors omit the field —
+    /// deserialize without a "missing field `depth`" error. Cutting
+    /// ops always emit the field explicitly; this default only fires
+    /// for program-only ops whose params bag is ignored anyway.
+    #[serde(default)]
     pub depth: f64,
     /// Z at which the first pass starts.
+    ///
+    /// 4dxb: same rationale as `depth` — defaulted to 0.0 so
+    /// program-only ops decode cleanly.
+    #[serde(default)]
     pub start_depth: f64,
     /// Per-pass step (negative ⇒ down). None = inherit from
     /// `ToolEntry.default_step`. Legacy projects wrote a bare `0.0` to
@@ -228,6 +240,11 @@ pub struct OpParamsCommon {
     )]
     pub step: Option<f64>,
     /// Z for rapid moves between cuts.
+    ///
+    /// 4dxb: defaulted to 0.0 alongside the other two universal
+    /// scalars. Program-only ops never use this; cutting ops always
+    /// emit it explicitly.
+    #[serde(default)]
     pub fast_move_z: f64,
     /// Cut-order strategy for multiple objects.
     #[serde(default)]
@@ -416,6 +433,41 @@ mod tests {
             json.contains("\"step\":-0.5"),
             "step=Some(-0.5) should write bare number: {json}"
         );
+    }
+
+    /// 4dxb: program-only ops (Pause, Homing, Probe, CycleMarker,
+    /// GcodeInclude) carry no meaningful depth schedule and the
+    /// frontend constructors at `project.svelte.ts` omit
+    /// `depth` / `startDepth` from the op shape. `JSON.stringify`
+    /// drops undefined keys, so the wire `params` bag arrives
+    /// without those fields. Before this fix, the Rust deserializer
+    /// bailed with `missing field depth`, breaking Generate
+    /// whenever a Pause sat between cutting ops. The three universal
+    /// scalars (depth, start_depth, fast_move_z) now decode to 0.0
+    /// when omitted — program-only ops ignore them anyway.
+    #[test]
+    fn op_params_decodes_with_all_universal_scalars_missing() {
+        // Mirrors what the FE serializer emits for a Pause op:
+        // only `objectorder` is present in the bag.
+        let json = r#"{"objectorder":"nearest"}"#;
+        let p: OpParams = serde_json::from_str(json).expect(
+            "OpParams must deserialize when depth / start_depth / fast_move_z are omitted",
+        );
+        assert_eq!(p.depth, 0.0);
+        assert_eq!(p.start_depth, 0.0);
+        assert_eq!(p.fast_move_z, 0.0);
+        assert_eq!(p.step, None);
+    }
+
+    /// 4dxb regression: a completely empty params bag still decodes
+    /// (covers the most-pessimistic future serializer that emits
+    /// nothing for a program-only op).
+    #[test]
+    fn op_params_decodes_from_empty_object() {
+        let p: OpParams = serde_json::from_str("{}").expect("empty params bag must decode");
+        assert_eq!(p.depth, 0.0);
+        assert_eq!(p.start_depth, 0.0);
+        assert_eq!(p.fast_move_z, 0.0);
     }
 
     #[test]

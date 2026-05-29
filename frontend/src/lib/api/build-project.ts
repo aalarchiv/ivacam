@@ -1006,8 +1006,15 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
       : {}),
     source: buildSource(opIn),
     params: {
-      depth: op.depth,
-      start_depth: op.startDepth,
+      // 4dxb: program-only ops (Pause, Homing, Probe, CycleMarker,
+      // GcodeInclude) construct without `depth` / `startDepth` —
+      // they have no meaningful depth schedule. Emit explicit 0
+      // fallbacks so the wire payload is well-formed even for
+      // older Rust binaries that pre-date the corresponding
+      // `#[serde(default)]` annotation on `OpParamsCommon`. The
+      // pipeline ignores params for program-only ops anyway.
+      depth: op.depth ?? 0,
+      start_depth: op.startDepth ?? 0,
       ...(op.step !== null && op.step !== undefined ? { step: op.step } : {}),
       fast_move_z: machine.fastMoveZ,
       objectorder: 'nearest',

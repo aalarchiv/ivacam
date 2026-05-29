@@ -3249,6 +3249,118 @@ fn op_group_round_trips_through_serde() {
     assert!(back2.group.is_none());
 }
 
+/// 4dxb: simulate the exact wire payload the frontend sends for a
+/// program-only op — a Pause between two cutting ops, params bag
+/// missing `depth`/`start_depth`/`fast_move_z` entirely (the FE
+/// constructor doesn't set them; JSON.stringify drops the
+/// undefined keys). Pre-fix this failed at deserialize with
+/// `missing field depth`. Post-fix the universal scalars default to
+/// 0.0 and the whole project decodes cleanly. Then run the pipeline
+/// and assert the Pause still gets emitted (`; OP 2 (pause)` header)
+/// between the two cutting op bodies.
+///
+/// Build the project programmatically so we don't have to hand-roll
+/// the full JSON for every nested struct (MachineConfig, ToolEntry,
+/// etc.). Then serialize → strip the Pause's depth fields → deserialize
+/// to exercise the actual failure-mode wire shape.
+#[test]
+fn project_with_pause_between_cuts_decodes_and_runs() {
+    let make_profile = |id: u32, name: &str, depth: f64| Op {
+        id,
+        name: name.into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+        group: None,
+    };
+    let pause = Op {
+        id: 2,
+        name: "Pause".into(),
+        enabled: true,
+        kind: OpKind::Pause {
+            message: "Flip stock".into(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+        group: None,
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![
+            make_profile(1, "Cut 1", -1.0),
+            pause,
+            make_profile(3, "Cut 2", -2.0),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+
+    // Round-trip through JSON, then surgically drop the three
+    // universal scalars from the Pause's params bag — exactly what
+    // `JSON.stringify` does when the FE op shape carries undefined.
+    let mut as_value = serde_json::to_value(&project).expect("project serializes");
+    let pause_params = as_value["operations"][1]["params"]
+        .as_object_mut()
+        .expect("params bag is an object");
+    pause_params.remove("depth");
+    pause_params.remove("start_depth");
+    pause_params.remove("fast_move_z");
+
+    // Pre-fix: this `from_value` panics with `missing field 'depth'`.
+    // Post-fix (4dxb): the three scalars default to 0.0 and the
+    // whole project decodes cleanly.
+    let project: crate::project::Project = serde_json::from_value(as_value)
+        .expect("4dxb: project must decode with Pause params bag missing depth scalars");
+    // Cross-check: the Pause's depth defaulted to 0.0, the Cuts'
+    // depths round-tripped untouched.
+    assert_eq!(project.operations[0].params.depth, -1.0);
+    assert_eq!(project.operations[1].params.depth, 0.0);
+    assert_eq!(project.operations[1].params.start_depth, 0.0);
+    assert_eq!(project.operations[1].params.fast_move_z, 0.0);
+    assert_eq!(project.operations[2].params.depth, -2.0);
+
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline runs over a Pause-between-cuts project");
+    let gcode = &resp.gcode;
+    // The Pause op-header marker lands between the two cutting ops,
+    // confirming the program-only op slotted in correctly.
+    assert!(
+        gcode.contains("; OP 2 (pause)"),
+        "expected `; OP 2 (pause)` header between cutting ops; got:\n{gcode}"
+    );
+}
+
 /// rt1.34: Pause op round-trips through serde JSON (`snake_case` tag).
 #[test]
 fn pause_op_round_trips_through_serde() {

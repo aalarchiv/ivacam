@@ -660,6 +660,179 @@ fn expand_gcode_include_vars(
     (out, unknown)
 }
 
+// yhen: Outcome of classifying one line of an expanded GcodeInclude
+// body. Mirrors the supported set of `gcode::preview::interpret`:
+// anything that interpreter tessellates into ToolpathSegments lands
+// in Simulated; anything heightmap-neutral (M-codes, units, modal
+// switches, blank/comment lines) lands in NoOp; explicit unsupported
+// G-codes or multi-axis A/B/C/U/V/W words land in Unsimulated with
+// a short reason string the caller can surface in a warning.
+//
+// Modal continuation (e.g. a bare `X10 Y10` after a prior `G1`) is
+// classified Simulated — the preview interpreter does carry modal
+// state across lines, and the heightmap will get carved correctly.
+#[derive(Debug, Clone)]
+pub(crate) enum GcodeIncludeLineClass {
+    Simulated,
+    NoOp,
+    Unsimulated(String),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SkippedIncludeLine {
+    /// 1-based line offset within the EXPANDED body.
+    pub line_no: u32,
+    /// Trimmed source text (without trailing comment).
+    pub trimmed: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct GcodeIncludeClassification {
+    pub n_simulated: usize,
+    pub n_noop: usize,
+    pub skipped: Vec<SkippedIncludeLine>,
+}
+
+/// Classify each line of an expanded GcodeInclude body. The blanket
+/// `gcode_include_not_simulated` warning (pre-yhen) lied to the user
+/// for the common case of a hand-rolled return-home block that's
+/// 100 % G0/G1/G2/G3 — the sim DOES already carve those, because the
+/// unified `preview::interpret_with_index` at run_pipeline's tail
+/// ingests them via `post.raw()`. This classifier lets the caller
+/// emit a counted, accurate "X of Y lines skipped" summary instead.
+fn classify_gcode_include_body(expanded: &str) -> GcodeIncludeClassification {
+    let mut out = GcodeIncludeClassification::default();
+    for (idx0, raw) in expanded.lines().enumerate() {
+        let line_no = u32::try_from(idx0 + 1).unwrap_or(u32::MAX);
+        match classify_gcode_include_line(raw) {
+            GcodeIncludeLineClass::Simulated => out.n_simulated += 1,
+            GcodeIncludeLineClass::NoOp => out.n_noop += 1,
+            GcodeIncludeLineClass::Unsimulated(reason) => {
+                out.skipped.push(SkippedIncludeLine {
+                    line_no,
+                    trimmed: strip_gcode_comment(raw).trim().to_string(),
+                    reason,
+                });
+            }
+        }
+    }
+    out
+}
+
+fn classify_gcode_include_line(raw: &str) -> GcodeIncludeLineClass {
+    let stripped = strip_gcode_comment(raw);
+    let trimmed = stripped.trim();
+    if trimmed.is_empty() {
+        return GcodeIncludeLineClass::NoOp;
+    }
+    let mut has_movement = false;
+    let mut multi_axis_word: Option<char> = None;
+    let mut simulated_g: Option<u32> = None;
+    let mut unsupported_g: Option<u32> = None;
+    for tok in trimmed.split_whitespace() {
+        if tok.is_empty() {
+            continue;
+        }
+        let head = tok.as_bytes()[0].to_ascii_uppercase();
+        let rest = &tok[1..];
+        match head {
+            b'G' => {
+                if let Ok(n) = rest.parse::<u32>() {
+                    if matches!(n, 0 | 1 | 2 | 3 | 73 | 81 | 82 | 83) {
+                        simulated_g = Some(n);
+                    } else if matches!(
+                        n,
+                        4 | 17
+                            | 18
+                            | 19
+                            | 20
+                            | 21
+                            | 28
+                            | 30
+                            | 40
+                            | 49
+                            | 53
+                            | 54
+                            | 55
+                            | 56
+                            | 57
+                            | 58
+                            | 59
+                            | 80
+                            | 90
+                            | 91
+                            | 92
+                            | 93
+                            | 94
+                            | 95
+                    ) {
+                        // dwell / plane select / unit / work offsets /
+                        // modal cancel / distance mode / feed mode —
+                        // all heightmap-neutral.
+                    } else {
+                        unsupported_g = Some(n);
+                    }
+                }
+            }
+            b'M' => {
+                // Every M-code is heightmap-neutral as far as the sim
+                // is concerned: spindle, coolant, pause, end-of-program
+                // don't move the cutter. Tool-change M6 happens outside
+                // the heightmap sweep too. So we classify all M-codes
+                // as NoOp; the carving correctness is unaffected.
+                // (If a future op kind models coolant or spindle in the
+                // heightmap, revisit.)
+            }
+            b'X' | b'Y' | b'Z' => has_movement = true,
+            b'A' | b'B' | b'C' | b'U' | b'V' | b'W' => {
+                if multi_axis_word.is_none() {
+                    multi_axis_word = Some(head as char);
+                }
+            }
+            // Arc-center (I/J/K), radius / canned-cycle params (R/P/Q),
+            // line number (N), tool (T), offsets (H/D), feed (F), speed
+            // (S) — none of these alone change the carve.
+            _ => {}
+        }
+    }
+    if let Some(n) = unsupported_g {
+        return GcodeIncludeLineClass::Unsimulated(format!(
+            "unsupported G{n} — sim recognizes only G0/G1/G2/G3 + canned cycles G73/G81/G82/G83"
+        ));
+    }
+    if let Some(axis) = multi_axis_word {
+        return GcodeIncludeLineClass::Unsimulated(format!(
+            "{axis}-axis word — sim is 3-axis (XYZ) only"
+        ));
+    }
+    if simulated_g.is_some() || has_movement {
+        GcodeIncludeLineClass::Simulated
+    } else {
+        // Lone F / S / T / N / standalone modal — no carve impact.
+        GcodeIncludeLineClass::NoOp
+    }
+}
+
+/// In-line comment stripper for classify_gcode_include_line. Mirrors
+/// `gcode::preview::strip_comment` (parens-delimited inline AND
+/// trailing `;` to EOL) but lives here as a private duplicate to
+/// avoid widening the gcode module's public surface.
+fn strip_gcode_comment(line: &str) -> String {
+    let mut out = String::new();
+    let mut in_paren = false;
+    for ch in line.chars() {
+        match ch {
+            '(' => in_paren = true,
+            ')' => in_paren = false,
+            ';' => break,
+            _ if !in_paren => out.push(ch),
+            _ => {}
+        }
+    }
+    out
+}
+
 fn count_tool_changes(project: &Project) -> u32 {
     let mut n = 0u32;
     let mut prev_tool_id: Option<u32> = None;
@@ -1044,14 +1217,45 @@ where
             for line in expanded.lines() {
                 post.raw(line);
             }
-            warnings.push(PipelineWarning {
-                op_id: Some(op.id),
-                kind: "gcode_include_not_simulated".into(),
-                message: format!(
-                    "Op '{}': the sim doesn't model the included G-code block — the carved stock state across this slot may not match the controller's actual behavior. Inspect the included file by hand.",
-                    op.name,
-                ),
-            });
+            // yhen: classify the expanded body and emit a counted
+            // summary instead of the legacy blanket
+            // `gcode_include_not_simulated` warning. The unified
+            // `preview::interpret_with_index` pass at the tail of
+            // run_pipeline already tessellates G0/G1/G2/G3 +
+            // G73/G81/G82/G83 lines into ToolpathSegments that the
+            // sim sweeps — saying "not simulated" for a 100 % G1
+            // return-home block was a lie. Now we warn only when
+            // there are genuinely unsimulatable lines, and we say
+            // how many.
+            let classification = classify_gcode_include_body(&expanded);
+            if !classification.skipped.is_empty() {
+                let n_total = classification.n_simulated
+                    + classification.n_noop
+                    + classification.skipped.len();
+                // Lead with the first skipped line so the user has a
+                // concrete starting point without scanning the
+                // warnings panel.
+                let head = &classification.skipped[0];
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "gcode_include_lines_skipped".into(),
+                    message: format!(
+                        "Op '{}': {n_skipped} of {n_total} included G-code line(s) cannot be simulated — the carved stock state across this slot may be incomplete. First skipped: line {head_line} `{head_text}` ({head_reason}). Inspect the included file by hand.",
+                        op.name,
+                        n_skipped = classification.skipped.len(),
+                        head_line = head.line_no,
+                        head_text = head.trimmed,
+                        head_reason = head.reason,
+                    ),
+                });
+            }
+            // Note: a 100 %-simulated body emits NO warning (was the
+            // blanket gcode_include_not_simulated before yhen). A
+            // body that's nothing but no-op (only comments / lone
+            // M-codes / no movement at all) ALSO emits no per-line
+            // warning here — the pre-existing `gcode_include_empty`
+            // check above already catches `expanded.trim().is_empty()`,
+            // and a comment-only body is the user's choice.
             // Reset post state — we have no idea where the included
             // block left the spindle. The next op re-emits all its
             // targets explicitly so subsequent moves are still

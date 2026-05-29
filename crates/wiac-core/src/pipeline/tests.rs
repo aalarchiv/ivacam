@@ -2496,13 +2496,23 @@ fn pipeline_emits_gcode_include_with_variable_expansion() {
         gcode.contains("G0 X0 Y0"),
         "expected verbatim `G0 X0 Y0`; got:\n{gcode}"
     );
-    // The not-simulated warning fires every Generate so the user
-    // never forgets the carve isn't modeled.
+    // yhen: the legacy blanket `gcode_include_not_simulated` warning
+    // is gone. This body is 100 % G0, which the unified preview
+    // interpreter already tessellates into ToolpathSegments — the
+    // sim DOES model the included block. So no `_skipped` or
+    // `_not_simulated` warning should fire for op 2.
     assert!(
-        resp.warnings
+        !resp.warnings
             .iter()
             .any(|w| w.kind == "gcode_include_not_simulated" && w.op_id == Some(2)),
-        "expected gcode_include_not_simulated warning; got {:?}",
+        "yhen: legacy gcode_include_not_simulated warning must be gone; got {:?}",
+        resp.warnings,
+    );
+    assert!(
+        !resp.warnings
+            .iter()
+            .any(|w| w.kind == "gcode_include_lines_skipped" && w.op_id == Some(2)),
+        "yhen: 100% G0 body should not produce a skipped-lines warning; got {:?}",
         resp.warnings,
     );
 }
@@ -2660,6 +2670,264 @@ fn gcode_include_empty_content_warns() {
         "expected gcode_include_empty warning; got {:?}",
         resp.warnings,
     );
+}
+
+/// yhen: a body that mixes simulatable lines (G0/G1) with an
+/// unsupported G-code (here G33 thread cutting) fires a counted
+/// `gcode_include_lines_skipped` summary warning. The summary names
+/// the FIRST skipped line so the user has a concrete starting point.
+#[test]
+fn gcode_include_mixed_body_emits_counted_skipped_summary() {
+    let include = Op {
+        id: 1,
+        name: "Thread cycle".into(),
+        enabled: true,
+        kind: OpKind::GcodeInclude {
+            path: "/tmp/thread.nc".into(),
+            // 5 lines: 1 G0 (simulated), 1 comment (no-op),
+            // 1 G33 (UNSIMULATED), 1 G1 (simulated), 1 M5 (no-op).
+            content: "G0 X10 Y0\n; bore to size\nG33 X10 Z-5 P1.5\nG1 Z2\nM5\n"
+                .into(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+        group: None,
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+        group: None,
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![include, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let skipped: Vec<&crate::pipeline::PipelineWarning> = resp
+        .warnings
+        .iter()
+        .filter(|w| w.kind == "gcode_include_lines_skipped" && w.op_id == Some(1))
+        .collect();
+    assert_eq!(
+        skipped.len(),
+        1,
+        "expected exactly one skipped-summary warning; got {skipped:?}"
+    );
+    let msg = &skipped[0].message;
+    assert!(
+        msg.contains("1 of 5"),
+        "summary must count 1 skipped out of 5 total; got: {msg}"
+    );
+    assert!(
+        msg.contains("line 3"),
+        "summary must cite the 1-based line offset within the body (line 3 = G33); got: {msg}"
+    );
+    assert!(
+        msg.contains("G33"),
+        "summary must surface the offending text (G33...); got: {msg}"
+    );
+    assert!(
+        msg.contains("unsupported G33"),
+        "summary must surface the classifier's reason string; got: {msg}"
+    );
+    // And the legacy blanket warning must NOT fire — yhen replaces
+    // it wholesale.
+    assert!(
+        !resp.warnings
+            .iter()
+            .any(|w| w.kind == "gcode_include_not_simulated"),
+        "yhen: legacy `gcode_include_not_simulated` warning must be gone; got {:?}",
+        resp.warnings,
+    );
+}
+
+/// yhen: multi-axis A / B / C / U / V / W words land in
+/// Unsimulated — the sim is 3-axis (XYZ) only. A 4-axis indexing
+/// line (`G1 A90`) carved by the controller will not match the
+/// sim's heightmap.
+#[test]
+fn gcode_include_multi_axis_line_classified_unsimulated() {
+    let include = Op {
+        id: 1,
+        name: "4th-axis index".into(),
+        enabled: true,
+        kind: OpKind::GcodeInclude {
+            path: String::new(),
+            content: "G0 X0 Y0\nG1 A90 F500\nG0 X10\n".into(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+        group: None,
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+        group: None,
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![include, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let summary = resp
+        .warnings
+        .iter()
+        .find(|w| w.kind == "gcode_include_lines_skipped" && w.op_id == Some(1))
+        .expect("expected skipped-summary warning for the A-axis line");
+    assert!(
+        summary.message.contains("A-axis"),
+        "expected `A-axis` reason; got: {}",
+        summary.message
+    );
+}
+
+/// yhen: a body that is 100 % comments / no-op lines (no movement,
+/// no unsupported G-codes) emits NEITHER the legacy blanket warning
+/// NOR a skipped-summary. It's the user's prerogative to ship a
+/// comment-only or M-code-only block — the existing
+/// `gcode_include_empty` check guards the truly-empty case.
+#[test]
+fn gcode_include_comment_only_body_emits_no_classification_warning() {
+    let include = Op {
+        id: 1,
+        name: "Notes only".into(),
+        enabled: true,
+        kind: OpKind::GcodeInclude {
+            path: String::new(),
+            content: "; just a note\n( and another )\nM5\n".into(),
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+        group: None,
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+        group: None,
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![include, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    for kind in ["gcode_include_not_simulated", "gcode_include_lines_skipped"] {
+        assert!(
+            !resp.warnings.iter().any(|w| w.kind == kind),
+            "yhen: comment/M-code-only body must not warn `{kind}`; got {:?}",
+            resp.warnings,
+        );
+    }
 }
 
 /// rxm9: round-trip a `GcodeInclude` op through serde JSON.

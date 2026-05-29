@@ -53,8 +53,22 @@ skip() {
 #───────────── Rust workspace ─────────────
 
 step "cargo fmt --check"      cargo fmt --all -- --check
-step "cargo clippy -Dwarnings" cargo clippy --workspace --all-targets -- -D warnings
-step "cargo test --workspace"  cargo test --workspace --all-features
+# ivr0: re-enable clippy::pedantic explicitly here. Workspace lints
+# leave it off for the inner dev loop (so daily `cargo clippy` runs in
+# ~30 s instead of 3 min); the release gate restores the strict walk
+# so nothing slips out.
+step "cargo clippy -Dwarnings (with pedantic)" \
+  cargo clippy --workspace --all-targets -- -W clippy::pedantic -D warnings
+# waud: prefer cargo-nextest when installed (parallel test-binary
+# execution, ~30-60 % faster wall time on multi-binary workspaces).
+# Falls through to plain `cargo test` when nextest isn't on PATH, so
+# a developer without it installed isn't blocked.
+if command -v cargo-nextest >/dev/null 2>&1; then
+  step "cargo nextest run (ci profile)" \
+    cargo nextest run --workspace --all-features --profile ci --run-ignored all
+else
+  step "cargo test --workspace"  cargo test --workspace --all-features
+fi
 step "xtask schema-check"      cargo run --quiet -p xtask -- schema-check
 
 #───────────── Frontend ─────────────

@@ -1,2 +1,18 @@
 [alias]
 xtask = "run --package xtask --"
+
+# hzru: prefer lld for linking. GNU ld is single-threaded; lld
+# parallelises and is ~5–10× faster on the link step alone — a
+# meaningful chunk of incremental-build wall time on this workspace.
+# The linker frontend (cc/gcc/clang) honors `-fuse-ld=<name>` and
+# picks up `/usr/bin/lld` automatically. To upgrade to mold later:
+#
+#     sudo apt install mold
+#     # swap `lld` → `mold` in the rustflags below.
+#
+# Both are drop-in compatible with the GNU-ld interface, so no other
+# config needs to change. CI / shop machines without lld installed
+# will fail loudly at link time, which is the right behavior — fix
+# the install or revert this block.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]

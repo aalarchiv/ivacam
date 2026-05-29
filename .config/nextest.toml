@@ -1,0 +1,36 @@
+# waud: cargo-nextest configuration.
+#
+# Why nextest: stock `cargo test` serialises across test binaries (it
+# parallelises threads inside a binary but runs binaries one at a time).
+# nextest runs every test binary in parallel, retries flaky tests
+# automatically, shows per-test wall-time, and supports running subsets
+# of slow tests via filter expressions or test groups.
+#
+# Run with:
+#     cargo nextest run --workspace               # default
+#     cargo nextest run --workspace --include-ignored  # include #[ignore]'d
+#
+# The pre-release ritual (`scripts/pre-release.sh`) still uses plain
+# `cargo test --workspace --all-features` so a developer without nextest
+# installed isn't blocked. nextest is the SPEED option, not the only
+# option.
+
+[profile.default]
+# nproc=1 on the dev machine means more threads than cores burns time
+# on context switches. Cap at 2 so the test runner and the spawned
+# rustc that linked it don't fight for the same core.
+test-threads = 2
+# Show each test's wall-time so the slow ones surface for #[ignore]
+# triage (l7a8).
+slow-timeout = { period = "30s", terminate-after = 3 }
+# Skip the network-tagged tests by default (none exist today; reserved
+# for future shop / hardware tests filed under 1lb0).
+default-filter = "not test(/network::/)"
+
+[profile.ci]
+# Pre-release / CI: run EVERY test, including ignored ones, and fail
+# loud rather than retry. Mirrors what `pre-release.sh` would do via
+# `cargo test ... -- --include-ignored`.
+test-threads = 2
+retries = 0
+slow-timeout = { period = "60s", terminate-after = 5 }

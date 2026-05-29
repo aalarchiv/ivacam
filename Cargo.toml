@@ -37,14 +37,23 @@ missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
+# ivr0: pedantic is OFF by default. The pedantic rule set adds ~150
+# extra lints that walk the AST on every clippy invocation, and
+# almost all of its value lives at the pre-release gate, not the
+# inner dev loop. `scripts/pre-release.sh` re-enables it explicitly
+# via `cargo clippy --workspace --all-targets -- -W clippy::pedantic
+# -D warnings` so the strict check still fires before release.
+# Day-to-day `cargo clippy` skips the pedantic walk entirely.
+pedantic = { level = "allow", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 # Subjective-pedantic lints that fire pervasively on deliberate CAM /
 # geometry / numerics code where they're idiomatic (single-char x/y/r/t,
-# long math routines, many-arg emit helpers). Allowed in the same spirit
-# as the three above — keeps `-D warnings` meaningful for real issues.
+# long math routines, many-arg emit helpers). Kept as explicit
+# `allow` so re-enabling pedantic at the gate doesn't fire on
+# them — they're idiomatic for this codebase regardless of gate vs
+# loop.
 too_many_lines = "allow"
 too_many_arguments = "allow"
 similar_names = "allow"
@@ -73,6 +82,20 @@ wiac-core = { path = "crates/wiac-core" }
 # default `rayon` feature so we don't pull a thread pool into the wasm
 # build for the sake of a one-time triangulation.
 voronator = { version = "0.2", default-features = false }
+
+# rhn5: shrink dev debug-info so object files + the link step are
+# smaller. `line-tables-only` keeps backtraces resolving to file:line
+# in panics + debugger stack frames but drops the variable / type
+# metadata that fattens .o files (and that we never look at on a
+# CAM debugger session). `split-debuginfo = "unpacked"` moves what
+# remains into sidecar files so the binary itself stays small and
+# the linker has less to merge. `incremental = true` is the cargo
+# default but worth making explicit so a feature combinator can't
+# silently flip it off (e.g. some CI envs set CARGO_INCREMENTAL=0).
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+incremental = true
 
 [profile.release]
 lto = "thin"

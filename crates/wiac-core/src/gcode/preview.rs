@@ -66,11 +66,62 @@ pub struct GcodeIndex {
 
 const NO_SEGMENT: u32 = u32::MAX;
 
+/// Reconstruct an arc center from the G-code radius form (`G2/G3 X Y R<r>`,
+/// no I/J). Returns the `(cx, cy)` center, or `None` for the degenerate
+/// cases R-form cannot express.
+///
+/// G-code R convention: `|R|` is the radius; a *positive* R selects the
+/// minor arc (sweep ≤ 180°), a *negative* R the major arc (sweep > 180°).
+/// A full circle is undefined in R-form (start == end gives no direction)
+/// and returns `None`. If the chord is longer than `2·|R|` the radius can't
+/// reach both endpoints — also `None`.
+///
+/// `ccw` is true for G3 (counter-clockwise), false for G2 (clockwise). The
+/// center lies on the perpendicular bisector of the chord, on the side that
+/// produces the requested direction + minor/major selection. (u7jn)
+#[must_use]
+fn arc_center_from_radius(
+    sx: f64,
+    sy: f64,
+    ex: f64,
+    ey: f64,
+    r_signed: f64,
+    ccw: bool,
+) -> Option<(f64, f64)> {
+    let r = r_signed.abs();
+    if r < 1e-9 {
+        return None;
+    }
+    let dx = ex - sx;
+    let dy = ey - sy;
+    let chord = dx.hypot(dy);
+    // Full circle (coincident endpoints) is undefined in R-form; chord
+    // longer than the diameter can't be spanned by this radius.
+    if chord < 1e-9 || chord > 2.0 * r + 1e-9 {
+        return None;
+    }
+    let mx = (sx + ex) * 0.5;
+    let my = (sy + ey) * 0.5;
+    // Distance from chord midpoint to center along the perpendicular.
+    let h = (r * r - (chord * 0.5).powi(2)).max(0.0).sqrt();
+    // Unit perpendicular to the chord.
+    let ux = -dy / chord;
+    let uy = dx / chord;
+    // Two candidate centers, one on each side of the chord. The correct
+    // side depends on direction (G2/G3) XOR major/minor (sign of R).
+    // For a minor CCW arc the center is to the left of start→end; flip for
+    // CW, flip again for a major arc (negative R).
+    let minor = r_signed > 0.0;
+    let left = ccw == minor;
+    let sign = if left { 1.0 } else { -1.0 };
+    Some((mx + sign * h * ux, my + sign * h * uy))
+}
+
 /// Parse `gcode` and return a stream of toolpath segments. Supports the
 /// minimal subset wiaConstructor itself emits (G0/G1 + G2/G3 with I/J
-/// arc-center, plus G20/G21 unit switching). Anything else is ignored
-/// gracefully. `; OP <n>` comments switch the active op id for later
-/// segments (used by the per-op emitter).
+/// arc-center or R radius form, plus G20/G21 unit switching). Anything else
+/// is ignored gracefully. `; OP <n>` comments switch the active op id for
+/// later segments (used by the per-op emitter).
 #[must_use]
 pub fn interpret(gcode: &str) -> Vec<ToolpathSegment> {
     let (segments, _) = interpret_with_index(gcode);
@@ -234,7 +285,8 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
             2 | 3 => MoveKind::Arc,
             _ => MoveKind::Cut,
         };
-        if matches!(kind, MoveKind::Arc) && (i_off.is_some() || j_off.is_some()) {
+        if matches!(kind, MoveKind::Arc) && (i_off.is_some() || j_off.is_some() || r_val.is_some())
+        {
             const TAU: f64 = std::f64::consts::TAU;
             // Tessellate G2/G3 into chord segments along the actual
             // arc. Otherwise the previewer emits a single chord from
@@ -243,8 +295,37 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
             // heightfield simulator render and carve along (visible
             // bug: profile-Outside on a circle "looks like a cut on
             // the source line").
-            let cx = from.x + i_off.unwrap_or(0.0);
-            let cy = from.y + j_off.unwrap_or(0.0);
+            //
+            // Center comes from the I/J offset form when present;
+            // otherwise (u7jn) reconstruct it from the radius form
+            // (`G2/G3 X Y R<r>`, no I/J). wiac's own emitters always
+            // use I/J, but raw `GcodeInclude` bodies may use R-form —
+            // without this they'd be drawn / carved as a straight chord.
+            let center = if i_off.is_some() || j_off.is_some() {
+                Some((from.x + i_off.unwrap_or(0.0), from.y + j_off.unwrap_or(0.0)))
+            } else {
+                r_val.and_then(|r_signed| {
+                    arc_center_from_radius(from.x, from.y, to.x, to.y, r_signed, active_code == 3)
+                })
+            };
+            let Some((cx, cy)) = center else {
+                // R-form we couldn't resolve (full circle — undefined in
+                // R-form — or chord longer than 2·R): fall back to a single
+                // straight chord rather than fabricating a bogus arc.
+                let seg_idx = out.len() as u32;
+                out.push(ToolpathSegment {
+                    from,
+                    to,
+                    kind,
+                    gcode_line: line_no,
+                    op_id: active_op,
+                });
+                let last = lines_to_segment.len() - 1;
+                lines_to_segment[last] = seg_idx;
+                segments_to_line.push(line_no);
+                state = to;
+                continue;
+            };
             let r = ((from.x - cx).powi(2) + (from.y - cy).powi(2)).sqrt();
             let theta_start = (from.y - cy).atan2(from.x - cx);
             let theta_end = (to.y - cy).atan2(to.x - cx);

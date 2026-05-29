@@ -338,6 +338,15 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
 
 /// Extract the op id from a `; OP <n>` or `(OP <n>)` marker. Returns
 /// `None` for non-marker lines.
+///
+/// Program-only ops (Pause, Homing, Probe, CycleMarker, GcodeInclude)
+/// emit headers of the form `; OP <n> (<label>)` — e.g.
+/// `; OP 2 (gcode include: /tmp/return_home.nc)`. We must accept the
+/// trailing parenthesized label, otherwise the active_op switch is
+/// missed and every segment born from the program-only block silently
+/// inherits the previous CAM op's id (qls1). We take the first
+/// whitespace-separated token after `OP` and parse THAT — the label
+/// after the first space is ignored.
 fn parse_op_marker(raw: &str) -> Option<u32> {
     let s = raw.trim();
     let body = s
@@ -348,7 +357,8 @@ fn parse_op_marker(raw: &str) -> Option<u32> {
         .strip_prefix("OP")
         .or_else(|| body.strip_prefix("op"))?
         .trim();
-    rest.parse::<u32>().ok()
+    let first_token = rest.split_whitespace().next()?;
+    first_token.parse::<u32>().ok()
 }
 
 fn strip_comment(line: &str) -> String {
@@ -554,6 +564,51 @@ mod tests {
         assert_eq!(segs[0].op_id, 1);
         assert_eq!(segs[1].op_id, 1);
         assert_eq!(segs[2].op_id, 2);
+    }
+
+    /// qls1: program-only ops (Pause, Homing, Probe, CycleMarker,
+    /// GcodeInclude) emit `; OP <n> (<label>)` headers — the trailing
+    /// parenthesized label must not block the active_op switch.
+    /// Before the fix, `parse_op_marker` ran `parse::<u32>` against the
+    /// whole `"<n> (label)"` rest and returned `None`, so every
+    /// segment from the program-only block silently inherited the
+    /// PREVIOUS op's id (the upstream CAM op). After the fix we only
+    /// parse the first whitespace-token after `OP`, so the label is
+    /// ignored and the switch fires correctly.
+    #[test]
+    fn op_markers_tolerate_parenthesized_label_suffix() {
+        let g = "; OP 1\n\
+                 G1 X2 Y0\n\
+                 ; OP 2 (gcode include: /tmp/return_home.nc)\n\
+                 G0 X10 Y10\n\
+                 ; OP 3 (pause)\n\
+                 G1 X11 Y10\n";
+        let segs = interpret(g);
+        assert_eq!(segs.len(), 3);
+        // Pre-fix bug: segs[1] and segs[2] would have op_id == 1
+        // because the suffix tripped `<u32>::from_str`.
+        assert_eq!(segs[0].op_id, 1);
+        assert_eq!(segs[1].op_id, 2, "segment after `; OP 2 (gcode include: ...)` must attribute to op 2, not the prior op");
+        assert_eq!(segs[2].op_id, 3, "segment after `; OP 3 (pause)` must attribute to op 3");
+    }
+
+    /// Negative case: a comment that is not actually an op marker must
+    /// still return None and leave `active_op` untouched. Guards
+    /// against the first-token split swallowing things like
+    /// `; OP_GUIDE 1` or `; OPERATOR foo`.
+    #[test]
+    fn non_op_comments_do_not_change_active_op() {
+        let g = "; OP 1\n\
+                 G1 X2 Y0\n\
+                 ; OPERATOR pressed start\n\
+                 G1 X3 Y0\n\
+                 ; OP_GUIDE 99\n\
+                 G1 X4 Y0\n";
+        let segs = interpret(g);
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[0].op_id, 1);
+        assert_eq!(segs[1].op_id, 1, "stray `; OPERATOR ...` must not steal active_op");
+        assert_eq!(segs[2].op_id, 1, "stray `; OP_GUIDE 99` must not steal active_op (no whitespace after `OP`)");
     }
 
     #[test]

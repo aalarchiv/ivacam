@@ -29,6 +29,10 @@ pub fn bulge_to_arc(start: Point2, end: Point2, bulge: f64) -> (Point2, f64, f64
     }
     let chord = start.distance(end);
     if chord < 1e-12 {
+        // Zero-length chord with a finite bulge is indeterminate — a full
+        // circle would need an infinite bulge. Report radius 0 so callers
+        // (e.g. `tessellate_arc`) fall back to a degenerate result instead
+        // of fabricating a circle. See `tessellate_arc`'s contract (v0ih).
         return (start, 0.0, 0.0, 0.0);
     }
     let sagitta = bulge * chord * 0.5;
@@ -88,6 +92,19 @@ pub fn cross_2d(a: Point2, b: Point2, c: Point2) -> f64 {
 /// Tessellate an arc described by start/end/bulge into polyline points
 /// (inclusive of both endpoints), with each step at most `max_angle_rad`
 /// of sweep. Returns at least two points.
+///
+/// **Contract (v0ih):** the bulge convention is `tan(included_angle / 4)`,
+/// so a single segment can only represent sweeps in `(-2π, 2π)` — a *full*
+/// 360° circle would require an infinite bulge and cannot be encoded here.
+/// A full circle must therefore be supplied as two (or more) sub-arc
+/// segments with distinct endpoints; that is exactly what the DXF importer
+/// does (`emit_circle` splits every CIRCLE into two semicircles, each
+/// `bulge = 1.0`). If a caller passes a degenerate segment with coincident
+/// endpoints (`start == end`) and a finite bulge, the radius is
+/// indeterminate and this function returns the two-point degenerate
+/// `[start, end]` rather than guessing a circle. Callers that hold a true
+/// circle (center + radius) should pre-split it, not route it through a
+/// zero-chord bulge.
 #[must_use]
 pub fn tessellate_arc(start: Point2, end: Point2, bulge: f64, max_angle_rad: f64) -> Vec<Point2> {
     if bulge.abs() < 1e-12 {
@@ -154,6 +171,23 @@ mod tests {
         assert!(approx(c2.x, center.x));
         assert!(approx(c2.y, center.y));
         assert!(approx(r2, r));
+    }
+
+    /// v0ih: a coincident-endpoint segment with a finite bulge is
+    /// geometrically indeterminate (a full circle needs infinite bulge),
+    /// so the documented contract is a two-point degenerate — never a
+    /// silently-wrong arc. Pin that so a future "helpfully reconstruct a
+    /// circle" change has to update the contract deliberately.
+    #[test]
+    fn tessellate_full_circle_bulge_is_degenerate_two_points() {
+        let p = Point2::new(3.0, 4.0);
+        let pts = tessellate_arc(p, p, 1.0, std::f64::consts::FRAC_PI_8);
+        assert_eq!(pts.len(), 2);
+        assert!(approx(pts[0].x, 3.0) && approx(pts[0].y, 4.0));
+        assert!(approx(pts[1].x, 3.0) && approx(pts[1].y, 4.0));
+        // bulge_to_arc reports radius 0 for the zero chord (no circle guess).
+        let (_c, _a0, _a1, r) = bulge_to_arc(p, p, 1.0);
+        assert!(approx(r, 0.0));
     }
 
     #[test]

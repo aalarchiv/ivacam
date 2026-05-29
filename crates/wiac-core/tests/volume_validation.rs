@@ -31,6 +31,8 @@ mod common;
 mod chamfer;
 #[path = "volume_validation/drill.rs"]
 mod drill;
+#[path = "volume_validation/gcode_include.rs"]
+mod gcode_include;
 #[path = "volume_validation/pocket.rs"]
 mod pocket;
 #[path = "volume_validation/profile.rs"]

@@ -312,6 +312,11 @@ export async function saveProject() {
     if (typeof path === 'string') {
       try {
         await writeTextFile(path, snapshot);
+        // amwo: the file now matches disk — clear dirty to match the
+        // contract every load path upholds. Otherwise the quit-confirm
+        // dialog, the confirmDiscardIfDirty prompt on a later Open, and
+        // the stale-gcode indicators all fire right after a save.
+        project.dirty = false;
       } catch (e) {
         project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -325,6 +330,9 @@ export async function saveProject() {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+  // amwo: the browser download IS the save; mirror the desktop branch and
+  // clear dirty so the snapshot just written to disk isn't reported unsaved.
+  project.dirty = false;
 }
 
 /// Save a project report as a Markdown file (vh6e). Desktop = native

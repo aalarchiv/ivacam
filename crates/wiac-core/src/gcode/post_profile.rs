@@ -223,9 +223,15 @@ pub fn format_axis_value(format: &str, value: f64) -> String {
         i += 1;
     }
 
+    // Clamp width / precision to a sane ceiling (yx9c): a hand-authored
+    // profile like `%9999999999f` or `%.9999999999f` would otherwise build
+    // a multi-GB padding string (or ask `format!` for billions of decimals)
+    // for a single coordinate. No real G-code field is wider than a couple
+    // dozen chars; 64 is comfortably past that.
+    const MAX_FIELD: usize = 64;
     let mut width: usize = 0;
     while i < bytes.len() && bytes[i].is_ascii_digit() {
-        width = width * 10 + (bytes[i] - b'0') as usize;
+        width = (width * 10 + (bytes[i] - b'0') as usize).min(MAX_FIELD);
         i += 1;
     }
 
@@ -239,7 +245,8 @@ pub fn format_axis_value(format: &str, value: f64) -> String {
         if i > pstart {
             precision = std::str::from_utf8(&bytes[pstart..i])
                 .ok()
-                .and_then(|s| s.parse().ok());
+                .and_then(|s| s.parse::<usize>().ok())
+                .map(|p| p.min(MAX_FIELD));
         } else {
             precision = Some(0);
         }
@@ -760,6 +767,22 @@ mod tests {
     fn format_axis_value_plus_sign() {
         assert_eq!(format_axis_value("%+.2f", 1.5), "+1.50");
         assert_eq!(format_axis_value("%+.2f", -1.5), "-1.50");
+    }
+
+    /// yx9c: a pathological width / precision in a hand-authored profile
+    /// must not trigger a giant allocation. Both clamp to 64, so the call
+    /// returns promptly with a bounded string instead of OOMing.
+    #[test]
+    fn format_axis_value_clamps_pathological_width_and_precision() {
+        let w = format_axis_value("%9999999999f", 1.0);
+        assert!(
+            w.len() <= 64,
+            "width must clamp to <=64, got {} chars",
+            w.len()
+        );
+        let p = format_axis_value("%.9999999999f", 1.0);
+        // 64 decimals + "1." ⇒ ~66 chars; the point is bounded, not billions.
+        assert!(p.len() <= 70, "precision must clamp, got {} chars", p.len());
     }
 
     #[test]

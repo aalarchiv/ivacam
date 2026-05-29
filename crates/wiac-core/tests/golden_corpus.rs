@@ -24,7 +24,17 @@ fn rust_smoke_pipeline_runs_without_panicking() {
         .join("tests")
         .join("data");
     if !dxf_dir.is_dir() {
-        eprintln!("skipping: {} not found", dxf_dir.display());
+        // 1zya: refs/ is optional dev scaffolding, so a checkout without it
+        // must not fail. Announce the skip clearly (visible under
+        // `cargo test -- --nocapture`) so a green run isn't mistaken for
+        // actual corpus coverage — the real correctness load lives in
+        // tests/volume_validation, not here.
+        eprintln!(
+            "golden_corpus: SKIPPED (no corpus) — {} not present; \
+             this smoke test exercised 0 DXFs. Correctness coverage is in \
+             tests/volume_validation.",
+            dxf_dir.display()
+        );
         return;
     }
     let mut matched = 0usize;

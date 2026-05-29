@@ -107,14 +107,14 @@ pub fn sweep_segment_partial(
     if hi <= lo {
         return 0;
     }
-    // f1z3: the `lo <= 1e-9` gate fires the once-per-segment diagnostic
-    // pass at the start of a segment. A driver that subdivides finely
-    // around `t=0` (e.g. `[0, 1e-10]` then `[1e-10, 0.5]`) would otherwise
-    // fire the gate twice — `lo=0` and `lo=1e-10` are both within the
-    // epsilon. Track the last segment_idx we fired against so the second
-    // sub-chunk against the same segment is a no-op. The token clears
-    // implicitly when the driver advances to a different segment.
-    if lo <= 1e-9 && diagnostics.last_partial_warn_segment_idx != Some(segment_idx) {
+    // f1z3 / 9epy: fire the once-per-segment diagnostic pass at the start
+    // of a segment (`lo <= 1e-9`). Each `partial_advance` resets the shared
+    // `SimDiagnostics` and sweeps exactly one segment slice, and the driver
+    // issues a single `t_start ≈ 0` slice per segment, so this gate already
+    // fires at most once per segment — no cross-call dedup token is needed.
+    // (A finer sub-`t=0` subdivision would re-fire, but nothing in the
+    // pipeline does that; revisit if a driver ever sub-slices near zero.)
+    if lo <= 1e-9 {
         // t1ru: same dragoff-shift as `sweep_segment` — diagnostics
         // must see the trailing-blade chord, not the spindle axis.
         let shifted = apply_dragoff_offset(segment, profile);
@@ -128,7 +128,6 @@ pub fn sweep_segment_partial(
             holder,
             diagnostics,
         );
-        diagnostics.last_partial_warn_segment_idx = Some(segment_idx);
     }
     if matches!(segment.kind, MoveKind::Rapid) {
         return 0;

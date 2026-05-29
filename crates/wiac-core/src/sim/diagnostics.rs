@@ -184,16 +184,6 @@ impl SimRunSummary {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SimDiagnostics {
     pub warnings: Vec<SimWarning>,
-    /// f1z3: per-`advance` idempotency token for the `partial_advance`
-    /// warning gate in `sweep_segment_partial`. When the driver subdivides
-    /// a segment finely near `t=0` (e.g. `[0, 1e-10]` then `[1e-10, 0.5]`),
-    /// `lo <= 1e-9` is true on both chunks and the warning pass would
-    /// fire twice on the same segment. We stash the last `segment_idx` that
-    /// fired the gate so the second-or-later chunk against the same
-    /// segment is a no-op. Cleared implicitly when the driver moves on
-    /// to the next `segment_idx`.
-    #[serde(default, skip)]
-    pub last_partial_warn_segment_idx: Option<usize>,
 }
 
 impl SimDiagnostics {

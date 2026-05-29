@@ -45,6 +45,24 @@ export type OpKind =
   | 'gcode_include'
   | 'relief_mill';
 
+/// gseb: the program-only op family — Pause, Homing, Probe,
+/// CycleMarker, GcodeInclude. These ops emit fixed gcode
+/// sequences (M0 / G28 / G38.2 / a comment / an included file)
+/// and never touch a cutter, so the tool-existence validator
+/// must NOT flag them as `tool_id: 0 missing`. Mirrors the Rust
+/// `Op::is_program_only()` predicate at
+/// `crates/wiac-core/src/project/op.rs`. Keep both in sync when
+/// new program-only kinds land.
+export function isProgramOnlyOp(kind: OpKind): boolean {
+  return (
+    kind === 'pause'
+    || kind === 'homing'
+    || kind === 'probe'
+    || kind === 'cycle_marker'
+    || kind === 'gcode_include'
+  );
+}
+
 /// 8n4k: axis selector for ProbeOp. Wire is the bare lowercase
 /// letter for direct concatenation into the G38.2 word.
 export type ProbeAxis = 'x' | 'y' | 'z';

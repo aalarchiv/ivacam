@@ -7,6 +7,7 @@
   import { project, type OpEntry } from '../state/project.svelte';
   import { opSourceCss } from '../state/op-color';
   import { warningFocus } from '../state/warning-focus.svelte';
+  import { isProgramOnlyOp } from '../state/op_types';
   import OpPropertiesPanel from './OpPropertiesPanel.svelte';
   import OpKindPicker, {
     KIND_ICON,
@@ -70,15 +71,53 @@
   }
 
   function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad'; reason: string } {
-    // rt1.34: Pause ops carry no tool / source / geometry and always
-    // emit (M0). The standard validation chain below would mark them
-    // red for "Tool #0 missing". Short-circuit to OK so the row reads
-    // as a deliberate program-flow stop instead of a config error.
+    // gseb: program-only ops (Pause, Homing, Probe, CycleMarker,
+    // GcodeInclude) carry no tool / source / geometry by design.
+    // They emit a small fixed gcode sequence (M0, G28, G38.2, a
+    // comment marker, or an included file) and never touch a
+    // spindle / cutter. The standard validation chain below would
+    // mark them red for 'Tool #0 missing'. Short-circuit to OK so
+    // the row reads as a deliberate program-flow building block
+    // instead of a config error. Pre-gseb only the Pause branch
+    // short-circuited; the other four kinds incorrectly tripped
+    // the missing-tool red X (rt1.34 / 8n4k / rxm9 follow-up).
     if (op.kind === 'pause') {
       return {
         label: '✓',
         tone: 'ok',
         reason: 'Pause op — emits M0 at this slot. Operator presses Cycle Start to resume.',
+      };
+    }
+    if (op.kind === 'homing') {
+      return {
+        label: '✓',
+        tone: 'ok',
+        reason:
+          'Homing op — emits G28 at this slot. The controller seeks the home switches; no cutter required.',
+      };
+    }
+    if (op.kind === 'probe') {
+      return {
+        label: '✓',
+        tone: 'ok',
+        reason:
+          'Probe op — emits a G38.2 probe move at this slot. Touch probe required at the spindle; no cutter.',
+      };
+    }
+    if (op.kind === 'cycle_marker') {
+      return {
+        label: '✓',
+        tone: 'ok',
+        reason:
+          'Marker op — emits a comment-only `; --- <label> ---` line so pendants / G-code viewers can jump between sections. No motion, no cutter.',
+      };
+    }
+    if (op.kind === 'gcode_include') {
+      return {
+        label: '✓',
+        tone: 'ok',
+        reason:
+          'G-code include op — splices an external file into the program. The file may carry its own toolchange; no project tool required at this slot.',
       };
     }
     if (!project.tools.find((t) => t.id === op.toolId)) {
@@ -388,7 +427,17 @@
                 >{KIND_ICON[op.kind]}</span
               >
               <span class="name">{op.name}</span>
-              <span class="tool">{op.kind === 'pause' ? '— pause —' : toolName(op.toolId)}</span>
+              <span class="tool"
+                >{#if isProgramOnlyOp(op.kind)}
+                  <!-- gseb: program-only ops carry no cutter. Render
+                       a dash with the kind label so the row reads as
+                       a deliberate program-flow building block instead
+                       of an unconfigured cutting op. -->
+                  — {KIND_LABEL[op.kind]?.toLowerCase() ?? op.kind} —
+                {:else}
+                  {toolName(op.toolId)}
+                {/if}</span
+              >
               {#if opHasPanelWarning(op)}
                 <button
                   type="button"

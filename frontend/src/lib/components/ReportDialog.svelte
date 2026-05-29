@@ -8,6 +8,7 @@
   /// of work, this MVP ships the user-visible 80%.
   import Modal from './Modal.svelte';
   import { project, type OpEntry } from '../state/project.svelte';
+  import { isProgramOnlyOp } from '../state/op_types';
   import type { TimeEstimate } from '../api/types';
   import { buildReportMarkdown, type ReportData } from './report-markdown';
   import { saveReportMarkdown } from '../state/file_ops';
@@ -124,7 +125,9 @@
       ops: enabledOps.map((op) => ({
         name: op.name,
         kind: op.kind,
-        tool: op.kind === 'pause' ? '—' : toolNameFor(op.toolId),
+        // gseb: every program-only kind (Pause, Homing, Probe,
+        // CycleMarker, GcodeInclude) is tool-less by design.
+        tool: isProgramOnlyOp(op.kind) ? '—' : toolNameFor(op.toolId),
         source: opSourceSummary(op),
         depth: opDepth(op),
         status: opStatusLabel(op),
@@ -246,7 +249,9 @@
                   <td>{op.name}</td>
                   <td>{op.kind}</td>
                   <td>
-                    {op.kind === 'pause'
+                    <!-- gseb: program-only ops show a dash, not the
+                         missing-tool sentinel. -->
+                    {isProgramOnlyOp(op.kind)
                       ? '—'
                       : (project.tools.find((t) => t.id === op.toolId)?.name ?? `#${op.toolId}`)}
                   </td>

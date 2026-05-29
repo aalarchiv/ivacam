@@ -173,6 +173,18 @@ fn closest_point_on_segment(seg: &Segment, tab: TabPoint) -> TabPoint {
 /// the correction every closed-arc-only object reads as area=0 ⇒ CCW,
 /// which silently flips the inward/outward sign for CW-encoded
 /// circles and gives wrong-side profile offsets.
+///
+/// **Precondition (jz8l):** the bow term `½r²(θ − sinθ)` is the *minor*
+/// circular-segment area, exact only for included angles θ ≤ 180°
+/// (`|bulge| ≤ 1`). For a major arc (`|bulge| > 1`, θ > 180°) the true
+/// enclosed region is the complement (circle minus minor segment), so the
+/// magnitude is under-counted here — and a contour dominated by one major
+/// arc could in principle flip the winding sign. In practice every arc
+/// reaching this function comes from the DXF importer, which keeps
+/// CIRCLE/ARC segments ≤ 180° (circles split into two semicircles, arcs
+/// subdivided at ≤ 45°), so the precondition holds. Callers that
+/// synthesize arbitrary major-arc segments must pre-split them rather than
+/// trust this magnitude.
 #[must_use]
 pub fn object_signed_area(obj: &VcObject) -> f64 {
     let mut sum = 0.0;

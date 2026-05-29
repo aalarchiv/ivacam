@@ -34,9 +34,9 @@
 // sites; allowed at file scope same as the common harness.
 #![allow(clippy::cast_possible_truncation)]
 
-mod common;
+// (common is declared at the binary entrypoint in tests/volume_validation.rs)
 
-use common::{
+use super::common::{
     build_heightmap, build_project, chamfer_volume, closed_rectangle, deepest_z, dump_stl, line,
     op_single_pass, removed_volume, run, sim_carve, stock_at_origin, vbit_tool,
 };

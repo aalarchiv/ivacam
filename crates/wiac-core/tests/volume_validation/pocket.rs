@@ -22,9 +22,9 @@
 // Same f64↔f32 cast allowance as chamfer_volume_validation.rs.
 #![allow(clippy::cast_possible_truncation)]
 
-mod common;
+// (common is declared at the binary entrypoint in tests/volume_validation.rs)
 
-use common::{
+use super::common::{
     build_heightmap, build_project, closed_rectangle, deepest_z, dump_stl, endmill_tool,
     op_single_pass, pocket_rect_volume, removed_volume, run, sim_carve, stock_at_origin,
 };

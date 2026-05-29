@@ -19,9 +19,9 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
-mod common;
+// (common is declared at the binary entrypoint in tests/volume_validation.rs)
 
-use common::{
+use super::common::{
     build_heightmap, build_project, deepest_z, drill_tool, drill_volume, dump_stl, op_single_pass,
     points, removed_volume, run, sim_carve, stock_at_origin,
 };

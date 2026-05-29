@@ -88,6 +88,19 @@ pub struct RenderTextLayerResponse {
 /// segments the pipeline pre-pass would produce, plus the
 /// single-line / family-name metadata the UI uses to label the layer.
 pub fn render_text_layer_api(layer: &TextLayer) -> crate::Result<RenderTextLayerResponse> {
+    // e3kg: dispatch on the font-bytes header — SVG 1.1 single-line
+    // fonts and TTF / OTF travel through the same `font_bytes`
+    // channel. The XML / `<svg` prefix is unambiguous against the
+    // binary OTF / TTF magic, so the sniff is cheap and safe.
+    if super::svg_font::looks_like_svg(&layer.font_bytes) {
+        let svg_font = super::svg_font::parse(&layer.font_bytes)?;
+        let segments = render_text_layer_svg(layer, &svg_font);
+        return Ok(RenderTextLayerResponse {
+            segments,
+            single_line: true,
+            family_name: Some(svg_font.family_name),
+        });
+    }
     let face = Face::parse(&layer.font_bytes, 0).map_err(|e| {
         Error::misconfigured(format!("ttf parse: {e}"))
             .with_hint("Pick a different font for this text layer.")
@@ -108,6 +121,24 @@ pub fn render_text_layer_api(layer: &TextLayer) -> crate::Result<RenderTextLayer
 /// as a font — the user can recover by picking a different font or
 /// installing one.
 pub fn render_text_api(req: &RenderTextRequest) -> crate::Result<RenderTextResponse> {
+    // e3kg: SVG 1.1 single-line font dispatch (same sniff every
+    // text-render entry uses).
+    if super::svg_font::looks_like_svg(&req.font_bytes) {
+        let font = super::svg_font::parse(&req.font_bytes)?;
+        let segments = render_text(
+            &req.font_bytes,
+            &req.text,
+            req.origin,
+            req.height_mm,
+            &req.layer,
+            req.color,
+        )?;
+        return Ok(RenderTextResponse {
+            segments,
+            single_line: true,
+            family_name: Some(font.family_name),
+        });
+    }
     let face = Face::parse(&req.font_bytes, 0).map_err(|e| {
         Error::misconfigured(format!("ttf parse: {e}"))
             .with_hint("Pick a different font or install one.")
@@ -258,6 +289,22 @@ pub fn render_text(
     layer: &str,
     color: i32,
 ) -> crate::Result<Vec<Segment>> {
+    // e3kg: SVG single-line font dispatch — same sniff as the
+    // TextLayer entry points.
+    if super::svg_font::looks_like_svg(font_bytes) {
+        let font = super::svg_font::parse(font_bytes)?;
+        let (segs, _) = super::svg_font::render_line(&font, text, height, 0.0, 1.0, layer, color);
+        let mut out = Vec::with_capacity(segs.len());
+        for s in segs {
+            out.push(Segment::line(
+                Point2::new(s.start.x + origin.x, s.start.y + origin.y),
+                Point2::new(s.end.x + origin.x, s.end.y + origin.y),
+                layer,
+                color,
+            ));
+        }
+        return Ok(out);
+    }
     let face = Face::parse(font_bytes, 0).map_err(|e| {
         Error::misconfigured(format!("ttf parse: {e}"))
             .with_hint("Pick a different font or install one.")
@@ -302,6 +349,13 @@ pub fn render_text(
 /// layer's `origin`. The output segments live on the synthetic layer
 /// `__text_<id>` so ops can target them via `OpSource::Layers`.
 pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
+    // e3kg: SVG 1.1 single-line fonts ride the same `font_bytes`
+    // channel. Sniff the prefix; route to the SVG renderer when it
+    // matches, fall through to ttf-parser otherwise.
+    if super::svg_font::looks_like_svg(&layer.font_bytes) {
+        let svg_font = super::svg_font::parse(&layer.font_bytes)?;
+        return Ok(render_text_layer_svg(layer, &svg_font));
+    }
     let face = Face::parse(&layer.font_bytes, 0).map_err(|e| {
         Error::misconfigured(format!("ttf parse: {e}"))
             .with_hint("Pick a different font for this text layer.")
@@ -429,6 +483,78 @@ fn transform_text_point(p: Point2, origin: Point2, cos: f64, sin: f64) -> Point2
         origin.x + p.x * cos - p.y * sin,
         origin.y + p.x * sin + p.y * cos,
     )
+}
+
+/// e3kg: render a `TextLayer` whose `font_bytes` is an SVG 1.1
+/// single-line font. Mirrors `render_text_layer`'s line-stacking,
+/// alignment, and rotation logic but renders each line through the
+/// SVG-font renderer (centerline polylines, no closed-outline
+/// hack-strokes).
+fn render_text_layer_svg(layer: &TextLayer, font: &super::svg_font::SvgFont) -> Vec<Segment> {
+    use super::svg_font;
+    let layer_name: std::sync::Arc<str> =
+        std::sync::Arc::from(text_layer_synthetic_layer(layer.id).as_str());
+    let color = 7;
+
+    let lines: Vec<&str> = if matches!(layer.kind, TextLayerKind::Mtext) {
+        layer.text.split('\n').collect()
+    } else {
+        vec![layer.text.as_str()]
+    };
+    let line_height = if layer.line_spacing_mm > 0.0 {
+        layer.line_spacing_mm
+    } else {
+        layer.size_mm * 1.2
+    };
+    let x_scale = layer.width_scale.clamp(0.5, 2.0);
+    // letter_spacing_mm → em units so the renderer can apply it on
+    // the same scale it walks glyph advances.
+    let letter_spacing_units = if layer.size_mm > 1e-9 {
+        layer.letter_spacing_mm * font.units_per_em / layer.size_mm
+    } else {
+        0.0
+    };
+
+    let mut out: Vec<Segment> = Vec::new();
+    for (line_idx, line) in lines.iter().enumerate() {
+        let (line_segs, line_width) = svg_font::render_line(
+            font,
+            line,
+            layer.size_mm,
+            letter_spacing_units,
+            x_scale,
+            &layer_name,
+            color,
+        );
+        let x_shift = match layer.alignment {
+            TextAlignment::Left => 0.0,
+            TextAlignment::Center => -line_width / 2.0,
+            TextAlignment::Right => -line_width,
+        };
+        let line_y = -(line_idx as f64) * line_height;
+        for s in line_segs {
+            out.push(Segment::line(
+                Point2::new(s.start.x + x_shift, s.start.y + line_y),
+                Point2::new(s.end.x + x_shift, s.end.y + line_y),
+                &*layer_name,
+                color,
+            ));
+        }
+    }
+
+    // Same world transform the TTF path applies.
+    let pivot = Point2::new(layer.origin.0, layer.origin.1);
+    let theta = layer.rotation_deg.to_radians();
+    let (cos, sin) = if layer.rotation_deg.abs() > 1e-9 {
+        (theta.cos(), theta.sin())
+    } else {
+        (1.0, 0.0)
+    };
+    for seg in &mut out {
+        seg.start = transform_text_point(seg.start, pivot, cos, sin);
+        seg.end = transform_text_point(seg.end, pivot, cos, sin);
+    }
+    out
 }
 
 fn push_polyline_closed(
@@ -834,6 +960,75 @@ mod tests {
         assert!(
             max_y > 4.0,
             "rotated glyph should extend upward (got {max_y})"
+        );
+    }
+
+    /// e3kg: a `TextLayer` whose `font_bytes` carry an SVG 1.1
+    /// font renders through the SVG path — produces single-stroke
+    /// segments (no closed-outline doubling) and the API reports
+    /// `single_line = true` + the family-name `ISO 3098`.
+    #[test]
+    fn render_text_layer_with_iso3098_dispatches_to_svg_path() {
+        use super::super::svg_font::ISO3098_REGULAR_SVG;
+        let layer = TextLayer {
+            id: 1,
+            kind: TextLayerKind::Text,
+            name: "ISO3098 test".into(),
+            text: "AB".into(),
+            font_bytes: ISO3098_REGULAR_SVG.to_vec(),
+            size_mm: 9.0,
+            origin: (0.0, 0.0),
+            rotation_deg: 0.0,
+            letter_spacing_mm: 0.0,
+            line_spacing_mm: 0.0,
+            alignment: TextAlignment::Left,
+            width_scale: 1.0,
+        };
+        let resp = render_text_layer_api(&layer).expect("api render");
+        assert!(resp.single_line, "ISO 3098 should classify as single-line");
+        assert_eq!(resp.family_name.as_deref(), Some("ISO 3098"));
+        assert!(!resp.segments.is_empty(), "AB should produce some strokes");
+        // Sanity: each stroke is a chord (start != end).
+        for s in &resp.segments {
+            let l = (s.end.x - s.start.x).hypot(s.end.y - s.start.y);
+            assert!(l > 0.0, "zero-length stroke leaked into output");
+        }
+    }
+
+    /// e3kg: SVG-font MTEXT stacks lines downward — each successive
+    /// `\n`-separated line lands at a more-negative Y.
+    #[test]
+    fn render_text_layer_svg_mtext_stacks_lines() {
+        use super::super::svg_font::ISO3098_REGULAR_SVG;
+        let layer = TextLayer {
+            id: 1,
+            kind: TextLayerKind::Mtext,
+            name: "mtext".into(),
+            text: "A\nB".into(),
+            font_bytes: ISO3098_REGULAR_SVG.to_vec(),
+            size_mm: 9.0,
+            origin: (0.0, 0.0),
+            rotation_deg: 0.0,
+            letter_spacing_mm: 0.0,
+            line_spacing_mm: 0.0,
+            alignment: TextAlignment::Left,
+            width_scale: 1.0,
+        };
+        let segs = render_text_layer(&layer).expect("mtext renders");
+        let min_y = segs
+            .iter()
+            .flat_map(|s| [s.start.y, s.end.y])
+            .fold(f64::INFINITY, f64::min);
+        let max_y = segs
+            .iter()
+            .flat_map(|s| [s.start.y, s.end.y])
+            .fold(f64::NEG_INFINITY, f64::max);
+        // Default line_spacing = 1.2 × 9 mm = 10.8 mm; first line's
+        // glyphs near y∈[0, 9] (cap-height in em), second line below
+        // by ~10.8 mm.
+        assert!(
+            max_y - min_y > 12.0,
+            "expected ≥ 2 stacked lines spanning >12 mm; got [{min_y}, {max_y}]"
         );
     }
 }

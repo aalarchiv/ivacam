@@ -36,11 +36,31 @@
     path: string;
     /// CSS @font-face family name registered at mount time; the
     /// dropdown row + sample chip render in this family so the user
-    /// previews the actual font glyphs before choosing (6y3m).
+    /// previews the actual font glyphs before choosing (6y3m). For
+    /// SVG single-line fonts the browser can't render the glyphs
+    /// natively — the family stays unregistered and the dropdown row
+    /// falls back to a system-font preview with a 'single-line' chip.
     family: string;
+    /// e3kg: SVG 1.1 single-line fonts (ISO 3098, Hershey, …) emit
+    /// one stroke per centerline at engrave time, vs TTF's filled
+    /// outlines. The UI shows a 'single-line' chip on these rows and
+    /// skips the FontFace registration (browsers can't render them).
+    singleLine?: boolean;
   }
 
   const BUNDLED_FONTS: BundledFont[] = [
+    {
+      label: 'ISO 3098 Regular (single-line)',
+      path: '/fonts/ISO3098-Regular.svg',
+      family: 'wiac-preview-iso3098-regular',
+      singleLine: true,
+    },
+    {
+      label: 'ISO 3098 Italic (single-line)',
+      path: '/fonts/ISO3098-Italic.svg',
+      family: 'wiac-preview-iso3098-italic',
+      singleLine: true,
+    },
     {
       label: 'DejaVu Sans (filled-outline, bundled)',
       path: '/fonts/DejaVuSans.ttf',
@@ -90,6 +110,10 @@
     let cancelled = false;
     void Promise.all(
       BUNDLED_FONTS.map(async (f) => {
+        // e3kg: SVG 1.1 fonts can't be loaded via FontFace — browsers
+        // dropped support in SVG 2. The dropdown row uses a system-
+        // font preview labelled 'single-line' instead.
+        if (f.singleLine) return;
         try {
           const face = new FontFace(f.family, `url(${f.path})`);
           await face.load();

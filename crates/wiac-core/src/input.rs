@@ -17,6 +17,7 @@ pub mod dxf_in;
 pub mod hatch;
 pub mod intern;
 pub mod nurbs;
+pub mod svg_font;
 pub mod svg_in;
 pub mod text;
 

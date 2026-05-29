@@ -418,9 +418,19 @@ fn snapshot_wirbeln_walks_closed_contour() {
 // ---------- baselines ----------
 //
 // Recorded digests; refresh with WIAC_UPDATE_SNAPSHOTS=1 when an
-// intentional change shifts emitted gcode. The first run after this
-// test was added captured these values from the live pipeline; each
-// reflects the canonical output for the corresponding fixture.
+// intentional change shifts emitted gcode.
+//
+// olgj — these digests are REGRESSION LOCKS, not correctness proofs. The
+// first run captured them from the live pipeline; they were never hand-
+// verified against a real controller or a known-good reference program.
+// A match only proves the output is byte-identical to whatever the
+// pipeline emitted when the test was written — if that original output
+// was subtly wrong, the digest locks the bug in. The human-meaningful
+// correctness signal is the STRUCTURAL asserts paired with each digest in
+// the test body (G81/G82, the M5/M6/M3 envelope, the helix arc, the ramp
+// Z profile, the wirbeln stamp count); the digest only catches
+// unintended drift on top of those. When you need to prove a behavior is
+// correct, strengthen those asserts rather than trusting the digest.
 
 const EXPECTED_DRILL_STUFENFASE_TOOLCHANGE_DIGEST: &str = "b296d632f465ec0e";
 const EXPECTED_PROFILE_RECTANGLE_TABS_HELIX_DIGEST: &str = "e373699104c83dff";

@@ -861,6 +861,14 @@ impl Transform2D {
     fn uniform_scale_factor(&self) -> f64 {
         // Effective isotropic scale (sqrt of det). Used to scale circle/arc
         // radii through INSERT transforms.
+        //
+        // pq8s: this collapses both axis scales to their geometric mean, so a
+        // CIRCLE/ARC inside an INSERT with a non-uniform block scale (sx != sy)
+        // comes out circular at the mean radius rather than as the true
+        // ellipse. Deliberate approximation — the bulge encoding can't
+        // represent an ellipse, and non-uniformly-scaled circular features are
+        // rare in CAM DXFs. ELLIPSE entities are unaffected (they carry
+        // independent axes and are flattened exactly).
         (self.a * self.d - self.b * self.c).abs().sqrt()
     }
 }

@@ -1148,6 +1148,11 @@ components:
           type:
           - integer
           - 'null'
+        group:
+          description: 'dp6b: optional group label. Consecutive enabled ops sharing the same value belong to the same logical phase ("rough", "finish", "drill cycle"), and the pipeline emits a `; === GROUP: <name> ===` comment at every boundary so the operator scrolling the gcode can see where each phase starts. Empty / `None` means the op carries no group and participates in no boundary line (a `Some("")` is treated the same as `None` at emit time). Default `None` keeps existing projects byte-identical.'
+          type:
+          - string
+          - 'null'
         id:
           format: uint32
           minimum: 0.0

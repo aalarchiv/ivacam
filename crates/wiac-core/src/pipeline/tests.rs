@@ -65,6 +65,7 @@ fn pipeline_relief_mill_emits_varying_z_ballnose_surface() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let project = Project {
         segments: Vec::new(),
@@ -160,6 +161,7 @@ fn pipeline_renders_text_layers_and_routes_via_synthetic_layer() {
             combine: SourceCombine::default(),
         },
         params: OpParams::mill_default(),
+        group: None,
     };
     let text_layer = TextLayer {
         id: 1,
@@ -605,6 +607,7 @@ fn plot_mode_emits_only_two_z_values() {
             finish_tool_id: None,
             source: OpSource::All,
             params,
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -698,6 +701,7 @@ fn laser_op_emits_pierce_dwell_before_cut() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -968,6 +972,7 @@ fn chamfer_op_emits_constant_z_pass_at_computed_depth() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1028,6 +1033,7 @@ fn chamfer_after_deep_profile_keeps_own_depth() {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: profile_params,
+                group: None,
             },
             Op {
                 id: 2,
@@ -1041,6 +1047,7 @@ fn chamfer_after_deep_profile_keeps_own_depth() {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams::mill_default(),
+                group: None,
             },
         ],
         fixtures: Vec::default(),
@@ -1123,6 +1130,7 @@ fn chamfer_finish_pass_emits_second_pass_at_finish_feed() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1162,6 +1170,7 @@ fn chamfer_with_non_vbit_warns() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1206,6 +1215,7 @@ fn chamfer_deep_chamfer_uses_multi_pass_stepdown() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1270,6 +1280,7 @@ fn chamfer_step_larger_than_depth_clamps_to_chamfer_z() {
             finish_tool_id: None,
             source: OpSource::All,
             params,
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1334,6 +1345,7 @@ fn chamfer_oversize_width_clamped_to_tool_reach() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1575,6 +1587,7 @@ fn generate_streaming_cancellation() {
                 fast_move_z: 5.0,
                 ..OpParams::default()
             },
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1659,6 +1672,7 @@ fn regenerate_with_no_edits_hits_cache() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1695,6 +1709,7 @@ fn edit_one_op_misses_only_that() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         })
         .collect();
     let mut project = Project {
@@ -1746,6 +1761,7 @@ fn cache_hit_produces_identical_response() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -1845,6 +1861,7 @@ fn pipeline_emits_m0_for_pause_op() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     // Real op in front of the Pause so the pipeline header machinery
     // resolves correctly (it picks the first enabled op's tool for
@@ -1868,6 +1885,7 @@ fn pipeline_emits_m0_for_pause_op() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -1941,6 +1959,7 @@ fn pause_op_skips_tool_validation() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let project = crate::project::Project {
         segments: Vec::new(),
@@ -2027,6 +2046,7 @@ fn pipeline_emits_g28_for_homing_op() {
             fast_move_z: 7.5,
             ..OpParams::default()
         },
+        group: None,
     };
     let profile = Op {
         id: 2,
@@ -2047,6 +2067,7 @@ fn pipeline_emits_g28_for_homing_op() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -2101,6 +2122,7 @@ fn pipeline_homing_without_retract_skips_safe_z_move() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let profile = Op {
         id: 2,
@@ -2121,6 +2143,7 @@ fn pipeline_homing_without_retract_skips_safe_z_move() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -2188,6 +2211,7 @@ fn pipeline_emits_g38_2_for_probe_op() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let profile = Op {
         id: 2,
@@ -2208,6 +2232,7 @@ fn pipeline_emits_g38_2_for_probe_op() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -2259,6 +2284,7 @@ fn pipeline_emits_comment_only_for_cycle_marker_op() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let profile = Op {
         id: 2,
@@ -2279,6 +2305,7 @@ fn pipeline_emits_comment_only_for_cycle_marker_op() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -2395,6 +2422,7 @@ fn pipeline_emits_gcode_include_with_variable_expansion() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let include = Op {
         id: 2,
@@ -2411,6 +2439,7 @@ fn pipeline_emits_gcode_include_with_variable_expansion() {
             fast_move_z: 12.5,
             ..OpParams::mill_default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -2496,6 +2525,7 @@ fn gcode_include_unknown_variable_warns_and_passes_through() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let profile = Op {
         id: 2,
@@ -2516,6 +2546,7 @@ fn gcode_include_unknown_variable_warns_and_passes_through() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -2575,6 +2606,7 @@ fn gcode_include_empty_content_warns() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let profile = Op {
         id: 2,
@@ -2595,6 +2627,7 @@ fn gcode_include_empty_content_warns() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
     let project = crate::project::Project {
         segments: vec![Segment::line(
@@ -2646,6 +2679,198 @@ fn gcode_include_round_trips_through_serde() {
     );
 }
 
+/// dp6b: ops with `group` emit `; === GROUP: <name> ===` at every
+/// group BOUNDARY. Two ops with the same group share one header;
+/// ops without a group share none.
+#[test]
+fn pipeline_emits_group_boundary_markers() {
+    let make_profile = |id: u32, name: &str, group: Option<&str>| Op {
+        id,
+        name: name.into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+        group: group.map(str::to_string),
+    };
+    // rough, rough, finish, (no group), finish
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![
+            make_profile(1, "rough A", Some("rough")),
+            make_profile(2, "rough B", Some("rough")),
+            make_profile(3, "finish A", Some("finish")),
+            make_profile(4, "no group", None),
+            make_profile(5, "finish C", Some("finish")),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    let gcode = &resp.gcode;
+    // Header lines, in order:
+    //   ; === GROUP: rough ===     (op 1)
+    //   (op 2 shares rough — no header)
+    //   ; === GROUP: finish ===    (op 3)
+    //   ; === END GROUP ===        (op 4 leaves group)
+    //   ; === GROUP: finish ===    (op 5 re-enters)
+    let lines: Vec<&str> = gcode.lines().filter(|l| l.starts_with("; === ")).collect();
+    assert_eq!(
+        lines,
+        vec![
+            "; === GROUP: rough ===",
+            "; === GROUP: finish ===",
+            "; === END GROUP ===",
+            "; === GROUP: finish ===",
+        ],
+        "unexpected group-boundary lines in:\n{gcode}"
+    );
+}
+
+/// dp6b: a project with NO `group` field on any op emits ZERO
+/// group markers — legacy projects stay byte-identical.
+#[test]
+fn pipeline_emits_no_group_markers_when_field_unset() {
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![profile_op(1, 1, ToolOffset::Outside)],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    assert!(
+        !resp.gcode.contains("=== GROUP"),
+        "expected NO group lines for groupless project; got:\n{}",
+        resp.gcode,
+    );
+    assert!(
+        !resp.gcode.contains("=== END GROUP"),
+        "expected NO end-group lines for groupless project; got:\n{}",
+        resp.gcode,
+    );
+}
+
+/// dp6b: `Some("")` and `None` are equivalent — neither emits a
+/// boundary on its own and both share the same "no group" state.
+#[test]
+fn pipeline_treats_empty_group_string_as_no_group() {
+    let mk = |id: u32, group: Option<&str>| {
+        let mut op = profile_op(id, 1, ToolOffset::Outside);
+        op.name = format!("Op {id}");
+        op.group = group.map(str::to_string);
+        op
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![mk(1, Some("")), mk(2, None), mk(3, Some("rough"))],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    // Only the transition INTO "rough" should fire a header — the
+    // Some("")→None transition is a no-group→no-group identity.
+    let lines: Vec<&str> = resp
+        .gcode
+        .lines()
+        .filter(|l| l.starts_with("; === "))
+        .collect();
+    assert_eq!(
+        lines,
+        vec!["; === GROUP: rough ==="],
+        "Some(\"\") should be the same state as None — only the\nfinal `Some(\"rough\")` transition should fire a header; got:\n{}",
+        resp.gcode,
+    );
+}
+
+/// dp6b: an `Op` with a non-None group round-trips through serde JSON.
+#[test]
+fn op_group_round_trips_through_serde() {
+    let mut op = Op::default();
+    op.id = 7;
+    op.group = Some("rough".into());
+    let json = serde_json::to_string(&op).expect("serialize");
+    assert!(
+        json.contains("\"group\":\"rough\""),
+        "expected group in {json}"
+    );
+    let back: Op = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back.group.as_deref(), Some("rough"));
+    // None defaults to None on round-trip.
+    let mut op2 = Op::default();
+    op2.id = 8;
+    op2.group = None;
+    let json2 = serde_json::to_string(&op2).expect("serialize");
+    assert!(
+        !json2.contains("group"),
+        "expected NO group field in {json2}"
+    );
+    let back2: Op = serde_json::from_str(&json2).expect("deserialize");
+    assert!(back2.group.is_none());
+}
+
 /// rt1.34: Pause op round-trips through serde JSON (`snake_case` tag).
 #[test]
 fn pause_op_round_trips_through_serde() {
@@ -2660,6 +2885,7 @@ fn pause_op_round_trips_through_serde() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let json = serde_json::to_string(&pause).expect("serialize");
     assert!(json.contains("\"pause\""), "expected pause tag in {json}");
@@ -2840,6 +3066,7 @@ fn rectangle_tab_drop_uses_plunge_feedrate() {
         finish_tool_id: None,
         source: OpSource::All,
         params,
+        group: None,
     };
     let project = Project {
         segments: closed_square_offset(40.0, 0.0, 0.0),
@@ -2936,6 +3163,7 @@ fn laser_pierce_dwells_at_cut_z() {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -3059,6 +3287,7 @@ fn dual_tool_internal_change_uses_full_envelope() {
             finish_tool_id: Some(2),
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -3142,6 +3371,7 @@ fn drill_stufenfase_change_uses_full_envelope() {
             finish_tool_id: Some(2),
             source: OpSource::All,
             params,
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -3591,6 +3821,7 @@ fn prev_tool_id_stays_unchanged_when_dual_tool_skips_finish() {
         finish_tool_id: Some(2),
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     // Second op on the same rough tool 1. The bug: it would skip
     // its M6 envelope because prev_tool_id was biased to 2.
@@ -3713,6 +3944,7 @@ fn prev_tool_id_unchanged_after_drill_skips_chamfer_swap() {
             p.fast_move_z = 5.0;
             p
         },
+        group: None,
     };
     let follow_up = profile_op(2, 1, ToolOffset::Outside);
     let project = crate::project::Project {
@@ -3797,6 +4029,7 @@ fn pause_op_does_not_lock_spindle_direction() {
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     };
     let profile_after = profile_op(3, 1, ToolOffset::Outside);
     let project = crate::project::Project {
@@ -4114,6 +4347,7 @@ fn tslot_project(tool: ToolEntry, depth: f64) -> Project {
             finish_tool_id: None,
             source: OpSource::All,
             params,
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -4310,6 +4544,7 @@ fn dovetail_project(tool: ToolEntry, depth: f64) -> Project {
             finish_tool_id: None,
             source: OpSource::All,
             params,
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
@@ -4460,6 +4695,7 @@ fn tessellated_circle_profile_project(arcs: bool) -> Project {
             finish_tool_id: None,
             source: OpSource::All,
             params,
+            group: None,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),

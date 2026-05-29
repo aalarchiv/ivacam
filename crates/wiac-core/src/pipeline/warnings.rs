@@ -1085,6 +1085,7 @@ mod tests {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         };
         let tools = vec![endmill(1, 6.0)];
 

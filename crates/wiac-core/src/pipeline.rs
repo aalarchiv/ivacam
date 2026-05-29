@@ -808,6 +808,13 @@ where
     // (the project-level tool key), not by tool.number (which can be
     // shared across entries on some configs).
     let mut prev_tool_id: Option<u32> = None;
+    // dp6b: track the previous op's `group` so we can emit a single
+    // boundary marker (`; === GROUP: <name> ===`) when the value
+    // changes. None / empty string means "no group" and never
+    // generates a boundary line on its own. Untouched-group
+    // sequences emit nothing — legacy projects without any group
+    // field stay byte-identical.
+    let mut prev_group: Option<&str> = None;
     for (idx, op) in enabled_ops.iter().enumerate() {
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);
@@ -818,6 +825,28 @@ where
             total: total_ops,
             name: op.name.clone(),
         });
+
+        // dp6b: group boundary marker. Fire ONCE when the live group
+        // changes from the previous op's (treating None and `Some("")`
+        // as the same "no group" state). Lands BEFORE the per-op
+        // reset / toolchange envelope / `; OP N` marker so the user
+        // scanning the gcode sees the phase change before any
+        // motion lines that belong to it.
+        let cur_group: Option<&str> = match op.group.as_deref() {
+            Some(g) if !g.is_empty() => Some(g),
+            _ => None,
+        };
+        if cur_group != prev_group {
+            if let Some(g) = cur_group {
+                post.raw(&format!("; === GROUP: {g} ==="));
+            } else {
+                // Transitioning OUT of a group into no-group. Emit a
+                // closing marker so the operator can see the phase
+                // ended; leave the body of the next op unannotated.
+                post.raw("; === END GROUP ===");
+            }
+            prev_group = cur_group;
+        }
 
         // rxm9: snapshot the live state BEFORE the per-op reset so
         // the GcodeInclude variable-expansion path can read
@@ -1592,6 +1621,7 @@ mod count_tool_changes_tests {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::mill_default(),
+            group: None,
         }
     }
 

@@ -133,6 +133,7 @@ fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
             fast_move_z: 5.0,
             ..OpParams::default()
         },
+        group: None,
     };
 
     let project = Project {

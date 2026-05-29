@@ -393,5 +393,6 @@ pub fn op_single_pass(id: u32, name: &str, kind: OpKind, tool_id: u32, depth_mm:
         finish_tool_id: None,
         source: OpSource::All,
         params,
+        group: None,
     }
 }

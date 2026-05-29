@@ -1162,6 +1162,29 @@
          union so this branch is unreachable; kept as a comment for
          the eventual standalone-helix-emitter feature reintroduction. -->
 
+    <!-- dp6b: group label. Consecutive enabled ops sharing the same
+         value emit `; === GROUP: <name> ===` only ONCE at the entry —
+         useful for marking rough / finish / drill / chamfer phases in
+         the G-code stream. Collapsed by default; empty = no group. -->
+    <details class="optional-section" open={op.group != null && op.group !== ''}>
+      <summary>
+        Group
+        <span class="opt-summary">{op.group ? op.group : '(none)'}</span>
+      </summary>
+      <label
+        class="row"
+        title="Optional phase label. Consecutive ops sharing this value belong to one logical phase (`rough`, `finish`, `drill cycle`, …) and the pipeline emits a `; === GROUP: <name> ===` boundary line at every transition. Empty = no group."
+      >
+        <span>Label</span>
+        <input
+          type="text"
+          value={op.group ?? ''}
+          placeholder="rough, finish, drill, …"
+          oninput={(e) => patch('group', (e.currentTarget as HTMLInputElement).value)}
+        />
+      </label>
+    </details>
+
     {#if op.kind === 'drill'}
       <details class="optional-section" open={op.pattern !== undefined && op.pattern !== null}>
         <summary>

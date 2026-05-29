@@ -86,6 +86,12 @@ export interface OpBase {
   /// overrides `step` / `finishStep` / `throughDepth`.
   depthList?: number[];
   pattern?: PatternConfig;
+  /// dp6b: optional group label. Consecutive enabled ops sharing the
+  /// same value belong to the same logical phase ("rough",
+  /// "finish", …); the pipeline emits a `; === GROUP: <name> ===`
+  /// boundary marker in the G-code at every transition. Empty
+  /// string is treated the same as undefined.
+  group?: string;
 }
 
 /// Fields shared by closed-contour ops (profile + pocket): cut

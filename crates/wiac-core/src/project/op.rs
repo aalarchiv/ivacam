@@ -34,6 +34,17 @@ pub struct Op {
     pub finish_tool_id: Option<u32>,
     pub source: OpSource,
     pub params: OpParams,
+    /// dp6b: optional group label. Consecutive enabled ops sharing
+    /// the same value belong to the same logical phase ("rough",
+    /// "finish", "drill cycle"), and the pipeline emits a
+    /// `; === GROUP: <name> ===` comment at every boundary so the
+    /// operator scrolling the gcode can see where each phase
+    /// starts. Empty / `None` means the op carries no group and
+    /// participates in no boundary line (a `Some("")` is treated the
+    /// same as `None` at emit time). Default `None` keeps existing
+    /// projects byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 impl Op {
@@ -189,6 +200,7 @@ impl Default for Op {
             finish_tool_id: None,
             source: OpSource::All,
             params: OpParams::default(),
+            group: None,
         }
     }
 }

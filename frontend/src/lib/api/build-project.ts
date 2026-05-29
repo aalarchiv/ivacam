@@ -439,6 +439,8 @@ interface WireOp {
     through_depth?: number;
     depth_list?: number[];
   };
+  // dp6b: optional group label, emitted only when set + non-empty.
+  group?: string;
 }
 
 /// Fixture wire shape mirrors `wiac_core::project::FixtureKind` (snake_case
@@ -1014,6 +1016,10 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
         : {}),
       ...(op.depthList && op.depthList.length > 0 ? { depth_list: op.depthList } : {}),
     },
+    // dp6b: emit `group` only when set and non-empty. The Rust serde
+    // tag is `skip_serializing_if = "Option::is_none"`, so omit it
+    // entirely to match round-trips on legacy projects.
+    ...(op.group && op.group.length > 0 ? { group: op.group } : {}),
   };
 }
 

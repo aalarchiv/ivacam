@@ -188,6 +188,7 @@ pub(in crate::pipeline) fn profile_op(id: u32, tool_id: u32, offset: ToolOffset)
         finish_tool_id: None,
         source: OpSource::All,
         params: OpParams::mill_default(),
+        group: None,
     }
 }
 
@@ -234,6 +235,7 @@ pub(in crate::pipeline) fn profile_leads_op(
         finish_tool_id: None,
         source: OpSource::All,
         params,
+        group: None,
     }
 }
 
@@ -251,6 +253,7 @@ pub(in crate::pipeline) fn pocket_op(id: u32, tool_id: u32, source: OpSource) ->
         finish_tool_id: None,
         source,
         params: OpParams::mill_default(),
+        group: None,
     }
 }
 
@@ -273,6 +276,7 @@ pub(in crate::pipeline) fn drill_op(id: u32, tool_id: u32, cycle: DrillCycle) ->
         finish_tool_id: None,
         source: OpSource::All,
         params,
+        group: None,
     }
 }
 

@@ -943,6 +943,11 @@ export interface components {
             path: string;
             /** @enum {string} */
             type: "gcode_include";
+            /**
+             * @description xi2g: when `true`, fan out one `gcode_include_unsim_line` warning per skipped line in addition to the `gcode_include_lines_skipped` summary. Off by default so the warnings panel doesn't drown on a multi-skip block; power users debugging an exotic canned cycle flip this on to see exactly which lines were skipped and why.
+             * @default false
+             */
+            verbose_unsim_warnings: boolean;
         } | {
             /**
              * Format: double

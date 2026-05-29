@@ -517,11 +517,15 @@ pub enum OpKind {
     /// typo doesn't silently leave a half-substituted line in the
     /// shipped program.
     ///
-    /// Sim coverage is intentionally conservative for v1: the
-    /// heightmap-side simulator emits a `gcode_include_not_simulated`
-    /// warning at this op's slot — the carved stock state across
-    /// the included block isn't modeled. Full interpret-and-apply
-    /// is a follow-up.
+    /// Sim coverage (yhen): the heightmap-side simulator classifies
+    /// the included body line-by-line. Lines that map to G0/G1/G2/G3
+    /// + canned cycles G73/G81/G82/G83 are carved by the unified
+    /// preview-interpret pass at run_pipeline's tail; everything
+    /// else fires a counted `gcode_include_lines_skipped` summary
+    /// warning so the user knows the carve is incomplete. When
+    /// `verbose_unsim_warnings` is set (xi2g), the summary is
+    /// followed by one `gcode_include_unsim_line` warning per
+    /// skipped line for users debugging an exotic block.
     GcodeInclude {
         /// Display-only path the user picked the file from. The
         /// file's CONTENTS live in `content` so the project round-
@@ -534,6 +538,14 @@ pub enum OpKind {
         /// newline is optional.
         #[serde(default)]
         content: String,
+        /// xi2g: when `true`, fan out one `gcode_include_unsim_line`
+        /// warning per skipped line in addition to the
+        /// `gcode_include_lines_skipped` summary. Off by default so
+        /// the warnings panel doesn't drown on a multi-skip block;
+        /// power users debugging an exotic canned cycle flip this
+        /// on to see exactly which lines were skipped and why.
+        #[serde(default)]
+        verbose_unsim_warnings: bool,
     },
     /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
     /// surface (a [`crate::project::ReliefSource`] referenced by

@@ -327,9 +327,16 @@ export interface CycleMarkerOp extends OpBase {
 /// authored gcode file into the program stream at the op's slot,
 /// with `{x}` / `{y}` / `{z}` / `{f}` / `{s}` / `{safe_z}` token
 /// substitution against the post's live state. Program-only kind —
-/// no tool, no source, no Z schedule. The sim doesn't model the
-/// included block (v1); a `gcode_include_not_simulated` warning
-/// fires so the user knows.
+/// no tool, no source, no Z schedule.
+///
+/// Sim coverage (yhen): the heightmap-side simulator classifies the
+/// included body line-by-line. G0/G1/G2/G3 + canned cycles
+/// G73/G81/G82/G83 are carved by the unified preview-interpret pass;
+/// everything else fires a counted `gcode_include_lines_skipped`
+/// summary warning. When `verboseUnsimWarnings` is set (xi2g), each
+/// skipped line additionally fires a `gcode_include_unsim_line`
+/// warning so the user can pinpoint exactly which lines were
+/// skipped and why.
 export interface GcodeIncludeOp extends OpBase {
   kind: 'gcode_include';
   /// Display-only path the file was loaded from. Empty string is
@@ -338,6 +345,11 @@ export interface GcodeIncludeOp extends OpBase {
   /// The G-code body to splice in, verbatim except for `{name}`
   /// variable substitution at emit time.
   content: string;
+  /// xi2g: when true, fan out one `gcode_include_unsim_line` warning
+  /// per skipped line in addition to the
+  /// `gcode_include_lines_skipped` summary. Off by default so the
+  /// warnings panel doesn't drown on a multi-skip block.
+  verboseUnsimWarnings?: boolean;
 }
 
 /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)

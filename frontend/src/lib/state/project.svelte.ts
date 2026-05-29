@@ -1483,6 +1483,10 @@ class ProjectState {
         sourceLayers: null,
         path: '',
         content: '',
+        // xi2g: default off — the counted summary fires anyway when
+        // unsim lines exist; the user opts into the per-line fan-out
+        // via the OpPropertiesPanel checkbox.
+        verboseUnsimWarnings: false,
       } as OpEntry;
       this.history.exec(addOperationCommand(op), this.target());
       this.selectedOpId = op.id;

@@ -755,10 +755,21 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             label.hash(h);
         }
         // rxm9: next free discriminant after CycleMarker(16).
-        OpKind::GcodeInclude { path, content } => {
+        OpKind::GcodeInclude {
+            path,
+            content,
+            verbose_unsim_warnings,
+        } => {
             h.write_u8(17);
             path.hash(h);
             content.hash(h);
+            // xi2g: fold the warning-verbosity flag so a project
+            // that flips it gets a fresh cache key (and the warnings
+            // get re-emitted). The classifier output itself doesn't
+            // depend on the flag — only the warning fan-out does —
+            // but cache values store warnings, so the key must
+            // distinguish them.
+            h.write_u8(u8::from(*verbose_unsim_warnings));
         }
     }
 }

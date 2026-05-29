@@ -2431,6 +2431,7 @@ fn pipeline_emits_gcode_include_with_variable_expansion() {
         kind: OpKind::GcodeInclude {
             path: "/tmp/return_home.nc".into(),
             content: "G0 X{x} Y{y}\nG0 Z{safe_z}\nG0 X0 Y0\n".into(),
+            verbose_unsim_warnings: false,
         },
         tool_id: 0,
         finish_tool_id: None,
@@ -2530,6 +2531,7 @@ fn gcode_include_unknown_variable_warns_and_passes_through() {
         kind: OpKind::GcodeInclude {
             path: String::new(),
             content: "G0 X{xx} Y{nope}\n".into(),
+            verbose_unsim_warnings: false,
         },
         tool_id: 0,
         finish_tool_id: None,
@@ -2611,6 +2613,7 @@ fn gcode_include_empty_content_warns() {
         kind: OpKind::GcodeInclude {
             path: String::new(),
             content: String::new(),
+            verbose_unsim_warnings: false,
         },
         tool_id: 0,
         finish_tool_id: None,
@@ -2688,6 +2691,7 @@ fn gcode_include_mixed_body_emits_counted_skipped_summary() {
             // 1 G33 (UNSIMULATED), 1 G1 (simulated), 1 M5 (no-op).
             content: "G0 X10 Y0\n; bore to size\nG33 X10 Z-5 P1.5\nG1 Z2\nM5\n"
                 .into(),
+            verbose_unsim_warnings: false,
         },
         tool_id: 0,
         finish_tool_id: None,
@@ -2791,6 +2795,7 @@ fn gcode_include_multi_axis_line_classified_unsimulated() {
         kind: OpKind::GcodeInclude {
             path: String::new(),
             content: "G0 X0 Y0\nG1 A90 F500\nG0 X10\n".into(),
+            verbose_unsim_warnings: false,
         },
         tool_id: 0,
         finish_tool_id: None,
@@ -2869,6 +2874,7 @@ fn gcode_include_comment_only_body_emits_no_classification_warning() {
         kind: OpKind::GcodeInclude {
             path: String::new(),
             content: "; just a note\n( and another )\nM5\n".into(),
+            verbose_unsim_warnings: false,
         },
         tool_id: 0,
         finish_tool_id: None,
@@ -2930,12 +2936,116 @@ fn gcode_include_comment_only_body_emits_no_classification_warning() {
     }
 }
 
+/// xi2g: when `verbose_unsim_warnings = true`, the classifier fans
+/// out one `gcode_include_unsim_line` warning per skipped line in
+/// addition to the `gcode_include_lines_skipped` summary. Off by
+/// default (covered by `gcode_include_mixed_body_emits_counted_skipped_summary`
+/// which asserts only the summary fires).
+#[test]
+fn gcode_include_verbose_mode_fans_out_per_line_warnings() {
+    let include = Op {
+        id: 1,
+        name: "Exotic block".into(),
+        enabled: true,
+        kind: OpKind::GcodeInclude {
+            path: "/tmp/exotic.nc".into(),
+            // 4 lines: 1 G0 (simulated), 1 G33 (skipped), 1 G1 A90
+            // (skipped — multi-axis), 1 G1 (simulated).
+            content: "G0 X0 Y0\nG33 X10 Z-5 P1.5\nG1 A90 F500\nG1 Z2\n"
+                .into(),
+            verbose_unsim_warnings: true,
+        },
+        tool_id: 0,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams::mill_default(),
+        group: None,
+    };
+    let profile = Op {
+        id: 2,
+        name: "Cut".into(),
+        enabled: true,
+        kind: OpKind::Profile {
+            offset: ToolOffset::Outside,
+            contour: crate::project::ContourParams::default(),
+            profile: crate::project::ProfileParams::default(),
+        },
+        tool_id: 1,
+        finish_tool_id: None,
+        source: OpSource::All,
+        params: OpParams {
+            depth: -1.0,
+            start_depth: 0.0,
+            step: Some(-1.0),
+            fast_move_z: 5.0,
+            ..OpParams::default()
+        },
+        group: None,
+    };
+    let project = crate::project::Project {
+        segments: vec![Segment::line(
+            crate::geometry::Point2::new(0.0, 0.0),
+            crate::geometry::Point2::new(10.0, 0.0),
+            "0",
+            7,
+        )],
+        machine: MachineConfig::default(),
+        tools: vec![endmill(1, 3.0)],
+        operations: vec![include, profile],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        crate::pipeline::PipelineRequest {
+            project,
+            post_processor: None,
+        },
+        |_, _, _| {},
+    )
+    .expect("pipeline ran");
+    // Summary still fires (xi2g layers per-line warnings on top, doesn't replace).
+    assert!(
+        resp.warnings
+            .iter()
+            .any(|w| w.kind == "gcode_include_lines_skipped" && w.op_id == Some(1)),
+        "verbose mode must still emit the summary warning"
+    );
+    let per_line: Vec<&crate::pipeline::PipelineWarning> = resp
+        .warnings
+        .iter()
+        .filter(|w| w.kind == "gcode_include_unsim_line" && w.op_id == Some(1))
+        .collect();
+    assert_eq!(
+        per_line.len(),
+        2,
+        "verbose mode must fan out one warning per skipped line; got {per_line:?}"
+    );
+    // First per-line warning cites the G33 on line 2.
+    assert!(
+        per_line[0].message.contains("line 2")
+            && per_line[0].message.contains("G33")
+            && per_line[0].message.contains("unsupported G33"),
+        "first per-line warning should be the G33 on line 2 with reason; got: {}",
+        per_line[0].message,
+    );
+    // Second per-line warning cites the A-axis on line 3.
+    assert!(
+        per_line[1].message.contains("line 3") && per_line[1].message.contains("A-axis"),
+        "second per-line warning should be the A-axis on line 3; got: {}",
+        per_line[1].message,
+    );
+}
+
 /// rxm9: round-trip a `GcodeInclude` op through serde JSON.
 #[test]
 fn gcode_include_round_trips_through_serde() {
     let kind = OpKind::GcodeInclude {
         path: "/some/file.nc".into(),
         content: "G0 X{x}\n".into(),
+        verbose_unsim_warnings: true,
     };
     let json = serde_json::to_string(&kind).expect("serialize");
     assert!(json.contains("\"gcode_include\""), "expected tag in {json}");

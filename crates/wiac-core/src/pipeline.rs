@@ -1184,7 +1184,12 @@ where
         // model the included block; a `gcode_include_not_simulated`
         // warning makes that explicit so the user can sanity-check
         // the canned cycle by hand.
-        if let OpKind::GcodeInclude { path, content } = &op.kind {
+        if let OpKind::GcodeInclude {
+            path,
+            content,
+            verbose_unsim_warnings,
+        } = &op.kind
+        {
             let header = if path.is_empty() {
                 format!("; OP {} (gcode include)", op.id)
             } else {
@@ -1248,6 +1253,26 @@ where
                         head_reason = head.reason,
                     ),
                 });
+                // xi2g: when the op opts into verbose mode, fan out a
+                // per-line warning for each skipped line. Off by
+                // default so the warnings panel stays readable on a
+                // multi-skip block; useful when the user is debugging
+                // a single specific include and wants the full list.
+                if *verbose_unsim_warnings {
+                    for skipped in &classification.skipped {
+                        warnings.push(PipelineWarning {
+                            op_id: Some(op.id),
+                            kind: "gcode_include_unsim_line".into(),
+                            message: format!(
+                                "Op '{}': included G-code line {n}: `{text}` — {reason}.",
+                                op.name,
+                                n = skipped.line_no,
+                                text = skipped.trimmed,
+                                reason = skipped.reason,
+                            ),
+                        });
+                    }
+                }
             }
             // Note: a 100 %-simulated body emits NO warning (was the
             // blanket gcode_include_not_simulated before yhen). A

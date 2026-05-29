@@ -82,6 +82,8 @@ interface FlatOp extends OpBase, ContourFields {
   // rxm9: GcodeIncludeOp
   path?: string;
   content?: string;
+  // xi2g: GcodeIncludeOp verbose-warning flag
+  verboseUnsimWarnings?: boolean;
   // PocketOp (rt1.9)
   pocketZigzagAngleDeg?: number;
   // ThreadOp
@@ -392,7 +394,12 @@ type WireOpKind =
   | { type: 'homing'; retract_to_safe_z: boolean }
   | { type: 'probe'; axis: 'x' | 'y' | 'z'; distance_mm: number; feed_mm_min: number }
   | { type: 'cycle_marker'; label: string }
-  | { type: 'gcode_include'; path: string; content: string }
+  | {
+      type: 'gcode_include';
+      path: string;
+      content: string;
+      verbose_unsim_warnings: boolean;
+    }
   | {
       type: 'relief_mill';
       source_id: number;
@@ -928,6 +935,7 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
         type: 'gcode_include',
         path: op.path ?? '',
         content: op.content ?? '',
+        verbose_unsim_warnings: op.verboseUnsimWarnings ?? false,
       } as WireOpKind;
     case 'relief_mill':
       return {

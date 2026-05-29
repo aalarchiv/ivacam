@@ -351,8 +351,28 @@
       <code>{'{s}'}</code> (last spindle RPM),
       <code>{'{safe_z}'}</code> (this op's fast-Z).
       Unknown <code>{'{tokens}'}</code> pass through and surface a warning.
-      The sim doesn't model the included block — inspect canned cycles by hand.
+      The sim carves G0/G1/G2/G3 and canned cycles G73/G81/G82/G83;
+      anything else fires a counted "lines skipped" warning so you
+      know what the heightmap won't show.
     </p>
+    <!-- xi2g: verbose per-line warning toggle. Off by default; users
+         debugging an exotic block flip it on to see exactly which
+         lines were skipped and why. -->
+    <label
+      class="row"
+      title="When on, each unsimulated line fires its own warning with the line offset and reason — useful for debugging an exotic block. When off (default), only the counted summary fires."
+    >
+      <span>Verbose unsim warnings</span>
+      <input
+        type="checkbox"
+        checked={op.verboseUnsimWarnings ?? false}
+        onchange={(e) =>
+          patch(
+            'verboseUnsimWarnings',
+            (e.currentTarget as HTMLInputElement).checked,
+          )}
+      />
+    </label>
   {:else if op.kind === 'cycle_marker'}
     <!-- 8n4k: comment-only marker. Pendants and gcode viewers that
          index by program line can jump to the next marker. -->

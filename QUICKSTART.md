@@ -39,8 +39,6 @@ project into G-code.
 
 - **DXF** — the most common CAD interchange (R12 and later).
 - **SVG** — any vector editor's output (paths, polylines, basic text).
-- **HPGL** — pen-plotter / drag-knife sources.
-- **NGC** — existing G-code, for re-simulation.
 
 Drag-and-drop also works: drop a file onto the window.
 

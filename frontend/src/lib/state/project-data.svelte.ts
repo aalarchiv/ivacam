@@ -78,6 +78,17 @@ export interface AppSettings {
   /// spacing between arrows (higher = more arrows). 1 = default (~3 mm
   /// spacing); 0 disables arrows.
   toolMoveArrowDensity: number;
+  /// 27ng: when true, scrubbing the playhead BACKWARD triggers a full
+  /// sim reset followed by a forward replay from t=0 to the new
+  /// position. The heightfield then exactly reflects the carve state
+  /// at the new playhead. When false (the default) backstep does
+  /// nothing to the heightfield — cells retain their deepest-ever
+  /// cuts. Subsequent forward advances continue to deepen the same
+  /// cells, so future destruction stays correct; only the
+  /// during-rewind visual differs. Default off because the replay
+  /// can be slow on long programs and (5w9z) currently produces a
+  /// half-pristine / half-deep visual artifact on big projects.
+  exactSimRewind: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -115,6 +126,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   osnap: { ...DEFAULT_OSNAP_SETTINGS },
   previewLineWidth: 1.5,
   toolMoveArrowDensity: 1,
+  // 27ng: cheap-default for backstep — don't reset+replay, keep
+  // deepest-ever cuts. Power users flip this on in Settings when
+  // they need exact rewind and accept the cost.
+  exactSimRewind: false,
 };
 
 /// Load persisted settings, deep-merging stored values over defaults so

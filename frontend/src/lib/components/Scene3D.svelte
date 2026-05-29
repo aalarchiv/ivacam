@@ -843,6 +843,11 @@
       toolForSegment(generated.toolpath),
       project.toolpathCumLen,
       project.toolpathTotalLen,
+      // 27ng: pass the user's exact-rewind preference through to the
+      // driver. Default false leaves the heightfield untouched on
+      // backstep (deepest-ever state retained); true triggers the
+      // reset + forward-replay path.
+      project.settings.exactSimRewind,
     );
   });
 

@@ -411,6 +411,17 @@ export class HeightfieldDriver {
     toolForSeg: ToolEntry | ((segIdx: number) => ToolEntry),
     cumLen?: Float64Array | null,
     totalLen?: number,
+    /// 27ng: when false (the default), a backward scrub leaves the
+    /// heightfield untouched — cells retain their deepest-ever
+    /// cuts, and the cursor (`appliedSeg` / `partialT`) does not
+    /// move backward, so subsequent forward scrubs resume from the
+    /// previous max position. When true, the driver runs the
+    /// reset + forward-replay path so the heightfield exactly
+    /// reflects the cuts up to the new playhead. Replay is O(N)
+    /// in segments-replayed and currently has a known visual
+    /// artifact on chunked / LOD meshes (5w9z), so it lives behind
+    /// a Settings toggle.
+    exactRewind: boolean = false,
   ): boolean {
     const resolveTool =
       typeof toolForSeg === 'function' ? toolForSeg : () => toolForSeg as ToolEntry;
@@ -435,11 +446,28 @@ export class HeightfieldDriver {
     const plan = planAdvance(this.appliedSeg, this.partialT, segIdx, segT, total);
     if (!plan) return false;
 
-    // Backward scrub: the heightfield is monotone (cuts can only deepen),
-    // so we reset the simulator and let the planner's forward ops replay.
-    // The mesh has to be refreshed from the clean sim heights BEFORE the
-    // forward replay; otherwise cells outside the replay's dirty AABB
-    // keep the stale (deeper) heights from the previous playhead.
+    // 27ng: a backward scrub asks the planner to emit `reset: true`
+    // plus a forward-replay sequence from t=0 to the new playhead.
+    // Default behavior (exactRewind=false) skips the whole advance:
+    // the heightmap is forward-monotone (cuts only deepen), so
+    // leaving the cells alone shows the deepest-ever state and
+    // subsequent forward scrubs correctly resume from the previous
+    // max position. exactRewind=true runs the reset + replay so
+    // the visible heights track the playhead — slow on long
+    // programs and currently has a chunked-mesh artifact (5w9z),
+    // which is why it lives behind a Settings toggle.
+    if (plan.reset && !exactRewind) {
+      // Leave appliedSeg / partialT untouched. The heightmap and
+      // mesh stay at the previous max-deep state. The PlaybackBar's
+      // hint tells the user this is the cheap path.
+      return false;
+    }
+
+    // Backward scrub WITH exactRewind: reset the simulator and let
+    // the planner's forward ops replay. The mesh has to be
+    // refreshed from the clean sim heights BEFORE the forward
+    // replay; otherwise cells outside the replay's dirty AABB keep
+    // the stale (deeper) heights from the previous playhead.
     if (plan.reset) {
       this.sim.reset();
       this.diagnostics = { warnings: [] };

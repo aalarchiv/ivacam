@@ -384,6 +384,36 @@
           accuracy is preserved; only the rendered mesh degrades. Stepped voxel mesh ≈ 6 triangles per
           cell.
         </p>
+
+        <!-- 27ng: exact-3D-rewind toggle. Default off (cheap path:
+             heightfield retains deepest-ever cuts; backstep does
+             NOT undo prior carves). Power users who need time-
+             accurate backstep flip it on, accepting the replay
+             cost on long programs. -->
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={project.settings.exactSimRewind}
+            onchange={(e) =>
+              update('exactSimRewind', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Exact 3D rewind on backstep</span>
+        </label>
+        <p class="hint">
+          The 3D heightfield is a forward-only carve simulator: cells
+          can only get deeper. <b>When off</b> (default), stepping the
+          playhead backward leaves the displayed cuts alone — the
+          heightfield shows the deepest cut at each point so far.
+          <b>When on</b>, every backstep resets the sim and replays
+          the carve from t = 0 to the new playhead so the heightfield
+          exactly tracks the playhead's position in time. Replay cost
+          scales with the number of segments replayed; on programs
+          with tens of thousands of segments it can stutter during
+          scrubbing. Exact replay currently has a known visual artifact
+          on chunked / LOD meshes — the front half of the stock can
+          read as fully-cut while the back half reads as pristine.
+          Tracked as <code>5w9z</code>.
+        </p>
       </section>
 
       <section>

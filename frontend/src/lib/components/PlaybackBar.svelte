@@ -236,6 +236,9 @@
         aria-valuetext={chapterTicks.length > 0 && activeTickIdx >= 0
           ? `${Math.round(project.playhead * 100)} percent · ${chapterTicks[activeTickIdx].chapter.name}`
           : `${Math.round(project.playhead * 100)} percent`}
+        title={project.settings.exactSimRewind
+          ? 'Scrub: the 3D heightfield exactly tracks the playhead — backstep reruns the carve from the start. Toggle off in Settings → Performance for cheap-and-fast mode.'
+          : 'Scrub: the 3D heightfield shows the deepest cut at each point so far. Stepping BACK does NOT undo prior cuts (forward-only sim). Toggle "Exact 3D rewind" in Settings → Performance for time-accurate backstep (slower on long programs).'}
       />
       {#if chapterTicks.length > 0}
         <div class="chapter-ticks" aria-hidden="true">

@@ -229,11 +229,37 @@ fn emit_stufenfase<P: PostProcessor>(
     // e63q: pass tip_diameter so the cone math accounts for the
     // bit's nose-flat (engraver-style V-bits have a small flat that
     // shifts the cone's z=0 width).
-    let chamfer_z = crate::cam::chamfer::chamfer_depth(
+    //
+    // 2wx2: use the tool-reach-aware variant (mirrors the Chamfer
+    // setup_resolver path). An over-large rim-chamfer width would
+    // otherwise drive the V-bit shank — not the cone — into stock.
+    // The cap clamps the width to (diameter - tip) / 2 and reports
+    // when it fired so we can warn the user instead of silently
+    // cutting too deep.
+    let tip_diameter_mm = cutter.tip_diameter.unwrap_or(0.0);
+    let sol = crate::cam::chamfer::chamfer_depth_capped(
         width_mm,
         cutter.tip_angle_deg,
-        cutter.tip_diameter.unwrap_or(0.0),
+        cutter.diameter,
+        tip_diameter_mm,
     );
+    if sol.clamped_to_reach {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "chamfer_width_clamped_to_reach".into(),
+            message: format!(
+                "drill op '{}': requested rim-chamfer width {:.3} mm exceeds V-bit '{}' physical reach ({:.3} mm = (diameter {:.3} - tip {:.3}) / 2). Clamped to {:.3} mm so the cone — not the shank — does the cutting.",
+                op.name,
+                width_mm,
+                cutter.name,
+                sol.width_cap_mm,
+                cutter.diameter,
+                tip_diameter_mm,
+                sol.effective_width_mm,
+            ),
+        });
+    }
+    let chamfer_z = sol.z;
     if chamfer_z.abs() < 1e-9 {
         return Ok(false);
     }
@@ -817,6 +843,74 @@ mod tests {
         assert!(
             resp.gcode.contains("Z-0.95"),
             "expected chamfer revolution at Z-0.95 (90° tip + 1mm width, e63q tip-flat correction):\n{}",
+            resp.gcode
+        );
+    }
+
+    /// 2wx2: an over-large rim-chamfer width must be clamped to the
+    /// V-bit's physical reach `(diameter - tip) / 2` (so the cone, not
+    /// the shank, does the cutting) AND surface a
+    /// `chamfer_width_clamped_to_reach` warning — mirroring the Chamfer
+    /// op's setup_resolver path. Pre-fix this drove an un-capped Z
+    /// straight into stock with no warning.
+    #[test]
+    fn drill_chamfer_after_clamps_oversize_width_to_reach() {
+        let mut vbit_drill = vbit();
+        vbit_drill.kind = ToolKind::Drill;
+        vbit_drill.diameter = 3.0; // reach cap = (3 - 0.1) / 2 = 1.45 mm
+        vbit_drill.tip_angle_deg = 90.0; // tan(45°) = 1 ⇒ z = -(w - tip_r)
+        let center = Point2::new(5.0, 7.0);
+        let mut params = OpParams::mill_default();
+        params.depth = -3.0;
+        params.start_depth = 0.0;
+        params.fast_move_z = 5.0;
+        let project = Project {
+            segments: closed_circle(center, 0.5),
+            machine: MachineConfig::default(),
+            tools: vec![vbit_drill],
+            operations: vec![Op {
+                id: 1,
+                name: "Drill+chamfer".into(),
+                enabled: true,
+                kind: OpKind::Drill {
+                    cycle: crate::project::DrillCycle::Simple { dwell_sec: 0.0 },
+                    // 5 mm requested ≫ 1.45 mm cap.
+                    chamfer_after_width_mm: Some(5.0),
+                    pattern: None,
+                    spot_first: None,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params,
+                group: None,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+            stock: None,
+            relief_sources: Vec::new(),
+        };
+        let resp = run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            resp.warnings
+                .iter()
+                .any(|w| w.kind == "chamfer_width_clamped_to_reach"),
+            "expected chamfer_width_clamped_to_reach warning, got: {:?}",
+            resp.warnings
+        );
+        // Clamped width = 1.45 mm; z = -(1.45 - 0.05) / tan(45°) = -1.4.
+        // The un-capped pre-fix value would have been -(5 - 0.05) = -4.95.
+        assert!(
+            resp.gcode.contains("Z-1.4") && !resp.gcode.contains("Z-4.95"),
+            "expected chamfer revolution clamped to Z-1.4 (reach cap), not the un-capped Z-4.95:\n{}",
             resp.gcode
         );
     }

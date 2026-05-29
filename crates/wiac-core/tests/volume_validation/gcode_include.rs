@@ -63,9 +63,8 @@ fn gcode_include_g1_slot_volume_matches_closed_form() {
     // retract. Every line is in the supported set (G0/G1) so the
     // yhen classifier returns 100 % Simulated and no skipped-summary
     // warning fires.
-    let body = format!(
-        "G0 Z5\nG0 X{x0} Y{cut_y}\nG1 Z{cut_z} F200\nG1 X{x1} Y{cut_y} F1200\nG0 Z5\n"
-    );
+    let body =
+        format!("G0 Z5\nG0 X{x0} Y{cut_y}\nG1 Z{cut_z} F200\nG1 X{x1} Y{cut_y} F1200\nG0 Z5\n");
 
     let include = Op {
         id: 1,
@@ -105,8 +104,11 @@ fn gcode_include_g1_slot_volume_matches_closed_form() {
     // assertion ever flips false, the classifier has regressed and
     // we're back to the pre-yhen lie.
     assert!(
-        !resp.warnings.iter().any(|w| w.kind == "gcode_include_lines_skipped"
-            || w.kind == "gcode_include_not_simulated"),
+        !resp
+            .warnings
+            .iter()
+            .any(|w| w.kind == "gcode_include_lines_skipped"
+                || w.kind == "gcode_include_not_simulated"),
         "yhen: 100% G0/G1 body must produce no skipped-summary or legacy warning; got {:?}",
         resp.warnings,
     );

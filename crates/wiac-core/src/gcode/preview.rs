@@ -588,8 +588,14 @@ mod tests {
         // Pre-fix bug: segs[1] and segs[2] would have op_id == 1
         // because the suffix tripped `<u32>::from_str`.
         assert_eq!(segs[0].op_id, 1);
-        assert_eq!(segs[1].op_id, 2, "segment after `; OP 2 (gcode include: ...)` must attribute to op 2, not the prior op");
-        assert_eq!(segs[2].op_id, 3, "segment after `; OP 3 (pause)` must attribute to op 3");
+        assert_eq!(
+            segs[1].op_id, 2,
+            "segment after `; OP 2 (gcode include: ...)` must attribute to op 2, not the prior op"
+        );
+        assert_eq!(
+            segs[2].op_id, 3,
+            "segment after `; OP 3 (pause)` must attribute to op 3"
+        );
     }
 
     /// Negative case: a comment that is not actually an op marker must
@@ -607,8 +613,14 @@ mod tests {
         let segs = interpret(g);
         assert_eq!(segs.len(), 3);
         assert_eq!(segs[0].op_id, 1);
-        assert_eq!(segs[1].op_id, 1, "stray `; OPERATOR ...` must not steal active_op");
-        assert_eq!(segs[2].op_id, 1, "stray `; OP_GUIDE 99` must not steal active_op (no whitespace after `OP`)");
+        assert_eq!(
+            segs[1].op_id, 1,
+            "stray `; OPERATOR ...` must not steal active_op"
+        );
+        assert_eq!(
+            segs[2].op_id, 1,
+            "stray `; OP_GUIDE 99` must not steal active_op (no whitespace after `OP`)"
+        );
     }
 
     #[test]

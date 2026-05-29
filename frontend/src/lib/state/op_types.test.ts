@@ -14,13 +14,7 @@ import { isProgramOnlyOp, type OpKind } from './op_types';
 
 describe('isProgramOnlyOp', () => {
   it('returns true for every program-only kind', () => {
-    const programOnly: OpKind[] = [
-      'pause',
-      'homing',
-      'probe',
-      'cycle_marker',
-      'gcode_include',
-    ];
+    const programOnly: OpKind[] = ['pause', 'homing', 'probe', 'cycle_marker', 'gcode_include'];
     for (const k of programOnly) {
       expect(isProgramOnlyOp(k)).toBe(true);
     }

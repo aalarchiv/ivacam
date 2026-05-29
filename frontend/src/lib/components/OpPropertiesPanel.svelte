@@ -233,7 +233,7 @@
       />
     </label>
     <p class="hint hint-pause">
-      The pipeline emits <code>G28</code> (move to machine home){op.retractToSafeZ ?? true
+      The pipeline emits <code>G28</code> (move to machine home){(op.retractToSafeZ ?? true)
         ? ' and a rapid Z lift to safe height'
         : ''}. No motion in X / Y other than the homing itself. The cutter does not engage.
     </p>
@@ -291,7 +291,9 @@
       />
     </label>
     <p class="hint hint-pause">
-      The pipeline emits <code>G38.2 {(op.axis ?? 'z').toUpperCase()}{op.distanceMm ?? -10} F{op.feedMmMin ?? 100}</code>. The controller halts at the trigger.
+      The pipeline emits <code
+        >G38.2 {(op.axis ?? 'z').toUpperCase()}{op.distanceMm ?? -10} F{op.feedMmMin ?? 100}</code
+      >. The controller halts at the trigger.
     </p>
   {:else if op.kind === 'gcode_include'}
     <!-- rxm9: file-picker + path display + content textarea.
@@ -349,11 +351,9 @@
       (last commanded XYZ),
       <code>{'{f}'}</code> (last feed),
       <code>{'{s}'}</code> (last spindle RPM),
-      <code>{'{safe_z}'}</code> (this op's fast-Z).
-      Unknown <code>{'{tokens}'}</code> pass through and surface a warning.
-      The sim carves G0/G1/G2/G3 and canned cycles G73/G81/G82/G83;
-      anything else fires a counted "lines skipped" warning so you
-      know what the heightmap won't show.
+      <code>{'{safe_z}'}</code> (this op's fast-Z). Unknown <code>{'{tokens}'}</code> pass through and
+      surface a warning. The sim carves G0/G1/G2/G3 and canned cycles G73/G81/G82/G83; anything else fires
+      a counted "lines skipped" warning so you know what the heightmap won't show.
     </p>
     <!-- xi2g: verbose per-line warning toggle. Off by default; users
          debugging an exotic block flip it on to see exactly which
@@ -367,10 +367,7 @@
         type="checkbox"
         checked={op.verboseUnsimWarnings ?? false}
         onchange={(e) =>
-          patch(
-            'verboseUnsimWarnings',
-            (e.currentTarget as HTMLInputElement).checked,
-          )}
+          patch('verboseUnsimWarnings', (e.currentTarget as HTMLInputElement).checked)}
       />
     </label>
   {:else if op.kind === 'cycle_marker'}

@@ -2503,14 +2503,16 @@ fn pipeline_emits_gcode_include_with_variable_expansion() {
     // sim DOES model the included block. So no `_skipped` or
     // `_not_simulated` warning should fire for op 2.
     assert!(
-        !resp.warnings
+        !resp
+            .warnings
             .iter()
             .any(|w| w.kind == "gcode_include_not_simulated" && w.op_id == Some(2)),
         "yhen: legacy gcode_include_not_simulated warning must be gone; got {:?}",
         resp.warnings,
     );
     assert!(
-        !resp.warnings
+        !resp
+            .warnings
             .iter()
             .any(|w| w.kind == "gcode_include_lines_skipped" && w.op_id == Some(2)),
         "yhen: 100% G0 body should not produce a skipped-lines warning; got {:?}",
@@ -2689,8 +2691,7 @@ fn gcode_include_mixed_body_emits_counted_skipped_summary() {
             path: "/tmp/thread.nc".into(),
             // 5 lines: 1 G0 (simulated), 1 comment (no-op),
             // 1 G33 (UNSIMULATED), 1 G1 (simulated), 1 M5 (no-op).
-            content: "G0 X10 Y0\n; bore to size\nG33 X10 Z-5 P1.5\nG1 Z2\nM5\n"
-                .into(),
+            content: "G0 X10 Y0\n; bore to size\nG33 X10 Z-5 P1.5\nG1 Z2\nM5\n".into(),
             verbose_unsim_warnings: false,
         },
         tool_id: 0,
@@ -2774,7 +2775,8 @@ fn gcode_include_mixed_body_emits_counted_skipped_summary() {
     // And the legacy blanket warning must NOT fire — yhen replaces
     // it wholesale.
     assert!(
-        !resp.warnings
+        !resp
+            .warnings
             .iter()
             .any(|w| w.kind == "gcode_include_not_simulated"),
         "yhen: legacy `gcode_include_not_simulated` warning must be gone; got {:?}",
@@ -2951,8 +2953,7 @@ fn gcode_include_verbose_mode_fans_out_per_line_warnings() {
             path: "/tmp/exotic.nc".into(),
             // 4 lines: 1 G0 (simulated), 1 G33 (skipped), 1 G1 A90
             // (skipped — multi-axis), 1 G1 (simulated).
-            content: "G0 X0 Y0\nG33 X10 Z-5 P1.5\nG1 A90 F500\nG1 Z2\n"
-                .into(),
+            content: "G0 X0 Y0\nG33 X10 Z-5 P1.5\nG1 A90 F500\nG1 Z2\n".into(),
             verbose_unsim_warnings: true,
         },
         tool_id: 0,

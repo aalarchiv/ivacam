@@ -450,9 +450,8 @@ mod tests {
         // Mirrors what the FE serializer emits for a Pause op:
         // only `objectorder` is present in the bag.
         let json = r#"{"objectorder":"nearest"}"#;
-        let p: OpParams = serde_json::from_str(json).expect(
-            "OpParams must deserialize when depth / start_depth / fast_move_z are omitted",
-        );
+        let p: OpParams = serde_json::from_str(json)
+            .expect("OpParams must deserialize when depth / start_depth / fast_move_z are omitted");
         assert_eq!(p.depth, 0.0);
         assert_eq!(p.start_depth, 0.0);
         assert_eq!(p.fast_move_z, 0.0);

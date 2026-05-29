@@ -55,11 +55,11 @@ export type OpKind =
 /// new program-only kinds land.
 export function isProgramOnlyOp(kind: OpKind): boolean {
   return (
-    kind === 'pause'
-    || kind === 'homing'
-    || kind === 'probe'
-    || kind === 'cycle_marker'
-    || kind === 'gcode_include'
+    kind === 'pause' ||
+    kind === 'homing' ||
+    kind === 'probe' ||
+    kind === 'cycle_marker' ||
+    kind === 'gcode_include'
   );
 }
 

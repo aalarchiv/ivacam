@@ -650,18 +650,6 @@ impl MachineConfig {
     pub fn effective_spindle_start_dwell_sec(&self) -> f64 {
         self.spindle_start_dwell_sec.unwrap_or(0.5).max(0.0)
     }
-
-    /// Effective op-kind capability set (h0tx). Falls back to a vec
-    /// containing the primary `mode` so projects that predate the
-    /// `capabilities` field still pass through cleanly.
-    #[must_use]
-    pub fn effective_capabilities(&self) -> Vec<MachineMode> {
-        if self.capabilities.is_empty() {
-            vec![self.mode]
-        } else {
-            self.capabilities.clone()
-        }
-    }
 }
 
 fn default_toolchange_s() -> f64 {

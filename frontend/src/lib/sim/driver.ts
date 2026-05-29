@@ -547,7 +547,17 @@ export class HeightfieldDriver {
     this.refreshHeightView();
     if (this.heightView) {
       const a = unionAabb as [number, number, number, number] | null;
-      if (a) {
+      // 5w9z: after a reset-driven backstep replay, do a FULL mesh
+      // re-upload regardless of how small the forward replay's
+      // dirty AABB came out. The partial-AABB path leaves cells
+      // outside the AABB at whatever the pre-replay state was —
+      // correct ON THE FIRST FRAME after the reset's full upload
+      // (those cells are topZ), but defense-in-depth against the
+      // chunked / LOD pyramid possibly retaining stale pool data
+      // in some configuration. The cost is one extra full upload
+      // per backstep, which the user opted into via the
+      // Settings exact-rewind toggle.
+      if (a && !plan.reset) {
         this.mesh.updateHeights(this.heightView, {
           ix0: a[0],
           iy0: a[1],

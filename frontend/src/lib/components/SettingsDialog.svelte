@@ -403,16 +403,19 @@
           The 3D heightfield is a forward-only carve simulator: cells
           can only get deeper. <b>When off</b> (default), stepping the
           playhead backward leaves the displayed cuts alone — the
-          heightfield shows the deepest cut at each point so far.
-          <b>When on</b>, every backstep resets the sim and replays
-          the carve from t = 0 to the new playhead so the heightfield
-          exactly tracks the playhead's position in time. Replay cost
-          scales with the number of segments replayed; on programs
-          with tens of thousands of segments it can stutter during
-          scrubbing. Exact replay currently has a known visual artifact
-          on chunked / LOD meshes — the front half of the stock can
-          read as fully-cut while the back half reads as pristine.
-          Tracked as <code>5w9z</code>.
+          heightfield shows the deepest cut at each point so far,
+          which is the most useful for &ldquo;will my program clear
+          this region?&rdquo; questions. <b>When on</b>, every backstep
+          resets the sim and replays the carve from t = 0 to the new
+          playhead so the heightfield reflects the cuts <em>as of
+          that playhead position</em> in time. Note the difference:
+          if your program cuts the front half first and the back
+          half last, exact rewind at playhead 50&nbsp;% will show
+          the front half cut and the back half pristine (that's
+          correct — the back half wouldn't have been cut yet). Cheap
+          mode would show both halves cut. Replay cost scales with
+          the number of segments replayed; on programs with tens of
+          thousands of segments scrubbing can stutter.
         </p>
       </section>
 

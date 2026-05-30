@@ -253,6 +253,37 @@ fn run_pipeline_picks_grbl_when_requested() {
     assert!(!resp.gcode.is_empty());
 }
 
+/// vl11: end-to-end HPGL coverage. `run_per_op` dispatches
+/// `PostProcessorKind::Hpgl`, but no `run_pipeline` test previously
+/// requested it — only the emitter's own unit tests. Run a real profile
+/// op through the pipeline as HPGL and assert the plotter program shape:
+/// the `IN;SP1;` init, at least one pen-down (`PD;`) and pen-up (`PU;`)
+/// with `PA<x>,<y>;` plotter-absolute moves between them.
+#[test]
+fn run_pipeline_hpgl_emits_pen_up_down_program() {
+    let resp = run_pipeline(
+        PipelineRequest {
+            project: project_with(
+                vec![profile_op(1, 1, ToolOffset::Outside)],
+                vec![endmill(1, 3.0)],
+            ),
+            post_processor: Some(PostProcessorKind::Hpgl),
+        },
+        |_, _, _| {},
+    )
+    .unwrap();
+    let g = &resp.gcode;
+    assert!(g.contains("SP1;"), "expected HPGL pen-select init:\n{g}");
+    assert!(g.contains("PD;"), "expected at least one pen-down:\n{g}");
+    assert!(g.contains("PU;"), "expected at least one pen-up:\n{g}");
+    assert!(g.contains("PA"), "expected PA plotter-absolute moves:\n{g}");
+    // HPGL is a 2D plotter dialect — no milling G-codes should leak in.
+    assert!(
+        !g.contains("G1 "),
+        "HPGL output must not contain G-codes:\n{g}"
+    );
+}
+
 #[test]
 fn two_op_project_emits_two_distinct_op_blocks() {
     let project = project_with(

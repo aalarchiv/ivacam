@@ -681,6 +681,8 @@ export interface components {
             kind: components["schemas"]["OpKind"];
             name: string;
             params: components["schemas"]["OpParamsCommon"];
+            /** @description l8lk: pin this op's position when the program-level [`Project::group_ops_by_tool`] reorder is on. A pinned op — like any program-only op (Pause / Homing / …) — is a fixed barrier: it keeps its declared slot and the tool-grouping pass never moves another op across it. Use it to lock a stability-critical cut order (tabs, thin walls) while still grouping the rest of the program. Ignored when grouping is off. Default `false` keeps existing projects byte-identical. */
+            pin_order?: boolean;
             source: components["schemas"]["OpSource"];
             /**
              * Format: uint32
@@ -1469,6 +1471,8 @@ export interface components {
         Project: {
             /** @description Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must avoid throughout the entire program — including rapids. The sim pass tests every toolpath segment against this set and emits `SimWarning::FixtureCollision` on overlap. Default empty: a project with no fixtures behaves exactly as before. */
             fixtures?: components["schemas"]["Fixture"][];
+            /** @description l8lk: when `true`, the pipeline runs an optional tool-change-order optimization that groups consecutive same-tool work so a `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change instead of two. Matters most on manual machines, where every swap is minutes + a re-probe + operator-error risk. The reorder is barrier-aware: program-only ops (Pause / Homing / …) and any op with [`Op::pin_order`] stay put and nothing moves across them, so a deliberate cut order (tabs, thin walls) is preserved. `false` (default) keeps the declared op order — byte-identical legacy output. See `order_ops_by_tool` in the pipeline. */
+            group_ops_by_tool?: boolean;
             machine: components["schemas"]["MachineConfig"];
             operations: components["schemas"]["Op"][];
             /** @description f60x: relief / 3-axis surfacing sources — the target Z(x,y) surfaces that [`OpKind::ReliefMill`] ops finish. Stored at project level (like `text_layers`) and referenced by `source_id`, not embedded in the op, because a surface grid is large and ops get cloned + hashed. Each carries a normalized-brightness grid; the op maps it to Z at planning time. Default empty: projects with no relief ops are unchanged. */

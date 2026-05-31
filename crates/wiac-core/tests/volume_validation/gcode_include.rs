@@ -83,6 +83,7 @@ fn gcode_include_g1_slot_volume_matches_closed_form() {
         source: OpSource::All,
         params: OpParams::mill_default(),
         group: None,
+        pin_order: false,
     };
 
     let project = Project {
@@ -95,6 +96,7 @@ fn gcode_include_g1_slot_volume_matches_closed_form() {
         work_offset: WorkOffset::default(),
         stock: Some(stock.clone()),
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     };
 
     let resp = run(project, PostProcessorKind::Grbl);

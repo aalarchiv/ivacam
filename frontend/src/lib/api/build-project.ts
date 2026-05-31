@@ -448,6 +448,9 @@ interface WireOp {
   };
   // dp6b: optional group label, emitted only when set + non-empty.
   group?: string;
+  // l8lk: pin this op's slot under the group-by-tool reorder. Emitted
+  // only when true (Rust serde skips the default false).
+  pin_order?: boolean;
 }
 
 /// Fixture wire shape mirrors `wiac_core::project::FixtureKind` (snake_case
@@ -516,6 +519,9 @@ export interface WireProject {
   /// f60x: relief surface sources referenced by `relief_mill` ops. Omitted
   /// when none are loaded.
   relief_sources?: WireReliefSource[];
+  /// l8lk: opt-in tool-change-order optimization. Omitted when false so the
+  /// Rust serde-default round-trip matches legacy projects.
+  group_ops_by_tool?: boolean;
 }
 
 /// f60x: wire shape of `wiac_core::project::ReliefSource`. `origin` is the
@@ -567,6 +573,9 @@ interface ProjectStateView {
   /// f60x: relief surface sources forwarded so `relief_mill` ops can
   /// resolve their target surface. Optional.
   reliefSources?: ReliefSource[];
+  /// l8lk: opt-in tool-change-order optimization (group ops by tool).
+  /// Optional — defaults to declared order.
+  groupOpsByTool?: boolean;
 }
 
 /// Base64 → byte array. Used for embedded TTF/OTF font payloads on the
@@ -1035,6 +1044,8 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
     // tag is `skip_serializing_if = "Option::is_none"`, so omit it
     // entirely to match round-trips on legacy projects.
     ...(op.group && op.group.length > 0 ? { group: op.group } : {}),
+    // l8lk: emit pin_order only when set (Rust skips the default false).
+    ...(op.pinOrder ? { pin_order: true } : {}),
   };
 }
 
@@ -1112,6 +1123,7 @@ export function buildProject(state: ProjectStateView): WireProject | null {
     ...(state.reliefSources && state.reliefSources.length > 0
       ? { relief_sources: state.reliefSources.map(buildReliefSource) }
       : {}),
+    ...(state.groupOpsByTool ? { group_ops_by_tool: true } : {}),
   };
 }
 

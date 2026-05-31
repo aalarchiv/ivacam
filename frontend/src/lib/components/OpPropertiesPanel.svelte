@@ -1200,6 +1200,19 @@
           oninput={(e) => patch('group', (e.currentTarget as HTMLInputElement).value)}
         />
       </label>
+      <!-- l8lk: pin this op's position when the project-level "Group ops
+           by tool" reorder is on. A pinned op is a fixed barrier. -->
+      <label
+        class="row"
+        title="Pin this operation's position when 'Group ops by tool' is on. A pinned op is a fixed barrier — it keeps its slot and the grouping pass won't move other ops across it. Use to lock a stability-critical cut order (tabs, thin walls)."
+      >
+        <span>Pin order</span>
+        <input
+          type="checkbox"
+          checked={op.pinOrder ?? false}
+          onchange={(e) => patch('pinOrder', (e.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
     </details>
 
     {#if op.kind === 'drill'}

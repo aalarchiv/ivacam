@@ -188,12 +188,14 @@ fn snapshot_drill_with_stufenfase_and_toolchange() {
             source: OpSource::All,
             params,
             group: None,
+            pin_order: false,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
         stock: None,
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     };
     let actual = run_to_gcode(project);
     // Structural pin — the brief asks for a snapshot covering the op
@@ -264,12 +266,14 @@ fn snapshot_profile_rectangle_tabs_and_helix_entry() {
             source: OpSource::All,
             params,
             group: None,
+            pin_order: false,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
         stock: None,
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     };
     let actual = run_to_gcode(project);
     assert!(actual.contains("; OP 1"), "missing op marker:\n{actual}");
@@ -332,12 +336,14 @@ fn snapshot_profile_ramp_tabs() {
             source: OpSource::All,
             params,
             group: None,
+            pin_order: false,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
         stock: None,
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     };
     let actual = run_to_gcode(project);
     assert!(actual.contains("; OP 1"), "missing op marker:\n{actual}");
@@ -392,12 +398,14 @@ fn snapshot_wirbeln_walks_closed_contour() {
             source: OpSource::All,
             params,
             group: None,
+            pin_order: false,
         }],
         fixtures: Vec::default(),
         text_layers: Vec::default(),
         work_offset: WorkOffset::default(),
         stock: None,
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     };
     let actual = run_to_gcode(project);
     assert!(actual.contains("; OP 1"), "missing op marker:\n{actual}");

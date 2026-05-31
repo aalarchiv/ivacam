@@ -444,7 +444,12 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // have a real reason for the declared order (jig, manual reset). The
     // 94sf safety gate downgrades the program when an `op_order_suspect`
     // surfaces, so the user has to acknowledge before the gcode ships.
-    warnings::push_op_order_warnings(&project, &mut warnings);
+    // l8lk: check the EFFECTIVE order (post tool-grouping) so the
+    // drill-after-profile / finish-before-rough warnings reflect what
+    // actually ships — grouping can itself reorder these.
+    let enabled_for_order: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
+    let effective_order = order_ops_by_tool(&enabled_for_order, project.group_ops_by_tool);
+    warnings::push_op_order_warnings(&effective_order, &project, &mut warnings);
     // f60x-E: nudge users to rough the bulk before a ball-nose relief finish.
     warnings::push_relief_roughing_warnings(&project, &mut warnings);
     // i5g4 MVP: warn when geometry bbox doesn't contain (0,0). Full
@@ -591,6 +596,56 @@ pub(super) fn cancelled(cancel: Option<&CancelToken>) -> bool {
 /// lookup to O(1) at the cost of one allocation per Generate.
 fn build_tool_index(tools: &[ToolEntry]) -> HashMap<u32, &ToolEntry> {
     tools.iter().map(|t| (t.id, t)).collect()
+}
+
+/// l8lk: optional tool-change-order optimization. When `group` is true,
+/// reorder `ops` so consecutive same-tool work is grouped — a
+/// `T1 / T2 / T1` program becomes `T1, T1, T2`, cutting two tool changes
+/// to one. This matters far more on manual machines, where each swap is
+/// minutes + a re-probe + operator-error risk (Estlcam's optimizer is
+/// travel-distance-only and does NOT group by tool — this exceeds it).
+///
+/// The reorder is barrier-aware. Every program-only op (Pause / Homing /
+/// Probe / marker / include) and every op with [`Op::pin_order`] set is a
+/// fixed barrier: it keeps its declared slot and grouping never moves an op
+/// across it. So a deliberately-placed pause, or a pinned
+/// stability-critical cut (tabs, thin walls), preserves its order while the
+/// rest of the program is grouped. Within each maximal run of non-barrier
+/// ops, a STABLE sort by first-seen `tool_id` groups same-tool work while
+/// preserving relative order — so layered same-tool passes keep their
+/// sequence. `group == false` returns the input order unchanged
+/// (byte-identical legacy output).
+fn order_ops_by_tool<'a>(ops: &[&'a Op], group: bool) -> Vec<&'a Op> {
+    if !group {
+        return ops.to_vec();
+    }
+    let mut out: Vec<&'a Op> = Vec::with_capacity(ops.len());
+    let mut run: Vec<&'a Op> = Vec::new();
+    let flush = |run: &mut Vec<&'a Op>, out: &mut Vec<&'a Op>| {
+        if run.len() <= 1 {
+            out.append(run);
+            return;
+        }
+        // First-seen tool order within this run; a stable sort by it
+        // groups same-tool ops without disturbing their relative order.
+        let mut first_seen: HashMap<u32, usize> = HashMap::new();
+        for op in run.iter() {
+            let next = first_seen.len();
+            first_seen.entry(op.tool_id).or_insert(next);
+        }
+        run.sort_by_key(|op| first_seen[&op.tool_id]);
+        out.append(run);
+    };
+    for &op in ops {
+        if op.pin_order || op.is_program_only() {
+            flush(&mut run, &mut out);
+            out.push(op);
+        } else {
+            run.push(op);
+        }
+    }
+    flush(&mut run, &mut out);
+    out
 }
 
 /// ye4b: count tool changes by walking the project's enabled op list
@@ -992,7 +1047,10 @@ where
     };
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
-    let enabled_ops: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
+    // l8lk: optional tool-change-order optimization. With the toggle off
+    // this is the declared order (byte-identical legacy output).
+    let enabled_ops_declared: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
+    let enabled_ops = order_ops_by_tool(&enabled_ops_declared, project.group_ops_by_tool);
     let total_ops = enabled_ops.len();
     // rnw6: per-pipeline tool-id index used by the per-op loop below so
     // the M6 envelope decision (`op.tool_id`), the cache-key tool lookup,
@@ -2035,6 +2093,7 @@ mod count_tool_changes_tests {
             source: OpSource::All,
             params: OpParams::mill_default(),
             group: None,
+            pin_order: false,
         }
     }
 

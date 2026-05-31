@@ -296,12 +296,14 @@ mod tests {
                 source: OpSource::All,
                 params: params.clone(),
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp_a = run_pipeline(
             PipelineRequest {
@@ -390,12 +392,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -468,12 +472,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -536,12 +542,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {

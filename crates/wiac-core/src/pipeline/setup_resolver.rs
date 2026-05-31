@@ -1114,6 +1114,7 @@ mod tests {
             source: crate::project::OpSource::All,
             params: crate::project::OpParams::mill_default(),
             group: None,
+            pin_order: false,
         };
         let mut cut = profile_op(2, 2, ToolOffset::Outside);
         cut.params.step = Some(-1.0);

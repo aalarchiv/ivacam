@@ -519,12 +519,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -591,12 +593,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -658,12 +662,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -715,12 +721,14 @@ mod tests {
                 source: OpSource::All,
                 params: OpParams::mill_default(),
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -770,12 +778,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -825,12 +835,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -896,12 +908,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -979,6 +993,7 @@ mod tests {
                     source: OpSource::All,
                     params: params_profile,
                     group: None,
+                    pin_order: false,
                 },
                 Op {
                     id: 2,
@@ -997,6 +1012,7 @@ mod tests {
                     source: OpSource::All,
                     params: params_thread,
                     group: None,
+                    pin_order: false,
                 },
             ],
             fixtures: Vec::default(),
@@ -1004,6 +1020,7 @@ mod tests {
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -1073,12 +1090,14 @@ mod tests {
                 source: OpSource::All,
                 params,
                 group: None,
+                pin_order: false,
             }],
             fixtures: Vec::default(),
             text_layers: Vec::default(),
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {

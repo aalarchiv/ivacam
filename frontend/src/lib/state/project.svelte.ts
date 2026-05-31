@@ -472,6 +472,20 @@ class ProjectState {
     this.data.reliefSources = v;
   }
 
+  /// l8lk: opt-in tool-change-order optimization (group ops by tool).
+  /// Changing it reorders the emitted program, so it invalidates the
+  /// cached toolpath (the user has to re-Generate) the same way a
+  /// machine edit does.
+  get groupOpsByTool(): boolean {
+    return this.data.groupOpsByTool;
+  }
+  set groupOpsByTool(v: boolean) {
+    if (this.data.groupOpsByTool === v) return;
+    this.data.groupOpsByTool = v;
+    this.dirty = true;
+    this.generated = null;
+  }
+
   get textLayers(): TextLayer[] {
     return this.data.textLayers;
   }
@@ -577,6 +591,7 @@ class ProjectState {
     this.fixtures = [];
     this.textLayers = [];
     this.reliefSources = [];
+    this.groupOpsByTool = false;
     this.stock = { ...this.stock };
     // j4tv: workOffset is per-project (the user pre-zeros their machine
     // at a different point per drawing), so reset to default like ops.
@@ -1209,6 +1224,8 @@ class ProjectState {
       // / unset projects keep their compact .wiac-project payloads. The
       // restore() side defaults to defaultWorkOffset() when absent.
       ...(isDefaultWorkOffset(this.workOffset) ? {} : { workOffset: this.workOffset }),
+      // l8lk: persist the tool-grouping toggle only when on.
+      ...(this.groupOpsByTool ? { groupOpsByTool: true } : {}),
     };
   }
 
@@ -1243,8 +1260,7 @@ class ProjectState {
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
     if (Array.isArray(file.tools) && file.tools.length > 0)
       this.tools = file.tools.map(migrateLegacyToolTerms);
-    if (file.machine)
-      this.machine = { ...this.machine, ...migrateMachineSettings(file.machine) };
+    if (file.machine) this.machine = { ...this.machine, ...migrateMachineSettings(file.machine) };
     if (Array.isArray(file.operations)) this.operations = file.operations;
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
     this.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
@@ -1255,6 +1271,8 @@ class ProjectState {
     this.workOffset = file.workOffset
       ? { ...defaultWorkOffset(), ...file.workOffset }
       : defaultWorkOffset();
+    // l8lk: restore the tool-grouping toggle (legacy files lack it → false).
+    this.groupOpsByTool = file.groupOpsByTool === true;
     this.selectedFixtureId = null;
     this.selectedOpId = null;
     // Loading a project resets to a clean undo baseline.

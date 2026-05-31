@@ -700,6 +700,8 @@ export interface ProjectFile {
   /// "geometry origin = WCS origin" (the legacy default; round-trips
   /// for legacy files lacking the field).
   workOffset?: WorkOffset;
+  /// l8lk: opt-in tool-change-order optimization. Omitted when false.
+  groupOpsByTool?: boolean;
 }
 
 /// f60x: a target surface source for relief / ball-nose surfacing. Mirror

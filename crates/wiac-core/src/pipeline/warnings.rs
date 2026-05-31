@@ -315,8 +315,15 @@ pub(super) fn push_stock_warning(
 /// Same-tool-back-to-back Profile or Pocket ops are NOT flagged —
 /// that's a common pattern for layered passes and the user
 /// frequently does it on purpose.
-pub(super) fn push_op_order_warnings(project: &Project, warnings: &mut Vec<PipelineWarning>) {
-    let enabled: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
+/// l8lk: `enabled` is the EFFECTIVE op order the pipeline will emit —
+/// already run through `order_ops_by_tool`, so when tool-grouping is on
+/// these checks reflect what actually ships (grouping could itself create a
+/// drill-after-profile, which this then catches), not the declared order.
+pub(super) fn push_op_order_warnings(
+    enabled: &[&Op],
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) {
     if enabled.len() < 2 {
         return;
     }
@@ -784,7 +791,15 @@ mod tests {
         let drill = drill_op(2, 1, DrillCycle::Simple { dwell_sec: 0.0 });
         let project = project_with(vec![profile, drill], vec![tool]);
         let mut warnings = Vec::new();
-        push_op_order_warnings(&project, &mut warnings);
+        push_op_order_warnings(
+            &project
+                .operations
+                .iter()
+                .filter(|o| o.enabled)
+                .collect::<Vec<_>>(),
+            &project,
+            &mut warnings,
+        );
         let hit = warnings
             .iter()
             .find(|w| w.kind == "op_order_suspect")
@@ -808,7 +823,15 @@ mod tests {
         profile.params.depth = -2.0;
         let project = project_with(vec![drill, profile], vec![tool]);
         let mut warnings = Vec::new();
-        push_op_order_warnings(&project, &mut warnings);
+        push_op_order_warnings(
+            &project
+                .operations
+                .iter()
+                .filter(|o| o.enabled)
+                .collect::<Vec<_>>(),
+            &project,
+            &mut warnings,
+        );
         assert!(
             warnings.iter().all(|w| w.kind != "op_order_suspect"),
             "no op_order_suspect expected in safe order, got {warnings:?}"
@@ -825,7 +848,15 @@ mod tests {
         let pocket_big = pocket_op(2, 2, OpSource::All);
         let project = project_with(vec![pocket_small, pocket_big], vec![tool_small, tool_big]);
         let mut warnings = Vec::new();
-        push_op_order_warnings(&project, &mut warnings);
+        push_op_order_warnings(
+            &project
+                .operations
+                .iter()
+                .filter(|o| o.enabled)
+                .collect::<Vec<_>>(),
+            &project,
+            &mut warnings,
+        );
         let hit = warnings
             .iter()
             .find(|w| w.kind == "op_order_suspect" && w.op_id == Some(1))
@@ -1183,6 +1214,7 @@ mod tests {
             source: OpSource::All,
             params: OpParams::mill_default(),
             group: None,
+            pin_order: false,
         };
         let tools = vec![endmill(1, 6.0)];
 

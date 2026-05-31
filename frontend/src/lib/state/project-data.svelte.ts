@@ -287,6 +287,12 @@ export class ProjectDataState {
   /// normalized-brightness grid decoded from a grayscale image.
   reliefSources = $state<ReliefSource[]>([]);
 
+  /// l8lk: opt-in tool-change-order optimization. When true, the pipeline
+  /// groups consecutive same-tool ops so a T1/T2/T1 program emits one
+  /// tool change instead of two. Barrier-aware (program-only ops + ops
+  /// with `pinOrder` stay put). Default false = declared order.
+  groupOpsByTool = $state(false);
+
   /// True when the in-memory project differs from the gcode currently
   /// shown in `generated`. Set by op edits/reorders/enable toggles;
   /// cleared by setGenerated. The status badge in the ops list reads

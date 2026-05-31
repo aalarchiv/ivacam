@@ -365,6 +365,24 @@
       </div>
     {/if}
 
+    {#if project.operations.length > 1}
+      <!-- l8lk: project-level tool-change-order optimization. Groups
+           consecutive same-tool ops so a T1/T2/T1 program emits one
+           tool change instead of two. Pin individual ops (in the op
+           panel) to lock a stability-critical order. -->
+      <label
+        class="group-by-tool"
+        title="Reorder operations so same-tool work runs back-to-back, cutting the number of tool changes (a T1/T2/T1 program becomes T1, T1, T2). Matters most on manual machines, where each swap is minutes + a re-probe. Program-only ops and ops with 'Pin order' set stay put. Off = the order shown here."
+      >
+        <input
+          type="checkbox"
+          checked={project.groupOpsByTool}
+          onchange={(e) => (project.groupOpsByTool = (e.currentTarget as HTMLInputElement).checked)}
+        />
+        Group ops by tool
+      </label>
+    {/if}
+
     {#if project.operations.length === 0}
       <div class="empty-card">
         <p class="empty-title">No operations yet</p>
@@ -500,6 +518,20 @@
 </div>
 
 <style>
+  /* l8lk: project-level tool-grouping toggle above the ops list. */
+  .group-by-tool {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-muted, var(--text));
+    margin: 0 0 0.5rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .group-by-tool input {
+    margin: 0;
+  }
   .ops {
     width: 100%;
     height: 100%;

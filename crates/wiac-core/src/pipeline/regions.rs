@@ -143,6 +143,7 @@ mod tests {
             source: OpSource::All,
             params: OpParams::mill_default(),
             group: None,
+            pin_order: false,
         }
     }
 

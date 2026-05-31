@@ -382,6 +382,7 @@ mod tests {
                 ..OpParams::default()
             },
             group: None,
+            pin_order: false,
         };
         let project = Project {
             segments: vec![
@@ -402,6 +403,7 @@ mod tests {
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -446,6 +448,7 @@ mod tests {
                 ..OpParams::default()
             },
             group: None,
+            pin_order: false,
         };
         // A single LINE segment doesn't form a closed contour. No
         // region → expect the warning.
@@ -464,6 +467,7 @@ mod tests {
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -511,6 +515,7 @@ mod tests {
                 ..OpParams::default()
             },
             group: None,
+            pin_order: false,
         };
         // 30x30 closed square — incircle radius 15mm.
         let project = Project {
@@ -528,6 +533,7 @@ mod tests {
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -578,6 +584,7 @@ mod tests {
                 ..OpParams::default()
             },
             group: None,
+            pin_order: false,
         };
         // 30x30 closed square — incircle radius 15mm. Boundary inset by
         // R = 3.175 mm (vbit tool reach) → expect a ~23.65×23.65 square
@@ -597,6 +604,7 @@ mod tests {
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -664,6 +672,7 @@ mod tests {
                 ..OpParams::default()
             },
             group: None,
+            pin_order: false,
         };
         let square = vec![
             Segment::line(Point2::new(0.0, 0.0), Point2::new(30.0, 0.0), "0", 7),
@@ -694,6 +703,7 @@ mod tests {
                 work_offset: crate::project::WorkOffset::default(),
                 stock: None,
                 relief_sources: Vec::new(),
+                group_ops_by_tool: false,
             };
             run_pipeline(
                 PipelineRequest {
@@ -755,6 +765,7 @@ mod tests {
                 ..OpParams::default()
             },
             group: None,
+            pin_order: false,
         };
         let project = Project {
             segments: vec![
@@ -771,6 +782,7 @@ mod tests {
             work_offset: crate::project::WorkOffset::default(),
             stock: None,
             relief_sources: Vec::new(),
+            group_ops_by_tool: false,
         };
         let resp = run_pipeline(
             PipelineRequest {
@@ -824,6 +836,7 @@ mod tests {
                 ..OpParams::default()
             },
             group: None,
+            pin_order: false,
         };
         let json = serde_json::to_string(&op).expect("serialize");
         let back: Op = serde_json::from_str(&json).expect("deserialize");

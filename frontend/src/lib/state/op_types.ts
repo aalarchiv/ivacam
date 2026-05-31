@@ -110,6 +110,12 @@ export interface OpBase {
   /// boundary marker in the G-code at every transition. Empty
   /// string is treated the same as undefined.
   group?: string;
+  /// l8lk: pin this op's position when the project-level
+  /// `groupOpsByTool` reorder is on. A pinned op (like any program-only
+  /// op) is a fixed barrier: it keeps its slot and grouping never moves
+  /// another op across it. Use it to lock a stability-critical cut order
+  /// (tabs, thin walls). Ignored when grouping is off. Default false.
+  pinOrder?: boolean;
 }
 
 /// Fields shared by closed-contour ops (profile + pocket): cut

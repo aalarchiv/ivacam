@@ -189,6 +189,7 @@ pub(in crate::pipeline) fn profile_op(id: u32, tool_id: u32, offset: ToolOffset)
         source: OpSource::All,
         params: OpParams::mill_default(),
         group: None,
+        pin_order: false,
     }
 }
 
@@ -236,6 +237,7 @@ pub(in crate::pipeline) fn profile_leads_op(
         source: OpSource::All,
         params,
         group: None,
+        pin_order: false,
     }
 }
 
@@ -254,6 +256,7 @@ pub(in crate::pipeline) fn pocket_op(id: u32, tool_id: u32, source: OpSource) ->
         source,
         params: OpParams::mill_default(),
         group: None,
+        pin_order: false,
     }
 }
 
@@ -277,6 +280,7 @@ pub(in crate::pipeline) fn drill_op(id: u32, tool_id: u32, cycle: DrillCycle) ->
         source: OpSource::All,
         params,
         group: None,
+        pin_order: false,
     }
 }
 
@@ -299,6 +303,7 @@ pub(in crate::pipeline) fn project_with_segments(
         work_offset: crate::project::WorkOffset::default(),
         stock: None,
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     }
 }
 

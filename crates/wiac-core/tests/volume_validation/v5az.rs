@@ -138,6 +138,7 @@ fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
             ..OpParams::default()
         },
         group: None,
+        pin_order: false,
     };
 
     let project = Project {
@@ -150,6 +151,7 @@ fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
         work_offset: WorkOffset::default(),
         stock: Some(stock.clone()),
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     };
 
     let resp = run_pipeline(
@@ -330,6 +332,7 @@ fn profile_after_pocket_does_not_dip_below_pocket_floor() {
         work_offset: WorkOffset::default(),
         stock: Some(stock.clone()),
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     };
     let resp = run(project, PostProcessorKind::Linuxcnc);
 

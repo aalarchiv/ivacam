@@ -1184,6 +1184,9 @@ components:
           type: string
         params:
           $ref: '#/components/schemas/OpParamsCommon'
+        pin_order:
+          description: 'l8lk: pin this op''s position when the program-level [`Project::group_ops_by_tool`] reorder is on. A pinned op — like any program-only op (Pause / Homing / …) — is a fixed barrier: it keeps its declared slot and the tool-grouping pass never moves another op across it. Use it to lock a stability-critical cut order (tabs, thin walls) while still grouping the rest of the program. Ignored when grouping is off. Default `false` keeps existing projects byte-identical.'
+          type: boolean
         source:
           $ref: '#/components/schemas/OpSource'
         tool_id:
@@ -2386,6 +2389,9 @@ components:
           items:
             $ref: '#/components/schemas/Fixture'
           type: array
+        group_ops_by_tool:
+          description: 'l8lk: when `true`, the pipeline runs an optional tool-change-order optimization that groups consecutive same-tool work so a `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change instead of two. Matters most on manual machines, where every swap is minutes + a re-probe + operator-error risk. The reorder is barrier-aware: program-only ops (Pause / Homing / …) and any op with [`Op::pin_order`] stay put and nothing moves across them, so a deliberate cut order (tabs, thin walls) is preserved. `false` (default) keeps the declared op order — byte-identical legacy output. See `order_ops_by_tool` in the pipeline.'
+          type: boolean
         machine:
           $ref: '#/components/schemas/MachineConfig'
         operations:

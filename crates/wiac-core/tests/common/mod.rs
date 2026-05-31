@@ -176,6 +176,7 @@ pub fn build_project(
         work_offset: WorkOffset::default(),
         stock: Some(stock.clone()),
         relief_sources: Vec::new(),
+        group_ops_by_tool: false,
     }
 }
 
@@ -394,5 +395,6 @@ pub fn op_single_pass(id: u32, name: &str, kind: OpKind, tool_id: u32, depth_mm:
         source: OpSource::All,
         params,
         group: None,
+        pin_order: false,
     }
 }

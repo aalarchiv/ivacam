@@ -45,6 +45,16 @@ pub struct Op {
     /// projects byte-identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// l8lk: pin this op's position when the program-level
+    /// [`Project::group_ops_by_tool`] reorder is on. A pinned op — like
+    /// any program-only op (Pause / Homing / …) — is a fixed barrier:
+    /// it keeps its declared slot and the tool-grouping pass never moves
+    /// another op across it. Use it to lock a stability-critical cut
+    /// order (tabs, thin walls) while still grouping the rest of the
+    /// program. Ignored when grouping is off. Default `false` keeps
+    /// existing projects byte-identical.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub pin_order: bool,
 }
 
 impl Op {
@@ -201,6 +211,7 @@ impl Default for Op {
             source: OpSource::All,
             params: OpParams::default(),
             group: None,
+            pin_order: false,
         }
     }
 }
@@ -1020,6 +1031,13 @@ impl SourceCombine {
 
 pub(crate) fn is_zero_f64(v: &f64) -> bool {
     v.abs() < 1e-9
+}
+
+/// Serde `skip_serializing_if` for opt-in bool flags that default to
+/// `false` — keeps the field out of JSON / schema when unset so legacy
+/// projects round-trip byte-identically.
+pub(crate) fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 #[cfg(test)]

@@ -104,6 +104,19 @@ pub struct Project {
     /// time. Default empty: projects with no relief ops are unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relief_sources: Vec<ReliefSource>,
+
+    /// l8lk: when `true`, the pipeline runs an optional tool-change-order
+    /// optimization that groups consecutive same-tool work so a
+    /// `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change
+    /// instead of two. Matters most on manual machines, where every swap
+    /// is minutes + a re-probe + operator-error risk. The reorder is
+    /// barrier-aware: program-only ops (Pause / Homing / …) and any op
+    /// with [`Op::pin_order`] stay put and nothing moves across them, so
+    /// a deliberate cut order (tabs, thin walls) is preserved. `false`
+    /// (default) keeps the declared op order — byte-identical legacy
+    /// output. See `order_ops_by_tool` in the pipeline.
+    #[serde(default, skip_serializing_if = "crate::project::op::is_false")]
+    pub group_ops_by_tool: bool,
 }
 
 /// f60x: a target surface source for relief / ball-nose surfacing. Holds a

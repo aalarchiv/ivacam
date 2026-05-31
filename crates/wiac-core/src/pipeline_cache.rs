@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 41;
+pub const PIPELINE_VERSION: u32 = 42;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -532,6 +532,11 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     // verbatim as G4 P<sec> lines around M5/M3 in the M6 envelope.
     hash_opt_f64(m.spindle_stop_dwell_sec, h);
     hash_opt_f64(m.spindle_start_dwell_sec, h);
+    // 4lq5: optional_stop swaps the manual-pause M0 → M1, which is captured
+    // into the cached op body for INTERNAL dual-tool / stufenfase swaps
+    // (the per-op Pause / boundary M6 land outside the cache, but the
+    // in-driver swap does not). So it must invalidate the cache.
+    m.optional_stop.hash(h);
     // syol: program_end footer routing — park_at_home flips on the
     // G53 G0 X0 Y0 retract, park_xy overrides it with an explicit
     // WCS-coord point. Both materially change the emitted footer.
@@ -1247,7 +1252,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x3ccb_efc9_2f0d_c3d4_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x508e_445c_3515_af87_u64, "got {:#018x}", key.0);
     }
 
     #[test]

@@ -395,6 +395,11 @@ export interface MachineSettings {
   /// fallback. Only meaningful when `parkAtHome` is false (the WCS
   /// fallback path). Emitted as `[x, y]` on the wire.
   parkXy?: [number, number];
+  /// 4lq5: emit `M1` (optional stop) instead of `M0` at every program
+  /// pause — the Pause op and the manual tool-change halt. `M1` is
+  /// honored only when the controller's optional-stop switch is on, so a
+  /// vetted program can run unattended. Default/undefined ⇒ `M0`.
+  optionalStop?: boolean;
 }
 
 /// Mirror of `wiac_core::gcode::post_profile::PostProfile` (rt1.15).

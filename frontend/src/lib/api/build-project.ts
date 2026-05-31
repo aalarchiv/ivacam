@@ -273,6 +273,9 @@ interface WireMachine {
   /// when at default so legacy projects round-trip unchanged.
   park_at_home?: boolean;
   park_xy?: [number, number];
+  /// 4lq5: emit M1 (optional stop) instead of M0 at program pauses.
+  /// Omitted when false (Rust serde skips the default).
+  optional_stop?: boolean;
 }
 
 interface WireAxisFormat {
@@ -647,6 +650,8 @@ function buildMachine(m: MachineSettings): WireMachine {
     // already pins the head to machine home, so an explicit WCS XY
     // would be ambiguous (and the Rust side ignores it anyway).
     ...(!m.parkAtHome && m.parkXy ? { park_xy: m.parkXy } : {}),
+    // 4lq5: optional-stop (M1) flag. Skip on the default (false).
+    ...(m.optionalStop ? { optional_stop: true } : {}),
   };
 }
 

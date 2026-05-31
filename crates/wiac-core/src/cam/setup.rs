@@ -758,6 +758,15 @@ pub struct MachineConfig {
     /// an M6 tool table.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub use_tool_length_offsets: bool,
+    /// 4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop)
+    /// at every program pause — both the `Pause` op and the manual
+    /// (`ManualM0Pause`) tool-change halt. `M1` is honored only when the
+    /// controller's optional-stop switch is ON, so a vetted program can
+    /// run unattended (the switch off skips the pauses) yet still stop on
+    /// demand. Default `false` keeps the mandatory `M0` — byte-identical
+    /// output for existing projects.
+    #[serde(default, skip_serializing_if = "is_false_bool")]
+    pub optional_stop: bool,
 }
 
 /// hat3: post-tool-change Z re-establish strategy. Internally tagged
@@ -854,6 +863,18 @@ impl MachineConfig {
     pub fn effective_spindle_start_dwell_sec(&self) -> f64 {
         self.spindle_start_dwell_sec.unwrap_or(0.5).max(0.0)
     }
+
+    /// 4lq5: the program-pause word to emit — `M1` (optional stop) when
+    /// [`optional_stop`](Self::optional_stop) is set, else `M0` (mandatory
+    /// stop). Used for both the `Pause` op and the manual tool-change halt.
+    #[must_use]
+    pub fn program_pause_code(&self) -> &'static str {
+        if self.optional_stop {
+            "M1"
+        } else {
+            "M0"
+        }
+    }
 }
 
 fn default_toolchange_s() -> f64 {
@@ -928,6 +949,7 @@ impl Default for MachineConfig {
             toolchange_xy: None,
             post_change_z: PostChangeZStrategy::None,
             use_tool_length_offsets: false,
+            optional_stop: false,
         }
     }
 }

@@ -349,6 +349,17 @@ describe('buildMachine — Round-3 spindle clamps & parking', () => {
     expect(m).not.toHaveProperty('spindle_stop_dwell_sec');
     expect(m).not.toHaveProperty('park_at_home');
     expect(m).not.toHaveProperty('park_xy');
+    expect(m).not.toHaveProperty('optional_stop');
+  });
+
+  it('emits optional_stop when set (4lq5)', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: { ...baseMachine(), optionalStop: true },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({ optional_stop: true });
   });
 
   it('emits spindle_rpm_min / max when set', () => {

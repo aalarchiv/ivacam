@@ -1164,7 +1164,8 @@ where
             if !message.is_empty() {
                 post.comment(message);
             }
-            post.raw("M0");
+            // 4lq5: M1 (optional stop) instead of M0 when the machine opts in.
+            post.raw(project.machine.program_pause_code());
             post.reset_state();
             emitted_ops += 1;
             progress(
@@ -1919,12 +1920,13 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
                 post.comment(&prompt);
             }
             if !is_first_tool {
-                // M0: program-pause. Operator presses Cycle Start to
-                // resume. Skip on first-tool because the spindle isn't
+                // Program-pause so the operator hand-swaps then presses
+                // Cycle Start. Skip on first-tool because the spindle isn't
                 // running yet — the program-start state is already
                 // tool-swap-equivalent (operator loaded a bit before
-                // hitting Cycle Start).
-                post.raw("M0");
+                // hitting Cycle Start). 4lq5: M1 (optional stop) instead of
+                // M0 when the machine opts in.
+                post.raw(machine.program_pause_code());
             }
             // hat3: re-establish the new tool's Z AFTER the pause — the
             // probe / fixed-sensor cycle runs automatically once the

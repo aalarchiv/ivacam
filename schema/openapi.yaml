@@ -964,6 +964,9 @@ components:
         name:
           description: 'h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.wiac-machine.json` save/load files.'
           type: string
+        optional_stop:
+          description: '4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop) at every program pause — both the `Pause` op and the manual (`ManualM0Pause`) tool-change halt. `M1` is honored only when the controller''s optional-stop switch is ON, so a vetted program can run unattended (the switch off skips the pauses) yet still stop on demand. Default `false` keeps the mandatory `M0` — byte-identical output for existing projects.'
+          type: boolean
         park_at_home:
           description: 'syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first.'
           type: boolean

@@ -445,6 +445,14 @@
           <option value="ignore">Ignore (no tool-change output)</option>
         </select>
       </label>
+      <!-- 4lq5: optional-stop M1 alternative to M0 at program pauses. -->
+      <label
+        class="check"
+        title="Emit M1 (optional stop) instead of M0 (mandatory stop) at every program pause — the Pause op and the manual tool-change halt. M1 is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (switch off skips the pauses) yet still stop on demand. Off = mandatory M0."
+      >
+        <input type="checkbox" bind:checked={draft.optionalStop} />
+        Optional stop (M1 instead of M0)
+      </label>
       <label
         class="check"
         title="Plot-mode Z (rt1.35): collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."

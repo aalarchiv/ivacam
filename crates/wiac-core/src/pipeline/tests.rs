@@ -6136,3 +6136,110 @@ fn group_ops_by_tool_collapses_redundant_toolchange() {
         "T2 change must follow the grouped T1 work:\n{grouped}"
     );
 }
+
+// ── 4lq5: optional-stop (M1) alternative to M0 ─────────────────────────
+
+/// 4lq5: with `optional_stop` on, a `Pause` op emits `M1` (optional stop)
+/// instead of `M0`; off, it emits `M0`.
+#[test]
+fn optional_stop_swaps_pause_m0_for_m1() {
+    let build = |optional: bool| {
+        let machine = MachineConfig {
+            optional_stop: optional,
+            ..MachineConfig::default()
+        };
+        let mut pause = profile_op(2, 1, ToolOffset::Outside);
+        pause.kind = OpKind::Pause {
+            message: String::new(),
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0)],
+            operations: vec![profile_op(1, 1, ToolOffset::Outside), pause],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+            stock: None,
+            relief_sources: Vec::new(),
+            group_ops_by_tool: false,
+        };
+        run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .gcode
+    };
+
+    let m0 = build(false);
+    assert!(
+        m0.lines().any(|l| l.trim() == "M0"),
+        "default machine pauses with M0:\n{m0}"
+    );
+    assert!(!m0.lines().any(|l| l.trim() == "M1"));
+
+    let m1 = build(true);
+    assert!(
+        m1.lines().any(|l| l.trim() == "M1"),
+        "optional_stop must emit M1:\n{m1}"
+    );
+    assert!(
+        !m1.lines().any(|l| l.trim() == "M0"),
+        "optional_stop must NOT emit M0:\n{m1}"
+    );
+}
+
+/// 4lq5: a manual (ManualM0Pause) tool change halts with `M1` instead of
+/// `M0` when `optional_stop` is set.
+#[test]
+fn optional_stop_swaps_manual_toolchange_m0_for_m1() {
+    let build = |optional: bool| {
+        let machine = MachineConfig {
+            optional_stop: optional,
+            ..MachineConfig::default() // tool_change defaults to ManualM0Pause
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+            stock: None,
+            relief_sources: Vec::new(),
+            group_ops_by_tool: false,
+        };
+        run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .gcode
+    };
+
+    let m0 = build(false);
+    assert!(
+        m0.lines().any(|l| l.trim() == "M0"),
+        "manual change halts with M0 by default:\n{m0}"
+    );
+    let m1 = build(true);
+    assert!(
+        m1.lines().any(|l| l.trim() == "M1"),
+        "optional_stop must emit M1 at the manual change:\n{m1}"
+    );
+    assert!(
+        !m1.lines().any(|l| l.trim() == "M0"),
+        "optional_stop must NOT emit M0:\n{m1}"
+    );
+}

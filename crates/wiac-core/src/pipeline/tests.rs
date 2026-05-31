@@ -4128,6 +4128,144 @@ fn non_toolchange_machine_pauses_for_manual_swap() {
     );
 }
 
+/// ad0v: when `MachineConfig.toolchange_xy` is set, a manual
+/// (supports_toolchange=false) multi-tool program must rapid to that
+/// machine-coords station (`G53 G0 X.. Y..`) AFTER the safe-Z lift and
+/// BEFORE the M0 pause — so the operator hand-swaps the bit at a fixed
+/// reachable position instead of directly over the workpiece.
+#[test]
+fn manual_multitool_emits_g53_move_to_toolchange_position() {
+    let machine = MachineConfig {
+        supports_toolchange: false,
+        toolchange_xy: Some((150.0, 5.0)),
+        ..MachineConfig::default()
+    };
+    let project = Project {
+        segments: closed_square_offset(20.0, 0.0, 0.0),
+        machine,
+        tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+        operations: vec![
+            profile_op(1, 1, ToolOffset::Outside),
+            profile_op(2, 2, ToolOffset::Outside),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap();
+    let op1 = must_find(&resp.gcode, "; OP 1");
+    let op2 = must_find(&resp.gcode, "; OP 2");
+    let between = &resp.gcode[op1..op2];
+    // The machine-coords rapid to the change station, before the pause.
+    let g53 = must_find(between, "G53 G0 X150 Y5");
+    let m0 = must_find(between, "\nM0");
+    assert!(
+        g53 < m0,
+        "expected G53 move-to-change-position before the M0 pause; g53={g53} m0={m0}:\n{between}"
+    );
+    // First tool is loaded before Cycle Start — no pause, no G53 ahead
+    // of OP 1.
+    let preamble = &resp.gcode[..op1];
+    assert!(
+        !preamble.contains("G53"),
+        "first tool must not emit a tool-change G53 (operator pre-loads it):\n{preamble}"
+    );
+}
+
+/// ad0v: the default (`toolchange_xy == None`) keeps the prior behavior
+/// — a manual swap still pauses, but NO mid-program G53 is emitted (the
+/// safe-Z lift alone, as before this feature).
+#[test]
+fn unset_toolchange_position_emits_no_mid_program_g53() {
+    let machine = MachineConfig {
+        supports_toolchange: false,
+        ..MachineConfig::default()
+    };
+    let project = Project {
+        segments: closed_square_offset(20.0, 0.0, 0.0),
+        machine,
+        tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+        operations: vec![
+            profile_op(1, 1, ToolOffset::Outside),
+            profile_op(2, 2, ToolOffset::Outside),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap();
+    // park_at_home defaults false, so the ONLY way a G53 appears is the
+    // new feature — which is off here.
+    assert!(
+        !resp.gcode.contains("G53"),
+        "unset toolchange_xy must emit no G53:\n{}",
+        resp.gcode
+    );
+    // The manual swap still happens.
+    assert!(resp.gcode.contains("\nM0"), "manual swap pause still expected");
+}
+
+/// ad0v: the change-position move also fires on an ATC
+/// (supports_toolchange=true) machine when configured — before the
+/// `T<n> M6`.
+#[test]
+fn atc_multitool_emits_g53_move_before_m6() {
+    let machine = MachineConfig {
+        supports_toolchange: true,
+        toolchange_xy: Some((150.0, 5.0)),
+        ..MachineConfig::default()
+    };
+    let project = Project {
+        segments: closed_square_offset(20.0, 0.0, 0.0),
+        machine,
+        tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+        operations: vec![
+            profile_op(1, 1, ToolOffset::Outside),
+            profile_op(2, 2, ToolOffset::Outside),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap();
+    let op1 = must_find(&resp.gcode, "; OP 1");
+    let op2 = must_find(&resp.gcode, "; OP 2");
+    let between = &resp.gcode[op1..op2];
+    let g53 = must_find(between, "G53 G0 X150 Y5");
+    let m6 = must_find(between, " M6");
+    assert!(
+        g53 < m6,
+        "expected G53 move-to-change-position before T/M6; g53={g53} m6={m6}:\n{between}"
+    );
+}
+
 /// w9hd: a project with `machine.unit = Inch` MUST scale every
 /// emitted X/Y/Z by 1/25.4. The pipeline math runs in mm; the
 /// post applies the boundary conversion. We assert that:

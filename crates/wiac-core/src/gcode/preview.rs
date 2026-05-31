@@ -180,12 +180,24 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
         // these in the same variable since they're mutually exclusive
         // per line.
         let mut r_val: Option<f64> = None;
+        // ad0v: a `G53` on the line makes its X/Y machine-frame, not WCS.
+        // The previewer models everything in the work frame and has no
+        // WCS↔machine offset, so it can't place a machine-coords move.
+        // Flag it and skip the line entirely below: don't emit a phantom
+        // rapid (machine X/Y misread as WCS would draw to the wrong
+        // spot) and DON'T advance `state` — the next absolute move
+        // re-establishes the WCS position (the post re-emits X/Y/Z after
+        // any G53). The non-cutting excursion to the changer is omitted,
+        // which is correct for a carve/preview that lives in part space.
+        let mut machine_coords = false;
         for tok in line.split_whitespace() {
             let (head, val_str) = tok.split_at(1);
             let val: f64 = val_str.parse().unwrap_or(0.0);
             match head {
                 "G" | "g" => {
-                    if let Ok(n) = val_str.parse::<u8>() {
+                    if val_str == "53" {
+                        machine_coords = true;
+                    } else if let Ok(n) = val_str.parse::<u8>() {
                         if (0..=3).contains(&n) {
                             active_code = n;
                         } else if n == 20 {
@@ -216,6 +228,14 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                 "R" | "r" => r_val = Some(val * unit_scale),
                 _ => {}
             }
+        }
+        // ad0v: machine-coords line (G53) — skip without touching the
+        // work-frame `state` or emitting a segment. See the flag's
+        // declaration above for why. Also resets `active_code` so a bare
+        // following motion isn't misclassified by this line's G word.
+        if machine_coords {
+            active_code = 0;
+            continue;
         }
         // Drill canned cycle expansion. The post emits one G81/G82/G83/G73
         // line per hole with the target X/Y/Z and the retract R. Expand
@@ -490,6 +510,31 @@ mod tests {
         assert!(matches!(segs[0].kind, MoveKind::Rapid));
         assert!(matches!(segs[1].kind, MoveKind::Plunge));
         assert!(matches!(segs[2].kind, MoveKind::Retract));
+    }
+
+    /// ad0v: a `G53 G0 X.. Y..` machine-coords reposition (the
+    /// tool-change-station move) must NOT draw a segment to those
+    /// coordinates in the work frame, and must NOT corrupt the tracked
+    /// position — the next absolute move re-establishes WCS. Here the
+    /// cut after the G53 still runs from the pre-G53 work position.
+    #[test]
+    fn g53_machine_move_does_not_emit_segment_or_corrupt_state() {
+        // Cut to (10,0), detour to machine (200,5) via G53, then the
+        // post re-emits the absolute work position before the next cut.
+        let g = "G21\nG90\nG1 X10 Y0 F800\nG53 G0 X200 Y5\nG0 X10 Y0\nG1 X10 Y10 F800\n";
+        let segs = interpret(g);
+        // Segments: cut→(10,0), [G53 skipped], rapid back→(10,0) is a
+        // no-op (from==to after state re-establish), cut→(10,10).
+        // The G53 line contributes nothing.
+        assert!(
+            segs.iter().all(|s| s.to.x <= 10.0 + 1e-9),
+            "G53 machine coord (200) leaked into a work-frame segment: {segs:#?}"
+        );
+        // The final cut still ends at the real work target.
+        let last = segs.last().expect("at least one segment");
+        assert_eq!(last.to.x, 10.0);
+        assert_eq!(last.to.y, 10.0);
+        assert!(matches!(last.kind, MoveKind::Cut));
     }
 
     /// Regression: a G81 canned cycle after a G0 Z lift used to be

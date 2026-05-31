@@ -1707,6 +1707,21 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     let fast_z = header_setup.mill.fast_move_z;
     post.move_to(None, None, Some(fast_z));
 
+    // ad0v: once clear in Z, rapid to the configured tool-change station
+    // (machine coords, G53) BEFORE the M0 / M6 pause so a manual bit-swap
+    // doesn't happen directly over the workpiece / clamps. Skip on the
+    // first tool: it's already loaded by the operator before Cycle Start
+    // (no pause is emitted), so there's nothing to clear yet. Opt-in —
+    // an unset `toolchange_xy` keeps the prior behavior (safe-Z lift
+    // only). Applies to both manual and ATC paths; HPGL / pen posts drop
+    // the G53 (no machine frame). The post invalidates its WCS position
+    // cache so the next op's rapid re-establishes XY in the work frame.
+    if !is_first_tool {
+        if let Some((tx, ty)) = machine.toolchange_xy {
+            post.rapid_machine_xy(tx, ty);
+        }
+    }
+
     // lx1u: the toolchange envelope only manages a SPINDLE — laser /
     // drag-knife / pen-plotter modes don't have one. The per-cut
     // `cut_tool_on` (gcode.rs::emit_*) is mode-aware and fires the

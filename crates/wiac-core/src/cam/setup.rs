@@ -626,6 +626,20 @@ pub struct MachineConfig {
     /// isn't (0, 0) in either frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub park_xy: Option<(f64, f64)>,
+    /// ad0v: optional tool-change position (mm, in MACHINE coordinates).
+    /// When `Some`, the toolchange envelope rapids the head here via
+    /// `G53 G0 X<x> Y<y>` after the safe-Z lift and BEFORE the M0 / M6
+    /// pause, so a manual bit-swap happens at a fixed, reachable station
+    /// instead of directly over the workpiece / clamps. MACHINE coords
+    /// (not WCS like `park_xy`) because a tool-change station is a
+    /// physical machine location independent of where the part zero
+    /// sits — re-zeroing a job must not move the changer. Applies to
+    /// both manual and ATC paths; on an ATC whose M6 macro homes to its
+    /// own changer, leave this `None`. `None` (default) keeps the prior
+    /// behavior: lift to `fast_move_z` only. Emitted via the post's
+    /// `rapid_machine_xy`, which HPGL / pen posts drop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toolchange_xy: Option<(f64, f64)>,
 }
 
 impl MachineConfig {
@@ -721,6 +735,7 @@ impl Default for MachineConfig {
             max_feed_mm_min: None,
             park_at_home: false,
             park_xy: None,
+            toolchange_xy: None,
         }
     }
 }

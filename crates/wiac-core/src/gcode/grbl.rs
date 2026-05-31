@@ -234,6 +234,12 @@ impl PostProcessor for Post {
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         self.inner.move_to(x, y, z);
     }
+    fn rapid_machine_xy(&mut self, x_mm: f64, y_mm: f64) {
+        // GRBL accepts G53 from v1.1 onward; delegate to the inner
+        // LinuxCNC post for identical formatting + position-cache
+        // invalidation (ad0v). Same reuse pattern as `move_to`.
+        self.inner.rapid_machine_xy(x_mm, y_mm);
+    }
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         self.inner.linear(x, y, z);
     }

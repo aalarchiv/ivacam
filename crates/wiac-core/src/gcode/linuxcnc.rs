@@ -568,6 +568,38 @@ impl PostProcessor for Post {
             self.write(format!("G0 {body}"));
         }
     }
+    fn rapid_machine_xy(&mut self, x_mm: f64, y_mm: f64) {
+        // ad0v: machine-coords rapid to the tool-change station. Build
+        // the X/Y words through `fmt_axis` so they honor the configured
+        // decimal separator, inch scale, and any per-axis profile
+        // rename/disable — exactly like a normal rapid. Unlike `coords`,
+        // there is NO delta suppression: a G53 line always restates both
+        // axes (the previous WCS position says nothing about the machine
+        // position we're commanding).
+        let mut body = String::from("G53 G0");
+        let mut emitted = false;
+        if let Some(w) = self.fmt_axis('X', x_mm) {
+            body.push(' ');
+            body.push_str(&w);
+            emitted = true;
+        }
+        if let Some(w) = self.fmt_axis('Y', y_mm) {
+            body.push(' ');
+            body.push_str(&w);
+            emitted = true;
+        }
+        if emitted {
+            self.write(body);
+        }
+        // The head now sits at a MACHINE XY we can't express in the
+        // active WCS. Drop the tracked WCS position so the next motion
+        // re-emits X/Y/Z explicitly instead of suppressing an axis
+        // against this now-meaningless snapshot. Leave rate / spindle /
+        // coolant modal state alone — a reposition doesn't change them.
+        self.state.last_x = None;
+        self.state.last_y = None;
+        self.state.last_z = None;
+    }
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         let body = self.coords(x, y, z);
         if !body.is_empty() {

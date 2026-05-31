@@ -589,6 +589,11 @@ export interface components {
              * @description Tool-change time in seconds.
              */
             toolchange_s?: number;
+            /** @description ad0v: optional tool-change position (mm, in MACHINE coordinates). When `Some`, the toolchange envelope rapids the head here via `G53 G0 X<x> Y<y>` after the safe-Z lift and BEFORE the M0 / M6 pause, so a manual bit-swap happens at a fixed, reachable station instead of directly over the workpiece / clamps. MACHINE coords (not WCS like `park_xy`) because a tool-change station is a physical machine location independent of where the part zero sits — re-zeroing a job must not move the changer. Applies to both manual and ATC paths; on an ATC whose M6 macro homes to its own changer, leave this `None`. `None` (default) keeps the prior behavior: lift to `fast_move_z` only. Emitted via the post's `rapid_machine_xy`, which HPGL / pen posts drop. */
+            toolchange_xy?: [
+                number,
+                number
+            ] | null;
             unit: components["schemas"]["UnitSystem"];
             /** @description When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator. */
             use_kinematic_time_estimate?: boolean;

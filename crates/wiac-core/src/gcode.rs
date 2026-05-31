@@ -189,6 +189,23 @@ pub trait PostProcessor {
     fn laser_off(&mut self) {}
 
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>);
+
+    /// ad0v: rapid to a fixed tool-change station in MACHINE
+    /// coordinates (`G53 G0 X<x> Y<y>`). `G53` makes THIS line interpret
+    /// X/Y in the machine frame regardless of the active WCS, so the
+    /// changer is a fixed physical location independent of part zero.
+    /// `x_mm` / `y_mm` are pipeline mm (the post applies the inch scale
+    /// and decimal separator at the boundary, same as `move_to`). Called
+    /// by `emit_toolchange_envelope` before the M0 / M6 pause when
+    /// `MachineConfig.toolchange_xy` is set. `LinuxCNC` / GRBL override;
+    /// HPGL / pen posts keep the default no-op (no machine frame).
+    /// Implementations MUST invalidate their delta-encoding position
+    /// cache afterward: the head is now at a MACHINE XY the post can't
+    /// express in the active WCS, so the next WCS motion must re-emit
+    /// X/Y/Z explicitly rather than suppress an axis that "didn't
+    /// change" against a stale WCS snapshot.
+    fn rapid_machine_xy(&mut self, _x_mm: f64, _y_mm: f64) {}
+
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>);
     fn arc_cw(
         &mut self,

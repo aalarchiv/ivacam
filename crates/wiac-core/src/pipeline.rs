@@ -1788,9 +1788,18 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
         // Auto-changer / macro-driven manual-with-prompt. The post's
         // tool() emits T<n> M6 (or the user's profile template).
         post.tool(new_tool_id);
-        // hat3: re-establish the new tool's Z (probe / fixed sensor /
-        // static shift) right after the change.
-        emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
+        if machine.use_tool_length_offsets {
+            // llkf: trust the controller's tool table — emit G43 H<n>
+            // and SKIP the static z_shift / probe flow (mutually
+            // exclusive; G43 supersedes both). Applies to every tool
+            // including the first (its offset must be active before the
+            // first cut). program_end cancels with G49.
+            post.tool_length_offset(new_tool_id);
+        } else {
+            // hat3: re-establish the new tool's Z (probe / fixed sensor /
+            // static shift) right after the change.
+            emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
+        }
         // Spin back up at the NEW tool's RPM. Pass pause=0 so the post
         // emits M3/M4 S<rpm> without an integer-second dwell tail; we
         // follow with an explicit `dwell(...)` so the machine-wide

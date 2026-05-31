@@ -1046,6 +1046,9 @@ components:
         use_kinematic_time_estimate:
           description: When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator.
           type: boolean
+        use_tool_length_offsets:
+          description: 'llkf: opt-in tool-length compensation via the controller''s tool table. When `true` on an ATC machine (`supports_toolchange`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can''t run an M6 tool table.'
+          type: boolean
         work_area:
           allOf:
           - $ref: '#/components/schemas/AxisLimits'

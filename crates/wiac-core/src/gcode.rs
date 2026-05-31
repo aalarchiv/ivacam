@@ -436,6 +436,21 @@ pub trait PostProcessor {
     /// is the plate thickness (often 0). HPGL ignores.
     fn set_work_z_here(&mut self, _z_mm: f64) {}
 
+    /// llkf: apply the controller's tool-length offset for tool `h`
+    /// (`G43 H<h>`). Emitted after `T<n> M6` in the ATC envelope when
+    /// `MachineConfig.use_tool_length_offsets` is set, so the controller
+    /// applies the pre-measured length from its tool table. `LinuxCNC` /
+    /// GRBL (grblHAL) override; HPGL ignores. Implementations invalidate
+    /// the tracked Z — `G43` shifts the active offset frame, so the next
+    /// Z move should re-emit explicitly.
+    fn tool_length_offset(&mut self, _h: u32) {}
+
+    /// llkf: cancel tool-length compensation (`G49`). Emitted at
+    /// `program_end` when `use_tool_length_offsets` is set so the
+    /// program doesn't leave a dynamic offset active for the next job.
+    /// `LinuxCNC` / GRBL override; HPGL ignores.
+    fn tool_length_offset_off(&mut self) {}
+
     /// hat3: rapid to a machine-coords Z (`G53 G0 Z<z>`), e.g. the safe
     /// approach height above a fixed tool-length sensor. Sibling of
     /// [`rapid_machine_xy`](Self::rapid_machine_xy); same invalidation
@@ -969,6 +984,12 @@ fn program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
         post.raw("G53 G0 X0 Y0");
     } else {
         post.move_to(Some(0.0), Some(0.0), None);
+    }
+    // llkf: cancel tool-length compensation before the program ends so
+    // a dynamic G43 offset doesn't bleed into the next job. Only emitted
+    // when the run used G43 (flag off → no G49, output unchanged).
+    if setup.machine.use_tool_length_offsets {
+        post.tool_length_offset_off();
     }
     post.spindle_off();
     if setup.tool.flood || setup.tool.mist {

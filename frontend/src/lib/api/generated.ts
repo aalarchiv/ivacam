@@ -599,6 +599,8 @@ export interface components {
             unit: components["schemas"]["UnitSystem"];
             /** @description When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator. */
             use_kinematic_time_estimate?: boolean;
+            /** @description llkf: opt-in tool-length compensation via the controller's tool table. When `true` on an ATC machine (`supports_toolchange`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can't run an M6 tool table. */
+            use_tool_length_offsets?: boolean;
             /** @description Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in `MachineDialog`. */
             work_area?: components["schemas"]["AxisLimits"];
         };

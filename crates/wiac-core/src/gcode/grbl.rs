@@ -244,6 +244,15 @@ impl PostProcessor for Post {
         // hat3: GRBL accepts G53 G0 Z; identical formatting via inner.
         self.inner.rapid_machine_z(z_mm);
     }
+    fn tool_length_offset(&mut self, h: u32) {
+        // llkf: grblHAL supports G43 H<n> (stock GRBL ignores it, but
+        // the i185 footgun guard already steers stock-GRBL users to a
+        // template / M0 instead). Same emission as inner.
+        self.inner.tool_length_offset(h);
+    }
+    fn tool_length_offset_off(&mut self) {
+        self.inner.tool_length_offset_off();
+    }
     fn probe_toward_z(&mut self, distance_mm: f64, feed_mm_min: u32) {
         // hat3: GRBL / grblHAL support G38.2; same emission as inner.
         self.inner.probe_toward_z(distance_mm, feed_mm_min);

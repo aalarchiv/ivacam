@@ -4426,6 +4426,92 @@ fn grbl_atc_without_template_warns() {
     );
 }
 
+/// llkf: opt-in G43 tool-length compensation. With the flag on + ATC,
+/// each tool emits `T<n> M6` then `G43 H<n>`, the static z_shift is
+/// skipped (mutually exclusive), and program_end cancels with `G49`.
+#[test]
+fn tool_length_offsets_emit_g43_and_skip_zshift() {
+    let machine = MachineConfig {
+        supports_toolchange: true,
+        use_tool_length_offsets: true,
+        ..MachineConfig::default()
+    };
+    let project = Project {
+        segments: closed_square_offset(20.0, 0.0, 0.0),
+        machine,
+        tools: vec![
+            endmill(1, 6.0),
+            // tool 2 carries a z_shift that MUST be skipped under G43.
+            ToolEntry {
+                z_shift_mm: Some(1.5),
+                ..endmill(2, 3.0)
+            },
+        ],
+        operations: vec![
+            profile_op(1, 1, ToolOffset::Outside),
+            profile_op(2, 2, ToolOffset::Outside),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let g = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap()
+    .gcode;
+    assert!(g.contains(" M6"), "ATC must emit M6:\n{g}");
+    assert!(g.contains("G43 H1"), "first tool must get G43 H1:\n{g}");
+    assert!(g.contains("G43 H2"), "second tool must get G43 H2:\n{g}");
+    assert!(g.contains("G49"), "program_end must cancel comp with G49:\n{g}");
+    // Mutually exclusive: the static z_shift (G92 Z / z-shift comment)
+    // must NOT appear when G43 is active.
+    assert!(
+        !g.contains("G92 Z1.5") && !g.contains("z-shift"),
+        "static z_shift must be skipped under G43:\n{g}"
+    );
+}
+
+/// llkf: default (flag off) emits no G43/G49 — existing output unchanged.
+#[test]
+fn tool_length_offsets_off_emits_no_g43() {
+    let machine = MachineConfig {
+        supports_toolchange: true,
+        ..MachineConfig::default()
+    };
+    let project = Project {
+        segments: closed_square_offset(20.0, 0.0, 0.0),
+        machine,
+        tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+        operations: vec![
+            profile_op(1, 1, ToolOffset::Outside),
+            profile_op(2, 2, ToolOffset::Outside),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let g = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap()
+    .gcode;
+    assert!(!g.contains("G43"), "flag off must not emit G43:\n{g}");
+    assert!(!g.contains("G49"), "flag off must not emit G49:\n{g}");
+}
+
 // ----------------------------------------------------------------
 // hat3: post-tool-change Z re-establish strategies
 // ----------------------------------------------------------------

@@ -652,6 +652,17 @@ pub struct MachineConfig {
     /// `None` keeps existing output byte-for-byte.
     #[serde(default, skip_serializing_if = "PostChangeZStrategy::is_none")]
     pub post_change_z: PostChangeZStrategy,
+    /// llkf: opt-in tool-length compensation via the controller's tool
+    /// table. When `true` on an ATC machine (`supports_toolchange`), the
+    /// toolchange envelope emits `G43 H<n>` after `T<n> M6` so the
+    /// controller applies the pre-measured length for tool `<n>`, and
+    /// SKIPS the static `z_shift` / `post_change_z` flow (mutually
+    /// exclusive — G43 supersedes both). `program_end` cancels with
+    /// `G49`. Default `false`: existing static-`z_shift` users are
+    /// unaffected. Ignored on manual (non-ATC) machines, which can't run
+    /// an M6 tool table.
+    #[serde(default, skip_serializing_if = "is_false_bool")]
+    pub use_tool_length_offsets: bool,
 }
 
 /// hat3: post-tool-change Z re-establish strategy. Internally tagged
@@ -821,6 +832,7 @@ impl Default for MachineConfig {
             park_xy: None,
             toolchange_xy: None,
             post_change_z: PostChangeZStrategy::None,
+            use_tool_length_offsets: false,
         }
     }
 }

@@ -828,6 +828,18 @@ impl PostProcessor for Post {
         self.write(format!("G92 Z{s}"));
         self.state.last_z = None;
     }
+    fn tool_length_offset(&mut self, h: u32) {
+        // llkf: apply tool-table length offset H<h>. G43 shifts the
+        // active Z offset frame, so flush tracked Z — the next move
+        // re-emits explicitly rather than eliding against a stale frame.
+        self.write(format!("G43 H{h}"));
+        self.state.last_z = None;
+    }
+    fn tool_length_offset_off(&mut self) {
+        // llkf: cancel tool-length comp at program end.
+        self.write("G49");
+        self.state.last_z = None;
+    }
     fn dwell(&mut self, seconds: f64) {
         if seconds <= 0.0 {
             return;

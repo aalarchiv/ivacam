@@ -549,9 +549,13 @@ mod tests {
     fn g38_probe_does_not_emit_phantom_plunge() {
         let g = "G21\nG90\nG0 X5 Y5 Z2\nG38.2 Z-50 F100\nG0 X5 Y5 Z2\nG1 X15 Y5 F800\n";
         let segs = interpret(g);
-        // No segment should dive to the -50 search limit.
+        // No segment should dive toward the -50 search limit. The floor is
+        // a generous -1.0 so a real phantom plunge (z ≈ -50) is caught
+        // while the legitimate opening rapid from the machine origin
+        // (z = 0) and the z = 2 work moves both pass — vl7w: the prior
+        // `>= 2.0` floor wrongly rejected that origin rapid (from.z = 0).
         assert!(
-            segs.iter().all(|s| s.to.z >= 2.0 - 1e-9 && s.from.z >= 2.0 - 1e-9),
+            segs.iter().all(|s| s.to.z > -1.0 && s.from.z > -1.0),
             "G38.2 search distance leaked into a phantom plunge: {segs:#?}"
         );
         let last = segs.last().expect("a segment after the probe");

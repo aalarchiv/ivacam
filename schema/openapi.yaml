@@ -982,6 +982,10 @@ components:
         plot_mode_z:
           description: 'Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op''s cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op''s `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers.'
           type: boolean
+        post_change_z:
+          allOf:
+          - $ref: '#/components/schemas/PostChangeZStrategy'
+          description: 'hat3: how the post re-establishes the new tool''s Z tip position after a tool change. A manual hand-swap leaves the new tool''s length unknown; the default `PostChangeZStrategy::None` applies only the static per-tool `ToolEntry.z_shift_mm`, which assumes perfectly repeatable collet seating + pre-known lengths — false for most hobby swaps. Best practice re-measures Z after every change. Maps onto grblHAL `$341` modes / Estlcam''s tool-measure policies. Applied by `emit_toolchange_envelope` to NON-first changes (the first tool is operator-loaded at program start); `None` keeps existing output byte-for-byte.'
         post_profile:
           anyOf:
           - $ref: '#/components/schemas/PostProfile'
@@ -2187,6 +2191,92 @@ components:
       - y
       - z
       type: object
+    PostChangeZStrategy:
+      description: 'hat3: post-tool-change Z re-establish strategy. Internally tagged (`{"mode": "...", ...}`) like [`PlungeStrategy`], so adding a variant is additive in the schema.'
+      oneOf:
+      - description: Apply only the static per-tool `ToolEntry.z_shift_mm` (today's behavior). Default — keeps existing output byte-for-byte.
+        properties:
+          mode:
+            enum:
+            - none
+            type: string
+        required:
+        - mode
+        type: object
+      - description: 'Hand touch-off: the operator jogs the new tool to the work surface and zeroes Z during the M0 pause. The envelope emits a touch-off instruction in the pre-pause prompt and skips the static `z_shift` (the operator establishes Z by hand, so a stale pre-known shift would fight them).'
+        properties:
+          mode:
+            enum:
+            - manual_touchoff
+            type: string
+        required:
+        - mode
+        type: object
+      - description: Chain a `G38.2` probe toward a touch plate after the swap, then pin work Z to the plate top. Automatic and repeatable.
+        properties:
+          distance_mm:
+            description: Max search distance (mm) along Z. NEGATIVE probes DOWN onto the plate (the usual case); the controller halts at the trigger and this is just the search limit.
+            format: double
+            type: number
+          feed_mm_min:
+            description: Probe feedrate (mm/min). 50–200 typical for a touch-trigger probe — slow enough to trip repeatably.
+            format: uint32
+            minimum: 0.0
+            type: integer
+          mode:
+            enum:
+            - probe
+            type: string
+          plate_thickness_mm:
+            default: 0.0
+            description: Plate thickness (mm). Work Z is pinned to this at the trigger so Z0 stays the stock top (plate sits on the stock). `0` probes directly onto the work zero surface.
+            format: double
+            type: number
+        required:
+        - distance_mm
+        - feed_mm_min
+        - mode
+        type: object
+      - description: Fixed tool-length sensor at a known MACHINE position. Rapid to it (G53), probe down (`G38.2`), and apply the measured length as a tool-length offset, differenced against the `reference_tool_id` that defines work Z0. Pairs with ATC + grblHAL `$341=2`. The numeric difference is computed by the CONTROLLER at runtime (it isn't known at CAM time) — see [`PostProcessor::apply_probed_tool_length`].
+        properties:
+          feed_mm_min:
+            description: Probe feedrate (mm/min).
+            format: uint32
+            minimum: 0.0
+            type: integer
+          mode:
+            enum:
+            - fixed_sensor
+            type: string
+          position:
+            description: 'Sensor location in MACHINE coords (mm): `(x, y, approach_z)`. `approach_z` is the safe machine Z the head rapids to before (and retracts to after) probing down.'
+            items:
+            - format: double
+              type: number
+            - format: double
+              type: number
+            - format: double
+              type: number
+            maxItems: 3
+            minItems: 3
+            type: array
+          reference_tool_id:
+            description: Tool whose sensor reading defines work Z0; the operator touches it off on the workpiece instead of the sensor, and other tools' offsets are differenced from it. `None` ⇒ the program's first tool.
+            format: uint32
+            minimum: 0.0
+            type:
+            - integer
+            - 'null'
+          seek_mm:
+            description: Signed search distance (mm) from `approach_z` toward the sensor. NEGATIVE seeks DOWN.
+            format: double
+            type: number
+        required:
+        - feed_mm_min
+        - mode
+        - position
+        - seek_mm
+        type: object
     PostProcessorKind:
       enum:
       - linuxcnc

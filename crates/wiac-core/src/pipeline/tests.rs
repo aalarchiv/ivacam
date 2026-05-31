@@ -4266,6 +4266,171 @@ fn atc_multitool_emits_g53_move_before_m6() {
     );
 }
 
+// ----------------------------------------------------------------
+// hat3: post-tool-change Z re-establish strategies
+// ----------------------------------------------------------------
+
+/// Build a 2-tool manual program; tool 2 carries `z_shift`. Returns the
+/// emitted gcode under the given post-change-Z strategy.
+fn two_tool_manual_gcode(
+    strategy: crate::cam::setup::PostChangeZStrategy,
+    tool2_z_shift: Option<f64>,
+) -> String {
+    let machine = MachineConfig {
+        supports_toolchange: false,
+        post_change_z: strategy,
+        ..MachineConfig::default()
+    };
+    let project = Project {
+        segments: closed_square_offset(20.0, 0.0, 0.0),
+        machine,
+        tools: vec![
+            endmill(1, 6.0),
+            ToolEntry {
+                z_shift_mm: tool2_z_shift,
+                ..endmill(2, 3.0)
+            },
+        ],
+        operations: vec![
+            profile_op(1, 1, ToolOffset::Outside),
+            profile_op(2, 2, ToolOffset::Outside),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap()
+    .gcode
+}
+
+/// hat3: the default `None` strategy preserves the legacy static
+/// `z_shift` (a `G92 Z`) and emits NO probe — existing output unchanged.
+#[test]
+fn post_change_z_none_preserves_static_zshift() {
+    let g = two_tool_manual_gcode(crate::cam::setup::PostChangeZStrategy::None, Some(1.5));
+    assert!(
+        g.contains("G92 Z1.5"),
+        "None strategy must keep the static z_shift G92 Z1.5:\n{g}"
+    );
+    assert!(
+        !g.contains("G38.2"),
+        "None strategy must not emit a probe:\n{g}"
+    );
+}
+
+/// hat3 acceptance: the `Probe` strategy chains a `G38.2` touch-off
+/// after the manual change (after M0), then pins work Z to the plate
+/// top — before the next cut resumes.
+#[test]
+fn post_change_z_probe_chains_g38_after_manual_change() {
+    let g = two_tool_manual_gcode(
+        crate::cam::setup::PostChangeZStrategy::Probe {
+            distance_mm: -5.0,
+            feed_mm_min: 100,
+            plate_thickness_mm: 2.0,
+        },
+        None,
+    );
+    let op1 = must_find(&g, "; OP 1");
+    let op2 = must_find(&g, "; OP 2");
+    let between = &g[op1..op2];
+    let m0 = must_find(between, "\nM0");
+    let probe = must_find(between, "G38.2 Z-5 F100");
+    let pin = must_find(between, "G92 Z2");
+    assert!(
+        m0 < probe && probe < pin,
+        "expected order M0 -> G38.2 -> set work Z; m0={m0} probe={probe} pin={pin}:\n{between}"
+    );
+}
+
+/// hat3: `ManualTouchoff` prints an operator instruction BEFORE the M0
+/// pause and emits neither a probe nor a static z_shift (the operator
+/// establishes Z by hand during the pause).
+#[test]
+fn post_change_z_manual_touchoff_prompts_before_pause() {
+    let g = two_tool_manual_gcode(
+        crate::cam::setup::PostChangeZStrategy::ManualTouchoff,
+        Some(1.5),
+    );
+    let op1 = must_find(&g, "; OP 1");
+    let op2 = must_find(&g, "; OP 2");
+    let between = &g[op1..op2];
+    let prompt = must_find(between, "touch off: jog tool 2");
+    let m0 = must_find(between, "\nM0");
+    assert!(
+        prompt < m0,
+        "manual touch-off prompt must precede the M0 pause; prompt={prompt} m0={m0}:\n{between}"
+    );
+    assert!(!between.contains("G38.2"), "manual touch-off must not probe:\n{between}");
+    assert!(
+        !between.contains("G92 Z1.5"),
+        "manual touch-off must NOT apply the static z_shift (operator zeros by hand):\n{between}"
+    );
+}
+
+/// hat3: `FixedSensor` rapids to the machine sensor position, probes,
+/// and applies the measured length — for a NON-reference tool. The
+/// reference tool (here the first tool) is operator-touched-off.
+#[test]
+fn post_change_z_fixed_sensor_probes_at_machine_position() {
+    let g = two_tool_manual_gcode(
+        crate::cam::setup::PostChangeZStrategy::FixedSensor {
+            position: (200.0, 10.0, 30.0),
+            seek_mm: -40.0,
+            feed_mm_min: 80,
+            reference_tool_id: Some(1),
+        },
+        None,
+    );
+    let op1 = must_find(&g, "; OP 1");
+    let op2 = must_find(&g, "; OP 2");
+    let between = &g[op1..op2];
+    // Tool 2 (non-reference) sensor cycle, in order.
+    let approach = must_find(between, "G53 G0 Z30");
+    let over = must_find(between, "G53 G0 X200 Y10");
+    let probe = must_find(between, "G38.2 Z-40 F80");
+    let apply = must_find(between, "G43.1 Z[#5063]");
+    assert!(
+        approach < over && over < probe && probe < apply,
+        "fixed-sensor order approach->over->probe->apply broke:\n{between}"
+    );
+}
+
+/// hat3: when the reference tool is a NON-first tool, its change emits
+/// the workpiece touch-off prompt and NO sensor probe (it defines Z0).
+#[test]
+fn post_change_z_fixed_sensor_reference_tool_gets_touchoff_prompt() {
+    let g = two_tool_manual_gcode(
+        crate::cam::setup::PostChangeZStrategy::FixedSensor {
+            position: (200.0, 10.0, 30.0),
+            seek_mm: -40.0,
+            feed_mm_min: 80,
+            reference_tool_id: Some(2),
+        },
+        None,
+    );
+    let op1 = must_find(&g, "; OP 1");
+    let op2 = must_find(&g, "; OP 2");
+    let between = &g[op1..op2];
+    assert!(
+        between.contains("reference tool 2: touch off on the workpiece"),
+        "reference tool 2 must get the workpiece touch-off prompt:\n{between}"
+    );
+    assert!(
+        !between.contains("G38.2"),
+        "the reference tool must NOT be sensor-probed:\n{between}"
+    );
+}
+
 /// w9hd: a project with `machine.unit = Inch` MUST scale every
 /// emitted X/Y/Z by 1/25.4. The pipeline math runs in mm; the
 /// post applies the boundary conversion. We assert that:

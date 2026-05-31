@@ -1773,14 +1773,18 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     }
 
     if machine.supports_toolchange {
+        // hat3: a manual touch-off / reference-tool prompt (if the
+        // strategy calls for one) goes before the M6 so it's visible in
+        // CAM-review; ATC machines don't actually pause on it.
+        if let Some(prompt) = post_change_z_prompt(machine, new_tool_id, is_first_tool) {
+            post.comment(&prompt);
+        }
         // Auto-changer / macro-driven manual-with-prompt. The post's
         // tool() emits T<n> M6 (or the user's profile template).
         post.tool(new_tool_id);
-        if let Some(t) = new_tool {
-            if let Some(shift) = t.z_shift_mm {
-                post.tool_z_shift(shift);
-            }
-        }
+        // hat3: re-establish the new tool's Z (probe / fixed sensor /
+        // static shift) right after the change.
+        emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
         // Spin back up at the NEW tool's RPM. Pass pause=0 so the post
         // emits M3/M4 S<rpm> without an integer-second dwell tail; we
         // follow with an explicit `dwell(...)` so the machine-wide
@@ -1820,6 +1824,13 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
         } else {
             post.comment(&format!("pause: swap to tool {new_tool_id}"));
         }
+        // hat3: emit any manual touch-off / reference-tool instruction
+        // BEFORE the M0 so the operator reads it while the program is
+        // halted (a post-pause comment lands after Cycle Start — too
+        // late to act on).
+        if let Some(prompt) = post_change_z_prompt(machine, new_tool_id, is_first_tool) {
+            post.comment(&prompt);
+        }
         if !is_first_tool {
             // M0: program-pause. Operator presses Cycle Start to
             // resume. Skip on first-tool because the spindle isn't
@@ -1828,10 +1839,12 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             // hitting Cycle Start).
             post.raw("M0");
         }
+        // hat3: re-establish the new tool's Z AFTER the pause — the
+        // probe / fixed-sensor cycle runs automatically once the
+        // operator confirms the swap with Cycle Start. `None` keeps the
+        // legacy static z_shift here.
+        emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
         if let Some(t) = new_tool {
-            if let Some(shift) = t.z_shift_mm {
-                post.tool_z_shift(shift);
-            }
             // Force the next M3/M4 to actually emit (the operator may
             // have hand-spun the spindle off during the pause; we
             // can't trust the delta-encoder's last_speed snapshot
@@ -1856,6 +1869,103 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
                     post.dwell(f64::from(t.pause));
                 }
             }
+        }
+    }
+}
+
+/// hat3: the operator-facing prompt (if any) that must appear BEFORE
+/// the tool-change pause — manual touch-off instructions the operator
+/// acts on while the program is halted. Returns `None` for the
+/// fully-automatic strategies (None / Probe / FixedSensor non-reference),
+/// whose flow `emit_post_change_z` emits AFTER the pause. Always `None`
+/// for the first tool (operator-loaded at program start, no pause).
+fn post_change_z_prompt(
+    machine: &crate::cam::setup::MachineConfig,
+    new_tool_id: u32,
+    is_first_tool: bool,
+) -> Option<String> {
+    use crate::cam::setup::PostChangeZStrategy as S;
+    if is_first_tool {
+        return None;
+    }
+    match &machine.post_change_z {
+        S::ManualTouchoff => Some(format!(
+            "touch off: jog tool {new_tool_id} to the work surface and zero Z before resuming"
+        )),
+        // The reference tool defines work Z0 by a workpiece touch-off
+        // (not the sensor), so it gets the manual prompt too.
+        S::FixedSensor {
+            reference_tool_id: Some(ref_id),
+            ..
+        } if *ref_id == new_tool_id => Some(format!(
+            "reference tool {new_tool_id}: touch off on the workpiece to set Z0 before resuming"
+        )),
+        _ => None,
+    }
+}
+
+/// hat3: emit the post-tool-change Z re-establish flow AFTER the pause
+/// / M6. `PostChangeZStrategy::None`, any strategy on the first tool
+/// (operator-loaded at program start), and any non-Mill mode (no
+/// spindle tool length to probe) all fall back to the legacy static
+/// `ToolEntry.z_shift_mm`, so existing output stays byte-for-byte
+/// identical. Probe / fixed-sensor strategies chain a `G38.2` cycle.
+fn emit_post_change_z<P: PostProcessor>(
+    post: &mut P,
+    machine: &crate::cam::setup::MachineConfig,
+    new_tool: Option<&ToolEntry>,
+    new_tool_id: u32,
+    is_first_tool: bool,
+) {
+    use crate::cam::setup::PostChangeZStrategy as S;
+    let is_mill = machine.mode == crate::cam::setup::MachineMode::Mill;
+
+    // Legacy static-shift fallback: the `None` default, the first tool,
+    // and non-Mill modes all keep the pre-hat3 `tool_z_shift` behavior.
+    if matches!(machine.post_change_z, S::None) || is_first_tool || !is_mill {
+        if let Some(shift) = new_tool.and_then(|t| t.z_shift_mm) {
+            post.tool_z_shift(shift);
+        }
+        return;
+    }
+
+    match &machine.post_change_z {
+        // Handled by the fallback above; here only to satisfy the match.
+        S::None => {}
+        // The operator established Z by hand during the pause (prompt
+        // emitted pre-pause). Intentionally NO static z_shift — it would
+        // fight the hand touch-off.
+        S::ManualTouchoff => {}
+        S::Probe {
+            distance_mm,
+            feed_mm_min,
+            plate_thickness_mm,
+        } => {
+            post.comment(&format!("post-change Z: probe touch plate (tool {new_tool_id})"));
+            post.probe_toward_z(*distance_mm, *feed_mm_min);
+            // Pin work Z to the plate top so Z0 stays the stock surface.
+            // `set_work_z_here` (not `tool_z_shift`) so a 0 mm plate
+            // still re-zeros Z.
+            post.set_work_z_here(*plate_thickness_mm);
+        }
+        S::FixedSensor {
+            position,
+            seek_mm,
+            feed_mm_min,
+            reference_tool_id,
+        } => {
+            // The reference tool defines Z0 via a workpiece touch-off
+            // (prompt emitted pre-pause) — no sensor probe for it.
+            if *reference_tool_id == Some(new_tool_id) {
+                return;
+            }
+            let (px, py, pz) = *position;
+            post.comment(&format!("post-change Z: fixed sensor (tool {new_tool_id})"));
+            post.rapid_machine_z(pz); // safe approach height above sensor
+            post.rapid_machine_xy(px, py); // over the sensor
+            post.probe_toward_z(*seek_mm, *feed_mm_min);
+            post.apply_probed_tool_length();
+            post.rapid_machine_z(pz); // retract to the approach height
         }
     }
 }

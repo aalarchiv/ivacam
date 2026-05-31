@@ -180,23 +180,25 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
         // these in the same variable since they're mutually exclusive
         // per line.
         let mut r_val: Option<f64> = None;
-        // ad0v: a `G53` on the line makes its X/Y machine-frame, not WCS.
-        // The previewer models everything in the work frame and has no
-        // WCS↔machine offset, so it can't place a machine-coords move.
-        // Flag it and skip the line entirely below: don't emit a phantom
-        // rapid (machine X/Y misread as WCS would draw to the wrong
-        // spot) and DON'T advance `state` — the next absolute move
-        // re-establishes the WCS position (the post re-emits X/Y/Z after
-        // any G53). The non-cutting excursion to the changer is omitted,
-        // which is correct for a carve/preview that lives in part space.
-        let mut machine_coords = false;
+        // ad0v / hat3: a non-cutting controller move the previewer can't
+        // place in the work frame —
+        //   * `G53` (machine-coords move): no WCS↔machine offset is
+        //     known here, so machine X/Y misread as WCS would draw to
+        //     the wrong spot.
+        //   * `G38.x` (probe): the head stops at an unknown trigger, not
+        //     at the commanded search distance, so drawing a segment to
+        //     that distance fabricates a deep phantom plunge.
+        // For either, flag the line and skip it below: emit no segment
+        // and DON'T advance `state`. The next absolute move re-establishes
+        // the WCS position (the post re-emits X/Y/Z after a G53 / G38).
+        let mut non_cutting_ctrl_move = false;
         for tok in line.split_whitespace() {
             let (head, val_str) = tok.split_at(1);
             let val: f64 = val_str.parse().unwrap_or(0.0);
             match head {
                 "G" | "g" => {
-                    if val_str == "53" {
-                        machine_coords = true;
+                    if val_str == "53" || val_str.starts_with("38") {
+                        non_cutting_ctrl_move = true;
                     } else if let Ok(n) = val_str.parse::<u8>() {
                         if (0..=3).contains(&n) {
                             active_code = n;
@@ -229,11 +231,12 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                 _ => {}
             }
         }
-        // ad0v: machine-coords line (G53) — skip without touching the
-        // work-frame `state` or emitting a segment. See the flag's
-        // declaration above for why. Also resets `active_code` so a bare
-        // following motion isn't misclassified by this line's G word.
-        if machine_coords {
+        // ad0v / hat3: non-cutting controller move (G53 machine-coords
+        // or G38.x probe) — skip without touching the work-frame `state`
+        // or emitting a segment. See the flag's declaration above for
+        // why. Also resets `active_code` so a bare following motion
+        // isn't misclassified by this line's G word.
+        if non_cutting_ctrl_move {
             active_code = 0;
             continue;
         }
@@ -534,6 +537,25 @@ mod tests {
         let last = segs.last().expect("at least one segment");
         assert_eq!(last.to.x, 10.0);
         assert_eq!(last.to.y, 10.0);
+        assert!(matches!(last.kind, MoveKind::Cut));
+    }
+
+    /// hat3: a `G38.2 Z<dist>` probe must NOT draw a segment to the full
+    /// search distance (the head stops at an unknown trigger, not at the
+    /// commanded depth) — otherwise the previewer fabricates a deep
+    /// phantom plunge. The cut after the probe runs from the pre-probe
+    /// position once the post re-emits absolute coordinates.
+    #[test]
+    fn g38_probe_does_not_emit_phantom_plunge() {
+        let g = "G21\nG90\nG0 X5 Y5 Z2\nG38.2 Z-50 F100\nG0 X5 Y5 Z2\nG1 X15 Y5 F800\n";
+        let segs = interpret(g);
+        // No segment should dive to the -50 search limit.
+        assert!(
+            segs.iter().all(|s| s.to.z >= 2.0 - 1e-9 && s.from.z >= 2.0 - 1e-9),
+            "G38.2 search distance leaked into a phantom plunge: {segs:#?}"
+        );
+        let last = segs.last().expect("a segment after the probe");
+        assert_eq!(last.to.x, 15.0);
         assert!(matches!(last.kind, MoveKind::Cut));
     }
 

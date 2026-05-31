@@ -429,6 +429,40 @@ pub trait PostProcessor {
     /// HPGL ignores. Skip when `shift_mm == 0`.
     fn tool_z_shift(&mut self, _shift_mm: f64) {}
 
+    /// hat3: pin the work-coordinate Z of the CURRENT position to
+    /// `z_mm` (`G92 Z` on LinuxCNC, `G10 L20 P<n> Z` on GRBL). Unlike
+    /// [`tool_z_shift`](Self::tool_z_shift) this ALWAYS emits — used to
+    /// re-zero Z right after a touch-plate `G38.2` trips, where `z_mm`
+    /// is the plate thickness (often 0). HPGL ignores.
+    fn set_work_z_here(&mut self, _z_mm: f64) {}
+
+    /// hat3: rapid to a machine-coords Z (`G53 G0 Z<z>`), e.g. the safe
+    /// approach height above a fixed tool-length sensor. Sibling of
+    /// [`rapid_machine_xy`](Self::rapid_machine_xy); same invalidation
+    /// contract (the WCS position cache is dropped). `LinuxCNC` / GRBL
+    /// override; HPGL keeps the default no-op.
+    fn rapid_machine_z(&mut self, _z_mm: f64) {}
+
+    /// hat3: emit a `G38.2 Z<distance> F<feed>` probing-feed move that
+    /// halts the instant the probe trips. `distance_mm` is signed
+    /// (NEGATIVE probes DOWN); `feed_mm_min` is the probe feed. Used by
+    /// the post-change Z re-establish flow (touch plate / fixed sensor).
+    /// `LinuxCNC` / GRBL override; HPGL keeps the default no-op.
+    /// Implementations MUST invalidate the delta-encoding position cache
+    /// afterward — the head stops at an unknown trigger point, so the
+    /// next move must re-emit coordinates explicitly.
+    fn probe_toward_z(&mut self, _distance_mm: f64, _feed_mm_min: u32) {}
+
+    /// hat3: apply the just-probed tool length as a tool-length offset.
+    /// Called after [`probe_toward_z`](Self::probe_toward_z) lands the
+    /// tool on a fixed sensor in `FixedSensor` mode. The numeric
+    /// difference from the reference tool is a CONTROLLER-runtime value
+    /// (unknown at CAM time): `LinuxCNC` emits `G43.1 Z[#5063]` (the
+    /// probed-Z parameter); GRBL emits a comment deferring to its native
+    /// `$341` tool-measure; HPGL ignores. Touch-plate `Probe` mode does
+    /// NOT use this — it pins work Z directly via `tool_z_shift`.
+    fn apply_probed_tool_length(&mut self) {}
+
     /// Emit a dwell of `seconds` (rt1.29 — used for laser pierce
     /// time). `LinuxCNC` / GRBL emit `G4 P<seconds>`; HPGL ignores.
     /// Skip when `seconds <= 0`.

@@ -600,6 +600,38 @@ impl PostProcessor for Post {
         self.state.last_y = None;
         self.state.last_z = None;
     }
+    fn rapid_machine_z(&mut self, z_mm: f64) {
+        // hat3: machine-coords Z rapid (G53 G0 Z<z>) — the safe approach
+        // height above a fixed sensor. Same fmt_axis path + position-
+        // cache invalidation as `rapid_machine_xy`.
+        if let Some(w) = self.fmt_axis('Z', z_mm) {
+            self.write(format!("G53 G0 {w}"));
+        }
+        self.state.last_x = None;
+        self.state.last_y = None;
+        self.state.last_z = None;
+    }
+    fn probe_toward_z(&mut self, distance_mm: f64, feed_mm_min: u32) {
+        // hat3: probing-feed move; controller halts at the trigger.
+        // w9hd: distance is a length (mm) — fmt_len applies the inch
+        // scale. Feed stays integer mm/min, matching the Probe op.
+        let d = self.fmt_len(distance_mm);
+        self.write(format!("G38.2 Z{d} F{feed_mm_min}"));
+        // The head stops at an unknown trigger Z — flush the position
+        // cache so the next move re-emits X/Y/Z explicitly.
+        self.state.last_x = None;
+        self.state.last_y = None;
+        self.state.last_z = None;
+    }
+    fn apply_probed_tool_length(&mut self) {
+        // hat3: LinuxCNC stores the probed Z in #5063. G43.1 applies it
+        // as a dynamic tool-length offset; combined with the reference
+        // tool's WCS Z0 this re-establishes the new tool's tip. The
+        // difference math is the controller's — we just wire the
+        // measured value in.
+        self.write("G43.1 Z[#5063]");
+        self.state.last_z = None;
+    }
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         let body = self.coords(x, y, z);
         if !body.is_empty() {
@@ -786,6 +818,14 @@ impl PostProcessor for Post {
         // The G92 leaves the controller's internal "last_z" unknown
         // to our delta encoder — flushing it forces the next Z move
         // to re-emit explicitly.
+        self.state.last_z = None;
+    }
+    fn set_work_z_here(&mut self, z_mm: f64) {
+        // hat3: same G92-Z mechanism as `tool_z_shift`, but always
+        // emitted (a 0 mm touch plate still needs Z re-zeroed here).
+        let s = self.fmt_len(z_mm);
+        self.write(format!("(set work Z: {s})"));
+        self.write(format!("G92 Z{s}"));
         self.state.last_z = None;
     }
     fn dwell(&mut self, seconds: f64) {

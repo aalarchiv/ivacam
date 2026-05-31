@@ -240,6 +240,23 @@ impl PostProcessor for Post {
         // invalidation (ad0v). Same reuse pattern as `move_to`.
         self.inner.rapid_machine_xy(x_mm, y_mm);
     }
+    fn rapid_machine_z(&mut self, z_mm: f64) {
+        // hat3: GRBL accepts G53 G0 Z; identical formatting via inner.
+        self.inner.rapid_machine_z(z_mm);
+    }
+    fn probe_toward_z(&mut self, distance_mm: f64, feed_mm_min: u32) {
+        // hat3: GRBL / grblHAL support G38.2; same emission as inner.
+        self.inner.probe_toward_z(distance_mm, feed_mm_min);
+    }
+    fn apply_probed_tool_length(&mut self) {
+        // hat3: grblHAL applies the tool-length offset natively in its
+        // `$341` tool-change cycle — emitting LinuxCNC's `G43.1 Z[#5063]`
+        // (numbered-parameter expression) would error on stock GRBL,
+        // which has no parameter system. Leave a comment so the operator
+        // / config knows where the offset comes from.
+        self.inner
+            .raw("; tool length offset set by controller ($341 tool-measure)");
+    }
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         self.inner.linear(x, y, z);
     }
@@ -325,6 +342,22 @@ impl PostProcessor for Post {
         self.inner.raw(&format!("G10 L20 P{p} Z{s}"));
         // The new WCS origin invalidates our delta-encoded last_z;
         // mirror LinuxCNC's tool_z_shift bookkeeping.
+        self.inner.state.last_z = None;
+    }
+    fn set_work_z_here(&mut self, z_mm: f64) {
+        // hat3: same `G10 L20 P<n> Z` mechanism as `tool_z_shift`, but
+        // always emitted (a 0 mm touch plate still re-zeros Z). G92.1
+        // first clears any stale G92 offset so the new origin doesn't
+        // stack, matching tool_z_shift.
+        let s = crate::gcode::fmt_num_dp(
+            z_mm * self.inner.state.unit_scale,
+            self.inner.state.decimal_separator,
+            self.inner.state.decimals(),
+        );
+        let p = self.inner.state.wcs.p_number();
+        self.inner.raw(&format!("; set work Z: {s}"));
+        self.inner.raw("G92.1");
+        self.inner.raw(&format!("G10 L20 P{p} Z{s}"));
         self.inner.state.last_z = None;
     }
     fn dwell(&mut self, seconds: f64) {

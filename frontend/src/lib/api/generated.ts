@@ -556,6 +556,8 @@ export interface components {
             ] | null;
             /** @description Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op's cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op's `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers. */
             plot_mode_z?: boolean;
+            /** @description hat3: how the post re-establishes the new tool's Z tip position after a tool change. A manual hand-swap leaves the new tool's length unknown; the default `PostChangeZStrategy::None` applies only the static per-tool `ToolEntry.z_shift_mm`, which assumes perfectly repeatable collet seating + pre-known lengths — false for most hobby swaps. Best practice re-measures Z after every change. Maps onto grblHAL `$341` modes / Estlcam's tool-measure policies. Applied by `emit_toolchange_envelope` to NON-first changes (the first tool is operator-loaded at program start); `None` keeps existing output byte-for-byte. */
+            post_change_z?: components["schemas"]["PostChangeZStrategy"];
             /** @description User-configurable post-processor profile (rt1.15). When `Some`, the built-in posts (linuxcnc / grbl) read its templates instead of emitting their hard-coded `program_start` / `program_end` / `tool_change` / coolant lines. `None` = hard-coded defaults. */
             post_profile?: components["schemas"]["PostProfile"] | null;
             /**
@@ -1348,6 +1350,57 @@ export interface components {
             y: number;
             /** Format: double */
             z: number;
+        };
+        /** @description hat3: post-tool-change Z re-establish strategy. Internally tagged (`{"mode": "...", ...}`) like [`PlungeStrategy`], so adding a variant is additive in the schema. */
+        PostChangeZStrategy: {
+            /** @enum {string} */
+            mode: "none";
+        } | {
+            /** @enum {string} */
+            mode: "manual_touchoff";
+        } | {
+            /**
+             * Format: double
+             * @description Max search distance (mm) along Z. NEGATIVE probes DOWN onto the plate (the usual case); the controller halts at the trigger and this is just the search limit.
+             */
+            distance_mm: number;
+            /**
+             * Format: uint32
+             * @description Probe feedrate (mm/min). 50–200 typical for a touch-trigger probe — slow enough to trip repeatably.
+             */
+            feed_mm_min: number;
+            /** @enum {string} */
+            mode: "probe";
+            /**
+             * Format: double
+             * @description Plate thickness (mm). Work Z is pinned to this at the trigger so Z0 stays the stock top (plate sits on the stock). `0` probes directly onto the work zero surface.
+             * @default 0
+             */
+            plate_thickness_mm: number;
+        } | {
+            /**
+             * Format: uint32
+             * @description Probe feedrate (mm/min).
+             */
+            feed_mm_min: number;
+            /** @enum {string} */
+            mode: "fixed_sensor";
+            /** @description Sensor location in MACHINE coords (mm): `(x, y, approach_z)`. `approach_z` is the safe machine Z the head rapids to before (and retracts to after) probing down. */
+            position: [
+                number,
+                number,
+                number
+            ];
+            /**
+             * Format: uint32
+             * @description Tool whose sensor reading defines work Z0; the operator touches it off on the workpiece instead of the sensor, and other tools' offsets are differenced from it. `None` ⇒ the program's first tool.
+             */
+            reference_tool_id?: number | null;
+            /**
+             * Format: double
+             * @description Signed search distance (mm) from `approach_z` toward the sensor. NEGATIVE seeks DOWN.
+             */
+            seek_mm: number;
         };
         /** @enum {string} */
         PostProcessorKind: "linuxcnc" | "grbl" | "hpgl";

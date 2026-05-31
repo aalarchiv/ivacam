@@ -585,7 +585,11 @@ export interface components {
              * @description Spindle-stop dwell (seconds) inserted into the M6 toolchange envelope between `M5` and the actual `T<n> M6`. Gives the spindle time to spin down before the chuck is touched. `None` (and the default `0.5 s`) covers most VFD-driven spindles; high-inertia big-iron may want 1–2 s. Set to `Some(0.0)` to skip entirely. See bd issues eaeq / m8sq / rwv8 / rfow.
              */
             spindle_stop_dwell_sec?: number | null;
-            supports_toolchange: boolean;
+            /**
+             * @description cb5y: tool-change strategy (was the `supports_toolchange` bool). See [`ToolChangeStrategy`]. Back-compat: an old project's `"supports_toolchange": true/false` still loads via the serde alias + bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).
+             * @default manual_m0_pause
+             */
+            tool_change: components["schemas"]["ToolChangeStrategy"];
             /**
              * Format: double
              * @description Tool-change time in seconds.
@@ -599,7 +603,7 @@ export interface components {
             unit: components["schemas"]["UnitSystem"];
             /** @description When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator. */
             use_kinematic_time_estimate?: boolean;
-            /** @description llkf: opt-in tool-length compensation via the controller's tool table. When `true` on an ATC machine (`supports_toolchange`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can't run an M6 tool table. */
+            /** @description llkf: opt-in tool-length compensation via the controller's tool table. When `true` on an ATC machine (`tool_change == Atc`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can't run an M6 tool table. */
             use_tool_length_offsets?: boolean;
             /** @description Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in `MachineDialog`. */
             work_area?: components["schemas"]["AxisLimits"];
@@ -1848,6 +1852,8 @@ export interface components {
             /** Format: double */
             total_s: number;
         };
+        /** @description cb5y: how the post-processor handles a tool change at an op boundary. Widened from the historical `supports_toolchange: bool` because the two *manual* behaviors need different emission: grblHAL / FluidNC accept `M6` as a prompt (the controller parks, prompts the operator, and can run a semi-automatic tool-length probe), while stock GRBL / Marlin reject `M6` (`error:20`) and must fall back to a portable `M0` program pause. Serde stays back-compat with the old bool via [`deserialize_toolchange`]: `true → Atc`, `false → ManualM0Pause`. */
+        ToolChangeStrategy: "atc" | "manual_m6_prompt" | "manual_m0_pause" | "ignore";
         ToolConfig: {
             /**
              * Format: double

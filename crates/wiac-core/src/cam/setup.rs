@@ -478,6 +478,92 @@ impl AxisLimits {
     }
 }
 
+/// cb5y: how the post-processor handles a tool change at an op boundary.
+/// Widened from the historical `supports_toolchange: bool` because the two
+/// *manual* behaviors need different emission: grblHAL / FluidNC accept
+/// `M6` as a prompt (the controller parks, prompts the operator, and can
+/// run a semi-automatic tool-length probe), while stock GRBL / Marlin
+/// reject `M6` (`error:20`) and must fall back to a portable `M0` program
+/// pause. Serde stays back-compat with the old bool via
+/// [`deserialize_toolchange`]: `true → Atc`, `false → ManualM0Pause`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolChangeStrategy {
+    /// Automatic tool changer: emit `T<n> M6`; the changer swaps the bit
+    /// and the program continues without an operator pause. Maps onto the
+    /// old `supports_toolchange == true`.
+    Atc,
+    /// Manual change with a controller-driven prompt (grblHAL / FluidNC):
+    /// emit `T<n> M6`; the controller parks, prompts the operator for the
+    /// swap, and can run a semi-automatic tool-length probe before resume.
+    ManualM6Prompt,
+    /// Manual change via a portable `M0` program pause — stock GRBL /
+    /// Marlin and any controller that rejects `M6`. Default for unknown
+    /// GRBL-class machines (the most portable choice). Maps onto the old
+    /// `supports_toolchange == false`.
+    #[default]
+    ManualM0Pause,
+    /// Emit no tool-change handling at all. The program runs as if every
+    /// op shares one tool; the operator / sender is responsible for swaps.
+    Ignore,
+}
+
+impl ToolChangeStrategy {
+    /// `true` when the post emits a real `T<n> M6` (an auto changer or a
+    /// controller that prompts on `M6`). These two share the `M6` emission
+    /// path in `emit_toolchange_envelope`; the `M0`-pause and `Ignore`
+    /// strategies do not.
+    #[must_use]
+    pub fn emits_m6(self) -> bool {
+        matches!(self, Self::Atc | Self::ManualM6Prompt)
+    }
+
+    /// `true` only for a fully automatic tool changer (no operator
+    /// intervention expected at the swap).
+    #[must_use]
+    pub fn is_atc(self) -> bool {
+        matches!(self, Self::Atc)
+    }
+
+    /// Stable cache discriminant folded into the op cache key. Pinned so
+    /// existing projects (the old `true` / `false`, i.e. `Atc` /
+    /// `ManualM0Pause`) hash byte-identically to the pre-cb5y `bool`
+    /// encoding: `bool::hash` writes `0` / `1` as a `u8`, so
+    /// `ManualM0Pause = 0` and `Atc = 1` keep the cache key stable. The new
+    /// variants get fresh discriminants.
+    #[must_use]
+    pub fn cache_discriminant(self) -> u8 {
+        match self {
+            Self::ManualM0Pause => 0,
+            Self::Atc => 1,
+            Self::ManualM6Prompt => 2,
+            Self::Ignore => 3,
+        }
+    }
+}
+
+/// cb5y: back-compat deserializer for [`MachineConfig::tool_change`].
+/// Accepts either the new enum string (`"atc"`, `"manual_m6_prompt"`,
+/// `"manual_m0_pause"`, `"ignore"`) or the legacy `supports_toolchange`
+/// bool (`true → Atc`, `false → ManualM0Pause`), so projects saved before
+/// the widening still load unchanged.
+fn deserialize_toolchange<'de, D>(d: D) -> Result<ToolChangeStrategy, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Compat {
+        Bool(bool),
+        Strategy(ToolChangeStrategy),
+    }
+    Ok(match Compat::deserialize(d)? {
+        Compat::Bool(true) => ToolChangeStrategy::Atc,
+        Compat::Bool(false) => ToolChangeStrategy::ManualM0Pause,
+        Compat::Strategy(s) => s,
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MachineConfig {
     pub unit: UnitSystem,
@@ -485,7 +571,16 @@ pub struct MachineConfig {
     pub comments: bool,
     /// Whether the machine emits arc commands (G2/G3).
     pub arcs: bool,
-    pub supports_toolchange: bool,
+    /// cb5y: tool-change strategy (was the `supports_toolchange` bool).
+    /// See [`ToolChangeStrategy`]. Back-compat: an old project's
+    /// `"supports_toolchange": true/false` still loads via the serde alias
+    /// + bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).
+    #[serde(
+        default,
+        alias = "supports_toolchange",
+        deserialize_with = "deserialize_toolchange"
+    )]
+    pub tool_change: ToolChangeStrategy,
     /// Per-axis acceleration in mm/s². When None the kinematic time
     /// estimator falls back to 250 mm/s² per axis (`LinuxCNC` default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -653,7 +748,7 @@ pub struct MachineConfig {
     #[serde(default, skip_serializing_if = "PostChangeZStrategy::is_none")]
     pub post_change_z: PostChangeZStrategy,
     /// llkf: opt-in tool-length compensation via the controller's tool
-    /// table. When `true` on an ATC machine (`supports_toolchange`), the
+    /// table. When `true` on an ATC machine (`tool_change == Atc`), the
     /// toolchange envelope emits `G43 H<n>` after `T<n> M6` so the
     /// controller applies the pre-measured length for tool `<n>`, and
     /// SKIPS the static `z_shift` / `post_change_z` flow (mutually
@@ -809,7 +904,7 @@ impl Default for MachineConfig {
             mode: MachineMode::Mill,
             comments: true,
             arcs: true,
-            supports_toolchange: false,
+            tool_change: ToolChangeStrategy::ManualM0Pause,
             accel: None,
             jerk: None,
             toolchange_s: default_toolchange_s(),
@@ -884,4 +979,61 @@ pub struct Setup {
 
 fn is_default_wcs(v: &crate::project::Wcs) -> bool {
     matches!(v, crate::project::Wcs::G54)
+}
+
+#[cfg(test)]
+mod toolchange_strategy_tests {
+    use super::{MachineConfig, ToolChangeStrategy};
+
+    /// cb5y acceptance: a project saved before the widening — with the
+    /// legacy `"supports_toolchange"` bool — still loads, mapping
+    /// `true → Atc` and `false → ManualM0Pause`.
+    #[test]
+    fn legacy_bool_deserializes() {
+        let true_json =
+            r#"{"unit":"mm","mode":"mill","comments":true,"arcs":true,"supports_toolchange":true}"#;
+        let m: MachineConfig = serde_json::from_str(true_json).unwrap();
+        assert_eq!(m.tool_change, ToolChangeStrategy::Atc);
+
+        let false_json = r#"{"unit":"mm","mode":"mill","comments":true,"arcs":true,"supports_toolchange":false}"#;
+        let m: MachineConfig = serde_json::from_str(false_json).unwrap();
+        assert_eq!(m.tool_change, ToolChangeStrategy::ManualM0Pause);
+    }
+
+    /// The new enum string form round-trips through serde.
+    #[test]
+    fn new_enum_string_round_trips() {
+        for s in [
+            ToolChangeStrategy::Atc,
+            ToolChangeStrategy::ManualM6Prompt,
+            ToolChangeStrategy::ManualM0Pause,
+            ToolChangeStrategy::Ignore,
+        ] {
+            let m = MachineConfig {
+                tool_change: s,
+                ..MachineConfig::default()
+            };
+            let json = serde_json::to_string(&m).unwrap();
+            let back: MachineConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.tool_change, s);
+        }
+    }
+
+    /// A missing field falls back to the portable default.
+    #[test]
+    fn missing_field_defaults_to_m0_pause() {
+        let json = r#"{"unit":"mm","mode":"mill","comments":true,"arcs":true}"#;
+        let m: MachineConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(m.tool_change, ToolChangeStrategy::ManualM0Pause);
+    }
+
+    /// The cache discriminant stays pinned to the old bool encoding for
+    /// the two pre-cb5y variants so existing cache keys don't churn.
+    #[test]
+    fn cache_discriminant_pins_legacy_variants() {
+        assert_eq!(ToolChangeStrategy::ManualM0Pause.cache_discriminant(), 0);
+        assert_eq!(ToolChangeStrategy::Atc.cache_discriminant(), 1);
+        assert_eq!(ToolChangeStrategy::ManualM6Prompt.cache_discriminant(), 2);
+        assert_eq!(ToolChangeStrategy::Ignore.cache_discriminant(), 3);
+    }
 }

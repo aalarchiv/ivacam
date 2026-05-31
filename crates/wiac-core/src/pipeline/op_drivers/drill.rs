@@ -358,7 +358,7 @@ fn emit_stufenfase<P: PostProcessor>(
     let mut chamfer_setup = drill_setup.clone();
     let mut swapped = false;
     if op.finish_tool_id.is_some() && op.finish_tool_id != Some(op.tool_id) {
-        if !project.machine.supports_toolchange {
+        if !project.machine.tool_change.emits_m6() {
             warnings.push(PipelineWarning {
                 op_id: Some(op.id),
                 kind: "stufenfase_no_toolchange".into(),
@@ -401,6 +401,7 @@ fn emit_stufenfase<P: PostProcessor>(
 #[cfg(test)]
 mod tests {
     use crate::cam::setup::MachineConfig;
+    use crate::cam::setup::ToolChangeStrategy;
     use crate::cam::setup::ToolOffset;
     use crate::geometry::Point2;
     use crate::pipeline::test_helpers::{
@@ -929,7 +930,7 @@ mod tests {
         vbit_finish.diameter = 6.35;
         vbit_finish.tip_angle_deg = 90.0;
         let machine = MachineConfig {
-            supports_toolchange: true,
+            tool_change: ToolChangeStrategy::Atc,
             ..MachineConfig::default()
         };
         let center = Point2::new(5.0, 7.0);
@@ -1294,7 +1295,7 @@ mod tests {
         let mut main_drill = endmill(1, 6.0);
         main_drill.id = 1;
         let machine = MachineConfig {
-            supports_toolchange: true,
+            tool_change: ToolChangeStrategy::Atc,
             ..MachineConfig::default()
         };
         let mut params = OpParams::mill_default();

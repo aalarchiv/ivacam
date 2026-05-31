@@ -219,7 +219,7 @@ interface WireMachine {
   mode: 'mill' | 'laser' | 'drag' | 'plasma';
   comments: boolean;
   arcs: boolean;
-  supports_toolchange: boolean;
+  tool_change: 'atc' | 'manual_m6_prompt' | 'manual_m0_pause' | 'ignore';
   accel?: WireAxisLimits;
   jerk?: WireAxisLimits;
   toolchange_s?: number;
@@ -602,7 +602,7 @@ function buildMachine(m: MachineSettings): WireMachine {
     mode: m.mode,
     comments: m.comments,
     arcs: m.arcs,
-    supports_toolchange: m.supportsToolchange,
+    tool_change: m.toolchangeStrategy,
     ...(m.accel ? { accel: { x: m.accel.x, y: m.accel.y, z: m.accel.z } } : {}),
     ...(m.jerk ? { jerk: { x: m.jerk.x, y: m.jerk.y, z: m.jerk.z } } : {}),
     ...(m.toolchangeS !== undefined && m.toolchangeS !== 5 ? { toolchange_s: m.toolchangeS } : {}),

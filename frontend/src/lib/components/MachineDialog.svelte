@@ -435,11 +435,15 @@
         >
       </label>
       <label
-        class="check"
-        title="Emit M6 tool-change commands between ops with different tools. Disable for hobby controllers (GRBL etc.) that need manual tool-change prompts instead."
+        title="How the post handles a tool change between ops with different tools. ATC: emit T<n> M6, the changer swaps automatically. Manual (M6 prompt): grblHAL / FluidNC — emit M6, the controller parks and prompts the operator. Manual (M0 pause): portable M0 program pause for stock GRBL / Marlin, which reject M6. Ignore: emit no tool-change handling (you manage swaps yourself)."
       >
-        <input type="checkbox" bind:checked={draft.supportsToolchange} />
-        Machine supports tool changes (M6)
+        Tool changes
+        <select bind:value={draft.toolchangeStrategy}>
+          <option value="atc">Automatic changer (T&lt;n&gt; M6)</option>
+          <option value="manual_m6_prompt">Manual — M6 prompt (grblHAL / FluidNC)</option>
+          <option value="manual_m0_pause">Manual — M0 pause (stock GRBL / Marlin)</option>
+          <option value="ignore">Ignore (no tool-change output)</option>
+        </select>
       </label>
       <label
         class="check"

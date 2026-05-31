@@ -82,6 +82,7 @@ import type {
   WorkOffset,
 } from './project-types';
 import { defaultWorkOffset, inferDefaultWorkOffset, isDefaultWorkOffset } from './project-types';
+import { migrateMachineSettings } from './project-types';
 import {
   applyFileTransformToPoint,
   combineImports,
@@ -1242,7 +1243,8 @@ class ProjectState {
     if (file.stock) this.stock = { ...this.stock, ...file.stock };
     if (Array.isArray(file.tools) && file.tools.length > 0)
       this.tools = file.tools.map(migrateLegacyToolTerms);
-    if (file.machine) this.machine = { ...this.machine, ...file.machine };
+    if (file.machine)
+      this.machine = { ...this.machine, ...migrateMachineSettings(file.machine) };
     if (Array.isArray(file.operations)) this.operations = file.operations;
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
     this.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];

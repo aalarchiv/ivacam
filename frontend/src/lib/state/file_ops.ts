@@ -18,6 +18,7 @@ import { migrateLegacyToolTerms } from './tool-migration';
 // `wiac.recent` localStorage key is harmlessly orphaned.
 import type { ImportResponse } from '../api/types';
 import type { MachineSettings, ToolEntry } from './project.svelte';
+import { migrateMachineSettings } from './project-types';
 
 /// eu2b: clear the Rust-side process-global pipeline cache when a
 /// project replace flow runs (open file, open project, load sample,
@@ -698,7 +699,9 @@ export async function loadMachine() {
   // post-swap Generate will miss-and-recompute. Drop the old entries
   // proactively.
   await clearPipelineCacheOnReplace();
-  project.setMachine(env.payload);
+  // cb5y: an older .wiac-machine.json carries `supportsToolchange` instead
+  // of `toolchangeStrategy` — migrate before applying.
+  project.setMachine(migrateMachineSettings(env.payload));
 }
 
 /// Decide whether a dropped/picked file is a project vs. raw geometry

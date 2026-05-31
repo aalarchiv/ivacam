@@ -242,7 +242,7 @@ export class ProjectDataState {
     mode: 'mill',
     comments: true,
     arcs: true,
-    supportsToolchange: false,
+    toolchangeStrategy: 'manual_m0_pause',
     fastMoveZ: 5,
     accel: { x: 250, y: 250, z: 250 },
     toolchangeS: 5,

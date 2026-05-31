@@ -7,7 +7,7 @@
 //! emitted offset list.
 
 use crate::cam::offsets::PolylineOffset;
-use crate::cam::setup::{Setup, ToolOffset};
+use crate::cam::setup::{Setup, ToolChangeStrategy, ToolOffset};
 use crate::cam::VcObject;
 use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project, StockConfig};
 
@@ -62,7 +62,7 @@ pub(super) fn push_wcs_origin_warning(project: &Project, warnings: &mut Vec<Pipe
 }
 
 /// 1gty: warn when a program needs manual tool changes on a machine
-/// without an automatic tool changer (`supports_toolchange == false`).
+/// using the `M0`-pause strategy (`tool_change == ManualM0Pause`).
 /// A plain T1/T2 multi-op program emits `M0` pauses at every inter-op
 /// tool boundary, but only the INTERNAL dual-tool / stufenfase swaps
 /// warned before this — a user running back-to-back ops with different
@@ -79,7 +79,13 @@ pub(super) fn push_manual_toolchange_warning(
     project: &Project,
     warnings: &mut Vec<PipelineWarning>,
 ) {
-    if project.machine.supports_toolchange {
+    // cb5y: this warning is specifically about M0 program pauses, so it
+    // fires only for the M0-pause strategy. ATC / M6-prompt swap without an
+    // M0; `Ignore` emits no pause to warn about.
+    if !matches!(
+        project.machine.tool_change,
+        ToolChangeStrategy::ManualM0Pause
+    ) {
         return;
     }
     let changes = super::count_tool_changes(project).saturating_sub(1);
@@ -98,13 +104,14 @@ pub(super) fn push_manual_toolchange_warning(
 
 /// i185: GRBL + ATC footgun. Stock GRBL 1.1 does NOT support `M6`
 /// (it returns `error:20`; tool change is the sender's job). When a
-/// user sets `supports_toolchange = true` on the GRBL dialect WITHOUT a
-/// `tool_change` template in the post profile, `Grbl::tool()` emits
-/// NOTHING — the swap signal silently vanishes (no M6, no M0) and the
-/// next op cuts with the wrong tool. Nothing blocks this today.
+/// user picks an M6-emitting strategy (`tool_change` = `Atc` or
+/// `ManualM6Prompt`) on the GRBL dialect WITHOUT a `tool_change` template
+/// in the post profile, `Grbl::tool()` emits NOTHING — the swap signal
+/// silently vanishes (no M6, no M0) and the next op cuts with the wrong
+/// tool. Nothing blocks this today.
 ///
 /// Fire a loud (FE-critical) warning when all of: dialect = GRBL,
-/// `supports_toolchange = true`, no non-empty `tool_change` template,
+/// `tool_change.emits_m6()`, no non-empty `tool_change` template,
 /// and the program actually needs >= 1 inter-op change. The user's fix
 /// is one of: switch to manual (M0-pause) mode, add a `tool_change`
 /// macro template to the post profile, or use a sender that intercepts
@@ -118,7 +125,10 @@ pub(super) fn push_grbl_atc_footgun_warning(
     if !matches!(post_kind, super::PostProcessorKind::Grbl) {
         return;
     }
-    if !project.machine.supports_toolchange {
+    // cb5y: the footgun is "stock GRBL got an M6 it can't run". Both Atc and
+    // ManualM6Prompt emit `T<n> M6`, so warn for either on the GRBL post
+    // when there's no macro template; M0-pause and Ignore emit no M6.
+    if !project.machine.tool_change.emits_m6() {
         return;
     }
     let has_template = project

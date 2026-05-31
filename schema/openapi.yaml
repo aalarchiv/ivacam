@@ -1023,8 +1023,11 @@ components:
           type:
           - number
           - 'null'
-        supports_toolchange:
-          type: boolean
+        tool_change:
+          allOf:
+          - $ref: '#/components/schemas/ToolChangeStrategy'
+          default: manual_m0_pause
+          description: 'cb5y: tool-change strategy (was the `supports_toolchange` bool). See [`ToolChangeStrategy`]. Back-compat: an old project''s `"supports_toolchange": true/false` still loads via the serde alias + bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).'
         toolchange_s:
           description: Tool-change time in seconds.
           format: double
@@ -1047,7 +1050,7 @@ components:
           description: When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator.
           type: boolean
         use_tool_length_offsets:
-          description: 'llkf: opt-in tool-length compensation via the controller''s tool table. When `true` on an ATC machine (`supports_toolchange`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can''t run an M6 tool table.'
+          description: 'llkf: opt-in tool-length compensation via the controller''s tool table. When `true` on an ATC machine (`tool_change == Atc`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can''t run an M6 tool table.'
           type: boolean
         work_area:
           allOf:
@@ -1057,7 +1060,6 @@ components:
       - arcs
       - comments
       - mode
-      - supports_toolchange
       - unit
       type: object
     MachineMode:
@@ -3111,6 +3113,25 @@ components:
       - toolchange_s
       - total_s
       type: object
+    ToolChangeStrategy:
+      description: 'cb5y: how the post-processor handles a tool change at an op boundary. Widened from the historical `supports_toolchange: bool` because the two *manual* behaviors need different emission: grblHAL / FluidNC accept `M6` as a prompt (the controller parks, prompts the operator, and can run a semi-automatic tool-length probe), while stock GRBL / Marlin reject `M6` (`error:20`) and must fall back to a portable `M0` program pause. Serde stays back-compat with the old bool via [`deserialize_toolchange`]: `true → Atc`, `false → ManualM0Pause`.'
+      oneOf:
+      - description: 'Automatic tool changer: emit `T<n> M6`; the changer swaps the bit and the program continues without an operator pause. Maps onto the old `supports_toolchange == true`.'
+        enum:
+        - atc
+        type: string
+      - description: 'Manual change with a controller-driven prompt (grblHAL / FluidNC): emit `T<n> M6`; the controller parks, prompts the operator for the swap, and can run a semi-automatic tool-length probe before resume.'
+        enum:
+        - manual_m6_prompt
+        type: string
+      - description: Manual change via a portable `M0` program pause — stock GRBL / Marlin and any controller that rejects `M6`. Default for unknown GRBL-class machines (the most portable choice). Maps onto the old `supports_toolchange == false`.
+        enum:
+        - manual_m0_pause
+        type: string
+      - description: Emit no tool-change handling at all. The program runs as if every op shares one tool; the operator / sender is responsible for swaps.
+        enum:
+        - ignore
+        type: string
     ToolConfig:
       properties:
         cut_height_mm:

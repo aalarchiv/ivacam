@@ -46,7 +46,7 @@ function baseMachine(): MachineSettings {
     mode: 'mill',
     comments: true,
     arcs: true,
-    supportsToolchange: false,
+    toolchangeStrategy: 'manual_m0_pause',
     fastMoveZ: 5,
   };
 }

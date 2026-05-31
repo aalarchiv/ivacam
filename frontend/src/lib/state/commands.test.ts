@@ -69,7 +69,7 @@ function blankTarget(): CommandTarget {
       mode: 'mill',
       comments: true,
       arcs: true,
-      supportsToolchange: false,
+      toolchangeStrategy: 'manual_m0_pause',
       fastMoveZ: 5,
     } as MachineSettings,
     stock: {

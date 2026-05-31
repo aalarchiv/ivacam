@@ -80,7 +80,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::cam::chaining::{classify_containment, segments_to_objects};
-use crate::cam::setup::Setup;
+use crate::cam::setup::{Setup, ToolChangeStrategy};
 use crate::cam::VcObject;
 use crate::gcode::{
     emit_program_begin, emit_program_end, grbl, hpgl, linuxcnc, preview, PostProcessor,
@@ -1504,7 +1504,7 @@ fn emit_boundary_toolchange<P: PostProcessor>(
     }
     if let Some(tool) = tool_index.get(&op.tool_id).copied() {
         let is_first_tool = prev_tool_id.is_none();
-        if project.machine.supports_toolchange {
+        if project.machine.tool_change.emits_m6() {
             post.comment(&format!(
                 "toolchange: T{} ({}) for op {} ({})",
                 tool.id, tool.name, op.id, op.name
@@ -1680,9 +1680,13 @@ pub(super) fn synthesize_finish_setup(
 /// * `op_drivers/dual_tool.rs` — within-op rough → finish split.
 /// * `op_drivers/drill.rs::emit_stufenfase` — drill → chamfer split.
 ///
-/// When `machine.supports_toolchange == false` the function emits a
-/// manual-swap pause envelope instead: M5 + dwell + a `; pause: swap to
-/// tool <n>` comment + M0, so the operator hand-changes the bit. Resume
+/// cb5y: the `machine.tool_change` strategy selects the body. `Atc` and
+/// `ManualM6Prompt` take the `T<n> M6` path (`emits_m6()`); the latter adds
+/// an operator-prompt comment since the controller parks/prompts on M6.
+/// `ManualM0Pause` emits the manual-swap pause envelope: M5 + dwell + a
+/// `; pause: swap to tool <n>` comment + M0, so the operator hand-changes
+/// the bit. `Ignore` emits no swap signal at all (the safe-Z lift / spindle
+/// stop above still run). Resume
 /// requires pressing Cycle Start. After resume the helper emits an
 /// explicit M3 at the new tool's RPM (going through
 /// [`PostProcessor::spindle_cw`]) so the next cut starts with the
@@ -1778,112 +1782,131 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
         }
     }
 
-    if machine.supports_toolchange {
-        // hat3: a manual touch-off / reference-tool prompt (if the
-        // strategy calls for one) goes before the M6 so it's visible in
-        // CAM-review; ATC machines don't actually pause on it.
-        if let Some(prompt) = post_change_z_prompt(machine, new_tool_id, is_first_tool) {
-            post.comment(&prompt);
+    match machine.tool_change {
+        ToolChangeStrategy::Atc | ToolChangeStrategy::ManualM6Prompt => {
+            // cb5y: grblHAL / FluidNC accept M6 as a prompt — the controller
+            // parks, prompts, and can semi-auto probe. Annotate so the swap is
+            // obvious in CAM-review; the M6 emission itself is shared with ATC.
+            if matches!(machine.tool_change, ToolChangeStrategy::ManualM6Prompt) {
+                post.comment(
+                    "manual tool change: the controller will park and prompt for the swap",
+                );
+            }
+            // hat3: a manual touch-off / reference-tool prompt (if the
+            // strategy calls for one) goes before the M6 so it's visible in
+            // CAM-review; ATC machines don't actually pause on it.
+            if let Some(prompt) = post_change_z_prompt(machine, new_tool_id, is_first_tool) {
+                post.comment(&prompt);
+            }
+            // Auto-changer / macro-driven manual-with-prompt. The post's
+            // tool() emits T<n> M6 (or the user's profile template).
+            post.tool(new_tool_id);
+            if machine.use_tool_length_offsets {
+                // llkf: trust the controller's tool table — emit G43 H<n>
+                // and SKIP the static z_shift / probe flow (mutually
+                // exclusive; G43 supersedes both). Applies to every tool
+                // including the first (its offset must be active before the
+                // first cut). program_end cancels with G49.
+                post.tool_length_offset(new_tool_id);
+            } else {
+                // hat3: re-establish the new tool's Z (probe / fixed sensor /
+                // static shift) right after the change.
+                emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
+            }
+            // Spin back up at the NEW tool's RPM. Pass pause=0 so the post
+            // emits M3/M4 S<rpm> without an integer-second dwell tail; we
+            // follow with an explicit `dwell(...)` so the machine-wide
+            // spin-up (sub-second supported) AND the per-tool warm-up both
+            // fire in the right order. zjgt: route through the central
+            // `spindle_on` dispatcher so a CCW tool emits M4 here — the
+            // previous unconditional `spindle_cw` baked M3 into the
+            // post's `last_speed` snapshot, so the next op's lazy
+            // `spindle_ccw(speed, 0)` saw last_speed == speed and elided
+            // the M4 entirely (program ran CW with a CCW tool).
+            if let Some(t) = new_tool {
+                if is_mill {
+                    crate::gcode::spindle_on(
+                        post,
+                        t.spindle_direction,
+                        setup_resolver::clamp_rpm_silent(target_speed.unwrap_or(t.speed), machine),
+                        0,
+                    );
+                    let start_dwell = machine.effective_spindle_start_dwell_sec();
+                    if start_dwell > 0.0 {
+                        post.dwell(start_dwell);
+                    }
+                    if t.pause > 0 {
+                        post.dwell(f64::from(t.pause));
+                    }
+                }
+            }
         }
-        // Auto-changer / macro-driven manual-with-prompt. The post's
-        // tool() emits T<n> M6 (or the user's profile template).
-        post.tool(new_tool_id);
-        if machine.use_tool_length_offsets {
-            // llkf: trust the controller's tool table — emit G43 H<n>
-            // and SKIP the static z_shift / probe flow (mutually
-            // exclusive; G43 supersedes both). Applies to every tool
-            // including the first (its offset must be active before the
-            // first cut). program_end cancels with G49.
-            post.tool_length_offset(new_tool_id);
-        } else {
-            // hat3: re-establish the new tool's Z (probe / fixed sensor /
-            // static shift) right after the change.
+        ToolChangeStrategy::ManualM0Pause => {
+            // Manual hand-swap on a hobby controller. We can't trust the
+            // controller to halt for an M6 — emit an explicit M0 program
+            // pause so the operator confirms the bit swap with Cycle Start.
+            // Tool Z-shift is applied AFTER the pause so the operator can
+            // jog the new bit to the surface before the work-Z=0 line is
+            // moved by G92.
+            if let Some(t) = new_tool {
+                post.comment(&format!("pause: swap to tool {} ({})", new_tool_id, t.name));
+            } else {
+                post.comment(&format!("pause: swap to tool {new_tool_id}"));
+            }
+            // hat3: emit any manual touch-off / reference-tool instruction
+            // BEFORE the M0 so the operator reads it while the program is
+            // halted (a post-pause comment lands after Cycle Start — too
+            // late to act on).
+            if let Some(prompt) = post_change_z_prompt(machine, new_tool_id, is_first_tool) {
+                post.comment(&prompt);
+            }
+            if !is_first_tool {
+                // M0: program-pause. Operator presses Cycle Start to
+                // resume. Skip on first-tool because the spindle isn't
+                // running yet — the program-start state is already
+                // tool-swap-equivalent (operator loaded a bit before
+                // hitting Cycle Start).
+                post.raw("M0");
+            }
+            // hat3: re-establish the new tool's Z AFTER the pause — the
+            // probe / fixed-sensor cycle runs automatically once the
+            // operator confirms the swap with Cycle Start. `None` keeps the
+            // legacy static z_shift here.
             emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
-        }
-        // Spin back up at the NEW tool's RPM. Pass pause=0 so the post
-        // emits M3/M4 S<rpm> without an integer-second dwell tail; we
-        // follow with an explicit `dwell(...)` so the machine-wide
-        // spin-up (sub-second supported) AND the per-tool warm-up both
-        // fire in the right order. zjgt: route through the central
-        // `spindle_on` dispatcher so a CCW tool emits M4 here — the
-        // previous unconditional `spindle_cw` baked M3 into the
-        // post's `last_speed` snapshot, so the next op's lazy
-        // `spindle_ccw(speed, 0)` saw last_speed == speed and elided
-        // the M4 entirely (program ran CW with a CCW tool).
-        if let Some(t) = new_tool {
-            if is_mill {
-                crate::gcode::spindle_on(
-                    post,
-                    t.spindle_direction,
-                    setup_resolver::clamp_rpm_silent(target_speed.unwrap_or(t.speed), machine),
-                    0,
-                );
-                let start_dwell = machine.effective_spindle_start_dwell_sec();
-                if start_dwell > 0.0 {
-                    post.dwell(start_dwell);
-                }
-                if t.pause > 0 {
-                    post.dwell(f64::from(t.pause));
-                }
-            }
-        }
-    } else {
-        // Manual hand-swap on a hobby controller. We can't trust the
-        // controller to halt for an M6 — emit an explicit M0 program
-        // pause so the operator confirms the bit swap with Cycle Start.
-        // Tool Z-shift is applied AFTER the pause so the operator can
-        // jog the new bit to the surface before the work-Z=0 line is
-        // moved by G92.
-        if let Some(t) = new_tool {
-            post.comment(&format!("pause: swap to tool {} ({})", new_tool_id, t.name));
-        } else {
-            post.comment(&format!("pause: swap to tool {new_tool_id}"));
-        }
-        // hat3: emit any manual touch-off / reference-tool instruction
-        // BEFORE the M0 so the operator reads it while the program is
-        // halted (a post-pause comment lands after Cycle Start — too
-        // late to act on).
-        if let Some(prompt) = post_change_z_prompt(machine, new_tool_id, is_first_tool) {
-            post.comment(&prompt);
-        }
-        if !is_first_tool {
-            // M0: program-pause. Operator presses Cycle Start to
-            // resume. Skip on first-tool because the spindle isn't
-            // running yet — the program-start state is already
-            // tool-swap-equivalent (operator loaded a bit before
-            // hitting Cycle Start).
-            post.raw("M0");
-        }
-        // hat3: re-establish the new tool's Z AFTER the pause — the
-        // probe / fixed-sensor cycle runs automatically once the
-        // operator confirms the swap with Cycle Start. `None` keeps the
-        // legacy static z_shift here.
-        emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
-        if let Some(t) = new_tool {
-            // Force the next M3/M4 to actually emit (the operator may
-            // have hand-spun the spindle off during the pause; we
-            // can't trust the delta-encoder's last_speed snapshot
-            // anymore). lx1u: only meaningful for Mill mode — laser /
-            // drag-knife envelopes don't drive the spindle from here.
-            if is_mill {
-                post.reset_state();
-                // Explicit spindle-up so the next cut starts with the
-                // spindle at commanded RPM — don't rely on lazy emit.
-                // zjgt: route through `spindle_on` so a CCW tool emits M4.
-                crate::gcode::spindle_on(
-                    post,
-                    t.spindle_direction,
-                    setup_resolver::clamp_rpm_silent(target_speed.unwrap_or(t.speed), machine),
-                    0,
-                );
-                let start_dwell = machine.effective_spindle_start_dwell_sec();
-                if start_dwell > 0.0 {
-                    post.dwell(start_dwell);
-                }
-                if t.pause > 0 {
-                    post.dwell(f64::from(t.pause));
+            if let Some(t) = new_tool {
+                // Force the next M3/M4 to actually emit (the operator may
+                // have hand-spun the spindle off during the pause; we
+                // can't trust the delta-encoder's last_speed snapshot
+                // anymore). lx1u: only meaningful for Mill mode — laser /
+                // drag-knife envelopes don't drive the spindle from here.
+                if is_mill {
+                    post.reset_state();
+                    // Explicit spindle-up so the next cut starts with the
+                    // spindle at commanded RPM — don't rely on lazy emit.
+                    // zjgt: route through `spindle_on` so a CCW tool emits M4.
+                    crate::gcode::spindle_on(
+                        post,
+                        t.spindle_direction,
+                        setup_resolver::clamp_rpm_silent(target_speed.unwrap_or(t.speed), machine),
+                        0,
+                    );
+                    let start_dwell = machine.effective_spindle_start_dwell_sec();
+                    if start_dwell > 0.0 {
+                        post.dwell(start_dwell);
+                    }
+                    if t.pause > 0 {
+                        post.dwell(f64::from(t.pause));
+                    }
                 }
             }
+        }
+        ToolChangeStrategy::Ignore => {
+            // cb5y: emit no swap signal. The safe-Z lift / coolant-off /
+            // spindle-stop above still ran (they're unconditional safety), but
+            // we leave the actual tool change to the operator or sender. A
+            // multi-tool program in this mode is intentional — the user owns
+            // the swap; the dual-tool / stufenfase drivers still surface a
+            // warning so it isn't silent.
         }
     }
 }
@@ -1956,7 +1979,9 @@ fn emit_post_change_z<P: PostProcessor>(
             feed_mm_min,
             plate_thickness_mm,
         } => {
-            post.comment(&format!("post-change Z: probe touch plate (tool {new_tool_id})"));
+            post.comment(&format!(
+                "post-change Z: probe touch plate (tool {new_tool_id})"
+            ));
             post.probe_toward_z(*distance_mm, *feed_mm_min);
             // Pin work Z to the plate top so Z0 stays the stock surface.
             // `set_work_z_here` (not `tool_z_shift`) so a 0 mm plate

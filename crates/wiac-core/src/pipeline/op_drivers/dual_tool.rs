@@ -56,12 +56,12 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
     // support it; no-op posts (GRBL) skip silently. Surface a
     // pipeline warning when the machine isn't toolchange-capable so
     // the user spots the manual-intervention requirement.
-    if !project.machine.supports_toolchange {
+    if !project.machine.tool_change.emits_m6() {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
             kind: "dual_tool_no_toolchange".into(),
             message: format!(
-                "op '{}' uses a dual-tool setup (rough + finish) but the machine config has supports_toolchange=false; the gcode will assume a manual tool change.",
+                "op '{}' uses a dual-tool setup (rough + finish) but the machine's tool-change strategy doesn't emit M6 (manual M0-pause or ignore); the gcode will assume a manual tool change.",
                 op.name
             ),
         });
@@ -99,7 +99,7 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::MachineConfig;
+    use crate::cam::setup::{MachineConfig, ToolChangeStrategy};
     use crate::pipeline::test_helpers::{closed_square_offset, endmill, pocket_op};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project};
@@ -118,7 +118,7 @@ mod tests {
         finish_tool.feed_rate_finish = Some(300);
 
         let machine = MachineConfig {
-            supports_toolchange: true,
+            tool_change: ToolChangeStrategy::Atc,
             ..MachineConfig::default()
         };
         let project = Project {
@@ -254,7 +254,7 @@ mod tests {
         let mut finish_tool = endmill(2, 3.0);
         finish_tool.z_shift_mm = Some(1.25);
         let machine = MachineConfig {
-            supports_toolchange: true,
+            tool_change: ToolChangeStrategy::Atc,
             ..MachineConfig::default()
         };
         let project = Project {

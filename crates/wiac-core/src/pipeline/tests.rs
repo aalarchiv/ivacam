@@ -9,7 +9,7 @@
 
 use super::test_helpers::*;
 use super::*;
-use crate::cam::setup::{MachineConfig, ToolOffset};
+use crate::cam::setup::{MachineConfig, ToolChangeStrategy, ToolOffset};
 use crate::geometry::Segment;
 use crate::project::{
     FormProfileSample, Op, OpKind, OpParams, OpSource, SourceCombine, TextAlignment, TextLayer,
@@ -2197,7 +2197,7 @@ fn pipeline_homing_without_retract_skips_safe_z_move() {
         relief_sources: Vec::new(),
     };
     let mut project = project;
-    project.machine.supports_toolchange = true;
+    project.machine.tool_change = ToolChangeStrategy::Atc;
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
             project,
@@ -2359,7 +2359,7 @@ fn pipeline_emits_comment_only_for_cycle_marker_op() {
         relief_sources: Vec::new(),
     };
     let mut project = project;
-    project.machine.supports_toolchange = true;
+    project.machine.tool_change = ToolChangeStrategy::Atc;
     let resp = run_pipeline(
         crate::pipeline::PipelineRequest {
             project,
@@ -3434,7 +3434,7 @@ fn pause_op_round_trips_through_serde() {
 #[test]
 fn multi_op_different_tools_emit_m6_at_each_boundary() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -3485,7 +3485,7 @@ fn multi_op_different_tools_emit_m6_at_each_boundary() {
 #[test]
 fn multi_op_same_tool_emits_at_most_one_m6() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -3518,13 +3518,13 @@ fn multi_op_same_tool_emits_at_most_one_m6() {
     );
 }
 
-/// k2ew: `machine.supports_toolchange` == false suppresses M6
+/// k2ew: `machine.tool_change` == ManualM0Pause suppresses M6
 /// emission entirely. The Z shift still applies (it's a work-Z
 /// origin, not a toolchange artifact).
 #[test]
 fn no_toolchange_machine_omits_m6() {
     let machine = MachineConfig {
-        supports_toolchange: false,
+        tool_change: ToolChangeStrategy::ManualM0Pause,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -3551,7 +3551,7 @@ fn no_toolchange_machine_omits_m6() {
     .unwrap();
     assert!(
         !resp.gcode.contains(" M6"),
-        "machines with supports_toolchange=false must not emit M6:\n{}",
+        "machines with manual M0-pause must not emit M6:\n{}",
         resp.gcode
     );
 }
@@ -3742,7 +3742,7 @@ fn must_find(haystack: &str, needle: &str) -> usize {
 #[test]
 fn multi_op_toolchange_envelope_has_m5_before_m6_and_m3_after() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -3796,7 +3796,7 @@ fn dual_tool_internal_change_uses_full_envelope() {
     finish_tool.speed = 24_000;
 
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -3875,7 +3875,7 @@ fn drill_stufenfase_change_uses_full_envelope() {
     vbit_finish.tip_angle_deg = 90.0;
     vbit_finish.speed = 22_000;
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let center = crate::geometry::Point2::new(5.0, 7.0);
@@ -3946,7 +3946,7 @@ fn coolant_off_before_spindle_off_in_inter_op_toolchange() {
     let mut tool_b = endmill(2, 3.0);
     tool_b.coolant = crate::project::Coolant::Flood;
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4001,7 +4001,7 @@ fn first_tool_envelope_omits_leading_coolant_off() {
     let mut tool = endmill(1, 3.0);
     tool.coolant = crate::project::Coolant::Flood;
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4039,7 +4039,7 @@ fn first_tool_envelope_omits_leading_coolant_off() {
 #[test]
 fn same_tool_consecutive_ops_skip_envelope_entirely() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4077,13 +4077,13 @@ fn same_tool_consecutive_ops_skip_envelope_entirely() {
     );
 }
 
-/// `machine.supports_toolchange == false` (hobby benchtop CNC):
+/// `machine.tool_change == ManualM0Pause` (hobby benchtop CNC):
 /// instead of M6, emit M5 + program-pause (M0) + comment so the
 /// operator hand-swaps the bit before pressing Cycle Start.
 #[test]
 fn non_toolchange_machine_pauses_for_manual_swap() {
     let machine = MachineConfig {
-        supports_toolchange: false,
+        tool_change: ToolChangeStrategy::ManualM0Pause,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4111,7 +4111,7 @@ fn non_toolchange_machine_pauses_for_manual_swap() {
     // No M6 (machine doesn't support it).
     assert!(
         !resp.gcode.contains(" M6"),
-        "expected no M6 when supports_toolchange=false:\n{}",
+        "expected no M6 when manual M0-pause:\n{}",
         resp.gcode
     );
     // The inter-op section must have M5, the `pause: swap to tool 2`
@@ -4129,14 +4129,14 @@ fn non_toolchange_machine_pauses_for_manual_swap() {
 }
 
 /// ad0v: when `MachineConfig.toolchange_xy` is set, a manual
-/// (supports_toolchange=false) multi-tool program must rapid to that
+/// (manual M0-pause) multi-tool program must rapid to that
 /// machine-coords station (`G53 G0 X.. Y..`) AFTER the safe-Z lift and
 /// BEFORE the M0 pause — so the operator hand-swaps the bit at a fixed
 /// reachable position instead of directly over the workpiece.
 #[test]
 fn manual_multitool_emits_g53_move_to_toolchange_position() {
     let machine = MachineConfig {
-        supports_toolchange: false,
+        tool_change: ToolChangeStrategy::ManualM0Pause,
         toolchange_xy: Some((150.0, 5.0)),
         ..MachineConfig::default()
     };
@@ -4187,7 +4187,7 @@ fn manual_multitool_emits_g53_move_to_toolchange_position() {
 #[test]
 fn unset_toolchange_position_emits_no_mid_program_g53() {
     let machine = MachineConfig {
-        supports_toolchange: false,
+        tool_change: ToolChangeStrategy::ManualM0Pause,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4220,16 +4220,19 @@ fn unset_toolchange_position_emits_no_mid_program_g53() {
         resp.gcode
     );
     // The manual swap still happens.
-    assert!(resp.gcode.contains("\nM0"), "manual swap pause still expected");
+    assert!(
+        resp.gcode.contains("\nM0"),
+        "manual swap pause still expected"
+    );
 }
 
 /// ad0v: the change-position move also fires on an ATC
-/// (supports_toolchange=true) machine when configured — before the
+/// (ATC) machine when configured — before the
 /// `T<n> M6`.
 #[test]
 fn atc_multitool_emits_g53_move_before_m6() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         toolchange_xy: Some((150.0, 5.0)),
         ..MachineConfig::default()
     };
@@ -4266,14 +4269,14 @@ fn atc_multitool_emits_g53_move_before_m6() {
     );
 }
 
-/// 1gty: a 2-tool program on a manual (supports_toolchange=false)
+/// 1gty: a 2-tool program on a manual (manual M0-pause)
 /// machine must emit a `multi_tool_manual_machine` warning naming the
 /// number of manual changes (here 1: T1→T2, the first tool is
 /// operator-loaded).
 #[test]
 fn multi_tool_manual_machine_warns_with_change_count() {
     let machine = MachineConfig {
-        supports_toolchange: false,
+        tool_change: ToolChangeStrategy::ManualM0Pause,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4302,7 +4305,12 @@ fn multi_tool_manual_machine_warns_with_change_count() {
         .warnings
         .iter()
         .find(|w| w.kind == "multi_tool_manual_machine")
-        .unwrap_or_else(|| panic!("expected multi_tool_manual_machine warning; got {:?}", resp.warnings));
+        .unwrap_or_else(|| {
+            panic!(
+                "expected multi_tool_manual_machine warning; got {:?}",
+                resp.warnings
+            )
+        });
     assert!(
         w.message.contains("1 manual tool change"),
         "warning must name 1 manual change: {}",
@@ -4316,7 +4324,11 @@ fn multi_tool_manual_machine_warns_with_change_count() {
 fn single_tool_and_atc_machines_omit_manual_toolchange_warning() {
     let build = |supports_toolchange: bool, two_tools: bool| {
         let machine = MachineConfig {
-            supports_toolchange,
+            tool_change: if supports_toolchange {
+                ToolChangeStrategy::Atc
+            } else {
+                ToolChangeStrategy::ManualM0Pause
+            },
             ..MachineConfig::default()
         };
         let (tools, operations) = if two_tools {
@@ -4357,12 +4369,18 @@ fn single_tool_and_atc_machines_omit_manual_toolchange_warning() {
         .any(|w| w.kind == "multi_tool_manual_machine")
     };
     // single-tool manual machine: no manual change to warn about
-    assert!(!build(false, false), "single-tool manual program must not warn");
+    assert!(
+        !build(false, false),
+        "single-tool manual program must not warn"
+    );
     // multi-tool ATC machine: changes are automatic
-    assert!(!build(true, true), "toolchange-capable machine must not warn");
+    assert!(
+        !build(true, true),
+        "toolchange-capable machine must not warn"
+    );
 }
 
-/// i185: GRBL + supports_toolchange=true + no tool_change template is a
+/// i185: GRBL + ATC + no tool_change template is a
 /// footgun — post.tool() emits nothing, so the next op cuts with the
 /// wrong tool. A 2-tool program in that config must surface the
 /// `grbl_atc_no_toolchange_template` warning.
@@ -4370,7 +4388,11 @@ fn single_tool_and_atc_machines_omit_manual_toolchange_warning() {
 fn grbl_atc_without_template_warns() {
     let run = |post_profile, post: PostProcessorKind, supports: bool| {
         let machine = MachineConfig {
-            supports_toolchange: supports,
+            tool_change: if supports {
+                ToolChangeStrategy::Atc
+            } else {
+                ToolChangeStrategy::ManualM0Pause
+            },
             post_profile,
             ..MachineConfig::default()
         };
@@ -4432,7 +4454,7 @@ fn grbl_atc_without_template_warns() {
 #[test]
 fn tool_length_offsets_emit_g43_and_skip_zshift() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         use_tool_length_offsets: true,
         ..MachineConfig::default()
     };
@@ -4469,7 +4491,10 @@ fn tool_length_offsets_emit_g43_and_skip_zshift() {
     assert!(g.contains(" M6"), "ATC must emit M6:\n{g}");
     assert!(g.contains("G43 H1"), "first tool must get G43 H1:\n{g}");
     assert!(g.contains("G43 H2"), "second tool must get G43 H2:\n{g}");
-    assert!(g.contains("G49"), "program_end must cancel comp with G49:\n{g}");
+    assert!(
+        g.contains("G49"),
+        "program_end must cancel comp with G49:\n{g}"
+    );
     // Mutually exclusive: the static z_shift (G92 Z / z-shift comment)
     // must NOT appear when G43 is active.
     assert!(
@@ -4482,7 +4507,7 @@ fn tool_length_offsets_emit_g43_and_skip_zshift() {
 #[test]
 fn tool_length_offsets_off_emits_no_g43() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4523,7 +4548,7 @@ fn two_tool_manual_gcode(
     tool2_z_shift: Option<f64>,
 ) -> String {
     let machine = MachineConfig {
-        supports_toolchange: false,
+        tool_change: ToolChangeStrategy::ManualM0Pause,
         post_change_z: strategy,
         ..MachineConfig::default()
     };
@@ -4616,7 +4641,10 @@ fn post_change_z_manual_touchoff_prompts_before_pause() {
         prompt < m0,
         "manual touch-off prompt must precede the M0 pause; prompt={prompt} m0={m0}:\n{between}"
     );
-    assert!(!between.contains("G38.2"), "manual touch-off must not probe:\n{between}");
+    assert!(
+        !between.contains("G38.2"),
+        "manual touch-off must not probe:\n{between}"
+    );
     assert!(
         !between.contains("G92 Z1.5"),
         "manual touch-off must NOT apply the static z_shift (operator zeros by hand):\n{between}"
@@ -4769,7 +4797,7 @@ fn toolchange_envelope_routes_ccw_tool_through_m4() {
     t2.spindle_direction = crate::project::SpindleDirection::Ccw;
     t2.speed = 18_000;
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = crate::project::Project {
@@ -4824,7 +4852,7 @@ fn toolchange_envelope_routes_ccw_tool_through_m4() {
 #[test]
 fn toolchange_envelope_keeps_m3_for_default_cw_tool() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let project = crate::project::Project {
@@ -4878,7 +4906,7 @@ fn toolchange_envelope_keeps_m3_for_default_cw_tool() {
 #[test]
 fn prev_tool_id_stays_unchanged_when_dual_tool_skips_finish() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     // Build a Pocket op pointing at finish_tool 2 but geometry
@@ -4997,7 +5025,7 @@ fn prev_tool_id_stays_unchanged_when_dual_tool_skips_finish() {
 #[test]
 fn prev_tool_id_unchanged_after_drill_skips_chamfer_swap() {
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     // Drill op on tool 1 declares finish_tool_id = Some(2) but
@@ -5194,7 +5222,7 @@ fn laser_mode_toolchange_envelope_emits_no_spindle_commands() {
     t2.kind = ToolKind::LaserBeam;
     t2.speed = 500;
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         mode: MachineMode::Laser,
         ..MachineConfig::default()
     };

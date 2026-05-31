@@ -25,7 +25,9 @@
 //! into the const below. Without the env var the test does a
 //! byte-equal compare and fails on any drift.
 
-use wiac_core::cam::setup::{MachineConfig, PlungeStrategy, TabType, TabsConfig, ToolOffset};
+use wiac_core::cam::setup::{
+    MachineConfig, PlungeStrategy, TabType, TabsConfig, ToolChangeStrategy, ToolOffset,
+};
 use wiac_core::geometry::{Point2, Segment, SegmentKind};
 use wiac_core::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
 use wiac_core::project::{
@@ -160,7 +162,7 @@ fn snapshot_drill_with_stufenfase_and_toolchange() {
     let mut finisher = vbit(2, 6.35, 90.0);
     finisher.flutes = 2;
     let machine = MachineConfig {
-        supports_toolchange: true,
+        tool_change: ToolChangeStrategy::Atc,
         ..MachineConfig::default()
     };
     let mut params = OpParams::mill_default();

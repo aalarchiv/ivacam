@@ -474,7 +474,7 @@ fn thread_lead_in(
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::MachineConfig;
+    use crate::cam::setup::{MachineConfig, ToolChangeStrategy};
     use crate::geometry::Point2;
     use crate::pipeline::test_helpers::{closed_circle, closed_square_offset, endmill};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
@@ -951,7 +951,7 @@ mod tests {
         // the Thread block; with the fix the M6 is suppressed because
         // Thread has nothing to emit.
         let mut machine = MachineConfig::default();
-        machine.supports_toolchange = true;
+        machine.tool_change = ToolChangeStrategy::Atc;
         let mut t1 = endmill(1, 3.0);
         t1.id = 1;
         let mut t2 = endmill(2, 1.0);

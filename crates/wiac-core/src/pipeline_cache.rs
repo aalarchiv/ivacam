@@ -487,7 +487,10 @@ fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
     h.write_u8(mode);
     m.comments.hash(h);
     m.arcs.hash(h);
-    m.supports_toolchange.hash(h);
+    // cb5y: widened from a bool to ToolChangeStrategy. `cache_discriminant`
+    // pins ManualM0Pause=0 / Atc=1 to the old `bool::hash` (write_u8 0/1) so
+    // existing projects keep an identical cache key; new variants get 2/3.
+    h.write_u8(m.tool_change.cache_discriminant());
     // ul60: name + work_area + capabilities. `name` rides into emitted
     // comments on some posts. `work_area` is consulted by the soft-limit
     // sim and the auto-stock fallback; tweaking it after a cache hit

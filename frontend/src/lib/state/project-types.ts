@@ -278,6 +278,25 @@ export interface AxisLimits {
   z: number;
 }
 
+/// cb5y: how the post handles a tool change. Mirrors the Rust
+/// `ToolChangeStrategy` enum (snake_case serde tags).
+export type ToolchangeStrategy = 'atc' | 'manual_m6_prompt' | 'manual_m0_pause' | 'ignore';
+
+/// cb5y: migrate a possibly-legacy machine payload. Older saves carried a
+/// `supportsToolchange` boolean instead of `toolchangeStrategy`; map
+/// `true → 'atc'`, `false → 'manual_m0_pause'` when the new field is
+/// absent, then drop the legacy key. Idempotent for already-migrated
+/// payloads.
+export function migrateMachineSettings(raw: unknown): MachineSettings {
+  if (raw == null || typeof raw !== 'object') return raw as MachineSettings;
+  const out: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  if (out.toolchangeStrategy === undefined && 'supportsToolchange' in out) {
+    out.toolchangeStrategy = out.supportsToolchange ? 'atc' : 'manual_m0_pause';
+  }
+  delete out.supportsToolchange;
+  return out as unknown as MachineSettings;
+}
+
 export interface MachineSettings {
   /// h0tx: free-text identifier for this machine ("Shop CNC",
   /// "Garage MPCNC"). Surfaces in the MachineDialog header + the
@@ -292,7 +311,12 @@ export interface MachineSettings {
   mode: 'mill' | 'laser' | 'drag' | 'plasma';
   comments: boolean;
   arcs: boolean;
-  supportsToolchange: boolean;
+  /// cb5y: tool-change strategy (was the `supportsToolchange` bool).
+  /// `atc` — automatic changer (`T<n> M6`, no pause). `manual_m6_prompt`
+  /// — grblHAL / FluidNC, `M6` as a controller-driven prompt.
+  /// `manual_m0_pause` — portable `M0` pause for stock GRBL / Marlin
+  /// (default). `ignore` — emit no tool-change handling.
+  toolchangeStrategy: ToolchangeStrategy;
   fastMoveZ: number;
   /// Per-axis acceleration (mm/s²). Optional — empty means defaults
   /// (250 mm/s² per axis, LinuxCNC convention).

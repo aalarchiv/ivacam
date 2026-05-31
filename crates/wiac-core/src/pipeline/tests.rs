@@ -4266,6 +4266,102 @@ fn atc_multitool_emits_g53_move_before_m6() {
     );
 }
 
+/// 1gty: a 2-tool program on a manual (supports_toolchange=false)
+/// machine must emit a `multi_tool_manual_machine` warning naming the
+/// number of manual changes (here 1: T1→T2, the first tool is
+/// operator-loaded).
+#[test]
+fn multi_tool_manual_machine_warns_with_change_count() {
+    let machine = MachineConfig {
+        supports_toolchange: false,
+        ..MachineConfig::default()
+    };
+    let project = Project {
+        segments: closed_square_offset(20.0, 0.0, 0.0),
+        machine,
+        tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+        operations: vec![
+            profile_op(1, 1, ToolOffset::Outside),
+            profile_op(2, 2, ToolOffset::Outside),
+        ],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: Vec::new(),
+    };
+    let resp = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap();
+    let w = resp
+        .warnings
+        .iter()
+        .find(|w| w.kind == "multi_tool_manual_machine")
+        .unwrap_or_else(|| panic!("expected multi_tool_manual_machine warning; got {:?}", resp.warnings));
+    assert!(
+        w.message.contains("1 manual tool change"),
+        "warning must name 1 manual change: {}",
+        w.message
+    );
+}
+
+/// 1gty: a single-tool program — or any program on a toolchange-capable
+/// machine — must NOT emit the manual-change warning.
+#[test]
+fn single_tool_and_atc_machines_omit_manual_toolchange_warning() {
+    let build = |supports_toolchange: bool, two_tools: bool| {
+        let machine = MachineConfig {
+            supports_toolchange,
+            ..MachineConfig::default()
+        };
+        let (tools, operations) = if two_tools {
+            (
+                vec![endmill(1, 6.0), endmill(2, 3.0)],
+                vec![
+                    profile_op(1, 1, ToolOffset::Outside),
+                    profile_op(2, 2, ToolOffset::Outside),
+                ],
+            )
+        } else {
+            (
+                vec![endmill(1, 6.0)],
+                vec![profile_op(1, 1, ToolOffset::Outside)],
+            )
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools,
+            operations,
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+            stock: None,
+            relief_sources: Vec::new(),
+        };
+        run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .warnings
+        .iter()
+        .any(|w| w.kind == "multi_tool_manual_machine")
+    };
+    // single-tool manual machine: no manual change to warn about
+    assert!(!build(false, false), "single-tool manual program must not warn");
+    // multi-tool ATC machine: changes are automatic
+    assert!(!build(true, true), "toolchange-capable machine must not warn");
+}
+
 // ----------------------------------------------------------------
 // hat3: post-tool-change Z re-establish strategies
 // ----------------------------------------------------------------

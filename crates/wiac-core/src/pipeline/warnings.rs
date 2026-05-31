@@ -61,6 +61,41 @@ pub(super) fn push_wcs_origin_warning(project: &Project, warnings: &mut Vec<Pipe
     }
 }
 
+/// 1gty: warn when a program needs manual tool changes on a machine
+/// without an automatic tool changer (`supports_toolchange == false`).
+/// A plain T1/T2 multi-op program emits `M0` pauses at every inter-op
+/// tool boundary, but only the INTERNAL dual-tool / stufenfase swaps
+/// warned before this — a user running back-to-back ops with different
+/// tools learned about the manual swaps only from the gcode comments.
+///
+/// The count is `count_tool_changes(project) - 1`: the first tool is
+/// loaded by the operator before Cycle Start (the envelope skips its
+/// M0), so the operator hand-swaps `N - 1` times mid-program. This
+/// total includes any internal dual-tool / chamfer swaps (which also
+/// pause on a manual machine), so it's the true number of hand swaps
+/// the run requires. Toolchange-capable machines and single-tool
+/// programs (`N <= 1`) emit nothing.
+pub(super) fn push_manual_toolchange_warning(
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    if project.machine.supports_toolchange {
+        return;
+    }
+    let changes = super::count_tool_changes(project).saturating_sub(1);
+    if changes == 0 {
+        return;
+    }
+    let plural = if changes == 1 { "" } else { "s" };
+    warnings.push(PipelineWarning {
+        op_id: None,
+        kind: "multi_tool_manual_machine".into(),
+        message: format!(
+            "This program needs {changes} manual tool change{plural}. The machine has no automatic tool changer, so the program pauses (M0) for each hand swap — re-establish the tool's Z after every change (see the machine's post-change Z setting)."
+        ),
+    });
+}
+
 /// v0ez: post-emit work-area envelope scan. Until now the ONLY check
 /// that emitted cuts stay inside the machine travel box lived in the
 /// frontend (`GenerateBar.boundsScan`), so any non-frontend consumer

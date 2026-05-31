@@ -453,6 +453,9 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // (part-center DXF + corner-zero G54 → sim shows cuts in the
     // wrong place, user trusts the sim, runs the program).
     warnings::push_wcs_origin_warning(&project, &mut warnings);
+    // 1gty: flag the manual-intervention requirement when a multi-tool
+    // program runs on a machine without an automatic tool changer.
+    warnings::push_manual_toolchange_warning(&project, &mut warnings);
 
     let post_tag: u8 = match post_kind {
         PostProcessorKind::Linuxcnc => 0,

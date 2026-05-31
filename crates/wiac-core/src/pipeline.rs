@@ -456,6 +456,9 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // 1gty: flag the manual-intervention requirement when a multi-tool
     // program runs on a machine without an automatic tool changer.
     warnings::push_manual_toolchange_warning(&project, &mut warnings);
+    // i185: block the GRBL + ATC + no-template footgun where post.tool()
+    // would silently emit no swap and the next op cuts with the wrong tool.
+    warnings::push_grbl_atc_footgun_warning(&project, post_kind, &mut warnings);
 
     let post_tag: u8 = match post_kind {
         PostProcessorKind::Linuxcnc => 0,

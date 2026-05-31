@@ -96,6 +96,10 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'halfpipe_radius_mismatch',
   'parallel_offset_panicked',
   'dual_tool_no_toolchange',
+  // i185: GRBL set to ATC with no tool-change macro template emits no
+  // swap at all — the next op cuts with the wrong tool. Silent
+  // corruption; must block shipping.
+  'grbl_atc_no_toolchange_template',
 ]);
 
 export function pipelineWarningSeverity(w: PipelineWarning): PipelineSeverity {

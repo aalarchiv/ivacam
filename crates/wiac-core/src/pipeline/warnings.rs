@@ -96,6 +96,54 @@ pub(super) fn push_manual_toolchange_warning(
     });
 }
 
+/// i185: GRBL + ATC footgun. Stock GRBL 1.1 does NOT support `M6`
+/// (it returns `error:20`; tool change is the sender's job). When a
+/// user sets `supports_toolchange = true` on the GRBL dialect WITHOUT a
+/// `tool_change` template in the post profile, `Grbl::tool()` emits
+/// NOTHING — the swap signal silently vanishes (no M6, no M0) and the
+/// next op cuts with the wrong tool. Nothing blocks this today.
+///
+/// Fire a loud (FE-critical) warning when all of: dialect = GRBL,
+/// `supports_toolchange = true`, no non-empty `tool_change` template,
+/// and the program actually needs >= 1 inter-op change. The user's fix
+/// is one of: switch to manual (M0-pause) mode, add a `tool_change`
+/// macro template to the post profile, or use a sender that intercepts
+/// M6. A `tool_change` template means the user runs a modified GRBL /
+/// grblHAL build with toolchange macros, so the swap is real — no warn.
+pub(super) fn push_grbl_atc_footgun_warning(
+    project: &Project,
+    post_kind: super::PostProcessorKind,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    if !matches!(post_kind, super::PostProcessorKind::Grbl) {
+        return;
+    }
+    if !project.machine.supports_toolchange {
+        return;
+    }
+    let has_template = project
+        .machine
+        .post_profile
+        .as_ref()
+        .and_then(|p| p.tool_change.as_ref())
+        .is_some_and(|t| !t.trim().is_empty());
+    if has_template {
+        return;
+    }
+    let changes = super::count_tool_changes(project).saturating_sub(1);
+    if changes == 0 {
+        return;
+    }
+    let plural = if changes == 1 { "" } else { "s" };
+    warnings.push(PipelineWarning {
+        op_id: None,
+        kind: "grbl_atc_no_toolchange_template".into(),
+        message: format!(
+            "GRBL does not support M6 tool changes (it returns error:20). This program needs {changes} tool change{plural} and the machine is set to automatic tool change, but the GRBL post has no tool-change macro template — the swap would emit nothing and the next operation would cut with the WRONG tool. Fix one of: switch the machine to manual (M0-pause) tool change, add a tool-change macro template to the post profile, or use a sender that intercepts M6."
+        ),
+    });
+}
+
 /// v0ez: post-emit work-area envelope scan. Until now the ONLY check
 /// that emitted cuts stay inside the machine travel box lived in the
 /// frontend (`GenerateBar.boundsScan`), so any non-frontend consumer

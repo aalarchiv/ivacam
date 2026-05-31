@@ -4362,6 +4362,70 @@ fn single_tool_and_atc_machines_omit_manual_toolchange_warning() {
     assert!(!build(true, true), "toolchange-capable machine must not warn");
 }
 
+/// i185: GRBL + supports_toolchange=true + no tool_change template is a
+/// footgun — post.tool() emits nothing, so the next op cuts with the
+/// wrong tool. A 2-tool program in that config must surface the
+/// `grbl_atc_no_toolchange_template` warning.
+#[test]
+fn grbl_atc_without_template_warns() {
+    let run = |post_profile, post: PostProcessorKind, supports: bool| {
+        let machine = MachineConfig {
+            supports_toolchange: supports,
+            post_profile,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+            stock: None,
+            relief_sources: Vec::new(),
+        };
+        run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(post),
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .warnings
+        .iter()
+        .any(|w| w.kind == "grbl_atc_no_toolchange_template")
+    };
+    // GRBL + ATC + no profile → footgun warning fires.
+    assert!(
+        run(None, PostProcessorKind::Grbl, true),
+        "GRBL ATC with no tool_change template must warn"
+    );
+    // GRBL + ATC + a tool_change template → user runs modified GRBL; no warn.
+    let with_template = crate::gcode::post_profile::PostProfile {
+        tool_change: Some("T<t> M6".into()),
+        ..Default::default()
+    };
+    assert!(
+        !run(Some(with_template), PostProcessorKind::Grbl, true),
+        "a tool_change template means the swap is real — must not warn"
+    );
+    // LinuxCNC emits M6 fine → no footgun.
+    assert!(
+        !run(None, PostProcessorKind::Linuxcnc, true),
+        "LinuxCNC supports M6 — must not warn"
+    );
+    // GRBL manual (no ATC) → handled by M0 path, not this footgun.
+    assert!(
+        !run(None, PostProcessorKind::Grbl, false),
+        "manual GRBL uses M0 pauses — footgun warning must not fire"
+    );
+}
+
 // ----------------------------------------------------------------
 // hat3: post-tool-change Z re-establish strategies
 // ----------------------------------------------------------------

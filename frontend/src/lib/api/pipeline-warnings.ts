@@ -66,6 +66,9 @@ export type PipelineSeverity = 'critical' | 'warning' | 'info';
 /// * `dual_tool_no_toolchange` — Dual-tool op needs an M6, but the
 ///   post profile suppresses tool changes; the second tool's path
 ///   runs with the first tool still loaded.
+/// * `stufenfase_no_toolchange` — same hazard for a drill → hole-rim
+///   chamfer: the internal swap to the finish tool can't happen, so
+///   the chamfer cuts with the drill still loaded (l7ze).
 const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'tool_too_large',
   'frame_padding_below_tool_radius',
@@ -96,6 +99,10 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'halfpipe_radius_mismatch',
   'parallel_offset_panicked',
   'dual_tool_no_toolchange',
+  // l7ze: a drill → hole-rim chamfer (stufenfase) with a distinct
+  // finish tool is the same hazard class as dual_tool_no_toolchange —
+  // an internal swap on a machine that can't do it. Must block shipping.
+  'stufenfase_no_toolchange',
   // i185: GRBL set to ATC with no tool-change macro template emits no
   // swap at all — the next op cuts with the wrong tool. Silent
   // corruption; must block shipping.

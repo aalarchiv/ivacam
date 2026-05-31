@@ -72,6 +72,9 @@ describe('pipelineWarningSeverity', () => {
       'halfpipe_radius_mismatch',
       'parallel_offset_panicked',
       'dual_tool_no_toolchange',
+      // l7ze: stufenfase (drill → hole-rim chamfer) internal swap on a
+      // machine that can't tool-change is the same hazard class.
+      'stufenfase_no_toolchange',
       'grbl_atc_no_toolchange_template',
     ];
     for (const kind of SILENT_CORRUPTION_KINDS) {

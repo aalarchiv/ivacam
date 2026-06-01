@@ -78,6 +78,15 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    fs: {
+      // node_modules/wiac-wasm is a symlink into ../crates/wiac-wasm/pkg.
+      // Vite resolves the symlink to that real path and serves the glue +
+      // wasm via /@fs/. With no pnpm-workspace.yaml the default allowed
+      // root is just frontend/, so the crates/ path is blocked (403) and
+      // the in-browser wasm fetch fails. Allow the repo root (one level
+      // up) so the linked pkg is serveable. Dev only.
+      allow: ['..'],
+    },
     // Same-origin proxy to wiac-server so the frontend can ship without
     // bothering with CORS in dev. Override with VITE_WIAC_API at build
     // time or `?api=…` at runtime if you're pointing at a remote host.

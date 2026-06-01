@@ -21,6 +21,8 @@
     type PointerPos,
   } from '../canvas/touch-gestures';
   import { objectsContainedInBox } from '../canvas/box_select';
+  import { resolveAci, hexToCss } from '../canvas/aci-color';
+  import { unpackFixtureColor } from '../canvas/fixture-color';
   import {
     DEFAULT_OSNAP_SETTINGS,
     findOSnap,
@@ -41,19 +43,6 @@
     onActivateSidebarPane?: (pane: 'stock' | 'layers' | 'text' | 'operations') => void;
   }
   let { onShowHelp, onActivateSidebarPane }: Props = $props();
-
-  // AutoCAD ACI palette. ACI 7 means "white in dark mode, black in light" —
-  // this is exactly how AutoCAD itself renders it. We resolve it at draw
-  // time from the active theme.
-  const ACI_FIXED: Record<number, string> = {
-    1: '#ff0000',
-    2: '#ffff00',
-    3: '#00ff00',
-    4: '#00ffff',
-    5: '#0000ff',
-    6: '#ff00ff',
-    9: '#808080',
-  };
 
   let canvas: HTMLCanvasElement;
   /// Stacked overlay canvas for state-bearing repaints (selection halos,
@@ -1197,9 +1186,8 @@
   }
 
   function colorFor(c: number): string {
-    if (c === 7 || c === 256) return themeVar('--text-strong', '#e6e6e6');
-    if (c === 8) return themeVar('--text-muted', '#888');
-    return ACI_FIXED[c] ?? themeVar('--text-faint', '#bbbbbb');
+    const r = resolveAci(c);
+    return r.kind === 'fixed' ? hexToCss(r.hex) : themeVar(r.token, hexToCss(r.fallback));
   }
 
   /// Idempotent canvas-size + DPR sync. Returns the painting context +
@@ -1607,11 +1595,7 @@
     if (!project.fixtures || project.fixtures.length === 0) return;
     const accent = themeVar('--accent', '#2d6cdf');
     for (const f of project.fixtures) {
-      const colorPacked = f.color ?? 0xffa050c0;
-      const r = (colorPacked >>> 24) & 0xff;
-      const g = (colorPacked >>> 16) & 0xff;
-      const b = (colorPacked >>> 8) & 0xff;
-      const a = colorPacked & 0xff;
+      const { r, g, b, a } = unpackFixtureColor(f.color);
       const fill = `rgba(${r}, ${g}, ${b}, ${Math.max(0.15, (a / 255) * 0.5)})`;
       const stroke = `rgb(${r}, ${g}, ${b})`;
       const isSel = project.selectedFixtureId === f.id;

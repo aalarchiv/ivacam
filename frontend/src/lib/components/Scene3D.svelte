@@ -29,6 +29,8 @@
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
+  import { resolveAci } from '../canvas/aci-color';
+  import { unpackFixtureColor, DEFAULT_FIXTURE_COLOR } from '../canvas/fixture-color';
 
   interface Props {
     /// w5wx: mirrors EntityCanvas2D — after the right-click menu creates
@@ -1337,14 +1339,9 @@
     fixtureBaseColors = new Map();
     const accent = cssColor('--accent', 0x4a8df0);
     for (const f of project.fixtures) {
-      const colorPacked = f.color ?? 0xffa050c0;
-      // Packed RGBA → hex 0xRRGGBB + alpha [0,1]. Default alpha ~0.5
-      // when the wire color omits it.
-      const r = (colorPacked >>> 24) & 0xff;
-      const g = (colorPacked >>> 16) & 0xff;
-      const b = (colorPacked >>> 8) & 0xff;
-      const a = colorPacked & 0xff;
-      const hex = (r << 16) | (g << 8) | b;
+      // 7iej.12: shared unpack with the 2D canvas. Default alpha ~0.5 when
+      // the wire color omits it; the 3D opacity treatment stays here.
+      const { a, hex } = unpackFixtureColor(f.color);
       const opacity = Math.max(0.2, Math.min(1.0, a > 0 ? a / 255 : 0.5));
       fixtureBaseColors.set(f.id, hex);
 
@@ -1412,7 +1409,7 @@
     const flashColor = cssColor('--error', 0xe54848);
     for (const [id, mats] of fixtureMaterials) {
       const flash = flashingFixtures.has(id);
-      const base = fixtureBaseColors.get(id) ?? 0xffa050c0;
+      const base = fixtureBaseColors.get(id) ?? DEFAULT_FIXTURE_COLOR;
       for (const m of mats) {
         if (flash) m.color.copy(flashColor);
         else m.color.set(base);
@@ -2233,18 +2230,10 @@
   }
 
   function aciColor(c: number): THREE.Color {
-    const fixed: Record<number, number> = {
-      1: 0xff0000,
-      2: 0xffff00,
-      3: 0x00ff00,
-      4: 0x00ffff,
-      5: 0x0000ff,
-      6: 0xff00ff,
-    };
-    if (c === 7 || c === 256) return cssColor('--text-strong', 0xe6e6e6);
-    if (c === 8) return cssColor('--text-muted', 0x888888);
-    if (fixed[c] !== undefined) return new THREE.Color(fixed[c]);
-    return cssColor('--text-faint', 0xbbbbbb);
+    // 7iej.12: shared palette + classification with the 2D canvas; the 3D
+    // copy previously omitted ACI 9.
+    const r = resolveAci(c);
+    return r.kind === 'fixed' ? new THREE.Color(r.hex) : cssColor(r.token, r.fallback);
   }
 </script>
 

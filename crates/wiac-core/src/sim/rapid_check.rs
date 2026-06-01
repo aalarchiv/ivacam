@@ -189,7 +189,7 @@ pub fn check_rapid_against_stock(
                 continue;
             }
             let r = r_sq.sqrt();
-            let Some(holder_lower_z) = lowest_z_for_radius(holder, r) else {
+            let Some(holder_lower_z) = holder.lowest_z_for_radius(r) else {
                 continue;
             };
             let cell_z = heightmap.data[(iy as usize) * cols + ix as usize];
@@ -222,37 +222,6 @@ pub fn check_rapid_against_stock(
             }
         }
     }
-}
-
-/// Lowest `z_above_tip` where the envelope radius reaches `r`. Mirror
-/// of `holder_check::lowest_z_for_radius` (private there); duplicated
-/// here so this module owns its envelope-walking logic.
-fn lowest_z_for_radius(holder: &HolderProfile, r: f64) -> Option<f64> {
-    if r <= 0.0 {
-        return Some(0.0);
-    }
-    let pts = holder.samples();
-    if pts.is_empty() {
-        return None;
-    }
-    if pts[0].1 >= r {
-        return Some(pts[0].0);
-    }
-    for w in pts.windows(2) {
-        let (z0, r0) = w[0];
-        let (z1, r1) = w[1];
-        if r1 >= r && r0 < r {
-            if (r1 - r0).abs() < 1e-12 {
-                return Some(z0.min(z1));
-            }
-            let t = (r - r0) / (r1 - r0);
-            return Some(z0 + t * (z1 - z0));
-        }
-        if r0 >= r {
-            return Some(z0);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

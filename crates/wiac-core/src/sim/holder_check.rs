@@ -149,10 +149,29 @@ pub fn check_segment_holder_against_walls(
     // the caller decide how to render them.
     let mut offenders: Vec<HolderCollisionCell> = Vec::new();
 
+    // 7iej.9/7iej.11: clip each row to the holder envelope's stadium
+    // x-extent (radius = max_r) instead of walking the full AABB width.
+    // Shares the helper the material sweep uses; the per-cell
+    // `r_sq > max_r_sq` test below stays the correctness gate, so the
+    // row range only has to be a superset.
+    let layout = crate::sim::sweep::HeightmapLayout::of(heightmap);
     for iy in iy0..=iy1 {
-        for ix in ix0..=ix1 {
+        let cy = heightmap.origin.y + (iy as f64 + 0.5) * cell;
+        let Some((rx0, rx1)) = crate::sim::sweep::swept_row_cell_range(
+            &layout,
+            from,
+            to,
+            max_r,
+            max_r_sq,
+            pure_plunge,
+            cy,
+            ix0,
+            ix1,
+        ) else {
+            continue;
+        };
+        for ix in rx0..=rx1 {
             let cx = heightmap.origin.x + (ix as f64 + 0.5) * cell;
-            let cy = heightmap.origin.y + (iy as f64 + 0.5) * cell;
             let (r_sq, cutter_pz) = if pure_plunge {
                 let ex = cx - from.x;
                 let ey = cy - from.y;
@@ -178,7 +197,7 @@ pub fn check_segment_holder_against_walls(
             // Lowest height above the tip at which the envelope grows
             // past `r`. None when `r > max_radius`, but we already
             // filtered that case via `max_r_sq`.
-            let Some(holder_lower_z) = lowest_z_for_radius(holder, r) else {
+            let Some(holder_lower_z) = holder.lowest_z_for_radius(r) else {
                 continue;
             };
             let cell_z = heightmap.data[(iy as usize) * cols + ix as usize];
@@ -217,42 +236,6 @@ pub fn check_segment_holder_against_walls(
         required_clearance_mm: worst.required_clearance_mm,
         cells: offenders,
     }
-}
-
-/// Lowest `z_above_tip` where `radius_at(z) >= r`. Walks the sample list
-/// from the tip up looking for the first segment whose radius range
-/// contains `r`; linearly interpolates inside that segment.
-#[must_use]
-fn lowest_z_for_radius(holder: &HolderProfile, r: f64) -> Option<f64> {
-    if r <= 0.0 {
-        return Some(0.0);
-    }
-    let pts = holder.samples();
-    if pts.is_empty() {
-        return None;
-    }
-    // First point with radius ≥ r: if it's the very first sample the
-    // envelope already covers `r` at the tip.
-    if pts[0].1 >= r {
-        return Some(pts[0].0);
-    }
-    for w in pts.windows(2) {
-        let (z0, r0) = w[0];
-        let (z1, r1) = w[1];
-        if r1 >= r && r0 < r {
-            // Ascending step that crosses r.
-            if (r1 - r0).abs() < 1e-12 {
-                return Some(z0.min(z1));
-            }
-            let t = (r - r0) / (r1 - r0);
-            return Some(z0 + t * (z1 - z0));
-        }
-        if r0 >= r {
-            // Already covered at z0.
-            return Some(z0);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

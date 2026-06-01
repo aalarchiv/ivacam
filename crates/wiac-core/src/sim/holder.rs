@@ -231,6 +231,48 @@ impl HolderProfile {
     pub(crate) fn samples(&self) -> &[(f64, f64)] {
         &self.points
     }
+
+    /// 7iej.11: lowest `z_above_tip` where the envelope radius first
+    /// reaches `r`, linearly interpolating across the crossing segment.
+    /// `Some(0.0)` for `r <= 0` (the tip covers any non-positive radius);
+    /// `None` when the profile never reaches `r`. Walks the sample list
+    /// from the tip up. Single owner for what were byte-identical copies
+    /// in `holder_check` and `rapid_check`. (The `heightmap::FormProfile`
+    /// eval arm is the f32-domain twin of this walk — its `1e-6` epsilon
+    /// is the f32-precision analogue of the `1e-12` used here, kept
+    /// separate so the per-cell sweep stays in f32.)
+    #[must_use]
+    pub(crate) fn lowest_z_for_radius(&self, r: f64) -> Option<f64> {
+        if r <= 0.0 {
+            return Some(0.0);
+        }
+        let pts = self.samples();
+        if pts.is_empty() {
+            return None;
+        }
+        // First point with radius ≥ r: if it's the very first sample the
+        // envelope already covers `r` at the tip.
+        if pts[0].1 >= r {
+            return Some(pts[0].0);
+        }
+        for w in pts.windows(2) {
+            let (z0, r0) = w[0];
+            let (z1, r1) = w[1];
+            if r1 >= r && r0 < r {
+                // Ascending step that crosses r.
+                if (r1 - r0).abs() < 1e-12 {
+                    return Some(z0.min(z1));
+                }
+                let t = (r - r0) / (r1 - r0);
+                return Some(z0 + t * (z1 - z0));
+            }
+            if r0 >= r {
+                // Already covered at z0.
+                return Some(z0);
+            }
+        }
+        None
+    }
 }
 
 /// 8g4w: max profile radius for a form cutter, mirroring the same fallback

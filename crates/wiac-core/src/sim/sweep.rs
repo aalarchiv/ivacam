@@ -495,7 +495,7 @@ impl HeightmapLayout {
 /// since the stadium is convex, the min-left / max-right over the pieces
 /// is the exact `[lo, hi]`.
 #[allow(clippy::too_many_arguments)]
-fn swept_row_cell_range(
+pub(super) fn swept_row_cell_range(
     layout: &HeightmapLayout,
     from: &Pose3,
     to: &Pose3,

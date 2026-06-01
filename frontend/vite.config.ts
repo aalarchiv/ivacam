@@ -38,6 +38,16 @@ function pkgVersion(): string {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte()],
+  // The wiac-wasm pkg is wasm-bindgen `--target web` glue: its init
+  // fetches `wiac_wasm_bg.wasm` relative to its own URL. If Vite's dep
+  // optimizer pre-bundles it into `.vite/deps/`, that relative fetch
+  // 404s → SPA fallback → "Response has unsupported MIME type ''".
+  // Excluding it keeps the glue at its node_modules path so the wasm
+  // resolves next to it (dev only; the prod build emits it as a proper
+  // asset). Covers the main thread and the Web Worker.
+  optimizeDeps: {
+    exclude: ['wiac-wasm'],
+  },
   define: {
     __WIAC_BUILD_VERSION__: JSON.stringify(gitVersion()),
     // ISO-8601 UTC timestamp at build time. Shown in the About

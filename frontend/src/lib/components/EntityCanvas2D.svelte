@@ -1691,7 +1691,6 @@
     offY: number,
   ) {
     const accent = themeVar('--accent', '#2d6cdf');
-    const muted = themeVar('--text-muted', '#9aa0aa');
     const paths = regionPaths(regions);
     // Compose data → canvas transform on top of the existing dpr scale.
     // Y is flipped (canvas y-down vs DXF y-up) so we use -scale on Y +
@@ -1700,9 +1699,12 @@
     ctx.transform(scale, 0, 0, -scale, offX, offY);
     for (const rp of paths) {
       const isSelected = project.selectedOpId === rp.op_id;
+      // Accent tint, clearly visible so toggling Regions is obvious (the
+      // old ~10% muted-grey fill was near-invisible). Selected op's
+      // region is brighter. Still translucent so contours read through.
       ctx.fillStyle = isSelected
-        ? `${accent}33` // ~20% alpha
-        : `${muted}1a`; // ~10% alpha
+        ? `${accent}66` // ~40% alpha
+        : `${accent}33`; // ~20% alpha
       ctx.fill(rp.path, 'evenodd');
     }
     ctx.restore();

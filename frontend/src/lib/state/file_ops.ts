@@ -71,11 +71,14 @@ export function pathToLoadingMessage(path: string): string {
 
 /// Same-origin samples bundled in `public/samples/`. The labels
 /// surface in the File ▸ Samples submenu.
+// ujs2: the `*-rust.json` variants are gitignored (no generator ships
+// them) and the py/rs split is vestigial now that the backend is
+// Rust-only — both now come from the same importer. Keep just the two
+// tracked, selectable fixtures so a clean checkout / static deploy never
+// 404s a sample.
 export const SAMPLES: { label: string; url: string }[] = [
-  { label: 'simple (py)', url: '/samples/simple.json' },
-  { label: 'simple (rs)', url: '/samples/simple-rust.json' },
-  { label: 'all (py)', url: '/samples/all.json' },
-  { label: 'all (rs)', url: '/samples/all-rust.json' },
+  { label: 'simple', url: '/samples/simple.json' },
+  { label: 'all', url: '/samples/all.json' },
 ];
 
 /// FileUpload.svelte stashes its hidden `<input type=file>` elements

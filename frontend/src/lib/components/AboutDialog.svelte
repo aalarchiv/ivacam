@@ -253,6 +253,10 @@
     align-items: center;
     padding: 1rem 1.25rem 0.5rem 1.25rem;
     border-bottom: 1px solid var(--border);
+    /* Opaque background so scrolled content doesn't bleed through the
+       sticky header in this draggable (floating) modal — matches the
+       Tool-library / Settings dialog headers. */
+    background: var(--bg-elevated);
   }
   header h2 {
     margin: 0;

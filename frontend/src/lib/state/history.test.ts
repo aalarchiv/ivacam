@@ -102,6 +102,27 @@ describe('History coalescing', () => {
     expect(s.value).toBe(0);
   });
 
+  it('redo_after_coalesced_run_restores_final_value', () => {
+    // 7iej.3 regression: a coalesced drag 0→1→…→100 then undo→0 then
+    // redo must return to 100, NOT the first intermediate value (1). The
+    // bug was that the stacked entry kept command #1's apply, so redo
+    // replayed to 1.
+    const h = new History();
+    const s = freshState();
+    h.exec(setCmd(1, 'slider:depth'), s);
+    for (let i = 2; i <= 100; i++) h.exec(setCmd(i, 'slider:depth'), s);
+    expect(s.value).toBe(100);
+    h.undo(s);
+    expect(s.value).toBe(0);
+    expect(h.redo(s)).toBe(true);
+    expect(s.value).toBe(100);
+    // And a second undo/redo round-trip stays consistent.
+    h.undo(s);
+    expect(s.value).toBe(0);
+    h.redo(s);
+    expect(s.value).toBe(100);
+  });
+
   it('coalescing_breaks_on_different_key', () => {
     const h = new History();
     const s = freshState();

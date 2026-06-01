@@ -100,10 +100,21 @@ export class History {
       // single undo step takes the user back to before this run started.
       // The original wrapper's prevDirty already captures the pre-edit
       // dirty state from when the first command ran.
+      const marksDirty = cmd.marksDirty !== false;
       cmd.apply(state);
       // Selection (and other marksDirty=false) commands don't flip
       // the dirty bit even when coalescing.
-      if (cmd.marksDirty !== false) markDirty(state);
+      if (marksDirty) markDirty(state);
+      // Repoint the retained entry's `apply` at THIS (latest) command so
+      // a later redo replays to the final value, not the first. Without
+      // this, redo of a coalesced slider/number drag (0→100) would restore
+      // the first intermediate value (e.g. 1) because the stacked entry
+      // still held command #1's apply. `revert` is left untouched so undo
+      // still unwinds to before the run started.
+      last.apply = (s) => {
+        cmd.apply(s);
+        if (marksDirty) markDirty(s);
+      };
     } else {
       const wrapped = wrapWithDirty(cmd, state);
       wrapped.apply(state);

@@ -28,7 +28,7 @@
     clippy::cast_possible_wrap
 )]
 
-use crate::gcode::preview::{MoveKind, ToolpathSegment};
+use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
 use crate::pipeline::CancelToken;
 use crate::project::Fixture;
 use crate::sim::diagnostics::{SimDiagnostics, SimWarning};
@@ -385,9 +385,19 @@ fn sweep_chord_carve_partial(
     let depth_floor_z = profile.max_engagement_depth().map(|d| top_z - f64::from(d));
     let mut touched = 0u32;
     for iy in iy0..=iy1 {
-        for ix in ix0..=ix1 {
+        let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
+        // 7iej.9: clip the row to the full segment's stadium x-extent.
+        // Every cell this partial carves (interior chunk + any owned end
+        // cap) is within r_tool of the full [from, to] segment, so the
+        // full-segment stadium is a valid superset; the per-cell t-range
+        // and `r_sq > r_tool_sq` checks below stay the correctness gate.
+        let Some((rx0, rx1)) =
+            swept_row_cell_range(&layout, from, to, r_tool, r_tool_sq, pure_plunge, cy, ix0, ix1)
+        else {
+            continue;
+        };
+        for ix in rx0..=rx1 {
             let cx = layout.origin_x + (ix as f64 + 0.5) * cell;
-            let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
             let (r_sq, cutter_pz) = if pure_plunge {
                 // Pure plunge: t is degenerate; clamp/restrict by the
                 // Z range corresponding to [t_start..t_end].
@@ -465,6 +475,109 @@ impl HeightmapLayout {
     }
 }
 
+/// 7iej.9: clip one scanline (`cy`, a fixed cell-row center) to the
+/// swept *stadium*'s x-extent, returning the inclusive `[ix_lo, ix_hi]`
+/// cell range (clamped to `[ix0, ix1]`) or `None` when the row misses the
+/// footprint entirely. Walking the full AABB width per row is ~L×L cells
+/// for a 45° cut of length L while the stadium is only ~L×2r wide — the
+/// wasted-work factor is ~L/(2r), and this is the sim's hottest path.
+///
+/// SAFETY: this only tightens the loop bounds. The per-cell
+/// `r_sq > r_tool_sq` test in `for_each_swept_cell` remains the
+/// correctness gate, so the returned range only has to be a *superset* of
+/// the cells whose center is within the tool radius — any extra cell is
+/// rejected by that check, and the ±1-cell margin below guarantees no
+/// in-stadium cell is ever skipped.
+///
+/// The stadium x-extent at `cy` is the union of two end-cap disks
+/// (at `from` / `to`) and the core rectangle (the segment offset by ±r
+/// along its normal). Each piece's cross-section is a simple interval;
+/// since the stadium is convex, the min-left / max-right over the pieces
+/// is the exact `[lo, hi]`.
+#[allow(clippy::too_many_arguments)]
+fn swept_row_cell_range(
+    layout: &HeightmapLayout,
+    from: &Pose3,
+    to: &Pose3,
+    r_tool: f64,
+    r_tool_sq: f64,
+    pure_plunge: bool,
+    cy: f64,
+    ix0: u32,
+    ix1: u32,
+) -> Option<(u32, u32)> {
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+
+    // End-cap disk at `from`.
+    let da = cy - from.y;
+    if da * da <= r_tool_sq {
+        let w = (r_tool_sq - da * da).sqrt();
+        lo = lo.min(from.x - w);
+        hi = hi.max(from.x + w);
+    }
+
+    if !pure_plunge {
+        // End-cap disk at `to`.
+        let db = cy - to.y;
+        if db * db <= r_tool_sq {
+            let w = (r_tool_sq - db * db).sqrt();
+            lo = lo.min(to.x - w);
+            hi = hi.max(to.x + w);
+        }
+        // Core rectangle: corners are the endpoints offset by ±r along
+        // the segment normal. Intersect each edge with the horizontal
+        // line y = cy.
+        let dx = to.x - from.x;
+        let dy = to.y - from.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len > 0.0 {
+            let nx = -(dy / len) * r_tool;
+            let ny = (dx / len) * r_tool;
+            let corners = [
+                (from.x + nx, from.y + ny),
+                (to.x + nx, to.y + ny),
+                (to.x - nx, to.y - ny),
+                (from.x - nx, from.y - ny),
+            ];
+            for k in 0..4 {
+                let (px, py) = corners[k];
+                let (qx, qy) = corners[(k + 1) % 4];
+                if cy < py.min(qy) || cy > py.max(qy) {
+                    continue;
+                }
+                if (qy - py).abs() < 1e-12 {
+                    // Horizontal edge exactly on the scanline.
+                    lo = lo.min(px.min(qx));
+                    hi = hi.max(px.max(qx));
+                } else {
+                    let x = px + (cy - py) / (qy - py) * (qx - px);
+                    lo = lo.min(x);
+                    hi = hi.max(x);
+                }
+            }
+        }
+    }
+
+    if lo > hi {
+        return None; // scanline misses the stadium entirely
+    }
+
+    // Convert the world x-interval to cell columns. A cell `i`'s center is
+    // at `origin_x + (i + 0.5) * cell`, so the center-aligned fractional
+    // index is `(x - origin_x)/cell - 0.5`. Widen by one cell each side
+    // for FP safety (the per-cell check still gates correctness).
+    let inv = 1.0 / layout.cell;
+    let f_lo = (lo - layout.origin_x) * inv - 0.5;
+    let f_hi = (hi - layout.origin_x) * inv - 0.5;
+    let row_lo = (f_lo.floor() as i64 - 1).max(i64::from(ix0));
+    let row_hi = (f_hi.ceil() as i64 + 1).min(i64::from(ix1));
+    if row_lo > row_hi {
+        return None;
+    }
+    Some((row_lo as u32, row_hi as u32))
+}
+
 /// Walk every cell inside `segment`'s swept footprint (XY AABB inflated
 /// by the tool radius, clamped to the heightmap), invoking `body` with
 /// the per-cell `(ix, iy, r, cutter_pz, dz)` so callers can either lower
@@ -515,9 +628,17 @@ pub(super) fn for_each_swept_cell<F>(
     let flat_bottom = profile.is_flat_bottom();
 
     for iy in iy0..=iy1 {
-        for ix in ix0..=ix1 {
+        let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
+        // 7iej.9: clip this row to the stadium's x-extent instead of
+        // walking the full AABB width. The per-cell `r_sq > r_tool_sq`
+        // check below is unchanged and remains the correctness gate.
+        let Some((rx0, rx1)) =
+            swept_row_cell_range(layout, from, to, r_tool, r_tool_sq, pure_plunge, cy, ix0, ix1)
+        else {
+            continue;
+        };
+        for ix in rx0..=rx1 {
             let cx = layout.origin_x + (ix as f64 + 0.5) * cell;
-            let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
             let (r_sq, cutter_pz) = if pure_plunge {
                 let ex = cx - from.x;
                 let ey = cy - from.y;
@@ -1517,5 +1638,127 @@ mod tests {
         );
         // Deepest cell reaches near the tip depth, not above it.
         assert!(z0 < -2.0, "axis cell should be near tip depth -3, got {z0}");
+    }
+
+    /// 7iej.9 safety net: the per-row stadium clip must visit EXACTLY the
+    /// same cells (and produce the same per-cell values) as a brute-force
+    /// walk of the full AABB. The clip only tightens loop bounds; if it
+    /// ever drops an in-stadium cell the sim would under-carve / miss a
+    /// collision (a false negative — the worst-case bug), so prove
+    /// equivalence across many segment orientations, lengths, and
+    /// profiles.
+    #[test]
+    fn swept_cell_clip_matches_brute_force_full_aabb() {
+        // Brute-force reference: replicate for_each_swept_cell's per-cell
+        // logic over the ENTIRE AABB (no per-row clip).
+        fn brute(
+            layout: &HeightmapLayout,
+            segment: &ToolpathSegment,
+            profile: &ToolProfile,
+        ) -> Vec<(u32, u32, f64, f32)> {
+            let r_tool = profile.radius() as f64;
+            if r_tool <= 0.0 {
+                return Vec::new();
+            }
+            let from = &segment.from;
+            let to = &segment.to;
+            let min_x = from.x.min(to.x) - r_tool;
+            let max_x = from.x.max(to.x) + r_tool;
+            let min_y = from.y.min(to.y) - r_tool;
+            let max_y = from.y.max(to.y) + r_tool;
+            let Some((ix0, iy0, ix1, iy1)) =
+                world_aabb_to_cells(layout, min_x, min_y, max_x, max_y)
+            else {
+                return Vec::new();
+            };
+            let dx = to.x - from.x;
+            let dy = to.y - from.y;
+            let len_sq = dx * dx + dy * dy;
+            let pure_plunge = len_sq < 1e-12;
+            let plunge_z = from.z.min(to.z);
+            let cell = layout.cell;
+            let r_tool_sq = r_tool * r_tool;
+            let flat_bottom = profile.is_flat_bottom();
+            let mut out = Vec::new();
+            for iy in iy0..=iy1 {
+                for ix in ix0..=ix1 {
+                    let cx = layout.origin_x + (ix as f64 + 0.5) * cell;
+                    let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
+                    let (r_sq, cutter_pz) = if pure_plunge {
+                        let ex = cx - from.x;
+                        let ey = cy - from.y;
+                        (ex * ex + ey * ey, plunge_z)
+                    } else {
+                        let t = (((cx - from.x) * dx + (cy - from.y) * dy) / len_sq)
+                            .clamp(0.0, 1.0);
+                        let px = from.x + t * dx;
+                        let py = from.y + t * dy;
+                        let ex = cx - px;
+                        let ey = cy - py;
+                        (ex * ex + ey * ey, from.z + (to.z - from.z) * t)
+                    };
+                    if r_sq > r_tool_sq {
+                        continue;
+                    }
+                    if flat_bottom {
+                        out.push((ix, iy, cutter_pz, 0.0_f32));
+                    } else {
+                        let r = r_sq.sqrt() as f32;
+                        if let Some(dz) = profile.eval(r) {
+                            out.push((ix, iy, cutter_pz, dz));
+                        }
+                    }
+                }
+            }
+            out
+        }
+
+        let map = fresh_map(80, 80);
+        let layout = HeightmapLayout::of(&map);
+        let profiles = [
+            ToolProfile::Endmill { r: 2.0 },
+            ToolProfile::Endmill { r: 1.0 },
+            ToolProfile::BallNose { r: 3.0 },
+            ToolProfile::VBit {
+                r: 3.0,
+                tip_r: 0.0,
+                half_angle_rad: 0.5,
+            },
+        ];
+        // A spread of orientations (incl. the 45° worst case), lengths
+        // (sub-radius to long), reversed direction, and a pure plunge.
+        let segs = [
+            (pose(40.0, 40.0, -1.0), pose(40.0, 40.0, -1.0)), // plunge
+            (pose(10.0, 10.0, -1.0), pose(70.0, 70.0, -3.0)), // 45° long
+            (pose(70.0, 10.0, -1.0), pose(10.0, 70.0, -1.0)), // anti-diagonal
+            (pose(10.0, 40.0, -2.0), pose(70.0, 40.0, -2.0)), // horizontal
+            (pose(40.0, 10.0, 0.0), pose(40.0, 70.0, -4.0)),  // vertical
+            (pose(15.0, 20.0, -1.0), pose(65.0, 35.0, -2.0)), // shallow diag
+            (pose(20.0, 60.0, -1.0), pose(55.0, 15.0, -1.0)), // steep diag
+            (pose(40.0, 40.0, -1.0), pose(42.5, 41.0, -1.0)), // sub-radius
+        ];
+        for profile in &profiles {
+            for (from, to) in &segs {
+                let s = seg(MoveKind::Cut, *from, *to);
+                let mut got: Vec<(u32, u32, f64, f32)> = Vec::new();
+                for_each_swept_cell(&layout, &s, profile, |ix, iy, _r, pz, dz| {
+                    got.push((ix, iy, pz, dz));
+                });
+                let mut want = brute(&layout, &s, profile);
+                got.sort_by_key(|c| (c.0, c.1));
+                want.sort_by_key(|c| (c.0, c.1));
+                assert_eq!(
+                    got, want,
+                    "clipped walk diverged from brute force for {profile:?} {from:?}->{to:?}\n\
+                     got {} cells, want {} cells",
+                    got.len(),
+                    want.len()
+                );
+                // Sanity: a non-degenerate cut must actually carve something.
+                if from != to {
+                    assert!(!want.is_empty(), "brute force carved nothing for {from:?}->{to:?}");
+                }
+            }
+        }
     }
 }

@@ -879,21 +879,50 @@ pub fn emit_drill_block<P: PostProcessor>(
         // Rapid up to a safe Z above the workpiece before traversing,
         // mirroring what emit_offset does for normal cuts.
         post.move_to(None, None, Some(fast_z));
-        match cycle {
-            crate::project::DrillCycle::Simple { dwell_sec } => {
-                post.drill_simple(pt.x, pt.y, z, r, setup.tool.rate_v, dwell_sec);
+        if matches!(setup.machine.mode, MachineMode::Laser) {
+            // 7iej.5: a laser has no Z-plunge canned cycle — a G81/G83
+            // drill cycle is meaningless for a beam, and `cut_tool_on`
+            // only ARMED it at S0, so the previous code drilled nothing.
+            // Emit a spot ablation: rapid XY cold (beam armed at S0),
+            // ramp to cut power, dwell to ablate (the dwell drives the
+            // burn time for a laser), then drop the beam before the
+            // rapid to the next hole so it doesn't scorch a traverse line.
+            post.move_to(Some(pt.x), Some(pt.y), None);
+            cut_tool_pierce(post, setup, setup.tool.speed);
+            let dwell_sec = match cycle {
+                crate::project::DrillCycle::Simple { dwell_sec }
+                | crate::project::DrillCycle::Peck { dwell_sec, .. }
+                | crate::project::DrillCycle::ChipBreak { dwell_sec, .. } => dwell_sec,
+            };
+            if dwell_sec > 0.0 {
+                post.dwell(dwell_sec);
             }
-            crate::project::DrillCycle::Peck {
-                peck_step_mm,
-                dwell_sec,
-            } => {
-                post.drill_peck(pt.x, pt.y, z, r, peck_step_mm, setup.tool.rate_v, dwell_sec);
-            }
-            crate::project::DrillCycle::ChipBreak {
-                peck_step_mm,
-                dwell_sec,
-            } => {
-                post.drill_chip_break(pt.x, pt.y, z, r, peck_step_mm, setup.tool.rate_v, dwell_sec);
+            cut_tool_off(post, setup);
+        } else {
+            match cycle {
+                crate::project::DrillCycle::Simple { dwell_sec } => {
+                    post.drill_simple(pt.x, pt.y, z, r, setup.tool.rate_v, dwell_sec);
+                }
+                crate::project::DrillCycle::Peck {
+                    peck_step_mm,
+                    dwell_sec,
+                } => {
+                    post.drill_peck(pt.x, pt.y, z, r, peck_step_mm, setup.tool.rate_v, dwell_sec);
+                }
+                crate::project::DrillCycle::ChipBreak {
+                    peck_step_mm,
+                    dwell_sec,
+                } => {
+                    post.drill_chip_break(
+                        pt.x,
+                        pt.y,
+                        z,
+                        r,
+                        peck_step_mm,
+                        setup.tool.rate_v,
+                        dwell_sec,
+                    );
+                }
             }
         }
         *last_pos = pt;
@@ -978,10 +1007,14 @@ fn program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
     if let Some((px, py)) = setup.machine.park_xy {
         post.move_to(Some(px), Some(py), None);
     } else if setup.machine.park_at_home {
-        // G53 modifies the next motion line to be in machine
-        // coordinates regardless of the active WCS. Emit raw so
-        // posts that don't model G53 (HPGL) silently drop it.
-        post.raw("G53 G0 X0 Y0");
+        // 7iej.6: machine-home park. Route through the `rapid_machine_xy`
+        // trait method (machine-coord G53 G0 rapid) rather than a raw
+        // string so the move honors the decimal separator / inch scale /
+        // per-axis rename like every other coordinate, and invalidates the
+        // post's WCS position cache (a raw G53 left last_x/last_y pointing
+        // at the now-stale work position). Posts that don't model G53
+        // (HPGL pen plotter) inherit the no-op default and drop it.
+        post.rapid_machine_xy(0.0, 0.0);
     } else {
         post.move_to(Some(0.0), Some(0.0), None);
     }
@@ -2997,6 +3030,69 @@ mod tests {
         assert!(
             g83_line.contains("R0.5"),
             "expected R=0.5 (stock_top + 0.5 mm clearance) when start_depth = -1; got: {g83_line}",
+        );
+    }
+
+    /// 7iej.5: laser-mode drilling must actually FIRE the beam. The old
+    /// code armed the laser at S0 (via `cut_tool_on`) and then ran a
+    /// G81/G83 canned cycle that never ramped to power, so the beam stayed
+    /// cold and nothing ablated. The fix emits a spot ablation per hole:
+    /// ramp to cut power (`M3 S<power>`), dwell, then drop the beam (`M5`)
+    /// before the rapid to the next hole — and NO canned drill cycle.
+    #[test]
+    fn laser_drill_fires_the_beam_and_skips_canned_cycle() {
+        use crate::cam::offsets::PolylineOffset;
+        use crate::geometry::Segment;
+        use crate::project::DrillCycle;
+
+        let mut setup = Setup::default();
+        setup.machine.mode = crate::cam::setup::MachineMode::Laser;
+        setup.tool.speed = 800; // laser power, not RPM
+        setup.tool.rate_v = 200;
+        setup.mill.depth = -1.0;
+        setup.mill.fast_move_z = 10.0;
+        setup.machine.comments = false;
+
+        let hole = |x: f64, y: f64| PolylineOffset {
+            segments: vec![Segment::point(Point2::new(x, y), "0", 7)],
+            closed: false,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        };
+        // Two holes so the inter-hole beam-off is exercised.
+        let offsets = vec![hole(2.5, 4.5), hole(8.0, 4.5)];
+        let cycle = DrillCycle::Simple { dwell_sec: 0.5 };
+        let mut post = linuxcnc::Post::new();
+        let mut last = Point2::new(0.0, 0.0);
+        emit_drill_block(&setup, &offsets, cycle, &mut post, &mut last);
+        let g = post.finish();
+
+        assert!(
+            g.contains("M3 S800"),
+            "laser drill must ramp the beam to cut power (M3 S800); got:\n{g}",
+        );
+        assert!(
+            g.contains("M5"),
+            "laser drill must drop the beam between holes / at the end (M5); got:\n{g}",
+        );
+        // A laser has no Z-plunge canned cycle — none of G81/G82/G83 should
+        // appear.
+        for cc in ["G81", "G82", "G83", "G73"] {
+            assert!(
+                !g.contains(cc),
+                "laser drill must NOT emit a canned drill cycle ({cc}); got:\n{g}",
+            );
+        }
+        // Beam must fire once per hole.
+        assert_eq!(
+            g.matches("M3 S800").count(),
+            2,
+            "expected one beam-on per hole (2 holes); got:\n{g}",
         );
     }
 

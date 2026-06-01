@@ -53,6 +53,19 @@ interface Pending {
   cleanup?: () => void;
 }
 
+/// Make a worker argument structured-clone-safe. Request payloads are
+/// built from Svelte 5 `$state`, i.e. Proxy objects — `postMessage`'s
+/// structured clone throws "Proxy object could not be cloned" on those.
+/// JSON round-trip de-proxies plain data (the requests are already pure
+/// JSON — it's exactly what the HTTP transport serializes), while binary
+/// (the import `Uint8Array`) passes through untouched so it can transfer.
+/// Primitives are returned as-is.
+export function toCloneable(arg: unknown): unknown {
+  if (arg == null || typeof arg !== 'object') return arg;
+  if (arg instanceof ArrayBuffer || ArrayBuffer.isView(arg)) return arg;
+  return JSON.parse(JSON.stringify(arg)) as unknown;
+}
+
 export class WasmWorkerClient implements WiacClient {
   private readonly factory: WorkerFactory;
   private worker: WorkerLike | null = null;
@@ -162,7 +175,7 @@ export class WasmWorkerClient implements WiacClient {
         entry.cleanup = () => signal.removeEventListener('abort', onAbort);
       }
       this.pending.set(id, entry);
-      const req: WorkerRequest = { id, method, args };
+      const req: WorkerRequest = { id, method, args: args.map(toCloneable) };
       worker.postMessage(req, opts.transfer ?? []);
     });
   }

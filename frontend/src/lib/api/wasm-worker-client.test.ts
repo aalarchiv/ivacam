@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WasmWorkerClient, type WorkerLike } from './wasm-worker-client';
+import { WasmWorkerClient, toCloneable, type WorkerLike } from './wasm-worker-client';
 import { CancelledError, type PipelineEvent } from './client';
 import type { WorkerRequest, WorkerResponse } from './wasm-worker-protocol';
 import type { GenerateRequest } from './types';
@@ -121,5 +121,32 @@ describe('WasmWorkerClient', () => {
     client.dispose();
     await expect(client.health()).resolves.toBe(true);
     expect(spawnCount).toBe(2); // respawned on next call
+  });
+});
+
+describe('toCloneable (Proxy → structured-clone-safe)', () => {
+  it('de-proxies a Svelte-$state-like Proxy into a plain deep clone', () => {
+    const target = { a: 1, nested: { b: [2, 3] } };
+    const proxy = new Proxy(target, {}); // stands in for a $state proxy
+    const out = toCloneable(proxy) as typeof target;
+    expect(out).toEqual(target);
+    expect(out).not.toBe(proxy); // a fresh plain object, not the proxy
+    expect(out.nested).not.toBe(target.nested); // deep clone
+    // The clone must survive structured clone (postMessage uses it).
+    expect(() => structuredClone(out)).not.toThrow();
+  });
+
+  it('passes binary through untouched so it can transfer', () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    expect(toCloneable(bytes)).toBe(bytes);
+    const buf = bytes.buffer;
+    expect(toCloneable(buf)).toBe(buf);
+  });
+
+  it('returns primitives as-is', () => {
+    expect(toCloneable('dxf.dxf')).toBe('dxf.dxf');
+    expect(toCloneable(42)).toBe(42);
+    expect(toCloneable(null)).toBe(null);
+    expect(toCloneable(undefined)).toBe(undefined);
   });
 });

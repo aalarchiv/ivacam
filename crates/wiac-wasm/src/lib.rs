@@ -73,10 +73,12 @@ pub fn version() -> Result<JsValue, JsValue> {
 /// can match the format detector.
 #[wasm_bindgen(js_name = importBytes)]
 pub fn import_bytes(filename: &str, bytes: &[u8]) -> Result<JsValue, JsValue> {
-    let opts = ImportOptions::default();
-    let out =
-        wiac_core::input::import_bytes(filename, bytes, &opts).map_err(structured_error_to_js)?;
-    serde_wasm_bindgen::to_value(&out).map_err(into_js_error)
+    guard(|| {
+        let opts = ImportOptions::default();
+        let out = wiac_core::input::import_bytes(filename, bytes, &opts)
+            .map_err(structured_error_to_js)?;
+        serde_wasm_bindgen::to_value(&out).map_err(into_js_error)
+    })
 }
 
 #[wasm_bindgen]
@@ -143,15 +145,22 @@ pub fn generate_streaming_wasm(
 #[wasm_bindgen(js_name = renderText)]
 pub fn render_text(request: JsValue) -> Result<JsValue, JsValue> {
     let req: RenderTextRequest = serde_wasm_bindgen::from_value(request).map_err(into_js_error)?;
-    let resp = render_text_api(&req).map_err(structured_error_to_js)?;
-    serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+    // Guarded: parses untrusted font bytes (ttf-parser / svg_font), which
+    // can panic on malformed input.
+    guard(|| {
+        let resp = render_text_api(&req).map_err(structured_error_to_js)?;
+        serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+    })
 }
 
 #[wasm_bindgen(js_name = renderTextLayer)]
 pub fn render_text_layer(layer: JsValue) -> Result<JsValue, JsValue> {
     let layer: TextLayer = serde_wasm_bindgen::from_value(layer).map_err(into_js_error)?;
-    let resp = render_text_layer_api(&layer).map_err(structured_error_to_js)?;
-    serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+    // Guarded: same untrusted-font-bytes parsing as `render_text`.
+    guard(|| {
+        let resp = render_text_layer_api(&layer).map_err(structured_error_to_js)?;
+        serde_wasm_bindgen::to_value(&resp).map_err(into_js_error)
+    })
 }
 
 #[wasm_bindgen(js_name = computeHelixRadius)]
@@ -163,6 +172,23 @@ pub fn compute_helix_radius(request: JsValue) -> Result<JsValue, JsValue> {
 
 pub(crate) fn into_js_error<E: std::fmt::Display>(err: E) -> JsValue {
     JsValue::from_str(&err.to_string())
+}
+
+/// 7iej.15: run `f` under a panic guard so a panic in a transitive parser
+/// (dxf-rs / usvg / ttf font shaping) on malformed user input surfaces as a
+/// structured JS error instead of aborting the whole wasm instance — the
+/// same protection `generate` / `generate_streaming` already have. Wraps
+/// the entry points that take untrusted file / font bytes. `AssertUnwindSafe`
+/// is sound here: the wasm module is single-threaded and the closure owns
+/// no state we read again after a panic.
+fn guard<T>(f: impl FnOnce() -> Result<T, JsValue>) -> Result<T, JsValue> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(r) => r,
+        Err(panic) => Err(structured_error_to_js(
+            wiac_core::Error::internal(format!("panic: {}", panic_message(&panic)))
+                .with_hint("Please report this bug — see the toast for details."),
+        )),
+    }
 }
 
 /// Serialize a structured `wiac_core::Error` to a JS value the frontend

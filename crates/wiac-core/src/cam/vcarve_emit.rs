@@ -79,12 +79,12 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<Z
 /// configurable lead-in ramp; the per-tool setting flows through
 /// `ToolEntry::vcarve_lead_in_angle_deg` → `ToolConfig` → here.
 ///
-/// # Panics
-///
-/// Never panics in practice: the `partial_cmp(...).unwrap()` on the
-/// `levels` sort sees only finite f64 values built from `depth_per_pass`
-/// and `z_min` (both guarded against NaN by the early-return short-vec
-/// check and the `dpp.abs().max(...)` floor).
+/// The `levels` sort sees only finite f64 values built from
+/// `depth_per_pass` and `z_min` (both guarded against NaN by the
+/// early-return short-vec check and the `dpp.abs().max(...)` floor), but
+/// the comparator uses the `unwrap_or(Ordering::Equal)` house idiom
+/// (7iej.15) so a future NaN slipping through degrades to a stable sort
+/// rather than a panic.
 #[allow(clippy::too_many_lines)]
 pub fn ratchet_emit_with_lead_in(
     axis: &[(f64, f64, f64, f64)],
@@ -109,7 +109,7 @@ pub fn ratchet_emit_with_lead_in(
     let n_levels = ((-z_min) / dpp).ceil() as usize;
     let mut levels: Vec<f64> = (1..=n_levels).map(|i| -(i as f64) * dpp).collect();
     levels.push(z_min);
-    levels.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    levels.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     levels.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
 
     let mut dense: Vec<(f64, f64, f64)> = Vec::with_capacity(axis.len() * 2);
@@ -476,7 +476,7 @@ mod tests {
         ];
         let polylines = ratchet_emit(&axis, 1.0);
         let mut levels: Vec<f64> = polylines.iter().flatten().map(|t| t.2).collect();
-        levels.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        levels.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         levels.dedup_by(|a, b| (*a - *b).abs() < 0.05);
         assert!(
             levels.len() >= 3,

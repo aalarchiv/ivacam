@@ -17,6 +17,7 @@ import { HeightfieldMeshPyramid, pickMinLodLevelForBudget } from './heightfield_
 import { planAdvance, playheadToSegment } from './playhead';
 import { computeFootprint } from './footprint';
 import { isWasmTransport } from '../api/transport-mode';
+import { simWarningKey } from './warnings';
 import type {
   GenerateResponse,
   ImportResponse,
@@ -312,7 +313,8 @@ export class HeightfieldDriver {
     // longer forces a coarse mesh.
     // 5v1b: in the in-browser wasm trial the sim is single-threaded on
     // the main thread, so clamp harder to keep rebuild + scrub smooth.
-    const simCellCap = effectiveSimCellCap(input.settings.maxSimulationCells, isWasmTransport());
+    const isWasm = isWasmTransport();
+    const simCellCap = effectiveSimCellCap(input.settings.maxSimulationCells, isWasm);
     let effectiveCellSize = cellSize;
     let coarsened = false;
     if (cellCount > simCellCap) {
@@ -331,7 +333,12 @@ export class HeightfieldDriver {
     // wpzm: surface the coarsening as a sim warning so it shows up in
     // the diagnostics panel — silently coarsening the grid hid
     // tool-engagement and small-feature issues from the user.
-    if (coarsened && typeof this.sim.push_cell_size_coarsened === 'function') {
+    // ujs2/5v1b: but ONLY when it's user-config-driven (a low
+    // maxSimulationCells the user can raise). The wasm-trial cap
+    // coarsens by design and isn't user-actionable — warning there just
+    // floods the diagnostics window (it's a sticky warning re-emitted
+    // every advance), so stay silent in the trial.
+    if (coarsened && !isWasm && typeof this.sim.push_cell_size_coarsened === 'function') {
       this.sim.push_cell_size_coarsened(cellSize, effectiveCellSize, 'max_simulation_cells');
     }
     // 9tba: pick the lowest LOD level whose mesh fits the user's
@@ -714,8 +721,20 @@ export class HeightfieldDriver {
     if (!this.sim) return;
     const fresh = this.sim.take_diagnostics();
     if (!fresh || !Array.isArray(fresh.warnings) || fresh.warnings.length === 0) return;
+    // Dedupe against what's already accumulated: the sim re-emits sticky
+    // warnings (cell_size_coarsened) every advance and re-fires segment
+    // warnings on scrub-back, which otherwise pile up duplicate rows and
+    // flood the window (and inflate the critical count).
+    const seen = new Set(this.diagnostics.warnings.map(simWarningKey));
+    const added = fresh.warnings.filter((w) => {
+      const k = simWarningKey(w);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (added.length === 0) return;
     this.diagnostics = {
-      warnings: [...this.diagnostics.warnings, ...fresh.warnings],
+      warnings: [...this.diagnostics.warnings, ...added],
     };
     this.notifyDiagnostics();
   }

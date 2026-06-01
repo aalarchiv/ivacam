@@ -20,6 +20,26 @@ export function simWarningSeverity(w: SimWarning): SimSeverity {
   }
 }
 
+/// Stable identity for de-duplicating accumulated sim warnings. The sim
+/// re-emits some warnings across `advance()` frames — `cell_size_coarsened`
+/// is sticky (re-merged every frame) and segment-attached warnings
+/// re-fire when the playhead scrubs back over a segment — so without a
+/// key the cumulative list piles up duplicate rows and floods the
+/// warnings window. Setup-time `cell_size_coarsened` keys by kind (one
+/// instance); segment warnings key by kind + segment (+ fixture id) so
+/// the same physical hit collapses to a single row.
+export function simWarningKey(w: SimWarning): string {
+  switch (w.kind) {
+    case 'cell_size_coarsened':
+      return 'cell_size_coarsened';
+    case 'fixture_collision':
+      return `fixture_collision:${w.fixture_id}:${w.segment_idx}`;
+    case 'rapid_through_material':
+    case 'holder_collision':
+      return `${w.kind}:${w.segment_idx}`;
+  }
+}
+
 /// Segment index a warning attaches to. `cell_size_coarsened` is
 /// setup-time and not attached to any segment — return -1 so the
 /// caller can skip marker placement.

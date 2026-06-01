@@ -78,11 +78,15 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'pocket_fill_incomplete',
   'helix_radius_unfittable',
   'stock_origin_outside_geometry_bbox',
-  // Front-end-synthesized kinds from GenerateBar's post-Generate
-  // bounds scan — surfaced through the same warnings panel as the
-  // pipeline's own warnings so the user has one place to look.
+  // Toolpath extends past the stock box — likely cutting air / off the
+  // material, so the program is probably wrong. Critical.
   'out_of_stock',
-  'out_of_work_area',
+  // NOTE: `out_of_work_area` is intentionally NOT critical. The work-area
+  // limits are frequently a conservative default (200×300) that doesn't
+  // match the user's actual machine, so exceeding them must *inform*
+  // (a visible warning) without *blocking* Generate — the operator
+  // decides whether their machine can reach the path. It still renders
+  // in the warnings panel via the default 'warning' severity.
   // fj88 round-2 additions
   'zero_rate_emitted',
   'op_source_empty',

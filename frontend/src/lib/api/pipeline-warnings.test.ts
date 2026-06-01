@@ -50,6 +50,14 @@ describe('pipelineWarningSeverity', () => {
     expect(pipelineWarningSeverity(w('tool_kind_mismatch', 11))).toBe('warning');
   });
 
+  it('keeps out_of_work_area a non-blocking warning but out_of_stock critical', () => {
+    // ujs2: the work-area limits are often a conservative default that
+    // doesn't match the real machine — exceeding them informs, it must
+    // not block Generate. Cutting past the stock box stays critical.
+    expect(pipelineWarningSeverity(w('out_of_work_area'))).toBe('warning');
+    expect(pipelineWarningSeverity(w('out_of_stock'))).toBe('critical');
+  });
+
   /// fj88 round-2 audit: lock the silent-corruption kinds that the
   /// pipeline emits but the original CRITICAL_KINDS set missed. Each
   /// of these reflects "the pipeline returned a generate response but

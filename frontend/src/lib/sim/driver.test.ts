@@ -5,7 +5,12 @@
 /// build instead.
 
 import { describe, expect, it } from 'vitest';
-import { computeFootprint, toWireTool } from './driver';
+import {
+  computeFootprint,
+  toWireTool,
+  effectiveSimCellCap,
+  WASM_TRIAL_SIM_CELL_CAP,
+} from './driver';
 import { planAdvance } from './playhead';
 import type { ImportResponse } from '../api/types';
 import type { ToolEntry } from '../state/project-types';
@@ -187,5 +192,27 @@ describe('toWireTool — German wire contract (8njb regression)', () => {
     expect(toWireTool(tool({ kind: 'v_bit' })).kind).toBe('v_bit');
     expect(toWireTool(tool({ kind: 'endmill' })).kind).toBe('endmill');
     expect(toWireTool(tool({ kind: 'drag_knife' })).kind).toBe('drag_knife');
+  });
+});
+
+describe('effectiveSimCellCap (5v1b trial-mode fidelity)', () => {
+  it('returns the user setting verbatim off the wasm trial', () => {
+    expect(effectiveSimCellCap(1_000_000, false)).toBe(1_000_000);
+    expect(effectiveSimCellCap(4_000_000, false)).toBe(4_000_000);
+  });
+
+  it('clamps to the trial cap in wasm mode when the user setting is higher', () => {
+    expect(effectiveSimCellCap(1_000_000, true)).toBe(WASM_TRIAL_SIM_CELL_CAP);
+    expect(effectiveSimCellCap(4_000_000, true)).toBe(WASM_TRIAL_SIM_CELL_CAP);
+  });
+
+  it('keeps a lower-than-cap user setting even in wasm mode', () => {
+    const low = WASM_TRIAL_SIM_CELL_CAP - 50_000;
+    expect(effectiveSimCellCap(low, true)).toBe(low);
+  });
+
+  it('never returns less than 1 cell', () => {
+    expect(effectiveSimCellCap(0, false)).toBe(1);
+    expect(effectiveSimCellCap(-10, true)).toBe(1);
   });
 });

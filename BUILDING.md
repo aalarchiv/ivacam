@@ -141,8 +141,11 @@ headline trial path):
   is terminated and respawned). Falls back to the main-thread client
   where module workers aren't available. The 3D **sim** still runs on
   the main thread (its per-frame heightfield would need transferring
-  every frame) — heavy sims can still stutter; moving it into a worker
-  is a possible follow-up.
+  every frame). To keep it smooth there, `?api=wasm` mode auto-caps the
+  sim heightfield to a coarser grid (`WASM_TRIAL_SIM_CELL_CAP`, ~250k
+  cells) — a lower-res carve *preview*, deliberately traded for
+  zero-latency scrubbing (`wiaconstructor-5v1b`). Server / Tauri keep
+  full sim fidelity.
 - **Touch is supported** (`wiaconstructor-bwt7`) — the 2D canvas does
   pinch-zoom, two-finger pan, tap- and box-select, and a long-press
   opens the context menu; the 3D view uses OrbitControls (one-finger

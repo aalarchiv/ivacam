@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { HeightfieldMeshPyramid, pickMinLodLevelForBudget } from './heightfield_mesh';
 import { planAdvance, playheadToSegment } from './playhead';
 import { computeFootprint } from './footprint';
+import { isWasmTransport } from '../api/transport-mode';
 import type {
   GenerateResponse,
   ImportResponse,
@@ -177,6 +178,24 @@ export function toWireTool(t: ToolEntry): Record<string, unknown> {
 /// and re-exported for the existing 3D-scene import sites.
 export { computeFootprint };
 
+/// 5v1b: the in-browser (`?api=wasm`) trial runs the sim single-threaded
+/// on the main thread, so a too-fine heightfield makes `set_toolpath` /
+/// `advance` / mesh upload stutter the UI. Cap the grid harder there.
+/// This is the single fidelity knob: a lower-res carve PREVIEW is an
+/// acceptable trial trade — far better than laggy scrubbing. Native /
+/// server / Tauri keep the user's full `maxSimulationCells`. ~250k cells
+/// ≈ a 500×500 grid over the footprint — smooth, still legible.
+export const WASM_TRIAL_SIM_CELL_CAP = 250_000;
+
+/// Effective sim cell cap for the active transport. In wasm-trial mode
+/// it's the tighter of the user's setting and [`WASM_TRIAL_SIM_CELL_CAP`];
+/// everywhere else it's the user's setting verbatim. Pure so it's
+/// unit-tested without the wasm module.
+export function effectiveSimCellCap(userMaxCells: number, isWasm: boolean): number {
+  const userCap = Math.max(1, userMaxCells);
+  return isWasm ? Math.min(userCap, WASM_TRIAL_SIM_CELL_CAP) : userCap;
+}
+
 /// Compute cell size from the active tool diameter when settings is in
 /// 'auto' mode. Targets ~tool_diameter/15, clamped 0.05..2.0 mm.
 function computeCellSize(toolDiameter: number, settings: AppSettings): number {
@@ -291,7 +310,9 @@ export class HeightfieldDriver {
     // The GPU-side cap is handled separately by the LOD pyramid
     // (9tba) via `maxRenderTriangles`, so high sim accuracy no
     // longer forces a coarse mesh.
-    const simCellCap = Math.max(1, input.settings.maxSimulationCells);
+    // 5v1b: in the in-browser wasm trial the sim is single-threaded on
+    // the main thread, so clamp harder to keep rebuild + scrub smooth.
+    const simCellCap = effectiveSimCellCap(input.settings.maxSimulationCells, isWasmTransport());
     let effectiveCellSize = cellSize;
     let coarsened = false;
     if (cellCount > simCellCap) {

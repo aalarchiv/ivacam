@@ -337,7 +337,7 @@ fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
                 return de_s.min(de_e);
             }
             let theta_foot = dy.atan2(dx);
-            if arc_contains_angle(theta_start, sweep, theta_foot) {
+            if math::arc_contains_angle(theta_start, sweep, theta_foot) {
                 radial_dist
             } else {
                 // Foot lies outside the sweep — nearest point on the
@@ -347,35 +347,6 @@ fn segment_distance_to_point(seg: &Segment, center: Point2) -> f64 {
                 de_s.min(de_e)
             }
         }
-    }
-}
-
-/// Returns true when `theta` lies within the directed arc sweep from
-/// `theta_start` by `sweep` radians (signed: CCW positive, CW negative).
-/// Mirrors the same helper in `gcode/tabs.rs`; duplicated here so the
-/// leads module stays self-contained.
-fn arc_contains_angle(theta_start: f64, sweep: f64, theta: f64) -> bool {
-    let two_pi = std::f64::consts::TAU;
-    if sweep.abs() >= two_pi - 1e-9 {
-        return true;
-    }
-    let mut delta = theta - theta_start;
-    if sweep >= 0.0 {
-        while delta < -1e-12 {
-            delta += two_pi;
-        }
-        while delta >= two_pi - 1e-12 {
-            delta -= two_pi;
-        }
-        delta <= sweep + 1e-9
-    } else {
-        while delta > 1e-12 {
-            delta -= two_pi;
-        }
-        while delta <= -two_pi + 1e-12 {
-            delta += two_pi;
-        }
-        delta >= sweep - 1e-9
     }
 }
 

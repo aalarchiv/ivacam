@@ -142,12 +142,105 @@ pub fn tessellate_arc(start: Point2, end: Point2, bulge: f64, max_angle_rad: f64
     out
 }
 
+/// 7iej.10: positive arc sweep angle (radians, normalized to `[0, 2π)`)
+/// from `start` to `end` about `center`, traversed CCW or CW per `ccw`.
+/// Single owner for the atan2-and-normalize the arc-fitter (`gcode::arc_fit`)
+/// and the cut walker (`gcode::walk`) each derived independently.
+#[must_use]
+pub fn arc_sweep(center: Point2, start: Point2, end: Point2, ccw: bool) -> f64 {
+    use std::f64::consts::TAU;
+    let a0 = (start.y - center.y).atan2(start.x - center.x);
+    let a1 = (end.y - center.y).atan2(end.x - center.x);
+    let mut sweep = if ccw { a1 - a0 } else { a0 - a1 };
+    while sweep < 0.0 {
+        sweep += TAU;
+    }
+    while sweep > TAU {
+        sweep -= TAU;
+    }
+    sweep
+}
+
+/// 7iej.10: does the directed arc `[theta_start, theta_start + sweep]`
+/// contain the angle `theta`? `sweep > 0` is CCW, `sweep < 0` is CW; a
+/// `|sweep| >= 2π` arc contains every angle. Normalizes `theta -
+/// theta_start` into the sweep's direction so the test reduces to
+/// `0 <= delta <= |sweep|` (with a small tolerance). Single owner for what
+/// `gcode::leads` and `gcode::tabs` kept as byte-identical copies.
+#[must_use]
+pub fn arc_contains_angle(theta_start: f64, sweep: f64, theta: f64) -> bool {
+    let two_pi = std::f64::consts::TAU;
+    if sweep.abs() >= two_pi - 1e-9 {
+        return true;
+    }
+    // Walk forward by sweep direction; normalize (theta - theta_start) into
+    // the sweep direction's sign so the comparison reduces to
+    // 0 ≤ delta ≤ |sweep|.
+    let mut delta = theta - theta_start;
+    if sweep >= 0.0 {
+        // CCW: normalize delta into [0, 2π).
+        while delta < -1e-12 {
+            delta += two_pi;
+        }
+        while delta >= two_pi - 1e-12 {
+            delta -= two_pi;
+        }
+        delta <= sweep + 1e-9
+    } else {
+        // CW: normalize delta into (-2π, 0].
+        while delta > 1e-12 {
+            delta -= two_pi;
+        }
+        while delta <= -two_pi + 1e-12 {
+            delta += two_pi;
+        }
+        delta >= sweep - 1e-9
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
+    }
+
+    #[test]
+    fn arc_sweep_normalizes_both_directions() {
+        use std::f64::consts::{FRAC_PI_2, PI, TAU};
+        let c = Point2::new(0.0, 0.0);
+        let e = Point2::new(1.0, 0.0); // angle 0
+        let n = Point2::new(0.0, 1.0); // angle π/2
+        // CCW from +x to +y is a quarter turn; CW is three-quarters.
+        assert!(approx(arc_sweep(c, e, n, true), FRAC_PI_2));
+        assert!(approx(arc_sweep(c, e, n, false), 3.0 * FRAC_PI_2));
+        // Reverse endpoints: CCW from +y to +x is three-quarters.
+        assert!(approx(arc_sweep(c, n, e, true), 3.0 * FRAC_PI_2));
+        // A half-turn is π either way.
+        let w = Point2::new(-1.0, 0.0);
+        assert!(approx(arc_sweep(c, e, w, true), PI));
+        // Result always in [0, 2π).
+        for &ccw in &[true, false] {
+            let s = arc_sweep(c, e, n, ccw);
+            assert!((0.0..TAU).contains(&s));
+        }
+    }
+
+    #[test]
+    fn arc_contains_angle_ccw_and_cw() {
+        use std::f64::consts::{FRAC_PI_2, PI, TAU};
+        // CCW quarter arc [0, π/2]: contains π/4, excludes π.
+        assert!(arc_contains_angle(0.0, FRAC_PI_2, FRAC_PI_2 / 2.0));
+        assert!(!arc_contains_angle(0.0, FRAC_PI_2, PI));
+        // CW quarter arc [0, -π/2]: contains -π/4, excludes +π/4.
+        assert!(arc_contains_angle(0.0, -FRAC_PI_2, -FRAC_PI_2 / 2.0));
+        assert!(!arc_contains_angle(0.0, -FRAC_PI_2, FRAC_PI_2 / 2.0));
+        // Wraps across the ±π discontinuity: arc from 3π/4 sweeping +π/2
+        // crosses π and contains -3π/4 (≡ 5π/4).
+        assert!(arc_contains_angle(3.0 * FRAC_PI_2 / 2.0, FRAC_PI_2, -3.0 * FRAC_PI_2 / 2.0));
+        // Full revolution contains everything.
+        assert!(arc_contains_angle(1.0, TAU, 42.0));
     }
 
     #[test]

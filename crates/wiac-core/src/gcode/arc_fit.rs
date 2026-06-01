@@ -153,7 +153,7 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
         // 180° arc but opposite tool paths. Force such arcs to split
         // into two ~90° halves by lowering the cap to π·0.999 (about
         // 179.82°). The previous `> π + 1e-9` admitted exact π.
-        if arc_sweep(nc, p0, next, ccw) > std::f64::consts::PI * 0.999 {
+        if math::arc_sweep(nc, p0, next, ccw) > std::f64::consts::PI * 0.999 {
             // Retreat best so the SECOND arc has room: the caller
             // advances `start += consumed - 1` and then runs another
             // 3-point fit, which needs at least three remaining
@@ -277,17 +277,6 @@ fn direction_ccw(center: Point2, a: Point2, b: Point2) -> bool {
     cross > 0.0
 }
 
-/// Total sweep angle from `start` to `end` around `center` in the given
-/// orientation. Always returned in [0, 2π).
-fn arc_sweep(center: Point2, start: Point2, end: Point2, ccw: bool) -> f64 {
-    let a0 = (start.y - center.y).atan2(start.x - center.x);
-    let a1 = (end.y - center.y).atan2(end.x - center.x);
-    let mut sweep = if ccw { a1 - a0 } else { a0 - a1 };
-    while sweep < 0.0 {
-        sweep += std::f64::consts::TAU;
-    }
-    sweep
-}
 
 #[cfg(test)]
 mod tests {

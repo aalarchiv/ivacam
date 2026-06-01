@@ -151,15 +151,8 @@ fn arc_bulge_from_center(
     center: Point2,
     ccw: bool,
 ) -> (Point2, f64, f64) {
-    let a0 = (start.y - center.y).atan2(start.x - center.x);
-    let a1 = (end.y - center.y).atan2(end.x - center.x);
-    let mut sweep = if ccw { a1 - a0 } else { a0 - a1 };
-    while sweep < 0.0 {
-        sweep += std::f64::consts::TAU;
-    }
-    while sweep > std::f64::consts::TAU {
-        sweep -= std::f64::consts::TAU;
-    }
+    // 7iej.10: shared positive-sweep primitive (was an inline atan2 copy).
+    let sweep = math::arc_sweep(center, start, end, ccw);
     let signed_sweep = if ccw { sweep } else { -sweep };
     let bulge = (signed_sweep * 0.25).tan();
     (center, sweep, bulge)

@@ -322,41 +322,8 @@ fn arc_intersects_tab(
     let theta_start = (seg.start.y - center.y).atan2(seg.start.x - center.x);
     // Signed sweep (positive = CCW); matches bulge convention.
     let sweep = 4.0 * seg.bulge.atan();
-    arc_contains_angle(theta_start, sweep, theta_a)
-        || arc_contains_angle(theta_start, sweep, theta_b)
-}
-
-/// Returns true when `theta` lies within the directed arc sweep from
-/// `theta_start` by `sweep` radians (signed: CCW positive, CW
-/// negative). Wraps cleanly across ±π discontinuities. A full
-/// revolution (|sweep| >= 2π) always contains every angle.
-fn arc_contains_angle(theta_start: f64, sweep: f64, theta: f64) -> bool {
-    let two_pi = std::f64::consts::TAU;
-    if sweep.abs() >= two_pi - 1e-9 {
-        return true;
-    }
-    // Walk forward by sweep direction; normalize (theta - theta_start) into the
-    // sweep direction's sign so the comparison reduces to 0 ≤ delta ≤ |sweep|.
-    let mut delta = theta - theta_start;
-    if sweep >= 0.0 {
-        // CCW: normalize delta into [0, 2π).
-        while delta < -1e-12 {
-            delta += two_pi;
-        }
-        while delta >= two_pi - 1e-12 {
-            delta -= two_pi;
-        }
-        delta <= sweep + 1e-9
-    } else {
-        // CW: normalize delta into (-2π, 0].
-        while delta > 1e-12 {
-            delta -= two_pi;
-        }
-        while delta <= -two_pi + 1e-12 {
-            delta += two_pi;
-        }
-        delta >= sweep - 1e-9
-    }
+    math::arc_contains_angle(theta_start, sweep, theta_a)
+        || math::arc_contains_angle(theta_start, sweep, theta_b)
 }
 
 /// Emit a tab-crossing arc by discretizing it into short chord

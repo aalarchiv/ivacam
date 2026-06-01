@@ -1916,7 +1916,13 @@
     const counterClockwise = bulge > 0;
 
     const [pcx, pcy] = p(cx, cy);
-    const r = radius * (sx === ex && sy === ey ? 1 : Math.abs((sx - pcx) / (seg.start.x - cx)));
+    // 7iej.19: screen-space radius by projecting a point `radius` away from
+    // the center and measuring. The viewport transform is a uniform scale,
+    // so direction is irrelevant — and this avoids the div-by-near-zero the
+    // old `(sx - pcx) / (seg.start.x - cx)` ratio hit on a vertical chord
+    // (start directly above/below the center).
+    const [prx, pry] = p(cx + radius, cy);
+    const r = Math.hypot(prx - pcx, pry - pcy);
     // Reverse the y-flip on angles for canvas coords.
     ctx.beginPath();
     ctx.arc(pcx, pcy, r, -startAng, -endAng, counterClockwise);

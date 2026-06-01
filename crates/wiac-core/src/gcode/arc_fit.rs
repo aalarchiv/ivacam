@@ -86,6 +86,14 @@ pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     let last_pt = points.last().copied();
     match (last_arc_end, last_pt) {
         (Some(a), Some(p)) if (a.x - p.x).hypot(a.y - p.y) <= snap_tol => FitOutput::Arcs(arcs),
+        // 7iej.19: the arc chain must reach the run's final point — there
+        // is no mixed "arcs + trailing line" output. A near-π run too short
+        // to split (notably a 4-point run whose full sweep exceeds the
+        // π·0.999 cap: the first arc covers 3 points, leaving 2 that can't
+        // form a second arc) therefore falls back to all-Lines here. That
+        // output is geometrically faithful (same vertices, straight chords)
+        // — just not as smooth as an arc. A true fix would need a mixed
+        // FitOutput variant + a matching emit path in `walk.rs`.
         _ => FitOutput::Lines(points.to_vec()),
     }
 }

@@ -4,7 +4,7 @@
 /// confirms the response round-trips back to the caller.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HttpWiacClient } from './http';
+import { HttpWiacClient, resolveApiChoice } from './http';
 import { tryParseStructuredError } from './client';
 import type { HelixRadiusRequest, HelixRadiusResponse, WiacError } from './types';
 
@@ -111,5 +111,60 @@ describe('HttpWiacClient.computeHelixRadius', () => {
     expect(captured).toBeInstanceOf(Error);
     const parsed = tryParseStructuredError((captured as Error).message);
     expect(parsed).toEqual(wiac);
+  });
+});
+
+describe('resolveApiChoice (transport selection)', () => {
+  const base = {
+    hasTauri: false,
+    envApi: undefined,
+    queryApi: null,
+    defaultWasm: false,
+    serverUrl: 'http://localhost:8766',
+  };
+
+  it('Tauri shell wins over everything', () => {
+    expect(
+      resolveApiChoice({ ...base, hasTauri: true, envApi: 'wasm', queryApi: 'wasm' }),
+    ).toEqual({ kind: 'tauri' });
+  });
+
+  it('VITE_WIAC_API URL is used when set', () => {
+    expect(resolveApiChoice({ ...base, envApi: 'https://cam.example.com' })).toEqual({
+      kind: 'http',
+      url: 'https://cam.example.com',
+    });
+  });
+
+  it('VITE_WIAC_API=wasm forces the in-browser engine', () => {
+    expect(resolveApiChoice({ ...base, envApi: 'wasm' })).toEqual({ kind: 'wasm' });
+  });
+
+  it('?api=wasm forces the in-browser engine', () => {
+    expect(resolveApiChoice({ ...base, queryApi: 'wasm' })).toEqual({ kind: 'wasm' });
+  });
+
+  it('?api=<url> points at an arbitrary server', () => {
+    expect(resolveApiChoice({ ...base, queryApi: 'http://10.0.0.5:9000' })).toEqual({
+      kind: 'http',
+      url: 'http://10.0.0.5:9000',
+    });
+  });
+
+  it('default in a production build → wasm (bare static deploy, no backend)', () => {
+    expect(resolveApiChoice({ ...base, defaultWasm: true })).toEqual({ kind: 'wasm' });
+  });
+
+  it('default in dev → the local wiac-server', () => {
+    expect(resolveApiChoice({ ...base, defaultWasm: false })).toEqual({
+      kind: 'http',
+      url: 'http://localhost:8766',
+    });
+  });
+
+  it('an explicit VITE_WIAC_API URL overrides the production wasm default', () => {
+    expect(
+      resolveApiChoice({ ...base, envApi: 'https://cam.example.com', defaultWasm: true }),
+    ).toEqual({ kind: 'http', url: 'https://cam.example.com' });
   });
 });

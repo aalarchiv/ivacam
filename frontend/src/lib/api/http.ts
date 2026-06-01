@@ -278,37 +278,65 @@ export class HttpWiacClient implements WiacClient {
   }
 }
 
+/// Resolved transport choice — the pure decision behind `defaultClient`.
+export type ApiChoice = { kind: 'tauri' } | { kind: 'wasm' } | { kind: 'http'; url: string };
+
+/// Pure transport selection (testable without window / wasm / a real
+/// build mode). Resolution order:
+///   0. Tauri shell                          → in-process invoke()
+///   1. VITE_WIAC_API at build time          → that URL (or wasm if =='wasm')
+///   2. ?api=… query param at runtime        → that URL (or wasm if =='wasm')
+///   3. default — no transport configured:
+///        • production build → the in-browser wasm engine, so a static
+///          deploy works from a bare URL with no backend (5ue0/xeio
+///          browser-trial). Point at a server instead via VITE_WIAC_API.
+///        • dev → the local wiac-server on :8766 (the documented dev
+///          workflow runs `cargo run -p wiac-server`).
+export function resolveApiChoice(opts: {
+  hasTauri: boolean;
+  envApi: string | undefined;
+  queryApi: string | null;
+  defaultWasm: boolean;
+  serverUrl: string;
+}): ApiChoice {
+  if (opts.hasTauri) return { kind: 'tauri' };
+  if (opts.envApi) {
+    return opts.envApi === 'wasm' ? { kind: 'wasm' } : { kind: 'http', url: opts.envApi };
+  }
+  if (opts.queryApi === 'wasm') return { kind: 'wasm' };
+  if (opts.queryApi) return { kind: 'http', url: opts.queryApi };
+  return opts.defaultWasm ? { kind: 'wasm' } : { kind: 'http', url: opts.serverUrl };
+}
+
 export function defaultClient(): WiacClient {
-  // Resolution order:
-  //   0. Running inside the Tauri shell → in-process invoke()
-  //   1. VITE_WIAC_API at build time
-  //   2. ?api=… query param at runtime (handy for demos)
-  //   3. http://<host>:8766 — Rust server
-  if (typeof window !== 'undefined') {
-    const w = window as unknown as Record<string, unknown>;
-    if (typeof w.__TAURI_INTERNALS__ !== 'undefined') {
-      const mod = (w.__WIAC_TAURI_CLIENT__ ??= new TauriClientLazy()) as TauriClientLazy;
+  const hasWindow = typeof window !== 'undefined';
+  const w = hasWindow ? (window as unknown as Record<string, unknown>) : undefined;
+  const hasTauri = !!w && typeof w.__TAURI_INTERNALS__ !== 'undefined';
+  const queryApi = hasWindow ? new URLSearchParams(window.location.search).get('api') : null;
+  const serverUrl = hasWindow
+    ? `${window.location.protocol}//${window.location.hostname}:8766`
+    : 'http://127.0.0.1:8766';
+  const choice = resolveApiChoice({
+    hasTauri,
+    envApi: import.meta.env.VITE_WIAC_API as string | undefined,
+    queryApi,
+    // Default to wasm only in a real production browser build — wasm
+    // can't run during SSR / tests (no window), which keep the :8766
+    // server default so existing test/dev expectations hold.
+    defaultWasm: hasWindow && import.meta.env.PROD === true,
+    serverUrl,
+  });
+  switch (choice.kind) {
+    case 'tauri': {
+      const mod = (w!.__WIAC_TAURI_CLIENT__ ??= new TauriClientLazy()) as TauriClientLazy;
       return mod.proxy;
     }
-  }
-
-  const fromEnv = import.meta.env.VITE_WIAC_API as string | undefined;
-  if (fromEnv) return new HttpWiacClient(fromEnv);
-
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get('api');
-    if (fromQuery === 'wasm') {
-      // Lazy import so the wasm chunk is only fetched on opt-in.
+    case 'wasm':
+      // Lazy import so the wasm chunk is only fetched when wasm is chosen.
       return new WasmClientLazy().proxy;
-    }
-    if (fromQuery) return new HttpWiacClient(fromQuery);
-
-    const { protocol, hostname } = window.location;
-    return new HttpWiacClient(`${protocol}//${hostname}:8766`);
+    case 'http':
+      return new HttpWiacClient(choice.url);
   }
-
-  return new HttpWiacClient('http://127.0.0.1:8766');
 }
 
 /**

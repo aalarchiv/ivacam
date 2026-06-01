@@ -124,13 +124,20 @@ geometry never leaves their machine.
 wasm-pack build crates/wiac-wasm --target web --release
 cd frontend && pnpm install && pnpm build   # → frontend/dist/
 # host frontend/dist/ on GitHub Pages / S3+CloudFront / Netlify / …
-# share:  https://your.site/?api=wasm
+# share:  https://your.site/
 ```
 
-The `?api=wasm` query param selects the in-browser transport (the wasm
-chunk stays lazy — only fetched when that param is set). No CORS, no
-API server, no TLS-on-API, no auth to manage, because there is no
-backend.
+A **production build defaults to the in-browser wasm engine** when no
+backend is configured, so the bare URL just works for a static deploy.
+`?api=wasm` forces it explicitly (handy in dev); set
+`VITE_WIAC_API=https://your-server` at build time to point at a
+`wiac-server` instead. The wasm chunk stays lazy — only fetched when the
+wasm transport is actually selected. No CORS, no API server, no
+TLS-on-API, no auth to manage, because there is no backend.
+
+Deploy the built `dist/` behind a normal static host — never expose the
+Vite **dev** server publicly (its `server.fs.allow` opens the repo for
+local convenience).
 
 Known limitations of this mode (track before leaning on it as the
 headline trial path):

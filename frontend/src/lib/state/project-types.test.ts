@@ -5,7 +5,12 @@
 /// at the stock corner lands inside the geometry footprint.
 
 import { describe, expect, it } from 'vitest';
-import { defaultWorkOffset, inferDefaultWorkOffset, type WorkOffset } from './project-types';
+import {
+  defaultWorkOffset,
+  inferDefaultWorkOffset,
+  placementFileTransform,
+  type WorkOffset,
+} from './project-types';
 
 function bb(min_x: number, min_y: number, max_x: number, max_y: number) {
   return { min_x, min_y, max_x, max_y };
@@ -69,5 +74,50 @@ describe('inferDefaultWorkOffset', () => {
   it('bails on a degenerate bbox (max < min)', () => {
     const cur = defaultWorkOffset();
     expect(inferDefaultWorkOffset(bb(10, 10, 5, 5), cur)).toEqual(cur);
+  });
+});
+
+describe('placementFileTransform (xeio import placement)', () => {
+  const WORK = { x: 200, y: 300, z: 50 };
+  const bb = (min_x: number, min_y: number, max_x: number, max_y: number) => ({
+    min_x,
+    min_y,
+    max_x,
+    max_y,
+  });
+
+  it('leaves a drawing already fully inside the work area untouched', () => {
+    const t = placementFileTransform(bb(10, 10, 50, 50), WORK);
+    expect(t.translate).toEqual({ x: 0, y: 0 });
+    expect(t.scale).toBe(1);
+  });
+
+  it('moves a far-away drawing so its bottom-left lands on the origin', () => {
+    const t = placementFileTransform(bb(5000, 3000, 5040, 3030), WORK);
+    expect(t.translate).toEqual({ x: -5000, y: -3000 });
+  });
+
+  it('snaps a negative-origin drawing up to (0,0)', () => {
+    const t = placementFileTransform(bb(-12, -8, 30, 20), WORK);
+    expect(t.translate).toEqual({ x: 12, y: 8 });
+  });
+
+  it('aligns an oversize drawing bottom-left to origin (origin window reachable)', () => {
+    // 500x400 drawing on a 200x300 bed — exceeds, so align min → origin.
+    const t = placementFileTransform(bb(100, 100, 600, 500), WORK);
+    expect(t.translate).toEqual({ x: -100, y: -100 });
+  });
+
+  it('returns identity for a degenerate or non-finite bbox', () => {
+    expect(placementFileTransform(bb(10, 10, 5, 5), WORK).translate).toEqual({ x: 0, y: 0 });
+    expect(placementFileTransform(null, WORK).translate).toEqual({ x: 0, y: 0 });
+    expect(
+      placementFileTransform(bb(0, 0, Infinity, 10), WORK).translate,
+    ).toEqual({ x: 0, y: 0 });
+  });
+
+  it('treats an undefined work area as unbounded (positive-quadrant drawing kept)', () => {
+    const t = placementFileTransform(bb(5000, 3000, 5040, 3030), undefined);
+    expect(t.translate).toEqual({ x: 0, y: 0 });
   });
 });

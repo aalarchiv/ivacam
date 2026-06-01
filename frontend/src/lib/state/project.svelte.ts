@@ -81,7 +81,12 @@ import type {
   Wcs,
   WorkOffset,
 } from './project-types';
-import { defaultWorkOffset, inferDefaultWorkOffset, isDefaultWorkOffset } from './project-types';
+import {
+  defaultWorkOffset,
+  inferDefaultWorkOffset,
+  isDefaultWorkOffset,
+  placementFileTransform,
+} from './project-types';
 import { migrateMachineSettings } from './project-types';
 import {
   applyFileTransformToPoint,
@@ -849,11 +854,16 @@ class ProjectState {
     // from `sourcePath` when the caller provided one.
     const prev = this.data.imports[0];
     const nextPath = sourcePath !== undefined ? sourcePath : (prev?.lastImportPath ?? null);
+    // xeio: auto-place the drawing's bottom-left at the work-area origin
+    // (unless it already sits fully inside the bed) so the emitted g-code
+    // is reachable. Translate-only; flows through the normal FileTransform
+    // path so the pipeline / g-code see the placed coordinates.
+    const placement = placementFileTransform(r.bbox, this.machine.workArea);
     this.data.imports = [
       {
         id: prev?.id ?? 1,
         source: r,
-        fileTransform: identityFileTransform(),
+        fileTransform: placement,
         lastImportPath: nextPath,
       },
     ];
@@ -875,7 +885,15 @@ class ProjectState {
     // point in the source CAD), matching the canonical CNC workflow
     // (operator zeros at the bottom-left corner of the drawing).
     // No-op when the user has already moved away from default.
-    this.workOffset = inferDefaultWorkOffset(r.bbox, this.workOffset);
+    // Snap the WCS to the PLACED bottom-left, not the raw (pre-placement)
+    // coords — xeio's translate may have moved the geometry to origin.
+    const placedBbox = {
+      min_x: r.bbox.min_x + placement.translate.x,
+      min_y: r.bbox.min_y + placement.translate.y,
+      max_x: r.bbox.max_x + placement.translate.x,
+      max_y: r.bbox.max_y + placement.translate.y,
+    };
+    this.workOffset = inferDefaultWorkOffset(placedBbox, this.workOffset);
     // Replacing the imported geometry implies a new project boundary —
     // drop any text-preview segments cached from the previous project
     // so we don't paint stale TextLayer glyphs over the new file.

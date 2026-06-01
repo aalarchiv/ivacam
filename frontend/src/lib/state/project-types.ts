@@ -686,6 +686,39 @@ export function inferDefaultWorkOffset(
   return { ...current, x_mm: min_x, y_mm: min_y };
 }
 
+/// xeio: import-time placement. Returns the initial [`FileTransform`] that
+/// drops the drawing's bottom-left corner onto the work-area origin so the
+/// emitted g-code is reachable. The translate flows through the normal
+/// FileTransform path (applied before the pipeline), so the g-code matches.
+///
+/// Rule (anchor = bottom-left at origin):
+///   - bbox already fully inside `[0,W] × [0,H]` (W,H = workArea x/y): keep
+///     it — the author positioned it on purpose. Identity transform.
+///   - otherwise translate bbox-min → (0,0): if it fits it lands fully in
+///     the lower-left; if it's larger than the bed, the origin-corner
+///     window `[0,W] × [0,H]` is the machinable part.
+/// Degenerate / non-finite bboxes return identity. With no work area the
+/// bounds are treated as infinite, so a drawing already in the positive
+/// quadrant is left alone.
+export function placementFileTransform(
+  bbox: { min_x: number; min_y: number; max_x: number; max_y: number } | null | undefined,
+  workArea: AxisLimits | undefined,
+): FileTransform {
+  const identity = identityFileTransform();
+  if (!bbox) return identity;
+  const { min_x, min_y, max_x, max_y } = bbox;
+  if (![min_x, min_y, max_x, max_y].every(Number.isFinite)) return identity;
+  if (max_x < min_x || max_y < min_y) return identity; // degenerate
+  const w = workArea && workArea.x > 0 ? workArea.x : Infinity;
+  const h = workArea && workArea.y > 0 ? workArea.y : Infinity;
+  // 1e-3 mm slack mirrors inferDefaultWorkOffset / the pipeline warning.
+  const slack = 1e-3;
+  const fullyInside =
+    min_x >= -slack && min_y >= -slack && max_x <= w + slack && max_y <= h + slack;
+  if (fullyInside) return identity;
+  return { ...identity, translate: { x: -min_x, y: -min_y } };
+}
+
 export interface ProjectFile {
   kind: 'wiac-project';
   version: 1;

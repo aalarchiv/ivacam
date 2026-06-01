@@ -14,6 +14,12 @@
   import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
   import { computeViewportTransform } from '../canvas/viewport';
+  import {
+    applyPinch,
+    withinTapTolerance,
+    LONG_PRESS_MS,
+    type PointerPos,
+  } from '../canvas/touch-gestures';
   import { objectsContainedInBox } from '../canvas/box_select';
   import {
     DEFAULT_OSNAP_SETTINGS,
@@ -286,6 +292,37 @@
   /// Active pan drag — started on middle-button down, ended on pointer up.
   let panDrag = $state<{ startX: number; startY: number; pointerId: number } | null>(null);
 
+  /// bwt7 — touch gesture bookkeeping. These are plain (non-reactive)
+  /// fields: they drive the reactive `userZoom/Pan*` fields, but nothing
+  /// renders them directly, so they don't need `$state`.
+  ///
+  /// `activePointers` maps every live touch pointerId → its last
+  /// canvas-relative position, so a second finger landing turns the pair
+  /// into a pinch/pan. `pinch` holds the prior two-finger frame the next
+  /// move diffs against. `longPress*` arm the hold→context-menu timer.
+  const activePointers = new Map<number, PointerPos>();
+  let pinch: { idA: number; idB: number; prevA: PointerPos; prevB: PointerPos } | null = null;
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressStart: PointerPos | null = null;
+
+  /// bwt7: keyboardless multi-select. On a touchscreen with no hardware
+  /// keyboard, shift/ctrl-tap are unreachable, so this toggle makes a
+  /// plain tap behave like ctrl-click (toggle into the selection).
+  /// Surfaced as an overlay button on touch-capable devices only.
+  let addToSelection = $state(false);
+  const isTouchDevice =
+    typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0;
+
+  /// Cancel a pending long-press hold (finger moved, lifted, or a second
+  /// finger arrived). Idempotent.
+  function cancelLongPress() {
+    if (longPressTimer != null) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    longPressStart = null;
+  }
+
   /// Reset pan + zoom when the imported file changes (different filename
   /// or going from no-import to imported). Keeps mid-session zooms
   /// intact across normal redraws.
@@ -403,6 +440,35 @@
     // while pan/zoom/select/picking. pxToData returns null if the
     // transform isn't staged yet (no imported drawing).
     cursorXY = pxToData(cx, cy);
+    // bwt7: feed the live touch position into the gesture tracker and,
+    // while a pinch is active, recompute zoom + pan from the two
+    // fingers' movement (consuming the event before any hover / select).
+    if (activePointers.has(e.pointerId)) {
+      activePointers.set(e.pointerId, { x: cx, y: cy });
+    }
+    if (pinch) {
+      const a = activePointers.get(pinch.idA);
+      const b = activePointers.get(pinch.idB);
+      if (a && b && lastBaseTransform) {
+        const next = applyPinch(
+          { zoom: userZoom, panX: userPanX, panY: userPanY },
+          lastBaseTransform,
+          { a: pinch.prevA, b: pinch.prevB },
+          { a, b },
+        );
+        userZoom = next.zoom;
+        userPanX = next.panX;
+        userPanY = next.panY;
+        pinch.prevA = { ...a };
+        pinch.prevB = { ...b };
+      }
+      return;
+    }
+    // A held finger that wanders past tap tolerance is a drag, not a
+    // hold — cancel the pending long-press context menu.
+    if (longPressStart && !withinTapTolerance(longPressStart, { x: cx, y: cy })) {
+      cancelLongPress();
+    }
     // n79: in approach-pick mode, the cursor IS the picker — update
     // the preview marker on every move and short-circuit the
     // hover-hit / box-select paths below.
@@ -515,6 +581,22 @@
   }
 
   function onPointerUp(e: PointerEvent) {
+    // bwt7: release touch tracking + end any active gesture. A quick
+    // down→up cancels the long-press (it was a tap, not a hold); a
+    // finger leaving a pinch ends the gesture and drops any armed
+    // box-select so the remaining finger's lift is a no-op.
+    if (e.pointerType === 'touch') {
+      activePointers.delete(e.pointerId);
+    }
+    cancelLongPress();
+    if (pinch && (e.pointerId === pinch.idA || e.pointerId === pinch.idB)) {
+      pinch = null;
+      boxSelect = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
     // n79: end an active approach-marker drag.
     if (approachDrag && e.pointerId === approachDrag.pointerId) {
       approachDrag = null;
@@ -621,6 +703,8 @@
     hoverIdx = null;
     ghostTab = null;
     cursorXY = null;
+    // bwt7: a finger dragged off the canvas can't complete a hold.
+    cancelLongPress();
     canvas.style.cursor = tabPlacementActive ? 'crosshair' : 'default';
   }
 
@@ -675,9 +759,20 @@
 
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
+    // A touch long-press may have already opened the menu; a native
+    // contextmenu event firing on the same hold would re-anchor it. The
+    // long-press path cancels its timer, so by here any native event is
+    // a real mouse right-click — just (re)open at the cursor.
+    cancelLongPress();
     const rect = canvas.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
+    openContextMenuAt(e.clientX - rect.left, e.clientY - rect.top);
+  }
+
+  /// Open the canvas context menu at a canvas-relative pixel position.
+  /// Shared by mouse right-click (`onContextMenu`) and the touch
+  /// long-press (bwt7) so both reach the same tab-popover / op-picker /
+  /// "set text origin here" actions.
+  function openContextMenuAt(cx: number, cy: number) {
     // 8rd: right-click over an existing tab opens the per-tab
     // popover BEFORE falling through to the op-picker context menu.
     const hit = findTabAtPixel(cx, cy);
@@ -891,6 +986,53 @@
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
+    // bwt7: touch gesture tracking. A second finger promotes the
+    // gesture to a pinch-zoom / two-finger pan; the first finger held
+    // still becomes a long-press → context menu. Mouse / pen fall
+    // straight through to the button-based paths below.
+    if (e.pointerType === 'touch') {
+      activePointers.set(e.pointerId, { x: cx, y: cy });
+      if (activePointers.size >= 2) {
+        // Abandon whatever the first finger armed (selection already
+        // happened on its down; a box-select / marker drag would fight
+        // the pinch), then diff finger movement from here.
+        cancelLongPress();
+        boxSelect = null;
+        approachDrag = null;
+        const entries = [...activePointers.entries()];
+        const first = entries[0];
+        const second = entries[1];
+        if (first && second) {
+          pinch = {
+            idA: first[0],
+            idB: second[0],
+            prevA: { ...first[1] },
+            prevB: { ...second[1] },
+          };
+          for (const id of [first[0], second[0]]) {
+            try {
+              canvas.setPointerCapture(id);
+            } catch {}
+          }
+        }
+        canvas.style.cursor = 'default';
+        e.preventDefault();
+        return;
+      }
+      // First finger down — arm the long-press hold. The selection
+      // logic below still runs (tap-to-select on down); the timer just
+      // overlays a context-menu open if the finger stays put.
+      cancelLongPress();
+      longPressStart = { x: cx, y: cy };
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        longPressStart = null;
+        // Fire only while exactly one finger is still down — a pinch
+        // would have cleared this. Open at the press position.
+        if (activePointers.size === 1) openContextMenuAt(cx, cy);
+      }, LONG_PRESS_MS);
+    }
+
     // Middle-button drag = pan. Capture the pointer so the drag
     // continues if the cursor leaves the canvas.
     if (e.button === 1) {
@@ -993,7 +1135,9 @@
       {
         hitObjectId,
         shiftKey: e.shiftKey,
-        ctrlKey: e.ctrlKey,
+        // bwt7: the "add to selection" toggle stands in for ctrl on a
+        // keyboardless touch device — a plain tap then toggles.
+        ctrlKey: e.ctrlKey || addToSelection,
         metaKey: e.metaKey,
       },
       objectToOps,
@@ -2066,6 +2210,22 @@
   >
     ⌖
   </button>
+  {#if isTouchDevice}
+    <!-- bwt7: keyboardless multi-select toggle. On touch there's no
+         shift/ctrl-tap, so this latches "tap = add/remove from
+         selection". Touch devices only — mouse users have modifiers. -->
+    <button
+      type="button"
+      class="multiselect-btn"
+      class:active={addToSelection}
+      aria-pressed={addToSelection}
+      onclick={() => (addToSelection = !addToSelection)}
+      title="Add to selection (tap multiple objects)"
+      aria-label="Toggle add-to-selection mode"
+    >
+      ⧉
+    </button>
+  {/if}
   {#if onShowHelp}
     <button
       type="button"
@@ -2333,6 +2493,42 @@
   .fit-btn:focus-visible {
     opacity: 1;
     color: var(--text-strong);
+  }
+  /* bwt7: keyboardless multi-select toggle — visual twin of .fit-btn,
+     sits one slot further left. Latches an accent fill while active. */
+  .multiselect-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 4.5rem;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.7;
+    transition:
+      opacity 0.12s ease,
+      color 0.12s ease,
+      background 0.12s ease;
+  }
+  .multiselect-btn:hover,
+  .multiselect-btn:focus-visible {
+    opacity: 1;
+    color: var(--text-strong);
+  }
+  .multiselect-btn.active {
+    opacity: 1;
+    color: var(--accent-contrast, #fff);
+    background: var(--accent);
+    border-color: var(--accent);
   }
   .help-btn {
     position: absolute;

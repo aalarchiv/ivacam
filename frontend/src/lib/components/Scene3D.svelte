@@ -28,6 +28,7 @@
   import type { ToolEntry } from '../state/project.svelte';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
 
   interface Props {
     /// w5wx: mirrors EntityCanvas2D — after the right-click menu creates
@@ -261,6 +262,34 @@
   // host-relative position when open.
   let rightStart: { x: number; y: number } | null = null;
   let ctxMenu = $state<{ x: number; y: number } | null>(null);
+
+  /// bwt7: touch long-press → context menu (parity with the 2D pane and
+  /// with mouse right-click). OrbitControls already handles one-finger
+  /// rotate / two-finger pan+zoom on touch; this only adds the
+  /// hold-to-open-menu path. `lpPointers` counts live touches so a
+  /// second finger (a pinch) cancels the pending hold. `lpStart` is the
+  /// press position in client coords, used both for the move-tolerance
+  /// check and to anchor the menu.
+  const lpPointers = new Set<number>();
+  let lpTimer: ReturnType<typeof setTimeout> | null = null;
+  let lpStart: { x: number; y: number } | null = null;
+  function cancelLongPress() {
+    if (lpTimer != null) {
+      clearTimeout(lpTimer);
+      lpTimer = null;
+    }
+    lpStart = null;
+  }
+  /// Open the op-picker context menu at a viewport-clamped position
+  /// derived from client coords. Shared by mouse right-click and the
+  /// touch long-press.
+  function openCtxMenuAt(clientX: number, clientY: number) {
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    const x = Math.max(4, Math.min(clientX - rect.left, host.clientWidth - 260));
+    const y = Math.max(4, Math.min(clientY - rect.top, host.clientHeight - 220));
+    ctxMenu = { x, y };
+  }
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const resVec = new THREE.Vector2();
@@ -353,6 +382,8 @@
     host.appendChild(renderer.domElement);
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', onPointerCancel);
+    renderer.domElement.addEventListener('pointermove', onPointerMoveLongPress);
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     controls = new OrbitControls(camera, renderer.domElement);
@@ -481,6 +512,8 @@
     if (renderer) {
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
+      renderer.domElement.removeEventListener('pointermove', onPointerMoveLongPress);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
     }
     controls?.removeEventListener('change', requestRender);
@@ -1982,6 +2015,25 @@
   }
 
   function onPointerDown(e: PointerEvent) {
+    // bwt7: touch long-press arming. A single finger held still opens
+    // the context menu; a second finger (pinch) cancels it and lets
+    // OrbitControls zoom/pan.
+    if (e.pointerType === 'touch') {
+      lpPointers.add(e.pointerId);
+      if (lpPointers.size >= 2) {
+        cancelLongPress();
+      } else {
+        cancelLongPress();
+        lpStart = { x: e.clientX, y: e.clientY };
+        const sx = e.clientX;
+        const sy = e.clientY;
+        lpTimer = setTimeout(() => {
+          lpTimer = null;
+          lpStart = null;
+          if (lpPointers.size === 1) openCtxMenuAt(sx, sy);
+        }, LONG_PRESS_MS);
+      }
+    }
     // w5wx: remember the right-button press position so `onContextMenu`
     // can distinguish a tap (open the menu) from a right-drag pan.
     if (e.button === 2) {
@@ -1992,6 +2044,24 @@
     if (ctxMenu) ctxMenu = null;
     if (e.button !== 0) return;
     pointerStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+  }
+
+  /// bwt7: cancel a pending long-press once the finger wanders (a
+  /// one-finger rotate is a drag, not a hold). Registered as a passive
+  /// pointermove listener alongside OrbitControls' own.
+  function onPointerMoveLongPress(e: PointerEvent) {
+    if (lpStart && Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > LONG_PRESS_MOVE_TOL_PX) {
+      cancelLongPress();
+    }
+  }
+
+  /// bwt7: a cancelled pointer (e.g. the OS captured the gesture) just
+  /// tears down transient press state — no pick, no menu.
+  function onPointerCancel(e: PointerEvent) {
+    if (e.pointerType === 'touch') lpPointers.delete(e.pointerId);
+    cancelLongPress();
+    pointerStart = null;
+    rightStart = null;
   }
 
   /// w5wx: right-click → "New operation from selection" menu (parity with
@@ -2009,13 +2079,9 @@
         return;
       }
     }
-    if (!host) return;
-    const rect = host.getBoundingClientRect();
     // Clamp so the menu (≈16rem wide) stays inside the viewport even on a
     // right-click near the right/bottom edge.
-    const x = Math.max(4, Math.min(e.clientX - rect.left, host.clientWidth - 260));
-    const y = Math.max(4, Math.min(e.clientY - rect.top, host.clientHeight - 220));
-    ctxMenu = { x, y };
+    openCtxMenuAt(e.clientX, e.clientY);
   }
 
   /// Mirror of EntityCanvas2D.pickFromCtx: build a new op whose source is
@@ -2062,6 +2128,12 @@
   }
 
   function onPointerUp(e: PointerEvent) {
+    // bwt7: release touch tracking + cancel a pending long-press (a
+    // quick tap is not a hold).
+    if (e.pointerType === 'touch') {
+      lpPointers.delete(e.pointerId);
+    }
+    cancelLongPress();
     if (!pointerStart) return;
     const dx = e.clientX - pointerStart.x;
     const dy = e.clientY - pointerStart.y;

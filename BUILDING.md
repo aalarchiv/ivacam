@@ -138,10 +138,12 @@ headline trial path):
 - **Runs on the main thread today** — a heavy `generate` or sim
   blocks the UI tab, and there is no working cancel. Moving the wasm
   client into a Web Worker fixes both (see issue `wiaconstructor-5ue0`).
-- **Touch gestures are incomplete** — the 2D canvas has no pinch-zoom
-  / two-finger pan, and context menus have no long-press fallback, so
-  a tablet/phone user can't navigate or reach right-click actions yet
-  (see issue `wiaconstructor-bwt7`). Mouse + keyboard works fine.
+- **Touch is supported** (`wiaconstructor-bwt7`) — the 2D canvas does
+  pinch-zoom, two-finger pan, tap- and box-select, and a long-press
+  opens the context menu; the 3D view uses OrbitControls (one-finger
+  rotate, two-finger pan/zoom) with the same long-press menu. A
+  touch-only ⧉ toggle enables keyboardless multi-select. Mouse +
+  keyboard is unchanged.
 - **wasm32 limits** — single-threaded, ~2–4 GB address space, plus a
   one-time module download; large jobs are slower than the native
   `wiac-server` and may hit memory ceilings sooner.

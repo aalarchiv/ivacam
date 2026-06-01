@@ -537,6 +537,31 @@
       scene?.remove(workAreaGroup);
       workAreaGroup = undefined;
     }
+    // 7iej.4: renderer.dispose() frees the GL context but does NOT walk
+    // the scene graph, so every owned group's geometry/material must be
+    // disposed explicitly. geometryGroup holds the imported wireframe,
+    // toolpath lines, direction arrows, and assignment overlays — the
+    // largest buffers — and these leaked a full toolpath on every 2D↔3D
+    // pane swap (Scene3D unmounts on each swap).
+    if (geometryGroup) {
+      disposeGroup(geometryGroup);
+      scene?.remove(geometryGroup);
+      geometryGroup = undefined;
+      importedLinesObject = undefined;
+      toolpathLinesObject = undefined;
+      toolpathArrowsObject = undefined;
+      assignmentOverlayObjects = [];
+    }
+    for (const g of [tabsGroup, approachGroup, fixturesGroup, warningGroup]) {
+      if (g) {
+        disposeGroup(g);
+        scene?.remove(g);
+      }
+    }
+    tabsGroup = undefined;
+    approachGroup = undefined;
+    fixturesGroup = undefined;
+    warningGroup = undefined;
     driver?.destroy();
     driver = undefined;
     renderer?.dispose();
@@ -1251,9 +1276,15 @@
     while (g.children.length > 0) {
       const child = g.children[0];
       g.remove(child);
-      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+      // `THREE.Line` covers plain lines AND `LineSegments` (which extends
+      // it); `THREE.Mesh` covers meshes AND the fat-line `LineSegments2`
+      // (which extends Mesh). Both carry `.geometry` + `.material`.
+      // Disposing a geometry/material shared across several children
+      // (e.g. updateTabs reuses one SphereGeometry) more than once is a
+      // safe no-op in three.js.
+      if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
         child.geometry.dispose();
-        const m = (child as THREE.Mesh | THREE.LineSegments).material as
+        const m = (child as THREE.Mesh | THREE.Line).material as
           | THREE.Material
           | THREE.Material[];
         if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
@@ -1395,7 +1426,10 @@
       tabsGroup = new THREE.Group();
       scene.add(tabsGroup);
     }
-    tabsGroup.clear();
+    // 7iej.4: dispose the previous run's geometry/material (the shared
+    // sphere geom+mat from the last call) — `.clear()` only detaches
+    // children and would leak a geom+mat pair on every op/transform edit.
+    disposeGroup(tabsGroup);
     const imp = project.transformedImport;
     if (!imp) return;
     const color = cssColor('--tab-marker', 0xffd23a);
@@ -1458,7 +1492,9 @@
       approachGroup = new THREE.Group();
       scene.add(approachGroup);
     }
-    approachGroup.clear();
+    // 7iej.4: dispose the previous needle + dot geom/material — `.clear()`
+    // alone leaks them on every approach-point drag / op selection.
+    disposeGroup(approachGroup);
     const opId = project.selectedOpId;
     if (opId == null) return;
     const op = project.operations.find((o) => o.id === opId);

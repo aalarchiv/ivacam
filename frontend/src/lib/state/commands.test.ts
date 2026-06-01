@@ -19,6 +19,7 @@ import {
   removeFixtureCommand,
   reorderOperationCommand,
   replaceToolsCommand,
+  setGroupOpsByToolCommand,
   setMachineCommand,
   setOpFieldCommand,
   setStockCommand,
@@ -85,6 +86,7 @@ function blankTarget(): CommandTarget {
     reliefSources: [],
     imports: [],
     workOffset: { x_mm: 0, y_mm: 0, z_mm: 0, wcs: 'G54' },
+    groupOpsByTool: false,
     dirty: false,
   };
 }
@@ -426,6 +428,20 @@ describe('machine / stock', () => {
     expect(t.workOffset.x_mm).toBe(0);
     expect(t.workOffset.y_mm).toBe(0);
     expect(t.workOffset.wcs).toBe('G54');
+  });
+
+  it('setGroupOpsByToolCommand toggles, restores, and flips dirty (7iej.8)', () => {
+    const t = blankTarget();
+    t.dirty = false;
+    const cmd = setGroupOpsByToolCommand(true);
+    cmd.apply(t);
+    expect(t.groupOpsByTool).toBe(true);
+    expect(t.dirty).toBe(true);
+    cmd.revert(t);
+    expect(t.groupOpsByTool).toBe(false);
+    expect(t.dirty).toBe(true);
+    // Discrete toggle — not a drag, so no coalescing.
+    expect(cmd.coalesce_key).toBeUndefined();
   });
 
   it('setWorkOffsetCommand coalesces per-field (audit abdk)', () => {

@@ -55,6 +55,7 @@ export interface CommandTarget {
   textLayers: TextLayer[];
   reliefSources: ReliefSource[];
   workOffset: WorkOffset;
+  groupOpsByTool: boolean;
   dirty: boolean;
 }
 
@@ -628,6 +629,29 @@ export function setStockCommand(patch: Partial<StockConfig>): Command {
       t.dirty = true;
     },
     coalesce_key: coalesceKeyForStockPatch(patch),
+  };
+}
+
+/// 7iej.8: undoable toggle of the program-level "group ops by tool"
+/// reorder. Mirrors setStockCommand — the wrapper (`setGroupOpsByTool`)
+/// invalidates the cached toolpath separately, since `generated` is
+/// view-only state excluded from history. No coalesce key: a checkbox
+/// toggle is a discrete edit, not a drag.
+export function setGroupOpsByToolCommand(value: boolean): Command {
+  let prev = false;
+  return {
+    label: value ? 'Group operations by tool' : 'Ungroup operations',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      prev = t.groupOpsByTool;
+      t.groupOpsByTool = value;
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      t.groupOpsByTool = prev;
+      t.dirty = true;
+    },
   };
 }
 

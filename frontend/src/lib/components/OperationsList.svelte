@@ -377,7 +377,7 @@
         <input
           type="checkbox"
           checked={project.groupOpsByTool}
-          onchange={(e) => (project.groupOpsByTool = (e.currentTarget as HTMLInputElement).checked)}
+          onchange={(e) => project.setGroupOpsByTool((e.currentTarget as HTMLInputElement).checked)}
         />
         Group ops by tool
       </label>

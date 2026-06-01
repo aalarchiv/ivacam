@@ -220,6 +220,7 @@ import {
   reorderOperationCommand,
   replaceToolsCommand,
   selectObjectsCommand,
+  setGroupOpsByToolCommand,
   setImportsCommand,
   setMachineCommand,
   setStockCommand,
@@ -484,11 +485,25 @@ class ProjectState {
   get groupOpsByTool(): boolean {
     return this.data.groupOpsByTool;
   }
+  /// 7iej.8: PLAIN setter — used by the command apply/revert, restore(),
+  /// and clearProject(). It deliberately does NOT mark dirty, invalidate
+  /// the toolpath, or touch history: a UI toggle must go through
+  /// `setGroupOpsByTool` (below) so it's undoable, while load/clear paths
+  /// manage dirty + generated + history themselves. Routing the UI edit
+  /// through here directly (the old behavior) bypassed the command bus and
+  /// left the toggle un-undoable.
   set groupOpsByTool(v: boolean) {
-    if (this.data.groupOpsByTool === v) return;
     this.data.groupOpsByTool = v;
-    this.dirty = true;
+  }
+  /// Undoable UI entry point for the tool-grouping toggle. Routes through
+  /// the command bus (so Ctrl+Z reverses it) and invalidates the cached
+  /// toolpath — the reorder changes emitted-program order, so a toolpath
+  /// generated against the prior setting isn't safe to draw/download.
+  setGroupOpsByTool(v: boolean) {
+    if (this.data.groupOpsByTool === v) return;
+    this.history.exec(setGroupOpsByToolCommand(v), this.target());
     this.generated = null;
+    this.toolpathCumLen = null;
   }
 
   get textLayers(): TextLayer[] {

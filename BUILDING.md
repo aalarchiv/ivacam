@@ -113,6 +113,39 @@ cd frontend && pnpm install && pnpm dev
 The browser downloads the wiac-wasm pkg lazily and runs the entire
 CAM pipeline client-side — no Rust server, no Python, no anything.
 
+#### Install-free trial channel (OS-agnostic)
+
+This is the lowest-friction way to let someone *try* wiaConstructor:
+ship a static bundle to any CDN / static host and hand out a URL — it
+runs in the browser on any OS, nothing to install, and the user's
+geometry never leaves their machine.
+
+```sh
+wasm-pack build crates/wiac-wasm --target web --release
+cd frontend && pnpm install && pnpm build   # → frontend/dist/
+# host frontend/dist/ on GitHub Pages / S3+CloudFront / Netlify / …
+# share:  https://your.site/?api=wasm
+```
+
+The `?api=wasm` query param selects the in-browser transport (the wasm
+chunk stays lazy — only fetched when that param is set). No CORS, no
+API server, no TLS-on-API, no auth to manage, because there is no
+backend.
+
+Known limitations of this mode (track before leaning on it as the
+headline trial path):
+
+- **Runs on the main thread today** — a heavy `generate` or sim
+  blocks the UI tab, and there is no working cancel. Moving the wasm
+  client into a Web Worker fixes both (see issue `wiaconstructor-5ue0`).
+- **Touch gestures are incomplete** — the 2D canvas has no pinch-zoom
+  / two-finger pan, and context menus have no long-press fallback, so
+  a tablet/phone user can't navigate or reach right-click actions yet
+  (see issue `wiaconstructor-bwt7`). Mouse + keyboard works fine.
+- **wasm32 limits** — single-threaded, ~2–4 GB address space, plus a
+  one-time module download; large jobs are slower than the native
+  `wiac-server` and may hit memory ceilings sooner.
+
 ### Desktop bundle (Tauri)
 
 ```sh

@@ -1,4 +1,9 @@
-//! Acceleration- and jerk-aware program-time estimation.
+//! Acceleration-aware (trapezoidal) program-time estimation.
+//!
+//! 7iej.14: this is a trapezoidal (constant-accel) model — jerk / S-curve
+//! limiting is NOT modeled (reserved for a Phase-2 refinement; see the
+//! algorithm note below). The header previously claimed "jerk-aware",
+//! which overstated the fidelity.
 //!
 //! The naive `path_length / feedrate` underpredicts real run-time by
 //! 1.5–3× on hobby machines because every short segment forces an
@@ -54,6 +59,12 @@ pub struct TimeEstimate {
 const DEFAULT_ACCEL_MM_S2: f64 = 250.0;
 const DEFAULT_RAPID_MM_MIN: f64 = 5000.0;
 const DIR_EPS: f64 = 1e-6;
+/// 7iej.14: last-resort cut feed used only when a program commands NO
+/// feedrate at all (every cut/plunge/arc segment resolves to 0). The
+/// pipeline normally blocks zero-feed programs (the critical
+/// `zero_rate_emitted` warning), so this is a degenerate fallback that
+/// keeps the estimate finite rather than the old pathological 1 mm/min.
+const DEFAULT_CUT_MM_MIN: f64 = 600.0;
 
 /// Public hook for the pipeline: reads the emitted gcode to recover
 /// modal F values for each segment, then estimates total run-time.
@@ -322,13 +333,33 @@ fn estimate_trapezoidal(
     let mut feeds = vec![0.0_f64; n];
     let mut accels = vec![0.0_f64; n];
 
+    // 7iej.14: a cut/plunge/arc segment carries feed 0 only when it
+    // precedes the program's first F word (modal F is sticky, so
+    // `feeds_per_segment` forward-fills everywhere else). The old
+    // `.max(1.0)` floor made those leading segments ~60× too slow at
+    // 1 mm/min. Instead inherit the nearest commanded feed: seed from the
+    // program's first positive feed (covers leading zeros) and forward-fill
+    // thereafter, falling back to a default only if NO feed is commanded.
+    let mut last_feed_mm_min = feeds_mm_min
+        .iter()
+        .copied()
+        .find(|&f| f > 0.0)
+        .unwrap_or(DEFAULT_CUT_MM_MIN);
     for (i, seg) in segments.iter().enumerate() {
         let (len, dir) = length_and_dir(seg.from, seg.to);
         lengths[i] = len;
         dirs[i] = dir;
         let feed_mm_min = match seg.kind {
             MoveKind::Rapid => rapid_mm_min,
-            _ => feeds_mm_min.get(i).copied().unwrap_or(0.0).max(1.0),
+            _ => {
+                let f = feeds_mm_min.get(i).copied().unwrap_or(0.0);
+                if f > 0.0 {
+                    last_feed_mm_min = f;
+                    f
+                } else {
+                    last_feed_mm_min
+                }
+            }
         };
         feeds[i] = feed_mm_min / 60.0;
         accels[i] = effective_accel(dir, accel);
@@ -338,6 +369,19 @@ fn estimate_trapezoidal(
     let mut v_out = vec![0.0_f64; n];
     for i in 0..n {
         if i + 1 < n {
+            // 7iej.14: a real controller decelerates to a full stop at the
+            // boundary between move TYPES — G0↔G1 exact-stop, and the
+            // Z-direction reversals at plunge/retract edges. Only carry
+            // junction velocity through when both segments are the same
+            // kind or both are cut-like (Cut↔Arc continue smoothly through
+            // a corner). Otherwise the old code blended speed across e.g.
+            // a Cut→Retract→Rapid→Plunge sequence as one continuous chain,
+            // under-predicting time at every op/lift boundary.
+            if !junction_blends(segments[i].kind, segments[i + 1].kind) {
+                v_out[i] = 0.0;
+                v_in[i + 1] = 0.0;
+                continue;
+            }
             let (len_i, len_j) = (lengths[i], lengths[i + 1]);
             let cos_t = dot(dirs[i], dirs[i + 1]);
             let cos_clamped = cos_t.clamp(-1.0, 1.0);
@@ -454,6 +498,18 @@ fn estimate_naive(
         dwell_s: 0.0,
         spindle_warmup_s,
     }
+}
+
+/// 7iej.14: whether motion blends through the junction between two
+/// consecutive moves, or the controller decelerates to a full stop. Speed
+/// only carries through between same-kind moves (a chain of cuts, a chain
+/// of rapids, peck plunges) or between the two cut-like kinds (Cut↔Arc,
+/// which flow through a corner). Every other transition — into/out of a
+/// rapid, a plunge, or a retract — is an exact stop on a real controller.
+fn junction_blends(a: MoveKind, b: MoveKind) -> bool {
+    use MoveKind::{Arc, Cut};
+    let cut_like = |k| matches!(k, Cut | Arc);
+    a == b || (cut_like(a) && cut_like(b))
 }
 
 fn length_and_dir(from: Pose3, to: Pose3) -> (f64, [f64; 3]) {
@@ -644,6 +700,33 @@ mod tests {
         MachineConfig {
             accel: Some(AxisLimits::uniform(250.0)),
             ..MachineConfig::default()
+        }
+    }
+
+    /// 7iej.14: motion blends through same-kind and Cut↔Arc junctions but
+    /// must full-stop at every transition into/out of a rapid, plunge, or
+    /// retract.
+    #[test]
+    fn junction_blends_only_within_cutting() {
+        use MoveKind::{Arc, Cut, Plunge, Rapid, Retract};
+        // Same kind → blend.
+        for k in [Cut, Arc, Rapid, Plunge, Retract] {
+            assert!(junction_blends(k, k), "{k:?}->{k:?} should blend");
+        }
+        // Cut ↔ Arc → blend (flow through a corner).
+        assert!(junction_blends(Cut, Arc));
+        assert!(junction_blends(Arc, Cut));
+        // Every transition touching rapid / plunge / retract → full stop.
+        for (a, b) in [
+            (Cut, Rapid),
+            (Rapid, Cut),
+            (Rapid, Plunge),
+            (Plunge, Cut),
+            (Cut, Retract),
+            (Retract, Rapid),
+            (Plunge, Arc),
+        ] {
+            assert!(!junction_blends(a, b), "{a:?}->{b:?} should full-stop");
         }
     }
 

@@ -20,17 +20,6 @@ use wiac_core::cam::VcObject;
 use wiac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
 use wiac_core::{ImportOptions, ImportOutput};
 
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-struct ImportResponseJson<'a> {
-    filename: &'a str,
-    format: &'a str,
-    segments: &'a [wiac_core::Segment],
-    layers: &'a [wiac_core::Layer],
-    bbox: &'a wiac_core::BBox,
-    unit_scale: f64,
-    warnings: &'a [String],
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -85,16 +74,13 @@ fn cmd_import(mut args: impl Iterator<Item = String>) -> Result<()> {
     let opts = ImportOptions::default();
     let out = wiac_core::input::import_path(&path, &opts)
         .with_context(|| format!("import {}", path.display()))?;
-    let body = ImportResponseJson {
-        filename: &out.filename,
-        format: &out.format,
-        segments: &out.segments,
-        layers: &out.layers,
-        bbox: &out.bbox,
-        unit_scale: out.unit_scale,
-        warnings: &out.warnings,
-    };
-    serde_json::to_writer_pretty(std::io::stdout(), &body)?;
+    // Serialize the full ImportOutput — it already derives the /import
+    // contract (snake_case field names matching the TS ImportResponse and
+    // the wasm/server output), so emitting it directly keeps `objects`,
+    // `object_meta`, and `text_entities`. The previous hand-rolled subset
+    // dropped those, producing "degraded" sample fixtures the 2D canvas
+    // couldn't select features from.
+    serde_json::to_writer_pretty(std::io::stdout(), &out)?;
     println!();
     Ok(())
 }

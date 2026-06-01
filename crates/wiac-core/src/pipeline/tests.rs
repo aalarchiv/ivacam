@@ -4560,6 +4560,77 @@ fn grbl_atc_without_template_warns() {
     );
 }
 
+/// 7iej.1: GRBL + FixedSensor is a footgun — the emitted `G38.2` probe is
+/// never followed by an applied tool-length offset (GRBL has no
+/// numbered-parameter system), so the post-change cut runs uncompensated.
+/// A 2-tool program in that config must surface the
+/// `grbl_fixed_sensor_no_offset` critical warning, while LinuxCNC (which
+/// applies `G43.1`) and a GRBL post with a tool_change macro template must
+/// not.
+#[test]
+fn grbl_fixed_sensor_without_template_warns() {
+    let sensor = || crate::cam::setup::PostChangeZStrategy::FixedSensor {
+        position: (200.0, 10.0, 30.0),
+        seek_mm: -40.0,
+        feed_mm_min: 80,
+        reference_tool_id: Some(1),
+    };
+    let run = |post_profile, post: PostProcessorKind, use_tlo: bool| {
+        let machine = MachineConfig {
+            tool_change: ToolChangeStrategy::ManualM0Pause,
+            post_change_z: sensor(),
+            use_tool_length_offsets: use_tlo,
+            post_profile,
+            ..MachineConfig::default()
+        };
+        let project = Project {
+            segments: closed_square_offset(20.0, 0.0, 0.0),
+            machine,
+            tools: vec![endmill(1, 6.0), endmill(2, 3.0)],
+            operations: vec![
+                profile_op(1, 1, ToolOffset::Outside),
+                profile_op(2, 2, ToolOffset::Outside),
+            ],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+            stock: None,
+            relief_sources: Vec::new(),
+            group_ops_by_tool: false,
+        };
+        run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(post),
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .warnings
+        .iter()
+        .any(|w| w.kind == "grbl_fixed_sensor_no_offset")
+    };
+    // GRBL + FixedSensor + no template → uncompensated cut warning fires.
+    assert!(
+        run(None, PostProcessorKind::Grbl, false),
+        "GRBL fixed-sensor with no tool_change template must warn"
+    );
+    // GRBL + a tool_change template → user's grblHAL M6 macro runs $341; no warn.
+    let with_template = crate::gcode::post_profile::PostProfile {
+        tool_change: Some("T<t> M6 ; $341 measure".into()),
+        ..Default::default()
+    };
+    assert!(
+        !run(Some(with_template), PostProcessorKind::Grbl, false),
+        "a tool_change template means the controller applies the offset — must not warn"
+    );
+    // LinuxCNC applies G43.1 from the probed parameter → no footgun.
+    assert!(
+        !run(None, PostProcessorKind::Linuxcnc, false),
+        "LinuxCNC applies the probed offset (G43.1) — must not warn"
+    );
+}
+
 /// llkf: opt-in G43 tool-length compensation. With the flag on + ATC,
 /// each tool emits `T<n> M6` then `G43 H<n>`, the static z_shift is
 /// skipped (mutually exclusive), and program_end cancels with `G49`.
@@ -4783,14 +4854,17 @@ fn post_change_z_fixed_sensor_probes_at_machine_position() {
     let op1 = must_find(&g, "; OP 1");
     let op2 = must_find(&g, "; OP 2");
     let between = &g[op1..op2];
-    // Tool 2 (non-reference) sensor cycle, in order.
-    let approach = must_find(between, "G53 G0 Z30");
+    // Tool 2 (non-reference) sensor cycle, in order. 7iej.2: XY-traverse
+    // to the sensor at safe Z comes FIRST, THEN the Z descent to the
+    // approach height — moving Z down before positioning XY would rake the
+    // fresh tool across the table at the low approach Z.
     let over = must_find(between, "G53 G0 X200 Y10");
+    let approach = must_find(between, "G53 G0 Z30");
     let probe = must_find(between, "G38.2 Z-40 F80");
     let apply = must_find(between, "G43.1 Z[#5063]");
     assert!(
-        approach < over && over < probe && probe < apply,
-        "fixed-sensor order approach->over->probe->apply broke:\n{between}"
+        over < approach && approach < probe && probe < apply,
+        "fixed-sensor order over->approach->probe->apply broke:\n{between}"
     );
 }
 

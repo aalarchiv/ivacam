@@ -464,6 +464,10 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // i185: block the GRBL + ATC + no-template footgun where post.tool()
     // would silently emit no swap and the next op cuts with the wrong tool.
     warnings::push_grbl_atc_footgun_warning(&project, post_kind, &mut warnings);
+    // 7iej.1: block the GRBL + FixedSensor footgun where the emitted G38.2
+    // probe is never followed by an applied tool-length offset (GRBL has no
+    // numbered-parameter system), so the post-change cut runs uncompensated.
+    warnings::push_grbl_fixed_sensor_warning(&project, post_kind, &mut warnings);
 
     let post_tag: u8 = match post_kind {
         PostProcessorKind::Linuxcnc => 0,
@@ -2061,8 +2065,13 @@ fn emit_post_change_z<P: PostProcessor>(
             }
             let (px, py, pz) = *position;
             post.comment(&format!("post-change Z: fixed sensor (tool {new_tool_id})"));
-            post.rapid_machine_z(pz); // safe approach height above sensor
-            post.rapid_machine_xy(px, py); // over the sensor
+            // Traverse XY to the sensor at the current (safe) Z FIRST, then
+            // descend to the approach height directly above the sensor. The
+            // reverse order (drop Z, then move XY) would rake the fresh tool
+            // across the table at the low approach Z, through any clamp /
+            // fixture / part between the change position and the sensor.
+            post.rapid_machine_xy(px, py); // over the sensor, still at safe Z
+            post.rapid_machine_z(pz); // descend to the approach height
             post.probe_toward_z(*seek_mm, *feed_mm_min);
             post.apply_probed_tool_length();
             post.rapid_machine_z(pz); // retract to the approach height

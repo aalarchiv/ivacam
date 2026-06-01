@@ -258,13 +258,17 @@ impl PostProcessor for Post {
         self.inner.probe_toward_z(distance_mm, feed_mm_min);
     }
     fn apply_probed_tool_length(&mut self) {
-        // hat3: grblHAL applies the tool-length offset natively in its
-        // `$341` tool-change cycle — emitting LinuxCNC's `G43.1 Z[#5063]`
-        // (numbered-parameter expression) would error on stock GRBL,
-        // which has no parameter system. Leave a comment so the operator
-        // / config knows where the offset comes from.
+        // hat3 / 7iej.1: stock GRBL has no numbered-parameter system, so
+        // LinuxCNC's `G43.1 Z[#5063]` (apply the probed Z) can't be
+        // emitted here — and our own `G38.2` is NOT wired into grblHAL's
+        // `$341` tool-measure cycle (that runs inside the controller's M6
+        // macro, not from a hand-rolled probe). So this emits only a
+        // comment: the offset is applied ONLY if the user's grblHAL build
+        // performs `$341` in a tool-change macro template. The pipeline
+        // fires a critical `grbl_fixed_sensor_no_offset` warning when no
+        // such template exists, since otherwise the cut runs uncompensated.
         self.inner
-            .raw("; tool length offset set by controller ($341 tool-measure)");
+            .raw("; tool length offset: relies on grblHAL $341 in the M6 macro (see grbl_fixed_sensor_no_offset)");
     }
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
         self.inner.linear(x, y, z);

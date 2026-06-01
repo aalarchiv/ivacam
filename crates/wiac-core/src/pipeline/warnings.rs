@@ -154,6 +154,69 @@ pub(super) fn push_grbl_atc_footgun_warning(
     });
 }
 
+/// 7iej.1: GRBL + FixedSensor footgun. The `FixedSensor` post-change-Z
+/// strategy emits a real `G38.2` probe (`probe_toward_z`) followed by
+/// `apply_probed_tool_length` to apply the measured length as a
+/// tool-length offset. On the LinuxCNC post that second call emits
+/// `G43.1 Z[#5063]` (the controller's probed-Z numbered parameter), so
+/// the offset is really applied. The GRBL post has NO numbered-parameter
+/// system, so its `apply_probed_tool_length` emits only a COMMENT — it
+/// relies on grblHAL's own `$341` tool-measure cycle, which fires inside
+/// the controller's `M6` macro, NOT from our hand-rolled `G38.2`. So on
+/// stock GRBL the program physically probes the tool onto the sensor and
+/// then keeps cutting with ZERO compensation: the first cut is off by the
+/// full tool-length delta (a crash or scrapped part). Nothing blocks this.
+///
+/// Fire a loud (FE-critical) warning when all of: dialect = GRBL,
+/// `post_change_z` = `FixedSensor`, the program needs >= 1 inter-op tool
+/// change, no `tool_change` macro template in the post profile, and the
+/// probe flow would actually be emitted (it is, unless the ATC path uses
+/// `G43 H<n>` tool-length offsets instead — `emits_m6() && use_tool_length_offsets`).
+/// A `tool_change` template means the user runs a custom grblHAL build
+/// whose `M6` macro performs the `$341` measurement itself, so the offset
+/// is real — no warn. The user's fix otherwise: add a tool-change macro
+/// template that probes + applies the offset, switch to the `Probe`
+/// (work-Z touch-plate) strategy, or use LinuxCNC.
+pub(super) fn push_grbl_fixed_sensor_warning(
+    project: &Project,
+    post_kind: super::PostProcessorKind,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    use crate::cam::setup::PostChangeZStrategy;
+    if !matches!(post_kind, super::PostProcessorKind::Grbl) {
+        return;
+    }
+    if !matches!(project.machine.post_change_z, PostChangeZStrategy::FixedSensor { .. }) {
+        return;
+    }
+    // The ATC / M6 path skips the probe flow entirely when G43 H<n>
+    // tool-length offsets are on (the controller's tool table supersedes
+    // it), so no broken probe is emitted — nothing to warn about.
+    if project.machine.tool_change.emits_m6() && project.machine.use_tool_length_offsets {
+        return;
+    }
+    let has_template = project
+        .machine
+        .post_profile
+        .as_ref()
+        .and_then(|p| p.tool_change.as_ref())
+        .is_some_and(|t| !t.trim().is_empty());
+    if has_template {
+        return;
+    }
+    let changes = super::count_tool_changes(project).saturating_sub(1);
+    if changes == 0 {
+        return;
+    }
+    warnings.push(PipelineWarning {
+        op_id: None,
+        kind: "grbl_fixed_sensor_no_offset".into(),
+        message:
+            "The machine uses a fixed tool-length sensor (post-change Z), but the GRBL post cannot apply the probed offset: it has no numbered-parameter system, so the emitted G38.2 probe measures the tool and then the program cuts with NO length compensation — the first cut after a tool change would be off by the full tool-length difference (a likely crash). Fix one of: add a tool-change macro template to the post profile whose M6 runs grblHAL's $341 tool-measure cycle, switch the post-change-Z strategy to a work-surface touch plate (Probe), or use the LinuxCNC post (which applies G43.1)."
+            .into(),
+    });
+}
+
 /// v0ez: post-emit work-area envelope scan. Until now the ONLY check
 /// that emitted cuts stay inside the machine travel box lived in the
 /// frontend (`GenerateBar.boundsScan`), so any non-frontend consumer

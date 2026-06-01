@@ -111,6 +111,11 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   // swap at all — the next op cuts with the wrong tool. Silent
   // corruption; must block shipping.
   'grbl_atc_no_toolchange_template',
+  // 7iej.1: GRBL with a fixed tool-length sensor emits a G38.2 probe but
+  // can't apply the measured offset (no numbered-parameter system), so the
+  // post-change cut runs uncompensated — off by the full tool-length
+  // delta. Likely crash; must block shipping.
+  'grbl_fixed_sensor_no_offset',
 ]);
 
 export function pipelineWarningSeverity(w: PipelineWarning): PipelineSeverity {

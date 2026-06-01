@@ -825,13 +825,19 @@
     const meta = imp.object_meta ?? [];
     const sel = project.selectedObjects;
     if (sel.size > 0 && meta.length > 0) {
+      // 7iej.7: object ids are NOT a dense 1-based index into `meta` —
+      // combineImports namespaces later drawings' ids by an offset, so
+      // `meta[id - 1]` reads the wrong (or no) entry once a second drawing
+      // is added. Resolve by id, like seriesSelectTo does.
+      const byId = new Map<number, (typeof meta)[number]>();
+      for (const m of meta) byId.set(m.id, m);
       let minX = Infinity;
       let minY = Infinity;
       let maxX = -Infinity;
       let maxY = -Infinity;
       let counted = 0;
       for (const id of sel) {
-        const m = meta[id - 1];
+        const m = byId.get(id);
         if (!m) continue;
         if (m.bbox.min_x < minX) minX = m.bbox.min_x;
         if (m.bbox.min_y < minY) minY = m.bbox.min_y;

@@ -17,7 +17,7 @@ import type {
   VersionResponse,
 } from './types';
 
-type WasmModule = {
+export type WasmModule = {
   default?: () => Promise<unknown>;
   healthz: () => { ok: boolean };
   version: () => VersionResponse;

@@ -312,6 +312,26 @@ export function defaultClient(): WiacClient {
 }
 
 /**
+ * 5ue0: build the in-browser wasm client. Prefer the Web Worker variant
+ * (non-blocking UI + real cancel); fall back to the main-thread client
+ * where module workers aren't available or the worker fails to construct.
+ */
+async function createWasmClient(): Promise<WiacClient> {
+  if (typeof Worker !== 'undefined') {
+    try {
+      const mod = await import('./wasm-worker-client');
+      // Constructs the worker eagerly — a module-worker-unsupported
+      // environment throws here and we fall through to the main thread.
+      return new mod.WasmWorkerClient();
+    } catch {
+      /* fall back to the synchronous main-thread client */
+    }
+  }
+  const wm = await import('./wasm');
+  return new wm.WasmWiacClient();
+}
+
+/**
  * WASM client wrapper — same lazy pattern. The wiac-wasm chunk is only
  * loaded when ?api=wasm is set, otherwise it stays out of the bundle.
  */
@@ -322,8 +342,7 @@ class WasmClientLazy {
   constructor() {
     const ensure = async (): Promise<WiacClient> => {
       if (!this.impl) {
-        const mod = await import('./wasm');
-        this.impl = new mod.WasmWiacClient();
+        this.impl = await createWasmClient();
       }
       return this.impl;
     };

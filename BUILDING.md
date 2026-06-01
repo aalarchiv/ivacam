@@ -135,9 +135,14 @@ backend.
 Known limitations of this mode (track before leaning on it as the
 headline trial path):
 
-- **Runs on the main thread today** — a heavy `generate` or sim
-  blocks the UI tab, and there is no working cancel. Moving the wasm
-  client into a Web Worker fixes both (see issue `wiaconstructor-5ue0`).
+- **Generate runs in a Web Worker** (`wiaconstructor-5ue0`) — the CAM
+  pipeline runs off the UI thread, so a heavy generate no longer
+  freezes the tab, and aborting a run cancels it for real (the worker
+  is terminated and respawned). Falls back to the main-thread client
+  where module workers aren't available. The 3D **sim** still runs on
+  the main thread (its per-frame heightfield would need transferring
+  every frame) — heavy sims can still stutter; moving it into a worker
+  is a possible follow-up.
 - **Touch is supported** (`wiaconstructor-bwt7`) — the 2D canvas does
   pinch-zoom, two-finger pan, tap- and box-select, and a long-press
   opens the context menu; the 3D view uses OrbitControls (one-finger

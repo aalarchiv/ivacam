@@ -1918,7 +1918,7 @@ mod tests {
                     "params": {
                         "depth": -2.0, "start_depth": 0.0, "step": -1.0, "fast_move_z": 5.0,
                         "helix": false, "reverse": false, "objectorder": "nearest", "overcut": false,
-                        "pocket_islands": true, "pocket_nocontour": false, "pocket_insideout": false,
+                        "pocket_islands": true, "pocket_nocontour": false,
                         "tabs": { "active": false, "width": 10.0, "height": 1.0, "tab_type": "rectangle" },
                         "leads": { "in": "off", "out": "off", "in_lenght": 5.0, "out_lenght": 5.0 }
                     }
@@ -1965,7 +1965,7 @@ mod tests {
                     "params": {
                         "depth": -2.0, "start_depth": 0.0, "step": -1.0, "fast_move_z": 5.0,
                         "helix": false, "reverse": false, "objectorder": "nearest", "overcut": false,
-                        "pocket_islands": false, "pocket_nocontour": false, "pocket_insideout": false,
+                        "pocket_islands": false, "pocket_nocontour": false,
                         "tabs": { "active": false, "width": 10.0, "height": 1.0, "tab_type": "rectangle" },
                         "leads": { "in": "off", "out": "off", "in_lenght": 5.0, "out_lenght": 5.0 }
                     }

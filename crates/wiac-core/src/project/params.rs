@@ -134,9 +134,6 @@ pub struct PocketParams {
     /// Skip the wall-defining ring (contour cut).
     #[serde(default)]
     pub pocket_nocontour: bool,
-    /// Cascade outward-in instead of inward-out.
-    #[serde(default)]
-    pub pocket_insideout: bool,
     /// XY stock allowance left uncut by roughing (rt1.24).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_xy_allowance_mm: Option<f64>,
@@ -373,7 +370,6 @@ pub fn pocket_mill_default() -> PocketParams {
         xy_overlap: 0.5,
         pocket_islands: false,
         pocket_nocontour: false,
-        pocket_insideout: false,
         finish_xy_allowance_mm: None,
         frame_shape: None,
         frame_padding_mm: None,

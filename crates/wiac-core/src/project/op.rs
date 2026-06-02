@@ -1072,7 +1072,6 @@ mod tests {
                 "pocket": {
                     "xy_overlap": 0.4,
                     "pocket_islands": true,
-                    "pocket_insideout": true,
                     "finish_xy_allowance_mm": 0.3
                 }
             },
@@ -1093,7 +1092,6 @@ mod tests {
         };
         assert!((pocket.xy_overlap - 0.4).abs() < 1e-9);
         assert!(pocket.pocket_islands);
-        assert!(pocket.pocket_insideout);
         assert_eq!(pocket.finish_xy_allowance_mm, Some(0.3));
         assert!(contour.tabs.active);
         assert!((contour.tabs.width - 8.0).abs() < 1e-9);

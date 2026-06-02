@@ -431,7 +431,6 @@ pub(in crate::pipeline) fn synthesize_op_setup(
             active: true,
             islands: pocket.pocket_islands,
             zigzag: matches!(strategy, PocketStrategy::Zigzag { .. }),
-            insideout: pocket.pocket_insideout,
             nocontour: pocket.pocket_nocontour,
         },
         _ => PocketConfig::default(),

@@ -1261,7 +1261,6 @@ components:
             allOf:
             - $ref: '#/components/schemas/PocketParams'
             default:
-              pocket_insideout: false
               pocket_islands: false
               pocket_nocontour: false
               xy_overlap: 0.0
@@ -2000,8 +1999,6 @@ components:
       properties:
         active:
           type: boolean
-        insideout:
-          type: boolean
         islands:
           type: boolean
         nocontour:
@@ -2011,7 +2008,6 @@ components:
           type: boolean
       required:
       - active
-      - insideout
       - islands
       - nocontour
       - zigzag
@@ -2042,10 +2038,6 @@ components:
           - $ref: '#/components/schemas/FrameShape'
           - type: 'null'
           description: Pocket-Outside wrapper shape. Set only on ops created via the Pocket-Outside UX.
-        pocket_insideout:
-          default: false
-          description: Cascade outward-in instead of inward-out.
-          type: boolean
         pocket_islands:
           default: false
           description: Treat inner contours as islands (don't cut them).

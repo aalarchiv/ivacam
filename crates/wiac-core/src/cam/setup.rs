@@ -376,7 +376,6 @@ pub struct PocketConfig {
     pub active: bool,
     pub islands: bool,
     pub zigzag: bool,
-    pub insideout: bool,
     /// Skip the boundary contour pass (used by HATCH-equivalent layers).
     pub nocontour: bool,
 }

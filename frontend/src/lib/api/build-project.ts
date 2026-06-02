@@ -341,7 +341,6 @@ interface WirePocketParams {
   xy_overlap?: number;
   pocket_islands?: boolean;
   pocket_nocontour?: boolean;
-  pocket_insideout?: boolean;
   finish_xy_allowance_mm?: number;
   frame_shape?: 'rectangle' | 'rounded_rectangle';
   frame_padding_mm?: number;

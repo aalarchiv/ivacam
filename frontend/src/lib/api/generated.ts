@@ -741,7 +741,6 @@ export interface components {
             contour: components["schemas"]["ContourParams"];
             /**
              * @default {
-             *       "pocket_insideout": false,
              *       "pocket_islands": false,
              *       "pocket_nocontour": false,
              *       "xy_overlap": 0
@@ -1249,7 +1248,6 @@ export interface components {
         };
         PocketConfig: {
             active: boolean;
-            insideout: boolean;
             islands: boolean;
             /** @description Skip the boundary contour pass (used by HATCH-equivalent layers). */
             nocontour: boolean;
@@ -1274,11 +1272,6 @@ export interface components {
             frame_padding_mm?: number | null;
             /** @description Pocket-Outside wrapper shape. Set only on ops created via the Pocket-Outside UX. */
             frame_shape?: components["schemas"]["FrameShape"] | null;
-            /**
-             * @description Cascade outward-in instead of inward-out.
-             * @default false
-             */
-            pocket_insideout: boolean;
             /**
              * @description Treat inner contours as islands (don't cut them).
              * @default false

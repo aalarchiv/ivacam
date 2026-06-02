@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 42;
+pub const PIPELINE_VERSION: u32 = 43;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -988,7 +988,6 @@ fn hash_pocket_params<H: Hasher>(p: &PocketParams, h: &mut H) {
     hash_f64(p.xy_overlap, h);
     p.pocket_islands.hash(h);
     p.pocket_nocontour.hash(h);
-    p.pocket_insideout.hash(h);
     hash_opt_f64(p.finish_xy_allowance_mm, h);
     match p.frame_shape {
         None => h.write_u8(0),
@@ -1252,7 +1251,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x508e_445c_3515_af87_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0x86f4_acbd_dcf7_17c3_u64, "got {:#018x}", key.0);
     }
 
     #[test]

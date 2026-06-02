@@ -730,6 +730,35 @@ pub(super) fn push_tool_fit_kind_warnings(
             }
         }
     }
+    // 1wir: plasma / laser pierce-on-edge. The pierce happens at the
+    // lead-in START point (see gcode.rs `plasma_entry`), so a Profile
+    // with NO lead-in — the default, LeadKind::Off — pierces directly on
+    // the finished contour, where the rough pierce divot (severe on
+    // plasma, minor on laser) mars the part edge. Warn so the user adds a
+    // lead-in for an off-edge starter hole. Only Profile is checked: it's
+    // the only contour cut-out kind valid on these machines (the op×mode
+    // check above flags the rest).
+    {
+        use crate::cam::setup::{LeadKind, MachineMode};
+        if matches!(op.kind, OpKind::Profile { .. })
+            && matches!(setup.machine.mode, MachineMode::Plasma | MachineMode::Laser)
+            && setup.leads.r#in == LeadKind::Off
+        {
+            let (cutter, harm) = if setup.machine.mode == MachineMode::Plasma {
+                ("torch", "the pierce blow-back gouges the edge")
+            } else {
+                ("beam", "the pierce dwell leaves a divot on the edge")
+            };
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "pierce_on_contour_no_lead".into(),
+                message: format!(
+                    "op '{}' has no lead-in, so the {cutter} pierces directly on the cut contour — {harm}. Add a lead-in (straight or arc) so the pierce lands off the finished edge (a starter hole).",
+                    op.name
+                ),
+            });
+        }
+    }
     // 3g6u: T-slot cuts ONLY the undercut at the floor Z. A T-slot cutter
     // can't mill the narrow stem (its head is the widest part, at the
     // tip), so the user must have cut a stem slot >= the neck width with
@@ -1354,6 +1383,50 @@ mod tests {
         assert!(
             !w4.iter().any(|x| x.kind == "op_machine_mode_mismatch"),
             "pocket allowed via Mill capability: {w4:?}"
+        );
+    }
+
+    /// 1wir: a plasma/laser Profile with no lead-in pierces on the
+    /// finished edge → warns `pierce_on_contour_no_lead`. A configured
+    /// lead-in silences it; a mill machine (no pierce) is never affected.
+    #[test]
+    fn pierce_on_contour_warns_without_lead_in() {
+        use crate::cam::setup::{LeadKind, MachineMode, Setup};
+        let tool = endmill(1, 6.0);
+        let profile = profile_op(1, 1, ToolOffset::Outside);
+        let project = project_with(vec![profile.clone()], vec![tool]);
+
+        // Plasma, no lead-in (default Off) → warn, names the torch.
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Plasma;
+        setup.leads.r#in = LeadKind::Off;
+        let mut w = Vec::new();
+        push_tool_fit_kind_warnings(&profile, &project, &setup, &mut w);
+        let hit = w
+            .iter()
+            .find(|x| x.kind == "pierce_on_contour_no_lead")
+            .expect("plasma profile with no lead-in should warn");
+        assert_eq!(hit.op_id, Some(1));
+        assert!(hit.message.contains("torch"), "plasma names the torch: {}", hit.message);
+
+        // Plasma WITH a straight lead-in → off-edge starter hole → silent.
+        setup.leads.r#in = LeadKind::Straight;
+        let mut w2 = Vec::new();
+        push_tool_fit_kind_warnings(&profile, &project, &setup, &mut w2);
+        assert!(
+            !w2.iter().any(|x| x.kind == "pierce_on_contour_no_lead"),
+            "a lead-in gives an off-edge starter hole: {w2:?}"
+        );
+
+        // Mill machine, no lead-in → not a pierce machine → silent.
+        let mut setup_mill = Setup::default();
+        setup_mill.machine.mode = MachineMode::Mill;
+        setup_mill.leads.r#in = LeadKind::Off;
+        let mut w3 = Vec::new();
+        push_tool_fit_kind_warnings(&profile, &project, &setup_mill, &mut w3);
+        assert!(
+            !w3.iter().any(|x| x.kind == "pierce_on_contour_no_lead"),
+            "mill doesn't pierce: {w3:?}"
         );
     }
 

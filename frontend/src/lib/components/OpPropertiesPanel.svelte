@@ -568,6 +568,19 @@
                 <option value={layer.name}>"{layer.name}"</option>
               {/each}
             {/if}
+            <!-- y8wv: text layers are selectable sources too. Each
+                 TextLayer's rendered geometry lives on the synthetic
+                 layer `__text_<id>` (the same value AddTextDialog seeds
+                 the engrave op with), so listing it here makes the text
+                 source visible + re-selectable instead of rendering blank
+                 and getting clobbered on the next edit. -->
+            {#if project.textLayers.length > 0}
+              <optgroup label="Text">
+                {#each project.textLayers as t (t.id)}
+                  <option value={`__text_${t.id}`}>{t.name}</option>
+                {/each}
+              </optgroup>
+            {/if}
           </select>
         </label>
       {:else if op.sourceObjects && op.sourceObjects.length > 0}

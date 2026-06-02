@@ -351,14 +351,17 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         // means "use the default".
         vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(tool.vcarve_lead_in_angle_deg),
     };
-    // 2606: plasma kerf compensation. In Plasma mode the cut width is the
-    // torch kerf, not a physical tool diameter — so override the effective
-    // cutting diameter to `kerf_mm`. The offset cascade then compensates
-    // the cut path by `kerf_mm / 2` (Profile Outside/Inside semantics
-    // handled by the same machinery as a milling tool's radius), instead
-    // of using the dummy tool diameter. Only when a kerf is configured;
-    // otherwise the nominal diameter stands.
-    if matches!(setup.machine.mode, MachineMode::Plasma) {
+    // 2606 / b15k: plasma + laser kerf compensation. For a torch or a
+    // beam the cut width is the kerf, not a physical tool diameter — so
+    // override the effective cutting diameter to `kerf_mm`. The offset
+    // cascade then compensates the cut path by `kerf_mm / 2` (Profile
+    // Outside/Inside semantics handled by the same machinery as a milling
+    // tool's radius), instead of riding the nominal contour. This also
+    // makes the emitted toolpath agree with the sim, which already carves
+    // the heightmap at `kerf_mm` for both modes. Only when a kerf is
+    // configured; otherwise the nominal diameter stands (back-compat for
+    // laser/plasma tools that never set a kerf).
+    if matches!(setup.machine.mode, MachineMode::Plasma | MachineMode::Laser) {
         if let Some(kerf) = tool.kerf_mm.filter(|k| *k > 0.0) {
             setup.tool.diameter = kerf;
         }
@@ -959,13 +962,13 @@ mod tests {
         assert!(effective_step(&op, &tool).is_err());
     }
 
-    /// 2606: in Plasma mode the effective cutting diameter the offset
-    /// cascade uses is the torch KERF (cut width), not the nominal /
-    /// dummy tool diameter — so a Profile cut is compensated by kerf/2.
-    /// No kerf configured ⇒ the nominal diameter stands. Mill mode is
-    /// never affected.
+    /// 2606 / b15k: in Plasma AND Laser mode the effective cutting
+    /// diameter the offset cascade uses is the KERF (cut width), not the
+    /// nominal / dummy tool diameter — so a Profile cut is compensated by
+    /// kerf/2. No kerf configured ⇒ the nominal diameter stands. Mill
+    /// mode is never affected.
     #[test]
-    fn plasma_kerf_overrides_effective_cut_diameter() {
+    fn plasma_and_laser_kerf_override_effective_cut_diameter() {
         use crate::cam::setup::MachineMode;
         let mut tool = endmill(1, 10.0); // dummy 10 mm "tool" diameter
         tool.kerf_mm = Some(2.0);
@@ -986,13 +989,28 @@ mod tests {
             setup_p.tool.diameter
         );
 
-        // Plasma but no kerf configured: nominal diameter stands.
+        // Laser mode: same as plasma — the beam kerf drives the offset.
+        project.machine.mode = MachineMode::Laser;
+        let setup_l = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+        assert!(
+            (setup_l.tool.diameter - 2.0).abs() < 1e-9,
+            "laser kerf should override effective cut diameter, got {}",
+            setup_l.tool.diameter
+        );
+
+        // No kerf configured: nominal diameter stands in both kerf modes.
         let mut tool_nk = endmill(1, 10.0);
         tool_nk.kerf_mm = None;
         let mut project_nk = project_with(vec![op.clone()], vec![tool_nk]);
-        project_nk.machine.mode = MachineMode::Plasma;
-        let setup_nk = synthesize_op_setup(&op, &project_nk, &mut Vec::new()).unwrap();
-        assert!((setup_nk.tool.diameter - 10.0).abs() < 1e-9);
+        for mode in [MachineMode::Plasma, MachineMode::Laser] {
+            project_nk.machine.mode = mode;
+            let setup_nk = synthesize_op_setup(&op, &project_nk, &mut Vec::new()).unwrap();
+            assert!(
+                (setup_nk.tool.diameter - 10.0).abs() < 1e-9,
+                "no kerf ⇒ nominal diameter stands in {mode:?}, got {}",
+                setup_nk.tool.diameter
+            );
+        }
     }
 
     #[test]

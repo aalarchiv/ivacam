@@ -679,6 +679,57 @@ pub(super) fn push_tool_fit_kind_warnings(
             ),
         });
     }
+    // 3cyf: op-kind ✗ machine-mode. The op-kind picker hides kinds that
+    // don't fit the machine's capabilities at creation time, but a
+    // legacy project, a machine-mode switch (MachineDialog never
+    // re-checks existing ops), or the API can still leave e.g. a Pocket
+    // on a laser — which the emitter turns into nonsense (a beam tracing
+    // concentric pocket rings). Mirror the frontend gating against the
+    // machine's EFFECTIVE capability set so a genuine combo machine
+    // (mill + laser) doesn't false-warn. Non-blocking: the emitter still
+    // produces a path. Match is exhaustive so a new OpKind forces a
+    // deliberate mode decision.
+    {
+        use crate::cam::setup::MachineMode::{Drag, Laser, Mill, Plasma};
+        let (kind_name, allowed): (&str, &[crate::cam::setup::MachineMode]) = match &op.kind {
+            OpKind::Profile { .. } => ("Profile", &[Mill, Laser, Plasma]),
+            OpKind::Engrave { .. } => ("Engrave", &[Mill, Laser]),
+            OpKind::DragKnife { .. } => ("Drag-knife", &[Drag]),
+            OpKind::Pocket { .. } => ("Pocket", &[Mill]),
+            OpKind::Drill { .. } => ("Drill", &[Mill]),
+            OpKind::Thread { .. } => ("Thread", &[Mill]),
+            OpKind::Chamfer { .. } => ("Chamfer", &[Mill]),
+            OpKind::TSlot { .. } => ("T-slot", &[Mill]),
+            OpKind::Dovetail { .. } => ("Dovetail", &[Mill]),
+            OpKind::VCarve { .. } => ("V-carve", &[Mill]),
+            OpKind::ReliefMill { .. } => ("Relief", &[Mill]),
+            OpKind::Helix => ("Helix", &[Mill]),
+            // Program-flow / mode-agnostic ops (is_program_only): valid
+            // on every machine — empty `allowed` skips the check below.
+            OpKind::Pause { .. }
+            | OpKind::Homing { .. }
+            | OpKind::Probe { .. }
+            | OpKind::CycleMarker { .. }
+            | OpKind::GcodeInclude { .. } => ("", &[]),
+        };
+        if !allowed.is_empty() {
+            let caps: &[crate::cam::setup::MachineMode] = if setup.machine.capabilities.is_empty() {
+                std::slice::from_ref(&setup.machine.mode)
+            } else {
+                &setup.machine.capabilities
+            };
+            if !caps.iter().any(|c| allowed.contains(c)) {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "op_machine_mode_mismatch".into(),
+                    message: format!(
+                        "{kind_name} op '{}' isn't a meaningful operation on a {:?} machine (it runs on {allowed:?}). A toolpath is still emitted, but the result is unlikely to be usable — switch the machine's mode/capabilities or remove the op.",
+                        op.name, setup.machine.mode
+                    ),
+                });
+            }
+        }
+    }
     // 3g6u: T-slot cuts ONLY the undercut at the floor Z. A T-slot cutter
     // can't mill the narrow stem (its head is the widest part, at the
     // tip), so the user must have cut a stem slot >= the neck width with
@@ -1248,6 +1299,61 @@ mod tests {
             !w3.iter()
                 .any(|w| w.kind == "compression_transition_above_cut"),
             "transition-less compression bit should not warn: {w3:?}"
+        );
+    }
+
+    /// 3cyf: an op kind that doesn't fit the machine mode warns
+    /// `op_machine_mode_mismatch` (mirrors the frontend picker gating); a
+    /// compatible op stays silent, and the machine's CAPABILITY set — not
+    /// just the primary mode — governs so a combo machine doesn't false-warn.
+    #[test]
+    fn op_machine_mode_mismatch_warns_for_incompatible_kind() {
+        use crate::cam::setup::{MachineMode, Setup};
+        let tool = endmill(1, 6.0);
+        let pocket = pocket_op(1, 1, OpSource::All);
+        let profile = profile_op(2, 1, ToolOffset::Outside);
+        let project = project_with(vec![pocket.clone(), profile.clone()], vec![tool]);
+
+        // Laser machine: Pocket is nonsensical → warn (op_id carried).
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Laser;
+        let mut w = Vec::new();
+        push_tool_fit_kind_warnings(&pocket, &project, &setup, &mut w);
+        let hit = w
+            .iter()
+            .find(|x| x.kind == "op_machine_mode_mismatch")
+            .expect("pocket on a laser machine should warn");
+        assert_eq!(hit.op_id, Some(1));
+        assert!(hit.message.contains("Laser"), "names the mode: {}", hit.message);
+
+        // Profile on the same laser machine: laser-capable → silent.
+        let mut w2 = Vec::new();
+        push_tool_fit_kind_warnings(&profile, &project, &setup, &mut w2);
+        assert!(
+            !w2.iter().any(|x| x.kind == "op_machine_mode_mismatch"),
+            "profile is laser-capable: {w2:?}"
+        );
+
+        // Mill machine: Pocket is fine → silent.
+        let mut setup_mill = Setup::default();
+        setup_mill.machine.mode = MachineMode::Mill;
+        let mut w3 = Vec::new();
+        push_tool_fit_kind_warnings(&pocket, &project, &setup_mill, &mut w3);
+        assert!(
+            !w3.iter().any(|x| x.kind == "op_machine_mode_mismatch"),
+            "pocket on mill is fine: {w3:?}"
+        );
+
+        // Combo machine: primary mode Laser but capabilities include Mill
+        // → Pocket is allowed by capability → silent.
+        let mut setup_combo = Setup::default();
+        setup_combo.machine.mode = MachineMode::Laser;
+        setup_combo.machine.capabilities = vec![MachineMode::Laser, MachineMode::Mill];
+        let mut w4 = Vec::new();
+        push_tool_fit_kind_warnings(&pocket, &project, &setup_combo, &mut w4);
+        assert!(
+            !w4.iter().any(|x| x.kind == "op_machine_mode_mismatch"),
+            "pocket allowed via Mill capability: {w4:?}"
         );
     }
 

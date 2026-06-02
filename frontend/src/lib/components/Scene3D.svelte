@@ -29,6 +29,7 @@
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
+  import { computeArrowChevron, arrowSpacingMm } from '../scene3d/toolpath_buffers';
   import { resolveAci } from '../canvas/aci-color';
   import { unpackFixtureColor, DEFAULT_FIXTURE_COLOR } from '../canvas/fixture-color';
 
@@ -1872,15 +1873,18 @@
     // the main toolpath buffer.
     const arrowPositions: number[] = [];
     const arrowColors: number[] = [];
-    const ARROW_MIN_LEN = 1.0; // mm; shorter segments never get an arrow
-    const ARROW_MAX_SIZE = 4.0; // mm; absolute cap on arrow size
-    const ARROW_SIZE_FRAC = 0.2; // arrow size relative to segment length
-    const ARROW_HALF_WING = Math.tan((30 * Math.PI) / 180); // ±30° wings
+    // 7iej.17: chevron geometry lives in scene3d/toolpath_buffers.ts (pure +
+    // unit-tested); the buffer assembly + spacing bookkeeping stay here.
+    const ARROW_PARAMS = {
+      minLen: 1.0, // mm; shorter segments never get an arrow
+      maxSize: 4.0, // mm; absolute cap on arrow size
+      sizeFrac: 0.2, // arrow size relative to segment length
+      halfWing: Math.tan((30 * Math.PI) / 180), // ±30° wings
+    };
     // Arrow spacing is user-tunable (Settings → arrow density): higher
     // density packs arrows closer. density 0 ⇒ Infinity spacing ⇒ no
     // segment ever qualifies, so arrows are disabled.
-    const arrowDensity = project.settings.toolMoveArrowDensity;
-    const ARROW_MIN_SPACING = arrowDensity > 0 ? 3.0 / arrowDensity : Infinity;
+    const ARROW_MIN_SPACING = arrowSpacingMm(project.settings.toolMoveArrowDensity);
     let lenSinceLastArrow = ARROW_MIN_SPACING; // emit on first qualifying segment
     const moveTints: Record<string, THREE.Color> = {
       rapid: cssColor('--toolpath-rapid', 0x35a2ff),
@@ -1924,42 +1928,14 @@
       const dz = seg.to.z - seg.from.z;
       const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (len > 0) lenSinceLastArrow += len;
-      const arrowEligible =
-        len >= ARROW_MIN_LEN && lenSinceLastArrow >= ARROW_MIN_SPACING && seg.kind !== 'rapid';
-      if (arrowEligible) {
-        const A = Math.min(len * ARROW_SIZE_FRAC, ARROW_MAX_SIZE);
-        const ux = dx / len;
-        const uy = dy / len;
-        const uz = dz / len;
-        // Perpendicular: rotate forward dir 90° CCW in XY when the
-        // segment has meaningful horizontal component (the common
-        // case). Pure-Z plunge/retract gets a fixed +X side so
-        // arrows stay visible from any camera angle.
-        let nx: number;
-        let ny: number;
-        let nz: number;
-        const xyLen = Math.hypot(ux, uy);
-        if (xyLen > 0.01) {
-          nx = -uy / xyLen;
-          ny = ux / xyLen;
-          nz = 0;
-        } else {
-          nx = 1;
-          ny = 0;
-          nz = 0;
-        }
-        const mx = (seg.from.x + seg.to.x) * 0.5;
-        const my = (seg.from.y + seg.to.y) * 0.5;
-        const mz = (seg.from.z + seg.to.z) * 0.5;
-        const side = A * ARROW_HALF_WING;
-        const p1x = mx - A * ux + side * nx;
-        const p1y = my - A * uy + side * ny;
-        const p1z = mz - A * uz + side * nz;
-        const p2x = mx - A * ux - side * nx;
-        const p2y = my - A * uy - side * ny;
-        const p2z = mz - A * uz - side * nz;
-        arrowPositions.push(mx, my, mz, p1x, p1y, p1z);
-        arrowPositions.push(mx, my, mz, p2x, p2y, p2z);
+      // Spacing + move-kind eligibility stays here (caller state); the
+      // chevron geometry (incl. the per-segment minLen gate) is pure.
+      const spacingOk = lenSinceLastArrow >= ARROW_MIN_SPACING && seg.kind !== 'rapid';
+      const chev = spacingOk ? computeArrowChevron(seg.from, seg.to, ARROW_PARAMS) : null;
+      if (chev) {
+        const { mid, wing1, wing2 } = chev;
+        arrowPositions.push(mid[0], mid[1], mid[2], wing1[0], wing1[1], wing1[2]);
+        arrowPositions.push(mid[0], mid[1], mid[2], wing2[0], wing2[1], wing2[2]);
         // Slight brightness boost so arrows pop on top of the
         // base line.
         const ar = Math.min(1, r * 1.25);

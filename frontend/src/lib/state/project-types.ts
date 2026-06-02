@@ -198,7 +198,7 @@ export interface ToolEntry {
   /// When enabled with `whirlExtraWidthMm > 0`, every cut move using
   /// this tool is subdivided and the cutter centerline spirals around
   /// the toolpath — engagement bounded at each point. Default false.
-  /// (Serialized to the backend as the German `wirbeln` wire field.)
+  /// (Serialized to the backend as the `whirl` wire field.)
   whirl?: boolean;
   /// Whirling spiral diameter (3e5): mm. Net cut width becomes
   /// `diameter + whirlExtraWidthMm`. None / 0 ⇒ overlay disabled.

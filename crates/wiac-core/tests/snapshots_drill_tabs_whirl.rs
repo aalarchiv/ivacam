@@ -1,4 +1,4 @@
-//! 020s: Golden snapshot coverage for drill / tabs / wirbeln gcode.
+//! 020s: Golden snapshot coverage for drill / tabs / whirl gcode.
 //!
 //! Pins the exact emitted gcode for four representative pipeline
 //! configurations so future refactors can't silently change drill /
@@ -13,14 +13,14 @@
 //!     tab lift sequence and the helical plunge.
 //!  3. Profile with Ramp tabs — verifies the trapezoidal Z profile
 //!     over the tab footprint.
-//!  4. Wirbeln tool walking a closed contour — verifies the face-
+//!  4. Whirl tool walking a closed contour — verifies the face-
 //!     mill helical-spiral overlay (7z7w: misnamed historically as
-//!     "wirbeln") produces dense G1 stamps with the cutter
+//!     "whirl") produces dense G1 stamps with the cutter
 //!     centerline displaced.
 //!
 //! **Updating the baselines:** when an intentional change shifts the
 //! emitted gcode, set `WIAC_UPDATE_SNAPSHOTS=1` in the env and re-run
-//! `cargo test -p wiac-core --test snapshots_drill_tabs_wirbeln`; the
+//! `cargo test -p wiac-core --test snapshots_drill_tabs_whirl`; the
 //! test prints the new baseline string and fails so you can paste it
 //! into the const below. Without the env var the test does a
 //! byte-equal compare and fails on any drift.
@@ -365,16 +365,16 @@ fn snapshot_profile_ramp_tabs() {
     );
 }
 
-/// 020s.d: face-mill overlay (historical name "wirbeln") on a closed
+/// 020s.d: face-mill overlay (historical name "whirl") on a closed
 /// contour. Pins the dense G1 stamp output that the helical-spiral
 /// overlay produces.
 #[test]
-fn snapshot_wirbeln_walks_closed_contour() {
+fn snapshot_whirl_walks_closed_contour() {
     let mut tool = endmill(1, 3.0);
-    tool.wirbeln = true;
-    tool.wirbeln_extra_width_mm = Some(2.0);
-    tool.wirbeln_stepover_mm = Some(2.0);
-    tool.wirbeln_osc_mm = Some(0.0);
+    tool.whirl = true;
+    tool.whirl_extra_width_mm = Some(2.0);
+    tool.whirl_stepover_mm = Some(2.0);
+    tool.whirl_osc_mm = Some(0.0);
     let mut params = OpParams::mill_default();
     params.depth = -1.0;
     params.step = Some(-1.0);
@@ -386,7 +386,7 @@ fn snapshot_wirbeln_walks_closed_contour() {
         tools: vec![tool],
         operations: vec![Op {
             id: 1,
-            name: "WirbelnPocket".into(),
+            name: "WhirlPocket".into(),
             enabled: true,
             kind: OpKind::Pocket {
                 strategy: PocketStrategy::Cascade,
@@ -409,9 +409,9 @@ fn snapshot_wirbeln_walks_closed_contour() {
     };
     let actual = run_to_gcode(project);
     assert!(actual.contains("; OP 1"), "missing op marker:\n{actual}");
-    // Wirbeln overlay emits many short G1 stamps along the chord —
-    // verify the density (a non-wirbeln pocket would emit ~20 G1
-    // moves; wirbeln produces hundreds).
+    // Whirl overlay emits many short G1 stamps along the chord —
+    // verify the density (a non-whirl pocket would emit ~20 G1
+    // moves; whirl produces hundreds).
     let g1_count = actual.lines().filter(|l| l.starts_with("G1 ")).count();
     assert!(
         g1_count >= 50,
@@ -419,7 +419,7 @@ fn snapshot_wirbeln_walks_closed_contour() {
     );
     let digest = seahash_hex(&actual);
     assert_snapshot(
-        "wirbeln_closed_contour",
+        "whirl_closed_contour",
         &digest,
         EXPECTED_WIRBELN_CLOSED_CONTOUR_DIGEST,
     );
@@ -438,7 +438,7 @@ fn snapshot_wirbeln_walks_closed_contour() {
 // was subtly wrong, the digest locks the bug in. The human-meaningful
 // correctness signal is the STRUCTURAL asserts paired with each digest in
 // the test body (G81/G82, the M5/M6/M3 envelope, the helix arc, the ramp
-// Z profile, the wirbeln stamp count); the digest only catches
+// Z profile, the whirl stamp count); the digest only catches
 // unintended drift on top of those. When you need to prove a behavior is
 // correct, strengthen those asserts rather than trusting the digest.
 

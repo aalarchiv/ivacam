@@ -259,20 +259,20 @@ mod tests {
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project, ToolEntry, ToolKind};
 
-    /// Wirbeln (3e5): when a Pocket op uses a Wirbeln-tagged tool
+    /// Whirl (3e5): when a Pocket op uses a Whirl-tagged tool
     /// with a non-zero extra-width, the gcode body contains many more
-    /// G1 moves than the same op without Wirbeln — the helical-spiral
+    /// G1 moves than the same op without Whirl — the helical-spiral
     /// overlay subdivides every cut move at the spiral stride. The
     /// cascade-ring count stays the same (3e5 removed the v1
     /// `xy_step` clamp); the extra moves come from the overlay's
     /// stride stamping at gcode-emit time.
     #[test]
-    fn wirbeln_tool_inflates_gcode_g1_count() {
+    fn whirl_tool_inflates_gcode_g1_count() {
         let tool_a = endmill(1, 6.0);
         let mut tool_b = endmill(1, 6.0);
-        tool_b.wirbeln = true;
-        tool_b.wirbeln_extra_width_mm = Some(2.0); // 1 mm spiral radius
-        tool_b.wirbeln_stepover_mm = Some(2.0); // 2 mm stride per rev
+        tool_b.whirl = true;
+        tool_b.whirl_extra_width_mm = Some(2.0); // 1 mm spiral radius
+        tool_b.whirl_stepover_mm = Some(2.0); // 2 mm stride per rev
         let params = OpParams::mill_default();
         let pocket = crate::project::PocketParams {
             xy_overlap: 0.5,
@@ -325,7 +325,7 @@ mod tests {
         let g1_b = resp_b.gcode.lines().filter(|l| l.starts_with("G1")).count();
         assert!(
             g1_b > g1_a * 3,
-            "Wirbeln overlay should multiply G1 count substantially: on={g1_b} vs off={g1_a}",
+            "Whirl overlay should multiply G1 count substantially: on={g1_b} vs off={g1_a}",
         );
         // Cascade ring count stays the same — the overlay doesn't add rings.
         assert_eq!(
@@ -334,21 +334,21 @@ mod tests {
         );
     }
 
-    /// Wirbeln serde round-trip on `ToolEntry` (rt1.25). Default = false
+    /// Whirl serde round-trip on `ToolEntry` (rt1.25). Default = false
     /// (skipped on serialize); when on with an override, both round-trip.
     #[test]
-    fn wirbeln_serde_round_trip() {
+    fn whirl_serde_round_trip() {
         let mut tool = endmill(1, 6.0);
         let json_default = serde_json::to_string(&tool).unwrap();
-        assert!(!json_default.contains("wirbeln"));
-        tool.wirbeln = true;
-        tool.wirbeln_stepover_mm = Some(0.75);
+        assert!(!json_default.contains("whirl"));
+        tool.whirl = true;
+        tool.whirl_stepover_mm = Some(0.75);
         let json = serde_json::to_string(&tool).unwrap();
-        assert!(json.contains("\"wirbeln\":true"));
-        assert!(json.contains("wirbeln_stepover_mm"));
+        assert!(json.contains("\"whirl\":true"));
+        assert!(json.contains("whirl_stepover_mm"));
         let back: ToolEntry = serde_json::from_str(&json).unwrap();
-        assert!(back.wirbeln);
-        assert_eq!(back.wirbeln_stepover_mm, Some(0.75));
+        assert!(back.whirl);
+        assert_eq!(back.whirl_stepover_mm, Some(0.75));
     }
 
     /// Halfpipe op (rt1.19): a closed region + Halfpipe `CircularArc`

@@ -235,14 +235,14 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     } else {
         0.0
     };
-    // 3e5: Wirbeln helical overlay parameters. Off when the tool isn't
+    // 3e5: Whirl helical overlay parameters. Off when the tool isn't
     // tagged, or when extra-width is 0 / unset. Stepover defaults to
     // half the spiral radius (one-revolution overlap → smooth motion).
-    let (wirbeln_radius, wirbeln_stepover, wirbeln_osc) = if tool.wirbeln {
-        let r = tool.wirbeln_extra_width_mm.unwrap_or(0.0) * 0.5;
+    let (whirl_radius, whirl_stepover, whirl_osc) = if tool.whirl {
+        let r = tool.whirl_extra_width_mm.unwrap_or(0.0) * 0.5;
         if r > 0.0 {
-            let stepover = tool.wirbeln_stepover_mm.filter(|v| *v > 0.0).unwrap_or(r);
-            let osc = tool.wirbeln_osc_mm.unwrap_or(0.0).max(0.0);
+            let stepover = tool.whirl_stepover_mm.filter(|v| *v > 0.0).unwrap_or(r);
+            let osc = tool.whirl_osc_mm.unwrap_or(0.0).max(0.0);
             (r, stepover, osc)
         } else {
             (0.0, 0.0, 0.0)
@@ -324,14 +324,14 @@ pub(in crate::pipeline) fn synthesize_op_setup(
             warnings,
         ),
         pierce_sec,
-        wirbeln_radius,
-        wirbeln_stepover,
-        wirbeln_osc,
+        whirl_radius,
+        whirl_stepover,
+        whirl_osc,
         // Spiral rotation direction: matches the op's contour cut
         // direction (Estlcam's Einstellungen.Gleichlauf). Non-contour
-        // kinds (Drill et al.) never reach the wirbeln overlay anyway,
+        // kinds (Drill et al.) never reach the whirl overlay anyway,
         // so the default doesn't matter — pick `true` (climb).
-        wirbeln_climb: op.contour_params().map_or(true, |c| {
+        whirl_climb: op.contour_params().map_or(true, |c| {
             matches!(c.cut_direction, crate::project::CutDirection::Climb)
         }),
         default_xy_overlap: tool.default_xy_overlap,
@@ -759,14 +759,14 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                     &project.machine,
                 ),
                 pierce_sec,
-                // Wirbeln (3e5) is a cut-time overlay only — the
+                // Whirl (3e5) is a cut-time overlay only — the
                 // header_setup_for path is for program header emission
                 // and never reaches the cut walker, so the resolved
                 // params here are inert defaults.
-                wirbeln_radius: 0.0,
-                wirbeln_stepover: 0.0,
-                wirbeln_osc: 0.0,
-                wirbeln_climb: true,
+                whirl_radius: 0.0,
+                whirl_stepover: 0.0,
+                whirl_osc: 0.0,
+                whirl_climb: true,
                 default_xy_overlap: None,
                 tip_angle_deg: tool.tip_angle_deg,
                 tip_diameter_mm: effective_tip_diameter_mm(tool),
@@ -817,10 +817,10 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             rate_v_finish: clamp_feed_silent(fp, &project.machine),
             rate_h_finish: clamp_feed_silent(ff, &project.machine),
             pierce_sec,
-            wirbeln_radius: 0.0,
-            wirbeln_stepover: 0.0,
-            wirbeln_osc: 0.0,
-            wirbeln_climb: true,
+            whirl_radius: 0.0,
+            whirl_stepover: 0.0,
+            whirl_osc: 0.0,
+            whirl_climb: true,
             default_xy_overlap: tool.default_xy_overlap,
             tip_angle_deg: tool.tip_angle_deg,
             tip_diameter_mm: effective_tip_diameter_mm(tool),

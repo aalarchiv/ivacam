@@ -7,19 +7,19 @@
     clippy::many_single_char_names
 )]
 
-use super::wirbeln::{apply_wirbeln_with_state, WirbelnParams, WirbelnState};
+use super::face_mill_overlay::{apply_whirl_with_state, WhirlParams, WhirlState};
 use super::PostProcessor;
 use crate::cam::setup::Setup;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
 
-/// Cut-pass dispatcher (3e5). When the active tool has a Wirbeln
+/// Cut-pass dispatcher (3e5). When the active tool has a Whirl
 /// overlay configured, route the path through the helical-spiral
 /// emit; otherwise fall back to the standard corner-feed walker. All
-/// five `multi_pass` call sites go through here so the Wirbeln check
+/// five `multi_pass` call sites go through here so the Whirl check
 /// lives in exactly one place.
 ///
-/// qm9x: `wirbeln_state` carries the spiral phase + stride residual
+/// qm9x: `whirl_state` carries the spiral phase + stride residual
 /// across multiple `emit_cut_path` calls so the spiral doesn't reset
 /// at every pass boundary. `multi_pass` instantiates ONE state before
 /// the per-pass loop and reuses it across passes — matches 89n5's
@@ -32,17 +32,17 @@ pub(super) fn emit_cut_path<P: PostProcessor>(
     dragoff: f64,
     rate_h: u32,
     corner_feed_reduction: f64,
-    wirbeln_state: &mut WirbelnState,
+    whirl_state: &mut WhirlState,
     post: &mut P,
 ) {
-    if setup.tool.wirbeln_radius > 0.0 && setup.tool.wirbeln_stepover > 0.0 {
-        let params = WirbelnParams {
-            radius: setup.tool.wirbeln_radius,
-            stepover: setup.tool.wirbeln_stepover,
-            osc: setup.tool.wirbeln_osc,
-            climb: setup.tool.wirbeln_climb,
+    if setup.tool.whirl_radius > 0.0 && setup.tool.whirl_stepover > 0.0 {
+        let params = WhirlParams {
+            radius: setup.tool.whirl_radius,
+            stepover: setup.tool.whirl_stepover,
+            osc: setup.tool.whirl_osc,
+            climb: setup.tool.whirl_climb,
         };
-        let pts = apply_wirbeln_with_state(segments, cut_z, params, wirbeln_state);
+        let pts = apply_whirl_with_state(segments, cut_z, params, whirl_state);
         for (x, y, z) in pts {
             post.linear(Some(x), Some(y), Some(z));
         }

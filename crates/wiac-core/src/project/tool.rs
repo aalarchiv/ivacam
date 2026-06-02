@@ -152,41 +152,41 @@ pub struct ToolEntry {
     /// rows for cove / ogee / custom bits. Empty for every other kind.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_profile_mm: Vec<FormProfileSample>,
-    /// Wirbeln (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning.
+    /// Whirl (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning.
     /// When `true`, Pocket ops using this tool clamp their effective
-    /// `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)`
+    /// `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)`
     /// — the classic chip-thinning rule that bounds radial engagement
     /// at half-radius. Use for hard materials where the user wants
     /// fast cascade / spiral pockets but doesn't want the cutter to
     /// overload at high-engagement points. Default `false`.
     #[serde(default, skip_serializing_if = "is_false")]
-    pub wirbeln: bool,
-    /// Wirbeln stepover override (rt1.25). When `wirbeln` is `true`,
+    pub whirl: bool,
+    /// Whirl stepover override (rt1.25). When `whirl` is `true`,
     /// this is the **stride along the toolpath per full revolution of
     /// the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm,
     /// positive only. None = use the half-radius default. (3e5 made
     /// this the spiral stride; before 3e5 it was the cascade-step
-    /// clamp, which was the "fake Wirbeln" v1 implementation.)
+    /// clamp, which was the "fake Whirl" v1 implementation.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wirbeln_stepover_mm: Option<f64>,
-    /// Wirbeln extra-width (Estlcam `T_Wirbelzusatzbreite` /
+    pub whirl_stepover_mm: Option<f64>,
+    /// Whirl extra-width (Estlcam `T_Wirbelzusatzbreite` /
     /// rt1.25 / 3e5). The *diameter* in mm by which the helical
     /// overlay widens the effective cut path: the cutter centerline
-    /// scrolls on a small circle of radius `wirbeln_extra_width_mm /
+    /// scrolls on a small circle of radius `whirl_extra_width_mm /
     /// 2` around the cascade ring. Net cut width is
-    /// `diameter + wirbeln_extra_width_mm`. None / 0 ⇒ overlay
-    /// disabled even when `wirbeln == true` (which then falls back
+    /// `diameter + whirl_extra_width_mm`. None / 0 ⇒ overlay
+    /// disabled even when `whirl == true` (which then falls back
     /// to a no-op — the v1 step clamp is gone in 3e5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wirbeln_extra_width_mm: Option<f64>,
-    /// Wirbeln Z-wobble amplitude (Estlcam `T_Osc`, 3e5). When > 0,
+    pub whirl_extra_width_mm: Option<f64>,
+    /// Whirl Z-wobble amplitude (Estlcam `T_Osc`, 3e5). When > 0,
     /// the spiral overlay adds a `cos(3·θ) · osc − osc` Z ripple so
     /// the cutter dips slightly below the cut plane between
     /// revolutions — improves chip evacuation on the wobbly cutters
     /// the feature targets. mm, positive only. None / 0 ⇒ flat
     /// (no Z motion added by the overlay).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wirbeln_osc_mm: Option<f64>,
+    pub whirl_osc_mm: Option<f64>,
     /// Spindle warm-up pause in seconds applied once per used tool by
     /// the time estimator. Mirrors `ToolConfig.pause`.
     #[serde(
@@ -361,10 +361,10 @@ impl Default for ToolEntry {
             kerf_mm: None,
             corner_radius_mm: None,
             form_profile_mm: Vec::new(),
-            wirbeln: false,
-            wirbeln_stepover_mm: None,
-            wirbeln_extra_width_mm: None,
-            wirbeln_osc_mm: None,
+            whirl: false,
+            whirl_stepover_mm: None,
+            whirl_extra_width_mm: None,
+            whirl_osc_mm: None,
             pause: default_tool_pause(),
             spindle_direction: SpindleDirection::default(),
             // pierce_height_mm / cut_height_mm / pierce_delay_sec — zpuk:

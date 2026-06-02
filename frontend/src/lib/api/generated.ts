@@ -1964,28 +1964,28 @@ export interface components {
              */
             vcarve_lead_in_angle_deg: number;
             /**
-             * @description Wirbeln spiral rotation direction (climb = `true`, conventional = `false`). Resolved from the op's contour cut direction — matches Estlcam's `Einstellungen.Gleichlauf` flag.
+             * @description Whirl spiral rotation direction (climb = `true`, conventional = `false`). Resolved from the op's contour cut direction — matches Estlcam's `Einstellungen.Gleichlauf` flag.
              * @default true
              */
-            wirbeln_climb: boolean;
+            whirl_climb: boolean;
             /**
              * Format: double
-             * @description Wirbeln Z-wobble amplitude (mm). The overlay adds a `cos(3θ)·osc − osc` Z ripple between revolutions when > 0. Resolved from `ToolEntry.wirbeln_osc_mm`.
+             * @description Whirl Z-wobble amplitude (mm). The overlay adds a `cos(3θ)·osc − osc` Z ripple between revolutions when > 0. Resolved from `ToolEntry.whirl_osc_mm`.
              * @default 0
              */
-            wirbeln_osc: number;
+            whirl_osc: number;
             /**
              * Format: double
-             * @description Wirbeln helical-overlay spiral radius (3e5). > 0 enables the `cos/sin` displacement on every cut move; 0 disables. Resolved from `ToolEntry.wirbeln_extra_width_mm / 2` at synth time when the tool is Wirbeln-tagged.
+             * @description Whirl helical-overlay spiral radius (3e5). > 0 enables the `cos/sin` displacement on every cut move; 0 disables. Resolved from `ToolEntry.whirl_extra_width_mm / 2` at synth time when the tool is Whirl-tagged.
              * @default 0
              */
-            wirbeln_radius: number;
+            whirl_radius: number;
             /**
              * Format: double
-             * @description Wirbeln stride along the toolpath per full spiral revolution (mm). Resolved from `ToolEntry.wirbeln_stepover_mm`, falling back to half the tool radius. Ignored when `wirbeln_radius` is 0.
+             * @description Whirl stride along the toolpath per full spiral revolution (mm). Resolved from `ToolEntry.whirl_stepover_mm`, falling back to half the tool radius. Ignored when `whirl_radius` is 0.
              * @default 0
              */
-            wirbeln_stepover: number;
+            whirl_stepover: number;
         };
         ToolEntry: {
             /** @description Free-text comment / description (rt1.31). Surfaced as the tooltip on the tool dropdown in `OpPropertiesPanel` and as an expandable text area in `ToolLibraryDialog`. Empty / None = no comment; doesn't affect any pipeline output. */
@@ -2158,23 +2158,23 @@ export interface components {
              * @description ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). pmpk originally hardcoded this to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the legacy 10° default so old projects round-trip unchanged.
              */
             vcarve_lead_in_angle_deg?: number | null;
-            /** @description Wirbeln (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `wirbeln_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
-            wirbeln?: boolean;
+            /** @description Whirl (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
+            whirl?: boolean;
             /**
              * Format: double
-             * @description Wirbeln extra-width (Estlcam `T_Wirbelzusatzbreite` / rt1.25 / 3e5). The *diameter* in mm by which the helical overlay widens the effective cut path: the cutter centerline scrolls on a small circle of radius `wirbeln_extra_width_mm / 2` around the cascade ring. Net cut width is `diameter + wirbeln_extra_width_mm`. None / 0 ⇒ overlay disabled even when `wirbeln == true` (which then falls back to a no-op — the v1 step clamp is gone in 3e5).
+             * @description Whirl extra-width (Estlcam `T_Wirbelzusatzbreite` / rt1.25 / 3e5). The *diameter* in mm by which the helical overlay widens the effective cut path: the cutter centerline scrolls on a small circle of radius `whirl_extra_width_mm / 2` around the cascade ring. Net cut width is `diameter + whirl_extra_width_mm`. None / 0 ⇒ overlay disabled even when `whirl == true` (which then falls back to a no-op — the v1 step clamp is gone in 3e5).
              */
-            wirbeln_extra_width_mm?: number | null;
+            whirl_extra_width_mm?: number | null;
             /**
              * Format: double
-             * @description Wirbeln Z-wobble amplitude (Estlcam `T_Osc`, 3e5). When > 0, the spiral overlay adds a `cos(3·θ) · osc − osc` Z ripple so the cutter dips slightly below the cut plane between revolutions — improves chip evacuation on the wobbly cutters the feature targets. mm, positive only. None / 0 ⇒ flat (no Z motion added by the overlay).
+             * @description Whirl Z-wobble amplitude (Estlcam `T_Osc`, 3e5). When > 0, the spiral overlay adds a `cos(3·θ) · osc − osc` Z ripple so the cutter dips slightly below the cut plane between revolutions — improves chip evacuation on the wobbly cutters the feature targets. mm, positive only. None / 0 ⇒ flat (no Z motion added by the overlay).
              */
-            wirbeln_osc_mm?: number | null;
+            whirl_osc_mm?: number | null;
             /**
              * Format: double
-             * @description Wirbeln stepover override (rt1.25). When `wirbeln` is `true`, this is the **stride along the toolpath per full revolution of the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm, positive only. None = use the half-radius default. (3e5 made this the spiral stride; before 3e5 it was the cascade-step clamp, which was the "fake Wirbeln" v1 implementation.)
+             * @description Whirl stepover override (rt1.25). When `whirl` is `true`, this is the **stride along the toolpath per full revolution of the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm, positive only. None = use the half-radius default. (3e5 made this the spiral stride; before 3e5 it was the cascade-step clamp, which was the "fake Whirl" v1 implementation.)
              */
-            wirbeln_stepover_mm?: number | null;
+            whirl_stepover_mm?: number | null;
             /**
              * Format: double
              * @description Per-tool Z origin offset (rt1.30 / Estlcam `Z_Shift`). For machines without automatic tool-length probing — the user pre-measures each tool's tip Z relative to a reference tool and records the delta here (positive = sticks out further; negative = shorter). At toolchange / program-start the post emits a `G92 Z<shift>` that pins the new tool's tip at the same work-Z the reference tool used. mm. None = no shift.

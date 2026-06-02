@@ -310,7 +310,7 @@ pub(super) fn build_op_offsets(
         0.5
     };
     let xy_step = setup.tool.diameter * (1.0 - overlap);
-    // 3e5: Wirbeln no longer clamps the cascade step. The v1
+    // 3e5: Whirl no longer clamps the cascade step. The v1
     // implementation (xy_step ≤ tool_radius / 2) bounded engagement
     // by reducing stepover, which slowed every cut. The 3e5 helical
     // overlay applied at gcode-emit time bounds engagement directly
@@ -2786,10 +2786,10 @@ mod tests {
             kerf_mm: None,
             corner_radius_mm: None,
             form_profile_mm: Vec::new(),
-            wirbeln: false,
-            wirbeln_stepover_mm: None,
-            wirbeln_extra_width_mm: None,
-            wirbeln_osc_mm: None,
+            whirl: false,
+            whirl_stepover_mm: None,
+            whirl_extra_width_mm: None,
+            whirl_osc_mm: None,
             pause: 1,
             flute_length_mm: None,
             length_mm: None,

@@ -405,10 +405,10 @@ fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
     // output), so it's no longer display-only — fold it into the key so
     // editing it refreshes the cached per-op warnings.
     hash_opt_f64(t.compression_transition_mm, h);
-    t.wirbeln.hash(h);
-    hash_opt_f64(t.wirbeln_stepover_mm, h);
-    hash_opt_f64(t.wirbeln_extra_width_mm, h);
-    hash_opt_f64(t.wirbeln_osc_mm, h);
+    t.whirl.hash(h);
+    hash_opt_f64(t.whirl_stepover_mm, h);
+    hash_opt_f64(t.whirl_extra_width_mm, h);
+    hash_opt_f64(t.whirl_osc_mm, h);
     let coolant: u8 = match t.coolant {
         Coolant::Off => 0,
         Coolant::Mist => 1,
@@ -1184,10 +1184,10 @@ mod tests {
             kerf_mm: None,
             corner_radius_mm: None,
             form_profile_mm: Vec::new(),
-            wirbeln: false,
-            wirbeln_stepover_mm: None,
-            wirbeln_extra_width_mm: None,
-            wirbeln_osc_mm: None,
+            whirl: false,
+            whirl_stepover_mm: None,
+            whirl_extra_width_mm: None,
+            whirl_osc_mm: None,
             pause: 1,
             flute_length_mm: None,
             length_mm: None,

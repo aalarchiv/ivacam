@@ -174,10 +174,10 @@ interface WireToolEntry {
   /// 1wit: form / profile cutter cross-section, tip → top. Omitted
   /// unless ≥2 samples are set (and kind === 'form_profile').
   form_profile_mm?: { z_mm: number; r_mm: number }[];
-  wirbeln?: boolean;
-  wirbeln_stepover_mm?: number;
-  wirbeln_extra_width_mm?: number;
-  wirbeln_osc_mm?: number;
+  whirl?: boolean;
+  whirl_stepover_mm?: number;
+  whirl_extra_width_mm?: number;
+  whirl_osc_mm?: number;
   /// Spindle warmup pause (seconds) emitted as G4 P<n> after every
   /// spindle_cw / spindle_ccw. Default 1.
   pause?: number;
@@ -700,16 +700,16 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
       ? { form_profile_mm: t.formProfileMm.map((s) => ({ z_mm: s.zMm, r_mm: s.rMm })) }
       : {}),
-    // Whirling overlay. The backend wire fields keep their German names
-    // (wirbeln*) — only the frontend identifiers are English.
-    ...(t.whirl ? { wirbeln: true } : {}),
+    // Whirling overlay (ob3e: wire fields are now English `whirl*`,
+    // matching the renamed Rust serde fields).
+    ...(t.whirl ? { whirl: true } : {}),
     ...(t.whirlStepoverMm !== undefined && t.whirlStepoverMm > 0
-      ? { wirbeln_stepover_mm: t.whirlStepoverMm }
+      ? { whirl_stepover_mm: t.whirlStepoverMm }
       : {}),
     ...(t.whirlExtraWidthMm !== undefined && t.whirlExtraWidthMm > 0
-      ? { wirbeln_extra_width_mm: t.whirlExtraWidthMm }
+      ? { whirl_extra_width_mm: t.whirlExtraWidthMm }
       : {}),
-    ...(t.whirlOscMm !== undefined && t.whirlOscMm > 0 ? { wirbeln_osc_mm: t.whirlOscMm } : {}),
+    ...(t.whirlOscMm !== undefined && t.whirlOscMm > 0 ? { whirl_osc_mm: t.whirlOscMm } : {}),
     // Spindle warmup pause (seconds). Omit when at backend default
     // (1) so we don't bloat the wire payload for the common case.
     ...(t.pause !== undefined && t.pause !== 1 ? { pause: t.pause } : {}),

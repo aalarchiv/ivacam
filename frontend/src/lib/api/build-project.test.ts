@@ -172,7 +172,7 @@ describe('buildTool — German wire contract (8njb)', () => {
     expect(project!.tools[0]).toMatchObject({ kind: 'v_bit' });
   });
 
-  it('emits whirl* fields under their German wirbeln_* wire keys', () => {
+  it('emits whirl* fields under their English whirl_* wire keys', () => {
     const project = buildProject({
       transformedImport: fakeImport(),
       machine: baseMachine(),
@@ -187,14 +187,16 @@ describe('buildTool — German wire contract (8njb)', () => {
       operations: [profileOp()],
     });
     expect(project!.tools[0]).toMatchObject({
-      wirbeln: true,
-      wirbeln_stepover_mm: 0.75,
-      wirbeln_extra_width_mm: 3,
-      wirbeln_osc_mm: 0.2,
+      whirl: true,
+      whirl_stepover_mm: 0.75,
+      whirl_extra_width_mm: 3,
+      whirl_osc_mm: 0.2,
     });
     const tool = project!.tools[0] as unknown as Record<string, unknown>;
-    expect(tool).not.toHaveProperty('whirl');
+    // The camelCase app fields must not leak onto the wire, and the old
+    // German keys must be gone (ob3e renamed them English).
     expect(tool).not.toHaveProperty('whirlStepoverMm');
+    expect(tool).not.toHaveProperty('wirbeln');
   });
 
   it('omits the whirl wire fields when disabled / at default', () => {
@@ -205,8 +207,8 @@ describe('buildTool — German wire contract (8njb)', () => {
       operations: [profileOp()],
     });
     const tool = project!.tools[0] as unknown as Record<string, unknown>;
-    expect(tool).not.toHaveProperty('wirbeln');
-    expect(tool).not.toHaveProperty('wirbeln_stepover_mm');
+    expect(tool).not.toHaveProperty('whirl');
+    expect(tool).not.toHaveProperty('whirl_stepover_mm');
   });
 });
 

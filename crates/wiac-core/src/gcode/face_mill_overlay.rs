@@ -1,23 +1,23 @@
 //! 7z7w: Face-mill helical-spiral overlay (3e5 / Estlcam
-//! `Flooper.cs`) — applied to every cut move when a "Wirbeln"-tagged
-//! tool is active in the project. **Historically called "wirbeln"**
+//! `Flooper.cs`) — applied to every cut move when a "Whirl"-tagged
+//! tool is active in the project. **Historically called "Wirbeln"**
 //! after the Estlcam menu label, but the operation is NOT thread-
 //! whirling — it's a face-mill spiral overlay that displaces the
 //! cutter centerline around a small circle while it walks the path.
-//! Kept under the old name in the public API via the `wirbeln` re-
-//! export so existing project files / serialized data deserialize
-//! unchanged.
+//! The public symbols (`WhirlParams`, `apply_whirl`, the `whirl*`
+//! serde fields) were renamed German → English in ob3e; the old
+//! `gcode::wirbeln` back-compat re-export shim has been retired.
 //!
-//! For each chord step of length `stride / schritte` along the
+//! For each chord step of length `stride / steps` along the
 //! incoming path, the cutter centerline gets displaced by
 //!
 //! ```text
-//! x' = x + cos(winkel · dir) · radius
-//! y' = y + sin(winkel · dir) · radius
-//! z' = z + cos(winkel · 3)   · osc    − osc
+//! x' = x + cos(angle · dir) · radius
+//! y' = y + sin(angle · dir) · radius
+//! z' = z + cos(angle · 3)   · osc    − osc
 //! ```
 //!
-//! `winkel` accumulates `360° / schritte` per stride step so the
+//! `angle` accumulates `360° / steps` per stride step so the
 //! centerline traces a small circle of radius `radius` that itself
 //! slides along the toolpath. `Dir = +1` climb / `−1` conventional.
 //! The Z ripple (`cos(3θ) · osc − osc`) dips the cutter slightly
@@ -35,7 +35,7 @@
 
 // # CAM/sim pedantic-lint exemptions
 // Stride / step counts cast from f64 are bounded by tool geometry
-// (mm scale) and `schritte_for_radius` clamps to [36, 360].
+// (mm scale) and `steps_for_radius` clamps to [36, 360].
 #![allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -48,7 +48,7 @@ use crate::math;
 
 /// Helical overlay parameters resolved at gcode-emit time.
 #[derive(Debug, Clone, Copy)]
-pub struct WirbelnParams {
+pub struct WhirlParams {
     /// Spiral radius (`extra_width_mm / 2`). Must be > 0 to emit.
     pub radius: f64,
     /// Stride along the path per full revolution. Estlcam's
@@ -64,9 +64,9 @@ pub struct WirbelnParams {
 }
 
 /// qm9x: persistent helical-overlay state that carries the spiral phase
-/// (`winkel`) and stride residual (`consumed_since_last_step`) across
-/// successive `apply_wirbeln` calls — typically the per-pass loop in
-/// `multi_pass`. Without this, every pass restarted at `winkel = 0`
+/// (`angle`) and stride residual (`consumed_since_last_step`) across
+/// successive `apply_whirl` calls — typically the per-pass loop in
+/// `multi_pass`. Without this, every pass restarted at `angle = 0`
 /// and produced a visible flat spot on the wall at every pass boundary
 /// (the spiral phase jumped to the same angular position on every Z
 /// step, so the cutter entered the new pass from the same direction
@@ -76,10 +76,10 @@ pub struct WirbelnParams {
 /// the spiral now traces ONE continuous helical centerline across the
 /// entire multi-pass cut.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct WirbelnState {
+pub struct WhirlState {
     /// Cumulative spiral phase in radians, monotonically increasing
     /// across stride steps.
-    pub winkel: f64,
+    pub angle: f64,
     /// Arc-length residual since the last stride stamp; carried into
     /// the next segment / pass so the next stride lands at the right
     /// cumulative arc-length.
@@ -87,11 +87,11 @@ pub struct WirbelnState {
 }
 
 /// Number of stride steps per full revolution. Matches Estlcam's
-/// `Schritte ≈ LIM(360 / (11.5 / √R), 36, 360)` — coarser for small
+/// `Steps ≈ LIM(360 / (11.5 / √R), 36, 360)` — coarser for small
 /// radii, finer for large radii, so the perimeter discretization stays
 /// proportional to the spiral's actual size.
 #[must_use]
-pub fn schritte_for_radius(radius: f64) -> u32 {
+pub fn steps_for_radius(radius: f64) -> u32 {
     if radius <= 0.0 {
         return 36;
     }
@@ -102,7 +102,7 @@ pub fn schritte_for_radius(radius: f64) -> u32 {
 /// Apply the helical overlay to a list of `Segment`s, returning a
 /// dense list of `(x, y, z)` waypoints at the cutter centerline. The
 /// emitter walks each segment along its arc length, subdivides into
-/// strides of `stepover / schritte`, and stamps the helical offset
+/// strides of `stepover / steps`, and stamps the helical offset
 /// at each stride point. Lines and arcs are both flattened to chord
 /// steps; Z is the segment's nominal cut Z plus the overlay's wobble.
 ///
@@ -115,55 +115,55 @@ pub fn schritte_for_radius(radius: f64) -> u32 {
 ///
 /// This entry point starts at phase zero — for single-shot applications
 /// (e.g. tests, plot-mode single-pass emit) it's fine. For multi-pass
-/// emission use `apply_wirbeln_with_state` and thread a single
-/// `WirbelnState` across passes so the spiral phase doesn't reset and
+/// emission use `apply_whirl_with_state` and thread a single
+/// `WhirlState` across passes so the spiral phase doesn't reset and
 /// produce flat spots at pass boundaries (qm9x).
 #[must_use]
-pub fn apply_wirbeln(
+pub fn apply_whirl(
     segments: &[Segment],
     cut_z: f64,
-    params: WirbelnParams,
+    params: WhirlParams,
 ) -> Vec<(f64, f64, f64)> {
-    let mut state = WirbelnState::default();
-    apply_wirbeln_with_state(segments, cut_z, params, &mut state)
+    let mut state = WhirlState::default();
+    apply_whirl_with_state(segments, cut_z, params, &mut state)
 }
 
-/// qm9x: variant of [`apply_wirbeln`] that takes an external
-/// [`WirbelnState`] reference. The caller can keep ONE state across
+/// qm9x: variant of [`apply_whirl`] that takes an external
+/// [`WhirlState`] reference. The caller can keep ONE state across
 /// successive calls so spiral phase + stride residual carry over —
 /// matching 89n5's cross-chord continuity for cross-pass continuity.
 ///
-/// Pass `&mut WirbelnState::default()` for the single-shot behavior.
+/// Pass `&mut WhirlState::default()` for the single-shot behavior.
 #[must_use]
-pub fn apply_wirbeln_with_state(
+pub fn apply_whirl_with_state(
     segments: &[Segment],
     cut_z: f64,
-    params: WirbelnParams,
-    state: &mut WirbelnState,
+    params: WhirlParams,
+    state: &mut WhirlState,
 ) -> Vec<(f64, f64, f64)> {
     if params.radius <= 0.0 || params.stepover <= 0.0 || segments.is_empty() {
         return Vec::new();
     }
-    let schritte = schritte_for_radius(params.radius);
-    let stride = params.stepover / f64::from(schritte);
+    let steps = steps_for_radius(params.radius);
+    let stride = params.stepover / f64::from(steps);
     if !stride.is_finite() || stride <= 1e-6 {
         return Vec::new();
     }
     let dir = if params.climb { 1.0 } else { -1.0 };
-    let schritt_rad = std::f64::consts::TAU / f64::from(schritte);
+    let step_rad = std::f64::consts::TAU / f64::from(steps);
 
     let mut out: Vec<(f64, f64, f64)> = Vec::new();
 
     // Always stamp the first waypoint at the very start of the path so
     // the cutter approaches the cascade ring's start cleanly. Phase is
-    // the CURRENT cumulative winkel (carried over from prior calls when
+    // the CURRENT cumulative angle (carried over from prior calls when
     // a shared state is threaded — qm9x).
     let start = segments[0].start;
     out.push(stamp(
         start.x,
         start.y,
         cut_z,
-        state.winkel,
+        state.angle,
         dir,
         params.radius,
         params.osc,
@@ -177,14 +177,14 @@ pub fn apply_wirbeln_with_state(
                 // doesn't drift into the next move with a hot rotation
                 // misaligned with the next segment's start direction.
                 let revs = 1.0;
-                let n = (f64::from(schritte) * revs) as u32;
+                let n = (f64::from(steps) * revs) as u32;
                 for _ in 0..n {
-                    state.winkel += schritt_rad;
+                    state.angle += step_rad;
                     out.push(stamp(
                         seg.start.x,
                         seg.start.y,
                         cut_z,
-                        state.winkel,
+                        state.angle,
                         dir,
                         params.radius,
                         params.osc,
@@ -196,12 +196,12 @@ pub fn apply_wirbeln_with_state(
                     seg.start,
                     seg.end,
                     stride,
-                    schritt_rad,
+                    step_rad,
                     cut_z,
                     dir,
                     params.radius,
                     params.osc,
-                    &mut state.winkel,
+                    &mut state.angle,
                     &mut state.consumed_since_last_step,
                     &mut out,
                 );
@@ -218,12 +218,12 @@ pub fn apply_wirbeln_with_state(
                         w[0],
                         w[1],
                         stride,
-                        schritt_rad,
+                        step_rad,
                         cut_z,
                         dir,
                         params.radius,
                         params.osc,
-                        &mut state.winkel,
+                        &mut state.angle,
                         &mut state.consumed_since_last_step,
                         &mut out,
                     );
@@ -235,12 +235,12 @@ pub fn apply_wirbeln_with_state(
     out
 }
 
-fn stamp(x: f64, y: f64, z: f64, winkel: f64, dir: f64, radius: f64, osc: f64) -> (f64, f64, f64) {
-    let theta = winkel * dir;
+fn stamp(x: f64, y: f64, z: f64, angle: f64, dir: f64, radius: f64, osc: f64) -> (f64, f64, f64) {
+    let theta = angle * dir;
     let dx = theta.cos() * radius;
     let dy = theta.sin() * radius;
     let dz = if osc > 0.0 {
-        (winkel * 3.0).cos() * osc - osc
+        (angle * 3.0).cos() * osc - osc
     } else {
         0.0
     };
@@ -252,12 +252,12 @@ fn walk_chord(
     p0: Point2,
     p1: Point2,
     stride: f64,
-    schritt_rad: f64,
+    step_rad: f64,
     cut_z: f64,
     dir: f64,
     radius: f64,
     osc: f64,
-    winkel: &mut f64,
+    angle: &mut f64,
     consumed_since_last_step: &mut f64,
     out: &mut Vec<(f64, f64, f64)>,
 ) {
@@ -271,8 +271,8 @@ fn walk_chord(
     let uy = dy / len;
     // 89n5: phase MUST carry continuously across chord boundaries.
     // The previous code reset `consumed_since_last_step` to 0 at the
-    // chord endpoint and unconditionally bumped `winkel` by
-    // `schritt_rad` there — losing the stride residual and producing
+    // chord endpoint and unconditionally bumped `angle` by
+    // `step_rad` there — losing the stride residual and producing
     // visible flat spots at corners as the spiral phase jumped by one
     // full step regardless of how far the cutter actually advanced.
     //
@@ -286,8 +286,8 @@ fn walk_chord(
     while next_stamp_at <= len + 1e-12 {
         let x = p0.x + ux * next_stamp_at;
         let y = p0.y + uy * next_stamp_at;
-        *winkel += schritt_rad;
-        out.push(stamp(x, y, cut_z, *winkel, dir, radius, osc));
+        *angle += step_rad;
+        out.push(stamp(x, y, cut_z, *angle, dir, radius, osc));
         next_stamp_at += stride;
     }
     // Residual: how much of the chord we walked past the last stride
@@ -309,12 +309,12 @@ fn walk_chord(
         // Partial-stride advance proportional to residual / stride.
         // The next chord's accumulator already tracks
         // `consumed_since_last_step = residual`; its first stride
-        // stamp will bump `winkel` by a full schritt_rad at the
+        // stamp will bump `angle` by a full step_rad at the
         // correct cumulative arc-length. Stamping the endpoint with
-        // a partial phase (no commit to `winkel`) keeps the cascade
+        // a partial phase (no commit to `angle`) keeps the cascade
         // ring's geometry reachable without double-counting.
-        let partial = (residual / stride) * schritt_rad;
-        let endpoint_phase = *winkel + partial;
+        let partial = (residual / stride) * step_rad;
+        let endpoint_phase = *angle + partial;
         out.push(stamp(p1.x, p1.y, cut_z, endpoint_phase, dir, radius, osc));
     }
 }
@@ -322,7 +322,7 @@ fn walk_chord(
 /// Chord-flatten an arc / circle segment to a polyline. 24 chords per
 /// full revolution gives < 1 % sagitta on a 10 mm radius arc — well
 /// within the visual / cutting tolerance for an overlay whose own
-/// spiral radius is typically a few mm. The wirbeln motion masks any
+/// spiral radius is typically a few mm. The whirl motion masks any
 /// residual chord-versus-arc error anyway.
 fn flatten_arc(seg: &Segment, center: Point2) -> Vec<Point2> {
     let r = (seg.start.x - center.x).hypot(seg.start.y - center.y);
@@ -357,45 +357,45 @@ mod tests {
     }
 
     #[test]
-    fn schritte_clamps_within_36_to_360() {
-        assert_eq!(schritte_for_radius(0.0), 36);
-        assert_eq!(schritte_for_radius(0.01), 36); // very small still clamped
-        assert!(schritte_for_radius(0.5) >= 36);
-        assert!(schritte_for_radius(0.5) <= 360);
-        // A 5 mm radius (huge by Wirbeln standards) should land near
+    fn steps_clamps_within_36_to_360() {
+        assert_eq!(steps_for_radius(0.0), 36);
+        assert_eq!(steps_for_radius(0.01), 36); // very small still clamped
+        assert!(steps_for_radius(0.5) >= 36);
+        assert!(steps_for_radius(0.5) <= 360);
+        // A 5 mm radius (huge by Whirl standards) should land near
         // the upper end but still inside the clamp.
-        assert!(schritte_for_radius(5.0) <= 360);
+        assert!(steps_for_radius(5.0) <= 360);
     }
 
     #[test]
     fn disabled_when_radius_or_stepover_is_zero() {
         let segs = vec![line(0.0, 0.0, 10.0, 0.0)];
-        let params = WirbelnParams {
+        let params = WhirlParams {
             radius: 0.0,
             stepover: 2.0,
             osc: 0.0,
             climb: true,
         };
-        assert!(apply_wirbeln(&segs, -1.0, params).is_empty());
-        let params = WirbelnParams {
+        assert!(apply_whirl(&segs, -1.0, params).is_empty());
+        let params = WhirlParams {
             radius: 1.0,
             stepover: 0.0,
             osc: 0.0,
             climb: true,
         };
-        assert!(apply_wirbeln(&segs, -1.0, params).is_empty());
+        assert!(apply_whirl(&segs, -1.0, params).is_empty());
     }
 
     #[test]
     fn straight_line_produces_centerline_within_radius_band() {
         let segs = vec![line(0.0, 0.0, 20.0, 0.0)];
-        let params = WirbelnParams {
+        let params = WhirlParams {
             radius: 1.0,
             stepover: 2.0,
             osc: 0.0,
             climb: true,
         };
-        let pts = apply_wirbeln(&segs, -1.0, params);
+        let pts = apply_whirl(&segs, -1.0, params);
         // Plenty of stride points across a 20 mm chord.
         assert!(pts.len() > 20);
         // Every waypoint sits within `radius` of the line y=0.
@@ -414,20 +414,20 @@ mod tests {
     #[test]
     fn climb_vs_conventional_flip_sign_of_y() {
         let segs = vec![line(0.0, 0.0, 5.0, 0.0)];
-        let climb = apply_wirbeln(
+        let climb = apply_whirl(
             &segs,
             0.0,
-            WirbelnParams {
+            WhirlParams {
                 radius: 1.0,
                 stepover: 1.0,
                 osc: 0.0,
                 climb: true,
             },
         );
-        let conv = apply_wirbeln(
+        let conv = apply_whirl(
             &segs,
             0.0,
-            WirbelnParams {
+            WhirlParams {
                 radius: 1.0,
                 stepover: 1.0,
                 osc: 0.0,
@@ -435,7 +435,7 @@ mod tests {
             },
         );
         assert_eq!(climb.len(), conv.len());
-        // After the first stamp at winkel=0 (same for both), each
+        // After the first stamp at angle=0 (same for both), each
         // subsequent waypoint has flipped sin → y component should be
         // sign-flipped.
         for (i, ((_, yc, _), (_, yv, _))) in climb.iter().zip(conv.iter()).enumerate().skip(1) {
@@ -450,13 +450,13 @@ mod tests {
     #[test]
     fn z_wobble_dips_below_cut_z() {
         let segs = vec![line(0.0, 0.0, 10.0, 0.0)];
-        let params = WirbelnParams {
+        let params = WhirlParams {
             radius: 1.0,
             stepover: 2.0,
             osc: 0.1,
             climb: true,
         };
-        let pts = apply_wirbeln(&segs, -1.0, params);
+        let pts = apply_whirl(&segs, -1.0, params);
         // Every waypoint sits AT OR BELOW the nominal cut z because
         // the wobble term is `cos(3θ)·osc − osc` ⇒ max is 0 (at θ=0
         // mod 2π/3), min is −2·osc.
@@ -476,17 +476,17 @@ mod tests {
     fn walk_chord_phase_is_continuous_across_boundaries() {
         // 89n5: walk_chord carries the stride residual across chord
         // boundaries — the spiral phase after N unit chords must
-        // equal N · (schritt_rad / stride) · stride within FP
+        // equal N · (step_rad / stride) · stride within FP
         // tolerance, independent of how the total length is split.
         let radius = 1.0;
         let stride = 2.0;
-        let schritte = schritte_for_radius(radius);
-        let schritt_rad = std::f64::consts::TAU / f64::from(schritte);
+        let steps = steps_for_radius(radius);
+        let step_rad = std::f64::consts::TAU / f64::from(steps);
 
         // Walk 10 unit chords laid head-to-tail. Track the resulting
-        // winkel by replaying walk_chord against a fresh state, then
+        // angle by replaying walk_chord against a fresh state, then
         // compare against ONE 10-unit chord.
-        let mut winkel_split = 0.0_f64;
+        let mut angle_split = 0.0_f64;
         let mut consumed = 0.0_f64;
         let mut out_split: Vec<(f64, f64, f64)> = Vec::new();
         for k in 0..10 {
@@ -496,85 +496,85 @@ mod tests {
                 p0,
                 p1,
                 stride,
-                schritt_rad,
+                step_rad,
                 0.0,
                 1.0,
                 radius,
                 0.0,
-                &mut winkel_split,
+                &mut angle_split,
                 &mut consumed,
                 &mut out_split,
             );
         }
 
-        let mut winkel_single = 0.0_f64;
+        let mut angle_single = 0.0_f64;
         let mut consumed_single = 0.0_f64;
         let mut out_single: Vec<(f64, f64, f64)> = Vec::new();
         walk_chord(
             Point2::new(0.0, 0.0),
             Point2::new(10.0, 0.0),
             stride,
-            schritt_rad,
+            step_rad,
             0.0,
             1.0,
             radius,
             0.0,
-            &mut winkel_single,
+            &mut angle_single,
             &mut consumed_single,
             &mut out_single,
         );
 
         assert!(
-            (winkel_split - winkel_single).abs() < 1e-9,
-            "phase mismatch: split path winkel={winkel_split}, single chord winkel={winkel_single}",
+            (angle_split - angle_single).abs() < 1e-9,
+            "phase mismatch: split path angle={angle_split}, single chord angle={angle_single}",
         );
         // Total arclen 10 / stride 2 = 5 stride stamps; both paths
         // accumulated the same total phase.
         assert!(
-            (winkel_split - 5.0 * schritt_rad).abs() < 1e-9,
-            "expected winkel = 5 · schritt_rad ({}), got {}",
-            5.0 * schritt_rad,
-            winkel_split,
+            (angle_split - 5.0 * step_rad).abs() < 1e-9,
+            "expected angle = 5 · step_rad ({}), got {}",
+            5.0 * step_rad,
+            angle_split,
         );
     }
 
-    /// qm9x: when the SAME shared `WirbelnState` is threaded across two
-    /// consecutive `apply_wirbeln_with_state` calls, the second call's
+    /// qm9x: when the SAME shared `WhirlState` is threaded across two
+    /// consecutive `apply_whirl_with_state` calls, the second call's
     /// spiral phase continues from where the first ended. Reset state
-    /// (a fresh `WirbelnState::default()` for each call) restarts the
+    /// (a fresh `WhirlState::default()` for each call) restarts the
     /// phase at zero — that's the pre-qm9x flat-spot bug.
     // juvx: `sx_shared`/`sy_shared` vs `sx_fresh`/`sy_fresh` are an
     // intentional pair — same XY component, two different state-carry
     // scenarios. The shared prefix is the test contract.
     #[allow(clippy::similar_names)]
     #[test]
-    fn cross_pass_state_continues_phase_across_apply_wirbeln_calls() {
-        // 11 mm line × 2 mm stepover: total winkel after pass1 ≈ 5.5·TAU
+    fn cross_pass_state_continues_phase_across_apply_whirl_calls() {
+        // 11 mm line × 2 mm stepover: total angle after pass1 ≈ 5.5·TAU
         // — deliberately NOT a multiple of TAU, so the carried phase
         // lands the first waypoint of pass2 at a different XY than a
-        // fresh pass2 (which starts at winkel=0).
+        // fresh pass2 (which starts at angle=0).
         let segs = vec![line(0.0, 0.0, 11.0, 0.0)];
-        let params = WirbelnParams {
+        let params = WhirlParams {
             radius: 1.0,
             stepover: 2.0,
             osc: 0.0,
             climb: true,
         };
         // Two calls with a SHARED state.
-        let mut shared = WirbelnState::default();
-        let pass1_shared = apply_wirbeln_with_state(&segs, -1.0, params, &mut shared);
-        let winkel_after_pass1 = shared.winkel;
-        let pass2_shared = apply_wirbeln_with_state(&segs, -2.0, params, &mut shared);
+        let mut shared = WhirlState::default();
+        let pass1_shared = apply_whirl_with_state(&segs, -1.0, params, &mut shared);
+        let angle_after_pass1 = shared.angle;
+        let pass2_shared = apply_whirl_with_state(&segs, -2.0, params, &mut shared);
         // Two calls with FRESH state each time (the pre-qm9x bug).
-        let mut fresh1 = WirbelnState::default();
-        let pass1_fresh = apply_wirbeln_with_state(&segs, -1.0, params, &mut fresh1);
-        let mut fresh2 = WirbelnState::default();
-        let pass2_fresh = apply_wirbeln_with_state(&segs, -2.0, params, &mut fresh2);
-        // pass2 with shared state starts at the carried-over winkel, so
+        let mut fresh1 = WhirlState::default();
+        let pass1_fresh = apply_whirl_with_state(&segs, -1.0, params, &mut fresh1);
+        let mut fresh2 = WhirlState::default();
+        let pass2_fresh = apply_whirl_with_state(&segs, -2.0, params, &mut fresh2);
+        // pass2 with shared state starts at the carried-over angle, so
         // its first waypoint sits at a different XY than pass2 with fresh
-        // state (which starts at winkel=0 again).
+        // state (which starts at angle=0 again).
         assert!(
-            winkel_after_pass1 > 0.0,
+            angle_after_pass1 > 0.0,
             "pass1 must have accumulated some phase"
         );
         let (sx_shared, sy_shared, _) = pass2_shared[0];
@@ -610,13 +610,13 @@ mod tests {
             line(10.0, 10.0, 0.0, 10.0),
             line(0.0, 10.0, 0.0, 0.0),
         ];
-        let params = WirbelnParams {
+        let params = WhirlParams {
             radius: 1.0,
             stepover: 2.0,
             osc: 0.0,
             climb: true,
         };
-        let pts = apply_wirbeln(&segs, 0.0, params);
+        let pts = apply_whirl(&segs, 0.0, params);
         // Confirm we made several full revolutions worth of stride
         // steps along the 40 mm perimeter — 40 / stride = 20 stride
         // steps minimum.

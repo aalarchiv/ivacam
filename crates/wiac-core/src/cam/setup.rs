@@ -74,28 +74,28 @@ pub struct ToolConfig {
     /// pierce dwell.
     #[serde(default)]
     pub pierce_sec: f64,
-    /// Wirbeln helical-overlay spiral radius (3e5). > 0 enables the
+    /// Whirl helical-overlay spiral radius (3e5). > 0 enables the
     /// `cos/sin` displacement on every cut move; 0 disables. Resolved
-    /// from `ToolEntry.wirbeln_extra_width_mm / 2` at synth time when
-    /// the tool is Wirbeln-tagged.
+    /// from `ToolEntry.whirl_extra_width_mm / 2` at synth time when
+    /// the tool is Whirl-tagged.
     #[serde(default)]
-    pub wirbeln_radius: f64,
-    /// Wirbeln stride along the toolpath per full spiral revolution
-    /// (mm). Resolved from `ToolEntry.wirbeln_stepover_mm`, falling
-    /// back to half the tool radius. Ignored when `wirbeln_radius`
+    pub whirl_radius: f64,
+    /// Whirl stride along the toolpath per full spiral revolution
+    /// (mm). Resolved from `ToolEntry.whirl_stepover_mm`, falling
+    /// back to half the tool radius. Ignored when `whirl_radius`
     /// is 0.
     #[serde(default)]
-    pub wirbeln_stepover: f64,
-    /// Wirbeln Z-wobble amplitude (mm). The overlay adds a
+    pub whirl_stepover: f64,
+    /// Whirl Z-wobble amplitude (mm). The overlay adds a
     /// `cos(3θ)·osc − osc` Z ripple between revolutions when > 0.
-    /// Resolved from `ToolEntry.wirbeln_osc_mm`.
+    /// Resolved from `ToolEntry.whirl_osc_mm`.
     #[serde(default)]
-    pub wirbeln_osc: f64,
-    /// Wirbeln spiral rotation direction (climb = `true`, conventional
+    pub whirl_osc: f64,
+    /// Whirl spiral rotation direction (climb = `true`, conventional
     /// = `false`). Resolved from the op's contour cut direction —
     /// matches Estlcam's `Einstellungen.Gleichlauf` flag.
     #[serde(default = "default_true")]
-    pub wirbeln_climb: bool,
+    pub whirl_climb: bool,
     /// Per-tool default XY overlap (dr5). Resolved from
     /// [`crate::project::ToolEntry::default_xy_overlap`] at synth time;
     /// `None` = no tool-level default, fall through to global 0.5.
@@ -210,10 +210,10 @@ impl Default for ToolConfig {
             rate_v_finish: 100,
             rate_h_finish: 800,
             pierce_sec: 0.0,
-            wirbeln_radius: 0.0,
-            wirbeln_stepover: 0.0,
-            wirbeln_osc: 0.0,
-            wirbeln_climb: true,
+            whirl_radius: 0.0,
+            whirl_stepover: 0.0,
+            whirl_osc: 0.0,
+            whirl_climb: true,
             default_xy_overlap: None,
             pierce_height_mm: 0.0,
             cut_height_mm: 0.0,

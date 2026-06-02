@@ -23,6 +23,7 @@ pub mod geometry_cache;
 pub mod halfpipe;
 pub mod inscribed;
 pub mod offsets;
+pub mod raster;
 pub mod setup;
 pub mod source_combine;
 pub mod surface;

@@ -706,6 +706,7 @@ pub(super) fn push_tool_fit_kind_warnings(
             OpKind::Dovetail { .. } => ("Dovetail", &[Mill]),
             OpKind::VCarve { .. } => ("V-carve", &[Mill]),
             OpKind::ReliefMill { .. } => ("Relief", &[Mill]),
+            OpKind::RasterEngrave { .. } => ("Raster engrave", &[Laser]),
             OpKind::Helix => ("Helix", &[Mill]),
             // Program-flow / mode-agnostic ops (is_program_only): valid
             // on every machine — empty `allowed` skips the check below.

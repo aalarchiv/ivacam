@@ -58,7 +58,7 @@ use crate::project::{
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 44;
+pub const PIPELINE_VERSION: u32 = 45;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -790,6 +790,53 @@ fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
             // distinguish them.
             h.write_u8(u8::from(*verbose_unsim_warnings));
         }
+        // rt1.12: raster engrave. All fields change the emitted scanlines
+        // (power mapping, resolution, scan/link, overscan). The referenced
+        // ReliefSource brightness content is folded in separately at the
+        // op_cache_key level (like ReliefMill / text_layers).
+        OpKind::RasterEngrave {
+            source_id,
+            resolution_mm,
+            power_curve,
+            scan_direction,
+            link,
+            overscan_factor,
+        } => {
+            h.write_u8(18);
+            h.write_u32(*source_id);
+            hash_f64(*resolution_mm, h);
+            match power_curve {
+                crate::cam::raster::PowerCurve::Linear { min, max } => {
+                    h.write_u8(0);
+                    h.write_u32(*min);
+                    h.write_u32(*max);
+                }
+                crate::cam::raster::PowerCurve::Threshold { level, power } => {
+                    h.write_u8(1);
+                    h.write_u32(level.to_bits());
+                    h.write_u32(*power);
+                }
+                crate::cam::raster::PowerCurve::FloydSteinberg { level, power } => {
+                    h.write_u8(2);
+                    h.write_u32(level.to_bits());
+                    h.write_u32(*power);
+                }
+                crate::cam::raster::PowerCurve::Bayer { matrix_size, power } => {
+                    h.write_u8(3);
+                    h.write_u8(*matrix_size);
+                    h.write_u32(*power);
+                }
+            }
+            h.write_u8(match scan_direction {
+                crate::cam::surface_mill::ScanDirection::AlongX => 0,
+                crate::cam::surface_mill::ScanDirection::AlongY => 1,
+            });
+            h.write_u8(match link {
+                crate::cam::raster::RasterLink::LiftBetween => 0,
+                crate::cam::raster::RasterLink::Bidirectional => 1,
+            });
+            hash_f64(*overscan_factor, h);
+        }
     }
 }
 
@@ -1251,7 +1298,7 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0x9c5c_cae2_4528_6377_u64, "got {:#018x}", key.0);
+        assert_eq!(key.0, 0xfc25_0d57_2d30_9858_u64, "got {:#018x}", key.0);
     }
 
     #[test]

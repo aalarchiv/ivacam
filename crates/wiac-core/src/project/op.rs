@@ -596,6 +596,39 @@ pub enum OpKind {
         #[serde(default = "default_relief_along_step")]
         along_step_mm: f64,
     },
+    /// rt1.12: photo / greyscale laser raster engrave. Walks a
+    /// [`crate::project::ReliefSource`]'s normalized-brightness grid one
+    /// row at a time, modulating laser power (the `S` word) per pixel via
+    /// [`crate::cam::raster::PowerCurve`] (dark burns hotter). Reuses the
+    /// relief image-source representation — brightness → power here vs
+    /// brightness → Z for [`OpKind::ReliefMill`]. Laser-only. (The grid →
+    /// power mapping lives in `cam::raster`; the gcode emit is rt1.12
+    /// phase 3.)
+    RasterEngrave {
+        /// Id of the [`crate::project::ReliefSource`] (in
+        /// `Project.relief_sources`) providing the brightness grid. No
+        /// matching source ⇒ the op emits nothing.
+        source_id: u32,
+        /// Per-pixel scan resolution (mm). The brightness grid is
+        /// resampled to this pitch at planning time. `0` ⇒ use the
+        /// source's native cell size.
+        #[serde(default)]
+        resolution_mm: f64,
+        /// Brightness → laser-power (`S`) mapping.
+        #[serde(default)]
+        power_curve: crate::cam::raster::PowerCurve,
+        /// Raster scanline direction (horizontal = `AlongX`).
+        #[serde(default)]
+        scan_direction: crate::cam::surface_mill::ScanDirection,
+        /// How consecutive rows connect (lift-between vs boustrophedon).
+        #[serde(default)]
+        link: crate::cam::raster::RasterLink,
+        /// Overscan past each row edge as a fraction of the row length
+        /// (≥ 0) so the head reaches commanded power before crossing
+        /// pixels (controllers ramp `S` over accel). `0` ⇒ no overscan.
+        #[serde(default)]
+        overscan_factor: f64,
+    },
 }
 
 fn default_relief_scallop() -> f64 {
@@ -1137,6 +1170,89 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn raster_engrave_kind_round_trips() {
+        use crate::cam::raster::{PowerCurve, RasterLink};
+        use crate::cam::surface_mill::ScanDirection;
+        let raw = serde_json::json!({
+            "id": 7,
+            "name": "Engrave photo",
+            "enabled": true,
+            "kind": {
+                "type": "raster_engrave",
+                "source_id": 3,
+                "resolution_mm": 0.1,
+                "power_curve": {"kind": "floyd_steinberg", "level": 0.5, "power": 800},
+                "scan_direction": "along_y",
+                "link": "bidirectional",
+                "overscan_factor": 1.2
+            },
+            "tool_id": 1,
+            "source": {"kind": "all"},
+            "params": {"depth": 0.0, "start_depth": 0.0, "fast_move_z": 5.0}
+        });
+        let op: Op = serde_json::from_value(raw).expect("Op deserialize");
+        let OpKind::RasterEngrave {
+            source_id,
+            resolution_mm,
+            power_curve,
+            scan_direction,
+            link,
+            overscan_factor,
+        } = &op.kind
+        else {
+            panic!("expected RasterEngrave kind");
+        };
+        assert_eq!(*source_id, 3);
+        assert!((*resolution_mm - 0.1).abs() < 1e-9);
+        assert_eq!(
+            *power_curve,
+            PowerCurve::FloydSteinberg {
+                level: 0.5,
+                power: 800
+            }
+        );
+        assert_eq!(*scan_direction, ScanDirection::AlongY);
+        assert_eq!(*link, RasterLink::Bidirectional);
+        assert!((*overscan_factor - 1.2).abs() < 1e-9);
+
+        // Full serde round-trip preserves the variant, curve, and enums.
+        let json = serde_json::to_value(&op).unwrap();
+        let back: Op = serde_json::from_value(json).unwrap();
+        assert_eq!(back.kind, op.kind);
+    }
+
+    /// rt1.12: omitting the optional fields lands on the documented
+    /// defaults (Linear 0..1000, AlongX, LiftBetween, no overscan).
+    #[test]
+    fn raster_engrave_defaults_fill_in() {
+        use crate::cam::raster::{PowerCurve, RasterLink};
+        use crate::cam::surface_mill::ScanDirection;
+        let raw = serde_json::json!({
+            "id": 1, "name": "r", "enabled": true,
+            "kind": { "type": "raster_engrave", "source_id": 9 },
+            "tool_id": 1, "source": {"kind": "all"},
+            "params": {"depth": 0.0, "start_depth": 0.0, "fast_move_z": 5.0}
+        });
+        let op: Op = serde_json::from_value(raw).expect("Op deserialize");
+        let OpKind::RasterEngrave {
+            source_id,
+            power_curve,
+            scan_direction,
+            link,
+            overscan_factor,
+            ..
+        } = &op.kind
+        else {
+            panic!("expected RasterEngrave kind");
+        };
+        assert_eq!(*source_id, 9);
+        assert_eq!(*power_curve, PowerCurve::Linear { min: 0, max: 1000 });
+        assert_eq!(*scan_direction, ScanDirection::AlongX);
+        assert_eq!(*link, RasterLink::LiftBetween);
+        assert_eq!(*overscan_factor, 0.0);
     }
 
     #[test]

@@ -1544,6 +1544,9 @@ fn specialty_will_emit(op: &Op, project: &Project, objects: &[VcObject]) -> bool
         } => halfpipe_would_emit(op, objects),
         // f60x: relief surfacing emits only when its referenced source exists.
         OpKind::ReliefMill { .. } => relief_would_emit(op, project),
+        // rt1.12: the raster-engrave scanline driver lands in phase 3; the
+        // op round-trips now but emits no toolpath yet.
+        OpKind::RasterEngrave { .. } => false,
         _ => true,
     }
 }

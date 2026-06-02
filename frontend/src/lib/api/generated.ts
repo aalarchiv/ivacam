@@ -1011,6 +1011,45 @@ export interface components {
              * @default 0
              */
             z_min_mm: number;
+        } | {
+            /**
+             * @description How consecutive rows connect (lift-between vs boustrophedon).
+             * @default lift_between
+             */
+            link: components["schemas"]["RasterLink"];
+            /**
+             * Format: double
+             * @description Overscan past each row edge as a fraction of the row length (≥ 0) so the head reaches commanded power before crossing pixels (controllers ramp `S` over accel). `0` ⇒ no overscan.
+             * @default 0
+             */
+            overscan_factor: number;
+            /**
+             * @description Brightness → laser-power (`S`) mapping.
+             * @default {
+             *       "kind": "linear",
+             *       "max": 1000,
+             *       "min": 0
+             *     }
+             */
+            power_curve: components["schemas"]["PowerCurve"];
+            /**
+             * Format: double
+             * @description Per-pixel scan resolution (mm). The brightness grid is resampled to this pitch at planning time. `0` ⇒ use the source's native cell size.
+             * @default 0
+             */
+            resolution_mm: number;
+            /**
+             * @description Raster scanline direction (horizontal = `AlongX`).
+             * @default along_x
+             */
+            scan_direction: components["schemas"]["ScanDirection"];
+            /**
+             * Format: uint32
+             * @description Id of the [`crate::project::ReliefSource`] (in `Project.relief_sources`) providing the brightness grid. No matching source ⇒ the op emits nothing.
+             */
+            source_id: number;
+            /** @enum {string} */
+            type: "raster_engrave";
         };
         /**
          * @description Universal per-op parameters — fields that apply to **every** op kind. Kind-specific config lives in the matching variant struct embedded in [`super::op::OpKind`]:
@@ -1441,6 +1480,42 @@ export interface components {
             tool_change?: string | null;
         };
         /**
+         * @description How a pixel's brightness maps to a commanded laser power (`S` word).
+         *
+         *     `level` thresholds compare against brightness in `[0, 1]`. `power` is the `S` value emitted for an "on" (burning) pixel; binary curves emit `0` for "off".
+         *
+         *     Wire form: internally tagged on `kind` (`{"kind":"linear",…}`).
+         */
+        PowerCurve: {
+            /** @enum {string} */
+            kind: "linear";
+            /** Format: uint32 */
+            max: number;
+            /** Format: uint32 */
+            min: number;
+        } | {
+            /** @enum {string} */
+            kind: "threshold";
+            /** Format: float */
+            level: number;
+            /** Format: uint32 */
+            power: number;
+        } | {
+            /** @enum {string} */
+            kind: "floyd_steinberg";
+            /** Format: float */
+            level: number;
+            /** Format: uint32 */
+            power: number;
+        } | {
+            /** @enum {string} */
+            kind: "bayer";
+            /** Format: uint8 */
+            matrix_size: number;
+            /** Format: uint32 */
+            power: number;
+        };
+        /**
          * @description 8n4k: axis selector for `OpKind::Probe`. Serializes as the bare lowercase letter (`"x"` / `"y"` / `"z"`) for a wire-friendly payload that drops straight into the G38.2 word.
          * @enum {string}
          */
@@ -1487,6 +1562,8 @@ export interface components {
          * @enum {string}
          */
         RapidCollisionSubkind: "tip" | "shank";
+        /** @description How consecutive raster rows are connected. */
+        RasterLink: "lift_between" | "bidirectional";
         /** @description One filled region attached to a specific operation. `outer` is the outer boundary; `holes` are the islands the cutter must avoid. Both in project units (typically mm). */
         RegionPreview: {
             holes?: components["schemas"]["Point2"][][];

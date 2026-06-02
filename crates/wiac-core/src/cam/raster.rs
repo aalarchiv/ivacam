@@ -20,7 +20,12 @@
 /// `level` thresholds compare against brightness in `[0, 1]`. `power` is
 /// the `S` value emitted for an "on" (burning) pixel; binary curves emit
 /// `0` for "off".
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// Wire form: internally tagged on `kind` (`{"kind":"linear",…}`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PowerCurve {
     /// Continuous greyscale. Power lerps from `max` at black
     /// (brightness 0) down to `min` at white (brightness 1), so darker
@@ -41,6 +46,40 @@ pub enum PowerCurve {
     /// `matrix_size` must be a power of two (2 / 4 / 8); other values
     /// fall back to 4.
     Bayer { matrix_size: u8, power: u32 },
+}
+
+impl Default for PowerCurve {
+    /// Continuous greyscale over the common GRBL `S0..S1000` range — a
+    /// safe, machine-agnostic starting point the user retunes per laser.
+    fn default() -> Self {
+        PowerCurve::Linear { min: 0, max: 1000 }
+    }
+}
+
+/// How consecutive raster rows are connected.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RasterLink {
+    /// Laser off + (optional) lift between rows; every row scans in the
+    /// same direction. Simple and artifact-free, but pays a return
+    /// traverse per row.
+    #[default]
+    LiftBetween,
+    /// Boustrophedon — alternate rows scan in opposite directions with no
+    /// inter-row lift. Saves the return traverse but doubles accel/decel
+    /// transitions; prefer ordered (Bayer) dither here, since
+    /// error-diffusion shows left/right alignment artifacts.
+    Bidirectional,
 }
 
 impl PowerCurve {

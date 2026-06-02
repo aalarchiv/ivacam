@@ -1620,6 +1620,49 @@ components:
         - source_id
         - type
         type: object
+      - description: 'rt1.12: photo / greyscale laser raster engrave. Walks a [`crate::project::ReliefSource`]''s normalized-brightness grid one row at a time, modulating laser power (the `S` word) per pixel via [`crate::cam::raster::PowerCurve`] (dark burns hotter). Reuses the relief image-source representation — brightness → power here vs brightness → Z for [`OpKind::ReliefMill`]. Laser-only. (The grid → power mapping lives in `cam::raster`; the gcode emit is rt1.12 phase 3.)'
+        properties:
+          link:
+            allOf:
+            - $ref: '#/components/schemas/RasterLink'
+            default: lift_between
+            description: How consecutive rows connect (lift-between vs boustrophedon).
+          overscan_factor:
+            default: 0.0
+            description: Overscan past each row edge as a fraction of the row length (≥ 0) so the head reaches commanded power before crossing pixels (controllers ramp `S` over accel). `0` ⇒ no overscan.
+            format: double
+            type: number
+          power_curve:
+            allOf:
+            - $ref: '#/components/schemas/PowerCurve'
+            default:
+              kind: linear
+              max: 1000
+              min: 0
+            description: Brightness → laser-power (`S`) mapping.
+          resolution_mm:
+            default: 0.0
+            description: Per-pixel scan resolution (mm). The brightness grid is resampled to this pitch at planning time. `0` ⇒ use the source's native cell size.
+            format: double
+            type: number
+          scan_direction:
+            allOf:
+            - $ref: '#/components/schemas/ScanDirection'
+            default: along_x
+            description: Raster scanline direction (horizontal = `AlongX`).
+          source_id:
+            description: Id of the [`crate::project::ReliefSource`] (in `Project.relief_sources`) providing the brightness grid. No matching source ⇒ the op emits nothing.
+            format: uint32
+            minimum: 0.0
+            type: integer
+          type:
+            enum:
+            - raster_engrave
+            type: string
+        required:
+        - source_id
+        - type
+        type: object
     OpParams:
       description: |-
         Universal per-op parameters — fields that apply to **every** op kind. Kind-specific config lives in the matching variant struct embedded in [`super::op::OpKind`]:
@@ -2354,6 +2397,88 @@ components:
           - string
           - 'null'
       type: object
+    PowerCurve:
+      description: |-
+        How a pixel's brightness maps to a commanded laser power (`S` word).
+
+        `level` thresholds compare against brightness in `[0, 1]`. `power` is the `S` value emitted for an "on" (burning) pixel; binary curves emit `0` for "off".
+
+        Wire form: internally tagged on `kind` (`{"kind":"linear",…}`).
+      oneOf:
+      - description: Continuous greyscale. Power lerps from `max` at black (brightness 0) down to `min` at white (brightness 1), so darker pixels burn hotter. `min`/`max` are `S` values; `min > max` is allowed (it simply inverts the ramp).
+        properties:
+          kind:
+            enum:
+            - linear
+            type: string
+          max:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          min:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - max
+        - min
+        type: object
+      - description: Hard cutoff. Pixels darker than `level` burn at `power`; lighter pixels stay off.
+        properties:
+          kind:
+            enum:
+            - threshold
+            type: string
+          level:
+            format: float
+            type: number
+          power:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - level
+        - power
+        type: object
+      - description: Floyd–Steinberg error-diffusion dither to on/off. Good tonal reproduction; errors propagate, so it can show alignment artifacts under bidirectional scanning (prefer [`PowerCurve::Bayer`] there). `level` is the binarization point; `power` is the on `S`.
+        properties:
+          kind:
+            enum:
+            - floyd_steinberg
+            type: string
+          level:
+            format: float
+            type: number
+          power:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - level
+        - power
+        type: object
+      - description: Ordered (Bayer) dither to on/off. No error propagation — fully local and predictable, so it's free of the boustrophedon alignment artifacts that hurt error-diffusion on lasers. `matrix_size` must be a power of two (2 / 4 / 8); other values fall back to 4.
+        properties:
+          kind:
+            enum:
+            - bayer
+            type: string
+          matrix_size:
+            format: uint8
+            minimum: 0.0
+            type: integer
+          power:
+            format: uint32
+            minimum: 0.0
+            type: integer
+        required:
+        - kind
+        - matrix_size
+        - power
+        type: object
     ProbeAxis:
       description: '8n4k: axis selector for `OpKind::Probe`. Serializes as the bare lowercase letter (`"x"` / `"y"` / `"z"`) for a wire-friendly payload that drops straight into the G38.2 word.'
       enum:
@@ -2433,6 +2558,17 @@ components:
       - tip
       - shank
       type: string
+    RasterLink:
+      description: How consecutive raster rows are connected.
+      oneOf:
+      - description: Laser off + (optional) lift between rows; every row scans in the same direction. Simple and artifact-free, but pays a return traverse per row.
+        enum:
+        - lift_between
+        type: string
+      - description: Boustrophedon — alternate rows scan in opposite directions with no inter-row lift. Saves the return traverse but doubles accel/decel transitions; prefer ordered (Bayer) dither here, since error-diffusion shows left/right alignment artifacts.
+        enum:
+        - bidirectional
+        type: string
     RegionPreview:
       description: One filled region attached to a specific operation. `outer` is the outer boundary; `holes` are the islands the cutter must avoid. Both in project units (typically mm).
       properties:

@@ -1346,7 +1346,10 @@ pub fn apply_cut_direction(
             | OpKind::Dovetail { .. }
             // f60x: relief surfacing has its own drop-cutter driver and
             // never enters the offset cascade — no winding to enforce.
-            | OpKind::ReliefMill { .. } => CutContext::Skip,
+            | OpKind::ReliefMill { .. }
+            // rt1.12: raster engrave has its own scanline driver; no
+            // vector winding to enforce.
+            | OpKind::RasterEngrave { .. } => CutContext::Skip,
         }
     };
     for offset in offsets.iter_mut() {

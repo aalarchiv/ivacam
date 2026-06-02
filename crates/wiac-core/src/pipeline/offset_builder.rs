@@ -679,6 +679,10 @@ pub(super) fn build_op_offsets(
                 // f60x: relief surfacing runs through `run_relief_op` (its
                 // own drop-cutter driver), never the offset cascade. Skip.
             }
+            OpKind::RasterEngrave { .. } => {
+                // rt1.12: raster engrave runs through its own scanline
+                // driver (phase 3), never the offset cascade. Skip.
+            }
             OpKind::Pause { .. }
             | OpKind::Homing { .. }
             | OpKind::Probe { .. }

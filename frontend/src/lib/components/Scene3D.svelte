@@ -704,17 +704,40 @@
     requestRender();
   });
 
-  /// Fit-to-view fires ONLY when the count of imports changes — i.e.
-  /// the user added or removed a drawing. fileTransform tweaks, layer
-  /// toggles, op edits, and Generates all derive a new
-  /// `transformedImport` reference but must NOT overrule the user's
-  /// chosen camera angle (user feedback this session). Tracking the
-  /// length directly (rather than the derived reference) gives the
-  /// right invalidation profile: add file → fit; tweak transform → no
-  /// touch.
+  /// Auto fit-to-view. Refit the camera to frame the whole scene when
+  /// the visible content GROWS or a fresh toolpath is generated:
+  ///   • a drawing is imported (imports.length grows), or
+  ///   • the total layer set grows — imported layers ∪ text layers — so
+  ///     newly-added geometry frames itself, while toggling an EXISTING
+  ///     layer's visibility leaves the count unchanged and so does NOT
+  ///     refit (preserves the earlier "don't fight my camera" feedback);
+  ///   • every Generate (`generatedVersion` increments only on a real
+  ///     generate, never on a clear — see project.svelte.ts).
+  /// fileTransform tweaks, op edits, and selection derive new references
+  /// but leave these counts/version alone, so they never override the
+  /// user's chosen camera. Removing content (fewer imports/layers) also
+  /// keeps the camera put. Counts (not the derived `transformedImport`
+  /// reference) give the right invalidation profile.
+  ///
+  /// Defined AFTER the geometry-rebuild effects above so
+  /// combinedBoundingSphere() sees the freshly-rebuilt line buffers.
+  /// On (re)mount the lasts start at -1 → one fit runs, which
+  /// maybeRestoreSavedCamera() then supersedes with the saved workspace
+  /// pose (one-shot), so 2D↔3D pane swaps don't jar the user's view.
+  let lastImportCount = -1;
+  let lastLayerCount = -1;
+  let lastGenVersion = -1;
   $effect(() => {
-    void project.imports.length;
-    fitCameraToScene();
+    const importCount = project.imports.length;
+    const layerCount =
+      (project.transformedImport?.layers.length ?? 0) + project.textLayers.length;
+    const genVersion = project.generatedVersion;
+    const grew = importCount > lastImportCount || layerCount > lastLayerCount;
+    const regenerated = genVersion !== lastGenVersion;
+    lastImportCount = importCount;
+    lastLayerCount = layerCount;
+    lastGenVersion = genVersion;
+    if (grew || regenerated) fitCameraToScene();
   });
 
   /// Selection-only fast path: mutate the color attribute in place
@@ -1997,8 +2020,10 @@
     fitCameraToScene();
   }
 
-  /// Camera fit-to-view, run once when a new geometry source appears.
-  /// Layer toggles / generates / op edits no longer reset the user's view.
+  /// Camera fit-to-view. Driven by the auto-fit effect above (content
+  /// grew or a fresh Generate) and the manual "Fit view" button. Layer
+  /// visibility toggles, fileTransform tweaks, and op edits do NOT call
+  /// this, so they never reset the user's chosen camera.
   function fitCameraToScene() {
     if (!camera || !controls) return;
     const sphere = combinedBoundingSphere();

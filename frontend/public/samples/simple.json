@@ -116,15 +116,7 @@
   },
   "unit_scale": 1.0,
   "warnings": [],
-  "objects": [
-    1,
-    1,
-    1,
-    2,
-    2,
-    2,
-    2
-  ],
+  "objects": [1, 1, 1, 2, 2, 2, 2],
   "object_meta": [
     {
       "id": 1,

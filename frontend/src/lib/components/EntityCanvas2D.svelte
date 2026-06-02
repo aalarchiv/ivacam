@@ -299,8 +299,7 @@
   /// plain tap behave like ctrl-click (toggle into the selection).
   /// Surfaced as an overlay button on touch-capable devices only.
   let addToSelection = $state(false);
-  const isTouchDevice =
-    typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0;
+  const isTouchDevice = typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0;
 
   /// Cancel a pending long-press hold (finger moved, lifted, or a second
   /// finger arrived). Idempotent.

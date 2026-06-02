@@ -53,7 +53,11 @@ describe('WasmWorkerClient', () => {
             type: 'event',
             event: { kind: 'op_started', op_id: 1, idx: 0, total: 2, name: 'a' },
           });
-          post({ id: req.id, type: 'event', event: { kind: 'done', op_count: 2, total_time_s: 0.1 } });
+          post({
+            id: req.id,
+            type: 'event',
+            event: { kind: 'done', op_count: 2, total_time_s: 0.1 },
+          });
           post({ id: req.id, type: 'result', value: result });
         }),
     );

@@ -124,9 +124,9 @@ describe('resolveApiChoice (transport selection)', () => {
   };
 
   it('Tauri shell wins over everything', () => {
-    expect(
-      resolveApiChoice({ ...base, hasTauri: true, envApi: 'wasm', queryApi: 'wasm' }),
-    ).toEqual({ kind: 'tauri' });
+    expect(resolveApiChoice({ ...base, hasTauri: true, envApi: 'wasm', queryApi: 'wasm' })).toEqual(
+      { kind: 'tauri' },
+    );
   });
 
   it('VITE_WIAC_API URL is used when set', () => {

@@ -1287,9 +1287,7 @@
       // safe no-op in three.js.
       if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
         child.geometry.dispose();
-        const m = (child as THREE.Mesh | THREE.Line).material as
-          | THREE.Material
-          | THREE.Material[];
+        const m = (child as THREE.Mesh | THREE.Line).material as THREE.Material | THREE.Material[];
         if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
         else m.dispose();
       }
@@ -2059,7 +2057,10 @@
   /// one-finger rotate is a drag, not a hold). Registered as a passive
   /// pointermove listener alongside OrbitControls' own.
   function onPointerMoveLongPress(e: PointerEvent) {
-    if (lpStart && Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > LONG_PRESS_MOVE_TOL_PX) {
+    if (
+      lpStart &&
+      Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > LONG_PRESS_MOVE_TOL_PX
+    ) {
       cancelLongPress();
     }
   }

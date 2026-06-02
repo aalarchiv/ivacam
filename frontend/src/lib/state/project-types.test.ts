@@ -111,9 +111,7 @@ describe('placementFileTransform (xeio import placement)', () => {
   it('returns identity for a degenerate or non-finite bbox', () => {
     expect(placementFileTransform(bb(10, 10, 5, 5), WORK).translate).toEqual({ x: 0, y: 0 });
     expect(placementFileTransform(null, WORK).translate).toEqual({ x: 0, y: 0 });
-    expect(
-      placementFileTransform(bb(0, 0, Infinity, 10), WORK).translate,
-    ).toEqual({ x: 0, y: 0 });
+    expect(placementFileTransform(bb(0, 0, Infinity, 10), WORK).translate).toEqual({ x: 0, y: 0 });
   });
 
   it('treats an undefined work area as unbounded (positive-quadrant drawing kept)', () => {

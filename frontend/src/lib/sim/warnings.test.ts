@@ -11,7 +11,12 @@ const coarsened = (reason = 'max_simulation_cells'): SimWarning =>
   }) as unknown as SimWarning;
 
 const rapid = (segment_idx: number): SimWarning =>
-  ({ kind: 'rapid_through_material', segment_idx, worst_x: 1, worst_y: 2 }) as unknown as SimWarning;
+  ({
+    kind: 'rapid_through_material',
+    segment_idx,
+    worst_x: 1,
+    worst_y: 2,
+  }) as unknown as SimWarning;
 
 const fixture = (fixture_id: number, segment_idx: number): SimWarning =>
   ({ kind: 'fixture_collision', fixture_id, segment_idx }) as unknown as SimWarning;

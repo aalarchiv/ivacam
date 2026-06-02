@@ -65,8 +65,9 @@ pub(in crate::pipeline) use selection::{
 mod test_helpers;
 
 use op_drivers::{
-    halfpipe_would_emit, relief_would_emit, run_halfpipe_op, run_relief_op, run_standard_op,
-    run_thread_op, run_vcarve_op, thread_would_emit, vcarve_would_emit,
+    halfpipe_would_emit, raster_would_emit, relief_would_emit, run_halfpipe_op, run_raster_op,
+    run_relief_op, run_standard_op, run_thread_op, run_vcarve_op, thread_would_emit,
+    vcarve_would_emit,
 };
 use regions::build_region_previews;
 pub use setup_resolver::fit_helix_radius_for_selection;
@@ -1544,9 +1545,8 @@ fn specialty_will_emit(op: &Op, project: &Project, objects: &[VcObject]) -> bool
         } => halfpipe_would_emit(op, objects),
         // f60x: relief surfacing emits only when its referenced source exists.
         OpKind::ReliefMill { .. } => relief_would_emit(op, project),
-        // rt1.12: the raster-engrave scanline driver lands in phase 3; the
-        // op round-trips now but emits no toolpath yet.
-        OpKind::RasterEngrave { .. } => false,
+        // rt1.12: raster engrave emits only with a real source on a laser.
+        OpKind::RasterEngrave { .. } => raster_would_emit(op, project),
         _ => true,
     }
 }
@@ -1638,6 +1638,13 @@ fn run_op_driver<P: PostProcessor>(
         OpKind::ReliefMill { .. } => {
             post.raw(&format!("; OP {}", op.id));
             run_relief_op(op, project, setup, post, last_pos, warnings, cancel)?;
+            Ok((0, 0, false))
+        }
+        // rt1.12: laser raster engrave — own scanline driver, emits XY
+        // moves with per-pixel S directly (no offset cascade).
+        OpKind::RasterEngrave { .. } => {
+            post.raw(&format!("; OP {}", op.id));
+            run_raster_op(op, project, setup, post, last_pos, warnings, cancel)?;
             Ok((0, 0, false))
         }
         _ => run_standard_op(

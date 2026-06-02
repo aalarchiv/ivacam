@@ -820,6 +820,171 @@ fn non_laser_tool_ignores_pierce_field() {
     );
 }
 
+/// rt1.12 phase 3: a laser raster-engrave op walks its ReliefSource
+/// brightness grid into per-pixel S-modulated scanlines, bracketed by
+/// `M3 S0` (arm) / `M5` (off). A 3-pixel row [black, white, black]
+/// through a 0.5-threshold curve burns the two black pixels at the
+/// configured power and skips the white one (S0).
+#[test]
+fn raster_engrave_emits_power_modulated_scanlines() {
+    use crate::cam::raster::{PowerCurve, RasterLink};
+    use crate::cam::surface_mill::ScanDirection;
+    use crate::geometry::Point2;
+    use crate::project::ReliefSource;
+
+    let mut tool = endmill(1, 0.1);
+    tool.kind = ToolKind::LaserBeam;
+    let machine = MachineConfig {
+        mode: crate::cam::setup::MachineMode::Laser,
+        ..MachineConfig::default()
+    };
+    let source = ReliefSource {
+        id: 5,
+        name: "img".into(),
+        origin: Point2::new(0.0, 0.0),
+        cell: 1.0,
+        cols: 3,
+        rows: 1,
+        brightness: vec![0.0, 1.0, 0.0], // black, white, black
+    };
+    let project = Project {
+        segments: Vec::new(),
+        machine,
+        tools: vec![tool],
+        operations: vec![Op {
+            id: 1,
+            name: "Engrave".into(),
+            enabled: true,
+            kind: OpKind::RasterEngrave {
+                source_id: 5,
+                resolution_mm: 0.0,
+                power_curve: PowerCurve::Threshold {
+                    level: 0.5,
+                    power: 800,
+                },
+                scan_direction: ScanDirection::AlongX,
+                link: RasterLink::LiftBetween,
+                overscan_factor: 0.0,
+            },
+            tool_id: 1,
+            finish_tool_id: None,
+            source: OpSource::All,
+            params: OpParams::mill_default(),
+            group: None,
+            pin_order: false,
+        }],
+        fixtures: Vec::default(),
+        text_layers: Vec::default(),
+        work_offset: crate::project::WorkOffset::default(),
+        stock: None,
+        relief_sources: vec![source],
+        group_ops_by_tool: false,
+    };
+    let resp = run_pipeline(
+        PipelineRequest {
+            project,
+            post_processor: Some(PostProcessorKind::Linuxcnc),
+        },
+        |_, _, _| {},
+    )
+    .unwrap();
+    let g = &resp.gcode;
+    assert!(g.contains("M3 S800"), "black pixels burn at S800:\n{g}");
+    assert!(g.contains("M3 S0"), "white pixel skipped at S0:\n{g}");
+    assert!(g.contains("M5"), "beam dropped (M5):\n{g}");
+}
+
+/// rt1.12 phase 3: scan direction reorients the scanlines without
+/// transposing the image. A 2×1 image (2 cols, 1 row) is ONE horizontal
+/// scanline under AlongX but TWO vertical scanlines under AlongY — and
+/// each scanline opens with a reposition rapid (`G0`), so the rapid count
+/// tracks the scanline count. (Catches the col/row index swap bug.)
+#[test]
+fn raster_scan_direction_sets_scanline_count() {
+    use crate::cam::raster::{PowerCurve, RasterLink};
+    use crate::cam::surface_mill::ScanDirection;
+    use crate::geometry::Point2;
+    use crate::project::ReliefSource;
+
+    let raster_gcode = |dir: ScanDirection| -> String {
+        let mut tool = endmill(1, 0.1);
+        tool.kind = ToolKind::LaserBeam;
+        let project = Project {
+            segments: Vec::new(),
+            machine: MachineConfig {
+                mode: crate::cam::setup::MachineMode::Laser,
+                ..MachineConfig::default()
+            },
+            tools: vec![tool],
+            operations: vec![Op {
+                id: 1,
+                name: "Engrave".into(),
+                enabled: true,
+                kind: OpKind::RasterEngrave {
+                    source_id: 1,
+                    resolution_mm: 0.0,
+                    power_curve: PowerCurve::Threshold {
+                        level: 0.5,
+                        power: 800,
+                    },
+                    scan_direction: dir,
+                    link: RasterLink::LiftBetween,
+                    overscan_factor: 0.0,
+                },
+                tool_id: 1,
+                finish_tool_id: None,
+                source: OpSource::All,
+                params: OpParams::mill_default(),
+                group: None,
+                pin_order: false,
+            }],
+            fixtures: Vec::default(),
+            text_layers: Vec::default(),
+            work_offset: crate::project::WorkOffset::default(),
+            stock: None,
+            relief_sources: vec![ReliefSource {
+                id: 1,
+                name: "img".into(),
+                origin: Point2::new(0.0, 0.0),
+                cell: 1.0,
+                cols: 2,
+                rows: 1,
+                brightness: vec![0.0, 1.0], // black, white
+            }],
+            group_ops_by_tool: false,
+        };
+        run_pipeline(
+            PipelineRequest {
+                project,
+                post_processor: Some(PostProcessorKind::Linuxcnc),
+            },
+            |_, _, _| {},
+        )
+        .unwrap()
+        .gcode
+    };
+    // The burn axis is the orientation tell, immune to header/footer
+    // noise: AlongX cuts (`G1`) sweep X (Y is modal-constant per row), so
+    // no burn carries a Y word; AlongY cuts sweep Y. A transpose bug would
+    // flip these.
+    let burns_with =
+        |g: &str, axis: char| g.lines().any(|l| l.starts_with("G1 ") && l.contains(axis));
+    let gx = raster_gcode(ScanDirection::AlongX);
+    let gy = raster_gcode(ScanDirection::AlongY);
+    assert!(
+        burns_with(&gx, 'X') && !burns_with(&gx, 'Y'),
+        "AlongX burns must sweep X only:\n{gx}"
+    );
+    assert!(
+        burns_with(&gy, 'Y') && !burns_with(&gy, 'X'),
+        "AlongY burns must sweep Y only:\n{gy}"
+    );
+    assert!(
+        gx.contains("M3 S800") && gy.contains("M3 S800"),
+        "both burn the black pixel"
+    );
+}
+
 /// Per-tool Z shift (rt1.30): when set on the first op's tool, a
 /// `G92 Z<shift>` line follows `program_begin` to pin work-Z=0 to
 /// the new tool's tip.

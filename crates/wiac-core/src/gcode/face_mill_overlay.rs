@@ -119,11 +119,7 @@ pub fn steps_for_radius(radius: f64) -> u32 {
 /// `WhirlState` across passes so the spiral phase doesn't reset and
 /// produce flat spots at pass boundaries (qm9x).
 #[must_use]
-pub fn apply_whirl(
-    segments: &[Segment],
-    cut_z: f64,
-    params: WhirlParams,
-) -> Vec<(f64, f64, f64)> {
+pub fn apply_whirl(segments: &[Segment], cut_z: f64, params: WhirlParams) -> Vec<(f64, f64, f64)> {
     let mut state = WhirlState::default();
     apply_whirl_with_state(segments, cut_z, params, &mut state)
 }

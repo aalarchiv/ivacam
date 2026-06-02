@@ -212,7 +212,7 @@ mod tests {
         let c = Point2::new(0.0, 0.0);
         let e = Point2::new(1.0, 0.0); // angle 0
         let n = Point2::new(0.0, 1.0); // angle π/2
-        // CCW from +x to +y is a quarter turn; CW is three-quarters.
+                                       // CCW from +x to +y is a quarter turn; CW is three-quarters.
         assert!(approx(arc_sweep(c, e, n, true), FRAC_PI_2));
         assert!(approx(arc_sweep(c, e, n, false), 3.0 * FRAC_PI_2));
         // Reverse endpoints: CCW from +y to +x is three-quarters.
@@ -238,7 +238,11 @@ mod tests {
         assert!(!arc_contains_angle(0.0, -FRAC_PI_2, FRAC_PI_2 / 2.0));
         // Wraps across the ±π discontinuity: arc from 3π/4 sweeping +π/2
         // crosses π and contains -3π/4 (≡ 5π/4).
-        assert!(arc_contains_angle(3.0 * FRAC_PI_2 / 2.0, FRAC_PI_2, -3.0 * FRAC_PI_2 / 2.0));
+        assert!(arc_contains_angle(
+            3.0 * FRAC_PI_2 / 2.0,
+            FRAC_PI_2,
+            -3.0 * FRAC_PI_2 / 2.0
+        ));
         // Full revolution contains everything.
         assert!(arc_contains_angle(1.0, TAU, 42.0));
     }

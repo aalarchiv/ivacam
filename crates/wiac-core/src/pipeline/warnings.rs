@@ -186,7 +186,10 @@ pub(super) fn push_grbl_fixed_sensor_warning(
     if !matches!(post_kind, super::PostProcessorKind::Grbl) {
         return;
     }
-    if !matches!(project.machine.post_change_z, PostChangeZStrategy::FixedSensor { .. }) {
+    if !matches!(
+        project.machine.post_change_z,
+        PostChangeZStrategy::FixedSensor { .. }
+    ) {
         return;
     }
     // The ATC / M6 path skips the probe flow entirely when G43 H<n>
@@ -1353,7 +1356,11 @@ mod tests {
             .find(|x| x.kind == "op_machine_mode_mismatch")
             .expect("pocket on a laser machine should warn");
         assert_eq!(hit.op_id, Some(1));
-        assert!(hit.message.contains("Laser"), "names the mode: {}", hit.message);
+        assert!(
+            hit.message.contains("Laser"),
+            "names the mode: {}",
+            hit.message
+        );
 
         // Profile on the same laser machine: laser-capable → silent.
         let mut w2 = Vec::new();
@@ -1407,7 +1414,11 @@ mod tests {
             .find(|x| x.kind == "pierce_on_contour_no_lead")
             .expect("plasma profile with no lead-in should warn");
         assert_eq!(hit.op_id, Some(1));
-        assert!(hit.message.contains("torch"), "plasma names the torch: {}", hit.message);
+        assert!(
+            hit.message.contains("torch"),
+            "plasma names the torch: {}",
+            hit.message
+        );
 
         // Plasma WITH a straight lead-in → off-edge starter hole → silent.
         setup.leads.r#in = LeadKind::Straight;

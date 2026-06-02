@@ -285,7 +285,6 @@ fn direction_ccw(center: Point2, a: Point2, b: Point2) -> bool {
     cross > 0.0
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

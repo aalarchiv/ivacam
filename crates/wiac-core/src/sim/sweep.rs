@@ -391,9 +391,17 @@ fn sweep_chord_carve_partial(
         // cap) is within r_tool of the full [from, to] segment, so the
         // full-segment stadium is a valid superset; the per-cell t-range
         // and `r_sq > r_tool_sq` checks below stay the correctness gate.
-        let Some((rx0, rx1)) =
-            swept_row_cell_range(&layout, from, to, r_tool, r_tool_sq, pure_plunge, cy, ix0, ix1)
-        else {
+        let Some((rx0, rx1)) = swept_row_cell_range(
+            &layout,
+            from,
+            to,
+            r_tool,
+            r_tool_sq,
+            pure_plunge,
+            cy,
+            ix0,
+            ix1,
+        ) else {
             continue;
         };
         for ix in rx0..=rx1 {
@@ -632,9 +640,17 @@ pub(super) fn for_each_swept_cell<F>(
         // 7iej.9: clip this row to the stadium's x-extent instead of
         // walking the full AABB width. The per-cell `r_sq > r_tool_sq`
         // check below is unchanged and remains the correctness gate.
-        let Some((rx0, rx1)) =
-            swept_row_cell_range(layout, from, to, r_tool, r_tool_sq, pure_plunge, cy, ix0, ix1)
-        else {
+        let Some((rx0, rx1)) = swept_row_cell_range(
+            layout,
+            from,
+            to,
+            r_tool,
+            r_tool_sq,
+            pure_plunge,
+            cy,
+            ix0,
+            ix1,
+        ) else {
             continue;
         };
         for ix in rx0..=rx1 {
@@ -1689,8 +1705,8 @@ mod tests {
                         let ey = cy - from.y;
                         (ex * ex + ey * ey, plunge_z)
                     } else {
-                        let t = (((cx - from.x) * dx + (cy - from.y) * dy) / len_sq)
-                            .clamp(0.0, 1.0);
+                        let t =
+                            (((cx - from.x) * dx + (cy - from.y) * dy) / len_sq).clamp(0.0, 1.0);
                         let px = from.x + t * dx;
                         let py = from.y + t * dy;
                         let ex = cx - px;
@@ -1748,7 +1764,8 @@ mod tests {
                 got.sort_by_key(|c| (c.0, c.1));
                 want.sort_by_key(|c| (c.0, c.1));
                 assert_eq!(
-                    got, want,
+                    got,
+                    want,
                     "clipped walk diverged from brute force for {profile:?} {from:?}->{to:?}\n\
                      got {} cells, want {} cells",
                     got.len(),
@@ -1756,7 +1773,10 @@ mod tests {
                 );
                 // Sanity: a non-degenerate cut must actually carve something.
                 if from != to {
-                    assert!(!want.is_empty(), "brute force carved nothing for {from:?}->{to:?}");
+                    assert!(
+                        !want.is_empty(),
+                        "brute force carved nothing for {from:?}->{to:?}"
+                    );
                 }
             }
         }

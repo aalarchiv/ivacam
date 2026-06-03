@@ -20,7 +20,6 @@ use wiac_core::cam::VcObject;
 use wiac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
 use wiac_core::{ImportOptions, ImportOutput};
 
-
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 struct GenerateResponseJson<'a> {

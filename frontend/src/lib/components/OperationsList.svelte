@@ -42,11 +42,18 @@
       ? new Set(project.transformedImport.objects)
       : new Set<number>(),
   );
-  let importedLayersSet = $derived(
-    project.transformedImport?.layers
+  let importedLayersSet = $derived.by(() => {
+    const set = project.transformedImport?.layers
       ? new Set(project.transformedImport.layers.map((l) => l.name))
-      : new Set<string>(),
-  );
+      : new Set<string>();
+    // Synthetic text-layer geometry (`__text_<id>`) is rendered from the
+    // project's TextLayers at pipeline time, not present in the imported
+    // drawing's layer list — but an op sourcing it is perfectly valid.
+    // Include those names so a text op (the default source AddTextDialog
+    // seeds) doesn't read as an orphaned source / false ⚠ warning.
+    for (const t of project.textLayers) set.add(`__text_${t.id}`);
+    return set;
+  });
 
   /// eb8.7: orphan-source diagnostics for an op. Returns the object ids
   /// or layer names that the op points at but that the current import
@@ -649,7 +656,12 @@
   }
   .row {
     display: grid;
-    grid-template-columns: auto auto auto auto minmax(0, 1fr) minmax(0, auto) auto auto auto;
+    /* Columns: grip · enable · caret · icon · name(1fr) · tool · status ·
+       [Re-pick] · duplicate · delete. The Re-pick button is conditional,
+       so the row has 9 or 10 children — the trailing `auto` reserves the
+       10th track so the delete `×` never wraps to a second line when
+       Re-pick shows (empty/collapsed otherwise). */
+    grid-template-columns: auto auto auto auto minmax(0, 1fr) minmax(0, auto) auto auto auto auto;
     align-items: center;
     gap: 0.35rem;
     padding: 0.25rem 0.4rem;

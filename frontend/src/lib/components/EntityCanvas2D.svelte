@@ -4,7 +4,7 @@
   import { opSourceCss } from '../state/op-color';
   import { STOCK_OUTLINE_LAYER } from '../state/stock-outline';
   import { buildObjectPolylines, polylineAtT, type ObjectPolyline } from '../cam/tabs';
-  import type { Segment } from '../api/types';
+  import type { Segment, BBox } from '../api/types';
   import {
     buildHitIndex as buildHitIndexPure,
     queryHit,
@@ -13,7 +13,7 @@
   import { fixtureAt } from '../canvas/fixture-hit';
   import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
-  import { computeViewportTransform } from '../canvas/viewport';
+  import { computeViewportTransform, placementsBBox } from '../canvas/viewport';
   import {
     applyPinch,
     withinTapTolerance,
@@ -154,6 +154,12 @@
     void project.machine.workArea;
     void project.stock;
     void project.settings.previewLineWidth;
+    // rt1.12 (fvb0): a raster-engrave-only project (no imported geometry)
+    // draws its grid / axes fit to the placement bbox, so the bg must
+    // react to sources / ops appearing / moving. Same per-frame cost as
+    // a pan (which already repaints this layer), so no new regression.
+    void project.reliefSources;
+    void project.operations;
     void userZoom;
     void userPanX;
     void userPanY;
@@ -1296,7 +1302,7 @@
   /// the active transform, and caches both the base and active values
   /// so hit-tests can read them without recomputing.
   function computeTransform(
-    data: import('../api/types').ImportResponse,
+    bbox: BBox,
     w: number,
     h: number,
   ): {
@@ -1306,7 +1312,7 @@
     project2: (x: number, y: number) => [number, number];
   } {
     const t = computeViewportTransform(
-      data.bbox,
+      bbox,
       { w, h },
       { zoom: userZoom, panX: userPanX, panY: userPanY },
     );
@@ -1327,19 +1333,33 @@
     ctx.fillRect(0, 0, w, h);
 
     const data = project.geometryView;
-    if (!data || data.segments.length === 0) {
+    const hasGeom = !!data && data.segments.length > 0;
+    // rt1.12 (fvb0): a raster-engrave-only project has no imported
+    // geometry — fall back to a bbox over the placement / bed so the
+    // grid + axes + draggable image still render.
+    const rasterBBox = hasGeom ? null : rasterOnlyBBox();
+    if (!hasGeom && !rasterBBox) {
       ctx.fillStyle = themeVar('--canvas-empty', '#555');
       ctx.font = '13px system-ui, sans-serif';
       ctx.fillText('Open a file to view geometry', 16, 24);
       return;
     }
 
-    const { scale, offX, offY, project2 } = computeTransform(data, w, h);
+    const { scale, offX, offY, project2 } = computeTransform(
+      hasGeom ? data!.bbox : rasterBBox!,
+      w,
+      h,
+    );
 
     drawGrid(ctx, w, h, scale, offX, offY);
     drawAxes(ctx, w, h, offX, offY);
     drawWorkArea(ctx, project2);
     drawStock(ctx, project2);
+
+    // The rest of the bg layer is imported-geometry chrome; a
+    // raster-only project has none, so stop here (the placement image
+    // itself lives on the overlay).
+    if (!hasGeom || !data) return;
 
     // Filled-region preview painted under the wireframe so contours stay
     // legible. Regions come from the backend (pipeline.rs
@@ -1386,84 +1406,91 @@
     ctx.clearRect(0, 0, w, h);
 
     const data = project.geometryView;
-    if (!data || data.segments.length === 0) return;
-    const { scale, project2 } = computeTransform(data, w, h);
+    const hasGeom = !!data && data.segments.length > 0;
+    // rt1.12 (fvb0): mirror drawBackground — fall back to the raster
+    // placement / bed bbox so a geometry-less engrave is draggable.
+    const rasterBBox = hasGeom ? null : rasterOnlyBBox();
+    if (!hasGeom && !rasterBBox) return;
+    const { scale, project2 } = computeTransform(hasGeom ? data!.bbox : rasterBBox!, w, h);
+
+    const accent = themeVar('--accent', '#2d6cdf');
 
     // rt1.12 (j7b4): faint raster-engrave placement images, painted
     // first so selection halos / chrome layer over them.
     drawRasterPlacements(ctx, project2, scale);
 
-    const accent = themeVar('--accent', '#2d6cdf');
-    const hoverColor = themeVar('--accent-strong', '#6e9ce6');
-    const selOpId = project.selectedOpId;
-    // Halo color = a high-contrast outline drawn UNDER selected /
-    // hovered / op-assigned objects so the state stays visible even
-    // when the underlying layer's ACI color happens to match the state
-    // color. Uses --text-strong so it inverts automatically in light
-    // theme.
-    const haloColor = themeVar('--text-strong', '#ffffff');
-    const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
-    const visibleLayersSnap = new Set(project.visibleLayers);
-    visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
-    const selectedObjectsSnap = new Set(project.selectedObjects);
-    for (let i = 0; i < data.segments.length; i++) {
-      const seg = data.segments[i];
-      if (!visibleLayersSnap.has(seg.layer)) continue;
-      const objId = data.objects?.[i] ?? 0;
-      if (objId === 0) continue;
-      const selected = selectedObjectsSnap.has(objId);
-      const hovered = objId === hoverObj;
-      const assignedOps = objectToOps.get(objId);
-      if (!selected && !hovered && !assignedOps) continue;
+    if (hasGeom && data) {
+      const hoverColor = themeVar('--accent-strong', '#6e9ce6');
+      const selOpId = project.selectedOpId;
+      // Halo color = a high-contrast outline drawn UNDER selected /
+      // hovered / op-assigned objects so the state stays visible even
+      // when the underlying layer's ACI color happens to match the state
+      // color. Uses --text-strong so it inverts automatically in light
+      // theme.
+      const haloColor = themeVar('--text-strong', '#ffffff');
+      const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
+      const visibleLayersSnap = new Set(project.visibleLayers);
+      visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
+      const selectedObjectsSnap = new Set(project.selectedObjects);
+      for (let i = 0; i < data.segments.length; i++) {
+        const seg = data.segments[i];
+        if (!visibleLayersSnap.has(seg.layer)) continue;
+        const objId = data.objects?.[i] ?? 0;
+        if (objId === 0) continue;
+        const selected = selectedObjectsSnap.has(objId);
+        const hovered = objId === hoverObj;
+        const assignedOps = objectToOps.get(objId);
+        if (!selected && !hovered && !assignedOps) continue;
 
-      // Per-op assignment outlines (concentric rings, one band per op).
-      // Each assigned op gets the SAME hue here as its toolpath in 3D.
-      // When an object belongs to several ops we draw nested rings —
-      // widest (outermost) first so narrower bands paint on top:
-      // "outline, outline of outline, …". The selected op is ordered
-      // innermost and rendered brighter so it reads as the primary
-      // assignment without hiding the others.
-      if (assignedOps && assignedOps.length > 0) {
-        // Selected op last → drawn innermost / on top.
-        const ids = [...assignedOps].sort(
-          (a, b) => (a === selOpId ? 1 : 0) - (b === selOpId ? 1 : 0) || a - b,
-        );
-        const n = ids.length;
-        const step = 2.4;
-        const innerWidth = 2.0;
-        // Faint contrast halo behind the widest band.
-        const prevAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = innerWidth + (n - 1) * step + 3;
-        ctx.strokeStyle = haloColor;
-        drawSegment(ctx, seg, project2);
-        ctx.globalAlpha = prevAlpha;
-        for (let k = 0; k < n; k++) {
-          const opId = ids[k];
-          // k=0 is the outermost (widest) band; the last is innermost.
-          ctx.lineWidth = innerWidth + (n - 1 - k) * step;
-          ctx.strokeStyle = opSourceCss(opId, opId === selOpId);
+        // Per-op assignment outlines (concentric rings, one band per op).
+        // Each assigned op gets the SAME hue here as its toolpath in 3D.
+        // When an object belongs to several ops we draw nested rings —
+        // widest (outermost) first so narrower bands paint on top:
+        // "outline, outline of outline, …". The selected op is ordered
+        // innermost and rendered brighter so it reads as the primary
+        // assignment without hiding the others.
+        if (assignedOps && assignedOps.length > 0) {
+          // Selected op last → drawn innermost / on top.
+          const ids = [...assignedOps].sort(
+            (a, b) => (a === selOpId ? 1 : 0) - (b === selOpId ? 1 : 0) || a - b,
+          );
+          const n = ids.length;
+          const step = 2.4;
+          const innerWidth = 2.0;
+          // Faint contrast halo behind the widest band.
+          const prevAlpha = ctx.globalAlpha;
+          ctx.globalAlpha = 0.35;
+          ctx.lineWidth = innerWidth + (n - 1) * step + 3;
+          ctx.strokeStyle = haloColor;
+          drawSegment(ctx, seg, project2);
+          ctx.globalAlpha = prevAlpha;
+          for (let k = 0; k < n; k++) {
+            const opId = ids[k];
+            // k=0 is the outermost (widest) band; the last is innermost.
+            ctx.lineWidth = innerWidth + (n - 1 - k) * step;
+            ctx.strokeStyle = opSourceCss(opId, opId === selOpId);
+            drawSegment(ctx, seg, project2);
+          }
+        }
+
+        // Hover / selection strokes paint on top so they stay legible even
+        // over the assignment rings.
+        if (hovered && !selected) {
+          ctx.lineWidth = 1.8;
+          ctx.strokeStyle = hoverColor;
           drawSegment(ctx, seg, project2);
         }
-      }
-
-      // Hover / selection strokes paint on top so they stay legible even
-      // over the assignment rings.
-      if (hovered && !selected) {
-        ctx.lineWidth = 1.8;
-        ctx.strokeStyle = hoverColor;
-        drawSegment(ctx, seg, project2);
-      }
-      if (selected) {
-        const prevAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = 0.6;
-        ctx.lineWidth = 2.4 + 3;
-        ctx.strokeStyle = haloColor;
-        drawSegment(ctx, seg, project2);
-        ctx.globalAlpha = prevAlpha;
-        ctx.lineWidth = 2.4;
-        ctx.strokeStyle = accent;
-        drawSegment(ctx, seg, project2);
+        if (selected) {
+          const prevAlpha = ctx.globalAlpha;
+          ctx.globalAlpha = 0.6;
+          ctx.lineWidth = 2.4 + 3;
+          ctx.strokeStyle = haloColor;
+          drawSegment(ctx, seg, project2);
+          ctx.globalAlpha = prevAlpha;
+          ctx.lineWidth = 2.4;
+          ctx.strokeStyle = accent;
+          drawSegment(ctx, seg, project2);
+        }
       }
     }
 
@@ -1676,6 +1703,29 @@
       }
     }
     return null;
+  }
+
+  /// rt1.12 (fvb0): a viewport bbox for a geometry-less raster project
+  /// (no imported DXF, no visible stock) so the placement still renders
+  /// + drags. Prefers the machine work area — a STABLE reference, so the
+  /// view doesn't jiggle while the origin is dragged (the image moves
+  /// within the bed). Falls back to the source extents (+10% margin)
+  /// when no bed is defined. Null when there are no raster placements.
+  function rasterOnlyBBox(): BBox | null {
+    const placements = rasterPlacements();
+    if (placements.length === 0) return null;
+    const wa = project.machine.workArea;
+    if (wa && wa.x > 0 && wa.y > 0) {
+      return { min_x: 0, min_y: 0, max_x: wa.x, max_y: wa.y };
+    }
+    return placementsBBox(
+      placements.map(({ src }) => ({
+        minX: src.origin.x,
+        minY: src.origin.y,
+        maxX: src.origin.x + src.cols * src.cell,
+        maxY: src.origin.y + src.rows * src.cell,
+      })),
+    );
   }
 
   /// Paint the faint placed raster images (+ selection / placement

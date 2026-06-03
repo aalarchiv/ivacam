@@ -66,3 +66,33 @@ export function computeViewportTransform(
   ];
   return { scale, offX, offY, baseScale, baseOffX, baseOffY, project2 };
 }
+
+/// An axis-aligned rectangle in data space.
+export interface Rect {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/// Union of placement rects, expanded by `marginFrac` of each axis span
+/// (with a 1-unit floor so a zero-span axis still gets padding), as a
+/// `BBox`. Returns `null` for an empty list. rt1.12 (fvb0): the fallback
+/// viewport extent for a geometry-less raster-engrave project, used when
+/// no machine work area provides a stable bed to fit to.
+export function placementsBBox(rects: readonly Rect[], marginFrac = 0.1): BBox | null {
+  if (rects.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const r of rects) {
+    minX = Math.min(minX, r.minX);
+    minY = Math.min(minY, r.minY);
+    maxX = Math.max(maxX, r.maxX);
+    maxY = Math.max(maxY, r.maxY);
+  }
+  const mx = Math.max(1, (maxX - minX) * marginFrac);
+  const my = Math.max(1, (maxY - minY) * marginFrac);
+  return { min_x: minX - mx, min_y: minY - my, max_x: maxX + mx, max_y: maxY + my };
+}

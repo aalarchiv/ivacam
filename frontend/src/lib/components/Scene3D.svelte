@@ -29,7 +29,12 @@
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
-  import { computeArrowChevron, arrowSpacingMm } from '../scene3d/toolpath_buffers';
+  import {
+    computeArrowChevron,
+    arrowSpacingMm,
+    resolveSegmentColor,
+    fadeColor,
+  } from '../scene3d/toolpath_buffers';
   import { powerGrid, maxPower } from '../state/raster_preview';
   import { powerAtWorld, heatColor, type HeatGrid } from '../scene3d/raster_heatmap';
   import { resolveAci } from '../canvas/aci-color';
@@ -1030,19 +1035,10 @@
     for (let i = lo; i < hi; i++) {
       const tc = toolpathColors[i];
       const past = i < head;
+      // 7iej.20: a warning-tinted segment fades from its tint, else from
+      // its base color; the past/future offset math is the pure fadeColor.
       const tint = warningSegmentColors.get(i);
-      let r: number;
-      let g: number;
-      let b: number;
-      if (tint) {
-        r = past ? tint[0] : tint[0] * f + fade_offset;
-        g = past ? tint[1] : tint[1] * f + fade_offset;
-        b = past ? tint[2] : tint[2] * f + fade_offset;
-      } else {
-        r = past ? tc.base[0] : tc.base[0] * f + fade_offset;
-        g = past ? tc.base[1] : tc.base[1] * f + fade_offset;
-        b = past ? tc.base[2] : tc.base[2] * f + fade_offset;
-      }
+      const [r, g, b] = fadeColor(tint ?? tc.base, past, f, fade_offset);
       const off = tc.start * 3;
       arr[off] = r;
       arr[off + 1] = g;
@@ -1998,15 +1994,14 @@
         const moveTint = moveTints[seg.kind] ?? moveTints.cut;
         const opHueV = opId === 0 ? 0.0 : opPalette(opId);
         const opCol = new THREE.Color().setHSL(opHueV, 0.55, 0.5);
-        const moveBoost =
-          seg.kind === 'rapid'
-            ? 0.5
-            : seg.kind === 'plunge' || seg.kind === 'retract'
-              ? 0.85
-              : 1.15;
-        r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
-        g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
-        b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
+        // 7iej.20: THREE/theme resolution stays here; the op_id-0 vs
+        // boosted-hue channel math lives in the pure resolveSegmentColor.
+        [r, g, b] = resolveSegmentColor(
+          opId,
+          seg.kind,
+          [moveTint.r, moveTint.g, moveTint.b],
+          [opCol.r, opCol.g, opCol.b],
+        );
       }
       const startVertex = positions.length / 3;
       positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);

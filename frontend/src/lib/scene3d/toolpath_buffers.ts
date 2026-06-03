@@ -91,3 +91,39 @@ export function computeArrowChevron(from: Vec3, to: Vec3, p: ArrowParams): Arrow
     wing2: [mx - A * ux - side * nx, my - A * uy - side * ny, mz - A * uz - side * nz],
   };
 }
+
+/// An RGB triple, each channel in [0, 1] (the fat-line buffer's color
+/// layout). Not clamped here — the toolpath base colors can ride a
+/// move-kind boost slightly past 1.0, exactly as the inline math did.
+export type Rgb = [number, number, number];
+
+/// 7iej.20: brightness multiplier per move kind — rapids dimmest,
+/// plunge/retract mid, cuts/arcs (and anything else) brightest. Pulled
+/// out of `rebuildToolpathGeometry` so the emphasis ladder is one
+/// testable place instead of an inline ternary.
+export function moveBoost(kind: string): number {
+  if (kind === 'rapid') return 0.5;
+  if (kind === 'plunge' || kind === 'retract') return 0.85;
+  return 1.15;
+}
+
+/// 7iej.20: final base color for a toolpath segment. `op_id === 0`
+/// (legacy / unstamped moves) uses the move-kind tint verbatim; a
+/// stamped op uses its hue color scaled by the move-kind boost so the
+/// cut/rapid/plunge emphasis reads on top of the per-op hue. THREE +
+/// theme lookups stay in the caller — pass the already-resolved
+/// `moveTint` (themed per kind) and `opColor` (op hue → RGB) triples.
+export function resolveSegmentColor(opId: number, kind: string, moveTint: Rgb, opColor: Rgb): Rgb {
+  if (opId === 0) return [moveTint[0], moveTint[1], moveTint[2]];
+  const b = moveBoost(kind);
+  return [opColor[0] * b, opColor[1] * b, opColor[2] * b];
+}
+
+/// 7iej.20: playhead fade. A `past` move (already cut) renders at full
+/// `base` color; a `future` move dims to `base * factor + offset` — the
+/// offset keeps a faded line visible (a non-black floor) instead of
+/// collapsing to the background. Pulled out of `applyToolpathFade`.
+export function fadeColor(base: Rgb, past: boolean, factor: number, offset: number): Rgb {
+  if (past) return [base[0], base[1], base[2]];
+  return [base[0] * factor + offset, base[1] * factor + offset, base[2] * factor + offset];
+}

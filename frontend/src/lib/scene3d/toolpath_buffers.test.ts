@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { computeArrowChevron, arrowSpacingMm, type ArrowParams } from './toolpath_buffers';
+import {
+  computeArrowChevron,
+  arrowSpacingMm,
+  moveBoost,
+  resolveSegmentColor,
+  fadeColor,
+  type ArrowParams,
+  type Rgb,
+} from './toolpath_buffers';
 
 const P: ArrowParams = {
   minLen: 1.0,
@@ -57,5 +65,53 @@ describe('computeArrowChevron', () => {
     expect(c!.wing1[2]).toBeCloseTo(1.5);
     expect(c!.wing2[0]).toBeCloseTo(-side);
     expect(c!.wing2[2]).toBeCloseTo(1.5);
+  });
+});
+
+describe('moveBoost', () => {
+  it('rapids are dimmest, plunge/retract mid, cuts brightest', () => {
+    expect(moveBoost('rapid')).toBe(0.5);
+    expect(moveBoost('plunge')).toBe(0.85);
+    expect(moveBoost('retract')).toBe(0.85);
+    expect(moveBoost('cut')).toBe(1.15);
+    expect(moveBoost('arc')).toBe(1.15);
+    // Unknown kinds fall into the "brightest" default.
+    expect(moveBoost('whatever')).toBe(1.15);
+  });
+});
+
+describe('resolveSegmentColor', () => {
+  const moveTint: Rgb = [0.2, 0.6, 1.0];
+  const opColor: Rgb = [0.4, 0.5, 0.6];
+
+  it('op_id 0 uses the move tint verbatim', () => {
+    expect(resolveSegmentColor(0, 'cut', moveTint, opColor)).toEqual([0.2, 0.6, 1.0]);
+    // Move kind is irrelevant when unstamped.
+    expect(resolveSegmentColor(0, 'rapid', moveTint, opColor)).toEqual([0.2, 0.6, 1.0]);
+  });
+
+  it('a stamped op scales its hue color by the move boost', () => {
+    const [r, g, b] = resolveSegmentColor(3, 'cut', moveTint, opColor);
+    expect(r).toBeCloseTo(0.4 * 1.15);
+    expect(g).toBeCloseTo(0.5 * 1.15);
+    expect(b).toBeCloseTo(0.6 * 1.15);
+    // Rapid dims the same op color.
+    const rapid = resolveSegmentColor(3, 'rapid', moveTint, opColor);
+    expect(rapid[0]).toBeCloseTo(0.4 * 0.5);
+  });
+});
+
+describe('fadeColor', () => {
+  const base: Rgb = [0.8, 0.4, 0.2];
+  it('past moves keep the full base color', () => {
+    expect(fadeColor(base, true, 0.25, 0.05)).toEqual([0.8, 0.4, 0.2]);
+  });
+  it('future moves dim to base*factor + offset (visible floor, not black)', () => {
+    const [r, g, b] = fadeColor(base, false, 0.25, 0.05);
+    expect(r).toBeCloseTo(0.8 * 0.25 + 0.05);
+    expect(g).toBeCloseTo(0.4 * 0.25 + 0.05);
+    expect(b).toBeCloseTo(0.2 * 0.25 + 0.05);
+    // A black base still floors at the offset so it's not invisible.
+    expect(fadeColor([0, 0, 0], false, 0.25, 0.05)).toEqual([0.05, 0.05, 0.05]);
   });
 });

@@ -30,6 +30,8 @@
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
   import { computeArrowChevron, arrowSpacingMm } from '../scene3d/toolpath_buffers';
+  import { powerGrid, maxPower } from '../state/raster_preview';
+  import { powerAtWorld, heatColor, type HeatGrid } from '../scene3d/raster_heatmap';
   import { resolveAci } from '../canvas/aci-color';
   import { unpackFixtureColor, DEFAULT_FIXTURE_COLOR } from '../canvas/fixture-color';
 
@@ -627,6 +629,10 @@
   $effect(() => {
     void project.generated;
     void project.operations;
+    // rt1.12 (nrob): the raster heatmap re-derives S from the source
+    // brightness + placement, so refresh when a source changes (swap /
+    // rescale / new image).
+    void project.reliefSources;
     void project.settings.toolMoveArrowDensity; // arrow spacing
     rebuildToolpathGeometry();
     requestRender();
@@ -729,8 +735,7 @@
   let lastGenVersion = -1;
   $effect(() => {
     const importCount = project.imports.length;
-    const layerCount =
-      (project.transformedImport?.layers.length ?? 0) + project.textLayers.length;
+    const layerCount = (project.transformedImport?.layers.length ?? 0) + project.textLayers.length;
     const genVersion = project.generatedVersion;
     const grew = importCount > lastImportCount || layerCount > lastLayerCount;
     const regenerated = genVersion !== lastGenVersion;
@@ -1921,19 +1926,88 @@
     for (const o of project.operations) {
       if (!o.enabled) disabledOpIds.add(o.id);
     }
+
+    // rt1.12 (nrob): per-raster-op power grids for the toolpath heatmap.
+    // The wire toolpath carries no `S`, so re-derive it from the source
+    // brightness through the same power curve the backend emits from,
+    // then colour each cut span by the power at its midpoint.
+    const rasterHeat = new Map<number, { grid: HeatGrid; powers: number[]; peak: number }>();
+    for (const o of project.operations) {
+      if (o.kind !== 'raster_engrave' || !o.enabled) continue;
+      const src = project.reliefSources.find((s) => s.id === o.sourceId);
+      if (!src || src.cols <= 0 || src.rows <= 0) continue;
+      const powers = powerGrid(o.powerCurve, src.brightness, src.cols, src.rows);
+      if (powers.length === 0) continue;
+      rasterHeat.set(o.id, {
+        grid: {
+          originX: src.origin.x,
+          originY: src.origin.y,
+          cell: src.cell,
+          cols: src.cols,
+          rows: src.rows,
+        },
+        powers,
+        peak: Math.max(1, maxPower(o.powerCurve)),
+      });
+    }
+    // Dithered curves emit ~one span per pixel, so a large engrave can
+    // run to millions of segments. Downsample the heat spans to a fixed
+    // budget (~10k) by striding — the fat-line buffer stays bounded and
+    // the heatmap still reads. Non-raster moves are never dropped.
+    const RASTER_HEAT_BUDGET = 10000;
+    let rasterHeatTotal = 0;
+    if (rasterHeat.size > 0) {
+      for (let i = 0; i < gen.toolpath.length; i++) {
+        const s = gen.toolpath[i];
+        const oid = s.op_id ?? 0;
+        if (oid > 0 && disabledOpIds.has(oid)) continue;
+        if (rasterHeat.has(oid) && (s.kind === 'cut' || s.kind === 'arc')) rasterHeatTotal++;
+      }
+    }
+    const rasterStride =
+      rasterHeatTotal > RASTER_HEAT_BUDGET ? Math.ceil(rasterHeatTotal / RASTER_HEAT_BUDGET) : 1;
+    let rasterCutSeen = 0;
+
     const total = gen.toolpath.length;
     for (let i = 0; i < total; i++) {
       const seg = gen.toolpath[i];
       const opId = seg.op_id ?? 0;
       if (opId > 0 && disabledOpIds.has(opId)) continue;
-      const moveTint = moveTints[seg.kind] ?? moveTints.cut;
-      const opHue = opId === 0 ? 0.0 : opPalette(opId);
-      const opCol = new THREE.Color().setHSL(opHue, 0.55, 0.5);
-      const moveBoost =
-        seg.kind === 'rapid' ? 0.5 : seg.kind === 'plunge' || seg.kind === 'retract' ? 0.85 : 1.15;
-      const r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
-      const g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
-      const b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
+
+      // rt1.12 (nrob): raster-engrave cut spans get a power heatmap
+      // instead of the op-hue colour. Travel moves (rapid) keep the
+      // normal tint. Dense engraves stride down to the segment budget.
+      const heat = rasterHeat.get(opId);
+      const isHeat = heat != null && (seg.kind === 'cut' || seg.kind === 'arc');
+      if (isHeat) {
+        const keep = rasterCutSeen % rasterStride === 0;
+        rasterCutSeen++;
+        if (!keep) continue;
+      }
+
+      let r: number;
+      let g: number;
+      let b: number;
+      if (isHeat && heat) {
+        const mx = (seg.from.x + seg.to.x) * 0.5;
+        const my = (seg.from.y + seg.to.y) * 0.5;
+        const p = powerAtWorld(mx, my, heat.grid, heat.powers);
+        const t = p == null ? 0 : Math.min(1, p / heat.peak);
+        [r, g, b] = heatColor(t);
+      } else {
+        const moveTint = moveTints[seg.kind] ?? moveTints.cut;
+        const opHueV = opId === 0 ? 0.0 : opPalette(opId);
+        const opCol = new THREE.Color().setHSL(opHueV, 0.55, 0.5);
+        const moveBoost =
+          seg.kind === 'rapid'
+            ? 0.5
+            : seg.kind === 'plunge' || seg.kind === 'retract'
+              ? 0.85
+              : 1.15;
+        r = opId === 0 ? moveTint.r : opCol.r * moveBoost;
+        g = opId === 0 ? moveTint.g : opCol.g * moveBoost;
+        b = opId === 0 ? moveTint.b : opCol.b * moveBoost;
+      }
       const startVertex = positions.length / 3;
       positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
       colors.push(r, g, b, r, g, b);
@@ -1951,7 +2025,9 @@
       if (len > 0) lenSinceLastArrow += len;
       // Spacing + move-kind eligibility stays here (caller state); the
       // chevron geometry (incl. the per-segment minLen gate) is pure.
-      const spacingOk = lenSinceLastArrow >= ARROW_MIN_SPACING && seg.kind !== 'rapid';
+      // rt1.12 (nrob): no direction arrows on raster heat spans — they'd
+      // swamp the heatmap and the scan direction is already obvious.
+      const spacingOk = lenSinceLastArrow >= ARROW_MIN_SPACING && seg.kind !== 'rapid' && !isHeat;
       const chev = spacingOk ? computeArrowChevron(seg.from, seg.to, ARROW_PARAMS) : null;
       if (chev) {
         const { mid, wing1, wing2 } = chev;

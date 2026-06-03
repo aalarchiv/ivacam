@@ -223,16 +223,19 @@
         <span class="unit">mm</span>
       </span>
     </label>
+    <!-- offsetZ is reserved (the pipeline + sim assume the stock top sits
+         at z = 0). Disabled so it reads as not-yet-functional rather than
+         a control that silently does nothing (user report). Wire it up
+         when the stock-top-Z sim refactor lands. -->
     <label>
-      <span>Z</span>
+      <span>Z <em class="reserved">(reserved)</em></span>
       <span class="field">
         <input
           type="number"
           step="0.5"
           value={project.stock.offsetZ ?? 0}
-          class:invalid={invalidKey === 'offsetZ'}
-          onchange={(e) => onStockNumberChange('offsetZ', e, { allowNegative: true })}
-          title="Reserved — currently the pipeline assumes stock top at z = 0."
+          disabled
+          title="Reserved — the pipeline currently assumes the stock top sits at z = 0, so this offset has no effect yet."
         />
         <span class="unit">mm</span>
       </span>
@@ -404,10 +407,17 @@
     padding: 0.18rem 0.35rem;
     font-size: 0.78rem;
   }
-  .field input[readonly] {
+  .field input[readonly],
+  .field input:disabled {
     color: var(--text-muted);
     background: color-mix(in srgb, var(--bg-input) 70%, transparent);
     cursor: default;
+  }
+  /* Reserved-field marker (e.g. the not-yet-wired Z offset). */
+  .reserved {
+    font-style: normal;
+    font-size: 0.7rem;
+    color: var(--text-muted);
   }
   .field input.invalid {
     border-color: var(--danger);

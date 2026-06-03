@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { project, isContourOp } from '../state/project.svelte';
+  import { project, isContourOp, type OpEntry } from '../state/project.svelte';
   import { opSourceCss } from '../state/op-color';
   import { STOCK_OUTLINE_LAYER } from '../state/stock-outline';
   import { buildObjectPolylines, polylineAtT, type ObjectPolyline } from '../cam/tabs';
@@ -33,6 +33,8 @@
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { computeFootprint } from '../sim/driver';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
+  import { brightnessToRgba } from '../state/raster_preview';
+  import type { ReliefSource } from '../state/project-types';
 
   interface Props {
     onShowHelp?: () => void;
@@ -167,6 +169,10 @@
     void project.fixtures;
     void project.selectedFixtureId;
     void project.selectedTextLayerId;
+    // rt1.12 (j7b4): raster-engrave placement images live on the overlay
+    // (faint, under the interaction chrome) so the heavy bg layer stays
+    // pure. Repaint when a source moves / resizes.
+    void project.reliefSources;
     void hoverIdx;
     void ghostTab;
     void boxSelect;
@@ -242,6 +248,27 @@
   /// (Option C: hybrid pick + draggable). Captured on pointerdown
   /// inside the marker's hit circle; released on pointerup.
   let approachDrag = $state<{ opId: number; pointerId: number } | null>(null);
+
+  /// rt1.12 (j7b4): drag state for repositioning a raster-engrave
+  /// placement image. `grabDX/DY` is the data-space offset between the
+  /// pointer and the source origin at grab time, so the origin tracks
+  /// the cursor without jumping. Committed live (coalesced into one undo
+  /// entry) on every move, mirroring the approach-marker drag.
+  let rasterDrag = $state<{
+    sourceId: number;
+    pointerId: number;
+    grabDX: number;
+    grabDY: number;
+  } | null>(null);
+
+  /// Cache of the decoded brightness image per relief source, keyed by
+  /// source id. Invalidated when the source's `brightness` array
+  /// reference changes (origin / cell edits keep the same array, so a
+  /// drag never rebuilds the 256² ImageData).
+  const rasterImageCache = new Map<
+    number,
+    { brightness: readonly number[]; canvas: HTMLCanvasElement }
+  >();
 
   /// Precomputed OSnap target collection. Rebuilt only when the
   /// imported geometry changes — never per pointermove. (64p.)
@@ -492,6 +519,20 @@
       return;
     }
 
+    // rt1.12 (j7b4): live drag of a raster-engrave placement image.
+    // Commits straight to the source origin (coalesced ⇒ one undo
+    // entry); the overlay repaint tracks the new origin reactively.
+    if (rasterDrag && e.pointerId === rasterDrag.pointerId) {
+      const data = pxToData(cx, cy);
+      if (data) {
+        project.updateReliefSource(rasterDrag.sourceId, {
+          origin: { x: data.x - rasterDrag.grabDX, y: data.y - rasterDrag.grabDY },
+        });
+      }
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+
     // Audit kj8i: hover-near-marker preview. Mirror the hit-test that
     // onPointerDown does for click-to-drag so the cursor flips to
     // `grab` BEFORE the user mousedowns — without this the marker is
@@ -590,6 +631,15 @@
       approachDrag = null;
       canvas.style.cursor = 'default';
       approachPreview = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
+    // rt1.12 (j7b4): end an active raster placement drag.
+    if (rasterDrag && e.pointerId === rasterDrag.pointerId) {
+      rasterDrag = null;
+      canvas.style.cursor = 'default';
       try {
         canvas.releasePointerCapture(e.pointerId);
       } catch {}
@@ -987,6 +1037,7 @@
         cancelLongPress();
         boxSelect = null;
         approachDrag = null;
+        rasterDrag = null;
         const entries = [...activePointers.entries()];
         const first = entries[0];
         const second = entries[1];
@@ -1089,6 +1140,30 @@
           e.preventDefault();
           return;
         }
+      }
+    }
+
+    // rt1.12 (j7b4): grab a raster-engrave placement image to drag it.
+    // Clicking the image also selects its op (raster ops have no source
+    // geometry, so the canvas is their only spatial handle). Gated out
+    // of the pick / tab modes above.
+    if (!approachPickActive && !tabPlacementActive) {
+      const data = pxToData(cx, cy);
+      const hit = data ? rasterPlacementAtData(data.x, data.y) : null;
+      if (data && hit) {
+        project.selectedOpId = hit.op.id;
+        rasterDrag = {
+          sourceId: hit.src.id,
+          pointerId: e.pointerId,
+          grabDX: data.x - hit.src.origin.x,
+          grabDY: data.y - hit.src.origin.y,
+        };
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {}
+        canvas.style.cursor = 'grabbing';
+        e.preventDefault();
+        return;
       }
     }
 
@@ -1314,6 +1389,10 @@
     if (!data || data.segments.length === 0) return;
     const { scale, project2 } = computeTransform(data, w, h);
 
+    // rt1.12 (j7b4): faint raster-engrave placement images, painted
+    // first so selection halos / chrome layer over them.
+    drawRasterPlacements(ctx, project2, scale);
+
     const accent = themeVar('--accent', '#2d6cdf');
     const hoverColor = themeVar('--accent-strong', '#6e9ce6');
     const selOpId = project.selectedOpId;
@@ -1538,6 +1617,105 @@
   /// gets a bright halo + accent stroke; idle layers render in the
   /// muted assigned-other tint so they're visible but don't draw the
   /// eye.
+  /// rt1.12 (j7b4): build / fetch the cached grayscale canvas for a
+  /// relief source's brightness grid (top-down, ready for drawImage).
+  /// Cached by source id; rebuilt only when the `brightness` array
+  /// reference changes, so an origin / cell drag never re-decodes.
+  function rasterImageCanvas(src: ReliefSource): HTMLCanvasElement | null {
+    if (src.cols <= 0 || src.rows <= 0) return null;
+    const cached = rasterImageCache.get(src.id);
+    if (cached && cached.brightness === src.brightness) return cached.canvas;
+    const cv = document.createElement('canvas');
+    cv.width = src.cols;
+    cv.height = src.rows;
+    const ictx = cv.getContext('2d');
+    if (!ictx) return null;
+    const rgba = brightnessToRgba(src.brightness, src.cols, src.rows);
+    const img = ictx.createImageData(src.cols, src.rows);
+    img.data.set(rgba);
+    ictx.putImageData(img, 0, 0);
+    rasterImageCache.set(src.id, { brightness: src.brightness, canvas: cv });
+    return cv;
+  }
+
+  /// The distinct relief sources referenced by raster-engrave ops, each
+  /// paired with the (first) op referencing it — so the selection
+  /// highlight + drag target know which op an image belongs to.
+  function rasterPlacements(): { op: OpEntry; src: ReliefSource }[] {
+    const out: { op: OpEntry; src: ReliefSource }[] = [];
+    const seen = new Set<number>();
+    for (const op of project.operations) {
+      if (op.kind !== 'raster_engrave' || !op.enabled) continue;
+      const src = project.reliefSources.find((s) => s.id === op.sourceId);
+      if (!src || src.cols <= 0 || src.rows <= 0 || seen.has(src.id)) continue;
+      seen.add(src.id);
+      out.push({ op, src });
+    }
+    return out;
+  }
+
+  /// Hit-test a data-space point against the placed raster images,
+  /// preferring the selected op's image (so overlapping placements stay
+  /// grabbable) then the topmost. Returns the placement or null.
+  function rasterPlacementAtData(x: number, y: number): { op: OpEntry; src: ReliefSource } | null {
+    const ordered = rasterPlacements().sort(
+      (a, b) =>
+        (a.op.id === project.selectedOpId ? 1 : 0) - (b.op.id === project.selectedOpId ? 1 : 0),
+    );
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      const { src } = ordered[i];
+      const wmm = src.cols * src.cell;
+      const hmm = src.rows * src.cell;
+      if (
+        x >= src.origin.x &&
+        x <= src.origin.x + wmm &&
+        y >= src.origin.y &&
+        y <= src.origin.y + hmm
+      ) {
+        return ordered[i];
+      }
+    }
+    return null;
+  }
+
+  /// Paint the faint placed raster images (+ selection / placement
+  /// border) on the overlay, under the interaction chrome. Drawn from
+  /// `drawOverlay` so a source move repaints without touching the heavy
+  /// bg layer. Editable whenever a transform exists (imported geometry
+  /// or visible stock); a geometry-less project shows the empty canvas.
+  function drawRasterPlacements(
+    ctx: CanvasRenderingContext2D,
+    project2: (x: number, y: number) => [number, number],
+    scale: number,
+  ) {
+    const placements = rasterPlacements();
+    if (placements.length === 0) return;
+    const accent = themeVar('--accent', '#2d6cdf');
+    const border = themeVar('--border', '#555');
+    for (const { op, src } of placements) {
+      const cv = rasterImageCanvas(src);
+      if (!cv) continue;
+      const wmm = src.cols * src.cell;
+      const hmm = src.rows * src.cell;
+      const [x0, y0] = project2(src.origin.x, src.origin.y + hmm); // world top-left
+      const wpx = wmm * scale;
+      const hpx = hmm * scale;
+      const prevAlpha = ctx.globalAlpha;
+      const prevSmooth = ctx.imageSmoothingEnabled;
+      ctx.globalAlpha = 0.5;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(cv, x0, y0, wpx, hpx);
+      ctx.globalAlpha = prevAlpha;
+      ctx.imageSmoothingEnabled = prevSmooth;
+      const selected = project.selectedOpId === op.id;
+      ctx.lineWidth = selected ? 2 : 1;
+      ctx.strokeStyle = selected ? accent : border;
+      if (!selected) ctx.setLineDash([4, 3]);
+      ctx.strokeRect(x0, y0, wpx, hpx);
+      ctx.setLineDash([]);
+    }
+  }
+
   function drawTextPreview(
     ctx: CanvasRenderingContext2D,
     p: (x: number, y: number) => [number, number],

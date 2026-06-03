@@ -12,6 +12,7 @@ import {
   brightnessHistogram,
   powerGridToRgba,
   estimateBurnSeconds,
+  brightnessToRgba,
 } from './raster_preview';
 
 describe('powerGrid — linear', () => {
@@ -178,6 +179,17 @@ describe('estimateBurnSeconds', () => {
     expect(estimateBurnSeconds({ ...base, overscanFactor: 0.2 })).toBeGreaterThan(
       estimateBurnSeconds({ ...base, overscanFactor: 0 }),
     );
+  });
+});
+
+describe('brightnessToRgba', () => {
+  it('maps bright→white / dark→black and flips Y to top-down', () => {
+    // 2 rows × 1 col: world row 0 (bottom) = black, row 1 (top) = white.
+    const rgba = brightnessToRgba([0, 1], 1, 2);
+    // ImageData row 0 = top = world row 1 (bright) ⇒ white.
+    expect([rgba[0], rgba[1], rgba[2], rgba[3]]).toEqual([255, 255, 255, 255]);
+    // ImageData row 1 = bottom = world row 0 (dark) ⇒ black.
+    expect([rgba[4], rgba[5], rgba[6], rgba[7]]).toEqual([0, 0, 0, 255]);
   });
 });
 

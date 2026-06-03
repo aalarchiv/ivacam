@@ -207,6 +207,31 @@ export function estimateBurnSeconds(i: RasterBurnInput): number {
   return (totalEngrave + returnTraverse + stepMoves) / mmPerSec;
 }
 
+/// Render a normalized-brightness grid to top-down RGBA bytes for a
+/// `<canvas>` — the source photo as grayscale (bright = white), used by
+/// the 2D canvas placement preview. Like `powerGridToRgba` the grid is
+/// world-oriented (row 0 = world bottom) so we flip back to top-down
+/// exactly once. Opacity is left to the caller (drawImage globalAlpha).
+export function brightnessToRgba(
+  brightness: readonly number[],
+  cols: number,
+  rows: number,
+): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(cols * rows * 4);
+  for (let y = 0; y < rows; y++) {
+    const wy = rows - 1 - y;
+    for (let x = 0; x < cols; x++) {
+      const gray = Math.round(255 * clamp01(brightness[wy * cols + x] ?? 0));
+      const o = (y * cols + x) * 4;
+      out[o] = gray;
+      out[o + 1] = gray;
+      out[o + 2] = gray;
+      out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
 /// Histogram of brightness values into `bins` equal buckets over [0, 1].
 /// Bucket `bins-1` also catches exactly-1.0. Drives the section's
 /// brightness histogram (with the threshold cursor overlaid).

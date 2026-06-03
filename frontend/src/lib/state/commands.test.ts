@@ -30,6 +30,7 @@ import {
   addTextLayerCommand,
   deleteTextLayerCommand,
   updateTextLayerCommand,
+  updateReliefSourceCommand,
   type CommandTarget,
 } from './commands';
 import type {
@@ -669,5 +670,41 @@ describe('selectObjectsCommand (80gv)', () => {
     );
     expect(cmd.marksDirty).toBe(false);
     expect(cmd.coalesce_key).toBe('selection');
+  });
+});
+
+describe('updateReliefSourceCommand (rt1.12 j7b4)', () => {
+  function targetWithSource(): CommandTarget {
+    const t = blankTarget();
+    t.reliefSources = [
+      {
+        id: 1,
+        name: 'pic',
+        origin: { x: 0, y: 0 },
+        cell: 0.5,
+        cols: 4,
+        rows: 4,
+        brightness: new Array(16).fill(0.5),
+      },
+    ];
+    return t;
+  }
+
+  it('apply patches origin, revert restores it', () => {
+    const t = targetWithSource();
+    const cmd = updateReliefSourceCommand(1, { origin: { x: 12, y: 7 } });
+    cmd.apply(t);
+    expect(t.reliefSources[0].origin).toEqual({ x: 12, y: 7 });
+    cmd.revert(t);
+    expect(t.reliefSources[0].origin).toEqual({ x: 0, y: 0 });
+  });
+
+  it('single-field patches coalesce (one undo entry per drag); multi-field do not', () => {
+    expect(updateReliefSourceCommand(1, { origin: { x: 1, y: 1 } }).coalesce_key).toBe(
+      'reliefSource:1:origin',
+    );
+    expect(
+      updateReliefSourceCommand(1, { origin: { x: 1, y: 1 }, cell: 0.3 }).coalesce_key,
+    ).toBeUndefined();
   });
 });

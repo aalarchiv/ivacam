@@ -491,7 +491,16 @@ export function updateReliefSourceCommand(id: number, patch: Partial<ReliefSourc
       t.reliefSources = t.reliefSources.map((rs) => (rs.id === id ? { ...rs, ...prevPatch } : rs));
       t.dirty = true;
     },
+    // rt1.12 (j7b4): single-field edits (e.g. live origin drag on the 2D
+    // canvas) coalesce so a drag is one undo entry, not one per frame.
+    coalesce_key: coalesceKeyForReliefPatch(id, patch),
   };
+}
+
+function coalesceKeyForReliefPatch(id: number, patch: Partial<ReliefSource>): string | undefined {
+  const keys = Object.keys(patch);
+  if (keys.length !== 1) return undefined;
+  return `reliefSource:${id}:${keys[0]}`;
 }
 
 // ── tabs (rt1.10) ─────────────────────────────────────────────────────

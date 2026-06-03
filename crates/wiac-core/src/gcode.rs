@@ -1742,6 +1742,13 @@ pub struct PostState {
     /// G55 — writing the per-tool z-shift into the wrong WCS.
     #[serde(default, skip)]
     pub wcs: crate::project::Wcs,
+    /// z9zh: when true, the laser arm/fire hooks emit `M4` (GRBL
+    /// dynamic-power mode) instead of `M3`. Set only by the GRBL post
+    /// when `MachineConfig.laser_dynamic_power` is on; LinuxCNC leaves it
+    /// false (its `M4` is spindle-CCW). Not serialized — derived from
+    /// machine config at post construction, not persisted state.
+    #[serde(default, skip)]
+    pub laser_dynamic: bool,
 }
 
 /// f78z: tracked coolant state for dedup. Mirrors the M-code we last
@@ -1781,6 +1788,7 @@ impl Default for PostState {
             last_coolant: CoolantState::Unknown,
             last_spindle_dir: None,
             wcs: crate::project::Wcs::G54,
+            laser_dynamic: false,
         }
     }
 }

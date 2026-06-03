@@ -766,6 +766,17 @@ pub struct MachineConfig {
     /// output for existing projects.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub optional_stop: bool,
+    /// z9zh: opt-in GRBL dynamic-power laser mode. When `true` on a GRBL
+    /// post, laser cuts/engraving arm + fire with `M4` instead of `M3`,
+    /// so the controller ramps `S` power with the actual feed rate —
+    /// corners and edges (where the head slows) don't over-burn, and
+    /// rapids force `S0` automatically. GRBL-specific (`$32=1` laser
+    /// mode); on LinuxCNC `M4` means spindle-CCW, so the flag is honored
+    /// ONLY by the GRBL post (others keep `M3`). "Strongly preferred" for
+    /// laser engraving per the rt1.12 spec. Default `false` keeps the
+    /// portable `M3` output byte-for-byte.
+    #[serde(default, skip_serializing_if = "is_false_bool")]
+    pub laser_dynamic_power: bool,
 }
 
 /// hat3: post-tool-change Z re-establish strategy. Internally tagged
@@ -949,6 +960,7 @@ impl Default for MachineConfig {
             post_change_z: PostChangeZStrategy::None,
             use_tool_length_offsets: false,
             optional_stop: false,
+            laser_dynamic_power: false,
         }
     }
 }

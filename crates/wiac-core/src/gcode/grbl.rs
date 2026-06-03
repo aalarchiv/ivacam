@@ -88,6 +88,19 @@ impl Post {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// z9zh: construct a GRBL post in dynamic-power laser mode when
+    /// `dynamic` is true. The laser arm/fire hooks then emit `M4`
+    /// (power ramps with feed; rapids force S0) instead of `M3`. Wired
+    /// from `MachineConfig.laser_dynamic_power` at pipeline construction.
+    /// The flag lives on the inner post's `PostState` and `configure_post_state`
+    /// mutates fields in place, so it survives `program_start`.
+    #[must_use]
+    pub fn with_dynamic_laser(dynamic: bool) -> Self {
+        let mut p = Self::default();
+        p.inner.state.laser_dynamic = dynamic;
+        p
+    }
 }
 
 impl PostProcessor for Post {
@@ -511,5 +524,41 @@ mod tests {
         let out = post.finish();
         let line = out.trim();
         assert_eq!(line, "G1 X10 Y20 F500", "got: {out}");
+    }
+
+    #[test]
+    fn z9zh_default_laser_emits_m3() {
+        // Portable default: arm + fire emit M3 (works in GRBL $32=1 and
+        // mill mode).
+        let mut post = Post::new();
+        post.laser_arm();
+        post.laser_on(800);
+        let out = post.finish();
+        assert!(out.contains("M3"), "default should emit M3, got:\n{out}");
+        assert!(
+            !out.contains("M4"),
+            "default must NOT emit M4 (LinuxCNC M4 = spindle-CCW), got:\n{out}",
+        );
+    }
+
+    #[test]
+    fn z9zh_dynamic_laser_emits_m4() {
+        // Opt-in dynamic-power mode: arm + fire emit M4 so GRBL ramps S
+        // with feed (no corner/edge over-burn).
+        let mut post = Post::with_dynamic_laser(true);
+        post.laser_arm();
+        post.laser_on(800);
+        let out = post.finish();
+        assert!(
+            out.contains("M4"),
+            "dynamic mode should emit M4, got:\n{out}",
+        );
+        assert!(
+            !out.contains("M3"),
+            "dynamic mode must not emit M3, got:\n{out}",
+        );
+        // Still drops the beam with M5 between cuts.
+        post.laser_off();
+        assert!(post.finish().contains("M5"));
     }
 }

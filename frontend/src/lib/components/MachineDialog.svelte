@@ -453,6 +453,14 @@
         <input type="checkbox" bind:checked={draft.optionalStop} />
         Optional stop (M1 instead of M0)
       </label>
+      <!-- z9zh: GRBL dynamic-power laser mode (M4). -->
+      <label
+        class="check"
+        title="GRBL only: emit M4 (dynamic power) instead of M3 for laser cuts and raster engraving. The controller ramps the S power with the actual feed rate, so corners and edges — where the head slows — don't over-burn, and rapids force S0 automatically. Strongly preferred for laser engraving. Requires GRBL laser mode ($32=1). Off = portable M3."
+      >
+        <input type="checkbox" bind:checked={draft.laserDynamicPower} />
+        Laser dynamic power (GRBL M4)
+      </label>
       <label
         class="check"
         title="Plot-mode Z (rt1.35): collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."

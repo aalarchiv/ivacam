@@ -537,7 +537,11 @@ impl PostProcessor for Post {
         // at the same power are no-ops.
         if self.state.last_speed != Some(power) {
             let rendered = self.render_speed(power);
-            self.write(format!("M3{rendered}"));
+            // z9zh: GRBL dynamic-power mode fires with M4 (S ramps with
+            // feed); default M3 elsewhere (portable; LinuxCNC M4 is
+            // spindle-CCW, so only the GRBL post sets `laser_dynamic`).
+            let m = if self.state.laser_dynamic { "M4" } else { "M3" };
+            self.write(format!("{m}{rendered}"));
             self.state.last_speed = Some(power);
         }
     }
@@ -550,7 +554,8 @@ impl PostProcessor for Post {
         // since `last_speed` is now Some(0).
         if self.state.last_speed != Some(0) {
             let rendered = self.render_speed(0);
-            self.write(format!("M3{rendered}"));
+            let m = if self.state.laser_dynamic { "M4" } else { "M3" };
+            self.write(format!("{m}{rendered}"));
             self.state.last_speed = Some(0);
         }
     }

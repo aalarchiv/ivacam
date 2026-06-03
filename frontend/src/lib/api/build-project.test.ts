@@ -352,6 +352,7 @@ describe('buildMachine — Round-3 spindle clamps & parking', () => {
     expect(m).not.toHaveProperty('park_at_home');
     expect(m).not.toHaveProperty('park_xy');
     expect(m).not.toHaveProperty('optional_stop');
+    expect(m).not.toHaveProperty('laser_dynamic_power');
   });
 
   it('emits optional_stop when set (4lq5)', () => {
@@ -362,6 +363,16 @@ describe('buildMachine — Round-3 spindle clamps & parking', () => {
       operations: [profileOp()],
     });
     expect(project!.machine).toMatchObject({ optional_stop: true });
+  });
+
+  it('emits laser_dynamic_power when set (z9zh)', () => {
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: { ...baseMachine(), laserDynamicPower: true },
+      tools: [baseTool()],
+      operations: [profileOp()],
+    });
+    expect(project!.machine).toMatchObject({ laser_dynamic_power: true });
   });
 
   it('emits spindle_rpm_min / max when set', () => {

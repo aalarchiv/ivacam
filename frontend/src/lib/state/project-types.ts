@@ -402,6 +402,11 @@ export interface MachineSettings {
   /// honored only when the controller's optional-stop switch is on, so a
   /// vetted program can run unattended. Default/undefined ⇒ `M0`.
   optionalStop?: boolean;
+  /// z9zh: GRBL dynamic-power laser mode. When true, the GRBL post emits
+  /// `M4` (power ramps with feed — no corner/edge over-burn) instead of
+  /// `M3` for laser cuts/engraving. GRBL-only (LinuxCNC `M4` = spindle
+  /// CCW). Default/undefined ⇒ portable `M3`.
+  laserDynamicPower?: boolean;
 }
 
 /// Mirror of `wiac_core::gcode::post_profile::PostProfile` (rt1.15).

@@ -498,7 +498,9 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
             &project,
             &objects,
             &header_setup,
-            &mut grbl::Post::new(),
+            // z9zh: GRBL dynamic-power (M4) laser mode is opt-in per
+            // machine config; default M3 keeps portable output.
+            &mut grbl::Post::with_dynamic_laser(project.machine.laser_dynamic_power),
             &stats_collector,
             progress,
             n_ops,

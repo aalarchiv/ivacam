@@ -945,6 +945,9 @@ components:
           - $ref: '#/components/schemas/AxisLimits'
           - type: 'null'
           description: Per-axis jerk in mm/s³. None ⇒ trapezoidal-only profiling (S-curve refinement is Phase 2).
+        laser_dynamic_power:
+          description: 'z9zh: opt-in GRBL dynamic-power laser mode. When `true` on a GRBL post, laser cuts/engraving arm + fire with `M4` instead of `M3`, so the controller ramps `S` power with the actual feed rate — corners and edges (where the head slows) don''t over-burn, and rapids force `S0` automatically. GRBL-specific (`$32=1` laser mode); on LinuxCNC `M4` means spindle-CCW, so the flag is honored ONLY by the GRBL post (others keep `M3`). "Strongly preferred" for laser engraving per the rt1.12 spec. Default `false` keeps the portable `M3` output byte-for-byte.'
+          type: boolean
         line_number_start:
           description: Starting line number for `N<n>` prefixes (rt1.36). `None` (the default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`, `N30`, … incrementing by 10. Required by some FANUC / vintage controllers; useful operator reference even on modern ones.
           format: uint32

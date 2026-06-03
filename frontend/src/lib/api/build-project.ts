@@ -283,6 +283,8 @@ interface WireMachine {
   /// 4lq5: emit M1 (optional stop) instead of M0 at program pauses.
   /// Omitted when false (Rust serde skips the default).
   optional_stop?: boolean;
+  /// z9zh: GRBL dynamic-power (M4) laser mode. Omitted when false.
+  laser_dynamic_power?: boolean;
 }
 
 interface WireAxisFormat {
@@ -676,6 +678,8 @@ function buildMachine(m: MachineSettings): WireMachine {
     ...(!m.parkAtHome && m.parkXy ? { park_xy: m.parkXy } : {}),
     // 4lq5: optional-stop (M1) flag. Skip on the default (false).
     ...(m.optionalStop ? { optional_stop: true } : {}),
+    // z9zh: GRBL dynamic-power (M4) laser mode. Skip on the default.
+    ...(m.laserDynamicPower ? { laser_dynamic_power: true } : {}),
   };
 }
 

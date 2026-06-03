@@ -199,7 +199,9 @@ mod tests {
     static TEST_GUARD: Mutex<()> = Mutex::new(());
 
     fn lock_caches() -> MutexGuard<'static, ()> {
-        TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner())
+        TEST_GUARD
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn square(side: f64) -> Vec<Point2> {

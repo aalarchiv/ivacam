@@ -188,6 +188,20 @@ pub(crate) fn clear_all_caches() {
 mod tests {
     use super::*;
 
+    /// fgay: the medial-axis / pocket-cascade caches are process-global
+    /// (`OnceLock<Mutex<LruCache>>`), so the cache tests — which each
+    /// `clear_all_caches()` then assert a global length — raced under the
+    /// default parallel test runner (one test's clear/insert landed
+    /// between another's populate and its length assertion). Serialize
+    /// them on this guard so each test owns the caches for its whole
+    /// body. `unwrap_or_else(into_inner)` recovers from poisoning so a
+    /// genuine assertion failure in one test doesn't cascade-fail the rest.
+    static TEST_GUARD: Mutex<()> = Mutex::new(());
+
+    fn lock_caches() -> MutexGuard<'static, ()> {
+        TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn square(side: f64) -> Vec<Point2> {
         vec![
             Point2::new(0.0, 0.0),
@@ -206,6 +220,7 @@ mod tests {
 
     #[test]
     fn medial_axis_cached_same_region_hits_cache() {
+        let _g = lock_caches();
         clear_all_caches();
         let r = square_region(20.0);
         let v1 = medial_axis_cached(&r, None);
@@ -229,6 +244,7 @@ mod tests {
 
     #[test]
     fn medial_axis_cached_different_region_misses() {
+        let _g = lock_caches();
         clear_all_caches();
         let _ = medial_axis_cached(&square_region(20.0), None);
         let _ = medial_axis_cached(&square_region(30.0), None);
@@ -237,6 +253,7 @@ mod tests {
 
     #[test]
     fn medial_axis_cached_holes_change_key() {
+        let _g = lock_caches();
         clear_all_caches();
         let mut r = square_region(20.0);
         let _ = medial_axis_cached(&r, None);
@@ -253,6 +270,7 @@ mod tests {
 
     #[test]
     fn pocket_cascade_cached_same_inputs_hits_cache() {
+        let _g = lock_caches();
         clear_all_caches();
         let boundary = square(20.0);
         let _ = pocket_cascade_with_islands_cached(&boundary, &[], 2.0);
@@ -265,6 +283,7 @@ mod tests {
 
     #[test]
     fn pocket_cascade_cached_different_delta_misses() {
+        let _g = lock_caches();
         clear_all_caches();
         let boundary = square(20.0);
         let _ = pocket_cascade_with_islands_cached(&boundary, &[], 2.0);
@@ -274,6 +293,7 @@ mod tests {
 
     #[test]
     fn pocket_cascade_cached_islands_change_key() {
+        let _g = lock_caches();
         clear_all_caches();
         let boundary = square(20.0);
         let island = vec![

@@ -76,7 +76,14 @@ fn resample(
 /// Emit a laser raster-engrave op. No-op when the source is missing /
 /// empty or the machine isn't a laser (the `would_emit` gate normally
 /// screens those out); over-large grids warn and skip.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+// iynx: `unnecessary_wraps` — the Result<(), _> return is never an Err
+// today, but the uniform op-driver signature (sibling run_*_op fns all
+// return Result, dispatched polymorphically) keeps the wrapper.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::unnecessary_wraps
+)]
 pub(in crate::pipeline) fn run_raster_op<P: PostProcessor>(
     op: &Op,
     project: &Project,

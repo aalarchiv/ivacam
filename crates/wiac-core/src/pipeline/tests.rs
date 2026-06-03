@@ -6291,6 +6291,7 @@ fn order_ops_by_tool_groups_same_tool_work() {
 /// l8lk: a `pin_order` op — and any program-only op (Pause) — is a fixed
 /// barrier the grouping pass never reorders across.
 #[test]
+#[allow(clippy::many_single_char_names)]
 fn order_ops_by_tool_respects_barriers() {
     // A pinned T2 op in the middle splits the program into two runs, so
     // the trailing T1 op can't hop ahead of it.

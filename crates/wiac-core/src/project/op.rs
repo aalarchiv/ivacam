@@ -1227,6 +1227,9 @@ mod tests {
     /// rt1.12: omitting the optional fields lands on the documented
     /// defaults (Linear 0..1000, AlongX, LiftBetween, no overscan).
     #[test]
+    // iynx: exact 0.0 comparison is intentional — round-tripping a serde
+    // default; the value is written verbatim, not computed.
+    #[allow(clippy::float_cmp)]
     fn raster_engrave_defaults_fill_in() {
         use crate::cam::raster::{PowerCurve, RasterLink};
         use crate::cam::surface_mill::ScanDirection;

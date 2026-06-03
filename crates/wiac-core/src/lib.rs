@@ -4,6 +4,13 @@
 //! drives the JSON contract across HTTP / Tauri / WASM transports.
 
 #![forbid(unsafe_code)]
+// iynx: the pre-release gate runs `clippy -W clippy::pedantic`. `doc_markdown`
+// is the one pedantic lint not worth satisfying here: a CNC/CAM codebase
+// mentions GRBL, LinuxCNC, G-code, G53, M3, DXF, SVG, HPGL etc. in nearly
+// every doc comment, and backticking every product/word would add far more
+// noise than it removes (and re-redden on each new comment). Allow it
+// crate-wide; the rest of pedantic stays enforced.
+#![allow(clippy::doc_markdown)]
 
 pub mod cam;
 pub mod errors;

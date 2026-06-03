@@ -111,7 +111,7 @@ pub fn pocket_trochoidal(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 #[must_use]
 pub fn pocket_trochoidal_cancellable(
     boundary_pts: &[Point2],

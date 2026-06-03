@@ -315,6 +315,7 @@ pub fn estimate(
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn estimate_trapezoidal(
     segments: &[ToolpathSegment],
     feeds_mm_min: &[f64],
@@ -349,16 +350,15 @@ fn estimate_trapezoidal(
         let (len, dir) = length_and_dir(seg.from, seg.to);
         lengths[i] = len;
         dirs[i] = dir;
-        let feed_mm_min = match seg.kind {
-            MoveKind::Rapid => rapid_mm_min,
-            _ => {
-                let f = feeds_mm_min.get(i).copied().unwrap_or(0.0);
-                if f > 0.0 {
-                    last_feed_mm_min = f;
-                    f
-                } else {
-                    last_feed_mm_min
-                }
+        let feed_mm_min = if seg.kind == MoveKind::Rapid {
+            rapid_mm_min
+        } else {
+            let f = feeds_mm_min.get(i).copied().unwrap_or(0.0);
+            if f > 0.0 {
+                last_feed_mm_min = f;
+                f
+            } else {
+                last_feed_mm_min
             }
         };
         feeds[i] = feed_mm_min / 60.0;

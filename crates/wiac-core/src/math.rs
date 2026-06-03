@@ -207,6 +207,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)]
     fn arc_sweep_normalizes_both_directions() {
         use std::f64::consts::{FRAC_PI_2, PI, TAU};
         let c = Point2::new(0.0, 0.0);

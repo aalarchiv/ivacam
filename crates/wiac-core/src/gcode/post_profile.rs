@@ -197,6 +197,13 @@ impl Default for AxesConfig {
 /// decimal separator after the fact.
 #[must_use]
 pub fn format_axis_value(format: &str, value: f64) -> String {
+    // Clamp width / precision to a sane ceiling (yx9c): a hand-authored
+    // profile like `%9999999999f` or `%.9999999999f` would otherwise build
+    // a multi-GB padding string (or ask `format!` for billions of decimals)
+    // for a single coordinate. No real G-code field is wider than a couple
+    // dozen chars; 64 is comfortably past that. (iynx: hoisted to fn top —
+    // clippy::items_after_statements.)
+    const MAX_FIELD: usize = 64;
     if format.is_empty() {
         return format!("{value:.3}");
     }
@@ -223,12 +230,6 @@ pub fn format_axis_value(format: &str, value: f64) -> String {
         i += 1;
     }
 
-    // Clamp width / precision to a sane ceiling (yx9c): a hand-authored
-    // profile like `%9999999999f` or `%.9999999999f` would otherwise build
-    // a multi-GB padding string (or ask `format!` for billions of decimals)
-    // for a single coordinate. No real G-code field is wider than a couple
-    // dozen chars; 64 is comfortably past that.
-    const MAX_FIELD: usize = 64;
     let mut width: usize = 0;
     while i < bytes.len() && bytes[i].is_ascii_digit() {
         width = (width * 10 + (bytes[i] - b'0') as usize).min(MAX_FIELD);

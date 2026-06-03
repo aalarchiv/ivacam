@@ -314,6 +314,7 @@ fn apply_dragoff_offset(
 /// `[0..t][t..1]` partial pairs vs. a single `[0..1]` sweep, because
 /// every cell carved by either partial sees the same `cutter_pz +
 /// profile.eval(r)` it would see in the full sweep.
+#[allow(clippy::too_many_lines)]
 fn sweep_chord_carve_partial(
     heightmap: &mut Heightmap,
     segment: &ToolpathSegment,
@@ -1664,6 +1665,7 @@ mod tests {
     /// equivalence across many segment orientations, lengths, and
     /// profiles.
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn swept_cell_clip_matches_brute_force_full_aabb() {
         // Brute-force reference: replicate for_each_swept_cell's per-cell
         // logic over the ENTIRE AABB (no per-row clip).

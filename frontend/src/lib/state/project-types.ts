@@ -47,6 +47,8 @@ export function prettyOpKind(kind: OpKind): string {
       return 'G-code include';
     case 'relief_mill':
       return 'Relief (3D)';
+    case 'raster_engrave':
+      return 'Raster engrave';
   }
 }
 

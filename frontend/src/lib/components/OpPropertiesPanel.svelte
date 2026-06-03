@@ -27,6 +27,7 @@
   import ProfileSection from './op_properties/ProfileSection.svelte';
   import PocketSection from './op_properties/PocketSection.svelte';
   import ReliefMillSection from './op_properties/ReliefMillSection.svelte';
+  import RasterEngraveSection from './op_properties/RasterEngraveSection.svelte';
   // d0mr: shared op-property styling lives in a plain CSS module so we
   // don't need 53 :global(.props X) rules in the scoped style block
   // below. Vite static-imports this once; the .props prefix keeps the
@@ -447,6 +448,56 @@
       </div>
     </label>
     <ReliefMillSection {op} {patch} />
+  {:else if op.kind === 'raster_engrave'}
+    <!-- rt1.12: laser raster engraving follows an image-derived power
+         field, not source geometry — name + tool + the raster section. -->
+    <label class="row">
+      <span>Name</span>
+      <input
+        type="text"
+        value={op.name}
+        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
+      />
+    </label>
+    {@const rasterTool = project.tools.find((t) => t.id === op.toolId)}
+    {#if rasterTool != null && !isToolKindAcceptable(op.kind, rasterTool.kind)}
+      <p
+        class="warn-chip"
+        title={`This op typically uses ${formatExpectedToolKinds(op.kind)}; running it with the assigned tool will likely produce unexpected gcode.`}
+      >
+        Tool kind mismatch — {prettyOpKind(op.kind)} expects {formatExpectedToolKinds(op.kind)}.
+      </p>
+    {/if}
+    <label
+      class="row"
+      title="Laser tool from the project library — its feed rate drives the burn-time estimate."
+    >
+      <span>Tool</span>
+      <div class="tool-cell">
+        <select
+          value={op.toolId}
+          onchange={(e) =>
+            patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
+        >
+          {#each project.tools as t (t.id)}
+            <option value={t.id} title={t.comment ?? ''}
+              >#{t.id} {t.name} ({formatLength(t.diameter, project.machine.unit)})</option
+            >
+          {/each}
+        </select>
+        <button
+          type="button"
+          class="tool-edit"
+          title="Edit this tool in the Tool library"
+          aria-label="Edit this tool in the Tool library"
+          onclick={(e) => {
+            e.stopPropagation();
+            project.toolsDialogFocusId = op.toolId;
+          }}>⚙</button
+        >
+      </div>
+    </label>
+    <RasterEngraveSection {op} {patch} />
   {:else}
     <label class="row">
       <span>Name</span>

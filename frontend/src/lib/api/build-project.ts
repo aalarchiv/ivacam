@@ -22,7 +22,9 @@ import type {
   OpBase,
   OpKind,
   PocketOp,
+  PowerCurve,
   ProfileOffset,
+  RasterEngraveOp,
   ReliefMillOp,
   ThreadOp,
   VCarveOp,
@@ -99,6 +101,11 @@ interface FlatOp extends OpBase, ContourFields {
   stepoverMm?: ReliefMillOp['stepoverMm'];
   scanDirection?: ReliefMillOp['scanDirection'];
   alongStepMm?: ReliefMillOp['alongStepMm'];
+  // RasterEngraveOp (rt1.12) — sourceId / scanDirection shared above.
+  resolutionMm?: RasterEngraveOp['resolutionMm'];
+  powerCurve?: RasterEngraveOp['powerCurve'];
+  link?: RasterEngraveOp['link'];
+  overscanFactor?: RasterEngraveOp['overscanFactor'];
 }
 
 export type WireToolKind =
@@ -412,7 +419,25 @@ type WireOpKind =
       stepover_mm?: number;
       scan_direction: 'along_x' | 'along_y';
       along_step_mm: number;
+    }
+  | {
+      type: 'raster_engrave';
+      source_id: number;
+      resolution_mm: number;
+      power_curve: WirePowerCurve;
+      scan_direction: 'along_x' | 'along_y';
+      link: 'lift_between' | 'bidirectional';
+      overscan_factor: number;
     };
+
+/// rt1.12: wire form of `PowerCurve` — tagged on `kind` with snake_case
+/// variant names. Identical to the app `PowerCurve` except bayer's
+/// `matrix_size` (app: `matrixSize`); see `buildPowerCurve`.
+type WirePowerCurve =
+  | { kind: 'linear'; min: number; max: number }
+  | { kind: 'threshold'; level: number; power: number }
+  | { kind: 'floyd_steinberg'; level: number; power: number }
+  | { kind: 'bayer'; matrix_size: number; power: number };
 
 type WireSourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
 type WireSource =
@@ -962,6 +987,34 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
         scan_direction: op.scanDirection ?? 'along_x',
         along_step_mm: op.alongStepMm ?? 0.5,
       } as WireOpKind;
+    case 'raster_engrave':
+      return {
+        type: 'raster_engrave',
+        source_id: op.sourceId ?? 0,
+        resolution_mm: op.resolutionMm ?? 0.1,
+        power_curve: buildPowerCurve(op.powerCurve),
+        scan_direction: op.scanDirection ?? 'along_x',
+        link: op.link ?? 'lift_between',
+        overscan_factor: op.overscanFactor ?? 0,
+      } as WireOpKind;
+  }
+}
+
+/// rt1.12: map an app `PowerCurve` to its wire shape. The only
+/// translation is bayer's `matrixSize` → `matrix_size`; every other
+/// variant passes through 1:1. `undefined` (a legacy save without the
+/// field) falls back to the GRBL-default linear ramp.
+function buildPowerCurve(c: PowerCurve | undefined): WirePowerCurve {
+  if (c == null) return { kind: 'linear', min: 0, max: 1000 };
+  switch (c.kind) {
+    case 'linear':
+      return { kind: 'linear', min: c.min, max: c.max };
+    case 'threshold':
+      return { kind: 'threshold', level: c.level, power: c.power };
+    case 'floyd_steinberg':
+      return { kind: 'floyd_steinberg', level: c.level, power: c.power };
+    case 'bayer':
+      return { kind: 'bayer', matrix_size: c.matrixSize, power: c.power };
   }
 }
 

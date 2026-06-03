@@ -627,3 +627,82 @@ describe('relief mill (f60x-D)', () => {
     expect(project!.relief_sources).toBeUndefined();
   });
 });
+
+describe('raster engrave (rt1.12)', () => {
+  it('maps a raster_engrave op + bayer curve to the wire shape', () => {
+    const rasterOp = {
+      id: 1,
+      name: 'Engrave',
+      enabled: true,
+      kind: 'raster_engrave',
+      toolId: 1,
+      sourceLayers: null,
+      depth: 0,
+      startDepth: 0,
+      step: null,
+      sourceId: 7,
+      resolutionMm: 0.05,
+      // matrixSize (app) → matrix_size (wire) is the only translation.
+      powerCurve: { kind: 'bayer', matrixSize: 8, power: 750 },
+      scanDirection: 'along_y',
+      link: 'bidirectional',
+      overscanFactor: 0.25,
+    } as unknown as OpEntry;
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool({ kind: 'laser_beam' })],
+      operations: [rasterOp],
+      reliefSources: [
+        {
+          id: 7,
+          name: 'logo.png',
+          origin: { x: 0, y: 0 },
+          cell: 0.25,
+          cols: 4,
+          rows: 4,
+          brightness: new Array(16).fill(0.5),
+        },
+      ],
+    });
+    expect(project!.operations[0].kind).toEqual({
+      type: 'raster_engrave',
+      source_id: 7,
+      resolution_mm: 0.05,
+      power_curve: { kind: 'bayer', matrix_size: 8, power: 750 },
+      scan_direction: 'along_y',
+      link: 'bidirectional',
+      overscan_factor: 0.25,
+    });
+  });
+
+  it('passes a linear power curve through unchanged', () => {
+    const rasterOp = {
+      id: 1,
+      name: 'Engrave',
+      enabled: true,
+      kind: 'raster_engrave',
+      toolId: 1,
+      sourceLayers: null,
+      depth: 0,
+      startDepth: 0,
+      step: null,
+      sourceId: 0,
+      resolutionMm: 0.1,
+      powerCurve: { kind: 'linear', min: 0, max: 1000 },
+      scanDirection: 'along_x',
+      link: 'lift_between',
+      overscanFactor: 0,
+    } as unknown as OpEntry;
+    const project = buildProject({
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool({ kind: 'laser_beam' })],
+      operations: [rasterOp],
+    });
+    expect(project!.operations[0].kind).toMatchObject({
+      type: 'raster_engrave',
+      power_curve: { kind: 'linear', min: 0, max: 1000 },
+    });
+  });
+});

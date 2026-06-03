@@ -43,7 +43,8 @@ export type OpKind =
   | 'probe'
   | 'cycle_marker'
   | 'gcode_include'
-  | 'relief_mill';
+  | 'relief_mill'
+  | 'raster_engrave';
 
 /// gseb: the program-only op family — Pause, Homing, Probe,
 /// CycleMarker, GcodeInclude. These ops emit fixed gcode
@@ -68,6 +69,27 @@ export function isProgramOnlyOp(kind: OpKind): boolean {
 export type ProbeAxis = 'x' | 'y' | 'z';
 
 export type ScanDirection = 'along_x' | 'along_y';
+
+/// rt1.12: brightness → laser-power (`S`) mapping for raster engraving.
+/// Tagged union on `kind`, mirroring the wire `PowerCurve` 1:1 — the
+/// only field-name difference is bayer's `matrixSize` ↔ wire
+/// `matrix_size`, translated in build-project.ts. Convention: dark
+/// pixels burn hotter (see `crates/wiac-core/src/cam/raster.rs`).
+///   - linear:         power lerps `max`@black → `min`@white
+///   - threshold:      binary — darker than `level` burns at `power`
+///   - floyd_steinberg error-diffusion dither to on/off at `level`
+///   - bayer:          ordered dither; `matrixSize` ∈ {2,4,8}
+export type PowerCurve =
+  | { kind: 'linear'; min: number; max: number }
+  | { kind: 'threshold'; level: number; power: number }
+  | { kind: 'floyd_steinberg'; level: number; power: number }
+  | { kind: 'bayer'; matrixSize: number; power: number };
+
+export type PowerCurveKind = PowerCurve['kind'];
+
+/// rt1.12: how consecutive raster rows are connected — lift-between
+/// (every row same direction) vs boustrophedon (alternating, no lift).
+export type RasterLink = 'lift_between' | 'bidirectional';
 
 export type ProfileOffset = 'outside' | 'inside' | 'on';
 export type SourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
@@ -402,6 +424,30 @@ export interface ReliefMillOp extends OpBase {
   alongStepMm: number;
 }
 
+/// rt1.12: laser raster engraving. Burns a grayscale image (a
+/// `ReliefSource` referenced by `sourceId`) row-by-row, modulating
+/// laser power (`S`) per pixel through `powerCurve`. Like ReliefMill it
+/// follows an image-derived field rather than source geometry, so it has
+/// no offset / contour semantics. Laser-capability gated in the op
+/// picker (OP_REQUIRES: ['laser']); the backend emits M3/S/M5 gcode.
+export interface RasterEngraveOp extends OpBase {
+  kind: 'raster_engrave';
+  /// Id of the `ReliefSource` (in `project.reliefSources`) to engrave.
+  sourceId: number;
+  /// Per-pixel scan resolution (mm). The brightness grid is resampled to
+  /// this pitch at planning time. 0 = use the source's native cell size.
+  resolutionMm: number;
+  /// Brightness → laser-power (`S`) mapping.
+  powerCurve: PowerCurve;
+  /// Raster scanline direction.
+  scanDirection: ScanDirection;
+  /// How consecutive rows connect (lift-between vs boustrophedon).
+  link: RasterLink;
+  /// Overscan past each row edge as a fraction of the row length (≥ 0)
+  /// so the head reaches commanded power before crossing pixels.
+  overscanFactor: number;
+}
+
 /// Tagged-union over every op kind. TypeScript narrows the variant
 /// on `op.kind === '<value>'` so reads of kind-specific fields are
 /// only valid inside the matching branch — wrong-kind reads (e.g.
@@ -423,7 +469,8 @@ export type OpEntry =
   | ProbeOp
   | CycleMarkerOp
   | GcodeIncludeOp
-  | ReliefMillOp;
+  | ReliefMillOp
+  | RasterEngraveOp;
 
 /// Patch type for `project.updateOperation`. A patch covers the full
 /// variant-specific shape — callers may pass `{ depth: -3 }` against

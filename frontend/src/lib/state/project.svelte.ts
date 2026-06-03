@@ -156,8 +156,12 @@ export type {
   OpOfKind,
   OpPatch,
   PocketOp,
+  PowerCurve,
+  PowerCurveKind,
   ProfileOffset,
   ProfileOp,
+  RasterEngraveOp,
+  RasterLink,
   ReliefMillOp,
   ScanDirection,
   SourceCombine,
@@ -1574,6 +1578,35 @@ class ProjectState {
       this.history.exec(addOperationCommand(reliefOp), this.target());
       this.selectedOpId = reliefOp.id;
       return reliefOp;
+    }
+    // rt1.12: laser raster engraving follows an image-derived power
+    // field, not source geometry — skip the offset/contour defaults
+    // (mirrors relief_mill). Prefer a laser tool; bind to the first
+    // loaded relief source (0 = none yet). Linear S0..S1000 ramp is the
+    // machine-agnostic GRBL default the user retunes per laser.
+    if (kind === 'raster_engrave') {
+      const laser = this.tools.find((t) => t.kind === 'laser_beam') ?? this.tools[0];
+      const rasterOp: OpEntry = {
+        id: nextId,
+        name: prettyOpKind(kind),
+        enabled: true,
+        kind: 'raster_engrave',
+        toolId: laser?.id ?? this.tools[0]?.id ?? 1,
+        sourceCombine: 'auto',
+        sourceLayers: null,
+        depth: 0,
+        startDepth: 0,
+        step: null,
+        sourceId: this.reliefSources[0]?.id ?? 0,
+        resolutionMm: 0.1,
+        powerCurve: { kind: 'linear', min: 0, max: 1000 },
+        scanDirection: 'along_x',
+        link: 'lift_between',
+        overscanFactor: 0,
+      } as OpEntry;
+      this.history.exec(addOperationCommand(rasterOp), this.target());
+      this.selectedOpId = rasterOp.id;
+      return rasterOp;
     }
     // When the user has objects selected on the canvas, pin the new op
     // to that exact set. Most users select first, click "+ Pocket"

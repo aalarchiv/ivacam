@@ -69,6 +69,10 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // ball-nose (full hemisphere) or a bull-nose (flat centre + corner
       // fillet). The corner radius shapes the floor + the scallop stepover.
       return ['ball_nose', 'bull_nose'];
+    case 'raster_engrave':
+      // rt1.12: laser raster engraving needs a laser head — the power
+      // curve modulates the beam's `S` word; no rotating cutter applies.
+      return ['laser_beam'];
     default:
       return [];
   }

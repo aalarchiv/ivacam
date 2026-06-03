@@ -22,6 +22,7 @@
     cycle_marker: 'Marker',
     gcode_include: 'G-code include',
     relief_mill: 'Relief (3D)',
+    raster_engrave: 'Raster engrave',
   };
   export const KIND_ICON: Record<OpKind, string> = {
     profile: '▢',
@@ -40,6 +41,7 @@
     cycle_marker: '◈',
     gcode_include: '⎙',
     relief_mill: '⛰',
+    raster_engrave: '▦',
   };
   // Helix is omitted intentionally: it's an OperationKind in the
   // schema but the dedicated standalone helix-op emitter isn't shipped
@@ -60,6 +62,7 @@
     'dovetail',
     'vcarve',
     'relief_mill',
+    'raster_engrave',
     'pause',
     'homing',
     'probe',
@@ -113,6 +116,8 @@
       'Splices an external G-code file into the program at this slot. Supports {x} / {y} / {z} / {f} / {s} / {safe_z} variable substitution. The sim does not model the included block — inspect canned cycles by hand.',
     relief_mill:
       '3D relief surfacing from a grayscale image with a ball-nose cutter. Brightness becomes height; load an image, set the depth range and scallop. Rough the bulk first with a flat endmill.',
+    raster_engrave:
+      'Laser raster engraving from a grayscale image. Burns row-by-row, modulating laser power per pixel (dark = hotter). Load an image, set resolution and a power curve (linear / threshold / dither).',
   };
 </script>
 
@@ -153,6 +158,9 @@
     dovetail: ['mill'],
     vcarve: ['mill'],
     relief_mill: ['mill'],
+    // rt1.12: laser raster engraving is laser-only (matches the backend
+    // laser gate + the op×mode warning).
+    raster_engrave: ['laser'],
     // Pause carries no tool / motion — every machine can pause.
     pause: ['mill', 'laser', 'drag', 'plasma'],
     // 8n4k: program-only building blocks (Homing / Probe / CycleMarker)

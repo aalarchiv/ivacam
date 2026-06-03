@@ -771,7 +771,7 @@ pub struct MachineConfig {
     /// so the controller ramps `S` power with the actual feed rate —
     /// corners and edges (where the head slows) don't over-burn, and
     /// rapids force `S0` automatically. GRBL-specific (`$32=1` laser
-    /// mode); on LinuxCNC `M4` means spindle-CCW, so the flag is honored
+    /// mode); on `LinuxCNC` `M4` means spindle-CCW, so the flag is honored
     /// ONLY by the GRBL post (others keep `M3`). "Strongly preferred" for
     /// laser engraving per the rt1.12 spec. Default `false` keeps the
     /// portable `M3` output byte-for-byte.

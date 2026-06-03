@@ -1744,7 +1744,7 @@ pub struct PostState {
     pub wcs: crate::project::Wcs,
     /// z9zh: when true, the laser arm/fire hooks emit `M4` (GRBL
     /// dynamic-power mode) instead of `M3`. Set only by the GRBL post
-    /// when `MachineConfig.laser_dynamic_power` is on; LinuxCNC leaves it
+    /// when `MachineConfig.laser_dynamic_power` is on; `LinuxCNC` leaves it
     /// false (its `M4` is spindle-CCW). Not serialized — derived from
     /// machine config at post construction, not persisted state.
     #[serde(default, skip)]

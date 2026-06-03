@@ -13,7 +13,7 @@
   import { fixtureAt } from '../canvas/fixture-hit';
   import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
-  import { computeViewportTransform, placementsBBox } from '../canvas/viewport';
+  import { computeViewportTransform, placementsBBox, type Rect } from '../canvas/viewport';
   import {
     applyPinch,
     withinTapTolerance,
@@ -34,7 +34,7 @@
   import { computeFootprint } from '../sim/driver';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
   import { brightnessToRgba } from '../state/raster_preview';
-  import type { ReliefSource } from '../state/project-types';
+  import type { ReliefSource, TextLayer } from '../state/project-types';
 
   interface Props {
     onShowHelp?: () => void;
@@ -262,6 +262,17 @@
   /// entry) on every move, mirroring the approach-marker drag.
   let rasterDrag = $state<{
     sourceId: number;
+    pointerId: number;
+    grabDX: number;
+    grabDY: number;
+  } | null>(null);
+
+  /// rt1.12 (ywf9): drag state for repositioning a text layer's origin.
+  /// `grabDX/DY` is the pointer→origin offset at grab time so the origin
+  /// tracks the cursor. Committed live (coalesced — see
+  /// coalesceKeyForTextPatch) on every move, mirroring the raster drag.
+  let textDrag = $state<{
+    id: number;
     pointerId: number;
     grabDX: number;
     grabDY: number;
@@ -539,6 +550,19 @@
       return;
     }
 
+    // rt1.12 (ywf9): live drag of a text layer's origin (coalesced ⇒ one
+    // undo entry); the bg repaint tracks the new origin reactively.
+    if (textDrag && e.pointerId === textDrag.pointerId) {
+      const data = pxToData(cx, cy);
+      if (data) {
+        project.updateTextLayer(textDrag.id, {
+          origin: { x: data.x - textDrag.grabDX, y: data.y - textDrag.grabDY },
+        });
+      }
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+
     // Audit kj8i: hover-near-marker preview. Mirror the hit-test that
     // onPointerDown does for click-to-drag so the cursor flips to
     // `grab` BEFORE the user mousedowns — without this the marker is
@@ -645,6 +669,15 @@
     // rt1.12 (j7b4): end an active raster placement drag.
     if (rasterDrag && e.pointerId === rasterDrag.pointerId) {
       rasterDrag = null;
+      canvas.style.cursor = 'default';
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
+    // rt1.12 (ywf9): end an active text-layer drag.
+    if (textDrag && e.pointerId === textDrag.pointerId) {
+      textDrag = null;
       canvas.style.cursor = 'default';
       try {
         canvas.releasePointerCapture(e.pointerId);
@@ -1044,6 +1077,7 @@
         boxSelect = null;
         approachDrag = null;
         rasterDrag = null;
+        textDrag = null;
         const entries = [...activePointers.entries()];
         const first = entries[0];
         const second = entries[1];
@@ -1163,6 +1197,30 @@
           pointerId: e.pointerId,
           grabDX: data.x - hit.src.origin.x,
           grabDY: data.y - hit.src.origin.y,
+        };
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {}
+        canvas.style.cursor = 'grabbing';
+        e.preventDefault();
+        return;
+      }
+    }
+
+    // rt1.12 (ywf9): grab the SELECTED text layer to drag its origin.
+    // Restricted to the already-selected layer (selected via the sidebar
+    // text list, like the approach-marker drag needs its op selected) so
+    // a text bbox overlapping imported geometry doesn't hijack object
+    // selection. Same mode gating as the raster grab.
+    if (!approachPickActive && !tabPlacementActive && project.selectedTextLayerId != null) {
+      const data = pxToData(cx, cy);
+      const hit = data ? selectedTextAtData(data.x, data.y) : null;
+      if (data && hit) {
+        textDrag = {
+          id: hit.id,
+          pointerId: e.pointerId,
+          grabDX: data.x - hit.origin.x,
+          grabDY: data.y - hit.origin.y,
         };
         try {
           canvas.setPointerCapture(e.pointerId);
@@ -1334,11 +1392,12 @@
 
     const data = project.geometryView;
     const hasGeom = !!data && data.segments.length > 0;
-    // rt1.12 (fvb0): a raster-engrave-only project has no imported
-    // geometry — fall back to a bbox over the placement / bed so the
-    // grid + axes + draggable image still render.
-    const rasterBBox = hasGeom ? null : rasterOnlyBBox();
-    if (!hasGeom && !rasterBBox) {
+    // rt1.12 (fvb0 / ywf9): a placement-only project (raster images
+    // and/or text, no imported DXF) has no geometry — fall back to a
+    // bbox over the placements / bed so the grid + axes + draggable
+    // entities still render.
+    const fallbackBBox = hasGeom ? null : placementFallbackBBox();
+    if (!hasGeom && !fallbackBBox) {
       ctx.fillStyle = themeVar('--canvas-empty', '#555');
       ctx.font = '13px system-ui, sans-serif';
       ctx.fillText('Open a file to view geometry', 16, 24);
@@ -1346,7 +1405,7 @@
     }
 
     const { scale, offX, offY, project2 } = computeTransform(
-      hasGeom ? data!.bbox : rasterBBox!,
+      hasGeom ? data!.bbox : fallbackBBox!,
       w,
       h,
     );
@@ -1356,36 +1415,37 @@
     drawWorkArea(ctx, project2);
     drawStock(ctx, project2);
 
-    // The rest of the bg layer is imported-geometry chrome; a
-    // raster-only project has none, so stop here (the placement image
-    // itself lives on the overlay).
-    if (!hasGeom || !data) return;
+    // Imported-geometry chrome (regions + base wireframe) — only when a
+    // DXF is loaded. A placement-only project skips straight to the text
+    // previews below (raster images live on the overlay).
+    if (hasGeom && data) {
+      // Filled-region preview painted under the wireframe so contours
+      // stay legible. Regions come from the backend (pipeline.rs
+      // build_region_previews).
+      const regions = project.generated?.regions ?? [];
+      if (regions.length > 0 && project.regionsVisible) {
+        drawRegions(ctx, regions, scale, offX, offY);
+      }
 
-    // Filled-region preview painted under the wireframe so contours stay
-    // legible. Regions come from the backend (pipeline.rs
-    // build_region_previews).
-    const regions = project.generated?.regions ?? [];
-    if (regions.length > 0 && project.regionsVisible) {
-      drawRegions(ctx, regions, scale, offX, offY);
+      // Imported segments — paint in BASE layer color only. State-bearing
+      // overlays (selection / hover / op-assignment halos) go on the
+      // overlay canvas, so editing those does NOT invalidate this layer.
+      const visibleLayersSnap = new Set(project.visibleLayers);
+      visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
+      ctx.lineWidth = project.settings.previewLineWidth;
+      for (let i = 0; i < data.segments.length; i++) {
+        const seg = data.segments[i];
+        if (!visibleLayersSnap.has(seg.layer)) continue;
+        ctx.strokeStyle = colorFor(seg.color);
+        drawSegment(ctx, seg, project2);
+      }
     }
 
-    // Imported segments — paint in BASE layer color only. State-bearing
-    // overlays (selection / hover / op-assignment halos) go on the
-    // overlay canvas, so editing those does NOT invalidate this layer.
-    const visibleLayersSnap = new Set(project.visibleLayers);
-    visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
-    ctx.lineWidth = project.settings.previewLineWidth;
-    for (let i = 0; i < data.segments.length; i++) {
-      const seg = data.segments[i];
-      if (!visibleLayersSnap.has(seg.layer)) continue;
-      ctx.strokeStyle = colorFor(seg.color);
-      drawSegment(ctx, seg, project2);
-    }
-
-    // Text-layer previews. The cache is filled by requestPreview() in
-    // the top-of-file effect. drawTextPreview also reads
-    // selectedTextLayerId for the highlight; selecting a text layer is
-    // rare enough that retainting bg is acceptable.
+    // Text-layer previews. Rendered with OR without imported geometry so
+    // a text-only engrave project is visible (and draggable) on a bare
+    // canvas. The cache is filled by requestPreview() in the top-of-file
+    // effect; drawTextPreview also reads selectedTextLayerId for the
+    // highlight.
     if (project.textLayers.length > 0) {
       const accent = themeVar('--accent', '#2d6cdf');
       const haloColor = themeVar('--text-strong', '#ffffff');
@@ -1407,11 +1467,11 @@
 
     const data = project.geometryView;
     const hasGeom = !!data && data.segments.length > 0;
-    // rt1.12 (fvb0): mirror drawBackground — fall back to the raster
-    // placement / bed bbox so a geometry-less engrave is draggable.
-    const rasterBBox = hasGeom ? null : rasterOnlyBBox();
-    if (!hasGeom && !rasterBBox) return;
-    const { scale, project2 } = computeTransform(hasGeom ? data!.bbox : rasterBBox!, w, h);
+    // rt1.12 (fvb0 / ywf9): mirror drawBackground — fall back to the
+    // placement / bed bbox so a geometry-less project is draggable.
+    const fallbackBBox = hasGeom ? null : placementFallbackBBox();
+    if (!hasGeom && !fallbackBBox) return;
+    const { scale, project2 } = computeTransform(hasGeom ? data!.bbox : fallbackBBox!, w, h);
 
     const accent = themeVar('--accent', '#2d6cdf');
 
@@ -1705,27 +1765,67 @@
     return null;
   }
 
-  /// rt1.12 (fvb0): a viewport bbox for a geometry-less raster project
-  /// (no imported DXF, no visible stock) so the placement still renders
-  /// + drags. Prefers the machine work area — a STABLE reference, so the
-  /// view doesn't jiggle while the origin is dragged (the image moves
-  /// within the bed). Falls back to the source extents (+10% margin)
-  /// when no bed is defined. Null when there are no raster placements.
-  function rasterOnlyBBox(): BBox | null {
-    const placements = rasterPlacements();
-    if (placements.length === 0) return null;
-    const wa = project.machine.workArea;
-    if (wa && wa.x > 0 && wa.y > 0) {
-      return { min_x: 0, min_y: 0, max_x: wa.x, max_y: wa.y };
+  /// Axis-aligned bbox over a segment list's endpoints (good enough for
+  /// view-fit + a drag hit-test; arc bulges are ignored). Null for an
+  /// empty list.
+  function segsBBox(segs: readonly Segment[]): Rect | null {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const s of segs) {
+      minX = Math.min(minX, s.start.x, s.end.x);
+      minY = Math.min(minY, s.start.y, s.end.y);
+      maxX = Math.max(maxX, s.start.x, s.end.x);
+      maxY = Math.max(maxY, s.start.y, s.end.y);
     }
-    return placementsBBox(
-      placements.map(({ src }) => ({
+    if (!Number.isFinite(minX)) return null;
+    return { minX, minY, maxX, maxY };
+  }
+
+  /// rt1.12 (fvb0 / ywf9): a viewport bbox for a project with no imported
+  /// geometry + no visible stock, so placement-only entities (raster
+  /// images, text layers) still render + drag. Prefers the machine work
+  /// area — a STABLE reference, so the view doesn't jiggle while an
+  /// origin is dragged (the entity moves within the bed). Falls back to
+  /// the union of all placement extents (+10% margin) when no bed is
+  /// defined. Null when there's nothing placeable to frame.
+  function placementFallbackBBox(): BBox | null {
+    const rects: Rect[] = [];
+    for (const { src } of rasterPlacements()) {
+      rects.push({
         minX: src.origin.x,
         minY: src.origin.y,
         maxX: src.origin.x + src.cols * src.cell,
         maxY: src.origin.y + src.rows * src.cell,
-      })),
-    );
+      });
+    }
+    for (const layer of project.textLayers) {
+      const bb = segsBBox(previewSegmentsFor(layer.id) ?? []);
+      if (bb) rects.push(bb);
+    }
+    if (rects.length === 0) return null;
+    const wa = project.machine.workArea;
+    if (wa && wa.x > 0 && wa.y > 0) {
+      return { min_x: 0, min_y: 0, max_x: wa.x, max_y: wa.y };
+    }
+    return placementsBBox(rects);
+  }
+
+  /// Whether a data-space point lands within the selected text layer's
+  /// rendered bbox (+ a small screen-constant tolerance) — the hit-test
+  /// for click-drag repositioning. Returns the layer when hit, else null.
+  function selectedTextAtData(x: number, y: number): TextLayer | null {
+    const id = project.selectedTextLayerId;
+    if (id == null) return null;
+    const layer = project.textLayers.find((l) => l.id === id);
+    if (!layer) return null;
+    const bb = segsBBox(previewSegmentsFor(id) ?? []);
+    if (!bb) return null;
+    const tol = lastTransform ? 4 / Math.max(Math.abs(lastTransform.scale), 1e-6) : 0;
+    const inside =
+      x >= bb.minX - tol && x <= bb.maxX + tol && y >= bb.minY - tol && y <= bb.maxY + tol;
+    return inside ? layer : null;
   }
 
   /// Paint the faint placed raster images (+ selection / placement

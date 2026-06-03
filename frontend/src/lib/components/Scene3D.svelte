@@ -1234,7 +1234,9 @@
 
     const cx = (fp.minX + fp.maxX) * 0.5;
     const cy = (fp.minY + fp.maxY) * 0.5;
-    const cz = -thickness * 0.5;
+    // ya00: stock top sits at offsetZ (default 0); box centered half a
+    // thickness below it, so it spans [offsetZ − thickness, offsetZ].
+    const cz = (cfg.offsetZ ?? 0) - thickness * 0.5;
     const box = new THREE.BoxGeometry(sizeX, sizeY, thickness);
     const fillMat = new THREE.MeshBasicMaterial({
       transparent: true,

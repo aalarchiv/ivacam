@@ -97,9 +97,12 @@ export interface StockConfig {
   /// mode the anchor is (0, 0) so offsets are absolute.
   offsetX?: number;
   offsetY?: number;
-  /// Z offset is for future use (currently the pipeline assumes stock
-  /// top at z = 0). Plumbed through the UI now so the field exists
-  /// before the sim refactor lands.
+  /// ya00: Z of the stock top plane (mm) in the WCS frame. 0 (default) =
+  /// top at the WCS origin (zeroed on the stock top). Positive raises the
+  /// stock above z=0 — e.g. set it to the thickness when you zeroed on
+  /// the bed. Sent as `top_z_mm`; drives the 3D stock box, the sim
+  /// heightmap top, and the out-of-stock scan. Distinct from
+  /// `workOffset.z_mm` (which moves the WCS origin, not the material).
   offsetZ?: number;
 }
 

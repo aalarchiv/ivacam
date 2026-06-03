@@ -322,8 +322,10 @@ pub(super) fn push_stock_warning(
     let max_x = stock.origin[0] + stock.width_mm;
     let min_y = stock.origin[1];
     let max_y = stock.origin[1] + stock.height_mm;
-    let stock_top = 0.0;
-    let stock_bottom = -stock.thickness_mm;
+    // ya00: the stock top sits at `top_z_mm` (default 0); the body
+    // extends down by `thickness_mm`.
+    let stock_top = stock.top_z_mm;
+    let stock_bottom = stock.top_z_mm - stock.thickness_mm;
     let mut count = 0usize;
     let mut first_line = 0u32;
     for seg in toolpath {
@@ -1161,6 +1163,7 @@ mod tests {
             width_mm: 100.0,
             height_mm: 80.0,
             thickness_mm: 10.0,
+            ..Default::default()
         };
         let seg = |fx, fy, fz, tx, ty, tz, kind, line| ToolpathSegment {
             from: Pose3 {
@@ -1202,6 +1205,51 @@ mod tests {
         assert!(
             hits[0].message.contains("2 cut moves") && hits[0].message.contains("gcode line 11"),
             "message should count two offending cuts, first at line 11: {}",
+            hits[0].message
+        );
+    }
+
+    /// ya00: a non-zero stock `top_z_mm` shifts the in-stock Z band. With
+    /// the top raised to +10, the body spans z ∈ [0, 10], so a cut at
+    /// z = -5 (fine when the top is at 0) is now BELOW the stock and a
+    /// cut at z = +8 (above the stock when top = 0) is now INSIDE it.
+    #[test]
+    fn stock_top_z_offset_shifts_the_z_band() {
+        use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
+        let stock = StockConfig {
+            origin: [0.0, 0.0],
+            width_mm: 100.0,
+            height_mm: 80.0,
+            thickness_mm: 10.0,
+            top_z_mm: 10.0, // body now spans z ∈ [0, 10]
+        };
+        let seg = |z: f64, kind, line| ToolpathSegment {
+            from: Pose3 {
+                x: 50.0,
+                y: 40.0,
+                z: 5.0,
+            },
+            to: Pose3 {
+                x: 50.0,
+                y: 40.0,
+                z,
+            },
+            kind,
+            gcode_line: line,
+            op_id: 0,
+        };
+        // z=+8 is inside [0,10]; z=-5 is below the shifted bottom (0).
+        let toolpath = vec![seg(8.0, MoveKind::Cut, 10), seg(-5.0, MoveKind::Plunge, 11)];
+        let mut warnings = Vec::new();
+        push_stock_warning(&toolpath, Some(&stock), &mut warnings);
+        let hits: Vec<_> = warnings
+            .iter()
+            .filter(|w| w.kind == "out_of_stock")
+            .collect();
+        assert_eq!(hits.len(), 1, "exactly one stock warning: {warnings:?}");
+        assert!(
+            hits[0].message.contains("1 cut move") && hits[0].message.contains("gcode line 11"),
+            "only the z=-5 plunge (line 11) is out of the shifted stock: {}",
             hits[0].message
         );
     }
@@ -1265,6 +1313,7 @@ mod tests {
             width_mm: 50.0,
             height_mm: 50.0,
             thickness_mm: 5.0,
+            ..Default::default()
         };
         let mut w_in = Vec::new();
         push_stock_warning(&in_bounds, Some(&stock), &mut w_in);

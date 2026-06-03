@@ -159,8 +159,19 @@ pub struct StockConfig {
     pub width_mm: f64,
     /// Y extent of the stock box (mm).
     pub height_mm: f64,
-    /// Material thickness (mm). The stock body spans z ∈ [-thickness, 0].
+    /// Material thickness (mm). The stock body spans
+    /// z ∈ [`top_z_mm` − thickness, `top_z_mm`].
     pub thickness_mm: f64,
+    /// ya00: Z of the stock TOP plane (mm) in the WCS frame. Default 0 ⇒
+    /// the top sits at the WCS origin plane (the legacy assumption), body
+    /// extending down to `-thickness_mm`. A non-zero value models zeroing
+    /// the machine somewhere other than the stock top (e.g. on the bed,
+    /// `top_z_mm = +thickness`); the `out_of_stock` scan and the sim
+    /// heightmap shift with it. Distinct from `WorkOffset::z_mm` (which
+    /// moves the WCS origin relative to the geometry) — this moves the
+    /// stock material relative to that origin.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub top_z_mm: f64,
 }
 
 /// i5g4: program-level work-coordinate offset. Defaults to all

@@ -154,6 +154,7 @@ pub fn stock_at_origin(width_mm: f64, height_mm: f64, thickness_mm: f64) -> Stoc
         width_mm,
         height_mm,
         thickness_mm,
+        ..Default::default()
     }
 }
 

@@ -528,6 +528,34 @@ describe('stock box (vrrr)', () => {
     });
   });
 
+  it('emits top_z_mm from offsetZ when set, omits it at 0 (ya00)', () => {
+    const base = {
+      transformedImport: fakeImport(),
+      machine: baseMachine(),
+      tools: [baseTool()],
+      operations: [profileOp()],
+    };
+    const withOffset = buildProject({
+      ...base,
+      stock: {
+        visible: true,
+        mode: 'auto',
+        margin: 5,
+        thickness: 3,
+        customX: 0,
+        customY: 0,
+        offsetZ: 12,
+      },
+    });
+    expect(withOffset!.stock).toMatchObject({ top_z_mm: 12 });
+    // Default (0 / unset) omits the key — byte-identical legacy wire.
+    const noOffset = buildProject({
+      ...base,
+      stock: { visible: true, mode: 'auto', margin: 5, thickness: 3, customX: 0, customY: 0 },
+    });
+    expect(noOffset!.stock).not.toHaveProperty('top_z_mm');
+  });
+
   it('sizes the stock from transformedImport, NOT the stock-augmented geometryView, and floors thickness', () => {
     // geometryView's bbox is huge (it would include the stock outline).
     // Stock must resolve against transformedImport (0..10) so the auto

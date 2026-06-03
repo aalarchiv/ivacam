@@ -292,6 +292,8 @@ export class HeightfieldDriver {
       thickness: number;
       customX: number;
       customY: number;
+      /// ya00: Z of the stock top plane (default 0 = top at WCS z=0).
+      offsetZ?: number;
     };
     settings: AppSettings;
     fixtures?: Fixture[];
@@ -322,7 +324,10 @@ export class HeightfieldDriver {
       effectiveCellSize = cellSize * scale;
       coarsened = true;
     }
-    const topZ = 0; // stock surface is z=0; carving descends to negative Z
+    // ya00: stock top plane Z (default 0). Carving descends from here;
+    // the floor is topZ − thickness. Toolpath Z is absolute (WCS), so a
+    // raised top models zeroing below the stock surface.
+    const topZ = input.stock.offsetZ ?? 0;
     // Stepped voxel renderer needs a finite floor — match the physical
     // stock bottom so the rendered boxes have the right thickness when
     // viewed from below. Default to 10 mm so an unconfigured project

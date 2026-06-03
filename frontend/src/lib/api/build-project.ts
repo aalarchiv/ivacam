@@ -567,12 +567,15 @@ export interface WireReliefSource {
 
 /// vrrr: wire shape of `wiac_core::project::StockConfig` — an
 /// axis-aligned stock box resolved in the geometry frame. `origin` is the
-/// min corner (x, y); the body spans z ∈ [-thickness_mm, 0].
+/// min corner (x, y); the body spans z ∈ [top_z_mm − thickness_mm, top_z_mm].
 export interface WireStock {
   origin: [number, number];
   width_mm: number;
   height_mm: number;
   thickness_mm: number;
+  /// ya00: Z of the stock top plane. Omitted when 0 (Rust serde skips
+  /// the default) — the legacy "top at WCS z=0" behavior.
+  top_z_mm?: number;
 }
 
 interface ProjectStateView {
@@ -1141,6 +1144,9 @@ function buildStock(state: ProjectStateView): WireStock | null {
     width_mm: fp.maxX - fp.minX,
     height_mm: fp.maxY - fp.minY,
     thickness_mm: Math.max(0.01, stock.thickness),
+    // ya00: stock-top Z placement. Omit at the default (0) so legacy
+    // projects stay byte-identical on the wire.
+    ...(stock.offsetZ ? { top_z_mm: stock.offsetZ } : {}),
   };
 }
 

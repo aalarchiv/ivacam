@@ -1776,9 +1776,14 @@ export interface components {
             origin: number[];
             /**
              * Format: double
-             * @description Material thickness (mm). The stock body spans z ∈ [-thickness, 0].
+             * @description Material thickness (mm). The stock body spans z ∈ [`top_z_mm` − thickness, `top_z_mm`].
              */
             thickness_mm: number;
+            /**
+             * Format: double
+             * @description ya00: Z of the stock TOP plane (mm) in the WCS frame. Default 0 ⇒ the top sits at the WCS origin plane (the legacy assumption), body extending down to `-thickness_mm`. A non-zero value models zeroing the machine somewhere other than the stock top (e.g. on the bed, `top_z_mm = +thickness`); the `out_of_stock` scan and the sim heightmap shift with it. Distinct from `WorkOffset::z_mm` (which moves the WCS origin relative to the geometry) — this moves the stock material relative to that origin.
+             */
+            top_z_mm?: number;
             /**
              * Format: double
              * @description X extent of the stock box (mm).

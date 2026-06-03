@@ -287,6 +287,14 @@
   // pipeline's own findings.
   let allPipelineWarnings = $derived<PipelineWarning[]>(pipelineWarnings);
   let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(allPipelineWarnings));
+  // Tier-4 safety: count out-of-work-area moves from the last Generate.
+  // `out_of_work_area` is intentionally NOT a critical kind (the default
+  // envelope is often a placeholder), so it never blocks via the critical
+  // gate; the opt-in `blockOnWorkAreaViolation` setting promotes it to a
+  // hard EXPORT block for operators who've set their real envelope.
+  let workAreaViolationCount = $derived(
+    allPipelineWarnings.filter((w) => w.kind === 'out_of_work_area').length,
+  );
   let criticalCount = $derived(
     warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,
   );
@@ -370,6 +378,16 @@
     if (project.settings.blockOnCriticalSimWarnings && pipelineCriticalCount > 0) {
       project.setError(
         `Pipeline raised ${pipelineCriticalCount} critical warning${pipelineCriticalCount === 1 ? '' : 's'} on the last Generate — fix or disable the safety check in Settings`,
+      );
+      return;
+    }
+    // Tier-4: opt-in hard gate on out-of-work-area moves. Blocks EXPORT
+    // only (Generate/preview stay open so the operator can see + fix the
+    // violation). The toolpath leaves the machine envelope — sending it
+    // risks a soft-limit fault or a gantry crash.
+    if (project.settings.blockOnWorkAreaViolation && workAreaViolationCount > 0) {
+      project.setError(
+        `${workAreaViolationCount} move${workAreaViolationCount === 1 ? '' : 's'} leave the machine work area — fix the path / work-offset, widen the work area, or disable the work-area gate in Settings`,
       );
       return;
     }

@@ -50,6 +50,14 @@ export interface AppSettings {
   /// When true, GenerateBar refuses to emit gcode while the most recent
   /// sim run reported critical warnings (collisions, rapid-through-stock).
   blockOnCriticalSimWarnings: boolean;
+  /// Tier-4 safety: when true, GenerateBar refuses to EXPORT gcode while
+  /// the last Generate reported `out_of_work_area` moves (the path leaves
+  /// the machine envelope — soft-limit fault or a gantry crash). Opt-IN
+  /// (default false) because the work-area default is often a placeholder
+  /// that doesn't match the real machine; operators who've set their true
+  /// envelope turn this on for a hard pre-send gate. Generate/preview stay
+  /// open so the violation can be seen and fixed.
+  blockOnWorkAreaViolation: boolean;
   /// 75op: when true, GenerateBar debounces project.dirty changes and
   /// auto-runs Generate after a brief idle. Off by default; power
   /// users on big projects keep manual control.
@@ -124,6 +132,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // the gate in Settings. Safer default for people running real
   // machines; opt-out rather than opt-in.
   blockOnCriticalSimWarnings: true,
+  // Tier-4: opt-IN (the work-area envelope is often a placeholder, so a
+  // default-on gate would be noise). Operators with an accurate envelope
+  // enable it for a hard pre-send block on out-of-work-area moves.
+  blockOnWorkAreaViolation: false,
   autoRegenerate: false,
   autoRunSimOnSave: true,
   autoReloadSources: true,

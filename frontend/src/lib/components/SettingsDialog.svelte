@@ -429,6 +429,18 @@
             />
             <span>Block G-code generation on critical sim warnings</span>
           </label>
+          <label
+            class="check"
+            title="When on, exporting/saving G-code is blocked if the last Generate found moves outside the machine work area (a soft-limit fault or gantry crash on the real machine). Off by default because the work-area envelope is often a placeholder — turn it on once you've set your machine's real travel. Generate/preview stay available so you can see and fix the violation."
+          >
+            <input
+              type="checkbox"
+              checked={project.settings.blockOnWorkAreaViolation}
+              onchange={(e) =>
+                update('blockOnWorkAreaViolation', (e.currentTarget as HTMLInputElement).checked)}
+            />
+            <span>Block G-code export on out-of-work-area moves</span>
+          </label>
           <label class="check">
             <input
               type="checkbox"

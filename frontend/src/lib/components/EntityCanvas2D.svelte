@@ -14,6 +14,7 @@
   import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
   import { computeViewportTransform, placementsBBox, type Rect } from '../canvas/viewport';
+  import { nearestTextLayer } from '../canvas/text-hit';
   import {
     applyPinch,
     withinTapTolerance,
@@ -180,6 +181,7 @@
     // pure. Repaint when a source moves / resizes.
     void project.reliefSources;
     void hoverIdx;
+    void hoverTextId;
     void ghostTab;
     void boxSelect;
     void userZoom;
@@ -304,6 +306,10 @@
   // and pick the nearest one within `HIT_PIXEL_TOL`.
   const HIT_PIXEL_TOL = 8;
   let hoverIdx = $state<number | null>(null);
+  /// fx06: id of the text layer whose stroke the cursor is hovering (for
+  /// the hover highlight + grab cursor), or null. Text-layer analogue of
+  /// `hoverIdx`.
+  let hoverTextId = $state<number | null>(null);
   /// 7tp5: cursor world coordinates for the on-canvas HUD. Updated on
   /// every pointermove (regardless of modal mode); cleared on
   /// pointerleave. null until the first import + first move.
@@ -616,8 +622,15 @@
         return;
       }
     }
-    const idx = pixelHit(cx, cy);
+    // fx06: text-stroke hover takes precedence (text is drawn on top);
+    // when over a glyph stroke we suppress the geometry hover and flip
+    // the cursor to a grab affordance so the drag is discoverable.
+    const tdata = pxToData(cx, cy);
+    const textHover = tdata ? textHitAtData(tdata.x, tdata.y) : null;
+    const idx = textHover ? null : pixelHit(cx, cy);
     if (idx !== hoverIdx) hoverIdx = idx;
+    const newHoverText = textHover ? textHover.id : null;
+    if (newHoverText !== hoverTextId) hoverTextId = newHoverText;
     // rt1.10: tab-placement mode — project cursor to the op's
     // closest source contour and stage a ghost tab. The ghost only
     // renders when the projection is within ~6 px of the cursor
@@ -636,7 +649,13 @@
       ghostTab = null;
     }
     const baseCursor = tabPlacementActive ? 'crosshair' : 'default';
-    canvas.style.cursor = idx == null ? baseCursor : tabPlacementActive ? 'cell' : 'pointer';
+    canvas.style.cursor = textHover
+      ? 'grab'
+      : idx == null
+        ? baseCursor
+        : tabPlacementActive
+          ? 'cell'
+          : 'pointer';
   }
 
   function onPointerUp(e: PointerEvent) {
@@ -778,6 +797,7 @@
   }
   function onPointerLeave() {
     hoverIdx = null;
+    hoverTextId = null;
     ghostTab = null;
     cursorXY = null;
     // bwt7: a finger dragged off the canvas can't complete a hold.
@@ -1207,15 +1227,18 @@
       }
     }
 
-    // rt1.12 (ywf9): grab the SELECTED text layer to drag its origin.
-    // Restricted to the already-selected layer (selected via the sidebar
-    // text list, like the approach-marker drag needs its op selected) so
-    // a text bbox overlapping imported geometry doesn't hijack object
+    // fx06: click a text glyph stroke to select that layer AND start
+    // dragging its origin in one gesture (precise stroke hit-test, so the
+    // mostly-whitespace bbox doesn't hijack clicks meant for geometry).
+    // Text selection is mutually exclusive with the object/fixture
     // selection. Same mode gating as the raster grab.
-    if (!approachPickActive && !tabPlacementActive && project.selectedTextLayerId != null) {
+    if (!approachPickActive && !tabPlacementActive) {
       const data = pxToData(cx, cy);
-      const hit = data ? selectedTextAtData(data.x, data.y) : null;
+      const hit = data ? textHitAtData(data.x, data.y) : null;
       if (data && hit) {
+        project.selectedTextLayerId = hit.id;
+        project.clearSelection();
+        project.selectFixture(null);
         textDrag = {
           id: hit.id,
           pointerId: e.pointerId,
@@ -1249,8 +1272,14 @@
     const fixId = fixtureHit(cx, cy);
     if (fixId != null) {
       project.selectFixture(fixId);
+      project.selectedTextLayerId = null; // fx06: keep selection single-domain
       return;
     }
+
+    // fx06: a left-click on geometry / empty space (not consumed by a
+    // text-stroke hit above) deselects any active text layer, so text
+    // and object selection stay mutually exclusive.
+    project.selectedTextLayerId = null;
 
     const idx = pixelHit(cx, cy);
     // Map segment index → its 1-based object id (or null for empty
@@ -1478,6 +1507,19 @@
     // rt1.12 (j7b4): faint raster-engrave placement images, painted
     // first so selection halos / chrome layer over them.
     drawRasterPlacements(ctx, project2, scale);
+
+    // fx06: hover highlight for the text layer under the cursor (the
+    // selected-layer highlight stays on the bg in drawTextPreview). Drawn
+    // on the overlay so frequent hover repaints don't touch the bg layer.
+    if (hoverTextId != null && hoverTextId !== project.selectedTextLayerId) {
+      const segs = previewSegmentsFor(hoverTextId);
+      if (segs && segs.length > 0) {
+        const hoverColor = themeVar('--accent-strong', '#6e9ce6');
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = hoverColor;
+        for (const seg of segs) drawSegment(ctx, seg, project2);
+      }
+    }
 
     if (hasGeom && data) {
       const hoverColor = themeVar('--accent-strong', '#6e9ce6');
@@ -1812,20 +1854,21 @@
     return placementsBBox(rects);
   }
 
-  /// Whether a data-space point lands within the selected text layer's
-  /// rendered bbox (+ a small screen-constant tolerance) — the hit-test
-  /// for click-drag repositioning. Returns the layer when hit, else null.
-  function selectedTextAtData(x: number, y: number): TextLayer | null {
-    const id = project.selectedTextLayerId;
-    if (id == null) return null;
-    const layer = project.textLayers.find((l) => l.id === id);
-    if (!layer) return null;
-    const bb = segsBBox(previewSegmentsFor(id) ?? []);
-    if (!bb) return null;
-    const tol = lastTransform ? 4 / Math.max(Math.abs(lastTransform.scale), 1e-6) : 0;
-    const inside =
-      x >= bb.minX - tol && x <= bb.maxX + tol && y >= bb.minY - tol && y <= bb.maxY + tol;
-    return inside ? layer : null;
+  /// fx06: the text layer whose glyph STROKE is under a data-space point
+  /// (within the screen-constant pixel tolerance), or null. Uses the
+  /// rendered preview segments so the mostly-whitespace bbox doesn't
+  /// steal clicks; topmost layer wins a tie. Drives both hover and
+  /// click-select / drag.
+  function textHitAtData(x: number, y: number): TextLayer | null {
+    if (!lastTransform || project.textLayers.length === 0) return null;
+    const tol = HIT_PIXEL_TOL / Math.max(Math.abs(lastTransform.scale), 1e-6);
+    const hit = nearestTextLayer(
+      project.textLayers.map((l) => ({ id: l.id, segments: previewSegmentsFor(l.id) ?? [] })),
+      x,
+      y,
+      tol,
+    );
+    return hit ? (project.textLayers.find((l) => l.id === hit.id) ?? null) : null;
   }
 
   /// Paint the faint placed raster images (+ selection / placement

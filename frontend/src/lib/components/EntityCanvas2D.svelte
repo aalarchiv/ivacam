@@ -144,12 +144,21 @@
   // tab markers, box-select rect, selected-text-layer highlight, OSnap
   // glyphs. Hover and selection only retouch this layer.
 
+  // Only the SET of text layers (add / remove) changes what the heavy
+  // background repaint draws — glyph segments are origin-baked and cached,
+  // so dragging a text origin hands `textLayers` a new array reference
+  // without changing any drawn output (the cache stays stale until the
+  // debounced render bumps `previewVersion`). Keying on the id set instead
+  // of the raw array stops a full imported-geometry repaint on every
+  // pointermove of a text-origin drag (k9cz).
+  const textLayerIdKey = $derived(project.textLayers.map((l) => l.id).join(','));
+
   $effect(() => {
     void project.geometryView;
     void project.visibleLayers;
     void project.regionsVisible;
     void project.generated;
-    void project.textLayers;
+    void textLayerIdKey;
     void project.selectedTextLayerId;
     void previewVersion.v;
     void project.machine.workArea;

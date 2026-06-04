@@ -615,11 +615,20 @@
   // tears down the imported-geometry buffer, and toggling a layer no
   // longer teardowns the toolpath buffer.
 
+  // Only the SET of text layers (add / remove) changes what this rebuild
+  // draws — glyph segments are origin-baked + cached and read by id, so a
+  // text-origin drag hands `textLayers` a new array reference without
+  // changing any output (the cache stays stale until the debounced render
+  // bumps `previewVersion`). Keying on the id set instead of the raw array
+  // stops a full imported-geometry teardown/rebuild on every pointermove
+  // of a text-origin drag (k9cz).
+  const textLayerIdKey = $derived(project.textLayers.map((l) => l.id).join(','));
+
   // Imported drawing + text-layer previews.
   $effect(() => {
     void project.transformedImport;
     void project.visibleLayers;
-    void project.textLayers;
+    void textLayerIdKey;
     void previewVersion.v;
     void project.generated; // affects fade for non-selected imports
     void project.settings.previewMode; // affects contrast-against-stock color

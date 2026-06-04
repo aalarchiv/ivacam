@@ -1808,7 +1808,10 @@
     if (project.textLayers.length > 0) {
       const previewC = cssColor('--accent', 0x4a8df0);
       for (const layer of project.textLayers) {
-        const segs = previewSegmentsFor(layer.id);
+        // Segments come back translated to the layer's current origin, so
+        // the 3D position is correct without a re-render; refreshed once at
+        // drag-end via forceTextPreviewRefresh (no per-move GPU rebuild). (k9cz)
+        const segs = previewSegmentsFor(layer.id, layer.origin);
         if (!segs || segs.length === 0) continue;
         for (const seg of segs) {
           const points = tessellate(seg);

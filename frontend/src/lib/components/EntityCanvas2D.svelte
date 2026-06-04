@@ -33,7 +33,12 @@
   } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { computeFootprint } from '../sim/driver';
-  import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
+  import {
+    previewSegmentsFor,
+    previewVersion,
+    requestPreview,
+    forceTextPreviewRefresh,
+  } from '../state/text_preview.svelte';
   import { brightnessToRgba } from '../state/raster_preview';
   import type { ReliefSource, TextLayer } from '../state/project-types';
 
@@ -144,21 +149,15 @@
   // tab markers, box-select rect, selected-text-layer highlight, OSnap
   // glyphs. Hover and selection only retouch this layer.
 
-  // Only the SET of text layers (add / remove) changes what the heavy
-  // background repaint draws — glyph segments are origin-baked and cached,
-  // so dragging a text origin hands `textLayers` a new array reference
-  // without changing any drawn output (the cache stays stale until the
-  // debounced render bumps `previewVersion`). Keying on the id set instead
-  // of the raw array stops a full imported-geometry repaint on every
-  // pointermove of a text-origin drag (k9cz).
-  const textLayerIdKey = $derived(project.textLayers.map((l) => l.id).join(','));
-
   $effect(() => {
     void project.geometryView;
     void project.visibleLayers;
     void project.regionsVisible;
     void project.generated;
-    void textLayerIdKey;
+    // Repaints on origin too (drag): cheap now that an origin change no
+    // longer triggers a backend render — drawTextPreview just re-strokes
+    // the cached glyphs at the live origin via a draw-time translation (k9cz).
+    void project.textLayers;
     void project.selectedTextLayerId;
     void previewVersion.v;
     void project.machine.workArea;
@@ -707,6 +706,10 @@
     if (textDrag && e.pointerId === textDrag.pointerId) {
       textDrag = null;
       canvas.style.cursor = 'default';
+      // The 3D scene doesn't track text origin per-frame (it would mean a
+      // GPU rebuild on every move); nudge it once so it picks up the final
+      // dragged position via the draw-time translation (k9cz).
+      forceTextPreviewRefresh();
       try {
         canvas.releasePointerCapture(e.pointerId);
       } catch {}
@@ -1521,7 +1524,8 @@
     // selected-layer highlight stays on the bg in drawTextPreview). Drawn
     // on the overlay so frequent hover repaints don't touch the bg layer.
     if (hoverTextId != null && hoverTextId !== project.selectedTextLayerId) {
-      const segs = previewSegmentsFor(hoverTextId);
+      const hoverLayer = project.textLayers.find((l) => l.id === hoverTextId);
+      const segs = hoverLayer ? previewSegmentsFor(hoverTextId, hoverLayer.origin) : null;
       if (segs && segs.length > 0) {
         const hoverColor = themeVar('--accent-strong', '#6e9ce6');
         ctx.lineWidth = 1.6;
@@ -1852,7 +1856,7 @@
       });
     }
     for (const layer of project.textLayers) {
-      const bb = segsBBox(previewSegmentsFor(layer.id) ?? []);
+      const bb = segsBBox(previewSegmentsFor(layer.id, layer.origin) ?? []);
       if (bb) rects.push(bb);
     }
     if (rects.length === 0) return null;
@@ -1872,7 +1876,10 @@
     if (!lastTransform || project.textLayers.length === 0) return null;
     const tol = HIT_PIXEL_TOL / Math.max(Math.abs(lastTransform.scale), 1e-6);
     const hit = nearestTextLayer(
-      project.textLayers.map((l) => ({ id: l.id, segments: previewSegmentsFor(l.id) ?? [] })),
+      project.textLayers.map((l) => ({
+        id: l.id,
+        segments: previewSegmentsFor(l.id, l.origin) ?? [],
+      })),
       x,
       y,
       tol,
@@ -1927,7 +1934,9 @@
   ) {
     const idleColor = themeVar('--obj-assigned-other', '#2a6f3b');
     for (const layer of project.textLayers) {
-      const segs = previewSegmentsFor(layer.id);
+      // Segments come back translated to the layer's current origin, so a
+      // drag repositions the glyphs with no re-render (k9cz).
+      const segs = previewSegmentsFor(layer.id, layer.origin);
       if (!segs || segs.length === 0) continue;
       const isActive = project.selectedTextLayerId === layer.id;
       const baseWidth = isActive ? 1.8 : 1.4;

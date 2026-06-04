@@ -26,6 +26,11 @@ interface CacheEntry {
   /// Hash of the inputs that produced these segments.
   key: string;
   segments: Segment[];
+  /// The layer origin these segments were rendered at. Origin is NOT part
+  /// of the hash (an origin change is a pure translation, not a reshape),
+  /// so a drag never re-renders; consumers translate by
+  /// `currentOrigin - renderOrigin` instead. See `previewRenderOrigin`.
+  renderOrigin: { x: number; y: number };
 }
 
 const cache: Map<number, CacheEntry> = new Map();
@@ -45,12 +50,14 @@ function hashLayer(layer: TextLayer): string {
     layer.fontSource.kind === 'bundled'
       ? `b:${layer.fontSource.path}`
       : `u:${layer.fontSource.filename}:${layer.fontSource.bytes_b64.length}`;
+  // NOTE: origin is deliberately excluded — it only translates the result,
+  // so dragging the origin must not invalidate the cache / trigger a render
+  // (each render re-marshals the whole font; k9cz). Consumers apply the
+  // origin delta at draw time.
   return [
     layer.text,
     layer.kind,
     layer.sizeMm,
-    layer.origin.x,
-    layer.origin.y,
     layer.rotationDeg,
     layer.letterSpacingMm,
     layer.lineSpacingMm,
@@ -117,19 +124,20 @@ export function requestPreview(layer: TextLayer): void {
   }
   const timer = setTimeout(() => {
     inflight.delete(layer.id);
-    // Build the wire payload (which atob-decodes the WHOLE font into a
-    // number[]) only when the debounce actually fires — never per
-    // scheduling call. A text-origin drag re-schedules this on every
-    // pointermove with a fresh key (origin changes), so decoding here
-    // instead of up-front keeps the drag from re-decoding the font on
-    // every move (k9cz). `layer` is the last-scheduled snapshot, which
-    // matches `key`.
+    // Build the wire payload (which atob-decodes the WHOLE 700 KB+ font
+    // into a number[] and marshals it across the worker / IPC boundary)
+    // only when the debounce actually fires. Origin is out of the hash, so
+    // a drag no longer reaches here at all — this runs only on a real
+    // text / size / font change (k9cz).
     const wire = toWire(layer);
+    // The origin baked into these segments. Consumers translate by
+    // (currentOrigin - renderOrigin), so an origin drag needs no re-render.
+    const renderOrigin = { x: layer.origin.x, y: layer.origin.y };
     const client = defaultClient();
     void client
       .renderTextLayer(wire as never)
       .then((resp) => {
-        cache.set(layer.id, { key, segments: resp.segments });
+        cache.set(layer.id, { key, segments: resp.segments, renderOrigin });
         bumpVersion();
       })
       .catch(() => {
@@ -146,8 +154,34 @@ export function requestPreview(layer: TextLayer): void {
 /// Latest cached segments for `layer`, or null if no render has
 /// resolved yet. Callers should call `requestPreview(layer)` separately
 /// to keep the cache warm.
-export function previewSegmentsFor(layerId: number): Segment[] | null {
-  return cache.get(layerId)?.segments ?? null;
+/// Cached segments for `layerId`, translated to `origin`, or null if no
+/// render has resolved yet. The cache holds glyphs at the origin they were
+/// rendered at; origin is excluded from the render hash (it's a pure
+/// translation), so a drag never re-renders — every consumer (draw, 3D,
+/// hit-test, bbox) passes the layer's CURRENT origin and gets correctly
+/// positioned segments. Translating start/end suffices: draw + tessellate
+/// recompute arc centers from start/end, and the hit-test uses chords. (k9cz)
+export function previewSegmentsFor(
+  layerId: number,
+  origin: { x: number; y: number },
+): Segment[] | null {
+  const entry = cache.get(layerId);
+  if (!entry) return null;
+  const dx = origin.x - entry.renderOrigin.x;
+  const dy = origin.y - entry.renderOrigin.y;
+  if (dx === 0 && dy === 0) return entry.segments;
+  return entry.segments.map((s) => ({
+    ...s,
+    start: { ...s.start, x: s.start.x + dx, y: s.start.y + dy },
+    end: { ...s.end, x: s.end.x + dx, y: s.end.y + dy },
+  }));
+}
+
+/// Force reactive readers (3D scene) to re-derive without a re-render —
+/// e.g. at the end of an origin drag, so views that don't track origin
+/// per-frame pick up the final position via the translation above.
+export function forceTextPreviewRefresh(): void {
+  bumpVersion();
 }
 
 /// Drop the cache + cancel pending timers for `layerId`. Call when the

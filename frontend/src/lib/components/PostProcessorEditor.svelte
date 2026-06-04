@@ -230,7 +230,7 @@
               <tr><td><code>&lt;n&gt;</code></td><td>tool name</td></tr>
               <tr><td><code>&lt;d&gt;</code></td><td>tool diameter</td></tr>
               <tr><td><code>&lt;f&gt;</code></td><td>feed (mm/min)</td></tr>
-              <tr><td><code>&lt;s&gt;</code></td><td>spindle (rpm)</td></tr>
+              <tr><td><code>&lt;s&gt;</code></td><td>spindle (RPM)</td></tr>
               <tr><td><code>&lt;op&gt;</code></td><td>current operation name</td></tr>
               <tr
                 ><td><code>&lt;tools&gt;</code></td><td>full tool-library listing (one per line)</td
@@ -467,7 +467,7 @@
         <div class="preview-head">
           Live preview
           <span class="preview-sub"
-            >synthetic 2-pass toolpath: header → toolchange → move + plunge + arc + retract → footer
+            >synthetic 2-pass toolpath: header → tool change → move + plunge + arc + retract → footer
             · re-renders on every edit</span
           >
         </div>

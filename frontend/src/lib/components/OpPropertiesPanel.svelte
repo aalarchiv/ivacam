@@ -196,7 +196,7 @@
     </label>
     <label
       class="row"
-      title="Rendered as a gcode comment immediately before the M0 stop. Shown on most controllers' operator console / pendant — write what the operator should do (e.g. 'Swap to 1/8 endmill', 'Flip the workpiece')."
+      title="Rendered as a G-code comment immediately before the M0 stop. Shown on most controllers' operator console / pendant — write what the operator should do (e.g. 'Swap to 1/8 endmill', 'Flip the workpiece')."
     >
       <span>Message</span>
       <input
@@ -279,9 +279,9 @@
     </label>
     <label
       class="row"
-      title="Probe feedrate (mm / min). 50–200 mm/min is typical for a touch-trigger probe — slow enough to trip repeatably."
+      title="Probe feed rate (mm/min). 50–200 mm/min is typical for a touch-trigger probe — slow enough to trip repeatably."
     >
-      <span>Feed (mm / min)</span>
+      <span>Feed (mm/min)</span>
       <input
         type="number"
         step="10"
@@ -384,7 +384,7 @@
     </label>
     <label
       class="row"
-      title="Wrapped with `--- … ---` and emitted as a gcode comment at this slot. No controller motion."
+      title="Wrapped with `--- … ---` and emitted as a G-code comment at this slot. No controller motion."
     >
       <span>Label</span>
       <input
@@ -554,7 +554,7 @@
       <label
         class="row"
         title={op.kind === 'pocket'
-          ? 'Optional finish tool. When different from the rough tool, the pipeline runs the bulk cascade with the rough tool, emits a T<n> M6 toolchange, then walks the wall ring with this smaller / sharper finish tool at its finish-set feed/speed. Empty = single-tool (the rough tool also defines the wall).'
+          ? 'Optional finish tool. When different from the rough tool, the pipeline runs the bulk cascade with the rough tool, emits a T<n> M6 tool change, then walks the wall ring with this smaller / sharper finish tool at its finish-set feed/speed. Empty = single-tool (the rough tool also defines the wall).'
           : 'Countersink chamfer cutter. Used only when Chamfer width is set below — after the drill cycle the pipeline emits a toolchange to this V-bit, then walks the hole rim at the chamfer depth. Empty = chamfer with the drill tool itself.'}
       >
         <span>Finish tool</span>
@@ -1043,7 +1043,7 @@
             {#if op.plunge.radius_mm === null}
               <div
                 class="row"
-                title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at gcode time."
+                title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at G-code time."
               >
                 <span>Helix radius</span>
                 {#if helixPreview?.radius_mm != null}

@@ -175,7 +175,7 @@
             {#if ch.disabled}
               <span
                 class="chapter-tag"
-                title="This op is disabled — commented-out below and hidden in 3D. Toggle the checkbox in the operations list to re-enable. Click Generate to bake the change into the gcode."
+                title="This op is disabled — commented-out below and hidden in 3D. Toggle the checkbox in the operations list to re-enable. Click Generate to bake the change into the G-code."
                 >silenced</span
               >
             {/if}

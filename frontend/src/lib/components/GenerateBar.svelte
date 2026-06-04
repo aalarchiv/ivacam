@@ -633,7 +633,7 @@
           <details class="row severity-{sev}">
             <summary>
               <span class="dot" aria-hidden="true"></span>
-              <span class="source" title="Surfaced by the simulator after gcode generation."
+              <span class="source" title="Surfaced by the simulator after G-code generation."
                 >sim</span
               >
               <span class="kind">{w.kind}</span>
@@ -665,7 +665,7 @@
               <span class="dot" aria-hidden="true"></span>
               <span
                 class="source pipeline"
-                title="Surfaced by the CAM pipeline during gcode generation.">pipeline</span
+                title="Surfaced by the CAM pipeline during G-code generation.">pipeline</span
               >
               <span class="kind">{pw.kind}</span>
               <span class="msg">{pw.message}</span>

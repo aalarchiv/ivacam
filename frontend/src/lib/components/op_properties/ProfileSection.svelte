@@ -36,7 +36,7 @@
   <legend>Leads</legend>
   <label
     class="row"
-    title="Lead-IN style. Off: rapid + plunge directly to the contour start. Straight: rapid to a point perpendicular to the start, then linear into the contour. Arc: tangent quarter-arc roll-on so the cutter eases into the cut without dwelling at the start."
+    title="Lead-in style. Off: rapid + plunge directly to the contour start. Straight: rapid to a point perpendicular to the start, then linear into the contour. Arc: tangent quarter-arc roll-on so the cutter eases into the cut without dwelling at the start."
   >
     <span>Lead in</span>
     <select
@@ -81,7 +81,7 @@
   {/if}
   <label
     class="row"
-    title="Lead-OUT style. Mirror of lead-in: how the cutter departs the contour at the END of the cut path. Arc gives a tangent roll-off; Straight a perpendicular exit; Off ends the cut at the contour end with a vertical retract."
+    title="Lead-out style. Mirror of lead-in: how the cutter departs the contour at the END of the cut path. Arc gives a tangent roll-off; Straight a perpendicular exit; Off ends the cut at the contour end with a vertical retract."
   >
     <span>Lead out</span>
     <select

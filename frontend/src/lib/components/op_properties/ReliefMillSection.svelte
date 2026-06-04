@@ -230,7 +230,7 @@
       </select>
     </div>
   </label>
-  <label class="row" title="Point spacing along each scanline. Finer = smoother path, more gcode.">
+  <label class="row" title="Point spacing along each scanline. Finer = smoother path, more G-code.">
     <span>Step</span>
     <div class="num-cell">
       <input

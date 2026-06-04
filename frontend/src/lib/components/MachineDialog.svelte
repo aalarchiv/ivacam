@@ -276,7 +276,7 @@
         </select>
       </label>
       <label
-        title="Primary mode — drives the gcode emitter. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL. Plasma: torch with a pierce/cut-height entry sequence. Adjust 'Capabilities' below if the machine can do more than this primary mode."
+        title="Primary mode — drives the G-code emitter. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL. Plasma: torch with a pierce/cut-height entry sequence. Adjust 'Capabilities' below if the machine can do more than this primary mode."
       >
         Mode
         <select bind:value={draft.mode}>
@@ -463,7 +463,7 @@
       </label>
       <label
         class="check"
-        title="Plot-mode Z: collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."
+        title="Plot-mode Z: collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in G-code are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."
       >
         <input type="checkbox" bind:checked={draft.plotModeZ} />
         Plot-mode Z (single-pass, binary up/down)
@@ -770,7 +770,7 @@
         >
       </label>
       <label
-        title="Spindle-start dwell inserted into the M6 toolchange envelope after M3 S<rpm>. Lets the spindle reach commanded RPM before the next cut. Stacks with the per-tool ToolEntry.pause. Empty = 0.5 s default."
+        title="Spindle-start dwell inserted into the M6 tool-change envelope after M3 S<rpm>. Lets the spindle reach commanded RPM before the next cut. Stacks with the per-tool ToolEntry.pause. Empty = 0.5 s default."
       >
         Spindle start dwell
         <span class="field"

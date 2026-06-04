@@ -751,7 +751,7 @@
                     min="0"
                     placeholder="—"
                     value={tool.lengthMm ?? ''}
-                    title="Overall / usable tool length (mm), tip to where the shank enters the collet. Display + 3D-preview only — it does NOT change the gcode (reach is driven by flute length + stickout + holder). Sets the preview tool's total height. Empty = diameter-derived heuristic."
+                    title="Overall / usable tool length (mm), tip to where the shank enters the collet. Display + 3D-preview only — it does NOT change the G-code (reach is driven by flute length + stickout + holder). Sets the preview tool's total height. Empty = diameter-derived heuristic."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'lengthMm', v === '' ? undefined : parseFloat(v));

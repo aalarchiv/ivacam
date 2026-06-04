@@ -139,6 +139,13 @@ Deploy the built `dist/` behind a normal static host — never expose the
 Vite **dev** server publicly (its `server.fs.allow` opens the repo for
 local convenience).
 
+Copy-paste server configs (with the `.wasm` MIME type, immutable asset
+caching, and an `index.html` fallback already set) live in
+[`deploy/`](./deploy/): [`Caddyfile`](./deploy/Caddyfile),
+[`nginx.conf`](./deploy/nginx.conf), and a [`README`](./deploy/README.md)
+covering the hard requirements (serve `.wasm` as `application/wasm`, serve
+from the domain root, no COOP/COEP needed, HTTPS optional).
+
 Known limitations of this mode (track before leaning on it as the
 headline trial path):
 

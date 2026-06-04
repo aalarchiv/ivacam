@@ -1,0 +1,46 @@
+# wiaConstructor — static web build (frontend/dist/)
+#
+# The production web build is fully static and serverless: it runs the
+# CAM engine in-browser via WebAssembly, so there is NO API server to
+# deploy. Just serve the dist/ tree.
+#
+# Build + run:
+#   cd frontend && pnpm build            # → frontend/dist/
+#   caddy run --config deploy/Caddyfile  # from the repo root
+#
+# Caddy auto-provisions HTTPS for a real domain (ports 80 + 443 must be
+# reachable from the internet and DNS must point here). HTTPS is
+# recommended — the About / error "copy to clipboard" buttons need a
+# secure context — but the app otherwise runs fine over plain HTTP.
+#
+# Adjust the site address and `root` path to your deployment. For a
+# quick local/LAN test without a cert, use the `:8080` block at the end.
+
+cnc.example.com {
+	root * /srv/wiaconstructor/dist
+	encode zstd gzip
+
+	# No client-side router — navigation is query-string based
+	# (?api=wasm, ?sample=…). Fall back to the app shell so a stray deep
+	# link or a refresh loads the app instead of 404ing.
+	try_files {path} /index.html
+	file_server
+
+	# Content-hashed bundles (incl. the .wasm) never change → cache hard.
+	# Caddy already serves *.wasm as application/wasm; no MIME tweak needed.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	# Always re-validate the entry point so a new deploy is picked up.
+	@html path / /index.html
+	header @html Cache-Control "no-cache"
+}
+
+# ── Local / LAN test: `caddy run --config deploy/Caddyfile`, then open
+#    http://localhost:8080 — uncomment to use.
+# :8080 {
+# 	root * /srv/wiaconstructor/dist
+# 	encode zstd gzip
+# 	try_files {path} /index.html
+# 	file_server
+# }

@@ -80,7 +80,7 @@
     </label>
     <label
       class="row"
-      title="Inlay plug clearance (rt1.7). Shrinks the source region inward by this amount before the V-Carve pass, so the plug ends up that much smaller per side than the pocket. Pocket side leaves this empty / 0; plug side typically uses 0.05–0.2 mm. Set both halves to the SAME value for a proper wedge fit."
+      title="Inlay plug clearance. Shrinks the source region inward by this amount before the V-Carve pass, so the plug ends up that much smaller per side than the pocket. Pocket side leaves this empty / 0; plug side typically uses 0.05–0.2 mm. Set both halves to the SAME value for a proper wedge fit."
     >
       <span>Source inset</span>
       <div class="num-cell">
@@ -100,7 +100,7 @@
     </label>
     <label
       class="row"
-      title="rt1.7: duplicates this V-Carve op as an inlay plug. The new op gets a 0.1 mm source inset by default — the plug is 0.1 mm smaller per side than the pocket. Cut the pocket on your base material; cut the plug on contrasting stock (flipped); glue together. Adjust 'Source inset' on either side to match — both halves need the SAME gap value for a proper wedge fit."
+      title="Duplicates this V-Carve op as an inlay plug. The new op gets a 0.1 mm source inset by default — the plug is 0.1 mm smaller per side than the pocket. Cut the pocket on your base material; cut the plug on contrasting stock (flipped); glue together. Adjust 'Source inset' on either side to match — both halves need the SAME gap value for a proper wedge fit."
     >
       <span>Inlay plug</span>
       <button

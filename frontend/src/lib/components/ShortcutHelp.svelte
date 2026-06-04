@@ -28,7 +28,7 @@
 
     <div class="body">
       <section>
-        <h3>2D Canvas</h3>
+        <h3>2D canvas</h3>
         <dl>
           <dt><kbd>drag</kbd></dt>
           <dd>Pan view</dd>
@@ -46,7 +46,7 @@
       </section>
 
       <section>
-        <h3>3D View</h3>
+        <h3>3D view</h3>
         <dl>
           <dt><kbd>left-drag</kbd></dt>
           <dd>Orbit</dd>

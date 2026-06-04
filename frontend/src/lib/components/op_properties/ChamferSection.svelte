@@ -41,7 +41,7 @@
   </label>
   <label
     class="row"
-    title="Cut the chamfer twice — once at the rough feed (cleanup) and once at the tool's finish-set feed (rt1.27) for surface quality."
+    title="Cut the chamfer twice — once at the rough feed (cleanup) and once at the tool's finish-set feed for surface quality."
   >
     <span>Finish pass</span>
     <input

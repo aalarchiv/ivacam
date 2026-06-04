@@ -225,7 +225,7 @@
       <summary>Zigzag direction</summary>
       <label
         class="row"
-        title="rt1.9: rotates the raster sweep. 0° = horizontal sweeps (default); 90° = vertical; 45° = diagonal. Long-thin pockets cut faster + cleaner when the sweep runs ALONG the long axis."
+        title="Rotates the raster sweep. 0° = horizontal sweeps (default); 90° = vertical; 45° = diagonal. Long-thin pockets cut faster + cleaner when the sweep runs ALONG the long axis."
       >
         <span>Angle</span>
         <div class="range-cell">

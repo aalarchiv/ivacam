@@ -111,7 +111,7 @@
   </label>
   <label
     class="row"
-    title="Stufenfase (rt1.20): after drilling each hole, the cutter walks a constant-Z revolution at the rim to break the edge. Depth is computed from the cutter's V-bit tip angle. Set Finish tool below to swap to a dedicated chamfer cutter (drill, then T<n> M6, then chamfer). Empty / 0 = no countersink."
+    title="Countersink: after drilling each hole, the cutter walks a constant-Z revolution at the rim to break the edge. Depth is computed from the cutter's V-bit tip angle. Set Finish tool below to swap to a dedicated chamfer cutter (drill, then T<n> M6, then chamfer). Empty / 0 = no countersink."
   >
     <span>Chamfer width</span>
     <div class="num-cell">
@@ -131,7 +131,7 @@
   </label>
   <label
     class="row"
-    title="Spot pre-pass (r2af): before the main drill, the machine spots each hole with a shallow centre mark using a stiffer tool, so a twist drill doesn't walk on hard or polished stock. Drill, then T<n> M6 to the spot tool, spot every hole, then back to the drill."
+    title="Spot pre-pass: before the main drill, the machine spots each hole with a shallow centre mark using a stiffer tool, so a twist drill doesn't walk on hard or polished stock. Drill, then T<n> M6 to the spot tool, spot every hole, then back to the drill."
   >
     <span>Spot pre-pass</span>
     <input

@@ -256,7 +256,7 @@
 
     <div class="grid">
       <label
-        title="Free-text identifier for this machine setup. Shown in the dialog header + persisted into .wiac-machine.json save files. (h0tx)"
+        title="Free-text identifier for this machine setup. Shown in the dialog header + persisted into .wiac-machine.json save files."
       >
         Name
         <input
@@ -463,7 +463,7 @@
       </label>
       <label
         class="check"
-        title="Plot-mode Z (rt1.35): collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."
+        title="Plot-mode Z: collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in gcode are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."
       >
         <input type="checkbox" bind:checked={draft.plotModeZ} />
         Plot-mode Z (single-pass, binary up/down)
@@ -530,7 +530,7 @@
         </span>
       </label>
 
-      <div class="section-title">Post-processor profile (rt1.15)</div>
+      <div class="section-title">Post-processor profile</div>
       {#if draft.mode === 'drag'}
         <p class="hpgl-note">
           Drag mode emits HPGL plotter commands, not G-code. The post-processor profile (templates,
@@ -701,7 +701,7 @@
 
       <div class="section-title">Spindle clamps &amp; warmup</div>
       <label
-        title="3nnj: lower spindle-RPM clamp (M3 S<rpm>). Tool / op RPMs below this clamp UP to the min and emit a 'spindle_speed_clamped_below_min' warning. Empty = no floor (back-compat default)."
+        title="Lower spindle-RPM clamp (M3 S<rpm>). Tool / op RPMs below this clamp UP to the min and emit a 'spindle_speed_clamped_below_min' warning. Empty = no floor (back-compat default)."
       >
         Spindle RPM min
         <span class="field"
@@ -724,7 +724,7 @@
         >
       </label>
       <label
-        title="3nnj: upper spindle-RPM clamp. Tool / op RPMs above this clamp DOWN to the max and emit a 'spindle_speed_clamped_above_max' warning. Empty = no ceiling (back-compat default)."
+        title="Upper spindle-RPM clamp. Tool / op RPMs above this clamp DOWN to the max and emit a 'spindle_speed_clamped_above_max' warning. Empty = no ceiling (back-compat default)."
       >
         Spindle RPM max
         <span class="field"
@@ -747,7 +747,7 @@
         >
       </label>
       <label
-        title="jcmx: upper feed clamp. Cutting / plunge feeds above this clamp DOWN to the max and emit a 'feed_clamped_above_max' warning, so an out-of-range feed can't reach the controller. Empty = no ceiling (back-compat default)."
+        title="Upper feed clamp. Cutting / plunge feeds above this clamp DOWN to the max and emit a 'feed_clamped_above_max' warning, so an out-of-range feed can't reach the controller. Empty = no ceiling (back-compat default)."
       >
         Max feed
         <span class="field"
@@ -817,7 +817,7 @@
       </label>
       <label
         class="check"
-        title="syol: when on, the program_end footer emits G53 G0 X0 Y0 — retract to machine home after the safe-Z lift, before spindle-off and M30. When off, falls back to G0 X0 Y0 in the current WCS (work zero) and the optional Park XY below applies."
+        title="When on, the program_end footer emits G53 G0 X0 Y0 — retract to machine home after the safe-Z lift, before spindle-off and M30. When off, falls back to G0 X0 Y0 in the current WCS (work zero) and the optional Park XY below applies."
       >
         <input type="checkbox" bind:checked={draft.parkAtHome} />
         Park at machine home (G53)

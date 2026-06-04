@@ -554,8 +554,8 @@
       <label
         class="row"
         title={op.kind === 'pocket'
-          ? 'Optional finish tool (rt1.33). When different from the rough tool, the pipeline runs the bulk cascade with the rough tool, emits a T<n> M6 toolchange, then walks the wall ring with this smaller / sharper finish tool at its finish-set feed/speed. Empty = single-tool (the rough tool also defines the wall).'
-          : 'Stufenfase chamfer cutter (rt1.20). Used only when Chamfer width is set below — after the drill cycle the pipeline emits a toolchange to this V-bit, then walks the hole rim at the chamfer depth. Empty = chamfer with the drill tool itself.'}
+          ? 'Optional finish tool. When different from the rough tool, the pipeline runs the bulk cascade with the rough tool, emits a T<n> M6 toolchange, then walks the wall ring with this smaller / sharper finish tool at its finish-set feed/speed. Empty = single-tool (the rough tool also defines the wall).'
+          : 'Countersink chamfer cutter. Used only when Chamfer width is set below — after the drill cycle the pipeline emits a toolchange to this V-bit, then walks the hole rim at the chamfer depth. Empty = chamfer with the drill tool itself.'}
       >
         <span>Finish tool</span>
         <div class="tool-cell">
@@ -804,7 +804,7 @@
           project.pickMode?.kind === 'approach-point' && project.pickMode.opId === op.id}
         <div
           class="row"
-          title="Anfahrpunkt (rt1.26): user-picked XY where the cutter enters each closed ring. Each closed offset's start vertex is rotated to the segment closest to this point — plunge/lead-in then happens there instead of an auto-picked vertex. Empty = auto."
+          title="Approach point: user-picked XY where the cutter enters each closed ring. Each closed offset's start vertex is rotated to the segment closest to this point — plunge/lead-in then happens there instead of an auto-picked vertex. Empty = auto."
         >
           <span>Approach point</span>
           <div class="num-cell num-cell-pair">

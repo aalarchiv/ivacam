@@ -781,7 +781,7 @@
                     min="0"
                     placeholder="—"
                     value={tool.stickoutLengthMm ?? ''}
-                    title="q0kc: free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models reach-extension tooling where the collet doesn't grip right above the flutes. Empty / 0 = legacy behavior (collet sits directly on flutes)."
+                    title="Free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models reach-extension tooling where the collet doesn't grip right above the flutes. Empty / 0 = legacy behavior (collet sits directly on flutes)."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'stickoutLengthMm', v === '' ? undefined : parseFloat(v));
@@ -1103,7 +1103,7 @@
                     rows="2"
                     value={tool.comment ?? ''}
                     placeholder="Notes about this tool — material, vendor, sharpening date, etc. Appears as the tooltip on the tool dropdown in op properties."
-                    title="Free-text description (rt1.31). Doesn't affect any pipeline output."
+                    title="Free-text description. Doesn't affect any pipeline output."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLTextAreaElement).value;
                       updateField(i, 'comment', v === '' ? undefined : v);
@@ -1117,7 +1117,7 @@
                     step="0.01"
                     placeholder="—"
                     value={tool.zShiftMm ?? ''}
-                    title="Per-tool Z origin offset (rt1.30). For machines without auto tool-length probing. Pre-measure each tool's tip Z relative to a reference and record the delta. Positive = sticks out further; negative = shorter. A G92 Z<shift> line is emitted at program start and after each tool change. Empty / 0 = no shift."
+                    title="Per-tool Z origin offset. For machines without auto tool-length probing. Pre-measure each tool's tip Z relative to a reference and record the delta. Positive = sticks out further; negative = shorter. A G92 Z<shift> line is emitted at program start and after each tool change. Empty / 0 = no shift."
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       if (v === '') {
@@ -1579,7 +1579,7 @@
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
-                    title="Laser-only fields (rt1.29). Honored when this tool fires the cut."
+                    title="Laser-only fields. Honored when this tool fires the cut."
                     >Laser</span
                   >
                 </div>
@@ -1622,7 +1622,7 @@
                       min="0"
                       placeholder="0.15"
                       value={tool.kerfMm ?? ''}
-                      title="mmu8: laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Empty / 0 = the legacy 0.15 mm default in the Rust sim. Set to your measured kerf on the actual stock for accurate heightmap previews."
+                      title="Laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Empty / 0 = the legacy 0.15 mm default in the Rust sim. Set to your measured kerf on the actual stock for accurate heightmap previews."
                       onchange={(e) => {
                         const v = (e.currentTarget as HTMLInputElement).value;
                         if (v === '') {

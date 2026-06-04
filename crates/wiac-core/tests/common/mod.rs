@@ -304,12 +304,22 @@ pub fn deepest_z(hm: &Heightmap) -> f32 {
     hm.data.iter().copied().fold(f32::INFINITY, f32::min)
 }
 
-/// Write the heightmap as a binary STL to `path` for hands-on
-/// inspection (`FreeCAD` / `MeshLab` / Blender). Returns byte size.
+/// Write the heightmap as a binary STL for hands-on inspection
+/// (`FreeCAD` / `MeshLab` / Blender). Returns byte size.
+///
+/// Callers pass unix-style `/tmp/foo.stl` debug paths, but the suite
+/// also runs on the Windows / macOS CI matrix where `/tmp` is absent —
+/// so we keep only the basename and write it into the OS temp dir. That
+/// keeps the dump portable (no panic on a missing `/tmp`) while still
+/// landing somewhere the dev can open it.
 pub fn dump_stl(hm: &Heightmap, path: &str, stock_bottom_z: f32) -> usize {
     let bytes = heightmap_to_stl_binary(hm, stock_bottom_z);
     let len = bytes.len();
-    fs::write(path, &bytes).unwrap_or_else(|e| panic!("write STL {path}: {e}"));
+    let file = std::path::Path::new(path)
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("wiac_dump.stl"));
+    let out = std::env::temp_dir().join(file);
+    fs::write(&out, &bytes).unwrap_or_else(|e| panic!("write STL {}: {e}", out.display()));
     len
 }
 

@@ -229,6 +229,11 @@ fn run() -> tauri::Result<()> {
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 kill_webkit_children();
             }
+            // `event` is consumed only by the Linux teardown above; keep the
+            // binding live on other targets so `clippy -D warnings` (run on
+            // the win/mac CI lanes) doesn't trip on an unused variable.
+            #[cfg(not(target_os = "linux"))]
+            let _ = &event;
         });
     Ok(())
 }

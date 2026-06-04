@@ -467,8 +467,8 @@
         <div class="preview-head">
           Live preview
           <span class="preview-sub"
-            >synthetic 2-pass toolpath: header → tool change → move + plunge + arc + retract → footer
-            · re-renders on every edit</span
+            >synthetic 2-pass toolpath: header → tool change → move + plunge + arc + retract →
+            footer · re-renders on every edit</span
           >
         </div>
         <pre class="preview-pane">{preview}</pre>

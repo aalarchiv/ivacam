@@ -1579,8 +1579,7 @@
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
-                    title="Laser-only fields. Honored when this tool fires the cut."
-                    >Laser</span
+                    title="Laser-only fields. Honored when this tool fires the cut.">Laser</span
                   >
                 </div>
                 <div class="holder-row">

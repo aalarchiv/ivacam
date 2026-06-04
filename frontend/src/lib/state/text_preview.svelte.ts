@@ -115,9 +115,16 @@ export function requestPreview(layer: TextLayer): void {
     if (pending.key === key) return;
     clearTimeout(pending.timer);
   }
-  const wire = toWire(layer);
   const timer = setTimeout(() => {
     inflight.delete(layer.id);
+    // Build the wire payload (which atob-decodes the WHOLE font into a
+    // number[]) only when the debounce actually fires — never per
+    // scheduling call. A text-origin drag re-schedules this on every
+    // pointermove with a fresh key (origin changes), so decoding here
+    // instead of up-front keeps the drag from re-decoding the font on
+    // every move (k9cz). `layer` is the last-scheduled snapshot, which
+    // matches `key`.
+    const wire = toWire(layer);
     const client = defaultClient();
     void client
       .renderTextLayer(wire as never)

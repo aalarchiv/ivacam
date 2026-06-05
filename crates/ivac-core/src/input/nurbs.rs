@@ -31,6 +31,17 @@ pub fn flatten(
         return cps.iter().map(|p| (p.0, p.1)).collect();
     }
     let n = cps.len();
+    // `de_boor` indexes `weights[i]` for every control point, so a slice
+    // shorter than `cps` (a non-rational caller that skipped the all-ones
+    // vector, or a malformed DXF) would panic. Repair to all-ones rather
+    // than panic, mirroring the knot-vector fallback below.
+    let weights_owned;
+    let weights: &[f64] = if weights.len() >= n {
+        weights
+    } else {
+        weights_owned = vec![1.0; n];
+        &weights_owned
+    };
     let expected_knots = n + degree + 1;
     if knots.len() != expected_knots {
         // Fall back to a clamped uniform knot vector — better than panicking on
@@ -165,5 +176,21 @@ mod tests {
         let mid = pts[pts.len() / 2];
         assert!((mid.0 - 5.0).abs() < 0.5);
         assert!(mid.1 > 0.0);
+    }
+
+    #[test]
+    fn short_weights_slice_does_not_panic() {
+        // A caller that passes too few (or no) weights must be repaired to
+        // all-ones rather than panicking in de_boor's weights[i] indexing.
+        let cps = vec![(0.0, 0.0, 1.0), (5.0, 10.0, 1.0), (10.0, 0.0, 1.0)];
+        let knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        // Empty weights → treated as non-rational (all 1.0).
+        let pts = flatten(2, &knots, &cps, &[], 16);
+        assert!(approx(pts[0].0, 0.0));
+        assert!(approx(pts.last().unwrap().0, 10.0));
+        // Same result as an explicit all-ones weight vector.
+        let with_ones = flatten(2, &knots, &cps, &[1.0, 1.0, 1.0], 16);
+        assert_eq!(pts.len(), with_ones.len());
+        assert!(approx(pts[pts.len() / 2].0, with_ones[with_ones.len() / 2].0));
     }
 }

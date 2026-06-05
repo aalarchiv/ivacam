@@ -23,7 +23,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to match rust-toolchain.toml; bump both together.
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
@@ -39,7 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to match rust-toolchain.toml; bump both together.
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2

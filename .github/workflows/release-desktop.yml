@@ -1,5 +1,10 @@
 name: Release desktop bundles
 
+# DORMANT: this repo is local-only (no git remote), so — like ci.yml —
+# this workflow never fires. It's kept ready for when a remote is added;
+# until then QUICKSTART.md's "no release pipeline is hooked up yet" holds
+# and AppImages are produced locally via `cargo tauri build`.
+#
 # Triggered on a `v*` tag push (e.g. v0.1.0). Builds Tauri 2 bundles for
 # Linux (.deb / .rpm / AppImage), macOS (.dmg / .app, optionally notarized),
 # and Windows (.msi via WiX, optionally Authenticode-signed) in parallel,
@@ -50,8 +55,8 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      # ── rust toolchain pinned by rust-toolchain.toml ──
-      - uses: dtolnay/rust-toolchain@stable
+      # ── rust toolchain pinned to match rust-toolchain.toml; bump both together ──
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           targets: ${{ matrix.platform.target }}
       - uses: Swatinem/rust-cache@v2

@@ -9,7 +9,7 @@
 #![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 
 use std::env;
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 
 fn main() -> ExitCode {
     let task = env::args().nth(1);
@@ -105,10 +105,20 @@ fn ci_all() -> ExitCode {
         ("cargo test", || {
             cargo(&["test", "--workspace", "--all-features"])
         }),
+        // Pairs with the frontend codegen drift guard below: the Rust
+        // schema and the checked-in OpenAPI YAML must agree (ci.yml runs
+        // this in the rust job).
+        ("xtask schema-check", || schema(true)),
         ("frontend lint", || pnpm(&["run", "lint"])),
         ("frontend check", || pnpm(&["run", "check"])),
         ("frontend test", || pnpm(&["run", "test"])),
         ("frontend build", || pnpm(&["run", "build"])),
+        // Regenerate generated.ts from the YAML and fail on any diff — the
+        // ts client must track the schema (ci.yml's "codegen drift guard").
+        ("codegen drift", codegen_drift),
+        // wasm-pack is an optional local tool; skip loudly rather than hard-
+        // fail when it's absent (ci.yml installs it, pre-release.sh skips it).
+        ("wasm-pack build (web)", wasm_or_skip),
     ];
     for (label, step) in steps {
         eprintln!("\n==> {label}");
@@ -118,6 +128,41 @@ fn ci_all() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// Regenerate `generated.ts` from `schema/openapi.yaml` and fail if the
+/// checked-in file drifts. Mirrors ci.yml's frontend codegen drift guard.
+fn codegen_drift() -> ExitCode {
+    let gen = pnpm(&["run", "codegen"]);
+    if gen != ExitCode::SUCCESS {
+        return gen;
+    }
+    run(Command::new("git").args([
+        "diff",
+        "--exit-code",
+        "--",
+        "frontend/src/lib/api/generated.ts",
+    ]))
+}
+
+/// Run wasm-pack if available; otherwise skip with a clear notice so the
+/// gate is never silently dropped.
+fn wasm_or_skip() -> ExitCode {
+    if binary_available("wasm-pack") {
+        wasm_pack()
+    } else {
+        eprintln!("  skipped: wasm-pack not on PATH (`cargo install wasm-pack` to enable)");
+        ExitCode::SUCCESS
+    }
+}
+
+fn binary_available(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
 }
 
 fn schema(check_only: bool) -> ExitCode {

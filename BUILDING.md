@@ -150,8 +150,8 @@ Known limitations of this mode (track before leaning on it as the
 headline trial path):
 
 - **Generate runs in a Web Worker** (`wiaconstructor-5ue0`) — the CAM
-  pipeline runs off the UI thread, so a heavy generate no longer
-  freezes the tab, and aborting a run cancels it for real (the worker
+  pipeline runs off the UI thread, so a heavy generate doesn't freeze
+  the tab, and aborting a run cancels it for real (the worker
   is terminated and respawned). Falls back to the main-thread client
   where module workers aren't available. The 3D **sim** still runs on
   the main thread (its per-frame heightfield would need transferring

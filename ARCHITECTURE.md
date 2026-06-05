@@ -151,9 +151,8 @@ frontend/src/lib/
 ### `frontend/src/lib/state/` (the slice layer)
 
 `ProjectState` (in `project.svelte.ts`) is the root of frontend state.
-It used to be a 1900-line god class; we split it into focused **slices**,
-each a `*.svelte.ts` class that `ProjectState` composes and re-exposes via
-proxy getters/setters:
+It's split into focused **slices**, each a `*.svelte.ts` class that
+`ProjectState` composes and re-exposes via proxy getters/setters:
 
 - `generated.svelte.ts` — pipeline output (gcode, toolpath, sim diagnostics, version, progress)
 - `selection.svelte.ts` — selectedObjects / hover / selectedOpId / …

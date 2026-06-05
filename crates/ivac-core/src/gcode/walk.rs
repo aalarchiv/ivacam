@@ -177,6 +177,13 @@ pub(super) fn emit_path_with_corner_feed<P: PostProcessor>(
         emit_path_with_dragoff(segments, dragoff, self_align_angle_rad, post);
         return;
     }
+    // The field is documented as a [0, 1] fraction but arrives unvalidated
+    // from `Project` params via the resolver. Without an upper clamp a
+    // misconfigured value >= 1.0 drives `(1.0 - corner_reduction)` to zero
+    // or negative, and the `.max(1.0)` floor then pins the corner feed to
+    // 1 mm/min — a near-stall at every sharp corner. Cap the reduction so
+    // at least 5% of the base feed always survives.
+    let corner_reduction = corner_reduction.clamp(0.0, 0.95);
     let reduced_rate = (f64::from(base_rate) * (1.0 - corner_reduction)).max(1.0) as u32;
     let cos_threshold = 0.5_f64; // 60° turn → cos(angle) <= 0.5
     let mut feed_currently_reduced = false;

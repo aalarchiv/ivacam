@@ -14,6 +14,7 @@
   import { project } from '../state/project.svelte';
   import type { TextLayer, TextLayerKind, TextAlignment } from '../state/project.svelte';
   import { selectionOrigin } from '../canvas/selection-geometry';
+  import { parseFiniteNumber } from '../cam/units';
 
   /// 245i: bottom-left of the current object selection's bbox, or null
   /// when nothing is selected. Drives the per-text "snap origin to
@@ -52,6 +53,32 @@
 
   function patch(id: number, delta: Partial<TextLayer>) {
     project.updateTextLayer(id, delta);
+  }
+
+  /// Transient red-border marker, keyed `<layerId>:<field>`. Set when a
+  /// numeric input parses to garbage / out-of-range; cleared on the next
+  /// valid (or empty) entry. Mirrors StockPanel's single-shared invalid
+  /// key — avoids `parseFloat(v) || 0`, which silently coerced a cleared
+  /// or non-numeric field to 0 (an empty toolpath when it became a text
+  /// size). See `parseFiniteNumber` in cam/units.ts.
+  let invalidKey = $state<string | null>(null);
+
+  /// Parse `raw` and apply it only when finite/in-range; an empty field
+  /// keeps the prior value silently, garbage flashes the invalid cue.
+  function commitNumber(
+    id: number,
+    field: string,
+    raw: string,
+    apply: (v: number) => void,
+    opts: { min?: number; max?: number } = {},
+  ) {
+    const parsed = parseFiniteNumber(raw, opts);
+    if (parsed.value == null) {
+      invalidKey = parsed.invalid ? `${id}:${field}` : null;
+      return;
+    }
+    invalidKey = null;
+    apply(parsed.value);
   }
 
   /// Single text-input handler that auto-promotes between TEXT and
@@ -179,11 +206,16 @@
                       type="number"
                       step="0.5"
                       min="0.1"
+                      class:invalid={invalidKey === `${layer.id}:size`}
                       value={layer.sizeMm}
                       oninput={(e) =>
-                        patch(layer.id, {
-                          sizeMm: parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                        })}
+                        commitNumber(
+                          layer.id,
+                          'size',
+                          (e.currentTarget as HTMLInputElement).value,
+                          (v) => patch(layer.id, { sizeMm: v }),
+                          { min: 0.1 },
+                        )}
                     />
                   </label>
                   <label>
@@ -191,12 +223,14 @@
                     <input
                       type="number"
                       step="0.5"
+                      class:invalid={invalidKey === `${layer.id}:x`}
                       value={layer.origin.x}
                       oninput={(e) =>
-                        patchOrigin(
+                        commitNumber(
                           layer.id,
                           'x',
-                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                          (e.currentTarget as HTMLInputElement).value,
+                          (v) => patchOrigin(layer.id, 'x', v),
                         )}
                     />
                   </label>
@@ -205,12 +239,14 @@
                     <input
                       type="number"
                       step="0.5"
+                      class:invalid={invalidKey === `${layer.id}:y`}
                       value={layer.origin.y}
                       oninput={(e) =>
-                        patchOrigin(
+                        commitNumber(
                           layer.id,
                           'y',
-                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
+                          (e.currentTarget as HTMLInputElement).value,
+                          (v) => patchOrigin(layer.id, 'y', v),
                         )}
                     />
                   </label>
@@ -233,11 +269,15 @@
                     <input
                       type="number"
                       step="5"
+                      class:invalid={invalidKey === `${layer.id}:rot`}
                       value={layer.rotationDeg}
                       oninput={(e) =>
-                        patch(layer.id, {
-                          rotationDeg: parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                        })}
+                        commitNumber(
+                          layer.id,
+                          'rot',
+                          (e.currentTarget as HTMLInputElement).value,
+                          (v) => patch(layer.id, { rotationDeg: v }),
+                        )}
                     />
                   </label>
                   <label>
@@ -245,12 +285,15 @@
                     <input
                       type="number"
                       step="0.1"
+                      class:invalid={invalidKey === `${layer.id}:gap`}
                       value={layer.letterSpacingMm}
                       oninput={(e) =>
-                        patch(layer.id, {
-                          letterSpacingMm:
-                            parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                        })}
+                        commitNumber(
+                          layer.id,
+                          'gap',
+                          (e.currentTarget as HTMLInputElement).value,
+                          (v) => patch(layer.id, { letterSpacingMm: v }),
+                        )}
                     />
                   </label>
                   <label title="Horizontal stretch (50–200 %). 100 % = natural font width.">
@@ -260,11 +303,16 @@
                       step="5"
                       min="50"
                       max="200"
+                      class:invalid={invalidKey === `${layer.id}:width`}
                       value={Math.round(layer.widthScale * 100)}
-                      oninput={(e) => {
-                        const pct = parseFloat((e.currentTarget as HTMLInputElement).value) || 100;
-                        patch(layer.id, { widthScale: pct / 100 });
-                      }}
+                      oninput={(e) =>
+                        commitNumber(
+                          layer.id,
+                          'width',
+                          (e.currentTarget as HTMLInputElement).value,
+                          (pct) => patch(layer.id, { widthScale: pct / 100 }),
+                          { min: 50, max: 200 },
+                        )}
                     />
                   </label>
                   <label class:hidden={layer.kind !== 'MTEXT'}>
@@ -273,12 +321,16 @@
                       type="number"
                       step="0.5"
                       min="0"
+                      class:invalid={invalidKey === `${layer.id}:line`}
                       value={layer.lineSpacingMm}
                       oninput={(e) =>
-                        patch(layer.id, {
-                          lineSpacingMm:
-                            parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                        })}
+                        commitNumber(
+                          layer.id,
+                          'line',
+                          (e.currentTarget as HTMLInputElement).value,
+                          (v) => patch(layer.id, { lineSpacingMm: v }),
+                          { min: 0 },
+                        )}
                     />
                   </label>
                   <label>
@@ -306,6 +358,12 @@
 </aside>
 
 <style>
+  /* Red-border cue for a rejected numeric entry. The global
+     `:where(.field) input.invalid` rule doesn't reach here — these
+     inputs sit in plain `<label>`s — so mirror it locally. */
+  input.invalid {
+    border-color: var(--danger);
+  }
   .text-panel {
     width: 100%;
     background: var(--bg-panel);

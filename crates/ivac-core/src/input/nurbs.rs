@@ -191,6 +191,9 @@ mod tests {
         // Same result as an explicit all-ones weight vector.
         let with_ones = flatten(2, &knots, &cps, &[1.0, 1.0, 1.0], 16);
         assert_eq!(pts.len(), with_ones.len());
-        assert!(approx(pts[pts.len() / 2].0, with_ones[with_ones.len() / 2].0));
+        assert!(approx(
+            pts[pts.len() / 2].0,
+            with_ones[with_ones.len() / 2].0
+        ));
     }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "wiac-frontend",
+  "name": "ivac-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -41,6 +41,6 @@
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-store": "^2.4.3",
     "three": "^0.184.0",
-    "wiac-wasm": "link:../crates/wiac-wasm/pkg"
+    "ivac-wasm": "link:../crates/ivac-wasm/pkg"
   }
 }

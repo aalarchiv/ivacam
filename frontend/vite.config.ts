@@ -38,27 +38,27 @@ function pkgVersion(): string {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte()],
-  // The wiac-wasm pkg is wasm-bindgen `--target web` glue: its init
-  // fetches `wiac_wasm_bg.wasm` relative to its own URL. If Vite's dep
+  // The ivac-wasm pkg is wasm-bindgen `--target web` glue: its init
+  // fetches `ivac_wasm_bg.wasm` relative to its own URL. If Vite's dep
   // optimizer pre-bundles it into `.vite/deps/`, that relative fetch
   // 404s → SPA fallback → "Response has unsupported MIME type ''".
   // Excluding it keeps the glue at its node_modules path so the wasm
   // resolves next to it (dev only; the prod build emits it as a proper
   // asset). Covers the main thread and the Web Worker.
   optimizeDeps: {
-    exclude: ['wiac-wasm'],
+    exclude: ['ivac-wasm'],
   },
   define: {
-    __WIAC_BUILD_VERSION__: JSON.stringify(gitVersion()),
+    __IVAC_BUILD_VERSION__: JSON.stringify(gitVersion()),
     // ISO-8601 UTC timestamp at build time. Shown in the About
     // dialog alongside the git-describe identifier so users can
     // tell which day a binary was produced without scraping the
     // commit hash against the git log.
-    __WIAC_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+    __IVAC_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
     // Package version from package.json so the window title shows the
     // real release identifier (qcvl). The git-describe value above is
     // the commit-level stamp; this is the human-facing semver.
-    __WIAC_PKG_VERSION__: JSON.stringify(pkgVersion()),
+    __IVAC_PKG_VERSION__: JSON.stringify(pkgVersion()),
   },
   build: {
     // Scene3D + three.js is a single intentional chunk (~540 KB);
@@ -79,7 +79,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     fs: {
-      // node_modules/wiac-wasm is a symlink into ../crates/wiac-wasm/pkg.
+      // node_modules/ivac-wasm is a symlink into ../crates/ivac-wasm/pkg.
       // Vite resolves the symlink to that real path and serves the glue +
       // wasm via /@fs/. With no pnpm-workspace.yaml the default allowed
       // root is just frontend/, so the crates/ path is blocked (403) and
@@ -87,8 +87,8 @@ export default defineConfig({
       // up) so the linked pkg is serveable. Dev only.
       allow: ['..'],
     },
-    // Same-origin proxy to wiac-server so the frontend can ship without
-    // bothering with CORS in dev. Override with VITE_WIAC_API at build
+    // Same-origin proxy to ivac-server so the frontend can ship without
+    // bothering with CORS in dev. Override with VITE_IVAC_API at build
     // time or `?api=…` at runtime if you're pointing at a remote host.
     proxy: {
       '/api': {

@@ -7,7 +7,7 @@
 ///
 /// Usage:
 ///   const ok = await confirmStore.ask({
-///     title: 'Quit wiaConstructor?',
+///     title: 'Quit ivaCAM?',
 ///     body: 'You have unsaved changes. They will be lost if you quit now.',
 ///     primaryLabel: 'Discard & quit',
 ///     cancelLabel: 'Keep editing',

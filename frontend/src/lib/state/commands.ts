@@ -833,7 +833,7 @@ export function changeProfileOffsetCommand(opId: number, offset: ProfileOffset):
 /// Lower the simulation cell resolution to bring the cell count back
 /// under the configured cap. The LowerSimResolution auto-fix.
 ///
-/// Note: `settings` is per-installation (wiac.settings localStorage,
+/// Note: `settings` is per-installation (ivac.settings localStorage,
 /// outside the project snapshot). Don't flip `t.dirty` — accepting the
 /// auto-fix shouldn't mark the project file as having unsaved changes
 /// (audit zxee). The setting still persists via `project.saveSettings()`

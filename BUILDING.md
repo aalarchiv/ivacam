@@ -1,4 +1,4 @@
-# Building wiaConstructor from source
+# Building ivaCAM from source
 
 Targeted at users who'd rather not run a prebuilt binary they didn't
 compile themselves. The project is a Cargo workspace plus a Vite frontend;
@@ -61,8 +61,8 @@ The repo expects a few sibling reference checkouts under `refs/`. Pull
 them yourself; CI does the same.
 
 ```sh
-git clone https://github.com/<your-org>/wiaconstructor.git
-cd wiaconstructor
+git clone https://github.com/<your-org>/ivacam.git
+cd ivacam
 
 git clone https://github.com/multigcs/viaconstructor refs/viaconstructor
 git clone https://github.com/IxMilia/dxf-rs           refs/dxf-rs
@@ -90,11 +90,11 @@ pnpm dev                     # http://localhost:5173, hot reload
 pnpm build                   # static bundle to frontend/dist/
 ```
 
-The full stack on top of `wiac-server` (Rust HTTP):
+The full stack on top of `ivac-server` (Rust HTTP):
 
 ```sh
 # in another shell
-cargo run -p wiac-server     # listens on 127.0.0.1:8766
+cargo run -p ivac-server     # listens on 127.0.0.1:8766
 ```
 
 `vite.config.ts` already proxies `/api/*` to that port, so the dev
@@ -103,25 +103,25 @@ server's "Open file" / Generate UI just works.
 ### Browser-only (WASM, no backend)
 
 ```sh
-wasm-pack build crates/wiac-wasm --target web --release
+wasm-pack build crates/ivac-wasm --target web --release
 # pkg/ is published as a local dep — pnpm picks it up via
-#   "wiac-wasm": "file:../crates/wiac-wasm/pkg"
+#   "ivac-wasm": "file:../crates/ivac-wasm/pkg"
 cd frontend && pnpm install && pnpm dev
 # visit http://localhost:5173/?api=wasm
 ```
 
-The browser downloads the wiac-wasm pkg lazily and runs the entire
+The browser downloads the ivac-wasm pkg lazily and runs the entire
 CAM pipeline client-side — no Rust server, no Python, no anything.
 
 #### Install-free trial channel (OS-agnostic)
 
-This is the lowest-friction way to let someone *try* wiaConstructor:
+This is the lowest-friction way to let someone *try* ivaCAM:
 ship a static bundle to any CDN / static host and hand out a URL — it
 runs in the browser on any OS, nothing to install, and the user's
 geometry never leaves their machine.
 
 ```sh
-wasm-pack build crates/wiac-wasm --target web --release
+wasm-pack build crates/ivac-wasm --target web --release
 cd frontend && pnpm install && pnpm build   # → frontend/dist/
 # host frontend/dist/ on GitHub Pages / S3+CloudFront / Netlify / …
 # share:  https://your.site/
@@ -130,8 +130,8 @@ cd frontend && pnpm install && pnpm build   # → frontend/dist/
 A **production build defaults to the in-browser wasm engine** when no
 backend is configured, so the bare URL just works for a static deploy.
 `?api=wasm` forces it explicitly (handy in dev); set
-`VITE_WIAC_API=https://your-server` at build time to point at a
-`wiac-server` instead. The wasm chunk stays lazy — only fetched when the
+`VITE_IVAC_API=https://your-server` at build time to point at a
+`ivac-server` instead. The wasm chunk stays lazy — only fetched when the
 wasm transport is actually selected. No CORS, no API server, no
 TLS-on-API, no auth to manage, because there is no backend.
 
@@ -168,12 +168,12 @@ headline trial path):
   keyboard is unchanged.
 - **wasm32 limits** — single-threaded, ~2–4 GB address space, plus a
   one-time module download; large jobs are slower than the native
-  `wiac-server` and may hit memory ceilings sooner.
+  `ivac-server` and may hit memory ceilings sooner.
 
 ### Desktop bundle (Tauri)
 
 ```sh
-cd crates/wiac-tauri
+cd crates/ivac-tauri
 cargo tauri build            # produces a release bundle for your platform
 ```
 
@@ -182,8 +182,8 @@ Outputs land under `target/release/bundle/`:
 | Platform | Artifact                                                   |
 |----------|------------------------------------------------------------|
 | Linux    | `bundle/deb/*.deb`, `bundle/rpm/*.rpm`, `bundle/appimage/*.AppImage` |
-| macOS    | `bundle/dmg/wiaConstructor.dmg`, `bundle/macos/wiaConstructor.app`   |
-| Windows  | `bundle/msi/wiaConstructor.msi`                            |
+| macOS    | `bundle/dmg/ivaCAM.dmg`, `bundle/macos/ivaCAM.app`   |
+| Windows  | `bundle/msi/ivaCAM.msi`                            |
 
 ## 4. Verify
 
@@ -195,12 +195,12 @@ cargo test --workspace
 cd frontend && npm run check
 
 # Smoke test the binary you just built:
-./target/release/wiac --help
-./target/release/wiac generate refs/viaconstructor/tests/data/simple.dxf > out.json
+./target/release/ivac --help
+./target/release/ivac generate refs/viaconstructor/tests/data/simple.dxf > out.json
 ```
 
 For Tauri builds, launching the bundled app should open a window titled
-*wiaConstructor* with the same UI you saw under `npm run dev`.
+*ivaCAM* with the same UI you saw under `npm run dev`.
 
 ## 5. Troubleshooting
 

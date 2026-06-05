@@ -1,11 +1,11 @@
 /// FE arc-length cross-check (audit 50u). The TS implementations in
-/// `cam/tabs.ts` mirror the Rust helpers in `wiac_core::cam::tabs`.
+/// `cam/tabs.ts` mirror the Rust helpers in `ivac_core::cam::tabs`.
 /// These tests pin a small set of known fixtures so any future drift
 /// between the two implementations breaks the build instead of
 /// silently landing tab placements on the wrong side of a vertex.
 ///
 /// The "ground truth" values below come from running the Rust
-/// reference (`cargo test -p wiac-core --lib cam::tabs`) against
+/// reference (`cargo test -p ivac-core --lib cam::tabs`) against
 /// the same fixtures — they're not derived from the TS code so a
 /// shared bug wouldn't slip past.
 

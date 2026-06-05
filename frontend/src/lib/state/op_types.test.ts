@@ -1,6 +1,6 @@
 /// gseb: `isProgramOnlyOp` is the FE mirror of the Rust
 /// `Op::is_program_only()` predicate at
-/// `crates/wiac-core/src/project/op.rs`. The two MUST agree —
+/// `crates/ivac-core/src/project/op.rs`. The two MUST agree —
 /// FE-side row-validation skips tool-existence checks for these
 /// kinds, and the Rust pipeline routes them through inline emit
 /// blocks that bypass the cutting-op machinery. A drift between

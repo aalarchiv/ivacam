@@ -13,7 +13,7 @@
 // extras on top. `attrApplies(attr, kind)` is now the one predicate the
 // dialog consults; `kindsInFamily(family)` is the one the op-constraint
 // table composes from. The Rust side mirrors `ToolKind::family()` (see
-// crates/wiac-core/src/project/tool.rs) — keep the two in sync.
+// crates/ivac-core/src/project/tool.rs) — keep the two in sync.
 
 import type { ToolKind } from './op_types';
 

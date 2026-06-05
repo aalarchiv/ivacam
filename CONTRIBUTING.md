@@ -1,4 +1,4 @@
-# Contributing to wiaConstructor
+# Contributing to ivaCAM
 
 ## License
 
@@ -22,11 +22,11 @@ answered there.
 
 ```
 crates/
-  wiac-core/      DXF/SVG import, CAM math, gcode generation (lib)
-  wiac-cli/       headless converter binary
-  wiac-server/    axum HTTP server binary
-  wiac-tauri/     Tauri desktop shell binary
-  wiac-wasm/      wasm-bindgen browser bindings (cdylib)
+  ivac-core/      DXF/SVG import, CAM math, gcode generation (lib)
+  ivac-cli/       headless converter binary
+  ivac-server/    axum HTTP server binary
+  ivac-tauri/     Tauri desktop shell binary
+  ivac-wasm/      wasm-bindgen browser bindings (cdylib)
 xtask/            cargo-xtask for dev workflows
 frontend/         Svelte + Vite + TypeScript web UI
 schema/           OpenAPI / JSON Schema source-of-truth contracts
@@ -76,12 +76,12 @@ wired via `.pre-commit-config.yaml`. Install with `pre-commit install`.
 
 `schema/openapi.yaml` and `frontend/src/lib/api/generated.ts` are
 derived: the YAML's `components.schemas` block comes from the Rust
-`#[derive(JsonSchema)]` types in `wiac-core` (regenerated via
+`#[derive(JsonSchema)]` types in `ivac-core` (regenerated via
 `cargo xtask schema`), and `generated.ts` is the TypeScript output of
 `pnpm run codegen` against the YAML. Both files are checked in so
 downstream builds don't depend on the toolchain.
 
-After touching any pub JsonSchema-deriving type in `wiac-core`:
+After touching any pub JsonSchema-deriving type in `ivac-core`:
 
 ```bash
 cargo xtask schema && (cd frontend && pnpm run codegen)
@@ -104,7 +104,7 @@ An "operation kind" is one row in the `OpKindPicker` (Profile / Pocket /
 Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
 (Engrave) to mirror:
 
-1. **Rust enum variant** — `crates/wiac-core/src/project/op.rs`, the
+1. **Rust enum variant** — `crates/ivac-core/src/project/op.rs`, the
    `OpKind` enum (around `pub enum OpKind {`). Add a variant. If the kind
    carries per-kind data, embed it in the variant (see
    `Thread { pitch_mm, internal, climb }`). If not, a unit variant like
@@ -120,11 +120,11 @@ Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
    per-kind `match` (specialty kinds that bypass the cascade go in the
    `Skip` / no-op arm). The frontend has matching exhaustive maps — see
    step 5.
-3. **Pipeline dispatch** — `crates/wiac-core/src/pipeline.rs`. Either:
+3. **Pipeline dispatch** — `crates/ivac-core/src/pipeline.rs`. Either:
    - Let it route through the standard offset-cascade path (no edit
      needed) if your kind cuts along an offset of the source path
      (Profile / Engrave / DragKnife behave this way), **or**
-   - Add a special-case driver to `crates/wiac-core/src/pipeline/op_drivers.rs`
+   - Add a special-case driver to `crates/ivac-core/src/pipeline/op_drivers.rs`
      and dispatch from `run_per_op` (see `run_vcarve_op`, `run_thread_op`,
      `run_relief_op`). Specialty drivers emit XYZ blocks via
      `emit_vcarve_block` and add a `*_would_emit` Level-1 gate.
@@ -158,10 +158,10 @@ Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
    CI's codegen drift guard fails if the checked-in `generated.ts` differs
    from a fresh run (it stays raw `openapi-typescript` output, not
    prettier-formatted).
-8. **Tests** — add a unit test in `crates/wiac-core/src/pipeline/tests.rs`
+8. **Tests** — add a unit test in `crates/ivac-core/src/pipeline/tests.rs`
    (search for `#[test]` near the bottom) that emits a tiny program
    with one op of the new kind. The corpus smoke test
-   (`crates/wiac-core/tests/golden_corpus.rs`) doesn't exercise new
+   (`crates/ivac-core/tests/golden_corpus.rs`) doesn't exercise new
    kinds directly but must stay green.
 
 ### Adding a new G-code post-processor
@@ -169,17 +169,17 @@ Drill / Engrave / V-Carve / …). Pattern of an existing simple kind
 A post-processor is a dialect of G-code emission (LinuxCNC / GRBL /
 HPGL today). Mirror the simplest existing one (GRBL):
 
-1. **New post file** — copy `crates/wiac-core/src/gcode/grbl.rs` to
-   `crates/wiac-core/src/gcode/<name>.rs`. Adjust the `Post::new()`
+1. **New post file** — copy `crates/ivac-core/src/gcode/grbl.rs` to
+   `crates/ivac-core/src/gcode/<name>.rs`. Adjust the `Post::new()`
    defaults and override `PostProcessor` trait methods as needed (see
    `gcode.rs:24` for the trait). Most posts only differ in headers /
    spindle / canned-cycle support.
-2. **Register it** — declare the module in `crates/wiac-core/src/gcode.rs`
+2. **Register it** — declare the module in `crates/ivac-core/src/gcode.rs`
    (e.g. `pub mod <name>;`) and re-export `<name>::Post` if appropriate.
 3. **Pipeline enum** — add a variant to `PostProcessorKind` in
-   `crates/wiac-core/src/pipeline.rs`. Add the dispatch arm in
+   `crates/ivac-core/src/pipeline.rs`. Add the dispatch arm in
    `run_pipeline` (search for `PostProcessorKind::Linuxcnc => …`).
-4. **CLI flag** — `crates/wiac-cli/src/main.rs`. Add the option name to
+4. **CLI flag** — `crates/ivac-cli/src/main.rs`. Add the option name to
    the help text and the match arm that picks the impl.
 5. **Frontend dropdown** — `frontend/src/lib/components/GenerateBar.svelte`.
    Extend the `PostId` union, update `coercePost`, and add an
@@ -197,8 +197,8 @@ HPGL today). Mirror the simplest existing one (GRBL):
 - CI must pass: cargo test (workspace), clippy, fmt, cargo-deny, frontend
   lint+check+build, wasm-pack build.
 - Geometry / gcode changes should add or update a unit test in
-  `crates/wiac-core/src/cam/` or `crates/wiac-core/src/gcode.rs`. The
-  workspace-wide smoke test (`crates/wiac-core/tests/golden_corpus.rs`)
+  `crates/ivac-core/src/cam/` or `crates/ivac-core/src/gcode.rs`. The
+  workspace-wide smoke test (`crates/ivac-core/tests/golden_corpus.rs`)
   walks every fixture under `refs/viaconstructor/tests/data/*.dxf` and
   asserts a non-empty linuxcnc program comes out — keep it green.
 - Conventional commit messages preferred (`feat:`, `fix:`, `refactor:`, …)

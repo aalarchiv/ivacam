@@ -56,7 +56,7 @@ jobs:
           targets: ${{ matrix.platform.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "./crates/wiac-tauri -> target"
+          workspaces: "./crates/ivac-tauri -> target"
 
       # ── Linux system libs ──
       - name: install linux deps
@@ -74,7 +74,7 @@ jobs:
 
       # ── build the bundle ──
       - name: tauri build
-        working-directory: crates/wiac-tauri
+        working-directory: crates/ivac-tauri
         env:
           # macOS notarization (set in repo secrets if signing is desired):
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -100,7 +100,7 @@ jobs:
       - name: upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wiaConstructor-${{ matrix.platform.name }}
+          name: ivaCAM-${{ matrix.platform.name }}
           path: |
             target/release/bundle/deb/*.deb
             target/release/bundle/rpm/*.rpm

@@ -1,5 +1,5 @@
 {
-  "kind": "wiac-project",
+  "kind": "ivac-project",
   "version": 1,
   "imported": {
     "filename": "test.dxf",

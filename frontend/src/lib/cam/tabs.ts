@@ -1,4 +1,4 @@
-/// TS mirror of `wiac_core::cam::tabs` (rt1.10). The 2D canvas
+/// TS mirror of `ivac_core::cam::tabs` (rt1.10). The 2D canvas
 /// (ghost-tab projection + click toggle) and the 3D scene (tab marker
 /// rendering) both need to resolve `(objectId, t)` to world XY without
 /// a round-trip to the backend. Keep this file numerically equivalent

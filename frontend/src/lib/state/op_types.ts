@@ -52,7 +52,7 @@ export type OpKind =
 /// and never touch a cutter, so the tool-existence validator
 /// must NOT flag them as `tool_id: 0 missing`. Mirrors the Rust
 /// `Op::is_program_only()` predicate at
-/// `crates/wiac-core/src/project/op.rs`. Keep both in sync when
+/// `crates/ivac-core/src/project/op.rs`. Keep both in sync when
 /// new program-only kinds land.
 export function isProgramOnlyOp(kind: OpKind): boolean {
   return (
@@ -74,7 +74,7 @@ export type ScanDirection = 'along_x' | 'along_y';
 /// Tagged union on `kind`, mirroring the wire `PowerCurve` 1:1 — the
 /// only field-name difference is bayer's `matrixSize` ↔ wire
 /// `matrix_size`, translated in build-project.ts. Convention: dark
-/// pixels burn hotter (see `crates/wiac-core/src/cam/raster.rs`).
+/// pixels burn hotter (see `crates/ivac-core/src/cam/raster.rs`).
 ///   - linear:         power lerps `max`@black → `min`@white
 ///   - threshold:      binary — darker than `level` burns at `power`
 ///   - floyd_steinberg error-diffusion dither to on/off at `level`
@@ -253,7 +253,7 @@ export interface VCarveOp extends OpBase {
   /// r8ut: trace the full medial axis. Default (undefined / false) =
   /// Estlcam-style perimeter-only — the cutter traces the boundary
   /// offset inward by `R = effective_r_cap` at constant depth, leaving
-  /// the centre plateau untouched. Set true to recover the prior wiac
+  /// the centre plateau untouched. Set true to recover the prior ivac
   /// behaviour for the rare "carve a depth gradient across the entire
   /// interior" workflow (Aspire-style relief).
   fullMedialAxis?: boolean;

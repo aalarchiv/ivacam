@@ -15,7 +15,7 @@ import { migrateLegacyToolTerms } from './tool-migration';
 // `pushRecent` (from ../recent) was a parallel store the UI never read
 // — the File menu draws Recent Projects from workspace.recent_projects.
 // The two stores could diverge silently (audit zxee). Dropped; the
-// `wiac.recent` localStorage key is harmlessly orphaned.
+// `ivac.recent` localStorage key is harmlessly orphaned.
 import type { ImportResponse } from '../api/types';
 import type { MachineSettings, ToolEntry } from './project.svelte';
 import { migrateMachineSettings } from './project-types';
@@ -85,11 +85,11 @@ export const SAMPLES: { label: string; url: string }[] = [
 /// on `window` so the browser fallbacks can find them. This is a no-op
 /// in Tauri where the native picker covers everything.
 function hiddenFileInput(): HTMLInputElement | null {
-  return (window as unknown as { __wiacFileInput?: HTMLInputElement }).__wiacFileInput ?? null;
+  return (window as unknown as { __ivacFileInput?: HTMLInputElement }).__ivacFileInput ?? null;
 }
 function hiddenProjectInput(): HTMLInputElement | null {
   return (
-    (window as unknown as { __wiacProjectInput?: HTMLInputElement }).__wiacProjectInput ?? null
+    (window as unknown as { __ivacProjectInput?: HTMLInputElement }).__ivacProjectInput ?? null
   );
 }
 
@@ -132,7 +132,7 @@ export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   });
 }
 
-/// Desktop: native open dialog for `.wiac-project.json`. Browser: same
+/// Desktop: native open dialog for `.ivac-project.json`. Browser: same
 /// hidden-input trick as openFile, but for project files.
 export async function openProject() {
   if (!(await confirmDiscardIfDirty('open another project'))) return;
@@ -143,8 +143,8 @@ export async function openProject() {
       multiple: false,
       filters: [
         {
-          name: 'wiaConstructor project',
-          extensions: ['wiac-project.json', 'vc-project.json', 'json'],
+          name: 'ivaCAM project',
+          extensions: ['ivac-project.json', 'vc-project.json', 'json'],
         },
       ],
     });
@@ -300,7 +300,7 @@ export async function loadProjectFile(file: File) {
 export async function saveProject() {
   const snapshot = JSON.stringify(project.snapshot(), null, 2);
   const base = project.transformedImport?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
-  const filename = `${base}.wiac-project.json`;
+  const filename = `${base}.ivac-project.json`;
   if (isTauri()) {
     const { save } = await import('@tauri-apps/plugin-dialog');
     const { writeTextFile } = await import('@tauri-apps/plugin-fs');
@@ -308,8 +308,8 @@ export async function saveProject() {
       defaultPath: filename,
       filters: [
         {
-          name: 'wiaConstructor project',
-          extensions: ['wiac-project.json', 'vc-project.json', 'json'],
+          name: 'ivaCAM project',
+          extensions: ['ivac-project.json', 'vc-project.json', 'json'],
         },
       ],
     });
@@ -501,7 +501,7 @@ export async function loadSampleWithGenerate(sampleUrl: string, generatedUrl: st
 // ───────────────────────────────────────────────────────────────────
 // h0tx: toolset + machine save/load files.
 //
-// Two side-files independent of the .wiac-project.json: a toolset
+// Two side-files independent of the .ivac-project.json: a toolset
 // snapshot the user can share across projects, and a machine config
 // snapshot the user can share across shop floors. Both wrap the
 // payload in a small envelope:
@@ -577,7 +577,7 @@ async function writeJson(
   URL.revokeObjectURL(url);
 }
 
-/// Export the current tool library to a `.wiac-toolset.json` file.
+/// Export the current tool library to a `.ivac-toolset.json` file.
 /// The user's set of tools, no machine, no project state. Reusable
 /// across projects.
 export async function saveToolset() {
@@ -587,12 +587,12 @@ export async function saveToolset() {
     updated_at: new Date().toISOString(),
     payload: project.tools.map((t) => ({ ...t })),
   };
-  await writeJson('toolset.wiac-toolset.json', JSON.stringify(envelope, null, 2), [
-    { name: 'wiaConstructor toolset', extensions: ['wiac-toolset.json', 'json'] },
+  await writeJson('toolset.ivac-toolset.json', JSON.stringify(envelope, null, 2), [
+    { name: 'ivaCAM toolset', extensions: ['ivac-toolset.json', 'json'] },
   ]);
 }
 
-/// Import a `.wiac-toolset.json`. `mode` controls how the file's
+/// Import a `.ivac-toolset.json`. `mode` controls how the file's
 /// tools merge into the current set:
 ///   * `'replace'` — drop the current tools, use the file's
 ///   * `'add'`     — append; tools whose `name` already exists are
@@ -601,7 +601,7 @@ export async function loadToolset(mode: 'replace' | 'add') {
   let text: string | null;
   try {
     text = await pickAndReadJson([
-      { name: 'wiaConstructor toolset', extensions: ['wiac-toolset.json', 'json'] },
+      { name: 'ivaCAM toolset', extensions: ['ivac-toolset.json', 'json'] },
     ]);
   } catch (e) {
     project.setError(`toolset load: ${e instanceof Error ? e.message : String(e)}`);
@@ -622,7 +622,7 @@ export async function loadToolset(mode: 'replace' | 'add') {
     env.kind !== 'toolset' ||
     !Array.isArray(env.payload)
   ) {
-    project.setError('toolset load: not a .wiac-toolset.json file');
+    project.setError('toolset load: not a .ivac-toolset.json file');
     return;
   }
   const incoming = env.payload.map(migrateLegacyToolTerms);
@@ -652,7 +652,7 @@ export async function loadToolset(mode: 'replace' | 'add') {
   }
 }
 
-/// Export the current machine config to a `.wiac-machine.json` file.
+/// Export the current machine config to a `.ivac-machine.json` file.
 export async function saveMachine() {
   const envelope: SnapshotEnvelope<'machine', MachineSettings> = {
     kind: 'machine',
@@ -661,18 +661,18 @@ export async function saveMachine() {
     payload: { ...project.machine },
   };
   const fileBase = (project.machine.name && project.machine.name.trim()) || 'machine';
-  await writeJson(`${fileBase}.wiac-machine.json`, JSON.stringify(envelope, null, 2), [
-    { name: 'wiaConstructor machine', extensions: ['wiac-machine.json', 'json'] },
+  await writeJson(`${fileBase}.ivac-machine.json`, JSON.stringify(envelope, null, 2), [
+    { name: 'ivaCAM machine', extensions: ['ivac-machine.json', 'json'] },
   ]);
 }
 
-/// Import a `.wiac-machine.json`. Replaces the active machine
+/// Import a `.ivac-machine.json`. Replaces the active machine
 /// config wholesale.
 export async function loadMachine() {
   let text: string | null;
   try {
     text = await pickAndReadJson([
-      { name: 'wiaConstructor machine', extensions: ['wiac-machine.json', 'json'] },
+      { name: 'ivaCAM machine', extensions: ['ivac-machine.json', 'json'] },
     ]);
   } catch (e) {
     project.setError(`machine load: ${e instanceof Error ? e.message : String(e)}`);
@@ -694,7 +694,7 @@ export async function loadMachine() {
     env.payload == null ||
     typeof env.payload !== 'object'
   ) {
-    project.setError('machine load: not a .wiac-machine.json file');
+    project.setError('machine load: not a .ivac-machine.json file');
     return;
   }
   // eu2b: machine swap invalidates the cache the same way as a tool
@@ -702,7 +702,7 @@ export async function loadMachine() {
   // post-swap Generate will miss-and-recompute. Drop the old entries
   // proactively.
   await clearPipelineCacheOnReplace();
-  // cb5y: an older .wiac-machine.json carries `supportsToolchange` instead
+  // cb5y: an older .ivac-machine.json carries `supportsToolchange` instead
   // of `toolchangeStrategy` — migrate before applying.
   project.setMachine(migrateMachineSettings(env.payload));
 }
@@ -711,7 +711,7 @@ export async function loadMachine() {
 /// by extension, then dispatch.
 export function importDroppedFile(file: File) {
   if (
-    file.name.endsWith('.wiac-project.json') ||
+    file.name.endsWith('.ivac-project.json') ||
     file.name.endsWith('.vc-project.json') ||
     file.name.endsWith('.json')
   ) {

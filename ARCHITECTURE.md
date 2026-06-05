@@ -1,4 +1,4 @@
-# wiaConstructor Architecture
+# ivaCAM Architecture
 
 This is the map. CONTRIBUTING.md tells you how to set up the toolchain
 and walks two extension recipes (new op kind, new post-processor); this
@@ -7,7 +7,7 @@ and what to leave alone.
 
 ## Big picture
 
-wiaConstructor turns a 2-D drawing (DXF or SVG) into G-code for a
+ivaCAM turns a 2-D drawing (DXF or SVG) into G-code for a
 CNC mill, router, plasma, or laser. The same CAM engine runs in three
 deployments: a desktop app (Tauri), a self-hosted server (axum HTTP),
 and a browser tab (WASM). All three share one Rust core and one Svelte
@@ -18,19 +18,19 @@ UI; the only difference is the **transport** wiring them together.
 │  components/  UI                                             │
 │  state/       reactive state (slices + command-bus undo)     │
 │  api/         transport-agnostic client interface            │
-│       ├── http.ts     ─→ wiac-server (axum)                  │
-│       ├── tauri.ts    ─→ wiac-tauri (native invoke)          │
-│       └── wasm.ts     ─→ wiac-wasm (in-page WASM)            │
+│       ├── http.ts     ─→ ivac-server (axum)                  │
+│       ├── tauri.ts    ─→ ivac-tauri (native invoke)          │
+│       └── wasm.ts     ─→ ivac-wasm (in-page WASM)            │
 └──────────────────────────────────────────────────────────────┘
                             ▲ ▼  JSON request / response
 ┌──────────── transports ─────────────────────────────────────┐
-│  wiac-cli      headless converter (no transport, direct lib) │
-│  wiac-server   axum HTTP wrapper                             │
-│  wiac-tauri    Tauri 2 desktop shell                         │
-│  wiac-wasm     wasm-bindgen browser bindings                 │
+│  ivac-cli      headless converter (no transport, direct lib) │
+│  ivac-server   axum HTTP wrapper                             │
+│  ivac-tauri    Tauri 2 desktop shell                         │
+│  ivac-wasm     wasm-bindgen browser bindings                 │
 └──────────────────────────────────────────────────────────────┘
                             ▲ ▼  Rust function calls
-┌────────── wiac-core (the only thing with CAM logic) ─────────┐
+┌────────── ivac-core (the only thing with CAM logic) ─────────┐
 │  input/       DXF / SVG / text → Vec<Segment>                │
 │  cam/         geometry, offsets, V-carve, halfpipe, …        │
 │  pipeline/    orchestrator: project → ordered toolpath ops   │
@@ -45,7 +45,7 @@ UI; the only difference is the **transport** wiring them together.
 ```
 
 **Rule of thumb:** if it touches geometry, post-processing, or anything a
-post-processor would care about, it lives in `wiac-core`. The transports
+post-processor would care about, it lives in `ivac-core`. The transports
 are dumb adapters; the UI is dumber still. The schema is the contract.
 
 ## Data flow: one user click
@@ -65,7 +65,7 @@ This is the single most important picture. Memorize it.
 4. api/{http,tauri,wasm}.ts (whichever transport is active)
        │  ──── JSON across process boundary ────
        ▼
-5. wiac-core::pipeline::run_pipeline()
+5. ivac-core::pipeline::run_pipeline()
        │  (resolves ops, builds offsets, dispatches per kind,
        │   emits G-code via the chosen PostProcessor)
        ▼  PipelineResponse (gcode + warnings + stats + toolpath)
@@ -80,17 +80,17 @@ This is the single most important picture. Memorize it.
 
 The arrows go **one way per phase**. UI mutates state; state calls the
 client; the client speaks the wire contract; the core does the math.
-Never short-circuit (UI calling `wiac-core` types directly, transport
+Never short-circuit (UI calling `ivac-core` types directly, transport
 shipping a raw Svelte proxy, the core reaching back into the UI).
 
 ## Layers in detail
 
-### `wiac-core` (the math)
+### `ivac-core` (the math)
 
 Pure Rust, no UI, no transport. **If you can write your change here, do.**
 
 ```
-wiac-core/src/
+ivac-core/src/
   cam/              geometry primitives, offsets, V-carve, halfpipe, threads
   gcode/            per-dialect emitters (linuxcnc, grbl, hpgl)
   gcode.rs          PostProcessor trait + per-block-kind emit shells
@@ -114,23 +114,23 @@ driver is a single file in `pipeline/op_drivers/` (`drill.rs`, `thread.rs`,
 **Add an op kind by adding a driver and one `run_op_driver` arm — not by
 growing `run_per_op`'s shared envelope.**
 
-### Transports (`wiac-cli` / `-server` / `-tauri` / `-wasm`)
+### Transports (`ivac-cli` / `-server` / `-tauri` / `-wasm`)
 
-Each is a thin adapter over `wiac-core`. They all serialize the same
+Each is a thin adapter over `ivac-core`. They all serialize the same
 `PipelineRequest` / `PipelineResponse` from `project.rs`, just over a
 different channel:
 
-- **wiac-cli** — no channel; calls `run_pipeline` directly.
-- **wiac-server** — axum HTTP, JSON request body, SSE for streaming.
-- **wiac-tauri** — Tauri 2 `invoke`, native dialogs, window state, file
-  watching. Commands live in `crates/wiac-tauri/src/commands.rs` and
+- **ivac-cli** — no channel; calls `run_pipeline` directly.
+- **ivac-server** — axum HTTP, JSON request body, SSE for streaming.
+- **ivac-tauri** — Tauri 2 `invoke`, native dialogs, window state, file
+  watching. Commands live in `crates/ivac-tauri/src/commands.rs` and
   must keep the same JSON shape as the HTTP endpoints.
-- **wiac-wasm** — wasm-bindgen functions exported under
-  `crates/wiac-wasm/src/lib.rs`; the browser calls them like local fns.
+- **ivac-wasm** — wasm-bindgen functions exported under
+  `crates/ivac-wasm/src/lib.rs`; the browser calls them like local fns.
 
 **A transport never decides what the math is.** If you find yourself
 adding business logic in `commands.rs` or `wasm/lib.rs`, push it into
-`wiac-core` instead.
+`ivac-core` instead.
 
 ### `frontend/`
 
@@ -173,11 +173,11 @@ it; don't pile it back onto `ProjectState` directly.**
 ### `schema/` (the contract seam)
 
 `schema/openapi.yaml` is **regenerated** from the `#[derive(JsonSchema)]`
-types in `wiac-core`. `frontend/src/lib/api/generated.ts` is regenerated
+types in `ivac-core`. `frontend/src/lib/api/generated.ts` is regenerated
 from the YAML. Both files are checked in so downstream builds don't
 need the toolchain.
 
-After touching any `pub` JsonSchema-deriving type in `wiac-core`:
+After touching any `pub` JsonSchema-deriving type in `ivac-core`:
 
 ```bash
 cargo xtask schema && (cd frontend && pnpm run codegen)
@@ -227,8 +227,8 @@ belongs to before writing it.
 
 ### 5. Schema seam (Rust ↔ TypeScript)
 
-Type that crosses the wire? Derive `JsonSchema` in `wiac-core::project`
-(or `wiac-core::lib.rs` for top-level request/response). Regen, commit
+Type that crosses the wire? Derive `JsonSchema` in `ivac-core::project`
+(or `ivac-core::lib.rs` for top-level request/response). Regen, commit
 both files, done. **Don't** define a TypeScript wire type by hand —
 `generated.ts` is the source of truth and your manual one will drift.
 
@@ -322,7 +322,7 @@ post-processor) end-to-end. The smaller recipes:
 
 ### A new wire type
 
-1. Define the struct in `wiac-core` with `#[derive(JsonSchema,
+1. Define the struct in `ivac-core` with `#[derive(JsonSchema,
    Serialize, Deserialize)]`. Decide whether it's a `pub` lib export
    (top of `lib.rs`) or lives in `project.rs`.
 2. `cargo xtask schema && (cd frontend && pnpm run codegen)`.

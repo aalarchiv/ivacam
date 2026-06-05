@@ -2065,6 +2065,93 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "ivac-cli"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "ivac-core",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ivac-core"
+version = "0.0.0"
+dependencies = [
+ "cavalier_contours",
+ "clipper2-rust",
+ "criterion",
+ "dxf",
+ "lru",
+ "schemars 0.8.22",
+ "seahash",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "ttf-parser",
+ "usvg",
+ "voronator",
+]
+
+[[package]]
+name = "ivac-server"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "futures",
+ "ivac-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ivac-tauri"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "ivac-core",
+ "libc",
+ "log",
+ "notify",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-log",
+ "tauri-plugin-process",
+ "tauri-plugin-store",
+ "tauri-plugin-window-state",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "ivac-wasm"
+version = "0.0.0"
+dependencies = [
+ "console_error_panic_hook",
+ "getrandom 0.2.17",
+ "ivac-core",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "uuid",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "javascriptcore-rs"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5372,93 +5459,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wiac-cli"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "tracing",
- "tracing-subscriber",
- "wiac-core",
-]
-
-[[package]]
-name = "wiac-core"
-version = "0.0.0"
-dependencies = [
- "cavalier_contours",
- "clipper2-rust",
- "criterion",
- "dxf",
- "lru",
- "schemars 0.8.22",
- "seahash",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "ttf-parser",
- "usvg",
- "voronator",
-]
-
-[[package]]
-name = "wiac-server"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "axum",
- "futures",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "wiac-core",
-]
-
-[[package]]
-name = "wiac-tauri"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "libc",
- "log",
- "notify",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-log",
- "tauri-plugin-process",
- "tauri-plugin-store",
- "tauri-plugin-window-state",
- "tempfile",
- "tokio",
- "wiac-core",
-]
-
-[[package]]
-name = "wiac-wasm"
-version = "0.0.0"
-dependencies = [
- "console_error_panic_hook",
- "getrandom 0.2.17",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "uuid",
- "wasm-bindgen",
- "wiac-core",
-]
-
-[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6117,9 +6117,9 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "ivac-core",
  "serde_json",
  "serde_yaml",
- "wiac-core",
 ]
 
 [[package]]

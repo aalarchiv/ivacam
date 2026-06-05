@@ -6,7 +6,7 @@
 
 import { isTauri } from '../api/env';
 
-const STORAGE_KEY = 'wiac-workspace';
+const STORAGE_KEY = 'ivac-workspace';
 const SCHEMA_VERSION = 1;
 const MAX_RECENT = 10;
 const SAVE_DEBOUNCE_MS = 500;

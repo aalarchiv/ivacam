@@ -1,4 +1,4 @@
-# wiaConstructor — static web build (frontend/dist/)
+# ivaCAM — static web build (frontend/dist/)
 #
 # The production web build is fully static and serverless: it runs the
 # CAM engine in-browser via WebAssembly, so there is NO API server to
@@ -17,7 +17,7 @@
 # quick local/LAN test without a cert, use the `:8080` block at the end.
 
 cnc.example.com {
-	root * /srv/wiaconstructor/dist
+	root * /srv/ivacam/dist
 	encode zstd gzip
 
 	# No client-side router — navigation is query-string based
@@ -39,7 +39,7 @@ cnc.example.com {
 # ── Local / LAN test: `caddy run --config deploy/Caddyfile`, then open
 #    http://localhost:8080 — uncomment to use.
 # :8080 {
-# 	root * /srv/wiaconstructor/dist
+# 	root * /srv/ivacam/dist
 # 	encode zstd gzip
 # 	try_files {path} /index.html
 # 	file_server

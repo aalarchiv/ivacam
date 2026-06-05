@@ -45,8 +45,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      - name: build wiac-wasm (web target)
-        run: wasm-pack build crates/wiac-wasm --target web --release
+      - name: build ivac-wasm (web target)
+        run: wasm-pack build crates/ivac-wasm --target web --release
 
   frontend:
     name: frontend

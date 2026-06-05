@@ -1,4 +1,4 @@
-// WASM implementation of WiacClient. Loads the wiac-wasm pkg lazily so it
+// WASM implementation of WiacClient. Loads the ivac-wasm pkg lazily so it
 // only ships when the user opts in via `?api=wasm`. Useful for offline
 // demos and CI smoke tests; the same JSON contract the HTTP / Tauri
 // transports speak.
@@ -37,10 +37,10 @@ let modPromise: Promise<WasmModule> | null = null;
 async function loadModule(): Promise<WasmModule> {
   if (!modPromise) {
     modPromise = (async () => {
-      // The pkg is produced by `wasm-pack build crates/wiac-wasm --target web`
-      // and lives under crates/wiac-wasm/pkg/. Vite resolves it relative to
+      // The pkg is produced by `wasm-pack build crates/ivac-wasm --target web`
+      // and lives under crates/ivac-wasm/pkg/. Vite resolves it relative to
       // the frontend root once the symlink (or pnpm linked dep) is in place.
-      const wasm = (await import(/* @vite-ignore */ 'wiac-wasm')) as WasmModule;
+      const wasm = (await import(/* @vite-ignore */ 'ivac-wasm')) as WasmModule;
       if (typeof wasm.default === 'function') {
         await wasm.default();
       }

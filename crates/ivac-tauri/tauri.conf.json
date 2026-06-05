@@ -1,0 +1,77 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ivaCAM",
+  "version": "0.0.0",
+  "identifier": "org.opcenter.ivacam",
+  "build": {
+    "beforeDevCommand": "pnpm --dir ../frontend dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm --dir ../frontend build",
+    "frontendDist": "../../frontend/dist"
+  },
+  "plugins": {},
+  "app": {
+    "windows": [
+      {
+        "title": "ivaCAM",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "DXF/SVG to G-code CAM tool",
+    "longDescription": "ivaCAM converts DXF and SVG drawings into G-code for CNC mills, lasers, and drag-knife plotters. Rust core, Svelte UI, GPL-3.0-or-later.",
+    "fileAssociations": [
+      {
+        "ext": ["dxf"],
+        "name": "AutoCAD DXF drawing",
+        "description": "Drawing Exchange Format",
+        "role": "Editor",
+        "mimeType": "image/vnd.dxf"
+      },
+      {
+        "ext": ["svg"],
+        "name": "Scalable Vector Graphics",
+        "description": "SVG drawing",
+        "role": "Editor",
+        "mimeType": "image/svg+xml"
+      },
+      {
+        "ext": ["hpgl", "plt"],
+        "name": "HPGL plotter file",
+        "description": "Hewlett-Packard Graphics Language",
+        "role": "Editor"
+      },
+      {
+        "ext": ["ngc"],
+        "name": "G-code program",
+        "description": "Numerical control / G-code",
+        "role": "Editor"
+      },
+      {
+        "ext": ["vc-project.json"],
+        "name": "ivaCAM project",
+        "description": "ivaCAM saved project (geometry + setup + tabs)",
+        "role": "Editor"
+      }
+    ]
+  }
+}

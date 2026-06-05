@@ -56,7 +56,7 @@ confidence-threshold = 0.8
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
-# Workspace-internal `wiac-core = { path = "..." }` declarations look like
+# Workspace-internal `ivac-core = { path = "..." }` declarations look like
 # wildcards to cargo-deny; allow them.
 allow-wildcard-paths = true
 

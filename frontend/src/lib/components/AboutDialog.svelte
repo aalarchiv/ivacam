@@ -4,7 +4,7 @@
   /// item; replaces the old "Check for updates" entry now that the
   /// auto-updater is gone.
   ///
-  /// Build version comes from the `__WIAC_BUILD_VERSION__` define
+  /// Build version comes from the `__IVAC_BUILD_VERSION__` define
   /// baked by vite.config.ts (git describe --always --dirty at
   /// compile time).
   import Modal from './Modal.svelte';
@@ -15,11 +15,11 @@
   let { onClose }: Props = $props();
 
   const buildVersion =
-    typeof __WIAC_BUILD_VERSION__ === 'string' ? __WIAC_BUILD_VERSION__ : 'unknown';
+    typeof __IVAC_BUILD_VERSION__ === 'string' ? __IVAC_BUILD_VERSION__ : 'unknown';
   /// ISO-8601 UTC timestamp baked at vite-build time. Rendered in the
   /// user's locale below the build identifier so bug reports carry
   /// "this is the build I produced on date X" alongside the commit.
-  const buildDateIso = typeof __WIAC_BUILD_DATE__ === 'string' ? __WIAC_BUILD_DATE__ : '';
+  const buildDateIso = typeof __IVAC_BUILD_DATE__ === 'string' ? __IVAC_BUILD_DATE__ : '';
   const buildDateDisplay = (() => {
     if (!buildDateIso) return '';
     const d = new Date(buildDateIso);
@@ -140,7 +140,7 @@
   ariaLabelledBy="about-title"
 >
   <header>
-    <h2 id="about-title">About wiaConstructor</h2>
+    <h2 id="about-title">About ivaCAM</h2>
     <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
   </header>
   <section>
@@ -179,12 +179,12 @@
   <section>
     <h3>License</h3>
     <p>
-      wiaConstructor is distributed under the
+      ivaCAM is distributed under the
       <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noreferrer">
         GNU General Public License v3.0 or later</a
       >. Source is available at
-      <a href="https://github.com/aalarchiv/wiaconstructor" target="_blank" rel="noreferrer">
-        github.com/aalarchiv/wiaconstructor</a
+      <a href="https://github.com/aalarchiv/ivacam" target="_blank" rel="noreferrer">
+        github.com/aalarchiv/ivacam</a
       >.
     </p>
     <p>
@@ -202,10 +202,10 @@
             >viaConstructor</a
           >
         </strong> - the project that gave the idea. viaConstructor is a Python CAM tool with a similar
-        scope; wiaConstructor reuses none of its code but stands on the shoulders of its UX exploration.
+        scope; ivaCAM reuses none of its code but stands on the shoulders of its UX exploration.
       </li>
       <li>
-        <strong>Estlcam</strong> - its feature catalogue inspired the CAM primitives wiaConstructor implements.
+        <strong>Estlcam</strong> - its feature catalogue inspired the CAM primitives ivaCAM implements.
         No Estlcam code is used; algorithms are implemented from public literature. Estlcam is not free,
         but it is great software at reasonable price. Buy it!
       </li>
@@ -219,8 +219,8 @@
   <section>
     <h3>Third-party libraries</h3>
     <p class="hint">
-      wiaConstructor stands on the work of many open-source projects. The major runtime dependencies
-      are listed below; full transitive lists ship in <code>Cargo.lock</code>
+      ivaCAM stands on the work of many open-source projects. The major runtime dependencies are
+      listed below; full transitive lists ship in <code>Cargo.lock</code>
       and <code>package-lock.json</code>.
     </p>
     <table class="libs">

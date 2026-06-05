@@ -98,7 +98,7 @@ popd >/dev/null
 #───────────── Optional gates ─────────────
 
 if command -v wasm-pack >/dev/null 2>&1; then
-  step "wasm-pack build (web)"   wasm-pack build crates/wiac-wasm --target web --release
+  step "wasm-pack build (web)"   wasm-pack build crates/ivac-wasm --target web --release
 else
   skip "wasm-pack build (web)"   "wasm-pack not on PATH"
 fi

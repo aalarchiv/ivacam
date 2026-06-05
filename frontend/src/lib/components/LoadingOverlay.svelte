@@ -51,12 +51,12 @@
     border: 3px solid color-mix(in srgb, var(--text) 18%, transparent);
     border-top-color: var(--accent);
     border-radius: 50%;
-    animation: wiac-loading-spin 0.9s linear infinite;
+    animation: ivac-loading-spin 0.9s linear infinite;
   }
   .msg {
     color: var(--text-muted);
   }
-  @keyframes wiac-loading-spin {
+  @keyframes ivac-loading-spin {
     to {
       transform: rotate(360deg);
     }

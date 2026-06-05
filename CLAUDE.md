@@ -69,7 +69,7 @@ Full setup + per-transport build instructions live in
 [`BUILDING.md`](./BUILDING.md). Quick reference:
 
 ```bash
-# Rust workspace (wiac-core + transports)
+# Rust workspace (ivac-core + transports)
 cargo build --workspace
 cargo test --workspace --tests   # full Rust unit + integration suite
 cargo clippy --workspace --no-deps --release
@@ -89,7 +89,7 @@ cargo tauri build --bundles appimage
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full picture (crate
 layout, data flow, the schema seam, key patterns, and anti-patterns).
-In short: `wiac-core` holds all CAM/geometry/sim math; the `wiac-cli` /
+In short: `ivac-core` holds all CAM/geometry/sim math; the `ivac-cli` /
 `-server` / `-tauri` / `-wasm` crates are thin transports over it; the
 Svelte frontend in `frontend/` talks to whichever transport is active
 through a generated TypeScript client (`schema/openapi.yaml` →

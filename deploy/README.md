@@ -2,7 +2,7 @@
 
 The production web build is a **fully static, serverless bundle** — it runs
 the CAM engine in the browser via WebAssembly, so there is no API server,
-database, or backend to deploy. (Do **not** expose `wiac-server`; it isn't
+database, or backend to deploy. (Do **not** expose `ivac-server`; it isn't
 needed, and the dev-only Vite proxy doesn't apply to a production build.)
 
 ## Build
@@ -41,7 +41,7 @@ hashed `assets/`, `fonts/`, `samples/`, icons) to your host's web root.
 | `nginx.conf`  | nginx server block — drop in `conf.d/`, then `certbot --nginx` for TLS   |
 
 Both default to `server_name cnc.example.com` and `root
-/srv/wiaconstructor/dist` — adjust to your domain and path.
+/srv/ivacam/dist` — adjust to your domain and path.
 
 ## Managed hosts
 

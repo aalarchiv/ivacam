@@ -1,4 +1,4 @@
-## wiaConstructor — common tasks. `just --list` to enumerate.
+## ivaCAM — common tasks. `just --list` to enumerate.
 
 # Run everything CI runs (mirrors xtask::ci_all).
 ci:
@@ -15,7 +15,7 @@ build:
 
 # Start the Rust axum server on port 8766.
 serve:
-    cargo run --release -p wiac-server
+    cargo run --release -p ivac-server
 
 # Start the Vite dev server.
 dev-frontend:
@@ -33,7 +33,7 @@ lint:
 
 # Regenerate the JSON contract: schema/openapi.yaml from Rust JsonSchema-deriving
 # types + the frontend TypeScript types from the YAML. Run this after touching
-# any pub type that derives JsonSchema in wiac-core (project.rs, pipeline.rs,
+# any pub type that derives JsonSchema in ivac-core (project.rs, pipeline.rs,
 # errors.rs, gcode.rs, …). Both files are checked into git.
 regen-schema:
     cargo xtask schema

@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: wiaConstructor API
+  title: ivaCAM API
   version: 0.0.1
   description: |
-    JSON contract for wiaConstructor core operations.
+    JSON contract for ivaCAM core operations.
     Implementation-agnostic: served by the Stage-1 Python FastAPI bridge,
     the Rust axum server, Tauri command bindings, and the WASM browser
     bindings — same shape everywhere.
@@ -37,7 +37,7 @@ paths:
                 $ref: '#/components/schemas/VersionResponse'
   /import:
     post:
-      summary: Parse a vector file into wiaConstructor geometry
+      summary: Parse a vector file into ivaCAM geometry
       operationId: import
       description: |
         Accepts the bytes of a DXF, SVG, HPGL, NGC, STL or other supported
@@ -965,7 +965,7 @@ components:
         mode:
           $ref: '#/components/schemas/MachineMode'
         name:
-          description: 'h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.wiac-machine.json` save/load files.'
+          description: 'h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.ivac-machine.json` save/load files.'
           type: string
         optional_stop:
           description: '4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop) at every program pause — both the `Pause` op and the manual (`ManualM0Pause`) tool-change halt. `M1` is honored only when the controller''s optional-stop switch is ON, so a vetted program can run unattended (the switch off skips the pauses) yet still stop on demand. Default `false` keeps the mandatory `M0` — byte-identical output for existing projects.'
@@ -1740,7 +1740,7 @@ components:
           - number
           - 'null'
         stock_to_leave_mm:
-          description: '1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior wiac behaviour).'
+          description: '1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior ivac behaviour).'
           format: double
           type: number
         through_depth:
@@ -1822,7 +1822,7 @@ components:
           - number
           - 'null'
         stock_to_leave_mm:
-          description: '1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior wiac behaviour).'
+          description: '1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior ivac behaviour).'
           format: double
           type: number
         through_depth:
@@ -2333,7 +2333,7 @@ components:
       - hpgl
       type: string
     PostProfile:
-      description: A named bundle of override templates the user attaches to a machine config. Any field left at `None` keeps the built-in emitter's default behavior. The active variant of `PostProcessorKind` is unaffected — wiac's linuxcnc / grbl / hpgl emitters continue to drive line-level formatting (delta encoding, arc fitting, drill cycles). The profile only swaps the PROGRAM-LEVEL strings.
+      description: A named bundle of override templates the user attaches to a machine config. Any field left at `None` keeps the built-in emitter's default behavior. The active variant of `PostProcessorKind` is unaffected — ivac's linuxcnc / grbl / hpgl emitters continue to drive line-level formatting (delta encoding, arc fitting, drill cycles). The profile only swaps the PROGRAM-LEVEL strings.
       properties:
         axes:
           anyOf:
@@ -3767,7 +3767,7 @@ components:
           - 'null'
         full_medial_axis:
           default: false
-          description: 'r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam''s behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true to recover the prior wiac behaviour for the rare "carve a depth gradient across the whole interior" workflow (think Aspire-style relief).'
+          description: 'r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam''s behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true to recover the prior ivac behaviour for the rare "carve a depth gradient across the whole interior" workflow (think Aspire-style relief).'
           type: boolean
         multi_pass_refine:
           default: false

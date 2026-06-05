@@ -16,7 +16,7 @@
   /// again.
   ///
   /// Powered by project.generated.gcode_index (lines_to_segment +
-  /// segments_to_line) emitted by wiac_core::gcode::preview.
+  /// segments_to_line) emitted by ivac_core::gcode::preview.
 
   import { project, playheadToSegment } from '../state/project.svelte';
   import { parseGcodeChapters, NO_SEGMENT } from '../state/gcode_chapters';

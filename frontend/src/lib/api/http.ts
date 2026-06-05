@@ -1,4 +1,4 @@
-// HTTP implementation of WiacClient. Talks to wiac-server (axum) over the
+// HTTP implementation of WiacClient. Talks to ivac-server (axum) over the
 // JSON contract in schema/openapi.yaml.
 
 import { CancelledError, type PipelineEvent, type ProgressEvent, type WiacClient } from './client';
@@ -17,7 +17,7 @@ import type {
 
 /**
  * Read a failed Response body and throw an Error whose `.message` carries
- * the structured `wiac_core::Error` shape verbatim when the server sent one
+ * the structured `ivac_core::Error` shape verbatim when the server sent one
  * (luf1). Frontend `tryParseStructuredError` recognises the JSON string and
  * extracts kind / recovery_hint / auto_fix / span; otherwise callers see
  * the legacy `<label> returned <status>: <detail>` form.
@@ -131,7 +131,7 @@ export class HttpWiacClient implements WiacClient {
     let buffer = '';
     let result: GenerateResponse | undefined;
     // Raw event-data string from the SSE `error` event. Server emits the
-    // full structured `wiac_core::Error` as the payload (luf1); we rethrow
+    // full structured `ivac_core::Error` as the payload (luf1); we rethrow
     // it as a JSON string so tryParseStructuredError() works downstream.
     let errorPayload: string | undefined;
 
@@ -201,7 +201,7 @@ export class HttpWiacClient implements WiacClient {
     let result: GenerateResponse | undefined;
     let cancelled = false;
     // Raw event-data from the SSE `error` event — the full structured
-    // `wiac_core::Error` JSON. Rethrown verbatim so the call site can
+    // `ivac_core::Error` JSON. Rethrown verbatim so the call site can
     // parse it via tryParseStructuredError().
     let errorPayload: string | undefined;
     let tokenId: number | undefined;
@@ -284,14 +284,14 @@ export type ApiChoice = { kind: 'tauri' } | { kind: 'wasm' } | { kind: 'http'; u
 /// Pure transport selection (testable without window / wasm / a real
 /// build mode). Resolution order:
 ///   0. Tauri shell                          → in-process invoke()
-///   1. VITE_WIAC_API at build time          → that URL (or wasm if =='wasm')
+///   1. VITE_IVAC_API at build time          → that URL (or wasm if =='wasm')
 ///   2. ?api=… query param at runtime        → that URL (or wasm if =='wasm')
 ///   3. default — no transport configured:
 ///        • production build → the in-browser wasm engine, so a static
 ///          deploy works from a bare URL with no backend (5ue0/xeio
-///          browser-trial). Point at a server instead via VITE_WIAC_API.
-///        • dev → the local wiac-server on :8766 (the documented dev
-///          workflow runs `cargo run -p wiac-server`).
+///          browser-trial). Point at a server instead via VITE_IVAC_API.
+///        • dev → the local ivac-server on :8766 (the documented dev
+///          workflow runs `cargo run -p ivac-server`).
 export function resolveApiChoice(opts: {
   hasTauri: boolean;
   envApi: string | undefined;
@@ -318,7 +318,7 @@ export function defaultClient(): WiacClient {
     : 'http://127.0.0.1:8766';
   const choice = resolveApiChoice({
     hasTauri,
-    envApi: import.meta.env.VITE_WIAC_API as string | undefined,
+    envApi: import.meta.env.VITE_IVAC_API as string | undefined,
     queryApi,
     // Default to wasm only in a real production browser build — wasm
     // can't run during SSR / tests (no window), which keep the :8766
@@ -328,7 +328,7 @@ export function defaultClient(): WiacClient {
   });
   switch (choice.kind) {
     case 'tauri': {
-      const mod = (w!.__WIAC_TAURI_CLIENT__ ??= new TauriClientLazy()) as TauriClientLazy;
+      const mod = (w!.__IVAC_TAURI_CLIENT__ ??= new TauriClientLazy()) as TauriClientLazy;
       return mod.proxy;
     }
     case 'wasm':
@@ -360,7 +360,7 @@ async function createWasmClient(): Promise<WiacClient> {
 }
 
 /**
- * WASM client wrapper — same lazy pattern. The wiac-wasm chunk is only
+ * WASM client wrapper — same lazy pattern. The ivac-wasm chunk is only
  * loaded when ?api=wasm is set, otherwise it stays out of the bundle.
  */
 class WasmClientLazy {

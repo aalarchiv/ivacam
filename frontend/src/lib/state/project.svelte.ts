@@ -1238,14 +1238,14 @@ class ProjectState {
   /// View-state fields (`visibleLayers`, `selectedEntities`) are
   /// intentionally OMITTED — they're per-installation UI preferences
   /// owned by `workspace.per_project[path].visible_layers`. Including
-  /// them in the .wiac-project save caused a two-source-of-truth
+  /// them in the .ivac-project save caused a two-source-of-truth
   /// conflict where workspace silently won on reopen, surprising
   /// users who expected their saved file to dictate visibility (audit
   /// vep). Old projects that still carry them load fine via the
   /// `?? []` fallback in restore().
   snapshot(): ProjectFile {
     return {
-      kind: 'wiac-project',
+      kind: 'ivac-project',
       version: 1,
       imports: this.data.imports,
       visibleLayers: [],
@@ -1258,7 +1258,7 @@ class ProjectState {
       textLayers: this.textLayers,
       ...(this.reliefSources.length > 0 ? { reliefSources: this.reliefSources } : {}),
       // i5g4 / j4tv: only persist work_offset when non-default so legacy
-      // / unset projects keep their compact .wiac-project payloads. The
+      // / unset projects keep their compact .ivac-project payloads. The
       // restore() side defaults to defaultWorkOffset() when absent.
       ...(isDefaultWorkOffset(this.workOffset) ? {} : { workOffset: this.workOffset }),
       // l8lk: persist the tool-grouping toggle only when on.
@@ -1267,8 +1267,8 @@ class ProjectState {
   }
 
   restore(file: ProjectFile) {
-    if (file.kind !== 'wiac-project') {
-      throw new Error('not a wiaConstructor project file');
+    if (file.kind !== 'ivac-project') {
+      throw new Error('not a ivaCAM project file');
     }
     // wrsu Phase 1: imports[] is the canonical shape. Pre-wrsu project
     // files (with bare `imported` / `fileTransform` / `lastImportPath`
@@ -1282,7 +1282,7 @@ class ProjectState {
     //   1. workspace.per_project[path].visible_layers (applied in
     //      setActiveProjectPath after restore returns).
     //   2. file.visibleLayers, when the saved project carries any —
-    //      e.g. a shared .wiac-project file from another machine
+    //      e.g. a shared .ivac-project file from another machine
     //      whose workspace we don't have.
     //   3. setImported defaults (all layers visible).
     // Empty `file.visibleLayers` is treated as "no opinion" and falls

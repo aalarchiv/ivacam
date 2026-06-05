@@ -53,21 +53,21 @@
   /// the window title and the Help → About dialog so users can
   /// paste an exact build identifier into bug reports.
   const buildVersion =
-    typeof __WIAC_BUILD_VERSION__ === 'string' ? __WIAC_BUILD_VERSION__ : 'unknown';
+    typeof __IVAC_BUILD_VERSION__ === 'string' ? __IVAC_BUILD_VERSION__ : 'unknown';
 
   /// Window title carries the build version so a screenshot pins the
-  /// report to the exact binary. Format: "wiaConstructor v<pkg>
+  /// report to the exact binary. Format: "ivaCAM v<pkg>
   /// (<git-describe>)" — package version comes from
-  /// frontend/package.json via the `__WIAC_PKG_VERSION__` define
+  /// frontend/package.json via the `__IVAC_PKG_VERSION__` define
   /// baked by vite.config.ts (audit qcvl), git-describe via
-  /// `__WIAC_BUILD_VERSION__`. `document.title` updates on every
+  /// `__IVAC_BUILD_VERSION__`. `document.title` updates on every
   /// paint that touches the effect, but it's cheap.
-  const pkgVersion = typeof __WIAC_PKG_VERSION__ === 'string' ? __WIAC_PKG_VERSION__ : '0.0.0';
+  const pkgVersion = typeof __IVAC_PKG_VERSION__ === 'string' ? __IVAC_PKG_VERSION__ : '0.0.0';
   $effect(() => {
     if (buildVersion && buildVersion !== 'unknown') {
-      document.title = `wiaConstructor v${pkgVersion} (${buildVersion})`;
+      document.title = `ivaCAM v${pkgVersion} (${buildVersion})`;
     } else {
-      document.title = `wiaConstructor v${pkgVersion}`;
+      document.title = `ivaCAM v${pkgVersion}`;
     }
   });
   /// Startup banner: when set, the user was previously editing a
@@ -187,7 +187,7 @@
     //   1. ALWAYS route through `logErrorToStderr` so terminal users
     //      running the AppImage see the failure on stderr and
     //      journald / log aggregators can capture it.
-    //   2. WHEN `WIAC_DEBUG=1` was set on launch, also render a
+    //   2. WHEN `IVAC_DEBUG=1` was set on launch, also render a
     //      direct-DOM banner that bypasses Svelte's reactivity (it
     //      stays visible even when the scheduler is dead). Production
     //      users get clean UI; debugging sessions get loud, visible
@@ -199,7 +199,7 @@
     void isDebugSession().then((dbg) => {
       if (!dbg) return;
       const host = document.createElement('div');
-      host.id = 'wiac-error-banner';
+      host.id = 'ivac-error-banner';
       host.style.cssText =
         'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#7a0000;color:#fff;font:11px monospace;padding:6px 10px;max-height:40vh;overflow:auto;pointer-events:auto;display:none;white-space:pre-wrap;';
       const dismiss = document.createElement('button');
@@ -310,7 +310,7 @@
     if (!reopenPrompt) return;
     const path = reopenPrompt.path;
     reopenPrompt = null;
-    const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
+    const isProjectFile = /\.(ivac|vc)-project\.json$|\.json$/i.test(path);
     if (isProjectFile) await loadProjectPath(path);
     else await loadFromPath(path);
     // If the project file already restored layer-visibility from
@@ -370,7 +370,7 @@
     // styled ConfirmPrompt (same dialog as Open / Quit) rather than a
     // native window.confirm.
     if (!(await confirmDiscardIfDirty('load the recent project'))) return;
-    const isProjectFile = /\.(wiac|vc)-project\.json$|\.json$/i.test(path);
+    const isProjectFile = /\.(ivac|vc)-project\.json$|\.json$/i.test(path);
     if (isProjectFile) await loadProjectPath(path);
     else await loadFromPath(path);
   }
@@ -400,7 +400,7 @@
     unlistenCloseRequested = await wireCloseRequested(async () => {
       const dirty = project.dirty;
       const ok = await confirmStore.ask({
-        title: 'Quit wiaConstructor?',
+        title: 'Quit ivaCAM?',
         body: dirty
           ? 'You have unsaved changes. They will be lost if you quit now.'
           : 'Are you sure you want to quit?',
@@ -647,7 +647,7 @@
   }
 
   // dteo: window-level drag-and-drop import. Accept .dxf / .svg
-  // (loadFile) and .wiac-project.json / .json (loadProjectFile). The
+  // (loadFile) and .ivac-project.json / .json (loadProjectFile). The
   // overlay only paints while a drag with a `Files` payload is over
   // the window; we count enter / leave to avoid flicker when the
   // cursor crosses child elements.
@@ -676,11 +676,11 @@
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
     const name = file.name.toLowerCase();
-    if (name.endsWith('.wiac-project.json') || name.endsWith('-project.json')) {
+    if (name.endsWith('.ivac-project.json') || name.endsWith('-project.json')) {
       await loadProjectFile(file);
     } else if (name.endsWith('.json')) {
       // Bare .json — also treat as a project file (loadProjectFile
-      // validates the kind: 'wiac-project' field and rejects otherwise).
+      // validates the kind: 'ivac-project' field and rejects otherwise).
       await loadProjectFile(file);
     } else {
       // .dxf / .svg / anything else the importer recognizes.
@@ -1134,7 +1134,7 @@
             <span class="label">Keyboard shortcuts…</span><span class="kbd">?</span>
           </button>
           <button role="menuitem" class="item" onclick={() => pickMenu(() => (aboutOpen = true))}>
-            <span class="label">About wiaConstructor…</span>
+            <span class="label">About ivaCAM…</span>
           </button>
         </div>
       {/if}
@@ -1155,7 +1155,7 @@
       class="tb-btn"
       onclick={() => openProject()}
       disabled={project.loading}
-      title="Open a saved .wiac-project.json"
+      title="Open a saved .ivac-project.json"
     >
       Open project
     </button>
@@ -1428,7 +1428,7 @@
       <div class="drop-card">
         <div class="drop-glyph">⤓</div>
         <div class="drop-title">Drop to open</div>
-        <div class="drop-sub">DXF / SVG drawings · .wiac-project files</div>
+        <div class="drop-sub">DXF / SVG drawings · .ivac-project files</div>
       </div>
     </div>
   {/if}
@@ -1568,7 +1568,7 @@
     color: var(--text-muted);
   }
   /* Shake animation on undo/redo when stack is empty. */
-  @keyframes wiac-undo-shake {
+  @keyframes ivac-undo-shake {
     0% {
       transform: translateX(0);
     }
@@ -1586,7 +1586,7 @@
     }
   }
   .dropdown .item.shake {
-    animation: wiac-undo-shake 100ms ease-in-out;
+    animation: ivac-undo-shake 100ms ease-in-out;
   }
 
   /* ---------- toolbar ------------------------------------------ */

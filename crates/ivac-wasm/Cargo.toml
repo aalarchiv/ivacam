@@ -1,0 +1,35 @@
+[package]
+name = "ivac-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "ivaCAM WebAssembly bindings (browser-only mode)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+ivac-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+# uuid (transitive via dxf-rs) needs a wasm-friendly rng. uuid >=1.23 won't
+# build for wasm32 unless we hand it the rng-getrandom feature; getrandom
+# itself needs its own `js` feature to use Web Crypto in the browser.
+uuid = { version = "=1.10", default-features = false, features = ["js"] }
+getrandom = { version = "0.2", features = ["js"] }
+
+[package.metadata.wasm-pack.profile.release]
+# Pass through the feature set rustc emits (sign-ext, mutable-globals,
+# bulk-memory, sat-float-to-int) so wasm-opt doesn't reject the input.
+wasm-opt = ["-Oz", "--enable-sign-ext", "--enable-mutable-globals", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]

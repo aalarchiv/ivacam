@@ -5,7 +5,7 @@
 import type { SimSeverity, SimWarning } from '../api/types';
 
 /// Severity mapping for a sim warning. Mirrors
-/// `wiac_core::sim::diagnostics::severity` so the UI can color-code
+/// `ivac_core::sim::diagnostics::severity` so the UI can color-code
 /// without a round-trip.
 export function simWarningSeverity(w: SimWarning): SimSeverity {
   switch (w.kind) {

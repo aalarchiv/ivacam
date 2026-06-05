@@ -84,19 +84,19 @@ describe('HttpWiacClient.computeHelixRadius', () => {
     ).rejects.toThrow(/helix-radius returned 400/);
   });
 
-  // luf1: when the server returns the full structured `wiac_core::Error`
+  // luf1: when the server returns the full structured `ivac_core::Error`
   // (post-luf1 envelope), the thrown Error.message is the JSON itself so
   // tryParseStructuredError() reconstructs every field — including
   // recovery_hint and auto_fix — for ErrorToast / GenerateBar to render.
   it('rethrows structured-error responses verbatim so the frontend recovers kind+hint+auto_fix', async () => {
-    const wiac: WiacError = {
+    const ivac: WiacError = {
       kind: 'misconfigured',
       message: 'op 2 references missing tool 9',
       recovery_hint: 'Pick a tool from the library.',
       auto_fix: { kind: 'assign_tool', op_id: 2, suggested_tool_id: 1 },
     };
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify(wiac), {
+      new Response(JSON.stringify(ivac), {
         status: 400,
         headers: { 'content-type': 'application/json' },
       }),
@@ -110,7 +110,7 @@ describe('HttpWiacClient.computeHelixRadius', () => {
     }
     expect(captured).toBeInstanceOf(Error);
     const parsed = tryParseStructuredError((captured as Error).message);
-    expect(parsed).toEqual(wiac);
+    expect(parsed).toEqual(ivac);
   });
 });
 
@@ -129,14 +129,14 @@ describe('resolveApiChoice (transport selection)', () => {
     );
   });
 
-  it('VITE_WIAC_API URL is used when set', () => {
+  it('VITE_IVAC_API URL is used when set', () => {
     expect(resolveApiChoice({ ...base, envApi: 'https://cam.example.com' })).toEqual({
       kind: 'http',
       url: 'https://cam.example.com',
     });
   });
 
-  it('VITE_WIAC_API=wasm forces the in-browser engine', () => {
+  it('VITE_IVAC_API=wasm forces the in-browser engine', () => {
     expect(resolveApiChoice({ ...base, envApi: 'wasm' })).toEqual({ kind: 'wasm' });
   });
 
@@ -155,14 +155,14 @@ describe('resolveApiChoice (transport selection)', () => {
     expect(resolveApiChoice({ ...base, defaultWasm: true })).toEqual({ kind: 'wasm' });
   });
 
-  it('default in dev → the local wiac-server', () => {
+  it('default in dev → the local ivac-server', () => {
     expect(resolveApiChoice({ ...base, defaultWasm: false })).toEqual({
       kind: 'http',
       url: 'http://localhost:8766',
     });
   });
 
-  it('an explicit VITE_WIAC_API URL overrides the production wasm default', () => {
+  it('an explicit VITE_IVAC_API URL overrides the production wasm default', () => {
     expect(
       resolveApiChoice({ ...base, envApi: 'https://cam.example.com', defaultWasm: true }),
     ).toEqual({ kind: 'http', url: 'https://cam.example.com' });

@@ -52,7 +52,7 @@ export function prettyOpKind(kind: OpKind): string {
   }
 }
 
-/// Mirrors `wiac_core::project::FixtureKind`. The `shape` discriminator
+/// Mirrors `ivac_core::project::FixtureKind`. The `shape` discriminator
 /// is the wire-side serde tag; vertex coords for `polygon` are local
 /// (origin-relative) so the fixture can be moved by editing `origin`.
 export type FixtureKind =
@@ -110,13 +110,13 @@ export type CoolantMode = 'off' | 'mist' | 'flood';
 
 /// z1y0: per-tool spindle direction. `cw` (M3) is the default for most
 /// right-hand cutters; `ccw` (M4) is for left-hand / reverse-thread /
-/// mirror-helix tooling. Mirror of `wiac_core::project::SpindleDirection`,
+/// mirror-helix tooling. Mirror of `ivac_core::project::SpindleDirection`,
 /// serde-`rename_all = "lowercase"`.
 export type SpindleDirection = 'cw' | 'ccw';
 
 /// 1wit: one cross-section sample of a form / profile cutter outline,
 /// measured up from the cutting tip. Mirror of
-/// `wiac_core::project::FormProfileSample`.
+/// `ivac_core::project::FormProfileSample`.
 export interface FormProfileSample {
   /// Height above the cutting tip (mm). 0 is the bottom face.
   zMm: number;
@@ -263,7 +263,7 @@ export interface ToolEntry {
 }
 
 /// Tool holder geometry above the shank. Mirrors
-/// `wiac_core::project::HolderShape`. v1 treats every holder as
+/// `ivac_core::project::HolderShape`. v1 treats every holder as
 /// cylindrically symmetric — set-screw flats and asymmetric ER nuts
 /// are bounded by their enclosing cylinder/cone.
 export type HolderShape =
@@ -305,7 +305,7 @@ export function migrateMachineSettings(raw: unknown): MachineSettings {
 export interface MachineSettings {
   /// h0tx: free-text identifier for this machine ("Shop CNC",
   /// "Garage MPCNC"). Surfaces in the MachineDialog header + the
-  /// .wiac-machine.json save file. Empty by default.
+  /// .ivac-machine.json save file. Empty by default.
   name?: string;
   /// h0tx: which op kinds the machine can run. Drives the
   /// OpKindPicker's filter — a laser-only machine doesn't show
@@ -412,7 +412,7 @@ export interface MachineSettings {
   laserDynamicPower?: boolean;
 }
 
-/// Mirror of `wiac_core::gcode::post_profile::PostProfile` (rt1.15).
+/// Mirror of `ivac_core::gcode::post_profile::PostProfile` (rt1.15).
 /// Every template field is optional — `None` keeps the built-in
 /// emitter's hard-coded behavior. Templates accept token markers
 /// substituted at emit time: `<version>`, `<unit>`, `<t>` (tool
@@ -436,7 +436,7 @@ export interface PostProfile {
   axes?: AxesConfig;
 }
 
-/// Mirror of `wiac_core::gcode::post_profile::AxisFormat`. The
+/// Mirror of `ivac_core::gcode::post_profile::AxisFormat`. The
 /// printf-ish `format` string supports `%[flags][width][.precision]<f|d|g|e>`.
 /// `scale` is applied before formatting (`-1.0` flips Z-down for a
 /// Z-up controller; `25.4` ad-hoc converts inch→mm).
@@ -447,7 +447,7 @@ export interface AxisFormat {
   scale: number;
 }
 
-/// Mirror of `wiac_core::gcode::post_profile::AxesConfig`. All seven
+/// Mirror of `ivac_core::gcode::post_profile::AxesConfig`. All seven
 /// axes are required so the Rust deserializer doesn't need to
 /// reconstruct defaults — the FE always sends a complete bundle.
 export interface AxesConfig {
@@ -498,7 +498,7 @@ export type HalfpipeProfile =
   | { kind: 'v_bottom'; included_angle_deg: number };
 
 /// Pattern repetition for an Operation. Mirrors
-/// `wiac_core::project::PatternConfig`. Each tagged variant matches
+/// `ivac_core::project::PatternConfig`. Each tagged variant matches
 /// the Rust snake_case discriminator. The (0, 0) / 0° instance is
 /// the original geometry, so a single-count pattern is identical to
 /// no pattern.
@@ -517,7 +517,7 @@ export type PatternConfig =
     };
 
 /// Per-op tab placement mode (rt1.10). Maps to
-/// `wiac_core::project::TabPlacementMode`.
+/// `ivac_core::project::TabPlacementMode`.
 export type TabPlacementMode =
   | { kind: 'off' }
   | { kind: 'auto'; count: number }
@@ -539,7 +539,7 @@ export interface TabPlacement {
 /// cutter rotation opposes the feed at the contact point so chip starts
 /// thin and grows; works on machines with backlash. `climb` is rotation
 /// with feed → better surface finish but needs a rigid stiff machine.
-/// See wiac_core::project::CutDirection for the winding rules.
+/// See ivac_core::project::CutDirection for the winding rules.
 export type CutDirection = 'conventional' | 'climb';
 
 /// Plunge entry strategy. `direct` is a straight Z dive (current
@@ -557,7 +557,7 @@ export type PlungeStrategy =
   | { kind: 'direct' }
   | { kind: 'ramp'; angle_deg: number }
   | { kind: 'helix'; angle_deg: number; radius_mm: number | null };
-/// Drill cycle for an OperationKind::Drill op. Mirrors wiac_core::project::DrillCycle.
+/// Drill cycle for an OperationKind::Drill op. Mirrors ivac_core::project::DrillCycle.
 /// `simple` → G81; `peck` → G83 (full retract between pecks); `chip_break` → G73
 /// (small partial retract between pecks). `dwell_sec` is the dwell at bottom in
 /// seconds (0 = no dwell). `peck_step_mm` is the per-peck Z step.
@@ -566,7 +566,7 @@ export type DrillCycle =
   | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
   | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
 
-/// Thin frontend mirror of wiac_core::project::Operation. Tracks just
+/// Thin frontend mirror of ivac_core::project::Operation. Tracks just
 /// what the UI needs to show + edit; the wire format expands to the
 /// full Operation when Generate ships.
 
@@ -577,7 +577,7 @@ export type DrillCycle =
 ///
 /// All non-translate ops use a fixed pivot: the ORIGINAL (untransformed)
 /// file bbox center. Application order: scale → mirrors → rotate → translate.
-/// Bulge handling follows `crates/wiac-core/src/cam.rs` — only mirrors flip
+/// Bulge handling follows `crates/ivac-core/src/cam.rs` — only mirrors flip
 /// it; scale / rotate / translate leave it unchanged.
 ///
 /// `identityFileTransform()` returns the no-op identity; consumers should
@@ -632,14 +632,14 @@ export interface ImportEntry {
 }
 
 /// i5g4: gcode work-coordinate system identifier. Mirror of
-/// `wiac_core::project::Wcs` (serde `rename_all = "UPPERCASE"`).
+/// `ivac_core::project::Wcs` (serde `rename_all = "UPPERCASE"`).
 export type Wcs = 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59';
 
 /// i5g4: program-level work-coordinate offset between the geometry
 /// frame (where the DXF / SVG was drawn) and the gcode WCS origin
 /// (where the user zeros the spindle on the real machine). All-zeros
 /// + G54 = "geometry origin = WCS origin", the legacy default.
-/// Mirror of `wiac_core::project::WorkOffset`.
+/// Mirror of `ivac_core::project::WorkOffset`.
 export interface WorkOffset {
   x_mm: number;
   y_mm: number;
@@ -730,7 +730,7 @@ export function placementFileTransform(
 }
 
 export interface ProjectFile {
-  kind: 'wiac-project';
+  kind: 'ivac-project';
   version: 1;
   imports: ImportEntry[];
   visibleLayers: string[];
@@ -753,7 +753,7 @@ export interface ProjectFile {
 }
 
 /// f60x: a target surface source for relief / ball-nose surfacing. Mirror
-/// of `wiac_core::project::ReliefSource`. Holds a row-major
+/// of `ivac_core::project::ReliefSource`. Holds a row-major
 /// normalized-brightness grid (each value in [0, 1]) plus its world
 /// placement; the depth mapping (brightness → Z) lives on the `relief_mill`
 /// op so depth retunes without re-decoding the image. Produced by

@@ -1,14 +1,14 @@
-# wiac-core pipeline baseline
+# ivac-core pipeline baseline
 
 End-to-end time per fixture: DXF import → segments → objects → parallel
 offset → linuxcnc gcode emit. Captured by
-`cargo bench -p wiac-core --bench pipeline`.
+`cargo bench -p ivac-core --bench pipeline`.
 
 > Numbers below are **indicative** and were captured on the maintainer's
 > dev box. For PR-relevant comparisons, run on a fixed self-hosted runner —
 > cloud CI varies too much for sub-millisecond regressions.
 
-| Fixture     | wiac-core (release) | Notes                |
+| Fixture     | ivac-core (release) | Notes                |
 |-------------|---------------------|----------------------|
 | simple.dxf  | ~0.63 ms            | reference target     |
 | nest.dxf    | ~0.92 ms            | nested objects       |
@@ -25,5 +25,5 @@ offset → linuxcnc gcode emit. Captured by
 ## How to run
 
 ```sh
-cargo bench -p wiac-core --bench pipeline -- --quick
+cargo bench -p ivac-core --bench pipeline -- --quick
 ```

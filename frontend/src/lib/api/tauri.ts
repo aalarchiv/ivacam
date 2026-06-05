@@ -1,7 +1,7 @@
 // Tauri implementation of WiacClient. The desktop app is detected by the
 // `__TAURI_INTERNALS__` global Tauri injects into the WebView; when absent
 // we use the HTTP client instead. Methods proxy through `invoke` to the
-// Rust commands defined in crates/wiac-tauri/src/commands.rs.
+// Rust commands defined in crates/ivac-tauri/src/commands.rs.
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -52,7 +52,7 @@ export class TauriWiacClient implements WiacClient {
     const { writeFile } = await import('@tauri-apps/plugin-fs');
     const { join } = await import('@tauri-apps/api/path');
     const dir = await tempDir();
-    const fname = `wiac-${Date.now()}-${file.name}`;
+    const fname = `ivac-${Date.now()}-${file.name}`;
     const fullpath = await join(dir, fname);
     const data = new Uint8Array(await file.arrayBuffer());
     await writeFile(fullpath, data);
@@ -183,7 +183,7 @@ export class TauriWiacClient implements WiacClient {
 }
 
 /// Replace the active source-file watch set on the desktop shell. The
-/// backend (crates/wiac-tauri/src/watcher.rs) emits `source-file-changed`
+/// backend (crates/ivac-tauri/src/watcher.rs) emits `source-file-changed`
 /// events whenever any of the supplied paths is rewritten.
 export async function watchSourcePaths(paths: string[]): Promise<void> {
   await invoke('watch_source_paths', { paths });

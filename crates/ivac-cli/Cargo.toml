@@ -1,0 +1,25 @@
+[package]
+name = "ivac-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "ivaCAM headless CLI converter"
+
+[[bin]]
+name = "ivac"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+ivac-core = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }

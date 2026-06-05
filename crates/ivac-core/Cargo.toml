@@ -1,0 +1,43 @@
+[package]
+name = "ivac-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "ivaCAM core: DXF/SVG import, CAM math, gcode generation"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+dxf = "0.6"
+cavalier_contours = "0.7"
+# Pure-Rust port of Clipper2 (BSL-1.0). Builds for wasm32-unknown-unknown
+# without a C++ stdlib, so the pocket cascade ships in every transport.
+clipper2-rust = "1"
+schemars = { version = "0.8", features = ["preserve_order"] }
+ttf-parser = "0.25"
+# usvg canonicalises an SVG document to a tree of paths with absolute
+# transforms applied. We disable its `text` / system-fonts pull so our
+# wasm bundle doesn't grow needlessly — the SVG importer treats <text>
+# as text-to-paths-already, which is fine for CAM input where
+# text-to-stroke conversion happens upstream.
+usvg = { version = "0.45", default-features = false }
+voronator = { workspace = true }
+seahash = "4"
+lru = { version = "0.16", default-features = false }
+
+[dev-dependencies]
+ttf-parser = "0.25"
+criterion = { version = "0.5", default-features = false, features = ["plotters", "cargo_bench_support"] }
+
+[[bench]]
+name = "pipeline"
+harness = false

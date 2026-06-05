@@ -26,9 +26,9 @@ importers:
       three:
         specifier: ^0.184.0
         version: 0.184.0
-      wiac-wasm:
-        specifier: link:../crates/wiac-wasm/pkg
-        version: link:../crates/wiac-wasm/pkg
+      ivac-wasm:
+        specifier: link:../crates/ivac-wasm/pkg
+        version: link:../crates/ivac-wasm/pkg
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1

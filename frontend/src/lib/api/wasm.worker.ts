@@ -36,7 +36,7 @@ let modPromise: Promise<WasmModule> | null = null;
 function loadModule(): Promise<WasmModule> {
   if (!modPromise) {
     modPromise = (async () => {
-      const wasm = (await import(/* @vite-ignore */ 'wiac-wasm')) as unknown as WasmModule;
+      const wasm = (await import(/* @vite-ignore */ 'ivac-wasm')) as unknown as WasmModule;
       if (typeof wasm.default === 'function') {
         await wasm.default();
       }

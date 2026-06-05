@@ -35,7 +35,7 @@ repos:
         name: cargo xtask schema-check
         entry: cargo xtask schema-check
         language: system
-        files: ^crates/wiac-core/src/.*\.rs$|^schema/openapi\.yaml$|^xtask/src/.*\.rs$
+        files: ^crates/ivac-core/src/.*\.rs$|^schema/openapi\.yaml$|^xtask/src/.*\.rs$
         pass_filenames: false
 
       # Schema-derived frontend types must also be regenerated. We regenerate

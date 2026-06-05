@@ -143,7 +143,7 @@
           name: 'Mach3 metric',
           file_extension: 'tap',
           line_ending: '\r\n',
-          program_start: '%\nN10 G21 G90 (wiac <version>)',
+          program_start: '%\nN10 G21 G90 (ivac <version>)',
           program_end: 'M30\n%',
         },
       },
@@ -153,7 +153,7 @@
           name: 'GRBL default',
           file_extension: 'nc',
           line_ending: '\n',
-          program_start: '; wiac <version> — GRBL',
+          program_start: '; ivac <version> — GRBL',
           program_end: 'M2',
           tool_change: '; toolchange to T<t> (manual on GRBL)',
         },
@@ -256,7 +256,7 @@
 
     <div class="grid">
       <label
-        title="Free-text identifier for this machine setup. Shown in the dialog header + persisted into .wiac-machine.json save files."
+        title="Free-text identifier for this machine setup. Shown in the dialog header + persisted into .ivac-machine.json save files."
       >
         Name
         <input
@@ -538,7 +538,7 @@
         </p>
       {/if}
       <label
-        title="Pick a built-in profile or write your own templates below. Built-in profiles fill the templates with sensible defaults for that controller; you can still edit them. 'None' uses wiac's hard-coded defaults."
+        title="Pick a built-in profile or write your own templates below. Built-in profiles fill the templates with sensible defaults for that controller; you can still edit them. 'None' uses ivac's hard-coded defaults."
       >
         Profile preset
         <span class="field">
@@ -559,7 +559,7 @@
                   name: 'Mach3 metric',
                   file_extension: 'tap',
                   line_ending: '\r\n',
-                  program_start: '%\nN10 G21 G90 (wiac <version>)',
+                  program_start: '%\nN10 G21 G90 (ivac <version>)',
                   program_end: 'M30\n%',
                 };
               } else if (v === 'grbl') {
@@ -567,7 +567,7 @@
                   name: 'GRBL default',
                   file_extension: 'nc',
                   line_ending: '\n',
-                  program_start: '; wiac <version> — GRBL',
+                  program_start: '; ivac <version> — GRBL',
                   program_end: 'M2',
                   tool_change: '; toolchange to T<t> (manual on GRBL)',
                 };
@@ -888,7 +888,7 @@
             commit();
             await fileOps.saveMachine();
           }}
-          title="Save this machine config to a .wiac-machine.json file."
+          title="Save this machine config to a .ivac-machine.json file."
         >
           Save…
         </button>
@@ -902,7 +902,7 @@
             jerkDraft = draft.jerk ? { ...draft.jerk } : { x: 0, y: 0, z: 0 };
             jerkEnabled = !!draft.jerk;
           }}
-          title="Replace the active machine config with the contents of a .wiac-machine.json file."
+          title="Replace the active machine config with the contents of a .ivac-machine.json file."
         >
           Load…
         </button>

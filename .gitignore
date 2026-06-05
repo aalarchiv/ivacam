@@ -21,11 +21,11 @@ frontend/.vite
 **/.vite/
 
 # Tauri
-crates/wiac-tauri/target
-crates/wiac-tauri/gen
+crates/ivac-tauri/target
+crates/ivac-tauri/gen
 
 # WASM
-crates/wiac-wasm/pkg
+crates/ivac-wasm/pkg
 
 # Editor
 .vscode/*

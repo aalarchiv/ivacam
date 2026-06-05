@@ -1,5 +1,5 @@
 // Adapter from the frontend ProjectState shape to the wire Project the
-// wiac_core pipeline consumes. Camel-case → snake-case, and the
+// ivac_core pipeline consumes. Camel-case → snake-case, and the
 // kind-specific Operation params get materialized from the per-op
 // entry's flat fields.
 
@@ -132,7 +132,7 @@ export function toWireToolKind(kind: import('../state/op_types').ToolKind): Wire
   return kind === 'cone' ? 'kegel' : kind;
 }
 
-/// Wire-side holder shape. Mirrors `wiac_core::project::HolderShape`'s
+/// Wire-side holder shape. Mirrors `ivac_core::project::HolderShape`'s
 /// `#[serde(tag = "kind")]` discriminator.
 export type WireHolderShape =
   | { kind: 'cylinder'; diameter_mm: number; length_mm: number }
@@ -248,7 +248,7 @@ interface WireMachine {
     coolant_mist_on?: string;
     coolant_mist_off?: string;
     // hev: per-axis output config. Must mirror
-    // `wiac_core::gcode::post_profile::AxesConfig` so a refactor that
+    // `ivac_core::gcode::post_profile::AxesConfig` so a refactor that
     // type-picks instead of spread-copies the post profile doesn't
     // silently drop the user's axis customisations.
     axes?: {
@@ -482,7 +482,7 @@ interface WireOp {
   pin_order?: boolean;
 }
 
-/// Fixture wire shape mirrors `wiac_core::project::FixtureKind` (snake_case
+/// Fixture wire shape mirrors `ivac_core::project::FixtureKind` (snake_case
 /// `shape` discriminator). Vertices for `polygon` are origin-relative, the
 /// other shapes carry their dims directly.
 export type WireFixtureKind =
@@ -517,7 +517,7 @@ interface WireTextLayer {
   width_scale: number;
 }
 
-/// i5g4: wire shape for `wiac_core::project::WorkOffset`. Every field
+/// i5g4: wire shape for `ivac_core::project::WorkOffset`. Every field
 /// is serde-`skip_serializing_if = is_zero / is_default`, so we always
 /// omit the field entirely when at default (zero offset + G54) rather
 /// than emit `{x_mm:0, y_mm:0, ...}` — keeps payloads small and
@@ -539,7 +539,7 @@ export interface WireProject {
   /// i5g4: program-level WCS offset. Omitted when default (all-zero @
   /// G54) so the Rust serde-default round-trip matches.
   work_offset?: WireWorkOffset;
-  /// vrrr: resolved stock box (mirror of `wiac_core::project::StockConfig`).
+  /// vrrr: resolved stock box (mirror of `ivac_core::project::StockConfig`).
   /// The frontend derives this from its auto/manual stock UI via
   /// `computeFootprint` and sends it so the core `out_of_stock` scan
   /// (warnings.rs::push_stock_warning) runs for every transport. Omitted
@@ -553,7 +553,7 @@ export interface WireProject {
   group_ops_by_tool?: boolean;
 }
 
-/// f60x: wire shape of `wiac_core::project::ReliefSource`. `origin` is the
+/// f60x: wire shape of `ivac_core::project::ReliefSource`. `origin` is the
 /// min corner [x, y]; `brightness` is row-major normalized [0, 1].
 export interface WireReliefSource {
   id: number;
@@ -565,7 +565,7 @@ export interface WireReliefSource {
   brightness: number[];
 }
 
-/// vrrr: wire shape of `wiac_core::project::StockConfig` — an
+/// vrrr: wire shape of `ivac_core::project::StockConfig` — an
 /// axis-aligned stock box resolved in the geometry frame. `origin` is the
 /// min corner (x, y); the body spans z ∈ [top_z_mm − thickness_mm, top_z_mm].
 export interface WireStock {

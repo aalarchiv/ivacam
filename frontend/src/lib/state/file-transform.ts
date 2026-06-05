@@ -1,7 +1,7 @@
 /// File-level transform engine (bww). A non-destructive 2D transform
 /// stored on the project that re-positions / re-orients / scales the
 /// imported drawing on the stock. Backend primitives live in
-/// `crates/wiac-core/src/cam.rs`; the same math is replicated here in
+/// `crates/ivac-core/src/cam.rs`; the same math is replicated here in
 /// TypeScript so every consumer (canvas draw, OSnap precompute, 3D
 /// scene, build-project payload, sim) sees the same geometry without
 /// a server round trip.

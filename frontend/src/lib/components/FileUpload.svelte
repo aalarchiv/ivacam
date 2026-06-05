@@ -64,8 +64,8 @@
   /// openProject can fire them when running in a browser (no native
   /// picker available there). Cleared on unmount.
   function exposeInputs() {
-    (window as unknown as Record<string, unknown>).__wiacFileInput = inputEl;
-    (window as unknown as Record<string, unknown>).__wiacProjectInput = projectInput;
+    (window as unknown as Record<string, unknown>).__ivacFileInput = inputEl;
+    (window as unknown as Record<string, unknown>).__ivacProjectInput = projectInput;
   }
 
   onMount(() => {
@@ -92,8 +92,8 @@
       window.removeEventListener('dragleave', onWindowDragLeave);
       window.removeEventListener('drop', onWindowDrop);
       unlistenFileAssoc?.();
-      delete (window as unknown as Record<string, unknown>).__wiacFileInput;
-      delete (window as unknown as Record<string, unknown>).__wiacProjectInput;
+      delete (window as unknown as Record<string, unknown>).__ivacFileInput;
+      delete (window as unknown as Record<string, unknown>).__ivacProjectInput;
     };
   });
 </script>
@@ -102,7 +102,7 @@
 <input
   bind:this={projectInput}
   type="file"
-  accept=".wiac-project.json,.vc-project.json,.json"
+  accept=".ivac-project.json,.vc-project.json,.json"
   onchange={onProjectPick}
   hidden
 />

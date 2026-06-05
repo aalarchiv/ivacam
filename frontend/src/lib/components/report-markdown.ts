@@ -21,7 +21,7 @@ export interface ReportOp {
 
 export interface ReportData {
   projectName: string;
-  /// Full version string, e.g. "wiaConstructor v0.0.0 (abc1234, built 2026-05-25T…)".
+  /// Full version string, e.g. "ivaCAM v0.0.0 (abc1234, built 2026-05-25T…)".
   generatedBy: string;
   dateIso: string;
   dateDisplay: string;
@@ -58,7 +58,7 @@ export function buildReportMarkdown(d: ReportData): string {
 
   const body: string[] = [];
   body.push(`# ${d.projectName}`, '');
-  body.push(`_${d.dateDisplay} · wiaConstructor report_`, '');
+  body.push(`_${d.dateDisplay} · ivaCAM report_`, '');
 
   if (d.stats) {
     body.push('## Toolpath stats', '');

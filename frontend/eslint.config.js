@@ -1,4 +1,4 @@
-// Flat ESLint config for the wiaConstructor frontend (zizn).
+// Flat ESLint config for the ivaCAM frontend (zizn).
 //
 // Scope: syntax-level lint only — no `parserOptions.project` / type-aware
 // rules. svelte-check already runs the full TS type-check on src/**, and
@@ -30,10 +30,10 @@ export default [
         ...globals.browser,
         ...globals.node,
         // Vite's `define` replacement constants (see vite.config.ts).
-        __WIAC_BUILD_VERSION__: 'readonly',
-        __WIAC_PKG_VERSION__: 'readonly',
-        __WIAC_BUILD_PROFILE__: 'readonly',
-        __WIAC_BUILD_DATE__: 'readonly',
+        __IVAC_BUILD_VERSION__: 'readonly',
+        __IVAC_PKG_VERSION__: 'readonly',
+        __IVAC_BUILD_PROFILE__: 'readonly',
+        __IVAC_BUILD_DATE__: 'readonly',
       },
     },
     rules: {

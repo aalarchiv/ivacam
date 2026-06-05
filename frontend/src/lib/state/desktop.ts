@@ -112,7 +112,7 @@ export async function logErrorToStderr(msg: string): Promise<void> {
 }
 
 /// Resolves to true when the desktop binary was launched with
-/// `WIAC_DEBUG=1`. Gates dev-only UI like the in-DOM error banner.
+/// `IVAC_DEBUG=1`. Gates dev-only UI like the in-DOM error banner.
 /// Always false on web.
 export async function isDebugSession(): Promise<boolean> {
   if (!isTauri()) return false;

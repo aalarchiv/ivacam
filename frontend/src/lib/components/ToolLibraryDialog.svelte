@@ -1728,7 +1728,7 @@
           onclick={async () => {
             await fileOps.saveToolset();
           }}
-          title="Save the current tool library to a .wiac-toolset.json file."
+          title="Save the current tool library to a .ivac-toolset.json file."
         >
           Save…
         </button>
@@ -1740,7 +1740,7 @@
             // doesn't keep showing stale entries.
             draft = project.tools.map((t) => ({ ...t }));
           }}
-          title="Replace the current tools with the contents of a .wiac-toolset.json file."
+          title="Replace the current tools with the contents of a .ivac-toolset.json file."
         >
           Load (replace)…
         </button>
@@ -1750,7 +1750,7 @@
             await fileOps.loadToolset('add');
             draft = project.tools.map((t) => ({ ...t }));
           }}
-          title="Add tools from a .wiac-toolset.json file. Tools whose name already exists are skipped."
+          title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
         >
           Load (add)…
         </button>
@@ -1849,7 +1849,7 @@
     letter-spacing: 0;
     margin-left: 0.2rem;
   }
-  @keyframes wiac-tool-flash {
+  @keyframes ivac-tool-flash {
     0%,
     100% {
       background: transparent;
@@ -1861,7 +1861,7 @@
   }
   .row.highlight {
     border-radius: 3px;
-    animation: wiac-tool-flash 1.2s ease-in-out;
+    animation: ivac-tool-flash 1.2s ease-in-out;
   }
   .id {
     text-align: center;

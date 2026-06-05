@@ -4,7 +4,7 @@
 import { isTauri } from './api/env';
 
 const MAX = 10;
-const STORAGE_KEY = 'wiac.recent';
+const STORAGE_KEY = 'ivac.recent';
 
 export interface RecentEntry {
   path: string;

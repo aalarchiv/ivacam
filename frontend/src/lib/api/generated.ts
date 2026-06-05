@@ -48,7 +48,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Parse a vector file into wiaConstructor geometry
+         * Parse a vector file into ivaCAM geometry
          * @description Accepts the bytes of a DXF, SVG, HPGL, NGC, STL or other supported
          *     format and returns the flattened geometry: layers, segments
          *     (LINE/ARC primitives with bulge for arcs), bounding box, and unit
@@ -547,7 +547,7 @@ export interface components {
              */
             max_feed_mm_min?: number | null;
             mode: components["schemas"]["MachineMode"];
-            /** @description h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.wiac-machine.json` save/load files. */
+            /** @description h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.ivac-machine.json` save/load files. */
             name?: string;
             /** @description 4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop) at every program pause — both the `Pause` op and the manual (`ManualM0Pause`) tool-change halt. `M1` is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (the switch off skips the pauses) yet still stop on demand. Default `false` keeps the mandatory `M0` — byte-identical output for existing projects. */
             optional_stop?: boolean;
@@ -1116,7 +1116,7 @@ export interface components {
             step?: number | null;
             /**
              * Format: double
-             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior wiac behaviour).
+             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior ivac behaviour).
              */
             stock_to_leave_mm?: number;
             /**
@@ -1188,7 +1188,7 @@ export interface components {
             step?: number | null;
             /**
              * Format: double
-             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior wiac behaviour).
+             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior ivac behaviour).
              */
             stock_to_leave_mm?: number;
             /**
@@ -1448,7 +1448,7 @@ export interface components {
         };
         /** @enum {string} */
         PostProcessorKind: "linuxcnc" | "grbl" | "hpgl";
-        /** @description A named bundle of override templates the user attaches to a machine config. Any field left at `None` keeps the built-in emitter's default behavior. The active variant of `PostProcessorKind` is unaffected — wiac's linuxcnc / grbl / hpgl emitters continue to drive line-level formatting (delta encoding, arc fitting, drill cycles). The profile only swaps the PROGRAM-LEVEL strings. */
+        /** @description A named bundle of override templates the user attaches to a machine config. Any field left at `None` keeps the built-in emitter's default behavior. The active variant of `PostProcessorKind` is unaffected — ivac's linuxcnc / grbl / hpgl emitters continue to drive line-level formatting (delta encoding, arc fitting, drill cycles). The profile only swaps the PROGRAM-LEVEL strings. */
         PostProfile: {
             /** @description Per-axis output format (hev). When set, replaces the hard-coded `X{val} Y{val} Z{val}` / `I{val} J{val}` / `F{rate}` / `S{rpm}` emission with the user's axis names + printf-ish format + scale, with per-axis enable so disabled axes drop out entirely. */
             axes?: components["schemas"]["AxesConfig"] | null;
@@ -2297,7 +2297,7 @@ export interface components {
              */
             carve_max_width_mm?: number | null;
             /**
-             * @description r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam's behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true to recover the prior wiac behaviour for the rare "carve a depth gradient across the whole interior" workflow (think Aspire-style relief).
+             * @description r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam's behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true to recover the prior ivac behaviour for the rare "carve a depth gradient across the whole interior" workflow (think Aspire-style relief).
              * @default false
              */
             full_medial_axis: boolean;

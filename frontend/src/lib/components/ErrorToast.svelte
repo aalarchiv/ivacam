@@ -123,7 +123,7 @@
       `Backend error:\n\n\`\`\`json\n${JSON.stringify(structured, null, 2)}\n\`\`\``,
     );
     const title = encodeURIComponent(`Internal error: ${structured.message.slice(0, 80)}`);
-    const url = `https://github.com/wiaconstructor/wiaconstructor/issues/new?title=${title}&body=${body}`;
+    const url = `https://github.com/ivacam/ivacam/issues/new?title=${title}&body=${body}`;
     if (typeof window !== 'undefined') {
       try {
         window.open(url, '_blank', 'noopener');
@@ -227,7 +227,7 @@
     font-size: 0.82rem;
     box-shadow: 0 6px 20px var(--shadow-modal);
     pointer-events: auto;
-    animation: wiac-toast-in 140ms ease-out;
+    animation: ivac-toast-in 140ms ease-out;
   }
   .toast.kind-internal {
     border-color: var(--danger);
@@ -289,7 +289,7 @@
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent-strong);
   }
-  @keyframes wiac-toast-in {
+  @keyframes ivac-toast-in {
     from {
       transform: translateY(8px);
       opacity: 0;

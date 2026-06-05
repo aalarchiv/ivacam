@@ -1,4 +1,4 @@
-# wiaConstructor — quickstart
+# ivaCAM — quickstart
 
 A 5-minute tour for people who already know CNC milling, laser cutting,
 or plasma cutting and want to turn a 2D drawing into G-code. If you're
@@ -7,7 +7,7 @@ and [`BUILDING.md`](./BUILDING.md) instead.
 
 ## 1. Install
 
-wiaConstructor ships as a single-binary desktop app via **Tauri**. The
+ivaCAM ships as a single-binary desktop app via **Tauri**. The
 desktop bundle includes the rendering engine and CAM math; nothing else
 needs to be installed.
 
@@ -50,7 +50,7 @@ also excluded from operations.
 > **File ▸ File transform** (or the per-import gear icon in the Layers
 > panel). Common case: DXF saved in mm but interpreted as inches.
 
-## 4. Tell wiaConstructor about your machine
+## 4. Tell ivaCAM about your machine
 
 Two configurations matter before you generate code:
 
@@ -130,7 +130,7 @@ gate. The four critical kinds:
 | `cell_size_coarsened`    | Sim cell size was raised to fit the budget — informational         |
 
 Click a warning row to jump the 3D scene to the warning location. The
-generated G-code is still emitted — wiaConstructor doesn't block you
+generated G-code is still emitted — ivaCAM doesn't block you
 from running unsafe code — but the **Settings** panel has a _"Block
 G-code save on critical warnings"_ toggle that turns the warnings into
 hard gates if you want belt-and-braces.
@@ -150,12 +150,12 @@ them before running.
 
 ## 9. Save the project
 
-`File ▸ Save project as…` writes a `.wiac-project.json` containing your
+`File ▸ Save project as…` writes a `.ivac-project.json` containing your
 imports, ops, tools, machine, stock, and fixtures. Reopening it brings
 you back exactly where you left off, including which layers were
 visible and which op was selected.
 
-Tool libraries can also be saved separately as `.wiac-toolset.json`
+Tool libraries can also be saved separately as `.ivac-toolset.json`
 (`Tools ▸ Save toolset` / `Load toolset`), so the same library can be
 reused across projects.
 

@@ -109,20 +109,20 @@ let wasmPromise: Promise<WasmHandle> | null = null;
 async function loadWasm(): Promise<WasmHandle> {
   if (!wasmPromise) {
     wasmPromise = (async () => {
-      // The pkg is built by `wasm-pack build crates/wiac-wasm --target web`
+      // The pkg is built by `wasm-pack build crates/ivac-wasm --target web`
       // and linked via package.json. Letting vite resolve the import is
-      // critical here: the browser can't fetch a bare `wiac-wasm` URL,
+      // critical here: the browser can't fetch a bare `ivac-wasm` URL,
       // so an @vite-ignore'd dynamic import would fail silently in a
       // bundled app. Without the ignore, vite splits this into a chunk,
-      // copies wiac_wasm_bg.wasm with a hashed name, and rewrites the
+      // copies ivac_wasm_bg.wasm with a hashed name, and rewrites the
       // js's `import.meta.url`-relative .wasm fetch to match.
-      const mod = (await import('wiac-wasm')) as unknown as WasmModule;
+      const mod = (await import('ivac-wasm')) as unknown as WasmModule;
       if (typeof mod.default !== 'function') {
-        throw new Error('wiac-wasm pkg missing default init export');
+        throw new Error('ivac-wasm pkg missing default init export');
       }
       const init = await mod.default();
       if (!init.memory) {
-        throw new Error('wiac-wasm init returned no memory');
+        throw new Error('ivac-wasm init returned no memory');
       }
       return { Simulator: mod.Simulator, memory: init.memory };
     })();
@@ -131,7 +131,7 @@ async function loadWasm(): Promise<WasmHandle> {
 }
 
 /// Project-state-shaped tool spec the WASM Simulator expects. Mirrors
-/// what wiac_core::project::ToolEntry deserializes from (snake_case).
+/// what ivac_core::project::ToolEntry deserializes from (snake_case).
 ///
 /// IMPORTANT: this is the SECOND wire seam after `buildTool`, both of
 /// them feeding the same Rust `ToolKind` deserializer. The kind name

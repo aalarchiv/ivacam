@@ -54,7 +54,7 @@ fn usage() {
            fmt             run cargo fmt --all\n\
            fmt-check       run cargo fmt --all -- --check\n\
            clippy          run cargo clippy -D warnings\n\
-           wasm            wasm-pack build crates/wiac-wasm --target web --release\n\
+           wasm            wasm-pack build crates/ivac-wasm --target web --release\n\
            frontend-build  pnpm run build (in frontend/)\n\
            frontend-test   pnpm run test\n\
            frontend-check  pnpm run check (svelte-check + tsc)\n\
@@ -78,7 +78,7 @@ fn pnpm(args: &[&str]) -> ExitCode {
 fn wasm_pack() -> ExitCode {
     run(Command::new("wasm-pack").args([
         "build",
-        "crates/wiac-wasm",
+        "crates/ivac-wasm",
         "--target",
         "web",
         "--release",
@@ -140,7 +140,7 @@ fn schema(check_only: bool) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let derived = wiac_core::schema::components_schemas();
+    let derived = ivac_core::schema::components_schemas();
     let derived_yaml = serde_yaml::to_value(&derived).unwrap();
     let components = doc
         .get_mut("components")

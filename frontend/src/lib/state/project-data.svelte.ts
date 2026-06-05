@@ -27,8 +27,8 @@ import {
 import type { OpEntry } from './op_types';
 import { DEFAULT_OSNAP_SETTINGS, type OSnapSettings } from '../canvas/osnap';
 
-const SETTINGS_KEY = 'wiac.settings';
-const LEGACY_THEME_KEY = 'wiac.theme';
+const SETTINGS_KEY = 'ivac.settings';
+const LEGACY_THEME_KEY = 'ivac.theme';
 
 export interface AppSettings {
   theme: 'auto' | 'light' | 'dark';
@@ -153,7 +153,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 /// Load persisted settings, deep-merging stored values over defaults so
 /// adding new keys later doesn't break old payloads. Falls back to the
-/// legacy `wiac.theme` key when no `wiac.settings` blob exists yet
+/// legacy `ivac.theme` key when no `ivac.settings` blob exists yet
 /// (first run after the dialog ships).
 function loadSettings(): AppSettings {
   if (typeof window === 'undefined') return { ...DEFAULT_SETTINGS };
@@ -312,7 +312,7 @@ export class ProjectDataState {
   dirty = $state(false);
 
   /// Per-installation user preferences. Persisted to localStorage under
-  /// `wiac.settings`; not part of .vc-project (those are per-project).
+  /// `ivac.settings`; not part of .vc-project (those are per-project).
   /// The SettingsDialog owns the UX; consumers (theme application,
   /// preview-mode toggles, performance caps) read from here.
   settings = $state<AppSettings>(loadSettings());

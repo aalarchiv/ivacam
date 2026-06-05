@@ -1,4 +1,4 @@
-# wiaConstructor
+# ivaCAM
 
 A CAM tool that converts DXF, SVG, HPGL and other vector formats into G-code for
 CNC milling, laser cutting and drag-knife cutting.
@@ -19,7 +19,7 @@ toggle, project save/load) are all in place. See the issue tracker
 
 ## I just want to use it
 
-If you're here to _run_ wiaConstructor and turn a drawing into G-code,
+If you're here to _run_ ivaCAM and turn a drawing into G-code,
 read [`QUICKSTART.md`](./QUICKSTART.md) — the rest of this README
 covers what the project is and how to build it from source.
 
@@ -37,11 +37,11 @@ covers what the project is and how to build it from source.
 ## Architecture
 
 ```
-wiac-core      Rust library: DXF/SVG/... import, CAM math, gcode generation
-wiac-cli       Rust binary: headless converter (file in → gcode out)
-wiac-server    Rust binary: axum HTTP server exposing the JSON contract
-wiac-tauri     Rust binary: desktop shell (Tauri 2 + WebKitGTK/WebView2/WKWebView)
-wiac-wasm      Rust cdylib: browser bindings via wasm-bindgen
+ivac-core      Rust library: DXF/SVG/... import, CAM math, gcode generation
+ivac-cli       Rust binary: headless converter (file in → gcode out)
+ivac-server    Rust binary: axum HTTP server exposing the JSON contract
+ivac-tauri     Rust binary: desktop shell (Tauri 2 + WebKitGTK/WebView2/WKWebView)
+ivac-wasm      Rust cdylib: browser bindings via wasm-bindgen
 frontend/      TypeScript / Svelte / Vite web frontend (Three.js renderer)
 ```
 
@@ -61,7 +61,7 @@ full clone → cargo → tauri workflow. Short version:
 ```sh
 cargo build --workspace          # core + CLI + server
 cd frontend && npm install && npm run dev   # web UI on :5173
-cd crates/wiac-tauri && cargo tauri build   # desktop bundle
+cd crates/ivac-tauri && cargo tauri build   # desktop bundle
 ```
 
 ## License

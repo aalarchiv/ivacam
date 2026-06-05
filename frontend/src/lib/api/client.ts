@@ -1,5 +1,5 @@
 // Transport-agnostic client interface. Implementations: HTTP (`http.ts`,
-// talks to wiac-server), Tauri (`tauri.ts`, native invoke), and WASM
+// talks to ivac-server), Tauri (`tauri.ts`, native invoke), and WASM
 // (`wasm.ts`, runs the CAM pipeline in-browser).
 
 import type {

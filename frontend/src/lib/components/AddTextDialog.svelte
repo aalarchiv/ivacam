@@ -52,19 +52,19 @@
     {
       label: 'ISO 3098 Regular (single-line)',
       path: '/fonts/ISO3098-Regular.svg',
-      family: 'wiac-preview-iso3098-regular',
+      family: 'ivac-preview-iso3098-regular',
       singleLine: true,
     },
     {
       label: 'ISO 3098 Italic (single-line)',
       path: '/fonts/ISO3098-Italic.svg',
-      family: 'wiac-preview-iso3098-italic',
+      family: 'ivac-preview-iso3098-italic',
       singleLine: true,
     },
     {
       label: 'DejaVu Sans (filled-outline, bundled)',
       path: '/fonts/DejaVuSans.ttf',
-      family: 'wiac-preview-dejavu',
+      family: 'ivac-preview-dejavu',
     },
   ];
   /// Glyph sample drawn in each bundled font's family on the dropdown
@@ -456,7 +456,7 @@
         <legend>Font</legend>
         <label
           class="row"
-          title="Use a font bundled with wiaconstructor. Bundled fonts are filled-outline (good for V-carve / pocket / drag-knife — not single-line engraving)."
+          title="Use a font bundled with ivacam. Bundled fonts are filled-outline (good for V-carve / pocket / drag-knife — not single-line engraving)."
         >
           <input type="radio" bind:group={useUserFont} value={false} />
           <div class="font-dd" class:open={fontDropdownOpen}>

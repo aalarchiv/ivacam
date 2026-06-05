@@ -1,7 +1,7 @@
 <script lang="ts">
   /// Settings dialog. Per-installation user preferences (theme, language,
   /// cutting-preview defaults, performance caps). Persisted to localStorage
-  /// under `wiac.settings`; not part of .vc-project. Mirrors the modal
+  /// under `ivac.settings`; not part of .vc-project. Mirrors the modal
   /// style used by MachineDialog / ToolLibraryDialog.
   ///
   /// Unlike Machine / Tools we commit changes live: theme switching needs

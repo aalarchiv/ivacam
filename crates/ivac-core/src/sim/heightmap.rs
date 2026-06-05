@@ -540,13 +540,10 @@ impl ToolProfile {
             },
             ToolKind::Drill => ToolProfile::Drill { r },
             // mmu8: laser kerf comes from the configured
-            // `tool.kerf_mm` (legacy default = 0.15 mm — matches the
-            // historical hard-coded radius). Floor at 0.05 mm so a
+            // `tool.kerf_mm` (default = 0.15 mm). Floor at 0.05 mm so a
             // zero / negative entry still registers some carve
             // instead of a degenerate zero-radius cutter the sweep
-            // would skip. The field is the spot-radius (half-kerf)
-            // — matching the prior `r: 0.15` semantics so old
-            // projects round-trip unchanged.
+            // would skip. The field is the spot-radius (half-kerf).
             ToolKind::LaserBeam => {
                 let kerf = tool.kerf_mm.unwrap_or(0.15).max(0.05);
                 let r = kerf as f32;

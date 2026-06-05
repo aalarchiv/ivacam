@@ -620,8 +620,7 @@ fn build_tool_index(tools: &[ToolEntry]) -> HashMap<u32, &ToolEntry> {
 /// rest of the program is grouped. Within each maximal run of non-barrier
 /// ops, a STABLE sort by first-seen `tool_id` groups same-tool work while
 /// preserving relative order — so layered same-tool passes keep their
-/// sequence. `group == false` returns the input order unchanged
-/// (byte-identical legacy output).
+/// sequence. `group == false` returns the input order unchanged.
 fn order_ops_by_tool<'a>(ops: &[&'a Op], group: bool) -> Vec<&'a Op> {
     if !group {
         return ops.to_vec();
@@ -1055,7 +1054,7 @@ where
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
     // l8lk: optional tool-change-order optimization. With the toggle off
-    // this is the declared order (byte-identical legacy output).
+    // this is the declared order, unchanged.
     let enabled_ops_declared: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
     let enabled_ops = order_ops_by_tool(&enabled_ops_declared, project.group_ops_by_tool);
     let total_ops = enabled_ops.len();
@@ -1074,9 +1073,8 @@ where
     // dp6b: track the previous op's `group` so we can emit a single
     // boundary marker (`; === GROUP: <name> ===`) when the value
     // changes. None / empty string means "no group" and never
-    // generates a boundary line on its own. Untouched-group
-    // sequences emit nothing — legacy projects without any group
-    // field stay byte-identical.
+    // generates a boundary line on its own. An op sequence that never
+    // sets a group emits no boundary lines at all.
     let mut prev_group: Option<&str> = None;
     for (idx, op) in enabled_ops.iter().enumerate() {
         if cancelled(cancel) {

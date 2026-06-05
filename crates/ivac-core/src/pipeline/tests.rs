@@ -783,7 +783,7 @@ fn laser_op_emits_pierce_dwell_before_cut() {
 }
 
 /// Non-laser tools never get the pierce dwell even if
-/// `laser_pierce_sec` is somehow set (e.g. legacy projects).
+/// `laser_pierce_sec` is somehow set.
 #[test]
 fn non_laser_tool_ignores_pierce_field() {
     let mut tool = endmill(1, 3.0);
@@ -3433,7 +3433,7 @@ fn pipeline_emits_group_boundary_markers() {
 }
 
 /// dp6b: a project with NO `group` field on any op emits ZERO
-/// group markers — legacy projects stay byte-identical.
+/// group markers.
 #[test]
 fn pipeline_emits_no_group_markers_when_field_unset() {
     let project = crate::project::Project {

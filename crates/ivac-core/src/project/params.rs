@@ -179,9 +179,9 @@ pub struct VCarveParams {
     /// Estlcam's behaviour — the toolpath traces the BOUNDARY offset
     /// inward by `R = effective_r_cap`, plunged to depth
     /// `-R / tan(angle / 2)`, and the centre plateau is left
-    /// untouched. Set true to recover the prior ivac behaviour for the
-    /// rare "carve a depth gradient across the whole interior"
-    /// workflow (think Aspire-style relief).
+    /// untouched. Set true for the rare "carve a depth gradient across
+    /// the whole interior" workflow — the full medial axis (think
+    /// Aspire-style relief).
     #[serde(default)]
     pub full_medial_axis: bool,
     /// rt1.7: extra inward offset applied to the source region BEFORE
@@ -283,7 +283,7 @@ pub struct OpParamsCommon {
     /// and triggers an extra contour pass; `stock_to_leave_mm` applies
     /// to ALL offset-cascade ops and is the universal "rough leaves
     /// material" knob. 0.0 = cutter walks the geometric wall (the
-    /// default, matching prior ivac behaviour).
+    /// default).
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub stock_to_leave_mm: f64,
     /// Explicit list of Z depths for each pass, overriding the

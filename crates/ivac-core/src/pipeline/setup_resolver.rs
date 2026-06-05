@@ -440,9 +440,9 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     };
     setup.tabs = contour.map(|c| c.tabs.clone()).unwrap_or_default();
     // C8 (rt1.21 followup): drive `setup.tabs.active` from the single
-    // source of truth — `tab_mode != Off`. The legacy `tabs.active`
-    // boolean was a separate hand-mirrored flag; honor it (logical OR)
-    // so old projects still emit tabs.
+    // source of truth — `tab_mode != Off`. The `tabs.active` boolean is
+    // a separate hand-mirrored flag; honor it (logical OR) so a setup
+    // that only set `tabs.active` still emits tabs.
     let tab_mode = contour.map_or(crate::project::TabPlacementMode::Off, |c| c.tab_mode);
     setup.tabs.active =
         setup.tabs.active || !matches!(tab_mode, crate::project::TabPlacementMode::Off);

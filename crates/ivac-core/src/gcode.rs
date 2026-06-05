@@ -1977,7 +1977,7 @@ mod tests {
     #[test]
     fn z1y0_default_spindle_direction_still_cw() {
         // Default behavior (Cw) must keep emitting M3 — z1y0 only
-        // adds the CCW path; existing projects round-trip unchanged.
+        // adds the CCW path.
         let mut setup = Setup::default();
         setup.tool.diameter = 1.0;
         setup.tool.speed = 12000;

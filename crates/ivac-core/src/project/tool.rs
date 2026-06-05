@@ -121,8 +121,7 @@ pub struct ToolEntry {
     /// sim carves at. Honored only when `kind == LaserBeam`. Lets the
     /// preview show actual cut width for fine-engraving (0.05 mm
     /// fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of
-    /// a uniform 0.15 mm stand-in. None = the legacy 0.15 mm default
-    /// (old projects round-trip unchanged). The sim floors the
+    /// a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the
     /// effective radius at 0.05 mm so a zero / missing value still
     /// registers some carve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -197,9 +196,9 @@ pub struct ToolEntry {
     /// z1y0: spindle direction the post should command when this tool
     /// is selected. Most cutters are right-hand and want `Cw` (M3);
     /// left-hand cutters, reverse-threading, and a few specialty
-    /// holders want `Ccw` (M4). Defaults to `Cw` so legacy projects
-    /// round-trip unchanged. The default is skipped on serialize so
-    /// the JSON stays small.
+    /// holders want `Ccw` (M4). Defaults to `Cw` (most cutters are
+    /// right-hand). The default is skipped on serialize so the JSON
+    /// stays small.
     #[serde(default, skip_serializing_if = "is_default_spindle_direction")]
     pub spindle_direction: SpindleDirection,
     /// Length of cutting flutes (mm). None = treat entire tool as cutting.
@@ -235,9 +234,8 @@ pub struct ToolEntry {
     /// q0kc: free shank length between the top of the cutting flutes and
     /// the bottom of the holder/collet (mm). Models the real-world case
     /// where the collet doesn't grip right above the flutes — common for
-    /// reach-extension tooling. Defaults to 0 (legacy behavior — collet
-    /// sits directly on the flutes), so old projects round-trip
-    /// unchanged. None = same as `Some(0.0)` for the sim.
+    /// reach-extension tooling. Defaults to 0 (collet sits directly on
+    /// the flutes). None = same as `Some(0.0)` for the sim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stickout_length_mm: Option<f64>,
     /// Holder geometry above the shank. None = no holder check.
@@ -275,7 +273,7 @@ pub struct ToolEntry {
     /// shops dial it per-tool — harder materials want shallower
     /// (5–8°), softer materials tolerate steeper (15°+). Values
     /// outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit
-    /// the legacy 10° default so old projects round-trip unchanged.
+    /// the 10° default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vcarve_lead_in_angle_deg: Option<f64>,
 }

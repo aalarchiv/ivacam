@@ -89,8 +89,8 @@ pub struct Project {
     /// stock UI (margin / custom dims / offset) via `computeFootprint`
     /// and sends the resolved box; a CLI / server consumer sets the
     /// dimensions directly. `None` (default) skips the `out_of_stock`
-    /// scan, so legacy projects — and any transport that doesn't model
-    /// stock — behave exactly as before this field existed. The stock
+    /// scan, so a transport that doesn't model stock simply gets no
+    /// out-of-stock checks. The stock
     /// top sits at z = 0 (the WCS / geometry origin plane); the body
     /// extends downward by `thickness_mm`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -113,8 +113,8 @@ pub struct Project {
     /// barrier-aware: program-only ops (Pause / Homing / …) and any op
     /// with [`Op::pin_order`] stay put and nothing moves across them, so
     /// a deliberate cut order (tabs, thin walls) is preserved. `false`
-    /// (default) keeps the declared op order — byte-identical legacy
-    /// output. See `order_ops_by_tool` in the pipeline.
+    /// (default) keeps the declared op order unchanged. See
+    /// `order_ops_by_tool` in the pipeline.
     #[serde(default, skip_serializing_if = "crate::project::op::is_false")]
     pub group_ops_by_tool: bool,
 }

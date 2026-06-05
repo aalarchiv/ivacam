@@ -120,7 +120,7 @@ pub struct ToolConfig {
     /// Mirrored from `ToolEntry.spindle_direction` at synth time so
     /// the gcode emitter can route between `post.spindle_cw` /
     /// `post.spindle_ccw` without reaching back into the tool
-    /// library. Default `Cw` keeps legacy projects unchanged.
+    /// library. Defaults to `Cw` (M3).
     #[serde(default)]
     pub spindle_direction: crate::project::tool::SpindleDirection,
     /// zpuk: plasma pierce height in mm (above stock top). The cut
@@ -483,8 +483,8 @@ impl AxisLimits {
 /// `M6` as a prompt (the controller parks, prompts the operator, and can
 /// run a semi-automatic tool-length probe), while stock GRBL / Marlin
 /// reject `M6` (`error:20`) and must fall back to a portable `M0` program
-/// pause. Serde stays back-compat with the old bool via
-/// [`deserialize_toolchange`]: `true → Atc`, `false → ManualM0Pause`.
+/// pause. Serde also accepts a plain bool via
+/// [`deserialize_toolchange`] (`true → Atc`, `false → ManualM0Pause`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolChangeStrategy {
@@ -525,11 +525,12 @@ impl ToolChangeStrategy {
     }
 
     /// Stable cache discriminant folded into the op cache key. Pinned so
-    /// existing projects (the old `true` / `false`, i.e. `Atc` /
-    /// `ManualM0Pause`) hash byte-identically to the pre-cb5y `bool`
-    /// encoding: `bool::hash` writes `0` / `1` as a `u8`, so
-    /// `ManualM0Pause = 0` and `Atc = 1` keep the cache key stable. The new
-    /// variants get fresh discriminants.
+    /// the two original variants (`Atc` / `ManualM0Pause`, which the
+    /// cb5y widening replaced a `true` / `false` bool with) hash
+    /// byte-identically to that `bool` encoding: `bool::hash` writes
+    /// `0` / `1` as a `u8`, so `ManualM0Pause = 0` and `Atc = 1` keep the
+    /// cache key stable across the widening. The new variants get fresh
+    /// discriminants.
     #[must_use]
     pub fn cache_discriminant(self) -> u8 {
         match self {
@@ -570,10 +571,10 @@ pub struct MachineConfig {
     pub comments: bool,
     /// Whether the machine emits arc commands (G2/G3).
     pub arcs: bool,
-    /// cb5y: tool-change strategy (was the `supports_toolchange` bool).
-    /// See [`ToolChangeStrategy`]. Back-compat: an old project's
-    /// `"supports_toolchange": true/false` still loads via the serde alias
-    /// + bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).
+    /// cb5y: tool-change strategy. See [`ToolChangeStrategy`]. A
+    /// `supports_toolchange` serde alias also accepts the boolean form
+    /// `true/false` via a bool-aware deserializer (`true → Atc`,
+    /// `false → ManualM0Pause`).
     #[serde(
         default,
         alias = "supports_toolchange",
@@ -677,7 +678,7 @@ pub struct MachineConfig {
     /// PRIMARY mode used by the gcode emitter; capabilities is the
     /// broader set so a multi-purpose machine can pick the right
     /// op set without flipping `mode`. Empty Vec ⇒ implicitly
-    /// `[mode]` (back-compat default for old project files).
+    /// `[mode]` (the default when `capabilities` is absent).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<MachineMode>,
     /// 3nnj: lower bound on the spindle RPM the controller will
@@ -762,8 +763,7 @@ pub struct MachineConfig {
     /// (`ManualM0Pause`) tool-change halt. `M1` is honored only when the
     /// controller's optional-stop switch is ON, so a vetted program can
     /// run unattended (the switch off skips the pauses) yet still stop on
-    /// demand. Default `false` keeps the mandatory `M0` — byte-identical
-    /// output for existing projects.
+    /// demand. Default `false` keeps the mandatory `M0`.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub optional_stop: bool,
     /// z9zh: opt-in GRBL dynamic-power laser mode. When `true` on a GRBL
@@ -1060,10 +1060,11 @@ mod toolchange_strategy_tests {
         assert_eq!(m.tool_change, ToolChangeStrategy::ManualM0Pause);
     }
 
-    /// The cache discriminant stays pinned to the old bool encoding for
-    /// the two pre-cb5y variants so existing cache keys don't churn.
+    /// The cache discriminant stays pinned to the original bool encoding
+    /// for the two original variants so cache keys stay stable across the
+    /// cb5y widening.
     #[test]
-    fn cache_discriminant_pins_legacy_variants() {
+    fn cache_discriminant_pins_original_variants() {
         assert_eq!(ToolChangeStrategy::ManualM0Pause.cache_discriminant(), 0);
         assert_eq!(ToolChangeStrategy::Atc.cache_discriminant(), 1);
         assert_eq!(ToolChangeStrategy::ManualM6Prompt.cache_discriminant(), 2);

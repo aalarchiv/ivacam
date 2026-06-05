@@ -686,8 +686,8 @@ pub(super) fn push_tool_fit_kind_warnings(
     }
     // 3cyf: op-kind ✗ machine-mode. The op-kind picker hides kinds that
     // don't fit the machine's capabilities at creation time, but a
-    // legacy project, a machine-mode switch (MachineDialog never
-    // re-checks existing ops), or the API can still leave e.g. a Pocket
+    // machine-mode switch (MachineDialog never re-checks ops already in
+    // the project) or the API can still leave e.g. a Pocket
     // on a laser — which the emitter turns into nonsense (a beam tracing
     // concentric pocket rings). Mirror the frontend gating against the
     // machine's EFFECTIVE capability set so a genuine combo machine

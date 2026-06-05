@@ -41,8 +41,7 @@ pub struct Op {
     /// operator scrolling the gcode can see where each phase
     /// starts. Empty / `None` means the op carries no group and
     /// participates in no boundary line (a `Some("")` is treated the
-    /// same as `None` at emit time). Default `None` keeps existing
-    /// projects byte-identical.
+    /// same as `None` at emit time). Defaults to `None` (no group).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     /// l8lk: pin this op's position when the program-level
@@ -51,8 +50,8 @@ pub struct Op {
     /// it keeps its declared slot and the tool-grouping pass never moves
     /// another op across it. Use it to lock a stability-critical cut
     /// order (tabs, thin walls) while still grouping the rest of the
-    /// program. Ignored when grouping is off. Default `false` keeps
-    /// existing projects byte-identical.
+    /// program. Ignored when grouping is off. Defaults to `false`
+    /// (unpinned).
     #[serde(default, skip_serializing_if = "is_false")]
     pub pin_order: bool,
 }
@@ -297,7 +296,7 @@ pub enum OpKind {
         /// BEFORE the main drill block. Twist drills walk on hard /
         /// polished stock — the spot dimple locks the chisel edge so
         /// the main drill plunges on-nominal instead of drifting by
-        /// tip/2+. None ⇒ legacy behaviour (no spot pre-pass).
+        /// tip/2+. None ⇒ no spot pre-pass.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         spot_first: Option<SpotConfig>,
     },
@@ -1067,8 +1066,8 @@ pub(crate) fn is_zero_f64(v: &f64) -> bool {
 }
 
 /// Serde `skip_serializing_if` for opt-in bool flags that default to
-/// `false` — keeps the field out of JSON / schema when unset so legacy
-/// projects round-trip byte-identically.
+/// `false` — keeps the field out of JSON / schema when unset so the
+/// serialized form stays compact.
 pub(crate) fn is_false(v: &bool) -> bool {
     !*v
 }

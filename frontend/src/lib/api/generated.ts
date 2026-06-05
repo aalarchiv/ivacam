@@ -527,7 +527,7 @@ export interface components {
             arc_fit_tolerance_mm?: number | null;
             /** @description Whether the machine emits arc commands (G2/G3). */
             arcs: boolean;
-            /** @description h0tx: which op kinds the machine can run. Drives the frontend's `OpKindPicker` filter — a laser-only machine doesn't show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (back-compat default for old project files). */
+            /** @description h0tx: which op kinds the machine can run. Drives the frontend's `OpKindPicker` filter — a laser-only machine doesn't show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (the default when `capabilities` is absent). */
             capabilities?: components["schemas"]["MachineMode"][];
             comments: boolean;
             /** @description Decimal separator for emitted numbers (rt1.36). `'.'` (default) suits `LinuxCNC` / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'. */
@@ -549,7 +549,7 @@ export interface components {
             mode: components["schemas"]["MachineMode"];
             /** @description h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.ivac-machine.json` save/load files. */
             name?: string;
-            /** @description 4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop) at every program pause — both the `Pause` op and the manual (`ManualM0Pause`) tool-change halt. `M1` is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (the switch off skips the pauses) yet still stop on demand. Default `false` keeps the mandatory `M0` — byte-identical output for existing projects. */
+            /** @description 4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop) at every program pause — both the `Pause` op and the manual (`ManualM0Pause`) tool-change halt. `M1` is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (the switch off skips the pauses) yet still stop on demand. Default `false` keeps the mandatory `M0`. */
             optional_stop?: boolean;
             /** @description syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first. */
             park_at_home?: boolean;
@@ -590,7 +590,7 @@ export interface components {
              */
             spindle_stop_dwell_sec?: number | null;
             /**
-             * @description cb5y: tool-change strategy (was the `supports_toolchange` bool). See [`ToolChangeStrategy`]. Back-compat: an old project's `"supports_toolchange": true/false` still loads via the serde alias + bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).
+             * @description cb5y: tool-change strategy. See [`ToolChangeStrategy`]. A `supports_toolchange` serde alias also accepts the boolean form `true/false` via a bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).
              * @default manual_m0_pause
              */
             tool_change: components["schemas"]["ToolChangeStrategy"];
@@ -678,14 +678,14 @@ export interface components {
              * @description Optional finish tool id for dual-tool Pocket ops (rt1.33 / Estlcam TS slot). When `Some(id)` and `id != tool_id`, the pipeline emits a toolchange after the rough cascade and runs the wall-defining ring with the finish tool's geometry + finish-set feed/speed. When `None` or equal to `tool_id`, the op runs single-tool (current behavior).
              */
             finish_tool_id?: number | null;
-            /** @description dp6b: optional group label. Consecutive enabled ops sharing the same value belong to the same logical phase ("rough", "finish", "drill cycle"), and the pipeline emits a `; === GROUP: <name> ===` comment at every boundary so the operator scrolling the gcode can see where each phase starts. Empty / `None` means the op carries no group and participates in no boundary line (a `Some("")` is treated the same as `None` at emit time). Default `None` keeps existing projects byte-identical. */
+            /** @description dp6b: optional group label. Consecutive enabled ops sharing the same value belong to the same logical phase ("rough", "finish", "drill cycle"), and the pipeline emits a `; === GROUP: <name> ===` comment at every boundary so the operator scrolling the gcode can see where each phase starts. Empty / `None` means the op carries no group and participates in no boundary line (a `Some("")` is treated the same as `None` at emit time). Defaults to `None` (no group). */
             group?: string | null;
             /** Format: uint32 */
             id: number;
             kind: components["schemas"]["OpKind"];
             name: string;
             params: components["schemas"]["OpParamsCommon"];
-            /** @description l8lk: pin this op's position when the program-level [`Project::group_ops_by_tool`] reorder is on. A pinned op — like any program-only op (Pause / Homing / …) — is a fixed barrier: it keeps its declared slot and the tool-grouping pass never moves another op across it. Use it to lock a stability-critical cut order (tabs, thin walls) while still grouping the rest of the program. Ignored when grouping is off. Default `false` keeps existing projects byte-identical. */
+            /** @description l8lk: pin this op's position when the program-level [`Project::group_ops_by_tool`] reorder is on. A pinned op — like any program-only op (Pause / Homing / …) — is a fixed barrier: it keeps its declared slot and the tool-grouping pass never moves another op across it. Use it to lock a stability-critical cut order (tabs, thin walls) while still grouping the rest of the program. Ignored when grouping is off. Defaults to `false` (unpinned). */
             pin_order?: boolean;
             source: components["schemas"]["OpSource"];
             /**
@@ -757,7 +757,7 @@ export interface components {
             chamfer_after_width_mm?: number | null;
             cycle: components["schemas"]["DrillCycle"];
             pattern?: components["schemas"]["PatternConfig"] | null;
-            /** @description r2af: optional spot/centerdrill pre-pass. When `Some`, the driver emits a shallow spot-drill block at every hole center BEFORE the main drill block. Twist drills walk on hard / polished stock — the spot dimple locks the chisel edge so the main drill plunges on-nominal instead of drifting by tip/2+. None ⇒ legacy behaviour (no spot pre-pass). */
+            /** @description r2af: optional spot/centerdrill pre-pass. When `Some`, the driver emits a shallow spot-drill block at every hole center BEFORE the main drill block. Twist drills walk on hard / polished stock — the spot dimple locks the chisel edge so the main drill plunges on-nominal instead of drifting by tip/2+. None ⇒ no spot pre-pass. */
             spot_first?: components["schemas"]["SpotConfig"] | null;
             /** @enum {string} */
             type: "drill";
@@ -1116,7 +1116,7 @@ export interface components {
             step?: number | null;
             /**
              * Format: double
-             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior ivac behaviour).
+             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default).
              */
             stock_to_leave_mm?: number;
             /**
@@ -1188,7 +1188,7 @@ export interface components {
             step?: number | null;
             /**
              * Format: double
-             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default, matching prior ivac behaviour).
+             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default).
              */
             stock_to_leave_mm?: number;
             /**
@@ -1543,7 +1543,7 @@ export interface components {
         Project: {
             /** @description Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must avoid throughout the entire program — including rapids. The sim pass tests every toolpath segment against this set and emits `SimWarning::FixtureCollision` on overlap. Default empty: a project with no fixtures behaves exactly as before. */
             fixtures?: components["schemas"]["Fixture"][];
-            /** @description l8lk: when `true`, the pipeline runs an optional tool-change-order optimization that groups consecutive same-tool work so a `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change instead of two. Matters most on manual machines, where every swap is minutes + a re-probe + operator-error risk. The reorder is barrier-aware: program-only ops (Pause / Homing / …) and any op with [`Op::pin_order`] stay put and nothing moves across them, so a deliberate cut order (tabs, thin walls) is preserved. `false` (default) keeps the declared op order — byte-identical legacy output. See `order_ops_by_tool` in the pipeline. */
+            /** @description l8lk: when `true`, the pipeline runs an optional tool-change-order optimization that groups consecutive same-tool work so a `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change instead of two. Matters most on manual machines, where every swap is minutes + a re-probe + operator-error risk. The reorder is barrier-aware: program-only ops (Pause / Homing / …) and any op with [`Op::pin_order`] stay put and nothing moves across them, so a deliberate cut order (tabs, thin walls) is preserved. `false` (default) keeps the declared op order unchanged. See `order_ops_by_tool` in the pipeline. */
             group_ops_by_tool?: boolean;
             machine: components["schemas"]["MachineConfig"];
             operations: components["schemas"]["Op"][];
@@ -1551,7 +1551,7 @@ export interface components {
             relief_sources?: components["schemas"]["ReliefSource"][];
             /** @description Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained. */
             segments: components["schemas"]["Segment"][];
-            /** @description vrrr: physical stock envelope, resolved to an axis-aligned box in the geometry frame. The frontend derives this from its auto/manual stock UI (margin / custom dims / offset) via `computeFootprint` and sends the resolved box; a CLI / server consumer sets the dimensions directly. `None` (default) skips the `out_of_stock` scan, so legacy projects — and any transport that doesn't model stock — behave exactly as before this field existed. The stock top sits at z = 0 (the WCS / geometry origin plane); the body extends downward by `thickness_mm`. */
+            /** @description vrrr: physical stock envelope, resolved to an axis-aligned box in the geometry frame. The frontend derives this from its auto/manual stock UI (margin / custom dims / offset) via `computeFootprint` and sends the resolved box; a CLI / server consumer sets the dimensions directly. `None` (default) skips the `out_of_stock` scan, so a transport that doesn't model stock simply gets no out-of-stock checks. The stock top sits at z = 0 (the WCS / geometry origin plane); the body extends downward by `thickness_mm`. */
             stock?: components["schemas"]["StockConfig"] | null;
             /** @description First-class editable text entities — content / font / size / position / rotation / spacing. The pipeline pre-pass renders each `TextLayer` to segments before any op runs so the existing `Engrave` (and friends) op can target the rendered geometry by layer name `__text_<id>`. Edits to a `TextLayer` re-run the pipeline; cache keys include `text_layers` content. */
             text_layers?: components["schemas"]["TextLayer"][];
@@ -1935,7 +1935,7 @@ export interface components {
             /** Format: double */
             total_s: number;
         };
-        /** @description cb5y: how the post-processor handles a tool change at an op boundary. Widened from the historical `supports_toolchange: bool` because the two *manual* behaviors need different emission: grblHAL / FluidNC accept `M6` as a prompt (the controller parks, prompts the operator, and can run a semi-automatic tool-length probe), while stock GRBL / Marlin reject `M6` (`error:20`) and must fall back to a portable `M0` program pause. Serde stays back-compat with the old bool via [`deserialize_toolchange`]: `true → Atc`, `false → ManualM0Pause`. */
+        /** @description cb5y: how the post-processor handles a tool change at an op boundary. Widened from the historical `supports_toolchange: bool` because the two *manual* behaviors need different emission: grblHAL / FluidNC accept `M6` as a prompt (the controller parks, prompts the operator, and can run a semi-automatic tool-length probe), while stock GRBL / Marlin reject `M6` (`error:20`) and must fall back to a portable `M0` program pause. Serde also accepts a plain bool via [`deserialize_toolchange`] (`true → Atc`, `false → ManualM0Pause`). */
         ToolChangeStrategy: "atc" | "manual_m6_prompt" | "manual_m0_pause" | "ignore";
         ToolConfig: {
             /**
@@ -2025,7 +2025,7 @@ export interface components {
              */
             speed_finish: number;
             /**
-             * @description z1y0: spindle direction for this tool (`Cw` → M3, `Ccw` → M4). Mirrored from `ToolEntry.spindle_direction` at synth time so the gcode emitter can route between `post.spindle_cw` / `post.spindle_ccw` without reaching back into the tool library. Default `Cw` keeps legacy projects unchanged.
+             * @description z1y0: spindle direction for this tool (`Cw` → M3, `Ccw` → M4). Mirrored from `ToolEntry.spindle_direction` at synth time so the gcode emitter can route between `post.spindle_cw` / `post.spindle_ccw` without reaching back into the tool library. Defaults to `Cw` (M3).
              * @default cw
              */
             spindle_direction: components["schemas"]["SpindleDirection"];
@@ -2147,7 +2147,7 @@ export interface components {
             id: number;
             /**
              * Format: double
-             * @description mmu8: laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Honored only when `kind == LaserBeam`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the legacy 0.15 mm default (old projects round-trip unchanged). The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
+             * @description mmu8: laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Honored only when `kind == LaserBeam`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
              */
             kerf_mm?: number | null;
             kind: components["schemas"]["ToolKind"];
@@ -2214,11 +2214,11 @@ export interface components {
              * @description Spindle RPM override for the finishing pass (the wall-defining level=0 ring of a Pocket). None = inherit `speed`. Hard-material finish quality usually wants a slower RPM than roughing.
              */
             speed_finish?: number | null;
-            /** @description z1y0: spindle direction the post should command when this tool is selected. Most cutters are right-hand and want `Cw` (M3); left-hand cutters, reverse-threading, and a few specialty holders want `Ccw` (M4). Defaults to `Cw` so legacy projects round-trip unchanged. The default is skipped on serialize so the JSON stays small. */
+            /** @description z1y0: spindle direction the post should command when this tool is selected. Most cutters are right-hand and want `Cw` (M3); left-hand cutters, reverse-threading, and a few specialty holders want `Ccw` (M4). Defaults to `Cw` (most cutters are right-hand). The default is skipped on serialize so the JSON stays small. */
             spindle_direction?: components["schemas"]["SpindleDirection"];
             /**
              * Format: double
-             * @description q0kc: free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models the real-world case where the collet doesn't grip right above the flutes — common for reach-extension tooling. Defaults to 0 (legacy behavior — collet sits directly on the flutes), so old projects round-trip unchanged. None = same as `Some(0.0)` for the sim.
+             * @description q0kc: free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models the real-world case where the collet doesn't grip right above the flutes — common for reach-extension tooling. Defaults to 0 (collet sits directly on the flutes). None = same as `Some(0.0)` for the sim.
              */
             stickout_length_mm?: number | null;
             /**
@@ -2239,7 +2239,7 @@ export interface components {
             tip_diameter?: number | null;
             /**
              * Format: double
-             * @description ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). pmpk originally hardcoded this to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the legacy 10° default so old projects round-trip unchanged.
+             * @description ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). pmpk originally hardcoded this to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the 10° default.
              */
             vcarve_lead_in_angle_deg?: number | null;
             /** @description Whirl (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
@@ -2297,7 +2297,7 @@ export interface components {
              */
             carve_max_width_mm?: number | null;
             /**
-             * @description r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam's behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true to recover the prior ivac behaviour for the rare "carve a depth gradient across the whole interior" workflow (think Aspire-style relief).
+             * @description r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam's behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true for the rare "carve a depth gradient across the whole interior" workflow — the full medial axis (think Aspire-style relief).
              * @default false
              */
             full_medial_axis: boolean;

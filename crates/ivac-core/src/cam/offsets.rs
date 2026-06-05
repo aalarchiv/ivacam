@@ -1237,8 +1237,7 @@ pub const APPROACH_POINT_WARN_MM: f64 = 10.0;
 ///
 /// kzz9: when the chosen `ap` ends up farther than
 /// [`APPROACH_POINT_WARN_MM`] from EVERY closed offset's nearest vertex
-/// the rotation still picks the nearest start (preserving the prior
-/// behaviour for back-compat with existing tests), but a record is
+/// the rotation still falls back to the nearest start, but a record is
 /// stashed in the thread-local drained by
 /// [`take_approach_point_far_rotations`]. The pipeline turns that into
 /// a `rotate_offsets_far_from_approach` warning attributed to the op.

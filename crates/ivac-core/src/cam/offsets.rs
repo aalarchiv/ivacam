@@ -807,35 +807,33 @@ fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<
         }
     }
     xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    // c6ej: collapse duplicate crossings whose x values are within a
+    // c6ej: collapse coincident crossings whose x values are within a
     // FUZZY-equivalent tolerance. A scanline that just grazes a vertex
-    // produces TWO crossings at the same x (one for each adjacent edge)
-    // when both edges happen to satisfy the half-open `y >= hi.y - 1e-12`
-    // rule at the same vertex — that's the classic odd-count source the
-    // downstream `chunks_exact(2)` silently dropped. Snapping coincident
-    // crossings together restores even parity for the common
-    // vertex-tangent case; a remaining odd remainder is a genuinely
-    // degenerate input that we now log instead of dropping silently.
+    // produces TWO crossings at the same x (one per adjacent edge) when
+    // both edges share that vertex as their lower endpoint — a local-min
+    // tangent. With the half-open `[lo.y, hi.y)` rule, a monotone-through
+    // shared vertex yields one crossing and a local-max yields none, so a
+    // coincident run is exactly a tangent: it touches the boundary without
+    // a net inside/outside toggle. Such crossings must be removed in PAIRS
+    // (not collapsed to one — that both breaks parity AND plants a spurious
+    // fill boundary at the vertex). An even run vanishes; an odd run is a
+    // genuinely degenerate input that leaves one crossing (and trips the
+    // odd-count warning below) rather than being dropped silently.
     if xs.len() >= 2 {
         let snap_tol = 1e-3_f64;
         let mut dedup = Vec::with_capacity(xs.len());
-        let mut last = f64::NEG_INFINITY;
-        let mut pending: Option<f64> = None;
-        for &x in &xs {
-            if (x - last).abs() <= snap_tol && pending.is_none() {
-                // Coincident pair (vertex-tangent): swallow the duplicate
-                // so the entry-exit count stays even.
-                pending = Some(last);
-                continue;
+        let mut i = 0;
+        while i < xs.len() {
+            let mut j = i + 1;
+            while j < xs.len() && (xs[j] - xs[i]).abs() <= snap_tol {
+                j += 1;
             }
-            if let Some(p) = pending.take() {
-                // Drop the swallowed duplicate; emit the new crossing
-                // fresh. (We keep one of the two coincident hits in
-                // `dedup` already.)
-                let _ = p;
+            // Keep one crossing only when the coincident run has odd length
+            // (a residual real crossing); pure tangent pairs cancel out.
+            if (j - i) % 2 == 1 {
+                dedup.push(xs[i]);
             }
-            dedup.push(x);
-            last = x;
+            i = j;
         }
         xs = dedup;
     }
@@ -3451,13 +3449,14 @@ mod tests {
             p(0.0, 10.0),
         ];
         let xs = horizontal_crossings(&poly, 5.0, 0.0, 20.0);
-        // After coalescing the result must be even.
-        assert_eq!(
-            xs.len() % 2,
-            0,
-            "expected even count after coalesce, got {}: {xs:?}",
-            xs.len()
-        );
+        // (10, 5) is a local-minimum tangent: the scanline grazes it but
+        // the interior at y = 5 is the single span [0, 20]. The tangent
+        // pair at x = 10 must cancel — NOT collapse to one (which used to
+        // leave [0, 10] and a tool-radius ribbon of uncut stock from
+        // x = 10 to 20).
+        assert_eq!(xs.len(), 2, "expected one interval, got {xs:?}");
+        assert!((xs[0] - 0.0).abs() < 1e-6, "left crossing: {xs:?}");
+        assert!((xs[1] - 20.0).abs() < 1e-6, "right crossing: {xs:?}");
     }
 
     /// 06m5 regression: a Pocket op with `nocontour=true` and the Zigzag

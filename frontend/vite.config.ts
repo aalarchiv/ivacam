@@ -35,9 +35,40 @@ function pkgVersion(): string {
   }
 }
 
+// Build identity computed once so every define + the About text agree on
+// the same commit/date for a given build.
+const BUILD_VERSION = gitVersion();
+const PKG_VERSION = pkgVersion();
+const BUILD_DATE = new Date().toISOString();
+
+/// Compile-time About copy. Reads the repo-root `ABOUT.md`, substitutes
+/// the `%%…%%` build-identity tokens, and exposes the finished markdown as
+/// `import aboutMd from 'virtual:about'`. Keeps the prose authorable as a
+/// plain `.md` (the tokens render literally on GitHub) while the version is
+/// filled in at build — no markdown tooling, just `fs` + the helpers above.
+function aboutMdPlugin() {
+  const VIRTUAL = 'virtual:about';
+  const RESOLVED = '\0' + VIRTUAL;
+  const aboutPath = fileURLToPath(new URL('../ABOUT.md', import.meta.url));
+  return {
+    name: 'ivac-about-md',
+    resolveId(id: string) {
+      return id === VIRTUAL ? RESOLVED : null;
+    },
+    load(id: string) {
+      if (id !== RESOLVED) return null;
+      const md = readFileSync(aboutPath, 'utf8')
+        .replace(/%%VERSION%%/g, BUILD_VERSION)
+        .replace(/%%PKG_VERSION%%/g, PKG_VERSION)
+        .replace(/%%DATE%%/g, BUILD_DATE);
+      return `export default ${JSON.stringify(md)};`;
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), aboutMdPlugin()],
   // The ivac-wasm pkg is wasm-bindgen `--target web` glue: its init
   // fetches `ivac_wasm_bg.wasm` relative to its own URL. If Vite's dep
   // optimizer pre-bundles it into `.vite/deps/`, that relative fetch
@@ -49,16 +80,16 @@ export default defineConfig({
     exclude: ['ivac-wasm'],
   },
   define: {
-    __IVAC_BUILD_VERSION__: JSON.stringify(gitVersion()),
+    __IVAC_BUILD_VERSION__: JSON.stringify(BUILD_VERSION),
     // ISO-8601 UTC timestamp at build time. Shown in the About
     // dialog alongside the git-describe identifier so users can
     // tell which day a binary was produced without scraping the
     // commit hash against the git log.
-    __IVAC_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+    __IVAC_BUILD_DATE__: JSON.stringify(BUILD_DATE),
     // Package version from package.json so the window title shows the
     // real release identifier (qcvl). The git-describe value above is
     // the commit-level stamp; this is the human-facing semver.
-    __IVAC_PKG_VERSION__: JSON.stringify(pkgVersion()),
+    __IVAC_PKG_VERSION__: JSON.stringify(PKG_VERSION),
   },
   build: {
     // Scene3D + three.js is a single intentional chunk (~540 KB);

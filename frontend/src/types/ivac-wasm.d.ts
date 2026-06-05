@@ -30,3 +30,11 @@ declare const __IVAC_BUILD_DATE__: string;
 /// time (audit qcvl). Shown in the window title alongside the
 /// git-describe build version.
 declare const __IVAC_PKG_VERSION__: string;
+
+/// Compile-time About copy: repo-root `ABOUT.md` with the `%%VERSION%%`,
+/// `%%PKG_VERSION%%`, and `%%DATE%%` tokens substituted, exposed as a
+/// virtual module by the `ivac-about-md` plugin in `vite.config.ts`.
+declare module 'virtual:about' {
+  const md: string;
+  export default md;
+}

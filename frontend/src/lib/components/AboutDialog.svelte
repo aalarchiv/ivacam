@@ -8,11 +8,19 @@
   /// baked by vite.config.ts (git describe --always --dirty at
   /// compile time).
   import Modal from './Modal.svelte';
+  import aboutMd from 'virtual:about';
+  import { renderMarkdown } from './markdown-lite';
 
   interface Props {
     onClose: () => void;
   }
   let { onClose }: Props = $props();
+
+  /// Prose (tagline, license, acknowledgements) authored in the repo-root
+  /// ABOUT.md and substituted + inlined at build time by the
+  /// `ivac-about-md` Vite plugin (`virtual:about`). Trusted, compiled-in
+  /// content — safe for `{@html}`; markdown-lite escapes raw HTML first.
+  const aboutHtml = renderMarkdown(aboutMd);
 
   const buildVersion =
     typeof __IVAC_BUILD_VERSION__ === 'string' ? __IVAC_BUILD_VERSION__ : 'unknown';
@@ -143,8 +151,10 @@
     <h2 id="about-title">About ivaCAM</h2>
     <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
   </header>
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted, compiled-in ABOUT.md; markdown-lite escapes raw HTML and whitelists link hrefs -->
+  <section class="about-md">{@html aboutHtml}</section>
+
   <section>
-    <p class="tagline">Open-source CAM for hobbyist CNC, laser, and drag-knife machines.</p>
     <dl class="build">
       <dt>Build</dt>
       <dd>
@@ -174,46 +184,6 @@
       Include the build identifier above when filing issues - it pins the report to the exact binary
       you tested.
     </p>
-  </section>
-
-  <section>
-    <h3>License</h3>
-    <p>
-      ivaCAM is distributed under the
-      <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noreferrer">
-        GNU General Public License v3.0 or later</a
-      >. Source is available at
-      <a href="https://github.com/aalarchiv/ivacam" target="_blank" rel="noreferrer">
-        github.com/aalarchiv/ivacam</a
-      >.
-    </p>
-    <p>
-      The bundled license text ships in the repository as <code>LICENSE</code>; you also have a copy
-      in the install directory of your desktop build.
-    </p>
-  </section>
-
-  <section>
-    <h3>Acknowledgements</h3>
-    <ul class="acks">
-      <li>
-        <strong>
-          <a href="https://github.com/multigcs/viaconstructor" target="_blank" rel="noreferrer"
-            >viaConstructor</a
-          >
-        </strong> - the project that gave the idea. viaConstructor is a Python CAM tool with a similar
-        scope; ivaCAM reuses none of its code but stands on the shoulders of its UX exploration.
-      </li>
-      <li>
-        <strong>Estlcam</strong> - its feature catalogue inspired the CAM primitives ivaCAM implements.
-        No Estlcam code is used; algorithms are implemented from public literature. Estlcam is not free,
-        but it is great software at reasonable price. Buy it!
-      </li>
-      <li>
-        <strong>CNC + maker community</strong> - bug reports, test geometries, and the machine quirks
-        that turned synthetic test suites into real shop-floor coverage.
-      </li>
-    </ul>
   </section>
 
   <section>
@@ -274,10 +244,44 @@
     font-size: 0.9rem;
     color: var(--text-strong);
   }
-  .tagline {
-    margin: 0 0 0.65rem 0;
+  /* The About prose is injected via {@html} from ABOUT.md, so its
+     elements aren't Svelte-scoped — target them with :global under the
+     scoped .about-md wrapper. */
+  .about-md :global(h3) {
+    margin: 0.9rem 0 0.4rem 0;
     font-size: 0.9rem;
+    color: var(--text-strong);
+  }
+  .about-md :global(p) {
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin: 0.4rem 0;
+  }
+  .about-md :global(p:first-child) {
+    margin-top: 0;
     color: var(--text-muted);
+  }
+  .about-md :global(ul) {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.85rem;
+  }
+  .about-md :global(li) {
+    margin-bottom: 0.35rem;
+  }
+  .about-md :global(a) {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .about-md :global(a:hover) {
+    text-decoration: underline;
+  }
+  .about-md :global(code) {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.82rem;
+    background: var(--bg-input, transparent);
+    padding: 0 0.2rem;
+    border-radius: 2px;
   }
   dl.build {
     display: grid;
@@ -328,14 +332,6 @@
     color: var(--text-muted);
     font-size: 0.78rem;
   }
-  .acks {
-    margin: 0;
-    padding-left: 1.2rem;
-    font-size: 0.85rem;
-  }
-  .acks li {
-    margin-bottom: 0.35rem;
-  }
   table.libs {
     width: 100%;
     border-collapse: collapse;
@@ -365,13 +361,6 @@
     font-size: 0.85rem;
     line-height: 1.4;
     margin: 0.4rem 0;
-  }
-  p a {
-    color: var(--accent);
-    text-decoration: none;
-  }
-  p a:hover {
-    text-decoration: underline;
   }
   code {
     font-family: ui-monospace, Menlo, monospace;

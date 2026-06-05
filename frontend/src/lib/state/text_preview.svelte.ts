@@ -36,6 +36,17 @@ interface CacheEntry {
 const cache: Map<number, CacheEntry> = new Map();
 const inflight: Map<number, { key: string; timer: ReturnType<typeof setTimeout> }> = new Map();
 
+/// Per-layer generation token of the most-recently-dispatched render.
+/// `inflight` only tracks the debounce timer and is cleared the moment a
+/// render fires, so two renders for the same layer can be in flight at
+/// once (edit while one is resolving). Without this guard a slower stale
+/// render could resolve last and overwrite fresh segments — and an
+/// in-flight render could repopulate a just-deleted layer. A render only
+/// mutates the cache if its captured token is still the latest. The
+/// counter is global+monotonic so a delete→recreate can't collide.
+const generation: Map<number, number> = new Map();
+let genCounter = 0;
+
 /// Bumped on every cache mutation so reactive readers re-derive.
 /// Components touch `previewVersion.v` inside a `$derived` / `$effect`
 /// to subscribe — the cache itself is a plain Map so the version
@@ -124,6 +135,10 @@ export function requestPreview(layer: TextLayer): void {
   }
   const timer = setTimeout(() => {
     inflight.delete(layer.id);
+    // Token for THIS render. Any later dispatch (or an invalidate/reset)
+    // advances the layer's generation, so a stale resolution below bails.
+    const gen = ++genCounter;
+    generation.set(layer.id, gen);
     // Build the wire payload (which atob-decodes the WHOLE 700 KB+ font
     // into a number[] and marshals it across the worker / IPC boundary)
     // only when the debounce actually fires. Origin is out of the hash, so
@@ -137,10 +152,12 @@ export function requestPreview(layer: TextLayer): void {
     void client
       .renderTextLayer(wire as never)
       .then((resp) => {
+        if (generation.get(layer.id) !== gen) return; // superseded
         cache.set(layer.id, { key, segments: resp.segments, renderOrigin });
         bumpVersion();
       })
       .catch(() => {
+        if (generation.get(layer.id) !== gen) return; // superseded
         // Drop the cache entry so the next edit retries. Failures
         // typically mean an empty / parseable-but-empty render; the UI
         // shows nothing rather than a stale outdated preview.
@@ -192,6 +209,9 @@ export function invalidatePreview(layerId: number): void {
     clearTimeout(pending.timer);
     inflight.delete(layerId);
   }
+  // Supersede any already-dispatched render so its late resolution can't
+  // repopulate the cache for a layer we just deleted.
+  generation.delete(layerId);
   if (cache.delete(layerId)) bumpVersion();
 }
 
@@ -201,6 +221,8 @@ export function resetPreviewCache(): void {
   if (cache.size === 0 && inflight.size === 0) return;
   for (const { timer } of inflight.values()) clearTimeout(timer);
   inflight.clear();
+  // Supersede every in-flight render so none repopulates the fresh cache.
+  generation.clear();
   cache.clear();
   bumpVersion();
 }

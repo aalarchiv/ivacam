@@ -255,6 +255,15 @@
         void run();
       }
     }, AUTO_REGEN_DEBOUNCE_MS);
+    // Cleanup on unmount (not just on re-run): without this a pending
+    // debounce survives teardown and fires run() after the bar is gone,
+    // re-entering the generate pipeline against stale state.
+    return () => {
+      if (autoTimer) {
+        clearTimeout(autoTimer);
+        autoTimer = null;
+      }
+    };
   });
 
   let warnings = $derived(project.simDiagnostics?.warnings ?? []);

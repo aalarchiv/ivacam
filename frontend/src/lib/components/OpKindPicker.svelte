@@ -141,8 +141,8 @@
 
   /// h0tx: each op kind's required machine capability. The picker
   /// hides kinds whose required capability isn't in the machine's
-  /// effective set (empty `machine.capabilities` ⇒ `[mode]` —
-  /// back-compat for projects that predate the field).
+  /// effective set (empty `machine.capabilities` ⇒ `[mode]` — the
+  /// default when capabilities is absent).
   const OP_REQUIRES: Record<PickerKind, ('mill' | 'laser' | 'drag' | 'plasma')[]> = {
     // Plasma cuts outlines (and holes are inner profiles), so profile is
     // plasma-capable; area-clearing / Z-aware ops stay mill/laser.

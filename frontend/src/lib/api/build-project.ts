@@ -209,8 +209,8 @@ interface WireToolEntry {
   /// Omit when undefined so the Rust sim falls back to its 0.15 mm
   /// default.
   kerf_mm?: number;
-  /// z1y0: spindle direction. Omit when default ('cw') so legacy
-  /// projects round-trip unchanged.
+  /// z1y0: spindle direction. Omit when default ('cw') to keep the wire
+  /// compact — the Rust serde default fills it back in.
   spindle_direction?: 'cw' | 'ccw';
   holder?: WireHolderShape;
 }
@@ -261,8 +261,8 @@ interface WireMachine {
       speed: WireAxisFormat;
     };
   };
-  /// 3nnj: machine spindle clamps. Omit when undefined so the
-  /// Rust serde default (no clamp) round-trips for legacy projects.
+  /// 3nnj: machine spindle clamps. Omit when undefined; the Rust serde
+  /// default (no clamp) fills it back in.
   spindle_rpm_min?: number;
   spindle_rpm_max?: number;
   /// jcmx: feed ceiling (mm/min). Omit when undefined (no clamp).
@@ -276,8 +276,8 @@ interface WireMachine {
   /// `park_at_home` is true the program_end footer emits
   /// `G53 G0 X0 Y0`; when false (and `park_xy` is None) it falls
   /// back to `G0 X0 Y0` in the current WCS. When `park_xy` is
-  /// set the head routes to that explicit point instead. Omit
-  /// when at default so legacy projects round-trip unchanged.
+  /// set the head routes to that explicit point instead. Omit at the
+  /// default to keep the wire compact.
   park_at_home?: boolean;
   park_xy?: [number, number];
   /// 4lq5: emit M1 (optional stop) instead of M0 at program pauses.
@@ -548,8 +548,8 @@ export interface WireProject {
   /// f60x: relief surface sources referenced by `relief_mill` ops. Omitted
   /// when none are loaded.
   relief_sources?: WireReliefSource[];
-  /// l8lk: opt-in tool-change-order optimization. Omitted when false so the
-  /// Rust serde-default round-trip matches legacy projects.
+  /// l8lk: opt-in tool-change-order optimization. Omitted when false; the
+  /// Rust serde default fills it back in.
   group_ops_by_tool?: boolean;
 }
 
@@ -671,8 +671,8 @@ function buildMachine(m: MachineSettings): WireMachine {
     ...(m.spindleStopDwellSec !== undefined
       ? { spindle_stop_dwell_sec: m.spindleStopDwellSec }
       : {}),
-    // syol: park-at-home flag. Skip on the default (false) so legacy
-    // projects round-trip unchanged.
+    // syol: park-at-home flag. Skip on the default (false) to keep the
+    // wire compact.
     ...(m.parkAtHome ? { park_at_home: true } : {}),
     // syol: explicit park XY. Per the audit spec we only emit this when
     // `parkAtHome === false` — when parkAtHome is true the G53 path
@@ -763,8 +763,8 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     // mmu8: laser kerf width (mm). Skip on zero/undefined so the Rust
     // sim falls back to its 0.15 mm default.
     ...(t.kerfMm !== undefined && t.kerfMm > 0 ? { kerf_mm: t.kerfMm } : {}),
-    // z1y0: spindle direction. Skip default ('cw') so legacy projects
-    // round-trip unchanged on the wire.
+    // z1y0: spindle direction. Skip the default ('cw') to keep the wire
+    // compact.
     ...(t.spindleDirection === 'ccw' ? { spindle_direction: 'ccw' as const } : {}),
     ...(t.holder !== undefined ? { holder: t.holder } : {}),
   };
@@ -1106,7 +1106,7 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
     },
     // dp6b: emit `group` only when set and non-empty. The Rust serde
     // tag is `skip_serializing_if = "Option::is_none"`, so omit it
-    // entirely to match round-trips on legacy projects.
+    // entirely when unset.
     ...(op.group && op.group.length > 0 ? { group: op.group } : {}),
     // l8lk: emit pin_order only when set (Rust skips the default false).
     ...(op.pinOrder ? { pin_order: true } : {}),
@@ -1144,8 +1144,8 @@ function buildStock(state: ProjectStateView): WireStock | null {
     width_mm: fp.maxX - fp.minX,
     height_mm: fp.maxY - fp.minY,
     thickness_mm: Math.max(0.01, stock.thickness),
-    // ya00: stock-top Z placement. Omit at the default (0) so legacy
-    // projects stay byte-identical on the wire.
+    // ya00: stock-top Z placement. Omit at the default (0) to keep the
+    // wire compact.
     ...(stock.offsetZ ? { top_z_mm: stock.offsetZ } : {}),
   };
 }

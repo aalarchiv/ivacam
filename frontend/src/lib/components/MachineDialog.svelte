@@ -701,7 +701,7 @@
 
       <div class="section-title">Spindle clamps &amp; warmup</div>
       <label
-        title="Lower spindle-RPM clamp (M3 S<rpm>). Tool / op RPMs below this clamp UP to the min and emit a 'spindle_speed_clamped_below_min' warning. Empty = no floor (back-compat default)."
+        title="Lower spindle-RPM clamp (M3 S<rpm>). Tool / op RPMs below this clamp UP to the min and emit a 'spindle_speed_clamped_below_min' warning. Empty = no floor (default)."
       >
         Spindle RPM min
         <span class="field"
@@ -724,7 +724,7 @@
         >
       </label>
       <label
-        title="Upper spindle-RPM clamp. Tool / op RPMs above this clamp DOWN to the max and emit a 'spindle_speed_clamped_above_max' warning. Empty = no ceiling (back-compat default)."
+        title="Upper spindle-RPM clamp. Tool / op RPMs above this clamp DOWN to the max and emit a 'spindle_speed_clamped_above_max' warning. Empty = no ceiling (default)."
       >
         Spindle RPM max
         <span class="field"
@@ -747,7 +747,7 @@
         >
       </label>
       <label
-        title="Upper feed clamp. Cutting / plunge feeds above this clamp DOWN to the max and emit a 'feed_clamped_above_max' warning, so an out-of-range feed can't reach the controller. Empty = no ceiling (back-compat default)."
+        title="Upper feed clamp. Cutting / plunge feeds above this clamp DOWN to the max and emit a 'feed_clamped_above_max' warning, so an out-of-range feed can't reach the controller. Empty = no ceiling (default)."
       >
         Max feed
         <span class="field"

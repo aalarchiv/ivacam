@@ -76,8 +76,8 @@ export class SelectionState {
   /// bulk replace lands more than one id at once.
   selectionAnchorObjectId = $state<number | null>(null);
 
-  /// Legacy entity-level (per-segment) selection. Kept for project-
-  /// file back-compat; no longer drives the UI directly.
+  /// Entity-level (per-segment) selection. Persisted in the project
+  /// file but not currently used to drive the UI directly.
   selectedEntities = $state<Set<number>>(new Set());
 
   /// id of the currently-selected fixture. Drives the right-hand

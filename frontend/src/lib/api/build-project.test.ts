@@ -279,7 +279,7 @@ describe('buildProject — j4tv work_offset wiring', () => {
     expect(project).not.toHaveProperty('work_offset');
   });
 
-  it('omits work_offset when state has no workOffset (legacy projects)', () => {
+  it('omits work_offset when state has no workOffset', () => {
     const project = buildProject({
       transformedImport: fakeImport(),
       machine: baseMachine(),
@@ -333,8 +333,8 @@ describe('buildProject — j4tv work_offset wiring', () => {
 
 // Round-3 P2: MachineDialog now exposes spindle_rpm_min/max,
 // spindle_start_dwell_sec, spindle_stop_dwell_sec, park_at_home,
-// park_xy. The wire layer skips each on default so legacy projects
-// round-trip unchanged; with all six set the WireMachine carries the
+// park_xy. The wire layer skips each on default to keep the payload
+// compact; with all six set the WireMachine carries the
 // canonical snake_case names the Rust serde derive expects.
 describe('buildMachine — Round-3 spindle clamps & parking', () => {
   it('omits every spindle / park field when at default', () => {
@@ -548,7 +548,7 @@ describe('stock box (vrrr)', () => {
       },
     });
     expect(withOffset!.stock).toMatchObject({ top_z_mm: 12 });
-    // Default (0 / unset) omits the key — byte-identical legacy wire.
+    // Default (0 / unset) omits the key.
     const noOffset = buildProject({
       ...base,
       stock: { visible: true, mode: 'auto', margin: 5, thickness: 3, customX: 0, customY: 0 },

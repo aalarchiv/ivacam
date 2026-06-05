@@ -62,7 +62,7 @@
   // The gcode dialect is now a MACHINE setting (chosen in the Machine
   // dialog) rather than a toolbar dropdown — a controller speaks one
   // dialect. Derive from the machine, falling back to the last-used /
-  // persisted choice so existing projects without the field keep working.
+  // persisted choice when the machine doesn't specify one.
   const post = $derived<PostId>(
     coercePost(project.machine.gcodeDialect ?? workspace.get().last_post_processor),
   );

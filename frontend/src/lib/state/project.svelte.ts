@@ -32,7 +32,7 @@ import {
 export { DEFAULT_SETTINGS };
 export type { AppSettings };
 // Bring the union types into scope locally; project-types and op_types
-// re-export them through this module for back-compat callers.
+// re-export them through this module so callers can import them here too.
 import { isContourOp, type OpEntry, type OpKind, type OpPatch } from './op_types';
 import { migrateLegacyToolTerms } from './tool-migration';
 
@@ -439,8 +439,8 @@ class ProjectState {
   }
 
   /// i5g4: program-level WCS offset (j4tv wiring). Defaults to all-zero
-  /// at G54, which serializes as "no work_offset field" on the wire so
-  /// legacy projects round-trip unchanged.
+  /// at G54, which serializes as "no work_offset field" on the wire to
+  /// keep the payload compact.
   get workOffset(): WorkOffset {
     return this.data.workOffset;
   }
@@ -813,8 +813,8 @@ class ProjectState {
   /// thread the add through a proper command if users complain.
   addImported(r: ImportResponse, sourcePath?: string | null) {
     if (this.data.imports.length === 0) {
-      // First import: identical to setImported for back-compat with
-      // the open-file flows that always call addImported.
+      // First import: behave identically to setImported, since the
+      // open-file flows always call addImported.
       this.setImported(r, sourcePath);
       return;
     }

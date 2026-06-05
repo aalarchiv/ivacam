@@ -132,8 +132,8 @@ export interface ToolEntry {
   tipDiameter?: number;
   /// V-bit full apex angle in degrees. Drives the V-Carve depth math
   /// (`z = -R / tan(tipAngleDeg / 2)`); ignored for non-V tools.
-  /// Optional in TS for back-compat with old project files; the wire
-  /// payload omits it when undefined and the Rust side defaults to 60°.
+  /// Optional in TS — the wire payload omits it when undefined and the
+  /// Rust side defaults to 60°.
   tipAngleDeg?: number;
   dragoff?: number;
   /// 0t9o: drag-knife self-align threshold (°). Corners whose tangent
@@ -256,7 +256,7 @@ export interface ToolEntry {
   /// z1y0: spindle direction the post commands when this tool is
   /// selected. Default 'cw' (M3); 'ccw' (M4) for left-hand cutters /
   /// reverse-thread / mirror-helix tooling. Skipped on the wire when
-  /// at default so legacy projects round-trip unchanged.
+  /// at default to keep the payload compact.
   spindleDirection?: SpindleDirection;
   /// Holder geometry above the shank. Undefined = no holder check.
   holder?: HolderShape;
@@ -309,8 +309,8 @@ export interface MachineSettings {
   name?: string;
   /// h0tx: which op kinds the machine can run. Drives the
   /// OpKindPicker's filter — a laser-only machine doesn't show
-  /// milling ops. Empty array = implicitly `[mode]` (back-compat
-  /// for projects that predate this field).
+  /// milling ops. Empty array = implicitly `[mode]` (the default when
+  /// capabilities is absent).
   capabilities?: ('mill' | 'laser' | 'drag' | 'plasma')[];
   unit: 'mm' | 'inch';
   mode: 'mill' | 'laser' | 'drag' | 'plasma';
@@ -367,17 +367,17 @@ export interface MachineSettings {
   /// 3nnj: lower bound on the spindle RPM the controller will accept.
   /// Tool / op RPMs below this clamp UP to the min and emit a
   /// `spindle_speed_clamped_below_min` warning. Undefined disables
-  /// the floor (default; back-compat).
+  /// the floor (default).
   spindleRpmMin?: number;
   /// 3nnj: upper bound on the spindle RPM the controller will accept.
   /// Tool / op RPMs above this clamp DOWN to the max and emit a
   /// `spindle_speed_clamped_above_max` warning. Undefined disables
-  /// the ceiling (default; back-compat).
+  /// the ceiling (default).
   spindleRpmMax?: number;
   /// jcmx: upper bound on the cutting / plunge feed (mm/min) the machine
   /// can drive. Feeds above this clamp DOWN to the max and emit a
   /// `feed_clamped_above_max` warning. Undefined disables the ceiling
-  /// (default; back-compat).
+  /// (default).
   maxFeedMmMin?: number;
   /// Spindle-start dwell (seconds) inserted into the M6 toolchange
   /// envelope after `M3 S<rpm>`. Lets the new tool come up to

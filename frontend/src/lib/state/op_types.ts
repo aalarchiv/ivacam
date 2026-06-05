@@ -253,9 +253,9 @@ export interface VCarveOp extends OpBase {
   /// r8ut: trace the full medial axis. Default (undefined / false) =
   /// Estlcam-style perimeter-only — the cutter traces the boundary
   /// offset inward by `R = effective_r_cap` at constant depth, leaving
-  /// the centre plateau untouched. Set true to recover the prior ivac
-  /// behaviour for the rare "carve a depth gradient across the entire
-  /// interior" workflow (Aspire-style relief).
+  /// the centre plateau untouched. Set true for the rare "carve a depth
+  /// gradient across the entire interior" workflow — the full medial
+  /// axis (Aspire-style relief).
   fullMedialAxis?: boolean;
   /// rt1.7: extra inward offset applied to the source region BEFORE
   /// the V-Carve pass. Used to build the "plug" side of an inlay pair —

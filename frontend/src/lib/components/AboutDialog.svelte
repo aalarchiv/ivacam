@@ -259,7 +259,6 @@
   }
   .about-md :global(p:first-child) {
     margin-top: 0;
-    color: var(--text-muted);
   }
   .about-md :global(ul) {
     margin: 0;

@@ -10,7 +10,7 @@ the desktop bundle is produced by Tauri 2.
 |-------------|------------------|------------------------------------------------|
 | Rust        | pinned in [`rust-toolchain.toml`](./rust-toolchain.toml) | rustup picks up the pin automatically the first time you run cargo in this repo. |
 | Node.js     | ≥ 20             | Any LTS works; we use it only to drive Vite + svelte-check. |
-| pnpm or npm | npm ≥ 10 / pnpm ≥ 9 | Lockfile is `frontend/pnpm-lock.yaml`; npm works against it but pnpm is faster. |
+| pnpm        | ≥ 9              | Required. The frontend pulls in the local `ivac-wasm` package via pnpm's `link:` protocol, which npm can't resolve; lockfile is `frontend/pnpm-lock.yaml`. |
 | Tauri CLI   | 2.x              | Install via `cargo install tauri-cli --version "^2" --locked` once you're set up for desktop builds. |
 | wasm-pack   | ≥ 0.14           | Install via `cargo install wasm-pack --locked` for the WASM crate. |
 | cargo-deny  | ≥ 0.19           | Optional but recommended; CI runs it. `cargo install cargo-deny --locked`. |
@@ -85,7 +85,7 @@ cargo test --workspace --tests   # full Rust unit + integration suite
 
 ```sh
 cd frontend
-pnpm install                 # or npm install
+pnpm install                 # pnpm required (link: dep, see prerequisites)
 pnpm dev                     # http://localhost:5173, hot reload
 pnpm build                   # static bundle to frontend/dist/
 ```
@@ -105,7 +105,7 @@ server's "Open file" / Generate UI just works.
 ```sh
 wasm-pack build crates/ivac-wasm --target web --release
 # pkg/ is published as a local dep — pnpm picks it up via
-#   "ivac-wasm": "file:../crates/ivac-wasm/pkg"
+#   "ivac-wasm": "link:../crates/ivac-wasm/pkg"
 cd frontend && pnpm install && pnpm dev
 # visit http://localhost:5173/?api=wasm
 ```
@@ -192,7 +192,7 @@ Outputs land under `target/release/bundle/`:
 cargo test --workspace
 
 # Frontend type check (svelte-check) must be clean:
-cd frontend && npm run check
+cd frontend && pnpm check
 
 # Smoke test the binary you just built:
 ./target/release/ivac --help
@@ -200,7 +200,7 @@ cd frontend && npm run check
 ```
 
 For Tauri builds, launching the bundled app should open a window titled
-*ivaCAM* with the same UI you saw under `npm run dev`.
+*ivaCAM* with the same UI you saw under `pnpm dev`.
 
 ## 5. Troubleshooting
 

@@ -1865,6 +1865,16 @@ pub fn fmt_num(v: f64, sep: char) -> String {
 /// `PostProfile::decimal_places_inch`. mm-mode defaults remain at 4.
 #[must_use]
 pub fn fmt_num_dp(v: f64, sep: char, decimals: u8) -> String {
+    // Non-finite backstop: a NaN/inf coordinate would otherwise format as
+    // the literal `NaN`/`inf`, emitting a syntactically invalid word
+    // (`XNaN`, `Xinf`) that a controller rejects — potentially mid-program.
+    // Geometry upstream is responsible for finiteness; this leaf formatter
+    // is the last line of defence, so it snaps to a clean `0` rather than
+    // ever letting poison output reach the listing (cf. the signed-zero
+    // snap just below).
+    if !v.is_finite() {
+        return "0".into();
+    }
     // Suppress signed-zero: any value with magnitude < 0.5 * 10^-N
     // (half-ULP of the N-decimal output) would round to "0" anyway —
     // including `-0.000049…` at 4 dp, which used to render as `-0`.
@@ -2041,6 +2051,17 @@ mod tests {
         assert_eq!(fmt_num(0.0, '.'), "0");
         // Comma locale: same suppression rule.
         assert_eq!(fmt_num(-0.0, ','), "0");
+    }
+
+    #[test]
+    fn fmt_num_non_finite_never_emits_poison() {
+        // A NaN/inf coordinate must never format as `NaN`/`inf` — that
+        // emits a syntactically invalid word (`XNaN`) a controller rejects
+        // mid-program. The leaf formatter snaps non-finite to a clean "0".
+        assert_eq!(fmt_num(f64::NAN, '.'), "0");
+        assert_eq!(fmt_num(f64::INFINITY, '.'), "0");
+        assert_eq!(fmt_num(f64::NEG_INFINITY, '.'), "0");
+        assert_eq!(fmt_num_dp(f64::NAN, ',', 6), "0");
     }
 
     fn square_offset() -> PolylineOffset {

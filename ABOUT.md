@@ -1,4 +1,4 @@
-ivaCAM by Soenke J.Peters is an open-source CAM for hobbyist CNC, laser cutters, drag-knife plotters, and plasma CNC machines.
+ivaCAM by Soenke J. Peters is an open-source CAM for hobbyist CNC, laser cutters, drag-knife plotters, and plasma CNC machines.
 
 <!--
   This file is the source for the About dialog's prose. It is read at

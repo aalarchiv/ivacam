@@ -1,4 +1,4 @@
-ivaCAM is open-source CAM for hobbyist CNC, laser, and drag-knife machines.
+ivaCAM by Soenke J.Peters is an open-source CAM for hobbyist CNC, laser cutters, drag-knife plotters, and plasma CNC machines.
 
 <!--
   This file is the source for the About dialog's prose. It is read at
@@ -20,6 +20,6 @@ The bundled license text ships in the repository as `LICENSE`; you also have a c
 
 ### Acknowledgements
 
-- **[viaConstructor](https://github.com/multigcs/viaconstructor)** — the project that gave the idea. A Python CAM tool with a similar scope; ivaCAM reuses none of its code but stands on the shoulders of its UX exploration.
+- **[viaConstructor](https://github.com/multigcs/viaconstructor)** — the project that gave the idea and was a name inspiration (besides being a funny acronym for "I vibe-coded a CAM"). A Python CAM tool with a similar scope; ivaCAM reuses none of its code but stands on the shoulders of its UX exploration.
 - **Estlcam** — its feature catalogue inspired the CAM primitives ivaCAM implements. No Estlcam code is used; algorithms are implemented from public literature. Estlcam is not free, but it is great software at a reasonable price. Buy it!
 - **The CNC and maker community** — bug reports, test geometries, and the machine quirks that turned synthetic test suites into real shop-floor coverage.

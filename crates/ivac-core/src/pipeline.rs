@@ -1019,6 +1019,176 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
 // that doesn't usefully split — see 55o4 for the planned per-op-driver
 // extraction.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+/// Short operator-readable label for a program-only op kind, used in the
+/// progress message emitted by [`run_per_op`].
+fn program_only_label(kind: &OpKind) -> &'static str {
+    match kind {
+        OpKind::Pause { .. } => "pause",
+        OpKind::Homing { .. } => "homing",
+        OpKind::Probe { .. } => "probe",
+        OpKind::CycleMarker { .. } => "cycle marker",
+        OpKind::GcodeInclude { .. } => "gcode include",
+        _ => "op",
+    }
+}
+
+/// Emit the body of a program-only op (Pause / Homing / Probe /
+/// CycleMarker / GcodeInclude) — raw program scaffolding that bypasses the
+/// tool / source / setup / cache machinery. Pulled out of [`run_per_op`]'s
+/// loop so the dispatcher only dispatches; the shared per-op bookkeeping
+/// (progress tick + completion event) stays in the caller. Adding a
+/// program-only kind is then one arm here plus `Op::is_program_only`.
+///
+/// `state_before_reset` is the post's live delta-encoding state captured
+/// BEFORE the per-op `reset_state()` — GcodeInclude's `{x}`/`{y}`/… var
+/// expansion reads the previous op's exit position from it.
+fn emit_program_only_op<P: PostProcessor>(
+    op: &Op,
+    project: &Project,
+    post: &mut P,
+    warnings: &mut Vec<PipelineWarning>,
+    state_before_reset: &crate::gcode::CapturedPostState,
+) {
+    match &op.kind {
+        // rt1.34 / yc2a: Pause — M5 → optional comment → optional-stop,
+        // then forget spindle state so the next op re-emits M3/M4 S<rpm>
+        // explicitly (a true mid-program restart honoring the next tool's
+        // direction), rather than hard-coding a raw M3.
+        OpKind::Pause { message } => {
+            post.raw(&format!("; OP {} (pause)", op.id));
+            post.raw("M5");
+            if !message.is_empty() {
+                post.comment(message);
+            }
+            // 4lq5: M1 (optional stop) instead of M0 when the machine opts in.
+            post.raw(project.machine.program_pause_code());
+            post.reset_state();
+        }
+        // 8n4k: Homing — comment + G28, optional rapid retract to the op's
+        // safe Z so the next op starts from a known clearance. Reset state
+        // because some controllers reset modal state at G28 too.
+        OpKind::Homing { retract_to_safe_z } => {
+            post.raw(&format!("; OP {} (homing)", op.id));
+            post.raw("G28");
+            if *retract_to_safe_z {
+                post.move_to(None, None, Some(op.params.fast_move_z));
+            }
+            post.reset_state();
+        }
+        // 8n4k: Probe — comment + `G38.2 <axis><dist> F<feed>`. Reset state
+        // so the delta-encoder doesn't assume the tool stayed at the probe
+        // XYZ; the next move re-emits its targets explicitly.
+        OpKind::Probe {
+            axis,
+            distance_mm,
+            feed_mm_min,
+        } => {
+            post.raw(&format!("; OP {} (probe)", op.id));
+            post.raw(&format!(
+                "G38.2 {}{:.4} F{}",
+                axis.letter(),
+                distance_mm,
+                feed_mm_min,
+            ));
+            post.reset_state();
+        }
+        // 8n4k: CycleMarker — a single operator-readable comment, no motion
+        // or state change. Wrap the label with `--- … ---` so it stands out.
+        OpKind::CycleMarker { label } => {
+            post.raw(&format!("; OP {} (cycle marker)", op.id));
+            if label.is_empty() {
+                post.raw("; ---");
+            } else {
+                post.raw(&format!("; --- {label} ---"));
+            }
+        }
+        // rxm9: GcodeInclude — substitute `{x}`/`{y}`/`{z}`/`{f}`/`{s}`/
+        // `{safe_z}` against the post's live state, then emit each line.
+        // Unknown variables pass through verbatim + warn; the sim classifies
+        // the expanded body and warns only about genuinely unsimulatable
+        // lines (yhen). Reset state afterward — we don't know where the
+        // included block left the spindle.
+        OpKind::GcodeInclude {
+            path,
+            content,
+            verbose_unsim_warnings,
+        } => {
+            let header = if path.is_empty() {
+                format!("; OP {} (gcode include)", op.id)
+            } else {
+                format!("; OP {} (gcode include: {path})", op.id)
+            };
+            post.raw(&header);
+            let safe_z = op.params.fast_move_z;
+            let (expanded, unknown) =
+                expand_gcode_include_vars(content, state_before_reset, safe_z);
+            for name in &unknown {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "gcode_include_unknown_variable".into(),
+                    message: format!(
+                        "Op '{}': unknown variable `{{{name}}}` in included G-code passed through verbatim — fix or remove to silence.",
+                        op.name,
+                    ),
+                });
+            }
+            if expanded.trim().is_empty() {
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "gcode_include_empty".into(),
+                    message: format!(
+                        "Op '{}': included G-code is empty — no lines emitted at this slot.",
+                        op.name,
+                    ),
+                });
+            }
+            for line in expanded.lines() {
+                post.raw(line);
+            }
+            let classification = classify_gcode_include_body(&expanded);
+            if !classification.skipped.is_empty() {
+                let n_total = classification.n_simulated
+                    + classification.n_noop
+                    + classification.skipped.len();
+                let head = &classification.skipped[0];
+                warnings.push(PipelineWarning {
+                    op_id: Some(op.id),
+                    kind: "gcode_include_lines_skipped".into(),
+                    message: format!(
+                        "Op '{}': {n_skipped} of {n_total} included G-code line(s) cannot be simulated — the carved stock state across this slot may be incomplete. First skipped: line {head_line} `{head_text}` ({head_reason}). Inspect the included file by hand.",
+                        op.name,
+                        n_skipped = classification.skipped.len(),
+                        head_line = head.line_no,
+                        head_text = head.trimmed,
+                        head_reason = head.reason,
+                    ),
+                });
+                // xi2g: verbose mode fans out a per-line warning for each
+                // skipped line. Off by default so the panel stays readable.
+                if *verbose_unsim_warnings {
+                    for skipped in &classification.skipped {
+                        warnings.push(PipelineWarning {
+                            op_id: Some(op.id),
+                            kind: "gcode_include_unsim_line".into(),
+                            message: format!(
+                                "Op '{}': included G-code line {n}: `{text}` — {reason}.",
+                                op.name,
+                                n = skipped.line_no,
+                                text = skipped.trimmed,
+                                reason = skipped.reason,
+                            ),
+                        });
+                    }
+                }
+            }
+            post.reset_state();
+        }
+        // Not reachable: callers gate on `op.is_program_only()`, whose match
+        // is kept in lockstep with the arms above (op.rs).
+        _ => unreachable!("emit_program_only_op called on non-program-only op kind"),
+    }
+}
+
 fn run_per_op<P, F>(
     project: &Project,
     objects: &[VcObject],
@@ -1148,238 +1318,19 @@ where
         }
         let body_marker = post.out_lines_count();
 
-        // rt1.34: Pause op — emit M5 → optional-stop and skip the rest
-        // of the op machinery (no tool, no source, no setup, no cache).
-        // The controller halts on M0; pressing Cycle Start resumes.
-        //
-        // yc2a: after M0 we DON'T emit a raw `M3` — that hard-codes CW
-        // and would lock a CCW-tool program into the wrong direction
-        // (and would emit no S<rpm>, leaving the controller at
-        // whatever last speed it cached). Instead, call
-        // `post.reset_state()` so the post's delta encoder forgets
-        // `last_speed` / `last_spindle_dir`; the NEXT op's lazy
-        // `spindle_on(...)` (driven by the op's tool's
-        // `spindle_direction`) will then re-emit M3/M4 S<rpm>
-        // explicitly. Net effect: the pause behaves as a true
-        // mid-program restart for the spindle, honoring whatever
-        // direction the next op needs.
-        if let OpKind::Pause { message } = &op.kind {
-            post.raw(&format!("; OP {} (pause)", op.id));
-            post.raw("M5");
-            if !message.is_empty() {
-                post.comment(message);
-            }
-            // 4lq5: M1 (optional stop) instead of M0 when the machine opts in.
-            post.raw(project.machine.program_pause_code());
-            post.reset_state();
+        // 8n4k / rxm9: program-only ops (Pause / Homing / Probe /
+        // CycleMarker / GcodeInclude) emit raw program scaffolding and skip
+        // the tool / source / setup / cache machinery below. Their emit
+        // bodies live in `emit_program_only_op`; the shared per-op
+        // bookkeeping (progress + completion event) stays here, so adding a
+        // program-only kind is one arm there — never new logic in this loop.
+        if op.is_program_only() {
+            emit_program_only_op(op, project, post, warnings, &state_before_reset);
             emitted_ops += 1;
             progress(
                 "gcode",
                 gcode_progress(emitted_ops, n_ops),
-                &format!("emitted op {} (pause)", op.id),
-            );
-            sink(PipelineEvent::OpCompleted {
-                op_id: op.id,
-                cached: false,
-            });
-            continue;
-        }
-
-        // 8n4k: Homing op — emit a comment + `G28`, optionally
-        // followed by a rapid retract to the op's safe Z so the next
-        // op starts from a known clearance. Like Pause we don't
-        // touch tool state, but unlike Pause we DO call
-        // `post.reset_state()` because some controllers reset
-        // modal state at G28 too.
-        if let OpKind::Homing { retract_to_safe_z } = &op.kind {
-            post.raw(&format!("; OP {} (homing)", op.id));
-            post.raw("G28");
-            if *retract_to_safe_z {
-                post.move_to(None, None, Some(op.params.fast_move_z));
-            }
-            post.reset_state();
-            emitted_ops += 1;
-            progress(
-                "gcode",
-                gcode_progress(emitted_ops, n_ops),
-                &format!("emitted op {} (homing)", op.id),
-            );
-            sink(PipelineEvent::OpCompleted {
-                op_id: op.id,
-                cached: false,
-            });
-            continue;
-        }
-
-        // 8n4k: Probe op — emit a comment + `G38.2 <axis><dist> F<feed>`.
-        // The controller halts at the trigger; we re-set state so the
-        // delta-encoder doesn't think the tool stayed at the probe XYZ
-        // — the next move re-emits its targets explicitly.
-        if let OpKind::Probe {
-            axis,
-            distance_mm,
-            feed_mm_min,
-        } = &op.kind
-        {
-            post.raw(&format!("; OP {} (probe)", op.id));
-            post.raw(&format!(
-                "G38.2 {}{:.4} F{}",
-                axis.letter(),
-                distance_mm,
-                feed_mm_min,
-            ));
-            post.reset_state();
-            emitted_ops += 1;
-            progress(
-                "gcode",
-                gcode_progress(emitted_ops, n_ops),
-                &format!("emitted op {} (probe)", op.id),
-            );
-            sink(PipelineEvent::OpCompleted {
-                op_id: op.id,
-                cached: false,
-            });
-            continue;
-        }
-
-        // 8n4k: CycleMarker — emit ONLY a comment line marking the
-        // operator-readable label, no controller motion or state
-        // change. Wrap the label with `--- … ---` so it stands out
-        // among the cut-block comments above and below.
-        if let OpKind::CycleMarker { label } = &op.kind {
-            post.raw(&format!("; OP {} (cycle marker)", op.id));
-            if label.is_empty() {
-                post.raw("; ---");
-            } else {
-                post.raw(&format!("; --- {label} ---"));
-            }
-            emitted_ops += 1;
-            progress(
-                "gcode",
-                gcode_progress(emitted_ops, n_ops),
-                &format!("emitted op {} (cycle marker)", op.id),
-            );
-            sink(PipelineEvent::OpCompleted {
-                op_id: op.id,
-                cached: false,
-            });
-            continue;
-        }
-
-        // rxm9: GcodeInclude — substitute `{x}`/`{y}`/`{z}`/`{f}`/
-        // `{s}`/`{safe_z}` against the post's live state, then emit
-        // each line via `post.raw()`. Unknown variables pass through
-        // as literal text and surface a warning. The sim doesn't
-        // model the included block; a `gcode_include_not_simulated`
-        // warning makes that explicit so the user can sanity-check
-        // the canned cycle by hand.
-        if let OpKind::GcodeInclude {
-            path,
-            content,
-            verbose_unsim_warnings,
-        } = &op.kind
-        {
-            let header = if path.is_empty() {
-                format!("; OP {} (gcode include)", op.id)
-            } else {
-                format!("; OP {} (gcode include: {path})", op.id)
-            };
-            post.raw(&header);
-            let safe_z = op.params.fast_move_z;
-            let (expanded, unknown) =
-                expand_gcode_include_vars(content, &state_before_reset, safe_z);
-            for name in &unknown {
-                warnings.push(PipelineWarning {
-                    op_id: Some(op.id),
-                    kind: "gcode_include_unknown_variable".into(),
-                    message: format!(
-                        "Op '{}': unknown variable `{{{name}}}` in included G-code passed through verbatim — fix or remove to silence.",
-                        op.name,
-                    ),
-                });
-            }
-            if expanded.trim().is_empty() {
-                warnings.push(PipelineWarning {
-                    op_id: Some(op.id),
-                    kind: "gcode_include_empty".into(),
-                    message: format!(
-                        "Op '{}': included G-code is empty — no lines emitted at this slot.",
-                        op.name,
-                    ),
-                });
-            }
-            for line in expanded.lines() {
-                post.raw(line);
-            }
-            // yhen: classify the expanded body and emit a counted
-            // summary instead of the legacy blanket
-            // `gcode_include_not_simulated` warning. The unified
-            // `preview::interpret_with_index` pass at the tail of
-            // run_pipeline already tessellates G0/G1/G2/G3 +
-            // G73/G81/G82/G83 lines into ToolpathSegments that the
-            // sim sweeps — saying "not simulated" for a 100 % G1
-            // return-home block was a lie. Now we warn only when
-            // there are genuinely unsimulatable lines, and we say
-            // how many.
-            let classification = classify_gcode_include_body(&expanded);
-            if !classification.skipped.is_empty() {
-                let n_total = classification.n_simulated
-                    + classification.n_noop
-                    + classification.skipped.len();
-                // Lead with the first skipped line so the user has a
-                // concrete starting point without scanning the
-                // warnings panel.
-                let head = &classification.skipped[0];
-                warnings.push(PipelineWarning {
-                    op_id: Some(op.id),
-                    kind: "gcode_include_lines_skipped".into(),
-                    message: format!(
-                        "Op '{}': {n_skipped} of {n_total} included G-code line(s) cannot be simulated — the carved stock state across this slot may be incomplete. First skipped: line {head_line} `{head_text}` ({head_reason}). Inspect the included file by hand.",
-                        op.name,
-                        n_skipped = classification.skipped.len(),
-                        head_line = head.line_no,
-                        head_text = head.trimmed,
-                        head_reason = head.reason,
-                    ),
-                });
-                // xi2g: when the op opts into verbose mode, fan out a
-                // per-line warning for each skipped line. Off by
-                // default so the warnings panel stays readable on a
-                // multi-skip block; useful when the user is debugging
-                // a single specific include and wants the full list.
-                if *verbose_unsim_warnings {
-                    for skipped in &classification.skipped {
-                        warnings.push(PipelineWarning {
-                            op_id: Some(op.id),
-                            kind: "gcode_include_unsim_line".into(),
-                            message: format!(
-                                "Op '{}': included G-code line {n}: `{text}` — {reason}.",
-                                op.name,
-                                n = skipped.line_no,
-                                text = skipped.trimmed,
-                                reason = skipped.reason,
-                            ),
-                        });
-                    }
-                }
-            }
-            // Note: a 100 %-simulated body emits NO warning (was the
-            // blanket gcode_include_not_simulated before yhen). A
-            // body that's nothing but no-op (only comments / lone
-            // M-codes / no movement at all) ALSO emits no per-line
-            // warning here — the pre-existing `gcode_include_empty`
-            // check above already catches `expanded.trim().is_empty()`,
-            // and a comment-only body is the user's choice.
-            // Reset post state — we have no idea where the included
-            // block left the spindle. The next op re-emits all its
-            // targets explicitly so subsequent moves are still
-            // correct.
-            post.reset_state();
-            emitted_ops += 1;
-            progress(
-                "gcode",
-                gcode_progress(emitted_ops, n_ops),
-                &format!("emitted op {} (gcode include)", op.id),
+                &format!("emitted op {} ({})", op.id, program_only_label(&op.kind)),
             );
             sink(PipelineEvent::OpCompleted {
                 op_id: op.id,

@@ -1482,23 +1482,99 @@ where
     Ok(post.finish())
 }
 
-/// o3od: whether the op's kind-specific driver will emit any cut moves.
-/// Specialty drivers have structural "no output" cases; standard ops have
-/// their own emptiness guards downstream and always report `true` here so
-/// the inter-op M6 still surfaces intent on multi-tool programs.
-fn specialty_will_emit(op: &Op, project: &Project, objects: &[VcObject]) -> bool {
+/// The geometry op kinds that have a dedicated driver emitting XYZ blocks
+/// directly, instead of going through the standard offset cascade. This is
+/// the single classification of an op into the specialty path; both the
+/// "will it emit?" gate ([`SpecialtyKind::would_emit`]) and the "run it"
+/// dispatch ([`SpecialtyKind::run`]) are exhaustive over these variants, so
+/// adding a specialty kind is one [`classify_specialty`] arm plus the two
+/// compiler-forced method arms — the gate can never silently disagree with
+/// the driver (the old hazard: two parallel `match &op.kind` blocks).
+#[derive(Clone, Copy)]
+enum SpecialtyKind {
+    VCarve,
+    Thread,
+    Halfpipe,
+    ReliefMill,
+    RasterEngrave,
+}
+
+/// Classify `op` into the specialty driver path, or `None` for the standard
+/// offset cascade. The one place a kind is mapped to its specialty driver.
+fn classify_specialty(op: &Op) -> Option<SpecialtyKind> {
     match &op.kind {
-        OpKind::VCarve { .. } => vcarve_would_emit(op, objects),
-        OpKind::Thread { .. } => thread_would_emit(op, objects),
+        OpKind::VCarve { .. } => Some(SpecialtyKind::VCarve),
+        OpKind::Thread { .. } => Some(SpecialtyKind::Thread),
         OpKind::Pocket {
             strategy: PocketStrategy::Halfpipe { .. },
             ..
-        } => halfpipe_would_emit(op, objects),
-        // f60x: relief surfacing emits only when its referenced source exists.
-        OpKind::ReliefMill { .. } => relief_would_emit(op, project),
-        // rt1.12: raster engrave emits only with a real source on a laser.
-        OpKind::RasterEngrave { .. } => raster_would_emit(op, project),
-        _ => true,
+        } => Some(SpecialtyKind::Halfpipe),
+        OpKind::ReliefMill { .. } => Some(SpecialtyKind::ReliefMill),
+        OpKind::RasterEngrave { .. } => Some(SpecialtyKind::RasterEngrave),
+        _ => None,
+    }
+}
+
+impl SpecialtyKind {
+    /// o3od: whether this specialty driver will emit any cut moves — it has
+    /// structural "no output" cases (open source, no closed circles, missing
+    /// relief source). The M6 envelope is gated on this so a no-output op
+    /// doesn't warm the spindle / burn a hand-swap.
+    fn would_emit(self, op: &Op, project: &Project, objects: &[VcObject]) -> bool {
+        match self {
+            SpecialtyKind::VCarve => vcarve_would_emit(op, objects),
+            SpecialtyKind::Thread => thread_would_emit(op, objects),
+            SpecialtyKind::Halfpipe => halfpipe_would_emit(op, objects),
+            // f60x: relief emits only when its referenced source exists.
+            SpecialtyKind::ReliefMill => relief_would_emit(op, project),
+            // rt1.12: raster emits only with a real source on a laser.
+            SpecialtyKind::RasterEngrave => raster_would_emit(op, project),
+        }
+    }
+
+    /// Run this specialty driver. Each emits XYZ blocks directly (the caller
+    /// prefixes the `; OP <id>` marker) and reports no offset stats.
+    #[allow(clippy::too_many_arguments)]
+    fn run<P: PostProcessor>(
+        self,
+        op: &Op,
+        project: &Project,
+        objects: &[VcObject],
+        setup: &Setup,
+        post: &mut P,
+        last_pos: &mut Point2,
+        warnings: &mut Vec<PipelineWarning>,
+        cancel: Option<&CancelToken>,
+    ) -> Result<(), PipelineError> {
+        match self {
+            SpecialtyKind::VCarve => run_vcarve_op(
+                op, project, objects, setup, post, last_pos, warnings, cancel,
+            ),
+            SpecialtyKind::Thread => run_thread_op(
+                op, project, objects, setup, post, last_pos, warnings, cancel,
+            ),
+            SpecialtyKind::Halfpipe => run_halfpipe_op(
+                op, project, objects, setup, post, last_pos, warnings, cancel,
+            ),
+            // f60x / rt1.12: relief + raster take no `objects` (they read
+            // their source from the project, not the chained geometry).
+            SpecialtyKind::ReliefMill => {
+                run_relief_op(op, project, setup, post, last_pos, warnings, cancel)
+            }
+            SpecialtyKind::RasterEngrave => {
+                run_raster_op(op, project, setup, post, last_pos, warnings, cancel)
+            }
+        }
+    }
+}
+
+/// Whether the op's kind-specific driver will emit any cut moves. Standard
+/// ops have their own emptiness guards downstream and always report `true`
+/// here so the inter-op M6 still surfaces intent on multi-tool programs.
+fn specialty_will_emit(op: &Op, project: &Project, objects: &[VcObject]) -> bool {
+    match classify_specialty(op) {
+        Some(kind) => kind.would_emit(op, project, objects),
+        None => true,
     }
 }
 
@@ -1559,46 +1635,15 @@ fn run_op_driver<P: PostProcessor>(
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
 ) -> Result<(usize, usize, bool), PipelineError> {
-    match &op.kind {
-        OpKind::VCarve { .. } => {
+    match classify_specialty(op) {
+        Some(kind) => {
             post.raw(&format!("; OP {}", op.id));
-            run_vcarve_op(
+            kind.run(
                 op, project, objects, setup, post, last_pos, warnings, cancel,
             )?;
             Ok((0, 0, false))
         }
-        OpKind::Thread { .. } => {
-            post.raw(&format!("; OP {}", op.id));
-            run_thread_op(
-                op, project, objects, setup, post, last_pos, warnings, cancel,
-            )?;
-            Ok((0, 0, false))
-        }
-        OpKind::Pocket {
-            strategy: PocketStrategy::Halfpipe { .. },
-            ..
-        } => {
-            post.raw(&format!("; OP {}", op.id));
-            run_halfpipe_op(
-                op, project, objects, setup, post, last_pos, warnings, cancel,
-            )?;
-            Ok((0, 0, false))
-        }
-        // f60x: 3-axis ball-nose relief surfacing — own drop-cutter driver,
-        // like Halfpipe/VCarve it emits XYZ blocks directly.
-        OpKind::ReliefMill { .. } => {
-            post.raw(&format!("; OP {}", op.id));
-            run_relief_op(op, project, setup, post, last_pos, warnings, cancel)?;
-            Ok((0, 0, false))
-        }
-        // rt1.12: laser raster engrave — own scanline driver, emits XY
-        // moves with per-pixel S directly (no offset cascade).
-        OpKind::RasterEngrave { .. } => {
-            post.raw(&format!("; OP {}", op.id));
-            run_raster_op(op, project, setup, post, last_pos, warnings, cancel)?;
-            Ok((0, 0, false))
-        }
-        _ => run_standard_op(
+        None => run_standard_op(
             op, project, objects, setup, post, last_pos, warnings, cancel,
         ),
     }

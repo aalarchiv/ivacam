@@ -8,21 +8,27 @@
 //!
 //! ## Hashing discipline (read this before adding fields)
 //!
-//! When you add a `Hash` impl in this module, hash EVERY field that
-//! affects the operation's output. Forgetting one means stale cache
-//! hits = wrong gcode. The compiler will not catch this — the
-//! `#[derive(Hash)]` macro can't be used because the project types
-//! contain `f64` (which deliberately doesn't implement `Hash` to keep
-//! NaN out of `HashMap` keys), so every Hash impl is hand-written.
+//! The op/tool/machine/config inputs are hashed via their canonical
+//! serde-JSON ([`hash_serde`]). The wire schema types are the single
+//! source of truth, so a new or renamed field on any of them
+//! automatically participates in the cache key — there is no
+//! hand-maintained field list to forget (which used to be the standing
+//! "forget a field → stale gcode" hazard). Two deliberate exceptions:
 //!
-//! Conventions:
-//! - `f64` → `state.write_u64(v.to_bits())`. Two NaNs hash differently
-//!   and that's fine — we never produce NaN in op params.
-//! - `Option<f64>` → discriminant byte (0/1) + bits when Some.
-//! - `Vec<f64>` → length + each element's bits.
-//! - `HashMap<K, V>` → SORT keys before iterating, then hash
-//!   `(key, value)` pairs in sorted order. Iteration order is non-
-//!   deterministic and would defeat the point of hashing.
+//! - **Geometry** (`Segment`) keeps a lightweight direct hash
+//!   ([`hash_segment`]) — it's the per-op bulk and a stable leaf type, so
+//!   it stays off the JSON path for speed. It carries a field-
+//!   exhaustiveness guard (full destructure, no `..`) so a new `Segment`
+//!   field is a compile error rather than a silent omission.
+//! - **`MachineConfig`** is hashed through serde with its estimator-only
+//!   fields (accel / jerk / rapid_speed / toolchange_s /
+//!   use_kinematic_time_estimate) normalized to default first: those
+//!   affect the time ESTIMATE, not the emitted gcode, so tuning them must
+//!   not invalidate the toolpath cache. See `op_cache_key_with_finish`.
+//!
+//! serde_json errors only on non-finite floats; op/geometry params are
+//! never NaN, and [`hash_serde`] folds a sentinel rather than panicking
+//! if one ever appears, so the key stays total.
 //!
 //! ## Pipeline version
 //!
@@ -39,26 +45,18 @@ use std::sync::Mutex;
 
 use lru::LruCache;
 use seahash::SeaHasher;
+use serde::Serialize;
 
-use crate::cam::setup::{
-    LeadKind, LeadsConfig, MachineConfig, MachineMode, ObjectOrder, PlungeStrategy, TabType,
-    TabsConfig, ToolOffset, UnitSystem,
-};
-use crate::cam::source_combine::FrameShape;
+use crate::cam::setup::MachineConfig;
 use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::pipeline::PipelineWarning;
-use crate::project::{
-    ContourParams, Coolant, CutDirection, DrillCycle, Fixture, FixtureKind, HolderShape, Op,
-    OpKind, OpParams, OpSource, PatternConfig, PocketParams, PocketStrategy, ProfileParams,
-    ReliefSource, SourceCombine, SpindleDirection, TextAlignment, TextLayer, TextLayerKind,
-    ToolEntry, ToolKind, VCarveParams, Wcs, WorkOffset,
-};
+use crate::project::{Fixture, Op, ReliefSource, TextLayer, ToolEntry, WorkOffset};
 
 /// Bumped when ANY pipeline output format changes — toolpath segment
 /// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 46;
+pub const PIPELINE_VERSION: u32 = 47;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an
@@ -213,119 +211,79 @@ pub fn op_cache_key_with_finish(
     let mut h = SeaHasher::new();
     PIPELINE_VERSION.hash(&mut h);
     h.write_u8(post_processor_tag);
-    hash_operation(op, &mut h);
-    hash_tool(tool, &mut h);
+    // Every op/tool/machine/config input is hashed via its canonical
+    // serde-JSON — the schema types are the single source of truth, so a
+    // new field on any wire type automatically participates in the key
+    // with no hand-mirror to forget. Geometry (`selected_segments`) is
+    // the bulk and a stable leaf, so it keeps a lightweight direct hash.
+    hash_serde(op, &mut h);
+    hash_serde(tool, &mut h);
     match finish_tool {
         None => h.write_u8(0),
         Some(t) => {
             h.write_u8(1);
-            hash_tool(t, &mut h);
+            hash_serde(t, &mut h);
         }
     }
-    hash_machine(machine, &mut h);
+    // MachineConfig is the one wire type with a deliberate gcode/estimator
+    // split: accel / jerk / rapid_speed / toolchange_s /
+    // use_kinematic_time_estimate affect only the TIME ESTIMATE, not the
+    // emitted gcode, so tuning them must hit the cheap re-estimate path
+    // rather than invalidate the expensive toolpath cache. Normalize those
+    // to default, then serde-hash the rest — a new GCODE-affecting machine
+    // field still auto-participates; a future estimator-only field would
+    // (until added here) merely over-invalidate, never serve stale gcode.
+    let mut machine_key = machine.clone();
+    let machine_defaults = MachineConfig::default();
+    machine_key.accel = machine_defaults.accel;
+    machine_key.jerk = machine_defaults.jerk;
+    machine_key.rapid_speed = machine_defaults.rapid_speed;
+    machine_key.toolchange_s = machine_defaults.toolchange_s;
+    machine_key.use_kinematic_time_estimate = machine_defaults.use_kinematic_time_estimate;
+    hash_serde(&machine_key, &mut h);
     h.write_usize(selected_segments.len());
     for seg in selected_segments {
         hash_segment(seg, &mut h);
     }
-    h.write_usize(fixtures.len());
-    for fx in fixtures {
-        hash_fixture(fx, &mut h);
-    }
+    hash_serde(fixtures, &mut h);
     // sqa3: fold the consumed text layers into the key. Edits to font /
     // content / size / placement / alignment must invalidate the cache
     // (otherwise the user changes the engraving text and Generate
-    // happily serves the old gcode). Conservative — we hash every
-    // text_layer rather than try to narrow to the layers this op
-    // actually consumes via `OpSource::Layers { __text_<id> }`. The
-    // extra discrimination is cheap and avoids miss-and-stale hits when
-    // a layer renames between runs.
-    h.write_usize(text_layers.len());
-    for tl in text_layers {
-        hash_text_layer(tl, &mut h);
-    }
+    // happily serves the old gcode). Conservative — every text_layer,
+    // not just the ones this op consumes via `OpSource::Layers`.
+    hash_serde(text_layers, &mut h);
     // f60x: fold relief surface sources into the key like text_layers —
     // editing the source image (brightness grid) must invalidate the
-    // cached relief toolpath. Conservative (hash all, not just the one the
-    // op references); cheap relative to the emit.
-    h.write_usize(relief_sources.len());
-    for rs in relief_sources {
-        hash_relief_source(rs, &mut h);
-    }
-    // ls7y: project work_offset (xyz + WCS selector) is consulted by
-    // sim alignment + the WCS-origin warning today, and on the roadmap
-    // it will drive G10 L20 / G54..G59 emission. Hash it now so that
-    // when WCS-driven emission lands, cached gcode for ops authored
-    // against a different work_offset is correctly invalidated. Cheap:
-    // 3 f64s + 1 discriminant byte per op.
-    hash_work_offset(work_offset, &mut h);
+    // cached relief toolpath. Conservative (hash all).
+    hash_serde(relief_sources, &mut h);
+    // ls7y: project work_offset (xyz + WCS selector) is consulted by sim
+    // alignment + the WCS-origin warning, and will drive G10 L20 /
+    // G54..G59 emission — hash it so cached gcode authored against a
+    // different work_offset is invalidated.
+    hash_serde(work_offset, &mut h);
     OpCacheKey(h.finish())
-}
-
-#[inline]
-fn hash_relief_source<H: Hasher>(rs: &ReliefSource, h: &mut H) {
-    h.write_u32(rs.id);
-    hash_f64(rs.origin.x, h);
-    hash_f64(rs.origin.y, h);
-    hash_f64(rs.cell, h);
-    h.write_u32(rs.cols);
-    h.write_u32(rs.rows);
-    h.write_usize(rs.brightness.len());
-    for &b in &rs.brightness {
-        h.write_u32(b.to_bits());
-    }
-}
-
-#[inline]
-fn hash_work_offset<H: Hasher>(w: &WorkOffset, h: &mut H) {
-    hash_f64(w.x_mm, h);
-    hash_f64(w.y_mm, h);
-    hash_f64(w.z_mm, h);
-    let wcs: u8 = match w.wcs {
-        Wcs::G54 => 0,
-        Wcs::G55 => 1,
-        Wcs::G56 => 2,
-        Wcs::G57 => 3,
-        Wcs::G58 => 4,
-        Wcs::G59 => 5,
-    };
-    h.write_u8(wcs);
 }
 
 // ─── primitives ───────────────────────────────────────────────────────
 
 #[inline]
+/// Hash the canonical serde-JSON of a wire type. Because the schema
+/// types ARE the single source of truth, a new or renamed field on any
+/// of them automatically participates in the cache key — there is no
+/// hand-written field list to drift out of sync (the old per-type
+/// `hash_*` fns were exactly that hazard: forget a field => stale gcode).
+/// serde_json only errors on non-finite floats, which op/geometry params
+/// never are (see module docs); on a degenerate input we fold a sentinel
+/// rather than panic, so the key stays total.
+fn hash_serde<T: Serialize + ?Sized, H: Hasher>(v: &T, h: &mut H) {
+    match serde_json::to_vec(v) {
+        Ok(bytes) => bytes.hash(h),
+        Err(_) => 0xDEAD_BEEF_u32.hash(h),
+    }
+}
+
 fn hash_f64<H: Hasher>(v: f64, h: &mut H) {
     h.write_u64(v.to_bits());
-}
-
-#[inline]
-fn hash_opt_f64<H: Hasher>(v: Option<f64>, h: &mut H) {
-    match v {
-        None => h.write_u8(0),
-        Some(x) => {
-            h.write_u8(1);
-            hash_f64(x, h);
-        }
-    }
-}
-
-#[inline]
-fn hash_opt_u32<H: Hasher>(v: Option<u32>, h: &mut H) {
-    match v {
-        None => h.write_u8(0),
-        Some(x) => {
-            h.write_u8(1);
-            x.hash(h);
-        }
-    }
-}
-
-#[inline]
-fn hash_vec_f64<H: Hasher>(v: &[f64], h: &mut H) {
-    h.write_usize(v.len());
-    for x in v {
-        hash_f64(*x, h);
-    }
 }
 
 #[inline]
@@ -356,850 +314,41 @@ fn hash_segment<H: Hasher>(s: &Segment, h: &mut H) {
     }
     s.layer.hash(h);
     s.color.hash(h);
+    // Field-exhaustiveness guard: this is the one type we still hash by
+    // hand (geometry leaf, kept off serde for the per-segment hot path),
+    // so destructure with no `..` — a new Segment field becomes a compile
+    // error here, forcing a decision about cache-relevance.
+    let Segment {
+        kind: _,
+        start: _,
+        end: _,
+        bulge: _,
+        center: _,
+        layer: _,
+        color: _,
+    } = s;
 }
 
 // ─── tool ─────────────────────────────────────────────────────────────
 
-fn hash_tool<H: Hasher>(t: &ToolEntry, h: &mut H) {
-    t.id.hash(h);
-    t.name.hash(h);
-    let kind: u8 = match t.kind {
-        ToolKind::Endmill => 1,
-        ToolKind::BallNose => 2,
-        ToolKind::VBit => 3,
-        ToolKind::Engraver => 4,
-        ToolKind::DragKnife => 5,
-        ToolKind::Drill => 6,
-        ToolKind::LaserBeam => 7,
-        ToolKind::BullNose => 8,
-        ToolKind::Compression => 9,
-        // 10 retired (z5yw: ToolKind::TSlot folded into FormProfile)
-        ToolKind::FormProfile => 11,
-        ToolKind::Kegel => 12,
-        ToolKind::ThreadMill => 13,
-    };
-    h.write_u8(kind);
-    hash_f64(t.diameter, h);
-    hash_opt_f64(t.tip_diameter, h);
-    hash_f64(t.tip_angle_deg, h);
-    hash_opt_f64(t.dragoff, h);
-    t.flutes.hash(h);
-    t.speed.hash(h);
-    t.plunge_rate.hash(h);
-    t.feed_rate.hash(h);
-    hash_opt_u32(t.speed_finish, h);
-    hash_opt_u32(t.plunge_rate_finish, h);
-    hash_opt_u32(t.feed_rate_finish, h);
-    hash_opt_u32(t.speed_drill, h);
-    hash_opt_u32(t.plunge_rate_drill, h);
-    hash_opt_u32(t.feed_rate_drill, h);
-    hash_opt_f64(t.default_peck_step_mm, h);
-    hash_opt_f64(t.z_shift_mm, h);
-    hash_opt_f64(t.laser_pierce_sec, h);
-    hash_opt_f64(t.laser_lead_in_mm, h);
-    hash_opt_f64(t.corner_radius_mm, h);
-    // gm1u: thread pitch changes the helical Z-advance of a Thread op.
-    hash_opt_f64(t.thread_pitch_mm, h);
-    // 4qeh: compression transition height now drives the
-    // `compression_transition_above_cut` planning warning (a pipeline
-    // output), so it's no longer display-only — fold it into the key so
-    // editing it refreshes the cached per-op warnings.
-    hash_opt_f64(t.compression_transition_mm, h);
-    t.whirl.hash(h);
-    hash_opt_f64(t.whirl_stepover_mm, h);
-    hash_opt_f64(t.whirl_extra_width_mm, h);
-    hash_opt_f64(t.whirl_osc_mm, h);
-    let coolant: u8 = match t.coolant {
-        Coolant::Off => 0,
-        Coolant::Mist => 1,
-        Coolant::Flood => 2,
-    };
-    h.write_u8(coolant);
-    hash_opt_f64(t.default_step, h);
-    hash_opt_f64(t.default_xy_overlap, h);
-    t.pause.hash(h);
-    // scwx: kerf_mm (laser spot diameter) carves into the heightmap at
-    // emission time; stickout_length_mm controls the holder/shank
-    // clearance check geometry; spindle_direction routes the post
-    // between M3 / M4 — all three change emitted output and must
-    // invalidate the cache.
-    hash_opt_f64(t.kerf_mm, h);
-    hash_opt_f64(t.stickout_length_mm, h);
-    let sdir: u8 = match t.spindle_direction {
-        SpindleDirection::Cw => 0,
-        SpindleDirection::Ccw => 1,
-    };
-    h.write_u8(sdir);
-    hash_opt_f64(t.flute_length_mm, h);
-    hash_opt_f64(t.shank_diameter_mm, h);
-    match t.holder {
-        None => h.write_u8(0),
-        Some(HolderShape::Cylinder {
-            diameter_mm,
-            length_mm,
-        }) => {
-            h.write_u8(1);
-            hash_f64(diameter_mm, h);
-            hash_f64(length_mm, h);
-        }
-        Some(HolderShape::Cone {
-            bottom_diameter_mm,
-            top_diameter_mm,
-            length_mm,
-        }) => {
-            h.write_u8(2);
-            hash_f64(bottom_diameter_mm, h);
-            hash_f64(top_diameter_mm, h);
-            hash_f64(length_mm, h);
-        }
-        Some(HolderShape::Stepped {
-            cylinder_diameter_mm,
-            cylinder_length_mm,
-            cone_top_diameter_mm,
-            cone_length_mm,
-        }) => {
-            h.write_u8(3);
-            hash_f64(cylinder_diameter_mm, h);
-            hash_f64(cylinder_length_mm, h);
-            hash_f64(cone_top_diameter_mm, h);
-            hash_f64(cone_length_mm, h);
-        }
-    }
-}
-
 // ─── machine ──────────────────────────────────────────────────────────
 
-fn hash_machine<H: Hasher>(m: &MachineConfig, h: &mut H) {
-    let unit: u8 = match m.unit {
-        UnitSystem::Mm => 0,
-        UnitSystem::Inch => 1,
-    };
-    h.write_u8(unit);
-    let mode: u8 = match m.mode {
-        MachineMode::Mill => 0,
-        MachineMode::Laser => 1,
-        MachineMode::Drag => 2,
-        // zpuk: Plasma — keep the discriminant numerically distinct so
-        // cached output isn't shared with Drag (different Z dance:
-        // pierce-height → dwell → cut-height vs. plot-mode single-Z).
-        MachineMode::Plasma => 3,
-    };
-    h.write_u8(mode);
-    m.comments.hash(h);
-    m.arcs.hash(h);
-    // cb5y: widened from a bool to ToolChangeStrategy. `cache_discriminant`
-    // pins ManualM0Pause=0 / Atc=1 to the original `bool::hash` (write_u8 0/1)
-    // so the two original variants keep a stable cache key across the
-    // widening; new variants get 2/3.
-    h.write_u8(m.tool_change.cache_discriminant());
-    // ul60: name + work_area + capabilities. `name` rides into emitted
-    // comments on some posts. `work_area` is consulted by the soft-limit
-    // sim and the auto-stock fallback; tweaking it after a cache hit
-    // would skip the warning re-check. `capabilities` gates the
-    // frontend's op picker but ALSO future-proofs the cache against a
-    // machine being repurposed (laser → mill) without changing `mode`.
-    m.name.hash(h);
-    hash_f64(m.work_area.x, h);
-    hash_f64(m.work_area.y, h);
-    hash_f64(m.work_area.z, h);
-    h.write_usize(m.capabilities.len());
-    for cap in &m.capabilities {
-        let cap_disc: u8 = match cap {
-            MachineMode::Mill => 0,
-            MachineMode::Laser => 1,
-            MachineMode::Drag => 2,
-            MachineMode::Plasma => 3,
-        };
-        h.write_u8(cap_disc);
-    }
-    // accel / jerk / toolchange_s / rapid_speed / use_kinematic_time_estimate
-    // are intentionally NOT hashed: these fields drive the post-toolpath
-    // time estimator (sim/timing.rs) only, not the emitted G-code body.
-    // The estimator re-runs on every Generate regardless of cache hits,
-    // so tweaking them updates the time estimate without invalidating
-    // any cached op output (audit-4zf).
-    hash_opt_f64(m.arc_fit_tolerance_mm, h);
-    h.write_u32(m.decimal_separator as u32);
-    hash_opt_u32(m.line_number_start, h);
-    m.plot_mode_z.hash(h);
-    // 3nnj: RPM clamp window changes whether an emitted S<rpm> is
-    // capped / floored (and triggers the matching warning lane), so
-    // it MUST invalidate the cache.
-    hash_opt_u32(m.spindle_rpm_min, h);
-    hash_opt_u32(m.spindle_rpm_max, h);
-    // jcmx: feed ceiling changes the clamped emitted feeds.
-    hash_opt_u32(m.max_feed_mm_min, h);
-    // eaeq / m8sq: toolchange spindle stop/start dwells are emitted
-    // verbatim as G4 P<sec> lines around M5/M3 in the M6 envelope.
-    hash_opt_f64(m.spindle_stop_dwell_sec, h);
-    hash_opt_f64(m.spindle_start_dwell_sec, h);
-    // 4lq5: optional_stop swaps the manual-pause M0 → M1, which is captured
-    // into the cached op body for INTERNAL dual-tool / stufenfase swaps
-    // (the per-op Pause / boundary M6 land outside the cache, but the
-    // in-driver swap does not). So it must invalidate the cache.
-    m.optional_stop.hash(h);
-    // syol: program_end footer routing — park_at_home flips on the
-    // G53 G0 X0 Y0 retract, park_xy overrides it with an explicit
-    // WCS-coord point. Both materially change the emitted footer.
-    m.park_at_home.hash(h);
-    match m.park_xy {
-        None => h.write_u8(0),
-        Some((x, y)) => {
-            h.write_u8(1);
-            hash_f64(x, h);
-            hash_f64(y, h);
-        }
-    }
-    // rt1.15: post-profile templates affect program output, so they
-    // must invalidate the cache. None == absent variant byte.
-    match &m.post_profile {
-        None => h.write_u8(0),
-        Some(p) => {
-            h.write_u8(1);
-            p.name.hash(h);
-            p.file_extension.hash(h);
-            p.line_ending.hash(h);
-            p.program_start.hash(h);
-            p.program_end.hash(h);
-            p.tool_change.hash(h);
-            p.coolant_flood_on.hash(h);
-            p.coolant_flood_off.hash(h);
-            p.coolant_mist_on.hash(h);
-            p.coolant_mist_off.hash(h);
-            // hev: per-axis output config. Hash each axis word so any
-            // tweak (rename / scale / format / disable) invalidates the
-            // cache. None == absent variant byte.
-            match &p.axes {
-                None => h.write_u8(0),
-                Some(a) => {
-                    h.write_u8(1);
-                    for af in [&a.x, &a.y, &a.z, &a.i, &a.j, &a.feed, &a.speed] {
-                        af.enabled.hash(h);
-                        af.name.hash(h);
-                        af.format.hash(h);
-                        hash_f64(af.scale, h);
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ─── operation ────────────────────────────────────────────────────────
-
-fn hash_operation<H: Hasher>(op: &Op, h: &mut H) {
-    op.id.hash(h);
-    op.name.hash(h);
-    op.enabled.hash(h);
-    // kbx5 step 3: kind-specific params (contour, pocket, profile,
-    // vcarve, drill pattern + chamfer_after) are hashed inside
-    // hash_operation_kind alongside the variant discriminator. The
-    // remaining `params` carries only universal fields.
-    hash_operation_kind(&op.kind, h);
-    op.tool_id.hash(h);
-    hash_opt_u32(op.finish_tool_id, h);
-    hash_operation_source(&op.source, h);
-    hash_operation_params(&op.params, h);
-}
-
-// juvx: per-variant hash dispatch — every OpKind variant gets its
-// own arm with explicit discriminant + field-hash list so the cache
-// key stays stable. Splitting would scatter the discriminants and
-// invite drift.
-#[allow(clippy::too_many_lines)]
-fn hash_operation_kind<H: Hasher>(k: &OpKind, h: &mut H) {
-    match k {
-        OpKind::Profile {
-            offset,
-            contour,
-            profile,
-        } => {
-            h.write_u8(1);
-            h.write_u8(tool_offset_disc(*offset));
-            hash_contour_params(contour, h);
-            hash_profile_params(*profile, h);
-        }
-        OpKind::Pocket {
-            strategy,
-            contour,
-            pocket,
-        } => {
-            h.write_u8(2);
-            hash_pocket_strategy(*strategy, h);
-            hash_contour_params(contour, h);
-            hash_pocket_params(pocket, h);
-        }
-        OpKind::Drill {
-            cycle,
-            chamfer_after_width_mm,
-            pattern,
-            spot_first,
-        } => {
-            h.write_u8(3);
-            hash_drill_cycle(*cycle, h);
-            hash_opt_f64(*chamfer_after_width_mm, h);
-            match pattern {
-                None => h.write_u8(0),
-                Some(p) => {
-                    h.write_u8(1);
-                    hash_pattern(*p, h);
-                }
-            }
-            // r2af: spot pre-pass is part of the op's emission shape;
-            // changing either depth or tool MUST invalidate the cache.
-            match spot_first {
-                None => h.write_u8(0),
-                Some(s) => {
-                    h.write_u8(1);
-                    s.spot_depth_mm.to_bits().hash(h);
-                    h.write_u32(s.spot_tool_id);
-                }
-            }
-        }
-        OpKind::Thread {
-            pitch_mm,
-            internal,
-            climb,
-            radial_passes,
-            start_angle_rad,
-            thread_depth_mm,
-        } => {
-            h.write_u8(4);
-            hash_f64(*pitch_mm, h);
-            internal.hash(h);
-            climb.hash(h);
-            // mniu: thread_depth_mm changes the helix radius, so
-            // it MUST hash into the cache key. `None` hashes to a
-            // discriminant byte distinct from any `Some(d)` so
-            // legacy entries (None → ISO default) stay separate
-            // from explicit pins.
-            match thread_depth_mm {
-                None => h.write_u8(0),
-                Some(d) => {
-                    h.write_u8(1);
-                    hash_f64(*d, h);
-                }
-            }
-            // sqnh: radial roughing-pass schedule changes the emitted
-            // helix bodies (one helix per pass vs. one at full
-            // engagement). 6uns: start_angle_rad rotates the helix
-            // start point so partial-thread restarts can pick up
-            // where a prior run stopped. Both materially change the
-            // emitted gcode and so must invalidate cache hits.
-            radial_passes.hash(h);
-            hash_f64(*start_angle_rad, h);
-        }
-        OpKind::Chamfer {
-            width_mm,
-            finish_pass,
-        } => {
-            h.write_u8(5);
-            hash_f64(*width_mm, h);
-            finish_pass.hash(h);
-        }
-        OpKind::Engrave { contour } => {
-            h.write_u8(6);
-            hash_contour_params(contour, h);
-        }
-        OpKind::DragKnife { contour } => {
-            h.write_u8(7);
-            hash_contour_params(contour, h);
-        }
-        OpKind::Helix => h.write_u8(8),
-        OpKind::Pause { message } => {
-            h.write_u8(10);
-            message.hash(h);
-        }
-        OpKind::VCarve { carve } => {
-            h.write_u8(9);
-            hash_vcarve_params(carve, h);
-        }
-        // 3g6u: next free discriminant after Pause(10).
-        OpKind::TSlot { contour } => {
-            h.write_u8(11);
-            hash_contour_params(contour, h);
-        }
-        // b7qz: next free discriminant after TSlot(11).
-        OpKind::Dovetail { contour } => {
-            h.write_u8(12);
-            hash_contour_params(contour, h);
-        }
-        // f60x: relief surfacing. All fields change the emitted toolpath
-        // (depth mapping, scallop/stepover, scan direction, sampling) so
-        // every one hashes in. The referenced ReliefSource content is
-        // folded in separately at the op_cache_key level (like text_layers).
-        OpKind::ReliefMill {
-            source_id,
-            z_min_mm,
-            z_max_mm,
-            invert,
-            scallop_height_mm,
-            stepover_mm,
-            scan_direction,
-            along_step_mm,
-        } => {
-            h.write_u8(13);
-            h.write_u32(*source_id);
-            hash_f64(*z_min_mm, h);
-            hash_f64(*z_max_mm, h);
-            invert.hash(h);
-            hash_f64(*scallop_height_mm, h);
-            hash_opt_f64(*stepover_mm, h);
-            h.write_u8(match scan_direction {
-                crate::cam::surface_mill::ScanDirection::AlongX => 0,
-                crate::cam::surface_mill::ScanDirection::AlongY => 1,
-            });
-            hash_f64(*along_step_mm, h);
-        }
-        // 8n4k: next free discriminant after ReliefMill(13).
-        OpKind::Homing { retract_to_safe_z } => {
-            h.write_u8(14);
-            retract_to_safe_z.hash(h);
-        }
-        OpKind::Probe {
-            axis,
-            distance_mm,
-            feed_mm_min,
-        } => {
-            h.write_u8(15);
-            h.write_u8(match axis {
-                crate::project::ProbeAxis::X => 0,
-                crate::project::ProbeAxis::Y => 1,
-                crate::project::ProbeAxis::Z => 2,
-            });
-            hash_f64(*distance_mm, h);
-            h.write_u32(*feed_mm_min);
-        }
-        OpKind::CycleMarker { label } => {
-            h.write_u8(16);
-            label.hash(h);
-        }
-        // rxm9: next free discriminant after CycleMarker(16).
-        OpKind::GcodeInclude {
-            path,
-            content,
-            verbose_unsim_warnings,
-        } => {
-            h.write_u8(17);
-            path.hash(h);
-            content.hash(h);
-            // xi2g: fold the warning-verbosity flag so a project
-            // that flips it gets a fresh cache key (and the warnings
-            // get re-emitted). The classifier output itself doesn't
-            // depend on the flag — only the warning fan-out does —
-            // but cache values store warnings, so the key must
-            // distinguish them.
-            h.write_u8(u8::from(*verbose_unsim_warnings));
-        }
-        // rt1.12: raster engrave. All fields change the emitted scanlines
-        // (power mapping, resolution, scan/link, overscan). The referenced
-        // ReliefSource brightness content is folded in separately at the
-        // op_cache_key level (like ReliefMill / text_layers).
-        OpKind::RasterEngrave {
-            source_id,
-            resolution_mm,
-            power_curve,
-            scan_direction,
-            link,
-            overscan_factor,
-        } => {
-            h.write_u8(18);
-            h.write_u32(*source_id);
-            hash_f64(*resolution_mm, h);
-            match power_curve {
-                crate::cam::raster::PowerCurve::Linear { min, max } => {
-                    h.write_u8(0);
-                    h.write_u32(*min);
-                    h.write_u32(*max);
-                }
-                crate::cam::raster::PowerCurve::Threshold { level, power } => {
-                    h.write_u8(1);
-                    h.write_u32(level.to_bits());
-                    h.write_u32(*power);
-                }
-                crate::cam::raster::PowerCurve::FloydSteinberg { level, power } => {
-                    h.write_u8(2);
-                    h.write_u32(level.to_bits());
-                    h.write_u32(*power);
-                }
-                crate::cam::raster::PowerCurve::Bayer { matrix_size, power } => {
-                    h.write_u8(3);
-                    h.write_u8(*matrix_size);
-                    h.write_u32(*power);
-                }
-            }
-            h.write_u8(match scan_direction {
-                crate::cam::surface_mill::ScanDirection::AlongX => 0,
-                crate::cam::surface_mill::ScanDirection::AlongY => 1,
-            });
-            h.write_u8(match link {
-                crate::cam::raster::RasterLink::LiftBetween => 0,
-                crate::cam::raster::RasterLink::Bidirectional => 1,
-            });
-            hash_f64(*overscan_factor, h);
-        }
-    }
-}
-
-fn tool_offset_disc(o: ToolOffset) -> u8 {
-    match o {
-        ToolOffset::None => 0,
-        ToolOffset::Outside => 1,
-        ToolOffset::Inside => 2,
-        ToolOffset::On => 3,
-    }
-}
-
-fn hash_pocket_strategy<H: Hasher>(s: PocketStrategy, h: &mut H) {
-    use crate::project::HalfpipeProfile;
-    match s {
-        PocketStrategy::Cascade => h.write_u8(0),
-        PocketStrategy::Zigzag { angle_deg } => {
-            h.write_u8(1);
-            // rt1.9: only fold the angle when non-zero so legacy zigzag
-            // ops (angle = 0 default) keep their pre-rt1.9 hash and
-            // continue hitting the in-process cache without
-            // PIPELINE_VERSION churn.
-            if angle_deg.abs() >= 1e-9 {
-                hash_f64(angle_deg, h);
-            }
-        }
-        PocketStrategy::Spiral => h.write_u8(2),
-        PocketStrategy::Trochoidal {
-            engagement_angle_deg,
-            loop_radius_factor,
-        } => {
-            h.write_u8(3);
-            hash_f64(engagement_angle_deg, h);
-            hash_f64(loop_radius_factor, h);
-        }
-        PocketStrategy::Halfpipe { profile } => {
-            h.write_u8(4);
-            match profile {
-                HalfpipeProfile::CircularArc { radius_mm } => {
-                    h.write_u8(0);
-                    hash_f64(radius_mm, h);
-                }
-                HalfpipeProfile::VBottom { included_angle_deg } => {
-                    h.write_u8(1);
-                    hash_f64(included_angle_deg, h);
-                }
-            }
-        }
-    }
-}
-
-fn hash_drill_cycle<H: Hasher>(c: DrillCycle, h: &mut H) {
-    match c {
-        DrillCycle::Simple { dwell_sec } => {
-            h.write_u8(0);
-            hash_f64(dwell_sec, h);
-        }
-        DrillCycle::Peck {
-            peck_step_mm,
-            dwell_sec,
-        } => {
-            h.write_u8(1);
-            hash_f64(peck_step_mm, h);
-            hash_f64(dwell_sec, h);
-        }
-        DrillCycle::ChipBreak {
-            peck_step_mm,
-            dwell_sec,
-        } => {
-            h.write_u8(2);
-            hash_f64(peck_step_mm, h);
-            hash_f64(dwell_sec, h);
-        }
-    }
-}
-
-fn hash_operation_source<H: Hasher>(s: &OpSource, h: &mut H) {
-    match s {
-        OpSource::All => h.write_u8(0),
-        OpSource::Layers { layers, combine } => {
-            h.write_u8(1);
-            h.write_usize(layers.len());
-            for l in layers {
-                l.hash(h);
-            }
-            h.write_u8(combine_disc(*combine));
-        }
-        OpSource::Objects { ids, combine } => {
-            h.write_u8(2);
-            h.write_usize(ids.len());
-            for id in ids {
-                id.hash(h);
-            }
-            h.write_u8(combine_disc(*combine));
-        }
-    }
-}
-
-fn combine_disc(c: SourceCombine) -> u8 {
-    match c {
-        SourceCombine::Auto => 0,
-        SourceCombine::Union => 1,
-        SourceCombine::Difference => 2,
-        SourceCombine::Intersection => 3,
-        SourceCombine::Xor => 4,
-        SourceCombine::None => 5,
-    }
-}
-
-fn hash_pattern<H: Hasher>(p: PatternConfig, h: &mut H) {
-    match p {
-        PatternConfig::Linear { count, dx, dy } => {
-            h.write_u8(0);
-            count.hash(h);
-            hash_f64(dx, h);
-            hash_f64(dy, h);
-        }
-        PatternConfig::Grid {
-            count_x,
-            count_y,
-            dx,
-            dy,
-        } => {
-            h.write_u8(1);
-            count_x.hash(h);
-            count_y.hash(h);
-            hash_f64(dx, h);
-            hash_f64(dy, h);
-        }
-        PatternConfig::Polar {
-            count,
-            center_x,
-            center_y,
-            angle_step_deg,
-            start_angle_deg,
-        } => {
-            h.write_u8(2);
-            count.hash(h);
-            hash_f64(center_x, h);
-            hash_f64(center_y, h);
-            hash_f64(angle_step_deg, h);
-            hash_f64(start_angle_deg, h);
-        }
-    }
-}
-
-fn hash_operation_params<H: Hasher>(p: &OpParams, h: &mut H) {
-    hash_f64(p.depth, h);
-    hash_f64(p.start_depth, h);
-    hash_opt_f64(p.step, h);
-    hash_f64(p.fast_move_z, h);
-    let oo: u8 = match p.objectorder {
-        ObjectOrder::Nearest => 0,
-        ObjectOrder::PerObject => 1,
-        ObjectOrder::Unordered => 2,
-    };
-    h.write_u8(oo);
-    hash_plunge(p.plunge, h);
-    hash_opt_u32(p.feed_rate_override, h);
-    hash_opt_u32(p.plunge_rate_override, h);
-    hash_opt_f64(p.finish_step, h);
-    hash_f64(p.through_depth, h);
-    // 1mlv: stock_to_leave_mm enlarges the effective tool radius in
-    // offset_builder for every Profile / Pocket cascade — the cutter
-    // walks farther from the geometric wall. Output gcode coordinates
-    // change verbatim, so this MUST be hashed.
-    hash_f64(p.stock_to_leave_mm, h);
-    hash_vec_f64(&p.depth_list, h);
-}
-
-fn hash_contour_params<H: Hasher>(c: &ContourParams, h: &mut H) {
-    hash_tabs(&c.tabs, h);
-    hash_tab_mode(c.tab_mode, h);
-    h.write_usize(c.tab_placements.len());
-    for tp in &c.tab_placements {
-        tp.object_id.hash(h);
-        hash_f64(tp.t, h);
-        hash_opt_f64(tp.width_override_mm, h);
-        hash_opt_f64(tp.height_override_mm, h);
-    }
-    hash_leads(&c.leads, h);
-    h.write_u8(cut_direction_disc(c.cut_direction));
-    h.write_u8(cut_direction_disc(c.finish_cut_direction));
-    hash_f64(c.corner_feed_reduction, h);
-    match c.approach_point {
-        None => h.write_u8(0),
-        Some((x, y)) => {
-            h.write_u8(1);
-            hash_f64(x, h);
-            hash_f64(y, h);
-        }
-    }
-}
-
-fn hash_pocket_params<H: Hasher>(p: &PocketParams, h: &mut H) {
-    hash_f64(p.xy_overlap, h);
-    p.pocket_islands.hash(h);
-    p.pocket_nocontour.hash(h);
-    hash_opt_f64(p.finish_xy_allowance_mm, h);
-    match p.frame_shape {
-        None => h.write_u8(0),
-        Some(FrameShape::Rectangle) => h.write_u8(1),
-        Some(FrameShape::RoundedRectangle) => h.write_u8(2),
-    }
-    hash_opt_f64(p.frame_padding_mm, h);
-    hash_opt_f64(p.frame_corner_radius_mm, h);
-}
-
-fn hash_profile_params<H: Hasher>(p: ProfileParams, h: &mut H) {
-    p.overcut.hash(h);
-    p.reverse.hash(h);
-    p.helix.hash(h);
-}
-
-fn hash_vcarve_params<H: Hasher>(v: &VCarveParams, h: &mut H) {
-    hash_opt_f64(v.carve_max_width_mm, h);
-    v.multi_pass_refine.hash(h);
-    v.full_medial_axis.hash(h);
-    hash_opt_f64(v.source_inset_mm, h);
-}
-
-fn cut_direction_disc(c: CutDirection) -> u8 {
-    match c {
-        CutDirection::Conventional => 0,
-        CutDirection::Climb => 1,
-    }
-}
-
-fn hash_plunge<H: Hasher>(p: PlungeStrategy, h: &mut H) {
-    match p {
-        PlungeStrategy::Direct => h.write_u8(0),
-        PlungeStrategy::Ramp { angle_deg } => {
-            h.write_u8(1);
-            hash_f64(angle_deg, h);
-        }
-        PlungeStrategy::Helix {
-            angle_deg,
-            radius_mm,
-        } => {
-            h.write_u8(2);
-            hash_f64(angle_deg, h);
-            hash_opt_f64(radius_mm, h);
-        }
-    }
-}
-
-fn hash_tabs<H: Hasher>(t: &TabsConfig, h: &mut H) {
-    t.active.hash(h);
-    hash_f64(t.width, h);
-    hash_f64(t.height, h);
-    let tt: u8 = match t.tab_type {
-        TabType::Rectangle => 0,
-        TabType::Ramp => 1,
-    };
-    h.write_u8(tt);
-    hash_f64(t.ramp_angle_deg, h);
-}
-
-fn hash_tab_mode<H: Hasher>(m: crate::project::TabPlacementMode, h: &mut H) {
-    use crate::project::TabPlacementMode;
-    match m {
-        TabPlacementMode::Off => h.write_u8(0),
-        TabPlacementMode::Auto { count } => {
-            h.write_u8(1);
-            count.hash(h);
-        }
-        TabPlacementMode::Manual => h.write_u8(2),
-        TabPlacementMode::Mixed { auto_count } => {
-            h.write_u8(3);
-            auto_count.hash(h);
-        }
-    }
-}
-
-fn hash_leads<H: Hasher>(l: &LeadsConfig, h: &mut H) {
-    h.write_u8(lead_kind_disc(l.r#in));
-    h.write_u8(lead_kind_disc(l.out));
-    hash_f64(l.in_lenght, h);
-    hash_f64(l.out_lenght, h);
-}
-
-fn lead_kind_disc(k: LeadKind) -> u8 {
-    match k {
-        LeadKind::Off => 0,
-        LeadKind::Straight => 1,
-        LeadKind::Arc => 2,
-    }
-}
 
 // ─── tabs map (helper for callers caching the project-level tabs for an op) ───
 
 // ─── text layers ──────────────────────────────────────────────────────
 
-/// sqa3: stable hash of a `TextLayer` so font / content / placement
-/// edits invalidate the per-op cache. Every persisted field is folded
-/// in — adding a new `TextLayer` field is a `PIPELINE_VERSION` bump and
-/// an entry here.
-fn hash_text_layer<H: Hasher>(t: &TextLayer, h: &mut H) {
-    t.id.hash(h);
-    let kind: u8 = match t.kind {
-        TextLayerKind::Text => 0,
-        TextLayerKind::Mtext => 1,
-    };
-    h.write_u8(kind);
-    t.name.hash(h);
-    t.text.hash(h);
-    // font_bytes can be megabytes for a fancy TTF — hash the LENGTH +
-    // a per-byte fold so renaming a font file with the same bytes still
-    // produces the same hash, while substituting a different font (even
-    // same name) changes it. Hash impl on &[u8] does this in one call.
-    h.write_usize(t.font_bytes.len());
-    t.font_bytes.hash(h);
-    hash_f64(t.size_mm, h);
-    hash_f64(t.origin.0, h);
-    hash_f64(t.origin.1, h);
-    hash_f64(t.rotation_deg, h);
-    hash_f64(t.letter_spacing_mm, h);
-    hash_f64(t.line_spacing_mm, h);
-    let align: u8 = match t.alignment {
-        TextAlignment::Left => 0,
-        TextAlignment::Center => 1,
-        TextAlignment::Right => 2,
-    };
-    h.write_u8(align);
-    hash_f64(t.width_scale, h);
-}
-
 // ─── fixtures ─────────────────────────────────────────────────────────
-
-fn hash_fixture<H: Hasher>(f: &Fixture, h: &mut H) {
-    f.id.hash(h);
-    f.name.hash(h);
-    match &f.kind {
-        FixtureKind::Box { width, depth } => {
-            h.write_u8(0);
-            hash_f64(*width, h);
-            hash_f64(*depth, h);
-        }
-        FixtureKind::Cylinder { radius } => {
-            h.write_u8(1);
-            hash_f64(*radius, h);
-        }
-        FixtureKind::Polygon { vertices } => {
-            h.write_u8(2);
-            h.write_usize(vertices.len());
-            for (x, y) in vertices {
-                hash_f64(*x, h);
-                hash_f64(*y, h);
-            }
-        }
-    }
-    hash_f64(f.origin.0, h);
-    hash_f64(f.origin.1, h);
-    hash_f64(f.z_bottom, h);
-    hash_f64(f.z_top, h);
-    f.color.hash(h);
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Types used only to construct test fixtures (the production hashing
+    // is now serde-based, so these are no longer needed at module scope).
+    use crate::cam::setup::MachineMode;
     use crate::cam::setup::ToolOffset;
+    use crate::project::{Coolant, FixtureKind, TextAlignment, TextLayerKind, Wcs};
     use crate::project::{Op, OpKind, OpParams, OpSource, ToolEntry, ToolKind};
 
     fn endmill() -> ToolEntry {
@@ -1299,7 +448,9 @@ mod tests {
             0,
         );
         // Snapshot — bump PIPELINE_VERSION when this legitimately changes.
-        assert_eq!(key.0, 0xac0b_2059_5195_67c5_u64, "got {:#018x}", key.0);
+        // (Updated when the per-type hand hashers were replaced by serde-JSON
+        //  hashing + PIPELINE_VERSION 46→47.)
+        assert_eq!(key.0, 0x59c3_f268_4afa_757b_u64, "got {:#018x}", key.0);
     }
 
     #[test]
@@ -1502,20 +653,28 @@ mod tests {
         let segs = square(20.0);
         let real = op_cache_key(&op, &tool, &machine, &segs, &[], 0);
 
+        // Recompute the key by hand with a bumped version — mirrors the
+        // body of `op_cache_key_with_finish` (serde-JSON per wire type +
+        // direct segment hash) so this stays a faithful "version is folded
+        // in" check.
+        let no_fixtures: &[Fixture] = &[];
+        let no_text: &[TextLayer] = &[];
+        let no_relief: &[ReliefSource] = &[];
         let mut h = SeaHasher::new();
         (PIPELINE_VERSION + 1).hash(&mut h);
-        h.write_u8(0);
-        hash_operation(&op, &mut h);
-        hash_tool(&tool, &mut h);
+        h.write_u8(0); // post_processor_tag
+        hash_serde(&op, &mut h);
+        hash_serde(&tool, &mut h);
         h.write_u8(0); // no finish tool
-        hash_machine(&machine, &mut h);
+        hash_serde(&machine, &mut h);
         h.write_usize(segs.len());
         for s in &segs {
             hash_segment(s, &mut h);
         }
-        h.write_usize(0); // no fixtures
-        h.write_usize(0); // no text_layers (sqa3)
-        hash_work_offset(&WorkOffset::default(), &mut h); // ls7y
+        hash_serde(no_fixtures, &mut h);
+        hash_serde(no_text, &mut h); // sqa3
+        hash_serde(no_relief, &mut h); // f60x
+        hash_serde(&WorkOffset::default(), &mut h); // ls7y
         let bumped = OpCacheKey(h.finish());
         assert_ne!(real, bumped);
     }

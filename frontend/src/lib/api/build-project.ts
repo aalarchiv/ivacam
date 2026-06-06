@@ -7,9 +7,7 @@ import type {
   ToolEntry as FrontToolEntry,
   OpEntry,
   MachineSettings,
-  TextAlignment,
   TextLayer,
-  TextLayerKind,
   WorkOffset,
 } from '../state/project.svelte';
 import { isDefaultWorkOffset } from '../state/project-types';
@@ -30,6 +28,16 @@ import type {
   VCarveOp,
 } from '../state/op_types';
 import type { GenerateRequest, ImportResponse } from './types';
+import type { components } from './generated';
+
+/// Wire shapes are the generated schema types — single source of truth.
+/// Adding/renaming a field on the Rust wire type + regenerating flows
+/// straight through here, so this adapter can never silently drift from
+/// the schema. The builders below map the camelCase UI model onto these.
+/// (Where the frontend intentionally OMITS a field that the Rust struct
+/// fills via `#[serde(default)]`, the schema still marks it required, so
+/// a few builders cast at the boundary — flagged inline.)
+type Schemas = components['schemas'];
 
 /// Permissive view of an `OpEntry` that exposes every variant's optional
 /// fields. The wire format flattens kind-specific params into one
@@ -108,19 +116,7 @@ interface FlatOp extends OpBase, ContourFields {
   overscanFactor?: RasterEngraveOp['overscanFactor'];
 }
 
-export type WireToolKind =
-  | 'endmill'
-  | 'ball_nose'
-  | 'v_bit'
-  | 'engraver'
-  | 'drag_knife'
-  | 'drill'
-  | 'laser_beam'
-  | 'bull_nose'
-  | 'compression'
-  | 'form_profile'
-  | 'kegel'
-  | 'thread_mill';
+export type WireToolKind = Schemas['ToolKind'];
 
 /// Frontend ToolKind → wire (Rust ToolKind variant) value. The German
 /// `kegel` wire name lives on for backend compatibility; the frontend
@@ -134,449 +130,60 @@ export function toWireToolKind(kind: import('../state/op_types').ToolKind): Wire
 
 /// Wire-side holder shape. Mirrors `ivac_core::project::HolderShape`'s
 /// `#[serde(tag = "kind")]` discriminator.
-export type WireHolderShape =
-  | { kind: 'cylinder'; diameter_mm: number; length_mm: number }
-  | { kind: 'cone'; bottom_diameter_mm: number; top_diameter_mm: number; length_mm: number }
-  | {
-      kind: 'stepped';
-      cylinder_diameter_mm: number;
-      cylinder_length_mm: number;
-      cone_top_diameter_mm: number;
-      cone_length_mm: number;
-    };
+export type WireHolderShape = Schemas['HolderShape'];
 
-interface WireToolEntry {
-  id: number;
-  name: string;
-  kind: WireToolKind;
-  diameter: number;
-  tip_diameter?: number;
-  /// V-bit full apex angle in degrees. Required by V-Carve to compute
-  /// `z = -R / tan(tip_angle / 2)`. Default 60 in the Rust struct.
-  tip_angle_deg?: number;
-  dragoff?: number;
-  drag_knife_self_align_angle_deg?: number;
-  flutes: number;
-  speed: number;
-  plunge_rate: number;
-  feed_rate: number;
-  coolant: 'off' | 'mist' | 'flood';
-  /// Per-pass rate overrides (rt1.27). Omit when unset so the Rust
-  /// side falls back to the general triplet.
-  speed_finish?: number;
-  plunge_rate_finish?: number;
-  feed_rate_finish?: number;
-  speed_drill?: number;
-  plunge_rate_drill?: number;
-  feed_rate_drill?: number;
-  default_peck_step_mm?: number;
-  z_shift_mm?: number;
-  laser_pierce_sec?: number;
-  laser_lead_in_mm?: number;
-  /// sm59: plasma pierce/cut-height entry sequence (honored in plasma mode).
-  pierce_height_mm?: number;
-  cut_height_mm?: number;
-  pierce_delay_sec?: number;
-  corner_radius_mm?: number;
-  /// 1wit: form / profile cutter cross-section, tip → top. Omitted
-  /// unless ≥2 samples are set (and kind === 'form_profile').
-  form_profile_mm?: { z_mm: number; r_mm: number }[];
-  whirl?: boolean;
-  whirl_stepover_mm?: number;
-  whirl_extra_width_mm?: number;
-  whirl_osc_mm?: number;
-  /// Spindle warmup pause (seconds) emitted as G4 P<n> after every
-  /// spindle_cw / spindle_ccw. Default 1.
-  pause?: number;
-  default_step?: number;
-  default_xy_overlap?: number;
-  comment?: string;
-  flute_length_mm?: number;
-  /// dhh0: overall tool length (mm) — display/preview only. Omit when
-  /// undefined.
-  length_mm?: number;
-  /// dhh0: compression flute-transition height (mm). Honored only when
-  /// kind === 'compression'. Omit when undefined.
-  compression_transition_mm?: number;
-  /// gm1u: thread pitch (mm). Honored only when kind === 'thread_mill'.
-  /// Omit when undefined.
-  thread_pitch_mm?: number;
-  shank_diameter_mm?: number;
-  /// q0kc: stickout between flute top and collet bottom (mm). Omit
-  /// when 0 / undefined so the wire payload stays compact.
-  stickout_length_mm?: number;
-  /// mmu8: laser kerf width (mm). Honored only when kind === 'laser_beam'.
-  /// Omit when undefined so the Rust sim falls back to its 0.15 mm
-  /// default.
-  kerf_mm?: number;
-  /// z1y0: spindle direction. Omit when default ('cw') to keep the wire
-  /// compact — the Rust serde default fills it back in.
-  spindle_direction?: 'cw' | 'ccw';
-  holder?: WireHolderShape;
-}
+type WireToolEntry = Schemas['ToolEntry'];
 
-interface WireAxisLimits {
-  x: number;
-  y: number;
-  z: number;
-}
+type WireMachine = Schemas['MachineConfig'];
 
-interface WireMachine {
-  unit: 'mm' | 'inch';
-  mode: 'mill' | 'laser' | 'drag' | 'plasma';
-  comments: boolean;
-  arcs: boolean;
-  tool_change: 'atc' | 'manual_m6_prompt' | 'manual_m0_pause' | 'ignore';
-  accel?: WireAxisLimits;
-  jerk?: WireAxisLimits;
-  toolchange_s?: number;
-  rapid_speed?: number;
-  work_area?: WireAxisLimits;
-  arc_fit_tolerance_mm?: number;
-  decimal_separator?: '.' | ',';
-  line_number_start?: number;
-  plot_mode_z?: boolean;
-  post_profile?: {
-    name?: string;
-    file_extension?: string;
-    line_ending?: string;
-    program_start?: string;
-    program_end?: string;
-    tool_change?: string;
-    coolant_flood_on?: string;
-    coolant_flood_off?: string;
-    coolant_mist_on?: string;
-    coolant_mist_off?: string;
-    // hev: per-axis output config. Must mirror
-    // `ivac_core::gcode::post_profile::AxesConfig` so a refactor that
-    // type-picks instead of spread-copies the post profile doesn't
-    // silently drop the user's axis customisations.
-    axes?: {
-      x: WireAxisFormat;
-      y: WireAxisFormat;
-      z: WireAxisFormat;
-      i: WireAxisFormat;
-      j: WireAxisFormat;
-      feed: WireAxisFormat;
-      speed: WireAxisFormat;
-    };
-  };
-  /// 3nnj: machine spindle clamps. Omit when undefined; the Rust serde
-  /// default (no clamp) fills it back in.
-  spindle_rpm_min?: number;
-  spindle_rpm_max?: number;
-  /// jcmx: feed ceiling (mm/min). Omit when undefined (no clamp).
-  max_feed_mm_min?: number;
-  /// Spindle warmup / spindown dwells (seconds) emitted around M6
-  /// tool changes. Omit when undefined so the Rust 0.5 s defaults
-  /// apply.
-  spindle_start_dwell_sec?: number;
-  spindle_stop_dwell_sec?: number;
-  /// syol: park-at-home flag + optional explicit park XY (mm). When
-  /// `park_at_home` is true the program_end footer emits
-  /// `G53 G0 X0 Y0`; when false (and `park_xy` is None) it falls
-  /// back to `G0 X0 Y0` in the current WCS. When `park_xy` is
-  /// set the head routes to that explicit point instead. Omit at the
-  /// default to keep the wire compact.
-  park_at_home?: boolean;
-  park_xy?: [number, number];
-  /// 4lq5: emit M1 (optional stop) instead of M0 at program pauses.
-  /// Omitted when false (Rust serde skips the default).
-  optional_stop?: boolean;
-  /// z9zh: GRBL dynamic-power (M4) laser mode. Omitted when false.
-  laser_dynamic_power?: boolean;
-}
-
-interface WireAxisFormat {
-  enabled: boolean;
-  name: string;
-  format: string;
-  scale: number;
-}
-
-type WireDrillCycle =
-  | { kind: 'simple'; dwell_sec?: number }
-  | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
-  | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
-
-type WirePocketStrategy =
-  | 'cascade'
-  | 'zigzag'
-  | 'spiral'
-  | { kind: 'zigzag'; angle_deg: number }
-  | { kind: 'trochoidal'; engagement_angle_deg: number; loop_radius_factor: number }
-  | {
-      kind: 'halfpipe';
-      profile:
-        | { kind: 'circular_arc'; radius_mm: number }
-        | { kind: 'v_bottom'; included_angle_deg: number };
-    };
+type WireDrillCycle = Schemas['DrillCycle'];
 
 /// kbx5 step 3: per-kind params live inside the kind discriminator,
 /// not on the parent `WireOp.params` bag. The shape mirrors
 /// `crate::project::OpKind` 1:1.
-interface WireContourParams {
-  tabs?: {
-    active: boolean;
-    width: number;
-    height: number;
-    tab_type: 'rectangle' | 'ramp';
-    ramp_angle_deg?: number;
-  };
-  tab_mode?:
-    | { kind: 'off' }
-    | { kind: 'auto'; count: number }
-    | { kind: 'manual' }
-    | { kind: 'mixed'; auto_count: number };
-  tab_placements?: {
-    object_id: number;
-    t: number;
-    width_override_mm?: number;
-    height_override_mm?: number;
-  }[];
-  leads?: {
-    in: 'off' | 'straight' | 'arc';
-    out: 'off' | 'straight' | 'arc';
-    in_lenght: number;
-    out_lenght: number;
-  };
-  cut_direction?: 'conventional' | 'climb';
-  finish_cut_direction?: 'conventional' | 'climb';
-  corner_feed_reduction?: number;
-  approach_point?: [number, number];
-}
 
-interface WirePocketParams {
-  xy_overlap?: number;
-  pocket_islands?: boolean;
-  pocket_nocontour?: boolean;
-  finish_xy_allowance_mm?: number;
-  frame_shape?: 'rectangle' | 'rounded_rectangle';
-  frame_padding_mm?: number;
-  frame_corner_radius_mm?: number;
-}
-
-interface WireProfileParams {
-  overcut?: boolean;
-  reverse?: boolean;
-  helix?: boolean;
-}
-
-interface WireVCarveParams {
-  carve_max_width_mm?: number;
-  multi_pass_refine?: boolean;
-}
-
-interface WirePatternConfig {
-  kind: 'linear' | 'grid' | 'polar';
-  // narrow shape varies by kind; keep permissive on the wire side.
-  [key: string]: unknown;
-}
-
-type WireOpKind =
-  | {
-      type: 'profile';
-      offset: 'outside' | 'inside' | 'on' | 'none';
-      contour: WireContourParams;
-      profile: WireProfileParams;
-    }
-  | {
-      type: 'pocket';
-      strategy: WirePocketStrategy;
-      contour: WireContourParams;
-      pocket: WirePocketParams;
-    }
-  | {
-      type: 'drill';
-      cycle: WireDrillCycle;
-      chamfer_after_width_mm?: number;
-      pattern?: WirePatternConfig;
-      spot_first?: { spot_depth_mm: number; spot_tool_id: number };
-    }
-  | { type: 'thread'; pitch_mm?: number; internal?: boolean; climb?: boolean }
-  | { type: 'chamfer'; width_mm?: number; finish_pass?: boolean }
-  | { type: 'engrave'; contour: WireContourParams }
-  | { type: 'drag_knife'; contour: WireContourParams }
-  | { type: 't_slot'; contour: WireContourParams }
-  | { type: 'dovetail'; contour: WireContourParams }
-  | { type: 'helix' }
-  | { type: 'v_carve'; carve: WireVCarveParams }
-  | { type: 'pause'; message: string }
-  | { type: 'homing'; retract_to_safe_z: boolean }
-  | { type: 'probe'; axis: 'x' | 'y' | 'z'; distance_mm: number; feed_mm_min: number }
-  | { type: 'cycle_marker'; label: string }
-  | {
-      type: 'gcode_include';
-      path: string;
-      content: string;
-      verbose_unsim_warnings: boolean;
-    }
-  | {
-      type: 'relief_mill';
-      source_id: number;
-      z_min_mm: number;
-      z_max_mm: number;
-      invert: boolean;
-      scallop_height_mm: number;
-      stepover_mm?: number;
-      scan_direction: 'along_x' | 'along_y';
-      along_step_mm: number;
-    }
-  | {
-      type: 'raster_engrave';
-      source_id: number;
-      resolution_mm: number;
-      power_curve: WirePowerCurve;
-      scan_direction: 'along_x' | 'along_y';
-      link: 'lift_between' | 'bidirectional';
-      overscan_factor: number;
-    };
+type WireOpKind = Schemas['OpKind'];
 
 /// rt1.12: wire form of `PowerCurve` — tagged on `kind` with snake_case
 /// variant names. Identical to the app `PowerCurve` except bayer's
 /// `matrix_size` (app: `matrixSize`); see `buildPowerCurve`.
-type WirePowerCurve =
-  | { kind: 'linear'; min: number; max: number }
-  | { kind: 'threshold'; level: number; power: number }
-  | { kind: 'floyd_steinberg'; level: number; power: number }
-  | { kind: 'bayer'; matrix_size: number; power: number };
+type WirePowerCurve = Schemas['PowerCurve'];
 
-type WireSourceCombine = 'auto' | 'union' | 'difference' | 'intersection' | 'xor' | 'none';
-type WireSource =
-  | { kind: 'all' }
-  | { kind: 'layers'; layers: string[]; combine?: WireSourceCombine }
-  | { kind: 'objects'; ids: number[]; combine?: WireSourceCombine };
+type WireSourceCombine = Schemas['SourceCombine'];
+type WireSource = Schemas['OpSource'];
 
 /// kbx5 step 3: `WireOp.params` is universal-only (depth schedule,
 /// plunge, feed overrides). Every other field — tabs, leads, cut
 /// direction, pocket flags, frame, vcarve cap, drill chamfer-after,
 /// pattern — moved to its appropriate `WireOpKind` variant struct.
-interface WireOp {
-  id: number;
-  name: string;
-  enabled: boolean;
-  kind: WireOpKind;
-  tool_id: number;
-  finish_tool_id?: number;
-  source: WireSource;
-  params: {
-    depth: number;
-    start_depth: number;
-    step?: number;
-    fast_move_z: number;
-    objectorder: 'nearest' | 'per_object' | 'unordered';
-    plunge?:
-      | { kind: 'direct' }
-      | { kind: 'ramp'; angle_deg: number }
-      | { kind: 'helix'; angle_deg: number; radius_mm: number | null };
-    feed_rate_override?: number;
-    plunge_rate_override?: number;
-    finish_step?: number;
-    through_depth?: number;
-    depth_list?: number[];
-  };
-  // dp6b: optional group label, emitted only when set + non-empty.
-  group?: string;
-  // l8lk: pin this op's slot under the group-by-tool reorder. Emitted
-  // only when true (Rust serde skips the default false).
-  pin_order?: boolean;
-}
+type WireOp = Schemas['Op'];
 
 /// Fixture wire shape mirrors `ivac_core::project::FixtureKind` (snake_case
 /// `shape` discriminator). Vertices for `polygon` are origin-relative, the
 /// other shapes carry their dims directly.
-export type WireFixtureKind =
-  | { shape: 'box'; width: number; depth: number }
-  | { shape: 'cylinder'; radius: number }
-  | { shape: 'polygon'; vertices: [number, number][] };
+export type WireFixtureKind = Schemas['FixtureKind'];
 
-export interface WireFixture {
-  id: number;
-  name: string;
-  kind: WireFixtureKind;
-  origin: [number, number];
-  z_bottom: number;
-  z_top: number;
-  color: number;
-}
+export type WireFixture = Schemas['Fixture'];
 
-interface WireTextLayer {
-  id: number;
-  kind: TextLayerKind;
-  name: string;
-  text: string;
-  /// TTF/OTF bytes encoded as a JSON array of integers — matches the
-  /// existing render_text request shape.
-  font_bytes: number[];
-  size_mm: number;
-  origin: [number, number];
-  rotation_deg: number;
-  letter_spacing_mm: number;
-  line_spacing_mm: number;
-  alignment: TextAlignment;
-  width_scale: number;
-}
+type WireTextLayer = Schemas['TextLayer'];
 
 /// i5g4: wire shape for `ivac_core::project::WorkOffset`. Every field
 /// is serde-`skip_serializing_if = is_zero / is_default`, so we always
 /// omit the field entirely when at default (zero offset + G54) rather
 /// than emit `{x_mm:0, y_mm:0, ...}` — keeps payloads small and
 /// matches what the Rust side serializes.
-export interface WireWorkOffset {
-  x_mm?: number;
-  y_mm?: number;
-  z_mm?: number;
-  wcs?: 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59';
-}
+export type WireWorkOffset = Schemas['WorkOffset'];
 
-export interface WireProject {
-  segments: ImportResponse['segments'];
-  machine: WireMachine;
-  tools: WireToolEntry[];
-  operations: WireOp[];
-  fixtures?: WireFixture[];
-  text_layers?: WireTextLayer[];
-  /// i5g4: program-level WCS offset. Omitted when default (all-zero @
-  /// G54) so the Rust serde-default round-trip matches.
-  work_offset?: WireWorkOffset;
-  /// vrrr: resolved stock box (mirror of `ivac_core::project::StockConfig`).
-  /// The frontend derives this from its auto/manual stock UI via
-  /// `computeFootprint` and sends it so the core `out_of_stock` scan
-  /// (warnings.rs::push_stock_warning) runs for every transport. Omitted
-  /// when no stock is modeled.
-  stock?: WireStock;
-  /// f60x: relief surface sources referenced by `relief_mill` ops. Omitted
-  /// when none are loaded.
-  relief_sources?: WireReliefSource[];
-  /// l8lk: opt-in tool-change-order optimization. Omitted when false; the
-  /// Rust serde default fills it back in.
-  group_ops_by_tool?: boolean;
-}
+export type WireProject = Schemas['Project'];
 
 /// f60x: wire shape of `ivac_core::project::ReliefSource`. `origin` is the
-/// min corner [x, y]; `brightness` is row-major normalized [0, 1].
-export interface WireReliefSource {
-  id: number;
-  name: string;
-  origin: [number, number];
-  cell: number;
-  cols: number;
-  rows: number;
-  brightness: number[];
-}
+/// min-corner Point2 `{x, y}`; `brightness` is row-major normalized [0, 1].
+export type WireReliefSource = Schemas['ReliefSource'];
 
 /// vrrr: wire shape of `ivac_core::project::StockConfig` — an
 /// axis-aligned stock box resolved in the geometry frame. `origin` is the
 /// min corner (x, y); the body spans z ∈ [top_z_mm − thickness_mm, top_z_mm].
-export interface WireStock {
-  origin: [number, number];
-  width_mm: number;
-  height_mm: number;
-  thickness_mm: number;
-  /// ya00: Z of the stock top plane. Omitted when 0 (Rust serde skips
-  /// the default) — the legacy "top at WCS z=0" behavior.
-  top_z_mm?: number;
-}
+export type WireStock = Schemas['StockConfig'];
 
 interface ProjectStateView {
   /// File-transform-applied combined view of every import (wrsu Phase 2).
@@ -654,7 +261,10 @@ function buildMachine(m: MachineSettings): WireMachine {
       ? { line_number_start: m.lineNumberStart }
       : {}),
     ...(m.plotModeZ ? { plot_mode_z: true } : {}),
-    ...(m.postProfile ? { post_profile: m.postProfile } : {}),
+    // The frontend PostProfile model types several string fields as
+    // optional that the schema marks required (Rust serde-defaults them);
+    // the shape is otherwise identical, so cast at this single boundary.
+    ...(m.postProfile ? { post_profile: m.postProfile as Schemas['PostProfile'] } : {}),
     ...(m.workArea ? { work_area: { x: m.workArea.x, y: m.workArea.y, z: m.workArea.z } } : {}),
     // 3nnj: spindle RPM clamps. Skip on undefined so the Rust serde
     // default (no clamp) applies; zero is a meaningful explicit setting
@@ -696,7 +306,10 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     kind: toWireToolKind(t.kind),
     diameter: t.diameter,
     ...(t.tipDiameter !== undefined ? { tip_diameter: t.tipDiameter } : {}),
-    ...(t.tipAngleDeg !== undefined ? { tip_angle_deg: t.tipAngleDeg } : {}),
+    // tip_angle_deg is required by the schema (Rust serde-defaults it to
+    // 60, which schemars marks required), so emit it explicitly; 60
+    // round-trips identically to omitting it.
+    tip_angle_deg: t.tipAngleDeg ?? 60,
     ...(t.dragoff !== undefined ? { dragoff: t.dragoff } : {}),
     ...(t.dragKnifeSelfAlignAngleDeg !== undefined
       ? { drag_knife_self_align_angle_deg: t.dragKnifeSelfAlignAngleDeg }
@@ -1026,21 +639,16 @@ function buildPowerCurve(c: PowerCurve | undefined): WirePowerCurve {
 }
 
 function mapDrillCycle(c: DrillOp['drillCycle']): WireDrillCycle {
+  // dwell_sec is required by the schema (the Rust field has a serde
+  // default of 0, which schemars still marks required), so emit it
+  // explicitly rather than omitting — 0 round-trips identically.
   switch (c.kind) {
     case 'simple':
-      return { kind: 'simple', ...(c.dwell_sec ? { dwell_sec: c.dwell_sec } : {}) };
+      return { kind: 'simple', dwell_sec: c.dwell_sec ?? 0 };
     case 'peck':
-      return {
-        kind: 'peck',
-        peck_step_mm: c.peck_step_mm,
-        ...(c.dwell_sec ? { dwell_sec: c.dwell_sec } : {}),
-      };
+      return { kind: 'peck', peck_step_mm: c.peck_step_mm, dwell_sec: c.dwell_sec ?? 0 };
     case 'chip_break':
-      return {
-        kind: 'chip_break',
-        peck_step_mm: c.peck_step_mm,
-        ...(c.dwell_sec ? { dwell_sec: c.dwell_sec } : {}),
-      };
+      return { kind: 'chip_break', peck_step_mm: c.peck_step_mm, dwell_sec: c.dwell_sec ?? 0 };
   }
 }
 
@@ -1156,7 +764,11 @@ function buildReliefSource(rs: ReliefSource): WireReliefSource {
   return {
     id: rs.id,
     name: rs.name,
-    origin: [rs.origin.x, rs.origin.y],
+    // Schema-correct: ReliefSource.origin is a Point2 ({x,y}). The prior
+    // hand wire type declared a [x,y] tuple, which only round-tripped
+    // because serde accepts a struct-from-sequence — aligning to the
+    // generated Point2 shape surfaced + fixes that drift.
+    origin: { x: rs.origin.x, y: rs.origin.y },
     cell: rs.cell,
     cols: rs.cols,
     rows: rs.rows,

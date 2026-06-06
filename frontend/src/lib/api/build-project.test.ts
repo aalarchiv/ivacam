@@ -647,7 +647,7 @@ describe('relief mill (f60x-D)', () => {
       {
         id: 5,
         name: 'pic.png',
-        origin: [2, 3], // object → tuple
+        origin: { x: 2, y: 3 }, // Point2 wire shape (schema-correct)
         cell: 0.5,
         cols: 4,
         rows: 4,

@@ -107,6 +107,23 @@ pub enum PostProcessorKind {
     Hpgl,
 }
 
+impl PostProcessorKind {
+    /// Stable per-dialect discriminant folded into the op cache key — two
+    /// posts emit different gcode for the same inputs, so they must key
+    /// separately. Lives on the enum (not an inline map at the dispatch
+    /// site) so it's the single source for the tag, and explicit values —
+    /// NOT `self as u8` — so reordering the variants can't silently remap
+    /// existing cache keys. Adding a dialect is a compile error here.
+    #[must_use]
+    pub fn cache_tag(self) -> u8 {
+        match self {
+            PostProcessorKind::Linuxcnc => 0,
+            PostProcessorKind::Grbl => 1,
+            PostProcessorKind::Hpgl => 2,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PipelineResponse {
     pub gcode: String,
@@ -470,11 +487,7 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // numbered-parameter system), so the post-change cut runs uncompensated.
     warnings::push_grbl_fixed_sensor_warning(&project, post_kind, &mut warnings);
 
-    let post_tag: u8 = match post_kind {
-        PostProcessorKind::Linuxcnc => 0,
-        PostProcessorKind::Grbl => 1,
-        PostProcessorKind::Hpgl => 2,
-    };
+    let post_tag: u8 = post_kind.cache_tag();
     // jzpl Phase 1: run_per_op + every downstream driver now take
     // `&[VcObject]`. No working copy needed — pass the imported chain
     // by reference; pattern / frame expansion is owned inside

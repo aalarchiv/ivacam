@@ -474,52 +474,35 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // `&[VcObject]`. No working copy needed — pass the imported chain
     // by reference; pattern / frame expansion is owned inside
     // build_op_offsets.
+    // Single source for the run_per_op call; each arm only varies the
+    // concrete Post. Add a run_per_op argument here once, not 3x.
+    macro_rules! run_with_post {
+        ($post:expr) => {
+            run_per_op(
+                &project,
+                &objects,
+                &header_setup,
+                $post,
+                &stats_collector,
+                progress,
+                n_ops,
+                &mut warnings,
+                sink,
+                cancel,
+                cache,
+                post_tag,
+            )
+        };
+    }
     let gcode = match post_kind {
-        PostProcessorKind::Linuxcnc => run_per_op(
-            &project,
-            &objects,
-            &header_setup,
-            &mut linuxcnc::Post::new(),
-            &stats_collector,
-            progress,
-            n_ops,
-            &mut warnings,
-            sink,
-            cancel,
-            cache,
-            post_tag,
-        )?,
-        PostProcessorKind::Grbl => run_per_op(
-            &project,
-            &objects,
-            &header_setup,
-            // z9zh: GRBL dynamic-power (M4) laser mode is opt-in per
-            // machine config; default M3 keeps portable output.
-            &mut grbl::Post::with_dynamic_laser(project.machine.laser_dynamic_power),
-            &stats_collector,
-            progress,
-            n_ops,
-            &mut warnings,
-            sink,
-            cancel,
-            cache,
-            post_tag,
-        )?,
-        PostProcessorKind::Hpgl => run_per_op(
-            &project,
-            &objects,
-            &header_setup,
-            &mut hpgl::Post::new(),
-            &stats_collector,
-            progress,
-            n_ops,
-            &mut warnings,
-            sink,
-            cancel,
-            cache,
-            post_tag,
-        )?,
-    };
+        PostProcessorKind::Linuxcnc => run_with_post!(&mut linuxcnc::Post::new()),
+        // z9zh: GRBL dynamic-power (M4) laser mode is opt-in per machine
+        // config; default M3 keeps portable output.
+        PostProcessorKind::Grbl => run_with_post!(&mut grbl::Post::with_dynamic_laser(
+            project.machine.laser_dynamic_power,
+        )),
+        PostProcessorKind::Hpgl => run_with_post!(&mut hpgl::Post::new()),
+    }?;
     let (total_closed, total_offsets, _) = *stats_collector.borrow();
 
     progress("preview", 0.92, "interpreting toolpath");

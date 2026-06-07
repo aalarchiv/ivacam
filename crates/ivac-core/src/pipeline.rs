@@ -1014,6 +1014,107 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
 // that doesn't usefully split — see 55o4 for the planned per-op-driver
 // extraction.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+/// Compute the op's toolpath cache key, or `None` when caching is off or
+/// the op's primary tool is unknown. Folds the dual-tool finish entry
+/// (rt1.33) into the key so changing the finish tool's diameter / feeds /
+/// RPMs invalidates cached output.
+fn compute_op_cache_key(
+    op: &Op,
+    project: &Project,
+    objects: &[VcObject],
+    tool_index: &HashMap<u32, &ToolEntry>,
+    post_tag: u8,
+    caching: bool,
+) -> Option<crate::pipeline_cache::OpCacheKey> {
+    if !caching {
+        return None;
+    }
+    let tool = tool_index.get(&op.tool_id).copied()?;
+    let finish_tool = op
+        .finish_tool_id
+        .filter(|id| *id != op.tool_id)
+        .and_then(|id| tool_index.get(&id).copied());
+    Some(op_cache_key_with_finish(
+        op,
+        tool,
+        finish_tool,
+        &project.machine,
+        &resolve_op_segments(op, &project.segments, objects),
+        &project.fixtures,
+        &project.text_layers,
+        &project.relief_sources,
+        &project.work_offset,
+        post_tag,
+    ))
+}
+
+/// Apply a cache HIT: replay the cached gcode body + the op's planning
+/// warnings (my03 — build_op_offsets / the driver / synthesize_op_setup
+/// don't re-run on a hit, so without this a critical warning could slip
+/// past the safety gate on the 2nd+ identical Generate), restore post
+/// state, advance the cutter position, and fold the op's stats. Returns
+/// the cached op's `internal_swap_emitted` so the caller updates
+/// `prev_tool_id` via [`next_prev_tool_id`].
+fn apply_cached_op<P: PostProcessor>(
+    post: &mut P,
+    cached: &OpCacheValue,
+    warnings: &mut Vec<PipelineWarning>,
+    last_pos: &mut Point2,
+    stats: &std::cell::RefCell<(usize, usize, usize)>,
+) -> bool {
+    let lines: Vec<String> = cached
+        .gcode_body
+        .lines()
+        .map(std::string::ToString::to_string)
+        .collect();
+    post.out_extend_lines(&lines);
+    post.restore_state(&cached.exit_state);
+    warnings.extend(cached.warnings.iter().cloned());
+    *last_pos = Point2::new(cached.exit_xy.0, cached.exit_xy.1);
+    {
+        let mut s = stats.borrow_mut();
+        s.0 += cached.closed_count;
+        s.1 += cached.offset_count;
+    }
+    cached.internal_swap_emitted
+}
+
+/// Build and store the cache value for a freshly-emitted op: its gcode
+/// body (from `body_marker` to now), the interpreted toolpath, stats,
+/// exit state / position, and exactly the warnings it pushed since
+/// `warn_start` (replayed verbatim on a future hit).
+#[allow(clippy::too_many_arguments)]
+fn store_op_cache<P: PostProcessor>(
+    cache: &PipelineCache,
+    key: crate::pipeline_cache::OpCacheKey,
+    post: &P,
+    body_marker: usize,
+    op: &Op,
+    closed_count: usize,
+    offset_count: usize,
+    internal_swap_emitted: bool,
+    last_pos: Point2,
+    warnings: &[PipelineWarning],
+    warn_start: usize,
+) {
+    let lines = post.out_lines_clone_from(body_marker);
+    let body = lines.join("\n");
+    let (toolpath, _idx) = preview::interpret_with_index(&format!("; OP {}\n{body}", op.id));
+    cache.put(
+        key,
+        OpCacheValue {
+            toolpath,
+            gcode_body: body,
+            closed_count,
+            offset_count,
+            exit_state: post.capture_state(),
+            exit_xy: (last_pos.x, last_pos.y),
+            internal_swap_emitted,
+            warnings: warnings[warn_start..].to_vec(),
+        },
+    );
+}
+
 /// Short operator-readable label for a program-only op kind, used in the
 /// progress message emitted by [`run_per_op`].
 fn program_only_label(kind: &OpKind) -> &'static str {
@@ -1345,57 +1446,19 @@ where
         // (+ op_source_empty when every requested layer is missing).
         validate_op_source_layers(op, &project.segments, warnings);
 
-        // Cache lookup. We skip caching when no cache is provided.
-        let cache_key = cache.and_then(|_| {
-            let tool = tool_index.get(&op.tool_id).copied()?;
-            // For dual-tool Pocket ops (rt1.33), fold the finish tool's
-            // properties into the key so changing its diameter / feeds
-            // / RPMs invalidates cached output. Single-tool ops pass
-            // None and route through op_cache_key_with_finish's
-            // is-finish-tool sentinel.
-            let finish_tool = op
-                .finish_tool_id
-                .filter(|id| *id != op.tool_id)
-                .and_then(|id| tool_index.get(&id).copied());
-            Some(op_cache_key_with_finish(
-                op,
-                tool,
-                finish_tool,
-                &project.machine,
-                &resolve_op_segments(op, &project.segments, objects),
-                &project.fixtures,
-                &project.text_layers,
-                &project.relief_sources,
-                &project.work_offset,
-                post_tag,
-            ))
-        });
+        // Cache round: key → lookup/replay → fresh emit → store. The
+        // per-op effects live in compute_op_cache_key / apply_cached_op /
+        // store_op_cache; this loop keeps only the control flow (hit ⇒
+        // bookkeep + continue; miss ⇒ emit + store + fall through).
+        let cache_key =
+            compute_op_cache_key(op, project, objects, &tool_index, post_tag, cache.is_some());
 
         if let (Some(c), Some(key)) = (cache, cache_key) {
             if let Some(cached) = c.get(key) {
-                let lines: Vec<String> = cached
-                    .gcode_body
-                    .lines()
-                    .map(std::string::ToString::to_string)
-                    .collect();
-                post.out_extend_lines(&lines);
-                post.restore_state(&cached.exit_state);
-                // my03: replay the op's planning warnings. build_op_offsets
-                // / the driver / synthesize_op_setup don't re-run on a hit,
-                // so without this their warnings (tool_kind_mismatch,
-                // tslot_requires_stem_slot, depth-limited, zero-rate, …)
-                // would vanish on the second+ identical Generate — and a
-                // critical one could let a program slip past the safety gate.
-                warnings.extend(cached.warnings.iter().cloned());
-                last_pos = Point2::new(cached.exit_xy.0, cached.exit_xy.1);
-                {
-                    let mut s = stats.borrow_mut();
-                    s.0 += cached.closed_count;
-                    s.1 += cached.offset_count;
-                }
+                let internal_swap = apply_cached_op(post, &cached, warnings, &mut last_pos, stats);
                 // k2ew + nguf: end-of-op tool bookkeeping, shared with the
                 // fresh-emit path via next_prev_tool_id.
-                prev_tool_id = Some(next_prev_tool_id(op, cached.internal_swap_emitted));
+                prev_tool_id = Some(next_prev_tool_id(op, internal_swap));
                 emitted_ops += 1;
                 progress(
                     "gcode",
@@ -1439,25 +1502,18 @@ where
             s.1 += offset_count_emitted;
         }
         if let (Some(c), Some(key)) = (cache, cache_key) {
-            let lines = post.out_lines_clone_from(body_marker);
-            let body = lines.join("\n");
-            let (toolpath, _idx) =
-                preview::interpret_with_index(&format!("; OP {}\n{body}", op.id));
-            c.put(
+            store_op_cache(
+                c,
                 key,
-                OpCacheValue {
-                    toolpath,
-                    gcode_body: body,
-                    closed_count: closed_count_emitted,
-                    offset_count: offset_count_emitted,
-                    exit_state: post.capture_state(),
-                    exit_xy: (last_pos.x, last_pos.y),
-                    internal_swap_emitted,
-                    // my03: capture exactly the warnings this op produced
-                    // (everything pushed since `warn_start`) so a future
-                    // cache hit can replay them.
-                    warnings: warnings[warn_start..].to_vec(),
-                },
+                post,
+                body_marker,
+                op,
+                closed_count_emitted,
+                offset_count_emitted,
+                internal_swap_emitted,
+                last_pos,
+                warnings,
+                warn_start,
             );
         }
         // k2ew + nguf: end-of-op tool bookkeeping (see next_prev_tool_id).

@@ -19,7 +19,7 @@
 //!
 //! Same conventions as [`crate::pipeline_cache`]: f64 → bits, sort maps
 //! before iterating, hand-written impls because [`Point2`] carries
-//! f64. Each cache folds [`crate::pipeline_cache::PIPELINE_VERSION`]
+//! f64. Each cache folds [`crate::version::PIPELINE_VERSION`]
 //! into the key so any algorithm change invalidates every entry.
 //!
 //! ## Capacity
@@ -37,9 +37,9 @@ use lru::LruCache;
 use seahash::SeaHasher;
 
 use crate::cam::vcarve::{medial_axis_cancellable, VPoint, VcRegion};
+use crate::cancel::CancelToken;
 use crate::geometry::Point2;
-use crate::pipeline::CancelToken;
-use crate::pipeline_cache::PIPELINE_VERSION;
+use crate::version::PIPELINE_VERSION;
 
 /// Algorithm discriminator byte. Folded into every key so two different
 /// algorithms can't collide even if they happened to hash their inputs

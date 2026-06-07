@@ -13,6 +13,7 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod cam;
+pub mod cancel;
 pub mod errors;
 pub mod gcode;
 pub mod geometry;
@@ -24,6 +25,7 @@ pub mod project;
 pub mod schema;
 pub mod sim;
 pub mod testing;
+pub mod version;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

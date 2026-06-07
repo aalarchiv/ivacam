@@ -34,8 +34,8 @@
 use crate::cam::offsets::{
     bridge_stays_inside_polygon, point_in_polygon_pts, stitch_rings_to_polyline,
 };
+use crate::cancel::CancelToken;
 use crate::geometry::{Point2, Segment};
-use crate::pipeline::CancelToken;
 
 /// 1ao5: structured record produced when the trochoidal emitter has to
 /// abandon the toolpath before the full centerline has been swept —

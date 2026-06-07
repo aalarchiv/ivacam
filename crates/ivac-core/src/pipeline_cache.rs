@@ -54,9 +54,10 @@ use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::pipeline::PipelineWarning;
 use crate::project::{Fixture, Op, ReliefSource, TextLayer, ToolEntry, WorkOffset};
 
-/// Bumped when ANY pipeline output format changes — toolpath segment
-/// shape, gcode formatting, anything. Invalidates the whole cache.
-pub const PIPELINE_VERSION: u32 = 47;
+/// Pipeline output-format version, defined in the leaf [`crate::version`]
+/// module so the `cam` geometry caches can fold it in without depending
+/// upward on this module. Re-exported here for existing call sites.
+pub use crate::version::PIPELINE_VERSION;
 
 /// Stable hash of (op, tool, machine, selected segments, fixtures, and
 /// [`PIPELINE_VERSION`]). Wrapper so callers can't accidentally pass an

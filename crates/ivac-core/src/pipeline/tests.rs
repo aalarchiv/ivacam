@@ -15,6 +15,7 @@ use crate::project::{
     FormProfileSample, Op, OpKind, OpParams, OpSource, SourceCombine, TextAlignment, TextLayer,
     TextLayerKind, ToolEntry, ToolKind,
 };
+use std::sync::Arc;
 
 /// f60x-C: a `ReliefMill` op with a brightness ramp + a ball-nose tool emits
 /// a varying-Z surfacing toolpath end-to-end (no source geometry needed —

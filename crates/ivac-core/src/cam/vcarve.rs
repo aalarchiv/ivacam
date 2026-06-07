@@ -25,7 +25,7 @@
 
 use voronator::delaunator::{triangulate, Point as VPointXy, INVALID_INDEX};
 
-use crate::pipeline::CancelToken;
+use crate::cancel::CancelToken;
 
 use crate::cam::{is_inside_polygon, segments_to_points, VcObject};
 use crate::geometry::Point2;

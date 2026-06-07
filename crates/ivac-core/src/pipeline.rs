@@ -74,8 +74,7 @@ pub use setup_resolver::fit_helix_radius_for_selection;
 use setup_resolver::{header_setup_for, resolve_auto_helix_radius, synthesize_op_setup};
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -277,27 +276,10 @@ fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-/// Cooperative-cancellation handle. Cloned cheaply; the inner flag is
-/// shared. Long inner loops in CAM primitives consult `is_cancelled`
-/// at a coarse-enough granularity to bail within ≤200 ms p95.
-#[derive(Debug, Clone, Default)]
-pub struct CancelToken(Arc<AtomicBool>);
-
-impl CancelToken {
-    #[must_use]
-    pub fn new() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
-    }
-
-    pub fn cancel(&self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-
-    #[must_use]
-    pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
+/// Cooperative-cancellation handle, defined in the leaf [`crate::cancel`]
+/// module so the pure-math `cam` layer can consult it without depending
+/// upward on this orchestrator. Re-exported here for existing call sites.
+pub use crate::cancel::CancelToken;
 
 /// Streaming pipeline event — one per phase boundary or per op.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

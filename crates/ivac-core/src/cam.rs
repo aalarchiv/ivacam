@@ -156,29 +156,10 @@ pub fn polygon_centroid(points: &[Point2]) -> Option<Point2> {
     ))
 }
 
-/// Even-odd point-in-polygon test on a closed polyline of `points`.
-#[must_use]
-pub fn is_inside_polygon(points: &[Point2], p: Point2) -> bool {
-    if points.len() < 3 {
-        return false;
-    }
-    let mut inside = false;
-    let n = points.len();
-    let mut j = n - 1;
-    for i in 0..n {
-        let pi = points[i];
-        let pj = points[j];
-        let crosses_y = (pi.y > p.y) != (pj.y > p.y);
-        if crosses_y {
-            let x_at = pi.x + (p.y - pi.y) * (pj.x - pi.x) / (pj.y - pi.y);
-            if p.x < x_at {
-                inside = !inside;
-            }
-        }
-        j = i;
-    }
-    inside
-}
+/// Re-exported from [`crate::geometry::is_inside_polygon`] (moved there
+/// to keep the polygon predicates in one place); kept here so existing
+/// `crate::cam::is_inside_polygon` call sites resolve unchanged.
+pub use crate::geometry::is_inside_polygon;
 
 /// Convert a [`Segment`] (LINE or ARC-with-bulge) into a flat polyline of
 /// `points` for clipper-side polygon ops. `interpolate` controls per-arc

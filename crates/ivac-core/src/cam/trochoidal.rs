@@ -31,10 +31,9 @@
     clippy::many_single_char_names
 )]
 
-use crate::cam::offsets::{
-    bridge_stays_inside_polygon, point_in_polygon_pts, stitch_rings_to_polyline,
-};
+use crate::cam::offsets::{bridge_stays_inside_polygon, stitch_rings_to_polyline};
 use crate::cancel::CancelToken;
+use crate::geometry::point_in_polygon;
 use crate::geometry::{Point2, Segment};
 
 /// 1ao5: structured record produced when the trochoidal emitter has to
@@ -354,7 +353,7 @@ fn subdivide_chords(pts: &[Point2], max_chord: f64) -> Vec<Point2> {
 /// failure mode that matters here (loop center too close to a
 /// re-entrant corner or a narrow neck the cutter can't thread).
 fn disc_inside_polygon(center: Point2, r: f64, outer: &[Point2], islands: &[Vec<Point2>]) -> bool {
-    if !point_in_polygon_pts(outer, center.x, center.y) {
+    if !point_in_polygon(outer, center.x, center.y) {
         return false;
     }
     let samples = 12;
@@ -362,11 +361,11 @@ fn disc_inside_polygon(center: Point2, r: f64, outer: &[Point2], islands: &[Vec<
         let theta = f64::from(i) * std::f64::consts::TAU / f64::from(samples);
         let px = center.x + r * theta.cos();
         let py = center.y + r * theta.sin();
-        if !point_in_polygon_pts(outer, px, py) {
+        if !point_in_polygon(outer, px, py) {
             return false;
         }
         for island in islands {
-            if point_in_polygon_pts(island, px, py) {
+            if point_in_polygon(island, px, py) {
                 return false;
             }
         }

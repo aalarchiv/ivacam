@@ -9,7 +9,7 @@
 
 use super::z_schedule::arc_length;
 use super::PostProcessor;
-use crate::geometry::{Point2, Segment, SegmentKind};
+use crate::geometry::{point_in_polygon, Point2, Segment, SegmentKind};
 use crate::math;
 
 /// Walk `segments` while linearly descending Z from `from_z` to `to_z`
@@ -515,32 +515,4 @@ fn polygon_signed_area(verts: &[Point2]) -> f64 {
         sum += a.x * b.y - b.x * a.y;
     }
     sum * 0.5
-}
-
-/// Even-odd ray-cast point-in-polygon test (horizontal ray to +X).
-/// Edges are treated as half-open [lo.y, hi.y) so vertex hits don't
-/// double-count. Sufficient for the helix-fit sanity check.
-fn point_in_polygon(verts: &[Point2], x: f64, y: f64) -> bool {
-    let n = verts.len();
-    if n < 3 {
-        return false;
-    }
-    let mut inside = false;
-    for i in 0..n {
-        let a = verts[i];
-        let b = verts[(i + 1) % n];
-        if (a.y - b.y).abs() < 1e-12 {
-            continue;
-        }
-        let (lo, hi) = if a.y < b.y { (a, b) } else { (b, a) };
-        if y < lo.y - 1e-12 || y >= hi.y - 1e-12 {
-            continue;
-        }
-        let t = (y - lo.y) / (hi.y - lo.y);
-        let xi = lo.x + t * (hi.x - lo.x);
-        if xi > x {
-            inside = !inside;
-        }
-    }
-    inside
 }

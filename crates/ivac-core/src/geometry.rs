@@ -184,6 +184,67 @@ impl BBox {
     }
 }
 
+/// Point-in-polygon test via a half-open scanline crossing count. An edge
+/// counts only over `[lo.y, hi.y)` (with a 1e-12 epsilon) and horizontal
+/// edges are skipped, so a ray grazing a shared vertex isn't double-
+/// counted — the boundary-robust variant the offset / pocket / V-carve
+/// fill code relies on. `verts` is an open ring (the closing edge is
+/// implied). Contrast [`is_inside_polygon`], the plain no-epsilon ray
+/// cast used where exact-boundary behavior doesn't matter.
+#[must_use]
+pub fn point_in_polygon(verts: &[Point2], x: f64, y: f64) -> bool {
+    let n = verts.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        if (a.y - b.y).abs() < 1e-12 {
+            continue;
+        }
+        let (lo, hi) = if a.y < b.y { (a, b) } else { (b, a) };
+        if y < lo.y - 1e-12 || y >= hi.y - 1e-12 {
+            continue;
+        }
+        let t = (y - lo.y) / (hi.y - lo.y);
+        let xi = lo.x + t * (hi.x - lo.x);
+        if xi > x {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// Point-in-polygon test via a classic even-odd ray cast (no epsilon). A
+/// vertex on a horizontal scanline can be counted twice, so prefer
+/// [`point_in_polygon`] where exact-boundary robustness matters; this
+/// variant is used by chaining / V-carve region nesting / fixture checks
+/// where the probe point is well inside or outside a face.
+#[must_use]
+pub fn is_inside_polygon(points: &[Point2], p: Point2) -> bool {
+    if points.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let n = points.len();
+    let mut j = n - 1;
+    for i in 0..n {
+        let pi = points[i];
+        let pj = points[j];
+        let crosses_y = (pi.y > p.y) != (pj.y > p.y);
+        if crosses_y {
+            let x_at = pi.x + (p.y - pi.y) * (pj.x - pi.x) / (pj.y - pi.y);
+            if p.x < x_at {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    inside
+}
+
 #[cfg(test)]
 // `assert_eq!(bbox.min_x, -3.0)` — values are copied verbatim from earlier
 // `.extend_point` calls, so exact float equality is the correct test.

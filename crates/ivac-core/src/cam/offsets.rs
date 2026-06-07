@@ -25,6 +25,7 @@
     clippy::implicit_hasher,
 )]
 
+use crate::geometry::point_in_polygon;
 use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Polyline};
 use clipper2_rust::{inflate_paths_d, EndType, JoinType, PathD, PathsD, Point as ClipperPoint};
 use schemars::JsonSchema;
@@ -742,7 +743,7 @@ fn segment_crosses_any_polygon(a: Point2, b: Point2, polys: &[Vec<Point2>]) -> b
             let t = f64::from(i) / f64::from(samples);
             let px = a.x + (b.x - a.x) * t;
             let py = a.y + (b.y - a.y) * t;
-            if point_in_polygon_pts(poly, px, py) {
+            if point_in_polygon(poly, px, py) {
                 return true;
             }
         }
@@ -1870,7 +1871,7 @@ pub(crate) fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point
         let t = f64::from(i) / f64::from(samples);
         let px = a.x + (b.x - a.x) * t;
         let py = a.y + (b.y - a.y) * t;
-        if !point_in_polygon_pts(polygon, px, py) {
+        if !point_in_polygon(polygon, px, py) {
             return false;
         }
     }
@@ -1894,7 +1895,7 @@ pub(crate) fn bridge_crosses_any_island(a: Point2, b: Point2, islands: &[Vec<Poi
             let t = f64::from(i) / f64::from(samples);
             let px = a.x + (b.x - a.x) * t;
             let py = a.y + (b.y - a.y) * t;
-            if point_in_polygon_pts(isl, px, py) {
+            if point_in_polygon(isl, px, py) {
                 return true;
             }
         }
@@ -1903,31 +1904,6 @@ pub(crate) fn bridge_crosses_any_island(a: Point2, b: Point2, islands: &[Vec<Poi
         }
     }
     false
-}
-
-pub(crate) fn point_in_polygon_pts(verts: &[Point2], x: f64, y: f64) -> bool {
-    let n = verts.len();
-    if n < 3 {
-        return false;
-    }
-    let mut inside = false;
-    for i in 0..n {
-        let a = verts[i];
-        let b = verts[(i + 1) % n];
-        if (a.y - b.y).abs() < 1e-12 {
-            continue;
-        }
-        let (lo, hi) = if a.y < b.y { (a, b) } else { (b, a) };
-        if y < lo.y - 1e-12 || y >= hi.y - 1e-12 {
-            continue;
-        }
-        let t = (y - lo.y) / (hi.y - lo.y);
-        let xi = lo.x + t * (hi.x - lo.x);
-        if xi > x {
-            inside = !inside;
-        }
-    }
-    inside
 }
 
 // ─── conversions ────────────────────────────────────────────────────────────
@@ -2609,7 +2585,7 @@ mod tests {
         // — verify with the same point-in-polygon helper the pocket
         // emitters use.
         assert!(
-            point_in_polygon_pts(&inflated[0], 0.0, 0.0),
+            point_in_polygon(&inflated[0], 0.0, 0.0),
             "island center (0,0) must lie inside the inflated boundary"
         );
     }

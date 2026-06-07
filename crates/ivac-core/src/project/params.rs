@@ -352,8 +352,8 @@ pub fn contour_mill_default() -> ContourParams {
         leads: LeadsConfig {
             r#in: LeadKind::Off,
             out: LeadKind::Off,
-            in_lenght: 5.0,
-            out_lenght: 5.0,
+            in_length: 5.0,
+            out_length: 5.0,
         },
         cut_direction: CutDirection::Conventional,
         finish_cut_direction: CutDirection::Conventional,

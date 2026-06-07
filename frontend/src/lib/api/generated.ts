@@ -513,7 +513,7 @@ export interface components {
             out: components["schemas"]["LeadKind"];
             /**
              * Format: double
-             * @description Lead-out size. Same interpretation as `in_lenght` but applied at the END of the cut path (cutter rolls off the contour at Pn).
+             * @description Lead-out size. Same interpretation as `in_length` but applied at the END of the cut path (cutter rolls off the contour at Pn).
              */
             out_lenght: number;
         };

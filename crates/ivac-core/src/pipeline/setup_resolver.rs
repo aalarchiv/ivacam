@@ -456,9 +456,9 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     // laser and the op didn't set its own lead-in, fall back to the
     // per-tool `laser_lead_in_mm`. Reduces edge burn at the entry
     // point. Off / `LeadKind::Off` keeps the op's explicit decision.
-    if matches!(tool.kind, crate::project::ToolKind::LaserBeam) && setup.leads.in_lenght <= 0.0 {
+    if matches!(tool.kind, crate::project::ToolKind::LaserBeam) && setup.leads.in_length <= 0.0 {
         if let Some(lead_mm) = tool.laser_lead_in_mm.filter(|v| *v > 0.0) {
-            setup.leads.in_lenght = lead_mm;
+            setup.leads.in_length = lead_mm;
             if matches!(setup.leads.r#in, crate::cam::setup::LeadKind::Off) {
                 setup.leads.r#in = crate::cam::setup::LeadKind::Straight;
             }

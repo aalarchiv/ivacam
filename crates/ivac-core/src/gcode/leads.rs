@@ -31,10 +31,10 @@ fn is_closed_contour(segments: &[Segment]) -> bool {
 /// Geometry of a lead-in or lead-out move.
 ///
 /// `Straight` keeps the legacy "perpendicular hop" lead — the approach
-/// (lead-in) or exit (lead-out) point sits `in_lenght` mm to the LEFT of
+/// (lead-in) or exit (lead-out) point sits `in_length` mm to the LEFT of
 /// the contour tangent, and the cutter travels in a straight line.
 ///
-/// `Arc` is a tangent roll-on / roll-off: a quarter-circle of `in_lenght`
+/// `Arc` is a tangent roll-on / roll-off: a quarter-circle of `in_length`
 /// mm radius whose center is `radius` perpendicular to the tangent on the
 /// LEFT (same convention as Straight). The arc lands tangent to the
 /// contour at the entry/exit point, so the cutter eases into / out of the
@@ -165,7 +165,7 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
     if setup.leads.r#in == LeadKind::Off || segments.is_empty() {
         return LeadGeometry::None;
     }
-    let len = setup.leads.in_lenght.max(0.0);
+    let len = setup.leads.in_length.max(0.0);
     if len < 1e-9 {
         return LeadGeometry::None;
     }
@@ -354,7 +354,7 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
     if setup.leads.out == LeadKind::Off || segments.is_empty() {
         return LeadGeometry::None;
     }
-    let len = setup.leads.out_lenght.max(0.0);
+    let len = setup.leads.out_length.max(0.0);
     if len < 1e-9 {
         return LeadGeometry::None;
     }
@@ -467,9 +467,9 @@ mod tests {
         let mut setup = Setup::default();
         setup.mill.offset = ToolOffset::Outside;
         setup.leads.r#in = LeadKind::Arc;
-        setup.leads.in_lenght = 5.0;
+        setup.leads.in_length = 5.0;
         setup.leads.out = LeadKind::Arc;
-        setup.leads.out_lenght = 5.0;
+        setup.leads.out_length = 5.0;
         // 20 mm open slot along +X.
         let segments = vec![segline(p(0.0, 0.0), p(20.0, 0.0))];
         let g_in = lead_in_geometry(&setup, &segments);
@@ -491,7 +491,7 @@ mod tests {
         let mut setup = Setup::default();
         setup.mill.offset = ToolOffset::Inside;
         setup.leads.r#in = LeadKind::Arc;
-        setup.leads.in_lenght = 1.0;
+        setup.leads.in_length = 1.0;
         // 50 × 50 closed square, CCW — large enough that the 1 mm
         // arc lead envelope clears the adjacent walls (62pd fit-check
         // passes alongside the xmwy closed-contour gate).
@@ -633,7 +633,7 @@ mod tests {
         let mut setup = Setup::default();
         setup.mill.offset = ToolOffset::Outside;
         setup.leads.r#in = LeadKind::Arc;
-        setup.leads.in_lenght = 5.0;
+        setup.leads.in_length = 5.0;
         // Single CCW polyline that boxes the lead-in into a corner —
         // arc swept disk inevitably grazes one of the non-adjacent
         // walls regardless of free-side orientation.

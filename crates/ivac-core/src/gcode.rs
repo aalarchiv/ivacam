@@ -3276,7 +3276,7 @@ mod tests {
             setup.mill.step = -1.0;
             setup.mill.fast_move_z = 5.0;
             setup.leads.r#in = lead_kind;
-            setup.leads.in_lenght = in_len;
+            setup.leads.in_length = in_len;
             setup.leads.out = LeadKind::Off;
             setup.machine.comments = false;
             setup.mill.offset = ToolOffset::Outside;
@@ -3309,9 +3309,9 @@ mod tests {
                 });
         }
 
-        // All three lead arms covered. Arc: large in_lenght on a closed
+        // All three lead arms covered. Arc: large in_length on a closed
         // 30mm square so arc_lead_fits succeeds. Straight: any positive
-        // in_lenght. Off: in_lenght irrelevant but pass a value so the
+        // in_length. Off: in_length irrelevant but pass a value so the
         // setup is realistic.
         check_arm(LeadKind::Arc, 3.0, "Arc");
         check_arm(LeadKind::Straight, 3.0, "Straight");

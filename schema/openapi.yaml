@@ -903,7 +903,7 @@ components:
         out:
           $ref: '#/components/schemas/LeadKind'
         out_lenght:
-          description: Lead-out size. Same interpretation as `in_lenght` but applied at the END of the cut path (cutter rolls off the contour at Pn).
+          description: Lead-out size. Same interpretation as `in_length` but applied at the END of the cut path (cutter rolls off the contour at Pn).
           format: double
           type: number
       required:

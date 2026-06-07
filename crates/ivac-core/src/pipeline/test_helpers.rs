@@ -216,8 +216,8 @@ pub(in crate::pipeline) fn profile_leads_op(
     let leads_for_op = LeadsConfig {
         r#in: kind_in,
         out: LeadKind::Off,
-        in_lenght: len_in,
-        out_lenght: 0.0,
+        in_length: len_in,
+        out_length: 0.0,
     };
     let contour = crate::project::ContourParams {
         leads: leads_for_op,

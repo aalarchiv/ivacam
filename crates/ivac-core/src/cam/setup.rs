@@ -437,10 +437,15 @@ pub struct LeadsConfig {
     ///   turn from the approach point (radius away on the perpendicular)
     ///   to the contour start, landing tangent to the first cut segment.
     /// * `Off`: ignored.
-    pub in_lenght: f64,
-    /// Lead-out size. Same interpretation as `in_lenght` but applied at
+    // sic: the serialized field name keeps the original `in_length`
+    // misspelling so the wire contract / schema / saved project files are
+    // unchanged; only the Rust identifier is corrected to `in_length`.
+    #[serde(rename = "in_lenght")]
+    pub in_length: f64,
+    /// Lead-out size. Same interpretation as `in_length` but applied at
     /// the END of the cut path (cutter rolls off the contour at Pn).
-    pub out_lenght: f64,
+    #[serde(rename = "out_lenght")]
+    pub out_length: f64,
 }
 
 impl Default for LeadsConfig {
@@ -448,8 +453,8 @@ impl Default for LeadsConfig {
         Self {
             r#in: LeadKind::Off,
             out: LeadKind::Off,
-            in_lenght: 5.0,
-            out_lenght: 5.0,
+            in_length: 5.0,
+            out_length: 5.0,
         }
     }
 }

@@ -63,14 +63,14 @@ pub(super) fn synthesize_pocket_outside_objects(
             if matches!(c.leads.r#in, crate::cam::setup::LeadKind::Off) {
                 0.0
             } else {
-                c.leads.in_lenght.max(0.0)
+                c.leads.in_length.max(0.0)
             }
         });
         let lead_out = contour.map_or(0.0, |c| {
             if matches!(c.leads.out, crate::cam::setup::LeadKind::Off) {
                 0.0
             } else {
-                c.leads.out_lenght.max(0.0)
+                c.leads.out_length.max(0.0)
             }
         });
         // Tabs grow the cutter envelope by their chord width — the
@@ -173,8 +173,8 @@ mod tests {
         contour.leads = LeadsConfig {
             r#in: LeadKind::Arc,
             out: LeadKind::Off,
-            in_lenght: 5.0,
-            out_lenght: 0.0,
+            in_length: 5.0,
+            out_length: 0.0,
         };
         let op = pocket_frame_op(contour, Some(2.0), None);
         let objects = vec![closed_square_obj(20.0)];

@@ -12,7 +12,7 @@
     type FormProfileSample,
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
-  import * as fileOps from '../state/file_ops';
+  import * as fileOps from '../services/file_ops';
   import { attrApplies, KIND_DISPLAY_LABELS } from '../state/tool_family';
   import {
     diameterInvalid,

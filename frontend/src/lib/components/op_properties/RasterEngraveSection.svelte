@@ -22,7 +22,7 @@
     powerGridToRgba,
     brightnessHistogram,
     estimateBurnSeconds,
-  } from '../../state/raster_preview';
+  } from '../../cam/raster_preview';
 
   interface Props {
     op: RasterEngraveOp;

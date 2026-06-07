@@ -39,7 +39,7 @@
     requestPreview,
     forceTextPreviewRefresh,
   } from '../state/text_preview.svelte';
-  import { brightnessToRgba } from '../state/raster_preview';
+  import { brightnessToRgba } from '../cam/raster_preview';
   import type { ReliefSource, TextLayer } from '../state/project-types';
 
   interface Props {

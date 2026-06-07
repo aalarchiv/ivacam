@@ -4,7 +4,7 @@
 /// faithful to what the backend emitter actually burns.
 
 import { describe, it, expect } from 'vitest';
-import type { PowerCurve } from './op_types';
+import type { PowerCurve } from '../state/op_types';
 import {
   powerGrid,
   bayerIndices,

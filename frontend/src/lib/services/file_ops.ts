@@ -5,20 +5,20 @@
 /// imported / generated payload, and the active project path / recent
 /// list.
 
-import { project } from './project.svelte';
-import { workspace } from './workspace.svelte';
-import { confirmStore } from './confirm.svelte';
+import { project } from '../state/project.svelte';
+import { workspace } from '../state/workspace.svelte';
+import { confirmStore } from '../state/confirm.svelte';
 import { isTauri } from '../api/env';
 import { defaultClient } from '../api/http';
 import { tryParseStructuredError } from '../api/client';
-import { migrateLegacyToolTerms } from './tool-migration';
+import { migrateLegacyToolTerms } from '../state/tool-migration';
 // `pushRecent` (from ../recent) was a parallel store the UI never read
 // — the File menu draws Recent Projects from workspace.recent_projects.
 // The two stores could diverge silently (audit zxee). Dropped; the
 // `ivac.recent` localStorage key is harmlessly orphaned.
 import type { ImportResponse } from '../api/types';
-import type { MachineSettings, ToolEntry } from './project.svelte';
-import { migrateMachineSettings } from './project-types';
+import type { MachineSettings, ToolEntry } from '../state/project.svelte';
+import { migrateMachineSettings } from '../state/project-types';
 
 /// eu2b: clear the Rust-side process-global pipeline cache when a
 /// project replace flow runs (open file, open project, load sample,

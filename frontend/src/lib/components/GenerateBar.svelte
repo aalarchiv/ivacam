@@ -11,7 +11,7 @@
     simWarningSummary,
   } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
-  import { exportGeneratedGcode } from '../state/file_ops';
+  import { exportGeneratedGcode } from '../services/file_ops';
   import type { SimWarning, TimeEstimate } from '../api/types';
   import {
     countCriticalPipelineWarnings,

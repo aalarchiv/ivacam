@@ -107,7 +107,7 @@
     exportSimulatedStockStl,
     confirmDiscardIfDirty,
     SAMPLES,
-  } from './lib/state/file_ops';
+  } from './lib/services/file_ops';
   import { onMount } from 'svelte';
   import {
     isDesktop,

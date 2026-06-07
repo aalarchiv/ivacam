@@ -12,7 +12,7 @@
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
   import PostProcessorEditor from './PostProcessorEditor.svelte';
-  import * as fileOps from '../state/file_ops';
+  import * as fileOps from '../services/file_ops';
 
   interface Props {
     open: boolean;

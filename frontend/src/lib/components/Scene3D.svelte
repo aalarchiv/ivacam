@@ -35,7 +35,7 @@
     resolveSegmentColor,
     fadeColor,
   } from '../scene3d/toolpath_buffers';
-  import { powerGrid, maxPower } from '../state/raster_preview';
+  import { powerGrid, maxPower } from '../cam/raster_preview';
   import { powerAtWorld, heatColor, type HeatGrid } from '../scene3d/raster_heatmap';
   import { resolveAci } from '../canvas/aci-color';
   import { unpackFixtureColor, DEFAULT_FIXTURE_COLOR } from '../canvas/fixture-color';

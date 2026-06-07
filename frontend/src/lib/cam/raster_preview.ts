@@ -9,7 +9,7 @@
 /// Convention (same as Rust): dark pixels burn hotter. brightness 0.0
 /// (black) ⇒ highest power; 1.0 (white) ⇒ none.
 
-import type { PowerCurve, RasterLink, ScanDirection } from './op_types';
+import type { PowerCurve, RasterLink, ScanDirection } from '../state/op_types';
 
 function clamp01(b: number): number {
   return b < 0 ? 0 : b > 1 ? 1 : b;

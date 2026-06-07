@@ -2,7 +2,7 @@
   /// Drag-and-drop overlay + hidden file inputs + URL-param boot loader.
   ///
   /// Now headless: the user-visible Open / Save / Sample buttons live in
-  /// the App.svelte toolbar and call `state/file_ops.ts` directly. This
+  /// the App.svelte toolbar and call `services/file_ops.ts` directly. This
   /// component only owns the things that have to stay alive in the DOM:
   ///
   ///   * The two `<input type=file hidden>` elements that `file_ops` clicks
@@ -21,7 +21,7 @@
     loadProjectFile,
     loadSample,
     loadSampleWithGenerate,
-  } from '../state/file_ops';
+  } from '../services/file_ops';
   import ErrorToast from './ErrorToast.svelte';
 
   let dragOver = $state(false);

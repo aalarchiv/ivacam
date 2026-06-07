@@ -22,9 +22,9 @@ export type TimeEstimate = components['schemas']['TimeEstimate'];
 export type RenderTextRequest = components['schemas']['RenderTextRequest'];
 export type RenderTextResponse = components['schemas']['RenderTextResponse'];
 export type RenderTextLayerResponse = components['schemas']['RenderTextLayerResponse'];
-/// Wire-shape TextLayer (font_bytes as JSON-array-of-integers). The
-/// in-memory TextLayer in state/project.svelte.ts keeps its bytes as
-/// base64; the live-preview helper decodes once before calling.
+/// Wire-shape TextLayer. `font_bytes` rides as a base64 string (dya2) —
+/// the same form the in-memory TextLayer in state/project.svelte.ts already
+/// keeps, so callers pass `bytes_b64` straight through.
 export type WireTextLayer = components['schemas']['TextLayer'];
 export type HelixRadiusRequest = components['schemas']['HelixRadiusRequest'];
 export type HelixRadiusResponse = components['schemas']['HelixRadiusResponse'];

@@ -78,23 +78,16 @@ function hashLayer(layer: TextLayer): string {
   ].join('|');
 }
 
-function decodeFontBytes(b64: string): number[] {
-  const binary = atob(b64);
-  const out: number[] = new Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
-/// Strict wire shape — mirrors the Rust TextLayer with font_bytes as
-/// an integer array. We don't import the generated type here because
-/// the OpenAPI codegen models `font_bytes` as `number[]`, which is
-/// what the renderer wants.
+/// Strict wire shape — mirrors the Rust TextLayer. `font_bytes` is the
+/// base64 string the in-memory `TextFontSource` already holds (dya2), so
+/// the live preview passes it straight through instead of expanding the
+/// ~742 KB font into an integer array on every keystroke.
 interface WireLayer {
   id: number;
   kind: 'TEXT' | 'MTEXT';
   name: string;
   text: string;
-  font_bytes: number[];
+  font_bytes: string;
   size_mm: number;
   origin: [number, number];
   rotation_deg: number;
@@ -110,7 +103,7 @@ function toWire(layer: TextLayer): WireLayer {
     kind: layer.kind,
     name: layer.name,
     text: layer.text,
-    font_bytes: decodeFontBytes(layer.fontSource.bytes_b64),
+    font_bytes: layer.fontSource.bytes_b64,
     size_mm: layer.sizeMm,
     origin: [layer.origin.x, layer.origin.y],
     rotation_deg: layer.rotationDeg,
@@ -139,11 +132,11 @@ export function requestPreview(layer: TextLayer): void {
     // advances the layer's generation, so a stale resolution below bails.
     const gen = ++genCounter;
     generation.set(layer.id, gen);
-    // Build the wire payload (which atob-decodes the WHOLE 700 KB+ font
-    // into a number[] and marshals it across the worker / IPC boundary)
-    // only when the debounce actually fires. Origin is out of the hash, so
-    // a drag no longer reaches here at all — this runs only on a real
-    // text / size / font change (k9cz).
+    // Build the wire payload (the base64 font string + params, marshalled
+    // across the worker / IPC boundary) only when the debounce actually
+    // fires. Origin is out of the hash, so a drag no longer reaches here at
+    // all — this runs only on a real text / size / font change (k9cz). The
+    // font rides as a base64 string now, not a ~742 KB integer array (dya2).
     const wire = toWire(layer);
     // The origin baked into these segments. Consumers translate by
     // (currentOrigin - renderOrigin), so an origin drag needs no re-render.

@@ -1612,8 +1612,8 @@ export interface components {
              * @default 7
              */
             color: number;
-            /** @description The font file as bytes (TTF / OTF). Encoded as a JSON `Vec<u8>` (i.e. an array of byte values) so the contract works equally well over HTTP/Tauri/WASM without picking a base64 layer. */
-            font_bytes: number[];
+            /** @description The font file as bytes (TTF / OTF). Marshalled as a base64 string on the wire (see [`font_bytes_b64`]) — compact and cheap to pass across HTTP / Tauri / WASM, where the live preview re-sends it on every debounced render (dya2). Deserialize still accepts the legacy integer-array form for back-compat. */
+            font_bytes: string;
             /** Format: double */
             height_mm: number;
             /** @default TEXT */
@@ -1869,8 +1869,8 @@ export interface components {
         TextLayer: {
             /** @default left */
             alignment: components["schemas"]["TextAlignment"];
-            /** @description TTF/OTF font as a byte vector. JSON serialises as an array of integers — matches the [`crate::input::text::RenderTextRequest`] convention so the same transport-agnostic encoding applies. */
-            font_bytes: number[];
+            /** @description TTF/OTF font as a byte vector. Marshalled as a base64 string on the wire (see [`crate::input::text::font_bytes_b64`]) — matches the [`crate::input::text::RenderTextRequest`] convention and keeps the live-preview re-send cheap (dya2). Deserialize still accepts the legacy integer-array form so older project files load unchanged. */
+            font_bytes: string;
             /** Format: uint32 */
             id: number;
             kind: components["schemas"]["TextLayerKind"];

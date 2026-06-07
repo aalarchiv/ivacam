@@ -264,7 +264,8 @@
         return;
       }
       const req: RenderTextRequest = {
-        font_bytes: Array.from(bytes) as unknown as RenderTextRequest['font_bytes'],
+        // dya2: font_bytes is a base64 string on the wire now.
+        font_bytes: bytesToBase64(bytes),
         text,
         origin: { x: posX, y: posY },
         height_mm: sizeMm,

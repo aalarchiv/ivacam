@@ -29,6 +29,49 @@ use crate::errors::Error;
 use crate::geometry::{Point2, Segment};
 use crate::project::{text_layer_synthetic_layer, TextAlignment, TextLayer, TextLayerKind};
 
+/// dya2: serde codec for the `font_bytes` field shared by [`RenderTextRequest`]
+/// and [`TextLayer`]. Serializes the byte vector as a base64 string — ~3×
+/// smaller than the legacy JSON integer array and far cheaper to marshal
+/// across the worker / IPC boundary, which the live text preview crosses on
+/// every keystroke. Deserialize accepts BOTH the base64 string and the
+/// legacy array of byte values, so projects saved before this change (whose
+/// `font_bytes` is still an integer array) keep loading.
+pub(crate) mod font_bytes_b64 {
+    use base64::Engine;
+    use serde::de::{self, SeqAccess, Visitor};
+    use serde::{Deserializer, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S: Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&base64::engine::general_purpose::STANDARD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        struct FontBytes;
+        impl<'de> Visitor<'de> for FontBytes {
+            type Value = Vec<u8>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a base64 string or an array of byte values")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Vec<u8>, E> {
+                base64::engine::general_purpose::STANDARD
+                    .decode(v)
+                    .map_err(|e| de::Error::custom(format!("invalid base64 font_bytes: {e}")))
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<u8>, A::Error> {
+                let mut out = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                while let Some(b) = seq.next_element::<u8>()? {
+                    out.push(b);
+                }
+                Ok(out)
+            }
+        }
+        // JSON is self-describing, so `deserialize_any` routes the base64
+        // string to `visit_str` and the legacy array to `visit_seq`.
+        d.deserialize_any(FontBytes)
+    }
+}
+
 /// Request payload for the cross-transport `/text` endpoint. The frontend
 /// hands us TTF bytes (uploaded by the user or pulled from
 /// `frontend/public/fonts/`) plus a string + placement parameters; we
@@ -36,9 +79,13 @@ use crate::project::{text_layer_synthetic_layer, TextAlignment, TextLayer, TextL
 /// the dialog uses to drive the engraving warning chip.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RenderTextRequest {
-    /// The font file as bytes (TTF / OTF). Encoded as a JSON `Vec<u8>`
-    /// (i.e. an array of byte values) so the contract works equally well
-    /// over HTTP/Tauri/WASM without picking a base64 layer.
+    /// The font file as bytes (TTF / OTF). Marshalled as a base64 string on
+    /// the wire (see [`font_bytes_b64`]) — compact and cheap to pass across
+    /// HTTP / Tauri / WASM, where the live preview re-sends it on every
+    /// debounced render (dya2). Deserialize still accepts the legacy
+    /// integer-array form for back-compat.
+    #[serde(with = "font_bytes_b64")]
+    #[schemars(with = "String")]
     pub font_bytes: Vec<u8>,
     pub text: String,
     pub origin: Point2,
@@ -753,6 +800,45 @@ fn bbox_of_contours(contours: &[Vec<Point2>]) -> (f64, f64, f64, f64) {
         }
     }
     (min_x, min_y, max_x, max_y)
+}
+
+#[cfg(test)]
+mod font_bytes_b64_tests {
+    use super::RenderTextRequest;
+    use crate::geometry::Point2;
+
+    fn req(font_bytes: Vec<u8>) -> RenderTextRequest {
+        RenderTextRequest {
+            font_bytes,
+            text: "x".into(),
+            origin: Point2::new(0.0, 0.0),
+            height_mm: 10.0,
+            layer: "0".into(),
+            color: 0,
+        }
+    }
+
+    /// dya2: `font_bytes` serializes as a base64 STRING (not a JSON integer
+    /// array) and round-trips back to the same bytes.
+    #[test]
+    fn serializes_as_base64_string_and_round_trips() {
+        let bytes = vec![0u8, 1, 2, 250, 251, 255];
+        let json = serde_json::to_value(req(bytes.clone())).unwrap();
+        let field = &json["font_bytes"];
+        assert!(field.is_string(), "font_bytes must serialize as a string");
+        assert_eq!(field.as_str().unwrap(), "AAEC+vv/"); // base64 of the bytes
+        let back: RenderTextRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back.font_bytes, bytes);
+    }
+
+    /// Back-compat: a project / request saved before dya2 carried
+    /// `font_bytes` as an array of byte values; it must still deserialize.
+    #[test]
+    fn legacy_integer_array_still_deserializes() {
+        let legacy = r#"{"font_bytes":[0,1,2,250,251,255],"text":"x","origin":{"x":0.0,"y":0.0},"height_mm":10.0}"#;
+        let back: RenderTextRequest = serde_json::from_str(legacy).unwrap();
+        assert_eq!(back.font_bytes, vec![0u8, 1, 2, 250, 251, 255]);
+    }
 }
 
 #[cfg(test)]

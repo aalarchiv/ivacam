@@ -19,9 +19,13 @@ pub struct TextLayer {
     pub name: String,
     /// Full string. For `Mtext`, lines are `\n`-separated.
     pub text: String,
-    /// TTF/OTF font as a byte vector. JSON serialises as an array of
-    /// integers — matches the [`crate::input::text::RenderTextRequest`]
-    /// convention so the same transport-agnostic encoding applies.
+    /// TTF/OTF font as a byte vector. Marshalled as a base64 string on the
+    /// wire (see [`crate::input::text::font_bytes_b64`]) — matches the
+    /// [`crate::input::text::RenderTextRequest`] convention and keeps the
+    /// live-preview re-send cheap (dya2). Deserialize still accepts the
+    /// legacy integer-array form so older project files load unchanged.
+    #[serde(with = "crate::input::text::font_bytes_b64")]
+    #[schemars(with = "String")]
     pub font_bytes: Vec<u8>,
     pub size_mm: f64,
     /// Anchor in stock XY (mm). Alignment offsets are applied relative

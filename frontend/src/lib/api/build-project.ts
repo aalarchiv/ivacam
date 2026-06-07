@@ -217,23 +217,15 @@ interface ProjectStateView {
   groupOpsByTool?: boolean;
 }
 
-/// Base64 → byte array. Used for embedded TTF/OTF font payloads on the
-/// pipeline request. `atob` returns each byte as a UTF-16 char code so
-/// charCodeAt() yields the raw 0-255 value the JSON serializer expects.
-function decodeFontBytes(b64: string): number[] {
-  const binary = atob(b64);
-  const out: number[] = new Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
 function buildTextLayer(layer: TextLayer): WireTextLayer {
   return {
     id: layer.id,
     kind: layer.kind,
     name: layer.name,
     text: layer.text,
-    font_bytes: decodeFontBytes(layer.fontSource.bytes_b64),
+    // dya2: font rides as the base64 string the source already holds, not a
+    // decoded integer array.
+    font_bytes: layer.fontSource.bytes_b64,
     size_mm: layer.sizeMm,
     origin: [layer.origin.x, layer.origin.y],
     rotation_deg: layer.rotationDeg,

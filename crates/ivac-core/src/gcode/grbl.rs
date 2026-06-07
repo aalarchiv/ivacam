@@ -8,9 +8,9 @@
 // (X/Y/Z/I/J/F/S).
 #![allow(clippy::many_single_char_names)]
 
-use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::post_profile::template_lines;
 use crate::gcode::{linuxcnc, CapturedPostState, PostProcessor};
+use crate::project::{ToolOffset, UnitSystem};
 
 /// gcxl: GRBL doesn't accept paren-style `(text)` block comments — it
 /// only recognises `;` line comments. Rewrite any `(...)` segments in

@@ -80,13 +80,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::cam::chaining::{classify_containment, segments_to_objects};
-use crate::cam::setup::{Setup, ToolChangeStrategy};
+use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::gcode::{
     emit_program_begin, emit_program_end, grbl, hpgl, linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::Point2;
 use crate::pipeline_cache::{op_cache_key_with_finish, OpCacheValue, PipelineCache};
+use crate::project::ToolChangeStrategy;
 use crate::project::{Op, OpKind, PocketStrategy, Project, ToolEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1806,7 +1807,7 @@ pub(super) fn synthesize_finish_setup(
 /// at this site).
 pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     post: &mut P,
-    machine: &crate::cam::setup::MachineConfig,
+    machine: &crate::project::MachineConfig,
     header_setup: &Setup,
     new_tool: Option<&ToolEntry>,
     new_tool_id: u32,
@@ -1846,7 +1847,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     // accept M5 as "beam off" which is fine, but the per-cut
     // `cut_tool_off` already arms that — and on Drag/HPGL plotters M5
     // is meaningless. Gate the entire spindle envelope on Mill mode.
-    let is_mill = machine.mode == crate::cam::setup::MachineMode::Mill;
+    let is_mill = machine.mode == crate::project::MachineMode::Mill;
 
     // 3lf0: turn off active coolant BEFORE stopping the spindle / opening
     // the tool holder. With flood (M8) still running through M5 + M6,
@@ -2022,11 +2023,11 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
 /// whose flow `emit_post_change_z` emits AFTER the pause. Always `None`
 /// for the first tool (operator-loaded at program start, no pause).
 fn post_change_z_prompt(
-    machine: &crate::cam::setup::MachineConfig,
+    machine: &crate::project::MachineConfig,
     new_tool_id: u32,
     is_first_tool: bool,
 ) -> Option<String> {
-    use crate::cam::setup::PostChangeZStrategy as S;
+    use crate::project::PostChangeZStrategy as S;
     if is_first_tool {
         return None;
     }
@@ -2054,13 +2055,13 @@ fn post_change_z_prompt(
 /// identical. Probe / fixed-sensor strategies chain a `G38.2` cycle.
 fn emit_post_change_z<P: PostProcessor>(
     post: &mut P,
-    machine: &crate::cam::setup::MachineConfig,
+    machine: &crate::project::MachineConfig,
     new_tool: Option<&ToolEntry>,
     new_tool_id: u32,
     is_first_tool: bool,
 ) {
-    use crate::cam::setup::PostChangeZStrategy as S;
-    let is_mill = machine.mode == crate::cam::setup::MachineMode::Mill;
+    use crate::project::PostChangeZStrategy as S;
+    let is_mill = machine.mode == crate::project::MachineMode::Mill;
 
     // Legacy static-shift fallback: the `None` default, the first tool,
     // and non-Mill modes all keep the pre-hat3 `tool_z_shift` behavior.
@@ -2153,7 +2154,7 @@ mod count_tool_changes_tests {
     #[test]
     fn single_op_counts_one_change() {
         let project = project_with(
-            vec![profile_op(1, 1, crate::cam::setup::ToolOffset::Outside)],
+            vec![profile_op(1, 1, crate::project::ToolOffset::Outside)],
             vec![endmill(1, 3.0)],
         );
         assert_eq!(count_tool_changes(&project), 1);
@@ -2164,8 +2165,8 @@ mod count_tool_changes_tests {
     fn back_to_back_same_tool_counts_one() {
         let project = project_with(
             vec![
-                profile_op(1, 1, crate::cam::setup::ToolOffset::Outside),
-                profile_op(2, 1, crate::cam::setup::ToolOffset::Outside),
+                profile_op(1, 1, crate::project::ToolOffset::Outside),
+                profile_op(2, 1, crate::project::ToolOffset::Outside),
             ],
             vec![endmill(1, 3.0)],
         );
@@ -2177,8 +2178,8 @@ mod count_tool_changes_tests {
     fn two_distinct_tools_count_two() {
         let project = project_with(
             vec![
-                profile_op(1, 1, crate::cam::setup::ToolOffset::Outside),
-                profile_op(2, 2, crate::cam::setup::ToolOffset::Outside),
+                profile_op(1, 1, crate::project::ToolOffset::Outside),
+                profile_op(2, 2, crate::project::ToolOffset::Outside),
             ],
             vec![endmill(1, 3.0), endmill(2, 6.0)],
         );
@@ -2192,9 +2193,9 @@ mod count_tool_changes_tests {
     fn pause_op_does_not_break_same_tool_run() {
         let project = project_with(
             vec![
-                profile_op(1, 1, crate::cam::setup::ToolOffset::Outside),
+                profile_op(1, 1, crate::project::ToolOffset::Outside),
                 pause_op(2),
-                profile_op(3, 1, crate::cam::setup::ToolOffset::Outside),
+                profile_op(3, 1, crate::project::ToolOffset::Outside),
             ],
             vec![endmill(1, 3.0)],
         );
@@ -2204,10 +2205,10 @@ mod count_tool_changes_tests {
     /// ye4b: disabled ops are skipped.
     #[test]
     fn disabled_ops_are_skipped() {
-        let mut a = profile_op(1, 1, crate::cam::setup::ToolOffset::Outside);
+        let mut a = profile_op(1, 1, crate::project::ToolOffset::Outside);
         a.enabled = false;
         let project = project_with(
-            vec![a, profile_op(2, 2, crate::cam::setup::ToolOffset::Outside)],
+            vec![a, profile_op(2, 2, crate::project::ToolOffset::Outside)],
             vec![endmill(1, 3.0), endmill(2, 6.0)],
         );
         assert_eq!(count_tool_changes(&project), 1);
@@ -2222,7 +2223,7 @@ mod count_tool_changes_tests {
     /// unconditionally on `finish_tool_id != tool_id`.
     #[test]
     fn profile_op_with_distinct_finish_tool_counts_one_change() {
-        let mut op = profile_op(1, 1, crate::cam::setup::ToolOffset::Outside);
+        let mut op = profile_op(1, 1, crate::project::ToolOffset::Outside);
         op.finish_tool_id = Some(2);
         let project = project_with(vec![op], vec![endmill(1, 3.0), endmill(2, 6.0)]);
         // One load + zero internal swap (Profile op kind doesn't dual-tool).

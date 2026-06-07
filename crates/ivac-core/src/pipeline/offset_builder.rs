@@ -26,10 +26,11 @@ use crate::cam::offsets::{
     inflate_islands_by_tool_radius, parallel_offset_inward, parallel_offset_outward,
     pocket_for_object, small_circle_drill, PocketEmit, PolylineOffset, TabPoint,
 };
-use crate::cam::setup::{Setup, ToolOffset};
+use crate::cam::setup::Setup;
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::{Point2, Segment};
+use crate::project::ToolOffset;
 use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project, SourceCombine};
 
 use super::frame::synthesize_pocket_outside_objects;
@@ -837,13 +838,13 @@ fn pocket_emit_for(strategy: PocketStrategy, op: &Op) -> PocketEmit {
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::{
-        LeadKind, MachineConfig, PlungeStrategy, TabType, TabsConfig, ToolOffset,
-    };
     use crate::pipeline::test_helpers::{
         closed_square_offset, endmill, first_lead_phase, profile_leads_op,
     };
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{
+        LeadKind, MachineConfig, PlungeStrategy, TabType, TabsConfig, ToolOffset,
+    };
     use crate::project::{Op, OpKind, OpParams, OpSource, Project};
 
     // ─── Plunge strategies ─────────────────────────────────────────────
@@ -3416,7 +3417,7 @@ mod tests {
                 name: "Profile".into(),
                 enabled: true,
                 kind: OpKind::Profile {
-                    offset: crate::cam::setup::ToolOffset::Inside,
+                    offset: crate::project::ToolOffset::Inside,
                     contour: crate::project::ContourParams::default(),
                     profile: crate::project::ProfileParams::default(),
                 },
@@ -3892,7 +3893,7 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams {
-                    plunge: crate::cam::setup::PlungeStrategy::Helix {
+                    plunge: crate::project::PlungeStrategy::Helix {
                         angle_deg: 3.0,
                         radius_mm: Some(4.5),
                     },
@@ -3963,14 +3964,14 @@ mod tests {
     fn trochoidal_with_tabs_emits_unsupported_warning() {
         let segments = closed_square_offset(50.0, 0.0, 0.0);
         let mut params = OpParams::mill_default();
-        params.plunge = crate::cam::setup::PlungeStrategy::Helix {
+        params.plunge = crate::project::PlungeStrategy::Helix {
             angle_deg: 3.0,
             radius_mm: Some(4.5),
         };
         let contour = crate::project::ContourParams {
-            tabs: crate::cam::setup::TabsConfig {
+            tabs: crate::project::TabsConfig {
                 active: true,
-                ..crate::cam::setup::TabsConfig::default()
+                ..crate::project::TabsConfig::default()
             },
             ..crate::project::ContourParams::default()
         };
@@ -4046,7 +4047,7 @@ mod tests {
                 finish_tool_id: None,
                 source: OpSource::All,
                 params: OpParams {
-                    plunge: crate::cam::setup::PlungeStrategy::Direct,
+                    plunge: crate::project::PlungeStrategy::Direct,
                     ..OpParams::mill_default()
                 },
                 group: None,
@@ -4122,7 +4123,7 @@ mod tests {
     /// the legacy `pocket_islands` behaviour.
     #[test]
     fn pocket_all_with_nested_closed_contours_builds_donut_by_default() {
-        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PlungeStrategy;
         use crate::project::PocketStrategy;
         let outer = closed_square_offset(60.0, 0.0, 0.0);
         let inner = closed_circle(Point2::new(30.0, 30.0), 8.0);
@@ -4221,7 +4222,7 @@ mod tests {
     /// raw island.
     #[test]
     fn pocket_zigzag_with_island_keeps_centerline_outside_raw_island() {
-        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PlungeStrategy;
         use crate::project::PocketStrategy;
         let outer = closed_square_offset(60.0, 0.0, 0.0);
         let island_center = Point2::new(30.0, 30.0);
@@ -4319,7 +4320,7 @@ mod tests {
     /// configured distinct finish values.
     #[test]
     fn profile_op_uses_finish_feed_and_speed() {
-        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PlungeStrategy;
         let mut tool = endmill(1, 3.0);
         tool.speed = 20_000;
         tool.feed_rate = 1500;
@@ -4392,7 +4393,7 @@ mod tests {
     /// at the same XY position as if allowance had never been set.
     #[test]
     fn pocket_nocontour_with_allowance_folds_to_zero_and_warns() {
-        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PlungeStrategy;
         use crate::project::PocketStrategy;
         let tool_diameter = 3.0;
         let mk = |allowance: f64, nocontour: bool| Project {

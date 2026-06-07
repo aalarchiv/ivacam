@@ -38,12 +38,12 @@ use super::common::{
     removed_volume, run, stock_at_origin, vbit_tool,
 };
 use ivac_core::cam::chamfer::chamfer_depth_capped;
-use ivac_core::cam::setup::{MachineConfig, ToolOffset};
 use ivac_core::pipeline::{run_pipeline, PipelineRequest};
 use ivac_core::project::{
     ContourParams, Op, OpKind, OpParams, OpSource, PocketParams, PocketStrategy, ProfileParams,
     Project, ToolKind, WorkOffset,
 };
+use ivac_core::project::{MachineConfig, ToolOffset};
 use ivac_core::schema::PostProcessorKind;
 use ivac_core::sim::diagnostics::SimDiagnostics;
 use ivac_core::sim::heightmap::ToolProfile;

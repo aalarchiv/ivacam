@@ -26,7 +26,7 @@ use super::common::{
     build_heightmap, build_project, closed_circle, deepest_z, dump_stl, endmill_tool,
     op_single_pass, profile_outside_circle_volume, removed_volume, run, sim_carve, stock_at_origin,
 };
-use ivac_core::cam::setup::ToolOffset;
+use ivac_core::project::ToolOffset;
 use ivac_core::project::{ContourParams, OpKind, ProfileParams};
 use ivac_core::schema::PostProcessorKind;
 

@@ -60,14 +60,14 @@ pub(super) fn synthesize_pocket_outside_objects(
         // yields a 7 mm air gap as the docstring promises.
         let contour = op.contour_params();
         let lead_in = contour.map_or(0.0, |c| {
-            if matches!(c.leads.r#in, crate::cam::setup::LeadKind::Off) {
+            if matches!(c.leads.r#in, crate::project::LeadKind::Off) {
                 0.0
             } else {
                 c.leads.in_length.max(0.0)
             }
         });
         let lead_out = contour.map_or(0.0, |c| {
-            if matches!(c.leads.out, crate::cam::setup::LeadKind::Off) {
+            if matches!(c.leads.out, crate::project::LeadKind::Off) {
                 0.0
             } else {
                 c.leads.out_length.max(0.0)
@@ -108,13 +108,13 @@ pub(super) fn synthesize_pocket_outside_objects(
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-    use crate::cam::setup::{LeadKind, LeadsConfig, TabsConfig};
     use crate::cam::source_combine::FrameShape;
     use crate::cam::VcObject;
     use crate::geometry::{Point2, Segment};
     use crate::project::{
         ContourParams, Op, OpKind, OpParams, OpSource, PocketParams, PocketStrategy,
     };
+    use crate::project::{LeadKind, LeadsConfig, TabsConfig};
 
     fn closed_square_obj(side: f64) -> VcObject {
         VcObject::new(

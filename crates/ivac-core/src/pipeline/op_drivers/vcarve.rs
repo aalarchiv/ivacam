@@ -352,10 +352,10 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
-    use crate::cam::setup::MachineConfig;
     use crate::geometry::{Point2, Segment};
     use crate::pipeline::test_helpers::vbit;
     use crate::pipeline::{run_pipeline, PipelineRequest};
+    use crate::project::MachineConfig;
     use crate::project::{Op, OpKind, OpParams, OpSource, Project};
 
     /// `VCarve` op produces a non-empty toolpath whose deepest cutting

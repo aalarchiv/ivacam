@@ -25,14 +25,14 @@
 //! into the const below. Without the env var the test does a
 //! byte-equal compare and fails on any drift.
 
-use ivac_core::cam::setup::{
-    MachineConfig, PlungeStrategy, TabType, TabsConfig, ToolChangeStrategy, ToolOffset,
-};
 use ivac_core::geometry::{Point2, Segment, SegmentKind};
 use ivac_core::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
 use ivac_core::project::{
     ContourParams, DrillCycle, Op, OpKind, OpParams, OpSource, PocketStrategy, ProfileParams,
     Project, TabPlacementMode, ToolEntry, ToolKind, WorkOffset,
+};
+use ivac_core::project::{
+    MachineConfig, PlungeStrategy, TabType, TabsConfig, ToolChangeStrategy, ToolOffset,
 };
 
 /// Compare `actual` to `expected`. When `IVAC_UPDATE_SNAPSHOTS=1`,

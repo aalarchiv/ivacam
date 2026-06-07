@@ -7,9 +7,10 @@
 //! emitted offset list.
 
 use crate::cam::offsets::PolylineOffset;
-use crate::cam::setup::{Setup, ToolChangeStrategy, ToolOffset};
+use crate::cam::setup::Setup;
 use crate::cam::VcObject;
 use crate::project::{Op, OpKind, OpSource, PocketStrategy, Project, StockConfig};
+use crate::project::{ToolChangeStrategy, ToolOffset};
 
 use super::{op_includes_object, PipelineWarning};
 
@@ -182,7 +183,7 @@ pub(super) fn push_grbl_fixed_sensor_warning(
     post_kind: super::PostProcessorKind,
     warnings: &mut Vec<PipelineWarning>,
 ) {
-    use crate::cam::setup::PostChangeZStrategy;
+    use crate::project::PostChangeZStrategy;
     if !matches!(post_kind, super::PostProcessorKind::Grbl) {
         return;
     }
@@ -241,7 +242,7 @@ pub(super) fn push_grbl_fixed_sensor_warning(
 /// work area is unset / zero on any axis.
 pub(super) fn push_work_area_warning(
     toolpath: &[crate::gcode::preview::ToolpathSegment],
-    machine: &crate::cam::setup::MachineConfig,
+    machine: &crate::project::MachineConfig,
     warnings: &mut Vec<PipelineWarning>,
 ) {
     use crate::gcode::preview::MoveKind;
@@ -542,7 +543,7 @@ pub(super) fn push_ramp_with_arcs_warning(
     use crate::geometry::SegmentKind;
     if !matches!(
         op.params.plunge,
-        crate::cam::setup::PlungeStrategy::Ramp { .. }
+        crate::project::PlungeStrategy::Ramp { .. }
     ) {
         return;
     }
@@ -587,7 +588,7 @@ pub(super) fn push_trochoidal_warnings(op: &Op, warnings: &mut Vec<PipelineWarni
     }
     if !matches!(
         op.params.plunge,
-        crate::cam::setup::PlungeStrategy::Helix { .. }
+        crate::project::PlungeStrategy::Helix { .. }
     ) {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
@@ -695,8 +696,8 @@ pub(super) fn push_tool_fit_kind_warnings(
     // produces a path. Match is exhaustive so a new OpKind forces a
     // deliberate mode decision.
     {
-        use crate::cam::setup::MachineMode::{Drag, Laser, Mill, Plasma};
-        let (kind_name, allowed): (&str, &[crate::cam::setup::MachineMode]) = match &op.kind {
+        use crate::project::MachineMode::{Drag, Laser, Mill, Plasma};
+        let (kind_name, allowed): (&str, &[crate::project::MachineMode]) = match &op.kind {
             OpKind::Profile { .. } => ("Profile", &[Mill, Laser, Plasma]),
             OpKind::Engrave { .. } => ("Engrave", &[Mill, Laser]),
             OpKind::DragKnife { .. } => ("Drag-knife", &[Drag]),
@@ -719,7 +720,7 @@ pub(super) fn push_tool_fit_kind_warnings(
             | OpKind::GcodeInclude { .. } => ("", &[]),
         };
         if !allowed.is_empty() {
-            let caps: &[crate::cam::setup::MachineMode] = if setup.machine.capabilities.is_empty() {
+            let caps: &[crate::project::MachineMode] = if setup.machine.capabilities.is_empty() {
                 std::slice::from_ref(&setup.machine.mode)
             } else {
                 &setup.machine.capabilities
@@ -745,7 +746,7 @@ pub(super) fn push_tool_fit_kind_warnings(
     // the only contour cut-out kind valid on these machines (the op×mode
     // check above flags the rest).
     {
-        use crate::cam::setup::{LeadKind, MachineMode};
+        use crate::project::{LeadKind, MachineMode};
         if matches!(op.kind, OpKind::Profile { .. })
             && matches!(setup.machine.mode, MachineMode::Plasma | MachineMode::Laser)
             && setup.leads.r#in == LeadKind::Off
@@ -874,8 +875,7 @@ pub(super) fn push_tool_fit_size_warning(
         op.kind,
         OpKind::Pocket { .. }
             | OpKind::Profile {
-                offset: crate::cam::setup::ToolOffset::Outside
-                    | crate::cam::setup::ToolOffset::Inside,
+                offset: crate::project::ToolOffset::Outside | crate::project::ToolOffset::Inside,
                 ..
             }
     );
@@ -918,11 +918,11 @@ pub(super) fn push_tool_fit_size_warning(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::ToolOffset;
     use crate::pipeline::test_helpers::{
         closed_square, closed_square_offset, drill_op, endmill, pocket_op, profile_op,
         project_with, project_with_segments,
     };
+    use crate::project::ToolOffset;
     use crate::project::{DrillCycle, OpSource};
 
     /// tnxu: a Profile op cutting the outline followed by a Drill op
@@ -1045,7 +1045,7 @@ mod tests {
     #[test]
     fn work_area_scan_flags_out_of_envelope_cut() {
         use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
-        let machine = crate::cam::setup::MachineConfig::default(); // 200×300×50
+        let machine = crate::project::MachineConfig::default(); // 200×300×50
         let seg = |fx, fy, fz, tx, ty, tz, kind, line| ToolpathSegment {
             from: Pose3 {
                 x: fx,
@@ -1112,7 +1112,7 @@ mod tests {
         let mut warnings = Vec::new();
         push_work_area_warning(
             &in_bounds,
-            &crate::cam::setup::MachineConfig::default(),
+            &crate::project::MachineConfig::default(),
             &mut warnings,
         );
         assert!(
@@ -1121,8 +1121,8 @@ mod tests {
         );
 
         // Same out-of-bounds cut but with a zeroed work area → skipped.
-        let mut zeroed = crate::cam::setup::MachineConfig::default();
-        zeroed.work_area = crate::cam::setup::AxisLimits {
+        let mut zeroed = crate::project::MachineConfig::default();
+        zeroed.work_area = crate::project::AxisLimits {
             x: 0.0,
             y: 0.0,
             z: 0.0,
@@ -1390,7 +1390,8 @@ mod tests {
     /// just the primary mode — governs so a combo machine doesn't false-warn.
     #[test]
     fn op_machine_mode_mismatch_warns_for_incompatible_kind() {
-        use crate::cam::setup::{MachineMode, Setup};
+        use crate::cam::setup::Setup;
+        use crate::project::MachineMode;
         let tool = endmill(1, 6.0);
         let pocket = pocket_op(1, 1, OpSource::All);
         let profile = profile_op(2, 1, ToolOffset::Outside);
@@ -1448,7 +1449,8 @@ mod tests {
     /// lead-in silences it; a mill machine (no pierce) is never affected.
     #[test]
     fn pierce_on_contour_warns_without_lead_in() {
-        use crate::cam::setup::{LeadKind, MachineMode, Setup};
+        use crate::cam::setup::Setup;
+        use crate::project::{LeadKind, MachineMode};
         let tool = endmill(1, 6.0);
         let profile = profile_op(1, 1, ToolOffset::Outside);
         let project = project_with(vec![profile.clone()], vec![tool]);

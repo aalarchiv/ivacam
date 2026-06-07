@@ -31,7 +31,7 @@
 
 use std::f64::consts::PI;
 
-use ivac_core::cam::setup::MachineConfig;
+use ivac_core::project::MachineConfig;
 use ivac_core::project::{Op, OpKind, OpParams, OpSource, Project, WorkOffset};
 use ivac_core::schema::PostProcessorKind;
 

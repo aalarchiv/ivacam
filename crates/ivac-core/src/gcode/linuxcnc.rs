@@ -6,13 +6,13 @@
 // every variant (G40/G41/G42) explicitly to mirror the gcode spec.
 #![allow(clippy::many_single_char_names, clippy::match_same_arms)]
 
-use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::post_profile::{template_lines, AxisFormat, PostProfile, TokenCtx};
 use crate::gcode::{
     configure_post_state, fmt_num_dp, line_number_prefix, CapturedPostState, CoolantState,
     PostProcessor, PostState,
 };
 use crate::project::tool::SpindleDirection;
+use crate::project::{ToolOffset, UnitSystem};
 
 #[derive(Debug, Default)]
 pub struct Post {

@@ -1328,8 +1328,8 @@ pub fn apply_cut_direction(
     finish_default_for_outside_profile_only: bool,
     spindle: crate::project::tool::SpindleDirection,
 ) {
-    use crate::cam::setup::ToolOffset;
     use crate::project::OpKind;
+    use crate::project::ToolOffset;
     let _ = finish_default_for_outside_profile_only; // currently unused; kept for future hook
                                                      // kbx5 step 2: cut directions live on ContourParams. Non-contour
                                                      // ops fall back to Conventional (the existing default).

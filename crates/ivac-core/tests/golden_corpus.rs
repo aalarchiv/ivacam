@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 
 use ivac_core::cam::chaining::{classify_containment, segments_to_objects};
 use ivac_core::cam::offsets::{parallel_offset_object, PolylineOffset};
-use ivac_core::cam::setup::{Setup, ToolOffset};
+use ivac_core::cam::setup::Setup;
 use ivac_core::gcode::{emit_polylines, linuxcnc};
+use ivac_core::project::ToolOffset;
 use ivac_core::ImportOptions;
 
 #[test]

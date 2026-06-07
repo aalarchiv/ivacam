@@ -7,9 +7,10 @@
     clippy::many_single_char_names
 )]
 
-use crate::cam::setup::{LeadKind, Setup, ToolOffset};
+use crate::cam::setup::Setup;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
+use crate::project::{LeadKind, ToolOffset};
 
 /// xmwy: open-contour test — the lead-in / lead-out helpers below
 /// downgrade Arc → Straight when the path is open (start != end). On
@@ -409,7 +410,7 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::{LeadKind, ToolOffset};
+    use crate::project::{LeadKind, ToolOffset};
 
     fn p(x: f64, y: f64) -> Point2 {
         Point2::new(x, y)

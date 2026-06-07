@@ -90,7 +90,7 @@ pub fn components_schemas() -> Value {
     insert::<crate::project::OpSource>(&mut schemas, "OpSource");
     insert::<crate::project::SourceCombine>(&mut schemas, "SourceCombine");
     insert::<crate::project::CutDirection>(&mut schemas, "CutDirection");
-    insert::<crate::cam::setup::PlungeStrategy>(&mut schemas, "PlungeStrategy");
+    insert::<crate::project::PlungeStrategy>(&mut schemas, "PlungeStrategy");
     insert::<crate::pipeline::RegionPreview>(&mut schemas, "RegionPreview");
     insert::<crate::pipeline::PipelineWarning>(&mut schemas, "PipelineWarning");
     insert::<crate::project::PocketStrategy>(&mut schemas, "PocketStrategy");

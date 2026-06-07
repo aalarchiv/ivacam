@@ -29,10 +29,10 @@
 use std::f64::consts::PI;
 use std::fs;
 
-use ivac_core::cam::setup::MachineConfig;
 use ivac_core::gcode::preview::ToolpathSegment;
 use ivac_core::geometry::{Point2, Segment, SegmentKind};
 use ivac_core::pipeline::{run_pipeline, PipelineRequest, PipelineResponse};
+use ivac_core::project::MachineConfig;
 use ivac_core::project::{
     Coolant, Op, OpKind, OpParams, OpSource, Project, SpindleDirection, StockConfig, ToolEntry,
     ToolKind, WorkOffset,

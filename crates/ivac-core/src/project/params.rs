@@ -4,8 +4,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::cam::setup::ObjectOrder;
 use crate::cam::source_combine::FrameShape;
+use crate::project::ObjectOrder;
 
 use super::op::is_zero_f64;
 
@@ -252,7 +252,7 @@ pub struct OpParamsCommon {
     /// directions simultaneously — required for non-center-cutting bits
     /// and for harder materials.
     #[serde(default, skip_serializing_if = "is_default_plunge")]
-    pub plunge: crate::cam::setup::PlungeStrategy,
+    pub plunge: crate::project::PlungeStrategy,
     /// Override the tool's `feed_rate` for this op only. Some materials
     /// or finishing passes need a slower feed than the tool's default;
     /// rather than editing the tool library, set this per-op. None =
@@ -299,8 +299,8 @@ pub struct OpParamsCommon {
 /// Back-compat alias — keeps existing call sites compiling.
 pub type OpParams = OpParamsCommon;
 
-fn is_default_plunge(p: &crate::cam::setup::PlungeStrategy) -> bool {
-    matches!(p, crate::cam::setup::PlungeStrategy::Direct)
+fn is_default_plunge(p: &crate::project::PlungeStrategy) -> bool {
+    matches!(p, crate::project::PlungeStrategy::Direct)
 }
 
 /// Accept legacy bare-number `step` (including `0.0` as the unset
@@ -323,7 +323,7 @@ impl OpParamsCommon {
             step: Some(-1.0),
             fast_move_z: 5.0,
             objectorder: ObjectOrder::default(),
-            plunge: crate::cam::setup::PlungeStrategy::Direct,
+            plunge: crate::project::PlungeStrategy::Direct,
             feed_rate_override: None,
             plunge_rate_override: None,
             finish_step: None,

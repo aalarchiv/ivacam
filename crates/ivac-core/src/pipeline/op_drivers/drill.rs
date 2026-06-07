@@ -400,14 +400,14 @@ fn emit_stufenfase<P: PostProcessor>(
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::MachineConfig;
-    use crate::cam::setup::ToolChangeStrategy;
-    use crate::cam::setup::ToolOffset;
     use crate::geometry::Point2;
     use crate::pipeline::test_helpers::{
         closed_circle, closed_square_offset, drill_op, endmill, profile_op, vbit,
     };
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::MachineConfig;
+    use crate::project::ToolChangeStrategy;
+    use crate::project::ToolOffset;
     use crate::project::{Op, OpKind, OpParams, OpSource, Project, SourceCombine, ToolKind};
 
     /// A 0.5mm-radius closed circle with a 3mm endmill running an

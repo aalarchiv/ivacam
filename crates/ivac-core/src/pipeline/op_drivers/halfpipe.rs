@@ -253,10 +253,10 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::MachineConfig;
     use crate::geometry::{Point2, Segment};
     use crate::pipeline::test_helpers::{closed_square_offset, endmill};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::MachineConfig;
     use crate::project::{Op, OpKind, OpParams, OpSource, Project, ToolEntry, ToolKind};
 
     /// Whirl (3e5): when a Pocket op uses a Whirl-tagged tool

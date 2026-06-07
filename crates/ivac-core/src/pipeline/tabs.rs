@@ -187,13 +187,13 @@ pub(super) fn build_op_tabs_by_object(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::{TabsConfig, ToolOffset};
     use crate::cam::VcObject;
     use crate::geometry::{Point2, Segment};
     use crate::project::{
         ContourParams, Op, OpKind, OpParams, OpSource, ProfileParams, TabPlacement,
         TabPlacementMode,
     };
+    use crate::project::{TabsConfig, ToolOffset};
 
     fn closed_square_segments(side: f64) -> Vec<Segment> {
         vec![

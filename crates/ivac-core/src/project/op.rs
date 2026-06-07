@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::cam::setup::ToolOffset;
+use crate::project::ToolOffset;
 
 use super::params::{ContourParams, OpParams, PocketParams, ProfileParams, VCarveParams};
 
@@ -1129,7 +1129,7 @@ mod tests {
         assert!((contour.tabs.width - 8.0).abs() < 1e-9);
         assert!(matches!(
             contour.leads.r#in,
-            crate::cam::setup::LeadKind::Straight
+            crate::project::LeadKind::Straight
         ));
         assert!(matches!(
             contour.cut_direction,

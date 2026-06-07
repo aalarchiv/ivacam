@@ -12,12 +12,12 @@
 // lint. Test-only float-eq is intentional in the fixtures.
 #![allow(clippy::float_cmp)]
 
-use crate::cam::setup::{LeadKind, LeadsConfig, MachineConfig, ToolOffset};
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::{
     Coolant, DrillCycle, Op, OpKind, OpParams, OpSource, PatternConfig, Project, ToolEntry,
     ToolKind,
 };
+use crate::project::{LeadKind, LeadsConfig, MachineConfig, ToolOffset};
 
 pub(in crate::pipeline) fn closed_square(side: f64) -> Vec<Segment> {
     vec![

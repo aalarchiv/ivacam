@@ -33,9 +33,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::cam::setup::{AxisLimits, MachineConfig};
 use crate::gcode::post_profile::DwellUnit;
 use crate::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
+use crate::project::{AxisLimits, MachineConfig};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TimeEstimate {

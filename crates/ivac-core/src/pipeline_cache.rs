@@ -47,11 +47,11 @@ use lru::LruCache;
 use seahash::SeaHasher;
 use serde::Serialize;
 
-use crate::cam::setup::MachineConfig;
 use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::pipeline::PipelineWarning;
+use crate::project::MachineConfig;
 use crate::project::{Fixture, Op, ReliefSource, TextLayer, ToolEntry, WorkOffset};
 
 /// Pipeline output-format version, defined in the leaf [`crate::version`]
@@ -347,8 +347,8 @@ mod tests {
     use super::*;
     // Types used only to construct test fixtures (the production hashing
     // is now serde-based, so these are no longer needed at module scope).
-    use crate::cam::setup::MachineMode;
-    use crate::cam::setup::ToolOffset;
+    use crate::project::MachineMode;
+    use crate::project::ToolOffset;
     use crate::project::{Coolant, FixtureKind, TextAlignment, TextLayerKind, Wcs};
     use crate::project::{Op, OpKind, OpParams, OpSource, ToolEntry, ToolKind};
 
@@ -610,13 +610,13 @@ mod tests {
 
         // Each clone tweaks one estimator-only field.
         let mut m_accel = base.clone();
-        m_accel.accel = Some(crate::cam::setup::AxisLimits {
+        m_accel.accel = Some(crate::project::AxisLimits {
             x: 5000.0,
             y: 5000.0,
             z: 1000.0,
         });
         let mut m_jerk = base.clone();
-        m_jerk.jerk = Some(crate::cam::setup::AxisLimits {
+        m_jerk.jerk = Some(crate::project::AxisLimits {
             x: 1500.0,
             y: 1500.0,
             z: 500.0,
@@ -790,7 +790,7 @@ mod tests {
         let tool = endmill();
         let base = MachineConfig::default();
         let mut bigger = base.clone();
-        bigger.work_area = crate::cam::setup::AxisLimits {
+        bigger.work_area = crate::project::AxisLimits {
             x: bigger.work_area.x + 100.0,
             y: bigger.work_area.y,
             z: bigger.work_area.z,

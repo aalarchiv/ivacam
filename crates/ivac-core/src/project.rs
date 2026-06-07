@@ -25,13 +25,17 @@
     clippy::struct_excessive_bools
 )]
 
+pub mod config;
 pub mod fixture;
+pub mod machine;
 pub mod op;
 pub mod params;
 pub mod text;
 pub mod tool;
 
+pub use config::*;
 pub use fixture::*;
+pub use machine::*;
 pub use op::*;
 pub use params::*;
 pub use text::*;
@@ -40,7 +44,6 @@ pub use tool::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::cam::setup::MachineConfig;
 use crate::geometry::Segment;
 
 // ─── top level ─────────────────────────────────────────────────────────────

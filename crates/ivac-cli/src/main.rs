@@ -14,9 +14,10 @@ use ivac_core::cam::chaining::{classify_containment, segments_to_objects};
 use ivac_core::cam::offsets::{
     apply_overcut_to_offsets, pocket_for_object, PocketEmit, PolylineOffset,
 };
-use ivac_core::cam::setup::{Setup, ToolOffset};
+use ivac_core::cam::setup::Setup;
 use ivac_core::cam::VcObject;
 use ivac_core::gcode::{emit_polylines, grbl, hpgl, linuxcnc, preview};
+use ivac_core::project::ToolOffset;
 use ivac_core::{ImportOptions, ImportOutput};
 use serde::Serialize;
 

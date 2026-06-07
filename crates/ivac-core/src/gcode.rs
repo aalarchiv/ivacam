@@ -19,9 +19,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::cam::offsets::PolylineOffset;
-use crate::cam::setup::{MachineMode, Setup, ToolOffset, UnitSystem};
+use crate::cam::setup::Setup;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::project::tool::SpindleDirection;
+use crate::project::{MachineMode, ToolOffset, UnitSystem};
 
 /// z1y0: route the post's spindle-direction call based on the tool's
 /// `spindle_direction`. Centralized so every cut-emission site
@@ -1301,7 +1302,7 @@ fn multi_pass<P: PostProcessor>(
     is_finish: bool,
     post: &mut P,
 ) {
-    use crate::cam::setup::{PlungeStrategy, TabType};
+    use crate::project::{PlungeStrategy, TabType};
     // Finish-set rates (rt1.27): swap in the tool's _finish overrides
     // when this offset is the wall-defining ring of a Pocket. Falls
     // back to rough rates everywhere else.
@@ -1913,8 +1914,8 @@ pub fn line_number_prefix(state: &mut PostState) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::{LeadKind, ToolOffset};
     use crate::geometry::Segment;
+    use crate::project::{LeadKind, ToolOffset};
 
     fn p(x: f64, y: f64) -> Point2 {
         Point2::new(x, y)
@@ -2085,7 +2086,7 @@ mod tests {
 
     #[test]
     fn nearest_neighbor_picks_the_closer_offset_first() {
-        use crate::cam::setup::ObjectOrder;
+        use crate::project::ObjectOrder;
         let mut setup = Setup::default();
         setup.tool.diameter = 1.0;
         setup.mill.depth = -1.0;
@@ -2120,7 +2121,7 @@ mod tests {
         // entry was supposed to provide. Instead, the post lifts to
         // fast_move_z, rapids to the contour start, and plunges at
         // rate_v.
-        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PlungeStrategy;
         let mut setup = Setup::default();
         setup.tool.diameter = 3.0;
         setup.tool.rate_h = 800;
@@ -2239,8 +2240,8 @@ mod tests {
 
     #[test]
     fn ramped_tab_emits_trapezoid_z_profile() {
-        use crate::cam::setup::TabType;
         use crate::gcode::preview::{interpret, MoveKind};
+        use crate::project::TabType;
         let mut setup = Setup::default();
         setup.tool.diameter = 3.0;
         setup.tool.speed = 12000;
@@ -2354,8 +2355,8 @@ mod tests {
 
     #[test]
     fn ramped_tab_with_too_narrow_width_uses_triangle() {
-        use crate::cam::setup::TabType;
         use crate::gcode::preview::{interpret, MoveKind};
+        use crate::project::TabType;
         let mut setup = Setup::default();
         setup.tool.diameter = 3.0;
         setup.tool.speed = 12000;
@@ -3074,7 +3075,7 @@ mod tests {
         use crate::project::DrillCycle;
 
         let mut setup = Setup::default();
-        setup.machine.mode = crate::cam::setup::MachineMode::Laser;
+        setup.machine.mode = crate::project::MachineMode::Laser;
         setup.tool.speed = 800; // laser power, not RPM
         setup.tool.rate_v = 200;
         setup.mill.depth = -1.0;
@@ -3553,7 +3554,7 @@ mod tests {
         // test which already checks the rapid-to-start step; here we
         // assert the IMMEDIATE next line after the helix arcs is a G0 Z
         // (the lift), not a G1 Z.
-        use crate::cam::setup::PlungeStrategy;
+        use crate::project::PlungeStrategy;
         let mut setup = Setup::default();
         setup.tool.diameter = 3.0;
         setup.tool.rate_h = 800;

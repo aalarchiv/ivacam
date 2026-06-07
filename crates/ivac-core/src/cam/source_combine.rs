@@ -31,10 +31,10 @@ use clipper2_rust::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::cam::setup::ToolOffset;
 use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::{Point2, Segment};
 use crate::project::SourceCombine;
+use crate::project::ToolOffset;
 
 /// Shape of the synthetic frame built around a Pocket-Outside selection.
 /// Rectangle is a plain padded bbox; `RoundedRectangle` uses the same bbox

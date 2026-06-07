@@ -474,10 +474,10 @@ fn thread_lead_in(
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::{MachineConfig, ToolChangeStrategy};
     use crate::geometry::Point2;
     use crate::pipeline::test_helpers::{closed_circle, closed_square_offset, endmill};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{MachineConfig, ToolChangeStrategy};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project};
 
     /// Thread op (rt1.17): a closed circle source + Thread op emits
@@ -984,7 +984,7 @@ mod tests {
                     name: "Profile".into(),
                     enabled: true,
                     kind: OpKind::Profile {
-                        offset: crate::cam::setup::ToolOffset::Outside,
+                        offset: crate::project::ToolOffset::Outside,
                         contour: crate::project::ContourParams::default(),
                         profile: crate::project::ProfileParams::default(),
                     },

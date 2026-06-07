@@ -10,9 +10,10 @@
 // adding a new kind forces a deliberate choice.
 #![allow(clippy::match_same_arms)]
 
-use crate::cam::setup::{MachineConfig, Setup};
+use crate::cam::setup::Setup;
 use crate::cam::source_combine::combine_source_regions;
 use crate::cam::VcObject;
+use crate::project::MachineConfig;
 use crate::project::{Op, OpKind, PassKind, PocketStrategy, Project};
 
 use super::{
@@ -168,7 +169,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     project: &Project,
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<Setup, PipelineError> {
-    use crate::cam::setup::{MachineMode, MillConfig, PocketConfig, ToolConfig, ToolOffset};
+    use crate::project::{MachineMode, MillConfig, PocketConfig, ToolConfig, ToolOffset};
 
     let tool = project
         .tools
@@ -391,9 +392,9 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     let plunge = if trochoidal
         && !matches!(
             op.params.plunge,
-            crate::cam::setup::PlungeStrategy::Helix { .. }
+            crate::project::PlungeStrategy::Helix { .. }
         ) {
-        crate::cam::setup::PlungeStrategy::Helix {
+        crate::project::PlungeStrategy::Helix {
             angle_deg: 3.0,
             radius_mm: Some(tool.diameter * 0.75),
         }
@@ -459,8 +460,8 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     if matches!(tool.kind, crate::project::ToolKind::LaserBeam) && setup.leads.in_length <= 0.0 {
         if let Some(lead_mm) = tool.laser_lead_in_mm.filter(|v| *v > 0.0) {
             setup.leads.in_length = lead_mm;
-            if matches!(setup.leads.r#in, crate::cam::setup::LeadKind::Off) {
-                setup.leads.r#in = crate::cam::setup::LeadKind::Straight;
+            if matches!(setup.leads.r#in, crate::project::LeadKind::Off) {
+                setup.leads.r#in = crate::project::LeadKind::Straight;
             }
         }
     }
@@ -589,7 +590,7 @@ pub(super) fn resolve_auto_helix_radius(
     setup: &mut Setup,
     warnings: &mut Vec<PipelineWarning>,
 ) {
-    use crate::cam::setup::PlungeStrategy;
+    use crate::project::PlungeStrategy;
     let PlungeStrategy::Helix {
         angle_deg,
         radius_mm: None,
@@ -712,7 +713,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             } else {
                 0.0
             };
-            setup.tool = crate::cam::setup::ToolConfig {
+            setup.tool = crate::project::ToolConfig {
                 number: tool.id,
                 name: tool.name.clone(),
                 diameter: tool.diameter,
@@ -798,7 +799,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
         } else {
             0.0
         };
-        setup.tool = crate::cam::setup::ToolConfig {
+        setup.tool = crate::project::ToolConfig {
             number: tool.id,
             name: tool.name.clone(),
             diameter: tool.diameter,
@@ -897,9 +898,9 @@ fn effective_tip_diameter_mm(tool: &crate::project::ToolEntry) -> f64 {
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-    use crate::cam::setup::ToolOffset;
     use crate::pipeline::test_helpers::{endmill, profile_op, project_with};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::ToolOffset;
     use crate::project::{resolve_tool_rates, PassKind};
 
     /// ot80: the lead-in-angle resolver clamps into the physical
@@ -969,7 +970,7 @@ mod tests {
     /// mode is never affected.
     #[test]
     fn plasma_and_laser_kerf_override_effective_cut_diameter() {
-        use crate::cam::setup::MachineMode;
+        use crate::project::MachineMode;
         let mut tool = endmill(1, 10.0); // dummy 10 mm "tool" diameter
         tool.kerf_mm = Some(2.0);
         let op = profile_op(1, 1, ToolOffset::Outside);

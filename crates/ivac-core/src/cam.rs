@@ -40,7 +40,7 @@ pub struct VcObject {
     pub segments: Vec<Segment>,
     pub closed: bool,
     /// "outside" / "inside" / "none" — see `setup::ToolOffset`.
-    pub tool_offset: setup::ToolOffset,
+    pub tool_offset: crate::project::ToolOffset,
     /// Per-object override of the tool-radius offset (None ⇒ tool diameter / 2).
     pub overwrite_offset: Option<f64>,
     /// IDs of objects fully containing this one.
@@ -66,7 +66,7 @@ impl VcObject {
         Self {
             segments,
             closed,
-            tool_offset: setup::ToolOffset::None,
+            tool_offset: crate::project::ToolOffset::None,
             overwrite_offset: None,
             outer_objects: Vec::new(),
             inner_objects: Vec::new(),

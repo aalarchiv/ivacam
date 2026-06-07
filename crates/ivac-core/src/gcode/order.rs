@@ -16,7 +16,7 @@ pub(super) fn order_offsets(
     offsets: &[PolylineOffset],
     start: Point2,
 ) -> Vec<usize> {
-    use crate::cam::setup::ObjectOrder;
+    use crate::project::ObjectOrder;
     let n = offsets.len();
     if n == 0 {
         return Vec::new();

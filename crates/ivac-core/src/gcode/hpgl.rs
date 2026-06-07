@@ -6,8 +6,8 @@
 // conversions are domain-bounded by the plotter's addressable plane.
 #![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 
-use crate::cam::setup::{ToolOffset, UnitSystem};
 use crate::gcode::{CapturedPostState, PostProcessor};
+use crate::project::{ToolOffset, UnitSystem};
 
 #[derive(Debug, Default)]
 pub struct Post {

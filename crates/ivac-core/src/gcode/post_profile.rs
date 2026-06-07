@@ -16,7 +16,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::cam::setup::UnitSystem;
+use crate::project::UnitSystem;
 
 /// A named bundle of override templates the user attaches to a
 /// machine config. Any field left at `None` keeps the built-in

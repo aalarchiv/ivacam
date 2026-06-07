@@ -99,9 +99,9 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::{MachineConfig, ToolChangeStrategy};
     use crate::pipeline::test_helpers::{closed_square_offset, endmill, pocket_op};
     use crate::pipeline::{run_pipeline, PipelineRequest, PostProcessorKind};
+    use crate::project::{MachineConfig, ToolChangeStrategy};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project};
 
     /// Dual-tool Pocket op (rt1.33): when `finish_tool_id` is set to a

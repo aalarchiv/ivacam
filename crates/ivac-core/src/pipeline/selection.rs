@@ -230,9 +230,9 @@ pub(in crate::pipeline) fn op_includes_object(op: &Op, obj: &VcObject, idx: usiz
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cam::setup::ToolOffset;
     use crate::pipeline::test_helpers::{endmill, profile_op, project_with};
     use crate::project::SourceCombine;
+    use crate::project::ToolOffset;
 
     /// 7l0a: an `OpSource::Objects` id that doesn't map to any current
     /// `VcObject` emits `op_source_missing_object` AND, when every id is

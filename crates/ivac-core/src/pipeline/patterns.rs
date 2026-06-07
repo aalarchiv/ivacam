@@ -161,7 +161,6 @@ fn transform_point(p: Point2, inst: PatternInstance) -> Point2 {
 
 #[cfg(test)]
 mod tests {
-    use crate::cam::setup::ToolOffset;
     use crate::geometry::Point2;
     use crate::pipeline::test_helpers::{
         closed_circle, cut_x_values, drill_op_with_pattern, endmill, profile_op, project_with,
@@ -169,6 +168,7 @@ mod tests {
     };
     use crate::pipeline::{run_pipeline, PipelineRequest};
     use crate::project::PatternConfig;
+    use crate::project::ToolOffset;
 
     /// Linear pattern: 3 instances translated dx=20. Drilled positions
     /// span all three X bands and the X range covers all three

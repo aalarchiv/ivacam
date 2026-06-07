@@ -15,11 +15,12 @@
 //! before it crosses the first burning pixel. Laser-only.
 
 use crate::cam::raster::RasterLink;
-use crate::cam::setup::{MachineMode, Setup};
+use crate::cam::setup::Setup;
 use crate::cam::surface_mill::ScanDirection;
 use crate::gcode::PostProcessor;
 use crate::geometry::Point2;
 use crate::pipeline::{CancelToken, PipelineError, PipelineWarning};
+use crate::project::MachineMode;
 use crate::project::{Op, OpKind, Project, ReliefSource};
 
 /// Hard ceiling on resampled pixel count — beyond this the line-buffered

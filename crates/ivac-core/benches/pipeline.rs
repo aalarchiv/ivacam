@@ -12,8 +12,9 @@ use std::path::{Path, PathBuf};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ivac_core::cam::chaining::{classify_containment, segments_to_objects};
 use ivac_core::cam::offsets::{parallel_offset_object, PolylineOffset};
-use ivac_core::cam::setup::{Setup, ToolOffset};
+use ivac_core::cam::setup::Setup;
 use ivac_core::gcode::{emit_polylines, linuxcnc};
+use ivac_core::project::ToolOffset;
 use ivac_core::ImportOptions;
 
 /// Walk up from CWD until we hit the repo root (Cargo.toml + crates/).

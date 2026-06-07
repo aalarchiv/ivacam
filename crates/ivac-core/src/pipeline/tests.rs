@@ -9,12 +9,12 @@
 
 use super::test_helpers::*;
 use super::*;
-use crate::cam::setup::{MachineConfig, ToolChangeStrategy, ToolOffset};
 use crate::geometry::Segment;
 use crate::project::{
     FormProfileSample, Op, OpKind, OpParams, OpSource, SourceCombine, TextAlignment, TextLayer,
     TextLayerKind, ToolEntry, ToolKind,
 };
+use crate::project::{MachineConfig, ToolChangeStrategy, ToolOffset};
 use std::sync::Arc;
 
 /// f60x-C: a `ReliefMill` op with a brightness ramp + a ball-nose tool emits
@@ -565,7 +565,7 @@ fn post_profile_without_axes_keeps_legacy_output() {
         ..MachineConfig::default()
     };
     let machine_without = MachineConfig::default();
-    let project = |m: crate::cam::setup::MachineConfig| Project {
+    let project = |m: crate::project::MachineConfig| Project {
         segments: closed_square_offset(20.0, 0.0, 0.0),
         machine: m,
         tools: vec![endmill(1, 3.0)],
@@ -740,7 +740,7 @@ fn laser_op_emits_pierce_dwell_before_cut() {
     tool.kind = ToolKind::LaserBeam;
     tool.laser_pierce_sec = Some(0.3);
     let machine = MachineConfig {
-        mode: crate::cam::setup::MachineMode::Laser,
+        mode: crate::project::MachineMode::Laser,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -836,7 +836,7 @@ fn raster_engrave_emits_power_modulated_scanlines() {
     let mut tool = endmill(1, 0.1);
     tool.kind = ToolKind::LaserBeam;
     let machine = MachineConfig {
-        mode: crate::cam::setup::MachineMode::Laser,
+        mode: crate::project::MachineMode::Laser,
         ..MachineConfig::default()
     };
     let source = ReliefSource {
@@ -913,7 +913,7 @@ fn raster_scan_direction_sets_scanline_count() {
         let project = Project {
             segments: Vec::new(),
             machine: MachineConfig {
-                mode: crate::cam::setup::MachineMode::Laser,
+                mode: crate::project::MachineMode::Laser,
                 ..MachineConfig::default()
             },
             tools: vec![tool],
@@ -3841,11 +3841,11 @@ fn rectangle_tab_drop_uses_plunge_feedrate() {
     params.start_depth = 0.0;
     params.fast_move_z = 5.0;
     let contour = crate::project::ContourParams {
-        tabs: crate::cam::setup::TabsConfig {
+        tabs: crate::project::TabsConfig {
             active: true,
             width: 5.0,
             height: 1.0,
-            tab_type: crate::cam::setup::TabType::Rectangle,
+            tab_type: crate::project::TabType::Rectangle,
             ramp_angle_deg: 30.0,
         },
         tab_mode: crate::project::TabPlacementMode::Auto { count: 1 },
@@ -3945,7 +3945,7 @@ fn laser_pierce_dwells_at_cut_z() {
     tool.kind = ToolKind::LaserBeam;
     tool.laser_pierce_sec = Some(0.4);
     let machine = MachineConfig {
-        mode: crate::cam::setup::MachineMode::Laser,
+        mode: crate::project::MachineMode::Laser,
         ..MachineConfig::default()
     };
     let project = Project {
@@ -4745,7 +4745,7 @@ fn grbl_atc_without_template_warns() {
 /// not.
 #[test]
 fn grbl_fixed_sensor_without_template_warns() {
-    let sensor = || crate::cam::setup::PostChangeZStrategy::FixedSensor {
+    let sensor = || crate::project::PostChangeZStrategy::FixedSensor {
         position: (200.0, 10.0, 30.0),
         seek_mm: -40.0,
         feed_mm_min: 80,
@@ -4905,7 +4905,7 @@ fn tool_length_offsets_off_emits_no_g43() {
 /// Build a 2-tool manual program; tool 2 carries `z_shift`. Returns the
 /// emitted gcode under the given post-change-Z strategy.
 fn two_tool_manual_gcode(
-    strategy: crate::cam::setup::PostChangeZStrategy,
+    strategy: crate::project::PostChangeZStrategy,
     tool2_z_shift: Option<f64>,
 ) -> String {
     let machine = MachineConfig {
@@ -4949,7 +4949,7 @@ fn two_tool_manual_gcode(
 /// `z_shift` (a `G92 Z`) and emits NO probe — existing output unchanged.
 #[test]
 fn post_change_z_none_preserves_static_zshift() {
-    let g = two_tool_manual_gcode(crate::cam::setup::PostChangeZStrategy::None, Some(1.5));
+    let g = two_tool_manual_gcode(crate::project::PostChangeZStrategy::None, Some(1.5));
     assert!(
         g.contains("G92 Z1.5"),
         "None strategy must keep the static z_shift G92 Z1.5:\n{g}"
@@ -4966,7 +4966,7 @@ fn post_change_z_none_preserves_static_zshift() {
 #[test]
 fn post_change_z_probe_chains_g38_after_manual_change() {
     let g = two_tool_manual_gcode(
-        crate::cam::setup::PostChangeZStrategy::Probe {
+        crate::project::PostChangeZStrategy::Probe {
             distance_mm: -5.0,
             feed_mm_min: 100,
             plate_thickness_mm: 2.0,
@@ -4991,7 +4991,7 @@ fn post_change_z_probe_chains_g38_after_manual_change() {
 #[test]
 fn post_change_z_manual_touchoff_prompts_before_pause() {
     let g = two_tool_manual_gcode(
-        crate::cam::setup::PostChangeZStrategy::ManualTouchoff,
+        crate::project::PostChangeZStrategy::ManualTouchoff,
         Some(1.5),
     );
     let op1 = must_find(&g, "; OP 1");
@@ -5019,7 +5019,7 @@ fn post_change_z_manual_touchoff_prompts_before_pause() {
 #[test]
 fn post_change_z_fixed_sensor_probes_at_machine_position() {
     let g = two_tool_manual_gcode(
-        crate::cam::setup::PostChangeZStrategy::FixedSensor {
+        crate::project::PostChangeZStrategy::FixedSensor {
             position: (200.0, 10.0, 30.0),
             seek_mm: -40.0,
             feed_mm_min: 80,
@@ -5049,7 +5049,7 @@ fn post_change_z_fixed_sensor_probes_at_machine_position() {
 #[test]
 fn post_change_z_fixed_sensor_reference_tool_gets_touchoff_prompt() {
     let g = two_tool_manual_gcode(
-        crate::cam::setup::PostChangeZStrategy::FixedSensor {
+        crate::project::PostChangeZStrategy::FixedSensor {
             position: (200.0, 10.0, 30.0),
             seek_mm: -40.0,
             feed_mm_min: 80,
@@ -5081,7 +5081,7 @@ fn post_change_z_fixed_sensor_reference_tool_gets_touchoff_prompt() {
 #[test]
 fn inch_units_emit_scaled_numbers() {
     let machine = MachineConfig {
-        unit: crate::cam::setup::UnitSystem::Inch,
+        unit: crate::project::UnitSystem::Inch,
         ..MachineConfig::default()
     };
     let mut profile = profile_op(1, 1, ToolOffset::Outside);
@@ -5588,7 +5588,7 @@ fn pause_op_does_not_lock_spindle_direction() {
 /// `MachineMode::Mill`.
 #[test]
 fn laser_mode_toolchange_envelope_emits_no_spindle_commands() {
-    use crate::cam::setup::MachineMode;
+    use crate::project::MachineMode;
     let mut t1 = endmill(1, 6.0);
     t1.kind = ToolKind::LaserBeam;
     t1.speed = 1000;

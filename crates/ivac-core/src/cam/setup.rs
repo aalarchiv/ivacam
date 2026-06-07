@@ -380,94 +380,12 @@ pub struct PocketConfig {
     pub nocontour: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct TabsConfig {
-    pub active: bool,
-    pub width: f64,
-    /// Z height the cutter lifts to over a tab (positive distance above
-    /// the cut floor). The actual tab Z is `mill.depth + tabs.height`.
-    pub height: f64,
-    pub tab_type: TabType,
-    /// Ramp angle in degrees, used only when `tab_type == Ramp`. The
-    /// horizontal length of each ramp into / out of a tab is
-    /// `tabs.height / tan(ramp_angle_deg)`. 30° gives a 1:√3 slope.
-    /// Ignored for Rectangle tabs.
-    #[serde(
-        default = "default_ramp_angle",
-        skip_serializing_if = "is_default_ramp_angle"
-    )]
-    pub ramp_angle_deg: f64,
-}
-
-fn default_ramp_angle() -> f64 {
-    30.0
-}
-
-fn is_default_ramp_angle(angle: &f64) -> bool {
-    (angle - 30.0).abs() < 1e-9
-}
-
-impl Default for TabsConfig {
-    fn default() -> Self {
-        Self {
-            active: false,
-            width: 10.0,
-            height: 1.0,
-            tab_type: TabType::Rectangle,
-            ramp_angle_deg: default_ramp_angle(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum TabType {
-    #[default]
-    Rectangle,
-    Ramp,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct LeadsConfig {
-    pub r#in: LeadKind,
-    pub out: LeadKind,
-    /// Lead-in size. Interpreted by `LeadKind`:
-    /// * `Straight`: straight-line LENGTH (mm) of the approach.
-    /// * `Arc`: tangent roll-on arc RADIUS (mm). The arc sweeps a quarter
-    ///   turn from the approach point (radius away on the perpendicular)
-    ///   to the contour start, landing tangent to the first cut segment.
-    /// * `Off`: ignored.
-    // sic: the serialized field name keeps the original `in_length`
-    // misspelling so the wire contract / schema / saved project files are
-    // unchanged; only the Rust identifier is corrected to `in_length`.
-    #[serde(rename = "in_lenght")]
-    pub in_length: f64,
-    /// Lead-out size. Same interpretation as `in_length` but applied at
-    /// the END of the cut path (cutter rolls off the contour at Pn).
-    #[serde(rename = "out_lenght")]
-    pub out_length: f64,
-}
-
-impl Default for LeadsConfig {
-    fn default() -> Self {
-        Self {
-            r#in: LeadKind::Off,
-            out: LeadKind::Off,
-            in_length: 5.0,
-            out_length: 5.0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum LeadKind {
-    #[default]
-    Off,
-    Straight,
-    Arc,
-}
-
+// The per-op contour config (tabs + leads) moved to
+// `crate::project::params` to sit next to `ContourParams`, which
+// embeds them — an op's full shape now reads in one module.
+// Re-exported so existing `crate::cam::setup::{TabsConfig, …}`
+// imports resolve unchanged.
+pub use crate::project::params::{LeadKind, LeadsConfig, TabType, TabsConfig};
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AxisLimits {
     pub x: f64,

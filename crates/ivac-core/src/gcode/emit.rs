@@ -280,6 +280,63 @@ pub(super) fn emit_offset<P: PostProcessor>(
     *last_pos = offset.segments.last().map_or(start, |s| s.end);
 }
 
+/// Single-pass emit for the plot-mode / drag-knife / plasma modes that
+/// collapse the multi-pass schedule to ONE pass at the cut depth.
+///
+/// rt1.35: laser / plasma / pen-plotter / 3D-printer / drag-knife
+/// controllers expect binary pen-up / pen-down Z — the multi-step
+/// descent + helix / ramp / finish_step / through_depth / depth_list
+/// machinery is noise. 6yhs: `MachineMode::Drag` collapses here even when
+/// the global `plot_mode_z` is off (`setup_resolver` pins `mode = Drag`
+/// per-op for `DragKnife`); the knife is locked at one depth, so extra
+/// passes only wear the Z axis. zpuk: Plasma holds the torch at
+/// `cut_height_mm` for the whole cut.
+fn emit_single_pass<P: PostProcessor>(
+    setup: &Setup,
+    segments: &[Segment],
+    rate_v: u32,
+    rate_h: u32,
+    post: &mut P,
+) {
+    // zpuk: plasma cuts at `cut_height_mm` above stock (positive Z), NOT
+    // at `mill.depth` (the milling-style depth below stock). For
+    // plot_mode_z / Drag the cut Z is still mill.depth.min(0).
+    let cut_z = if setup.machine.mode == MachineMode::Plasma {
+        // Default 1.5 mm if the resolved value is 0 (legacy projects
+        // without plasma fields set).
+        if setup.tool.cut_height_mm > 0.0 {
+            setup.tool.cut_height_mm
+        } else {
+            1.5
+        }
+    } else {
+        setup.mill.depth.min(0.0)
+    };
+    // For plot_mode_z / Drag we still need to dive to cut_z (the lead-in
+    // plunges to mill.start_depth, which may not equal the cut depth). For
+    // Plasma the lead-in already dropped to cut_height — the post
+    // delta-encodes Z so re-emitting is a no-op, but skip it for clarity.
+    if setup.machine.mode != MachineMode::Plasma {
+        post.feedrate(rate_v);
+        post.linear(None, None, Some(cut_z));
+    }
+    post.feedrate(rate_h);
+    let dragoff = setup.tool.dragoff.unwrap_or(0.0);
+    let fitted = fit_line_runs(segments, setup);
+    // Single-pass; a fresh whirl state is fine.
+    let mut whirl_state = WhirlState::default();
+    emit_cut_path(
+        &fitted,
+        setup,
+        cut_z,
+        dragoff,
+        rate_h,
+        setup.mill.corner_feed_reduction,
+        &mut whirl_state,
+        post,
+    );
+}
+
 // multi_pass walks the Z schedule with per-pass tab handling, helix
 // state, and ramp planning. Splitting would scatter the per-pass state
 // (helix-entry plan, ramp-length tracking) across multiple helpers.
@@ -306,74 +363,15 @@ fn multi_pass<P: PostProcessor>(
         setup.tool.rate_h
     };
 
-    // Plot-mode (rt1.35): emit ONE pass at the op's cut depth,
-    // skipping the multi-step schedule + helix / ramp / finish_step /
-    // through_depth / depth_list machinery. Laser / plasma / pen
-    // plotter / 3D-printer / drag-knife controllers expect binary
-    // pen-up / pen-down Z values; all the descent stages are noise.
-    //
-    // 6yhs: MachineMode::Drag also collapses to a single pass even
-    // when the global `plot_mode_z` is off. setup_resolver pins
-    // setup.machine.mode = Drag per-op for OpKind::DragKnife
-    // (see setup_resolver.rs:349-351); without this branch, a Drag op
-    // on a Mill-default machine (hobby Shapeoko with a knife taped to
-    // the spindle) walked the same path N times at incrementally more
-    // negative Z values. The knife is physically locked at one
-    // depth — extra passes do nothing useful except wear the Z axis
-    // and waste cycle time. Mirror the plot_mode_z branch: one pass
-    // at the configured `depth`.
-    //
-    // zpuk: Plasma is also a single-pass mode — the torch height stays
-    // at `cut_height_mm` for the whole cut, never stepping down. The
-    // pre-cut pierce + height drop is emitted up in emit_offset BEFORE
-    // multi_pass runs, so by the time we reach here Z is already at
-    // cut_height. Skipping the schedule keeps the walk at constant Z.
+    // Plot-mode / drag-knife / plasma collapse the whole Z schedule to
+    // ONE pass at the cut depth (no descent / helix / ramp / tabs) — see
+    // [`emit_single_pass`]. `tabs` is meaningless on these single-pass
+    // paths; it's consumed by the multi-pass schedule walk below.
     if setup.machine.plot_mode_z
         || setup.machine.mode == MachineMode::Drag
         || setup.machine.mode == MachineMode::Plasma
     {
-        // zpuk: plasma cuts at `cut_height_mm` above stock (positive
-        // Z), NOT at `mill.depth` (which is the milling-style depth
-        // below stock). For plot_mode_z / Drag the cut Z is still
-        // mill.depth.min(0). The lead-in in emit_offset already
-        // positioned Z at cut_height for plasma; we only need to
-        // re-emit the linear-to-cut-Z guard for plot_mode_z / Drag.
-        let cut_z = if setup.machine.mode == MachineMode::Plasma {
-            // Default 1.5 mm if the resolved value is 0 (legacy
-            // projects without plasma fields set).
-            if setup.tool.cut_height_mm > 0.0 {
-                setup.tool.cut_height_mm
-            } else {
-                1.5
-            }
-        } else {
-            setup.mill.depth.min(0.0)
-        };
-        // For plot_mode_z / Drag we still need to dive to cut_z (the
-        // lead-in plunges to mill.start_depth which may not equal
-        // the cut depth). For Plasma the lead-in already dropped to
-        // cut_height — the post delta-encodes Z so re-emitting the
-        // same Z is a no-op, but skip it anyway for clarity.
-        if setup.machine.mode != MachineMode::Plasma {
-            post.feedrate(rate_v);
-            post.linear(None, None, Some(cut_z));
-        }
-        post.feedrate(rate_h);
-        let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-        let fitted = fit_line_runs(segments, setup);
-        // Plot mode is single-pass; a fresh whirl state is fine.
-        let mut whirl_state = WhirlState::default();
-        emit_cut_path(
-            &fitted,
-            setup,
-            cut_z,
-            dragoff,
-            rate_h,
-            setup.mill.corner_feed_reduction,
-            &mut whirl_state,
-            post,
-        );
-        let _ = tabs; // tabs are meaningless in plot mode
+        emit_single_pass(setup, segments, rate_v, rate_h, post);
         return;
     }
     // Build the Z schedule. depth_list (when non-empty) wins as an

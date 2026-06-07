@@ -45,6 +45,23 @@ pub(in crate::pipeline) fn raster_would_emit(op: &Op, project: &Project) -> bool
         && find_source(project, *source_id).is_some_and(|s| !s.brightness.is_empty())
 }
 
+/// Post-resample grid dimensions for a `target_pitch`, computed WITHOUT
+/// allocating. `resample` returns exactly these dims, so the emit cap can
+/// be enforced against them before the (potentially huge) grid is built —
+/// otherwise a tiny `target_pitch` blows up the allocation before the
+/// pixel-count guard even runs. Mirrors `resample`'s identity short-circuit
+/// (untouched dims when pitch is ≤0, within 1 µm of `cell`, or empty).
+fn resampled_dims(cols: usize, rows: usize, cell: f64, target_pitch: f64) -> (usize, usize) {
+    if target_pitch <= 0.0 || (target_pitch - cell).abs() < 1e-6 || cols == 0 || rows == 0 {
+        return (cols, rows);
+    }
+    let width = cols as f64 * cell;
+    let height = rows as f64 * cell;
+    let new_cols = ((width / target_pitch).round() as usize).max(1);
+    let new_rows = ((height / target_pitch).round() as usize).max(1);
+    (new_cols, new_rows)
+}
+
 /// Nearest-neighbour resample of a brightness grid to a new square pitch.
 /// Returns `(brightness, cols, rows)` at `target_pitch`. A `target_pitch`
 /// at/below 0 or within 1 µm of `cell` returns the grid untouched.
@@ -58,10 +75,7 @@ fn resample(
     if target_pitch <= 0.0 || (target_pitch - cell).abs() < 1e-6 || cols == 0 || rows == 0 {
         return (brightness.to_vec(), cols, rows);
     }
-    let width = cols as f64 * cell;
-    let height = rows as f64 * cell;
-    let new_cols = ((width / target_pitch).round() as usize).max(1);
-    let new_rows = ((height / target_pitch).round() as usize).max(1);
+    let (new_cols, new_rows) = resampled_dims(cols, rows, cell, target_pitch);
     let mut out = vec![0.0f32; new_cols * new_rows];
     for ny in 0..new_rows {
         // Sample at the centre of each target cell, mapped back to source.
@@ -117,13 +131,12 @@ pub(in crate::pipeline) fn run_raster_op<P: PostProcessor>(
     }
 
     let cell = if source.cell > 0.0 { source.cell } else { 1.0 };
-    let (brightness, cols, rows) = resample(
-        &source.brightness,
-        source.cols as usize,
-        source.rows as usize,
-        cell,
-        *resolution_mm,
-    );
+    let in_cols = source.cols as usize;
+    let in_rows = source.rows as usize;
+    // Enforce the emit cap against the PROJECTED resample dims, before
+    // `resample` allocates the grid — a tiny resolution_mm would otherwise
+    // balloon the allocation past the cap the guard is meant to enforce.
+    let (cols, rows) = resampled_dims(in_cols, in_rows, cell, *resolution_mm);
     if cols
         .checked_mul(rows)
         .map_or(true, |n| n > MAX_RASTER_PIXELS)
@@ -138,10 +151,15 @@ pub(in crate::pipeline) fn run_raster_op<P: PostProcessor>(
         });
         return Ok(());
     }
+    let (brightness, cols, rows) =
+        resample(&source.brightness, in_cols, in_rows, cell, *resolution_mm);
 
     // Per-pixel power, computed once over the whole grid (Floyd–Steinberg
     // diffuses across rows, so the row walk must see the full result).
     let powers = power_curve.power_grid(&brightness, cols, rows);
+    // Brightness isn't needed past the power grid; free it before the emit
+    // loop so a large raster doesn't hold both grids live during emit.
+    drop(brightness);
     if powers.is_empty() {
         return Ok(());
     }
@@ -275,5 +293,32 @@ mod tests {
         let (out, c, r) = resample(&b, 4, 4, 0.1, 0.2);
         assert_eq!((c, r), (2, 2));
         assert_eq!(out.len(), 4);
+    }
+
+    #[test]
+    fn resampled_dims_matches_resample_output() {
+        // The cap is enforced against resampled_dims, so it must predict
+        // exactly the dims resample returns — for both the identity
+        // short-circuit and a genuine resample.
+        let b: Vec<f32> = (0..16).map(|i| i as f32 / 16.0).collect();
+        for (cell, pitch) in [(0.1, 0.1), (0.1, 0.0), (0.1, 0.2), (0.1, 0.05)] {
+            let (_, c, r) = resample(&b, 4, 4, cell, pitch);
+            assert_eq!(
+                resampled_dims(4, 4, cell, pitch),
+                (c, r),
+                "dims mismatch at cell={cell}, pitch={pitch}"
+            );
+        }
+    }
+
+    #[test]
+    fn resampled_dims_explodes_for_tiny_pitch() {
+        // A 2 mm-wide grid at a 0.0001 mm pitch projects to 20_000 px per
+        // axis (400 Mpx) — well over MAX_RASTER_PIXELS. The guard reads
+        // these dims BEFORE resample allocates, so the cap trips without
+        // first materializing a 400 M-element grid.
+        let (c, r) = resampled_dims(2, 2, 1.0, 0.0001);
+        assert_eq!((c, r), (20_000, 20_000));
+        assert!(c.checked_mul(r).is_some_and(|n| n > MAX_RASTER_PIXELS));
     }
 }

@@ -1122,6 +1122,9 @@ fn program_only_label(kind: &OpKind) -> &'static str {
 /// `state_before_reset` is the post's live delta-encoding state captured
 /// BEFORE the per-op `reset_state()` — GcodeInclude's `{x}`/`{y}`/… var
 /// expansion reads the previous op's exit position from it.
+// The per-kind dispatch arms (one block per program-only op) push the body
+// past 100 lines; splitting them out would scatter a single match.
+#[allow(clippy::too_many_lines)]
 fn emit_program_only_op<P: PostProcessor>(
     op: &Op,
     project: &Project,
@@ -1269,6 +1272,10 @@ fn emit_program_only_op<P: PostProcessor>(
     }
 }
 
+// The op-emit driver threads cache/progress/warning bookkeeping around the
+// per-op dispatch in one place; the linear body runs past 100 lines but
+// reads top-to-bottom as a single pass.
+#[allow(clippy::too_many_lines)]
 fn run_per_op<P, F>(
     project: &Project,
     objects: &[VcObject],

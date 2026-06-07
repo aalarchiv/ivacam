@@ -191,6 +191,9 @@ impl BBox {
 /// fill code relies on. `verts` is an open ring (the closing edge is
 /// implied). Contrast [`is_inside_polygon`], the plain no-epsilon ray
 /// cast used where exact-boundary behavior doesn't matter.
+// x/y (the test point) and the scanline locals (n, i, j) are the
+// conventional single-letter names for a ray-cast crossing count.
+#[allow(clippy::many_single_char_names)]
 #[must_use]
 pub fn point_in_polygon(verts: &[Point2], x: f64, y: f64) -> bool {
     let n = verts.len();

@@ -82,16 +82,10 @@ pub(super) fn build_op_offsets(
     if cancelled(cancel) {
         return Err(PipelineError::Cancelled);
     }
-    // Discard any stale panic records left over by a prior op on this
-    // thread (defensive — every op-completion path also drains, so this
-    // should be empty in normal operation).
-    let _ = crate::cam::offsets::take_parallel_offset_panics();
-    // 0tsy: same defensive drain for nocontour-allowance ignored events
-    // so a stale entry from a prior op can't get attributed to this one.
-    let _ = crate::cam::offsets::take_nocontour_allowance_ignored();
-    // cpym: defensive drain for zigzag-stride-degenerate events so a
-    // stale entry from a prior op can't bleed into this one.
-    let _ = crate::cam::offsets::take_zigzag_stride_degenerate();
+    // Defensive: discard any diagnostics left over by a prior op on this
+    // thread so a stale entry can't be attributed to this one. One drain
+    // clears every channel (was three separate take_* calls).
+    let _ = crate::cam::offsets::take_offset_diagnostics();
     // Up-front sanity checks that don't depend on whether the cascade
     // succeeds. push_tool_fit_kind_warnings populates `warnings` for
     // tool-kind / op-kind mismatches and impossible tool geometry.
@@ -399,12 +393,8 @@ pub(super) fn build_op_offsets(
                 crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
             }
             push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
-            drain_parallel_offset_panics(effective_op, warnings);
-            drain_pocket_cascade_truncations(effective_op, warnings);
+            drain_offset_diagnostics(effective_op, warnings);
             drain_trochoidal_incompletes(effective_op, warnings);
-            drain_approach_point_far_rotations(effective_op, warnings);
-            drain_nocontour_allowance_ignored(effective_op, warnings);
-            drain_zigzag_stride_degenerate(effective_op, warnings);
             return Ok((offsets, closed));
         }
     }
@@ -715,12 +705,8 @@ pub(super) fn build_op_offsets(
         crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
     }
     push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
-    drain_parallel_offset_panics(effective_op, warnings);
-    drain_pocket_cascade_truncations(effective_op, warnings);
+    drain_offset_diagnostics(effective_op, warnings);
     drain_trochoidal_incompletes(effective_op, warnings);
-    drain_approach_point_far_rotations(effective_op, warnings);
-    drain_nocontour_allowance_ignored(effective_op, warnings);
-    drain_zigzag_stride_degenerate(effective_op, warnings);
     Ok((offsets, closed))
 }
 
@@ -743,52 +729,31 @@ fn drain_trochoidal_incompletes(op: &Op, warnings: &mut Vec<PipelineWarning>) {
     }
 }
 
-/// 0tsy: drain any `NocontourAllowanceIgnored` events stashed by
-/// `pocket_for_object` and surface them as
-/// `nocontour_ignores_finish_allowance` warnings. The function folded
-/// the allowance back to 0 (rough cascade walked the wall straight)
-/// because no wall ring would have removed the stock; the user picked
-/// an incompatible combination and we want them to know.
-fn drain_nocontour_allowance_ignored(op: &Op, warnings: &mut Vec<PipelineWarning>) {
-    for ev in crate::cam::offsets::take_nocontour_allowance_ignored() {
+/// Drain the offset diagnostics this op produced — one bundled channel
+/// (see [`crate::cam::offsets::OffsetDiagnostics`]) — and surface each
+/// event as a `PipelineWarning`. Replaces five separate per-kind drains.
+fn drain_offset_diagnostics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
+    let diag = crate::cam::offsets::take_offset_diagnostics();
+
+    // z4t6: cavalier_contours panics trapped by parallel_offset_object —
+    // already caught (the pipeline kept running); this makes them VISIBLE.
+    for panic in diag.parallel_offset_panics {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
-            kind: "nocontour_ignores_finish_allowance".into(),
+            kind: "parallel_offset_panicked".into(),
             message: format!(
-                "op '{}': pocket_nocontour=true skips the wall ring, so the configured XY finish allowance ({:.3} mm) has no finish pass to remove it. The allowance was ignored — the rough cascade walks the wall directly at the tool radius. To get a finishing wall pass, turn pocket_nocontour off (or use the dual-tool finish-radius path instead).",
-                op.name, ev.allowance_mm,
+                "op '{}': parallel-offset on layer '{}' (bbox ({:.2}, {:.2}) → ({:.2}, {:.2}), digest {:#018x}, delta {:.3}) tripped a cavalier_contours assert and produced no toolpath. Try simplifying or re-tessellating the contour (e.g. remove self-touching vertices in HATCH boundaries / ELLIPSE flattening).",
+                op.name, panic.layer, panic.bbox_min_x, panic.bbox_min_y,
+                panic.bbox_max_x, panic.bbox_max_y, panic.input_digest, panic.delta,
             ),
         });
+        // Color is exposed via the structured kind tag for tests, not the message.
+        let _ = panic.color;
     }
-}
 
-/// cpym: drain any zigzag-stride-degenerate events stashed by
-/// [`crate::cam::offsets::pocket_zigzag`] for the current op and surface
-/// them as `zigzag_stride_clamped_below_minimum` warnings. Pre-cpym a
-/// sub-mm stride (mirror-finish raster) was silently clamped to 0.1 mm
-/// and the user got coarser scallops than requested; now strides below
-/// FP working precision still bail (the algorithm can't do anything
-/// useful with them) but the user is told instead of left guessing.
-fn drain_zigzag_stride_degenerate(op: &Op, warnings: &mut Vec<PipelineWarning>) {
-    for ev in crate::cam::offsets::take_zigzag_stride_degenerate() {
-        warnings.push(PipelineWarning {
-            op_id: Some(op.id),
-            kind: "zigzag_stride_clamped_below_minimum".into(),
-            message: format!(
-                "op '{}': zigzag pocket stride of {:.6} mm is below the working precision (1e-6 mm) — no raster strokes were emitted. Set the per-pass step to at least 1e-6 mm (sub-fp strides cannot be represented stably). For mirror-finish work pick a stride that resolves at your DRO precision (typically ≥ 0.01 mm).",
-                op.name, ev.stride_mm,
-            ),
-        });
-    }
-}
-
-/// mdpo: drain any cascade-truncation events stashed by
-/// `pocket_cascade_with_islands` for the current op and surface them as
-/// `pocket_cascade_truncated` warnings. Truncation means the inside-most
-/// rings of a very large pocket weren't carved — the user sees a hollow
-/// doughnut otherwise.
-fn drain_pocket_cascade_truncations(op: &Op, warnings: &mut Vec<PipelineWarning>) {
-    for ev in crate::cam::offsets::take_pocket_cascade_truncations() {
+    // mdpo: ring-cap truncations from pocket_cascade_with_islands — inner
+    // rings of a very large pocket weren't carved (hollow doughnut).
+    for ev in diag.pocket_cascade_truncations {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
             kind: "pocket_cascade_truncated".into(),
@@ -798,14 +763,10 @@ fn drain_pocket_cascade_truncations(op: &Op, warnings: &mut Vec<PipelineWarning>
             ),
         });
     }
-}
 
-/// kzz9: drain any far-approach-point records stashed by
-/// `rotate_offsets_to_approach_point` and surface them as
-/// `rotate_offsets_far_from_approach` warnings. Typical cause: the user
-/// moved the source contour after picking the approach point.
-fn drain_approach_point_far_rotations(op: &Op, warnings: &mut Vec<PipelineWarning>) {
-    for ev in crate::cam::offsets::take_approach_point_far_rotations() {
+    // kzz9: far approach-point rotations — usually a stale approach point
+    // after the user moved the source contour.
+    for ev in diag.approach_point_far {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
             kind: "rotate_offsets_far_from_approach".into(),
@@ -815,35 +776,31 @@ fn drain_approach_point_far_rotations(op: &Op, warnings: &mut Vec<PipelineWarnin
             ),
         });
     }
-}
 
-/// z4t6: drain any `cavalier_contours` panics trapped by
-/// `parallel_offset_object` during the current op and surface them as
-/// `parallel_offset_panicked` `PipelineWarning`s. The panic itself was
-/// already caught (the pipeline kept running); this is where we make it
-/// VISIBLE to the user via the warnings sidebar instead of only the
-/// stderr log.
-fn drain_parallel_offset_panics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
-    for panic in crate::cam::offsets::take_parallel_offset_panics() {
+    // 0tsy: nocontour+allowance conflict folded by pocket_for_object (the
+    // allowance had no finish pass to remove it).
+    for ev in diag.nocontour_allowance_ignored {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
-            kind: "parallel_offset_panicked".into(),
+            kind: "nocontour_ignores_finish_allowance".into(),
             message: format!(
-                "op '{}': parallel-offset on layer '{}' (bbox ({:.2}, {:.2}) → ({:.2}, {:.2}), digest {:#018x}, delta {:.3}) tripped a cavalier_contours assert and produced no toolpath. Try simplifying or re-tessellating the contour (e.g. remove self-touching vertices in HATCH boundaries / ELLIPSE flattening).",
-                op.name,
-                panic.layer,
-                panic.bbox_min_x,
-                panic.bbox_min_y,
-                panic.bbox_max_x,
-                panic.bbox_max_y,
-                panic.input_digest,
-                panic.delta,
+                "op '{}': pocket_nocontour=true skips the wall ring, so the configured XY finish allowance ({:.3} mm) has no finish pass to remove it. The allowance was ignored — the rough cascade walks the wall directly at the tool radius. To get a finishing wall pass, turn pocket_nocontour off (or use the dual-tool finish-radius path instead).",
+                op.name, ev.allowance_mm,
             ),
         });
-        // Color is captured but we don't include it in the human message
-        // — it's exposed in the structured PipelineWarning kind tag for
-        // tests that want to assert on it deterministically.
-        let _ = panic.color;
+    }
+
+    // cpym: degenerate zigzag stride bailed by pocket_zigzag (sub-fp stride
+    // would have been silently clamped pre-cpym).
+    for ev in diag.zigzag_stride_degenerate {
+        warnings.push(PipelineWarning {
+            op_id: Some(op.id),
+            kind: "zigzag_stride_clamped_below_minimum".into(),
+            message: format!(
+                "op '{}': zigzag pocket stride of {:.6} mm is below the working precision (1e-6 mm) — no raster strokes were emitted. Set the per-pass step to at least 1e-6 mm (sub-fp strides cannot be represented stably). For mirror-finish work pick a stride that resolves at your DRO precision (typically ≥ 0.01 mm).",
+                op.name, ev.stride_mm,
+            ),
+        });
     }
 }
 

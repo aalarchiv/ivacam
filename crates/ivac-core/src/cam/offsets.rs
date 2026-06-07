@@ -293,6 +293,42 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
         .collect()
 }
 
+/// All diagnostics the offset / pocket-fill routines can raise during one
+/// op's offset build, drained as a SINGLE channel by
+/// `pipeline::offset_builder`.
+///
+/// Each event is produced deep inside an otherwise-pure CAM function
+/// (parallel offset, pocket cascade / zigzag, approach-point rotation)
+/// where threading a sink through every signature would be noise — and
+/// `PipelineWarning` is a pipeline-layer type this module must not depend
+/// on. They accumulate in per-kind thread-locals; [`take_offset_diagnostics`]
+/// bundles them so the consumer drains ONE thing and translates each into a
+/// `PipelineWarning`, instead of juggling five separate `take_*` calls plus
+/// a multi-call reset dance.
+#[derive(Debug, Default)]
+pub struct OffsetDiagnostics {
+    pub parallel_offset_panics: Vec<ParallelOffsetPanic>,
+    pub pocket_cascade_truncations: Vec<PocketCascadeTruncation>,
+    pub nocontour_allowance_ignored: Vec<NocontourAllowanceIgnored>,
+    pub zigzag_stride_degenerate: Vec<ZigzagStrideDegenerate>,
+    pub approach_point_far: Vec<ApproachPointFarRotation>,
+}
+
+/// Drain (and clear) ALL offset diagnostics collected on this thread in one
+/// call. The pipeline calls this once per op defensively before the offset
+/// build (discard a prior op's leftovers) and once after to collect + surface
+/// this op's events.
+#[must_use]
+pub fn take_offset_diagnostics() -> OffsetDiagnostics {
+    OffsetDiagnostics {
+        parallel_offset_panics: take_parallel_offset_panics(),
+        pocket_cascade_truncations: take_pocket_cascade_truncations(),
+        nocontour_allowance_ignored: take_nocontour_allowance_ignored(),
+        zigzag_stride_degenerate: take_zigzag_stride_degenerate(),
+        approach_point_far: take_approach_point_far_rotations(),
+    }
+}
+
 /// Structured record produced when `parallel_offset_object` traps a
 /// `cavalier_contours` panic. The pipeline drains the thread-local sink
 /// after each op and converts these into `PipelineWarning`s tagged
@@ -366,7 +402,7 @@ fn record_parallel_offset_panic(obj: &VcObject, delta: f64) {
 /// `parallel_offset_object` on this thread. The pipeline calls this once
 /// per op so panics get attributed to the op that triggered them.
 #[must_use]
-pub fn take_parallel_offset_panics() -> Vec<ParallelOffsetPanic> {
+fn take_parallel_offset_panics() -> Vec<ParallelOffsetPanic> {
     PARALLEL_OFFSET_PANICS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
@@ -393,7 +429,7 @@ thread_local! {
 /// Drain (and clear) any cascade-truncation records stashed by
 /// `pocket_cascade_with_islands` on this thread.
 #[must_use]
-pub fn take_pocket_cascade_truncations() -> Vec<PocketCascadeTruncation> {
+fn take_pocket_cascade_truncations() -> Vec<PocketCascadeTruncation> {
     POCKET_CASCADE_TRUNCATIONS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
@@ -418,7 +454,7 @@ thread_local! {
 /// Drain (and clear) any `NocontourAllowanceIgnored` events stashed by
 /// `pocket_for_object` on this thread.
 #[must_use]
-pub fn take_nocontour_allowance_ignored() -> Vec<NocontourAllowanceIgnored> {
+fn take_nocontour_allowance_ignored() -> Vec<NocontourAllowanceIgnored> {
     NOCONTOUR_ALLOWANCE_IGNORED.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
@@ -449,7 +485,7 @@ thread_local! {
 /// Drain (and clear) any `ZigzagStrideDegenerate` records stashed by
 /// [`pocket_zigzag`] on this thread.
 #[must_use]
-pub fn take_zigzag_stride_degenerate() -> Vec<ZigzagStrideDegenerate> {
+fn take_zigzag_stride_degenerate() -> Vec<ZigzagStrideDegenerate> {
     ZIGZAG_STRIDE_DEGENERATE.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
@@ -1217,7 +1253,7 @@ thread_local! {
 /// Drain (and clear) any far-approach-point records stashed by
 /// [`rotate_offsets_to_approach_point`] on this thread.
 #[must_use]
-pub fn take_approach_point_far_rotations() -> Vec<ApproachPointFarRotation> {
+fn take_approach_point_far_rotations() -> Vec<ApproachPointFarRotation> {
     APPROACH_POINT_FAR.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 

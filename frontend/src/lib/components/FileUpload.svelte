@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// Drag-and-drop overlay + hidden file inputs + URL-param boot loader.
+  /// Hidden file inputs + URL-param boot loader + file-association wiring.
   ///
   /// Now headless: the user-visible Open / Save / Sample buttons live in
   /// the App.svelte toolbar and call `services/file_ops.ts` directly. This
@@ -7,15 +7,17 @@
   ///
   ///   * The two `<input type=file hidden>` elements that `file_ops` clicks
   ///     when running in a browser (no native picker available).
-  ///   * The full-window drag-and-drop catcher.
   ///   * The URL-param boot loader (?sample=…&gen=…) and the
   ///     `app:open_path` Tauri event listener for OS file-association
   ///     launches.
+  ///
+  /// Drag-and-drop lives entirely in App.svelte (richer drag visual +
+  /// the unsaved-changes guard). A duplicate window 'drop' listener here
+  /// used to double-import every dropped file — removed (944t).
 
   import { onMount } from 'svelte';
   import { wireFileAssociationOpen } from '../state/desktop';
   import {
-    importDroppedFile,
     loadFile,
     loadFromPath,
     loadProjectFile,
@@ -24,7 +26,6 @@
   } from '../services/file_ops';
   import ErrorToast from './ErrorToast.svelte';
 
-  let dragOver = $state(false);
   let inputEl: HTMLInputElement;
   let projectInput: HTMLInputElement;
 
@@ -41,25 +42,6 @@
     target.value = '';
   }
 
-  function onWindowDragOver(e: DragEvent) {
-    if (!e.dataTransfer?.types.includes('Files')) return;
-    e.preventDefault();
-    dragOver = true;
-  }
-  function onWindowDragLeave(e: DragEvent) {
-    // Only count it as "left" when the cursor leaves the window itself,
-    // not when the drag crosses between child elements (the browser
-    // fires dragleave on every nested element transition).
-    if (e.relatedTarget == null) dragOver = false;
-  }
-  function onWindowDrop(e: DragEvent) {
-    if (!e.dataTransfer?.types.includes('Files')) return;
-    e.preventDefault();
-    dragOver = false;
-    const file = e.dataTransfer.files[0];
-    if (file) void importDroppedFile(file);
-  }
-
   /// Register the hidden inputs globally so file_ops.openFile /
   /// openProject can fire them when running in a browser (no native
   /// picker available there). Cleared on unmount.
@@ -70,9 +52,6 @@
 
   onMount(() => {
     exposeInputs();
-    window.addEventListener('dragover', onWindowDragOver);
-    window.addEventListener('dragleave', onWindowDragLeave);
-    window.addEventListener('drop', onWindowDrop);
     // OS file-association launches forward the path here. Self-guards on
     // web; the returned unlisten is a no-op there.
     let unlistenFileAssoc: (() => void) | null = null;
@@ -88,9 +67,6 @@
       void loadSample(`/samples/${sample}.json`);
     }
     return () => {
-      window.removeEventListener('dragover', onWindowDragOver);
-      window.removeEventListener('dragleave', onWindowDragLeave);
-      window.removeEventListener('drop', onWindowDrop);
       unlistenFileAssoc?.();
       delete (window as unknown as Record<string, unknown>).__ivacFileInput;
       delete (window as unknown as Record<string, unknown>).__ivacProjectInput;
@@ -107,25 +83,4 @@
   hidden
 />
 
-<div class="drop-catcher" class:drag-over={dragOver} aria-hidden="true"></div>
-
 <ErrorToast />
-
-<style>
-  /* The drag indicator overlay is purely visual — window-level event
-     listeners do the real work, so pointer-events stays off and the
-     overlay never intercepts clicks. */
-  .drop-catcher {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: var(--z-drop-catcher);
-    background: transparent;
-    transition: background 80ms;
-  }
-  .drop-catcher.drag-over {
-    background: color-mix(in srgb, var(--accent) 22%, transparent);
-    outline: 2px dashed var(--accent);
-    outline-offset: -8px;
-  }
-</style>

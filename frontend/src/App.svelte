@@ -676,14 +676,25 @@
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
     const name = file.name.toLowerCase();
-    if (name.endsWith('.ivac-project.json') || name.endsWith('-project.json')) {
-      await loadProjectFile(file);
-    } else if (name.endsWith('.json')) {
-      // Bare .json — also treat as a project file (loadProjectFile
-      // validates the kind: 'ivac-project' field and rejects otherwise).
+    // .ivac-project.json / *-project.json / bare .json are treated as a
+    // project; anything else (.dxf / .svg / …) as a drawing. Both are
+    // REPLACE loads, so gate on unsaved changes like the menu paths do —
+    // a drop is just as destructive as File ▸ Open (944t).
+    const isProject =
+      name.endsWith('.ivac-project.json') ||
+      name.endsWith('-project.json') ||
+      name.endsWith('.json');
+    if (
+      !(await confirmDiscardIfDirty(
+        isProject ? 'open the dropped project' : 'open the dropped drawing',
+      ))
+    )
+      return;
+    if (isProject) {
+      // Bare .json is also routed here; loadProjectFile validates the
+      // kind: 'ivac-project' field and rejects otherwise.
       await loadProjectFile(file);
     } else {
-      // .dxf / .svg / anything else the importer recognizes.
       await loadFile(file);
     }
   }

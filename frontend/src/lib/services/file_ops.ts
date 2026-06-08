@@ -706,16 +706,3 @@ export async function loadMachine() {
   // of `toolchangeStrategy` — migrate before applying.
   project.setMachine(migrateMachineSettings(env.payload));
 }
-
-/// Decide whether a dropped/picked file is a project vs. raw geometry
-/// by extension, then dispatch.
-export function importDroppedFile(file: File) {
-  if (
-    file.name.endsWith('.ivac-project.json') ||
-    file.name.endsWith('.vc-project.json') ||
-    file.name.endsWith('.json')
-  ) {
-    return loadProjectFile(file);
-  }
-  return loadFile(file);
-}

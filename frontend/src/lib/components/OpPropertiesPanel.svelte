@@ -28,6 +28,11 @@
   import PocketSection from './op_properties/PocketSection.svelte';
   import ReliefMillSection from './op_properties/ReliefMillSection.svelte';
   import RasterEngraveSection from './op_properties/RasterEngraveSection.svelte';
+  import PauseSection from './op_properties/PauseSection.svelte';
+  import HomingSection from './op_properties/HomingSection.svelte';
+  import ProbeSection from './op_properties/ProbeSection.svelte';
+  import GcodeIncludeSection from './op_properties/GcodeIncludeSection.svelte';
+  import CycleMarkerSection from './op_properties/CycleMarkerSection.svelte';
   // d0mr: shared op-property styling lives in a plain CSS module so we
   // don't need 53 :global(.props X) rules in the scoped style block
   // below. Vite static-imports this once; the .props prefix keeps the
@@ -184,220 +189,17 @@
   {#if !op}
     <p class="empty" class:embedded-empty={embedded}>Select an operation in the list to edit it.</p>
   {:else if op.kind === 'pause'}
-    <!-- rt1.34: minimal property panel — name + operator message. No
-         tool, no source, no geometry: the op is a program-flow stop. -->
-    <label class="row">
-      <span>Name</span>
-      <input
-        type="text"
-        value={op.name}
-        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
-    <label
-      class="row"
-      title="Rendered as a G-code comment immediately before the M0 stop. Shown on most controllers' operator console / pendant — write what the operator should do (e.g. 'Swap to 1/8 endmill', 'Flip the workpiece')."
-    >
-      <span>Message</span>
-      <input
-        type="text"
-        value={op.message ?? ''}
-        placeholder="Tool change, inspect, flip stock, …"
-        oninput={(e) => patch('message', (e.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
-    <p class="hint hint-pause">
-      The pipeline emits <code>M5</code>, this message as a comment, <code>M0</code>, and
-      <code>M3</code> at this slot. Spindle stops; pressing Cycle Start resumes.
-    </p>
+    <!-- zt1p: program-only kinds delegate to a dedicated *Section, same as
+         the geometry kinds — one rule for where a kind's panel lives. -->
+    <PauseSection {op} {patch} />
   {:else if op.kind === 'homing'}
-    <!-- 8n4k: name + safe-Z toggle. The op emits G28 (machine-specific
-         home) and, optionally, a rapid Z lift afterwards. No tool, no
-         source, no Z schedule. -->
-    <label class="row">
-      <span>Name</span>
-      <input
-        type="text"
-        value={op.name}
-        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
-    <label
-      class="row"
-      title="When checked, the pipeline follows the G28 with a rapid G0 Z<safe> at the op's fastMoveZ so the next op starts from a known clearance. Most controllers leave the spindle wherever machine zero puts it, so the default is on."
-    >
-      <span>Retract to safe Z after G28</span>
-      <input
-        type="checkbox"
-        checked={op.retractToSafeZ ?? true}
-        onchange={(e) => patch('retractToSafeZ', (e.currentTarget as HTMLInputElement).checked)}
-      />
-    </label>
-    <p class="hint hint-pause">
-      The pipeline emits <code>G28</code> (move to machine home){(op.retractToSafeZ ?? true)
-        ? ' and a rapid Z lift to safe height'
-        : ''}. No motion in X / Y other than the homing itself. The cutter does not engage.
-    </p>
+    <HomingSection {op} {patch} />
   {:else if op.kind === 'probe'}
-    <!-- 8n4k: G38.2 probe move along the selected axis. No tool /
-         source needed — the operator wires the probe to the machine. -->
-    <label class="row">
-      <span>Name</span>
-      <input
-        type="text"
-        value={op.name}
-        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
-    <label
-      class="row"
-      title="Which axis to probe along. Z is the common case (zero the WCS Z against the stock top); X / Y are edge-finder cycles."
-    >
-      <span>Axis</span>
-      <select
-        value={op.axis ?? 'z'}
-        onchange={(e) =>
-          patch('axis', (e.currentTarget as HTMLSelectElement).value as 'x' | 'y' | 'z')}
-      >
-        <option value="x">X</option>
-        <option value="y">Y</option>
-        <option value="z">Z</option>
-      </select>
-    </label>
-    <label
-      class="row"
-      title="Search distance, mm. Sign follows the controller — NEGATIVE Z probes DOWN into stock; positive X / Y probes outward. The controller halts at the trigger; this is the maximum search."
-    >
-      <span>Distance (mm)</span>
-      <input
-        type="number"
-        step="0.1"
-        value={op.distanceMm ?? -10}
-        oninput={(e) =>
-          patch('distanceMm', Number.parseFloat((e.currentTarget as HTMLInputElement).value))}
-      />
-    </label>
-    <label
-      class="row"
-      title="Probe feed rate (mm/min). 50–200 mm/min is typical for a touch-trigger probe — slow enough to trip repeatably."
-    >
-      <span>Feed (mm/min)</span>
-      <input
-        type="number"
-        step="10"
-        min="1"
-        value={op.feedMmMin ?? 100}
-        oninput={(e) =>
-          patch('feedMmMin', Number.parseInt((e.currentTarget as HTMLInputElement).value, 10))}
-      />
-    </label>
-    <p class="hint hint-pause">
-      The pipeline emits <code
-        >G38.2 {(op.axis ?? 'z').toUpperCase()}{op.distanceMm ?? -10} F{op.feedMmMin ?? 100}</code
-      >. The controller halts at the trigger.
-    </p>
+    <ProbeSection {op} {patch} />
   {:else if op.kind === 'gcode_include'}
-    <!-- rxm9: file-picker + path display + content textarea.
-         Variable cheat-sheet hint shows the supported tokens. -->
-    <label class="row">
-      <span>Name</span>
-      <input
-        type="text"
-        value={op.name}
-        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
-    <label
-      class="row"
-      title="Pick a .nc / .ngc / .gcode file. Its contents are loaded into the op (project stays self-contained); the path is kept as a label so you can see what was picked."
-    >
-      <span>File</span>
-      <input
-        type="file"
-        accept=".nc,.ngc,.gcode,.tap,.cnc,text/plain"
-        onchange={async (e) => {
-          const f = (e.currentTarget as HTMLInputElement).files?.[0];
-          if (!f) return;
-          const text = await f.text();
-          patch('path', f.name);
-          patch('content', text);
-          // Reset the input so re-picking the same filename re-fires onchange.
-          (e.currentTarget as HTMLInputElement).value = '';
-        }}
-      />
-    </label>
-    {#if op.path}
-      <p class="hint">
-        Loaded from <code>{op.path}</code> · {op.content?.length ?? 0} characters,
-        {op.content?.split('\n').length ?? 0} lines.
-      </p>
-    {/if}
-    <label
-      class="row"
-      title="The G-code that ships in the program. Edit by hand if you need to tweak after loading. Variable tokens are substituted at Generate time."
-    >
-      <span>Content</span>
-      <textarea
-        rows="10"
-        spellcheck="false"
-        value={op.content ?? ''}
-        placeholder="G-code text — edit by hand or pick a file above."
-        oninput={(e) => patch('content', (e.currentTarget as HTMLTextAreaElement).value)}
-        style="font-family: ui-monospace, monospace; white-space: pre;"
-      ></textarea>
-    </label>
-    <p class="hint hint-pause">
-      The pipeline emits the content verbatim at this slot after substituting these tokens:
-      <code>{'{x}'}</code> <code>{'{y}'}</code> <code>{'{z}'}</code>
-      (last commanded XYZ),
-      <code>{'{f}'}</code> (last feed),
-      <code>{'{s}'}</code> (last spindle RPM),
-      <code>{'{safe_z}'}</code> (this op's fast-Z). Unknown <code>{'{tokens}'}</code> pass through and
-      surface a warning. The sim carves G0/G1/G2/G3 and canned cycles G73/G81/G82/G83; anything else fires
-      a counted "lines skipped" warning so you know what the heightmap won't show.
-    </p>
-    <!-- xi2g: verbose per-line warning toggle. Off by default; users
-         debugging an exotic block flip it on to see exactly which
-         lines were skipped and why. -->
-    <label
-      class="row"
-      title="When on, each unsimulated line fires its own warning with the line offset and reason — useful for debugging an exotic block. When off (default), only the counted summary fires."
-    >
-      <span>Verbose unsim warnings</span>
-      <input
-        type="checkbox"
-        checked={op.verboseUnsimWarnings ?? false}
-        onchange={(e) =>
-          patch('verboseUnsimWarnings', (e.currentTarget as HTMLInputElement).checked)}
-      />
-    </label>
+    <GcodeIncludeSection {op} {patch} />
   {:else if op.kind === 'cycle_marker'}
-    <!-- 8n4k: comment-only marker. Pendants and gcode viewers that
-         index by program line can jump to the next marker. -->
-    <label class="row">
-      <span>Name</span>
-      <input
-        type="text"
-        value={op.name}
-        oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
-    <label
-      class="row"
-      title="Wrapped with `--- … ---` and emitted as a G-code comment at this slot. No controller motion."
-    >
-      <span>Label</span>
-      <input
-        type="text"
-        value={op.label ?? ''}
-        placeholder="Halfway, Flip stock, …"
-        oninput={(e) => patch('label', (e.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
-    <p class="hint hint-pause">
-      The pipeline emits one comment line: <code>; --- {op.label ?? ''} ---</code>. No motion, no
-      modal change.
-    </p>
+    <CycleMarkerSection {op} {patch} />
   {:else if op.kind === 'relief_mill'}
     <!-- f60x: relief surfacing follows an image-derived Z-surface, not
          source geometry — name + tool + the relief section only. -->

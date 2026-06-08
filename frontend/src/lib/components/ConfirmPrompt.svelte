@@ -1,17 +1,20 @@
 <script lang="ts">
-  /// Renders `confirmStore.pending` as a Modal-shaped two-button dialog.
-  /// Mounted once at the App.svelte root; transparent when nothing is
-  /// pending. Replaces the inline close-prompt overlay (which lacked
-  /// ESC / backdrop / focus-trap / focus-restore) and the
+  /// Renders `confirmStore.pending` as a Modal-shaped dialog with two or
+  /// three buttons. Mounted once at the App.svelte root; transparent when
+  /// nothing is pending. Replaces the inline close-prompt overlay (which
+  /// lacked ESC / backdrop / focus-trap / focus-restore) and the
   /// `window.confirm` Tauri anti-pattern in file_ops + clickRecent.
   import Modal from './Modal.svelte';
   import { confirmStore } from '../state/confirm.svelte';
 
   function onCancel() {
-    confirmStore.answer(false);
+    confirmStore.answer('cancel');
+  }
+  function onExtra() {
+    confirmStore.answer('extra');
   }
   function onConfirm() {
-    confirmStore.answer(true);
+    confirmStore.answer('primary');
   }
 </script>
 
@@ -24,9 +27,19 @@
     <p class="body">{p.body}</p>
     <div class="actions">
       <!-- Cancel is declared first so Modal's "autofocus first focusable"
-           lands on the safer choice — accidentally hitting Enter on a
-           freshly-opened discard prompt won't destroy work. -->
+           lands on the safe choice — accidentally hitting Enter on a
+           freshly-opened discard prompt won't destroy work. The optional
+           middle (extra) button sits between Cancel and the primary. -->
       <button type="button" class="btn-secondary" onclick={onCancel}>{p.cancelLabel}</button>
+      {#if p.extraLabel}
+        <button
+          type="button"
+          class={p.extraDanger ? 'btn-danger' : 'btn-secondary'}
+          onclick={onExtra}
+        >
+          {p.extraLabel}
+        </button>
+      {/if}
       <button type="button" class={p.danger ? 'btn-danger' : 'btn-primary'} onclick={onConfirm}>
         {p.primaryLabel}
       </button>

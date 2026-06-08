@@ -398,15 +398,36 @@
   let unlistenCloseRequested: (() => void) | null = null;
   async function wireCloseConfirm() {
     unlistenCloseRequested = await wireCloseRequested(async () => {
-      const dirty = project.dirty;
+      if (project.dirty) {
+        // Three-way so a misclick on the close button doesn't force a
+        // choice between losing work and re-opening the app (ed67).
+        const choice = await confirmStore.askChoice({
+          title: 'Quit ivaCAM?',
+          body: 'You have unsaved changes. Save before you quit?',
+          primaryLabel: 'Save & quit',
+          extraLabel: 'Discard & quit',
+          cancelLabel: 'Keep editing',
+          danger: false,
+          extraDanger: true,
+        });
+        if (choice === 'cancel') return;
+        if (choice === 'primary') {
+          await saveProject();
+          // Save cancelled (native dialog dismissed) or failed → dirty
+          // stays set; don't quit and lose the work the user kept.
+          if (project.dirty) return;
+        }
+        void confirmClose();
+        return;
+      }
+      // Clean project: still confirm — an accidental close loses camera,
+      // panel sizes, and in-progress text not yet committed via Add.
       const ok = await confirmStore.ask({
         title: 'Quit ivaCAM?',
-        body: dirty
-          ? 'You have unsaved changes. They will be lost if you quit now.'
-          : 'Are you sure you want to quit?',
-        primaryLabel: dirty ? 'Discard & quit' : 'Quit',
-        cancelLabel: dirty ? 'Keep editing' : 'Cancel',
-        danger: dirty,
+        body: 'Are you sure you want to quit?',
+        primaryLabel: 'Quit',
+        cancelLabel: 'Cancel',
+        danger: false,
       });
       if (ok) void confirmClose();
     });

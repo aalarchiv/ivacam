@@ -111,8 +111,13 @@ export async function openFile() {
 }
 
 /// If the project has unsaved changes, prompt the user before a
-/// destructive load (open file, open project, recent). Returns
-/// `true` to proceed, `false` to bail.
+/// destructive load (open file, open project, recent, drag-drop).
+/// Returns `true` to proceed with the load, `false` to bail.
+///
+/// Three-way prompt (ed67): Save & continue / Don't save / Cancel — so
+/// the user can keep their work without having to cancel, dig out Save,
+/// and retry. Picking Save runs `saveProject()` first and only proceeds
+/// if the save actually lands (see below).
 ///
 /// Uses `confirmStore` for an in-app styled prompt — the previous
 /// `window.confirm` regressed against the Tauri C10 rule (WebKitGTK
@@ -123,13 +128,24 @@ export async function openFile() {
 export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   if (!project.dirty) return true;
   if (typeof window === 'undefined') return true;
-  return confirmStore.ask({
+  const choice = await confirmStore.askChoice({
     title: 'Unsaved changes',
-    body: `Your project has unsaved changes. Continue and ${action}? Your unsaved work will be lost.`,
-    primaryLabel: 'Discard & continue',
-    cancelLabel: 'Keep editing',
-    danger: true,
+    body: `Your project has unsaved changes. Save before you ${action}?`,
+    primaryLabel: 'Save & continue',
+    extraLabel: "Don't save",
+    cancelLabel: 'Cancel',
+    danger: false,
+    extraDanger: true,
   });
+  if (choice === 'cancel') return false;
+  if (choice === 'extra') return true; // discard unsaved changes, proceed
+  // 'primary' → save first, then proceed only if the save actually
+  // landed. saveProject() clears `project.dirty` on a successful write;
+  // if the user cancels the native save dialog (desktop) or the write
+  // errors, dirty stays true — abort the load rather than silently
+  // discarding the work the user just asked to keep.
+  await saveProject();
+  return !project.dirty;
 }
 
 /// Desktop: native open dialog for `.ivac-project.json`. Browser: same

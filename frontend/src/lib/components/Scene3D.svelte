@@ -6,7 +6,6 @@
   // preview-line-width setting (68ab) drives Line2/LineMaterial instead,
   // which renders width in screen pixels via a resolution uniform.
   import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
-  import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
   import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
   import {
     project,
@@ -15,9 +14,8 @@
     simWarningSegmentIdx,
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
-  import { opHue, opSourceHsl } from '../state/op-color';
+  import { opHue } from '../state/op-color';
   import { HeightfieldDriver } from '../sim/driver';
-  import { tessellate } from '../scene3d/tessellate';
   import { pixelsPerCell } from '../scene3d/lod';
   import { disposeGroup } from '../scene3d/dispose';
   import type { BuilderContext, CssColor } from '../scene3d/builder';
@@ -28,9 +26,12 @@
   import { WarningMarkersBuilder } from '../scene3d/warning_markers';
   import { FixturesBuilder } from '../scene3d/fixtures';
   import { ToolGlyphBuilder } from '../scene3d/tool_glyph';
+  import { ImportedGeometryBuilder } from '../scene3d/imported_geometry';
+  import { buildFatLines } from '../scene3d/fat_lines';
+  import type { LineOwner } from '../scene3d/builder';
   import type { ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
-  import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
+  import { previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
   import {
@@ -41,7 +42,6 @@
   } from '../scene3d/toolpath_buffers';
   import { powerGrid, maxPower } from '../cam/raster_preview';
   import { powerAtWorld, heatColor, type HeatGrid } from '../scene3d/raster_heatmap';
-  import { resolveAci } from '../canvas/aci-color';
 
   interface Props {
     /// w5wx: mirrors EntityCanvas2D — after the right-click menu creates
@@ -80,6 +80,11 @@
   /// drawing the same static scene whenever the 3D pane was open.
   /// Anything that mutates the scene must call `requestRender()`.
   let needsRender = true;
+  /// Bumped by applyTheme to re-trigger the line-buffer build effects (so a
+  /// theme switch re-emits the imported + toolpath wireframes in the new
+  /// tokens) WITHOUT making tabs/stock/fixtures/tool re-skin — matching the
+  /// pre-4w2f behavior where applyTheme rebuilt only those two buffers.
+  let themeVersion = $state(0);
   function requestRender() {
     needsRender = true;
   }
@@ -203,9 +208,7 @@
   //     generated / operations changes (op enable/disable filter is
   //     reapplied). Playhead fade + sim-warning tints mutate its color
   //     attribute in place.
-  type LineOwner = { kind: 'object'; objectId: number } | { kind: 'toolpath'; segIdx: number };
-  let importedLinesObject: LineSegments2 | undefined;
-  let importedLineOwners: LineOwner[] = [];
+  // (imported wireframe now lives in ImportedGeometryBuilder, 4w2f part 4)
   let toolpathLinesObject: LineSegments2 | undefined;
   /// Direction-indicator chevrons drawn on top of the toolpath
   /// wireframe. One pair of short line segments per qualifying
@@ -217,19 +220,6 @@
   let toolpathArrowsObject: LineSegments2 | undefined;
   let toolpathLineOwners: LineOwner[] = [];
   let sceneRadius = 100;
-
-  /// Per-object color ranges into importedLinesObject's color attribute.
-  /// Each entry is `{ start, count, base: [r,g,b] }` — start is the
-  /// vertex index (not floats) where this object's first vertex lives,
-  /// count is how many vertices belong to it, base is the original
-  /// (non-selected) color the object should revert to. Filled during
-  /// rebuildImportedGeometry so the selection-only $effect can mutate
-  /// the color attribute in-place.
-  type ColorRange = { start: number; count: number; base: [number, number, number] };
-  let objectColorRanges = new Map<number, ColorRange[]>();
-  /// Selection set the color attribute currently reflects. Compared
-  /// against project.selectedObjects to compute the symmetric diff.
-  let appliedSelection = new Set<number>();
 
   /// Per-toolpath-segment color ranges into toolpathLinesObject's color
   /// attribute, baked at rebuild time. Each entry covers exactly two
@@ -296,12 +286,6 @@
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const resVec = new THREE.Vector2();
-  /// w5wx/68ab: per-op dashed overlays revealing multi-op source
-  /// assignments. One dashed Line2 per (multi-op object, op) — the dashes
-  /// of each op tile the object's path in distinct phases so all op
-  /// colors show as interleaved bands (a thin solid line can only show
-  /// one color). Decorative: not picked, not selection-recolored.
-  let assignmentOverlayObjects: LineSegments2[] = [];
 
   function cssVar(name: string, fallback: string): string {
     if (!host) return fallback;
@@ -316,34 +300,25 @@
   /// land on the SAME color for a given op.
   const opPalette = opHue;
 
-  /// Build a fat-line (Line2) object from flat per-segment position +
-  /// color arrays (6 floats per segment — the same layout the old
-  /// LineSegments buffers used, which is also exactly how
-  /// LineSegmentsGeometry stores its interleaved instance buffers, so
-  /// the playhead-fade / selection recolor offset math is unchanged).
-  /// `linewidth` is in screen pixels (worldUnits off); the `resolution`
-  /// uniform must track the canvas size — set here and on every resize.
-  function buildFatLines(positions: number[], colors: number[]): LineSegments2 {
-    const geom = new LineSegmentsGeometry();
-    geom.setPositions(new Float32Array(positions));
-    geom.setColors(new Float32Array(colors));
-    const mat = new LineMaterial({
-      vertexColors: true,
-      linewidth: Math.max(0.5, project.settings.previewLineWidth),
-      worldUnits: false,
-    });
-    mat.resolution.set(host?.clientWidth || 1, host?.clientHeight || 1);
-    return new LineSegments2(geom, mat);
+  /// Thin wrapper over the shared scene3d/fat_lines builder, filling in the
+  /// current preview-line-width + canvas size (still used by the toolpath
+  /// rebuild; the imported builder calls the shared helper directly).
+  function buildToolpathFatLines(positions: number[], colors: number[]): LineSegments2 {
+    return buildFatLines(
+      positions,
+      colors,
+      project.settings.previewLineWidth,
+      host?.clientWidth || 1,
+      host?.clientHeight || 1,
+    );
   }
 
   /// Push the canvas pixel size into every fat-line material's
   /// `resolution` uniform (they render wrong / invisible otherwise).
   function updateLineResolution(w: number, h: number) {
-    for (const o of [importedLinesObject, toolpathLinesObject, toolpathArrowsObject]) {
+    importedBuilder?.setResolution(w, h);
+    for (const o of [toolpathLinesObject, toolpathArrowsObject]) {
       (o?.material as LineMaterial | undefined)?.resolution.set(w, h);
-    }
-    for (const o of assignmentOverlayObjects) {
-      (o.material as LineMaterial).resolution.set(w, h);
     }
   }
 
@@ -404,6 +379,7 @@
     // $effects read project fields and call builder.build(...).
     const builderCtx: BuilderContext = { scene, requestRender };
     const css: CssColor = cssColor;
+    importedBuilder = new ImportedGeometryBuilder(builderCtx, css);
     toolGlyphBuilder = new ToolGlyphBuilder(builderCtx, css);
     stockBuilder = new StockBoxBuilder(builderCtx, css);
     workAreaBuilder = new WorkAreaBuilder(builderCtx, css);
@@ -490,8 +466,10 @@
       scene.add(newGrid);
     }
     // After grid swap, re-emit both line buffers so the imported drawing
-    // + toolpath wireframe sit cleanly on top of the new grid.
-    rebuildImportedGeometry();
+    // + toolpath wireframe sit cleanly on top of the new grid. The imported
+    // builder re-runs via the themeVersion signal (its build effect deps on
+    // it); the toolpath rebuild is still a direct call until part 5.
+    themeVersion++;
     rebuildToolpathGeometry();
   }
 
@@ -526,20 +504,19 @@
     approachBuilder?.dispose();
     warningMarkersBuilder?.dispose();
     fixturesBuilder?.dispose();
+    importedBuilder?.dispose();
     // 7iej.4: renderer.dispose() frees the GL context but does NOT walk
     // the scene graph, so every owned group's geometry/material must be
-    // disposed explicitly. geometryGroup holds the imported wireframe,
-    // toolpath lines, direction arrows, and assignment overlays — the
-    // largest buffers — and these leaked a full toolpath on every 2D↔3D
-    // pane swap (Scene3D unmounts on each swap).
+    // disposed explicitly. geometryGroup holds the toolpath lines +
+    // direction arrows (the imported wireframe moved to its own builder) —
+    // these leaked a full toolpath on every 2D↔3D pane swap (Scene3D
+    // unmounts on each swap).
     if (geometryGroup) {
       disposeGroup(geometryGroup);
       scene?.remove(geometryGroup);
       geometryGroup = undefined;
-      importedLinesObject = undefined;
       toolpathLinesObject = undefined;
       toolpathArrowsObject = undefined;
-      assignmentOverlayObjects = [];
     }
     driver?.destroy();
     driver = undefined;
@@ -593,17 +570,31 @@
   // of a text-origin drag (k9cz).
   const textLayerIdKey = $derived(project.textLayers.map((l) => l.id).join(','));
 
-  // Imported drawing + text-layer previews.
+  // Imported drawing + text-layer previews. textLayerIdKey (not the raw
+  // textLayers array) keys the text-layer dep so a text-origin drag doesn't
+  // teardown/rebuild the whole buffer every pointermove (k9cz). themeVersion
+  // re-runs this on theme switch.
   $effect(() => {
-    void project.transformedImport;
-    void project.visibleLayers;
     void textLayerIdKey;
     void previewVersion.v;
-    void project.generated; // affects fade for non-selected imports
-    void project.settings.previewMode; // affects contrast-against-stock color
-    void project.operations; // op-source assignments drive the per-op tint
-    void project.selectedOpId; // selected op renders emphasized
-    rebuildImportedGeometry();
+    void themeVersion;
+    importedBuilder?.build({
+      data: project.transformedImport,
+      visibleLayers: project.visibleLayers,
+      operations: project.operations, // op-source assignments drive the tint
+      selectedOpId: project.selectedOpId, // selected op renders emphasized
+      selectedObjects: project.selectedObjects,
+      textLayers: project.textLayers,
+      hasGenerated: !!project.generated, // affects fade for non-selected imports
+      previewMode: project.settings.previewMode, // contrast-against-stock color
+      edgeColor: project.settings.edgeColor,
+      lineWidth: project.settings.previewLineWidth,
+      wireVisible,
+      width: host?.clientWidth || 1,
+      height: host?.clientHeight || 1,
+      sceneRadius,
+    });
+    updateSceneRadius(); // refresh combined radius now that imported is rebuilt
     requestRender();
   });
 
@@ -625,14 +616,10 @@
   // than rebuilding geometry, so dragging the slider is cheap.
   $effect(() => {
     const lw = Math.max(0.5, project.settings.previewLineWidth);
-    for (const o of [importedLinesObject, toolpathLinesObject, toolpathArrowsObject]) {
+    importedBuilder?.setLineWidth(lw);
+    for (const o of [toolpathLinesObject, toolpathArrowsObject]) {
       const m = o?.material as LineMaterial | undefined;
       if (m) m.linewidth = lw;
-    }
-    // Overlays render a touch wider so the colored dashes sit proud of
-    // the base wireframe.
-    for (const o of assignmentOverlayObjects) {
-      (o.material as LineMaterial).linewidth = lw + 1;
     }
     requestRender();
   });
@@ -739,12 +726,12 @@
   /// (e.g. before the first rebuild has run).
   $effect(() => {
     const sel = project.selectedObjects;
-    if (!importedLinesObject) {
-      // Geometry hasn't been built yet; the next rebuildImportedGeometry
-      // will pick up the current selection naturally.
+    if (!importedBuilder?.pickable) {
+      // Geometry hasn't been built yet; the next build picks up the current
+      // selection naturally.
       return;
     }
-    applySelectionDelta(sel);
+    importedBuilder.applySelection(sel);
     requestRender();
   });
 
@@ -810,10 +797,9 @@
     // show the toolpath + imported lines; solid hides them in favor of
     // the heightfield carved-stock mesh. wireVisible is a $derived at
     // module scope so the rebuild functions see the same value.
-    if (importedLinesObject) importedLinesObject.visible = wireVisible;
+    importedBuilder?.setWireVisible(wireVisible);
     if (toolpathLinesObject) toolpathLinesObject.visible = wireVisible;
     if (toolpathArrowsObject) toolpathArrowsObject.visible = wireVisible;
-    for (const o of assignmentOverlayObjects) o.visible = wireVisible;
     if (settings.previewMode === 'wireframe') {
       driver?.setVisible(false);
       requestRender();
@@ -1038,53 +1024,6 @@
     appliedHead = head;
   }
 
-  function applySelectionDelta(next: Set<number>) {
-    if (!importedLinesObject) return;
-    // Interleaved instance color buffer (6 floats / segment); the
-    // ColorRange offsets (start = first vertex index = 2·firstSegment)
-    // index it identically to the old flat color attribute.
-    const colorAttr = importedLinesObject.geometry.getAttribute(
-      'instanceColorStart',
-    ) as THREE.InterleavedBufferAttribute;
-    const arr = colorAttr.array as Float32Array;
-    const selectedColor = cssColor('--accent', 0x4a8df0);
-    let touched = false;
-    // Newly-selected objects: paint accent over their ranges.
-    for (const id of next) {
-      if (appliedSelection.has(id)) continue;
-      const ranges = objectColorRanges.get(id);
-      if (!ranges) continue;
-      for (const r of ranges) {
-        for (let v = 0; v < r.count; v++) {
-          const off = (r.start + v) * 3;
-          arr[off] = selectedColor.r;
-          arr[off + 1] = selectedColor.g;
-          arr[off + 2] = selectedColor.b;
-        }
-      }
-      touched = true;
-    }
-    // Newly-deselected objects: restore base color from the recorded
-    // ranges so the wireframe goes back to ACI / faded.
-    for (const id of appliedSelection) {
-      if (next.has(id)) continue;
-      const ranges = objectColorRanges.get(id);
-      if (!ranges) continue;
-      for (const r of ranges) {
-        const [br, bg, bb] = r.base;
-        for (let v = 0; v < r.count; v++) {
-          const off = (r.start + v) * 3;
-          arr[off] = br;
-          arr[off + 1] = bg;
-          arr[off + 2] = bb;
-        }
-      }
-      touched = true;
-    }
-    if (touched) colorAttr.data.needsUpdate = true;
-    appliedSelection = new Set(next);
-  }
-
   // Marker builders (4w2f): each owns its THREE.Group and rebuilds from
   // plain data the effects below hand it. Instantiated in onMount once the
   // scene exists.
@@ -1095,6 +1034,7 @@
   let warningMarkersBuilder: WarningMarkersBuilder | undefined;
   let fixturesBuilder: FixturesBuilder | undefined;
   let toolGlyphBuilder: ToolGlyphBuilder | undefined;
+  let importedBuilder: ImportedGeometryBuilder | undefined;
 
   $effect(() => {
     void project.simDiagnostics;
@@ -1135,223 +1075,6 @@
     // only when the set actually changed, so we render only then.
     if (fixturesBuilder?.flash(next)) requestRender();
   });
-
-  /// Imported drawing + text-layer previews. Independent of toolpath /
-  /// op enable state — re-runs only on transformedImport / visibleLayers /
-  /// textLayers / previewVersion changes (plus `generated` to switch
-  /// imported geometry to faded-color when a toolpath exists).
-  function rebuildImportedGeometry() {
-    if (!geometryGroup || !scene) return;
-    // Tear down only the imported half; toolpath stays put.
-    if (importedLinesObject) {
-      geometryGroup.remove(importedLinesObject);
-      importedLinesObject.geometry.dispose();
-      (importedLinesObject.material as THREE.Material).dispose();
-      importedLinesObject = undefined;
-    }
-    for (const o of assignmentOverlayObjects) {
-      geometryGroup.remove(o);
-      o.geometry.dispose();
-      (o.material as THREE.Material).dispose();
-    }
-    assignmentOverlayObjects = [];
-    importedLineOwners = [];
-    objectColorRanges = new Map();
-    const data = project.transformedImport;
-    if (!data) {
-      updateSceneRadius();
-      return;
-    }
-
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const c = new THREE.Color();
-    const fadedColor = cssColor('--imported-faded', 0x444444);
-    const selectedColor = cssColor('--accent', 0x4a8df0);
-    // When the stock heightfield is visible as a solid surface, the
-    // tan / configured stock color drowns out the ACI / faded
-    // wireframe colors. Use the user-configured EDGE color (already
-    // chosen for contrast against the stock material) as the line
-    // tint. Falls back to ACI when no solid is showing.
-    const previewMode = project.settings.previewMode;
-    const solidVisible = previewMode === 'solid' || previewMode === 'both';
-    const contrastOverStock = solidVisible ? new THREE.Color(project.settings.edgeColor) : null;
-    // Lift the wireframe slightly above the stock top surface so it
-    // doesn't Z-fight with the heightfield mesh (top_z = 0 in the
-    // stock coord system). 0.1 mm is below the smallest carve step
-    // but enough to win the depth test.
-    const lineZ = solidVisible ? 0.1 : 0;
-    const flat = !!project.generated;
-    // Source-assignment tint: objectId → op ids that reference it (mirror
-    // of EntityCanvas2D.objectToOps). An assigned object is drawn in its
-    // op's color — overriding the ACI / faded base so the assignment is
-    // visible even after Generate (when the wireframe otherwise fades to
-    // near-black). The base wireframe carries the PRIMARY op's solid
-    // color (selected op if assigned, else the first); objects in several
-    // ops additionally get phase-staggered DASHED overlays (built below)
-    // so every assigned op's color shows as interleaved bands — a single
-    // thin/thick line can only carry one color at a time.
-    const objectToOps3d = new Map<number, number[]>();
-    for (const op of project.operations) {
-      const refs = op.sourceObjects;
-      if (!refs) continue;
-      for (const id of refs) {
-        if (id <= 0) continue;
-        const list = objectToOps3d.get(id);
-        if (list) list.push(op.id);
-        else objectToOps3d.set(id, [op.id]);
-      }
-    }
-    const selOpId = project.selectedOpId;
-    // Per-object path points for the multi-op dashed overlays. Only
-    // populated for objects in ≥2 ops; each object's pairs are pushed in
-    // buffer (path) order so LineSegments2.computeLineDistances gives a
-    // cumulative distance → the dashes tile continuously along the path.
-    const overlayPosByObj = new Map<number, number[]>();
-    let segIdx = 0;
-    for (const seg of data.segments) {
-      if (!project.visibleLayers.has(seg.layer)) {
-        segIdx++;
-        continue;
-      }
-      const objectId = data.objects?.[segIdx] ?? 0;
-      const isSelected = objectId > 0 && project.selectedObjects.has(objectId);
-      const points = tessellate(seg);
-      const assignedOps = objectId > 0 ? objectToOps3d.get(objectId) : undefined;
-      let baseR: number;
-      let baseG: number;
-      let baseB: number;
-      if (assignedOps && assignedOps.length > 0) {
-        // Primary op: the selected one if this object is among its
-        // sources, otherwise the first-assigned op.
-        const primaryOp =
-          selOpId != null && assignedOps.includes(selOpId) ? selOpId : assignedOps[0];
-        const [hh, ss, ll] = opSourceHsl(primaryOp, primaryOp === selOpId);
-        c.setHSL(hh, ss, ll);
-        baseR = c.r;
-        baseG = c.g;
-        baseB = c.b;
-      } else if (contrastOverStock) {
-        baseR = contrastOverStock.r;
-        baseG = contrastOverStock.g;
-        baseB = contrastOverStock.b;
-      } else if (flat) {
-        baseR = fadedColor.r;
-        baseG = fadedColor.g;
-        baseB = fadedColor.b;
-      } else {
-        c.copy(aciColor(seg.color));
-        baseR = c.r;
-        baseG = c.g;
-        baseB = c.b;
-      }
-      const r = isSelected ? selectedColor.r : baseR;
-      const g = isSelected ? selectedColor.g : baseG;
-      const b = isSelected ? selectedColor.b : baseB;
-      const startVertex = positions.length / 3;
-      let pairCount = 0;
-      let overlayBuf: number[] | null = null;
-      if (assignedOps && assignedOps.length >= 2) {
-        overlayBuf = overlayPosByObj.get(objectId) ?? null;
-        if (!overlayBuf) {
-          overlayBuf = [];
-          overlayPosByObj.set(objectId, overlayBuf);
-        }
-      }
-      for (let i = 0; i < points.length - 1; i++) {
-        const [ax, ay] = points[i];
-        const [bx, by] = points[i + 1];
-        positions.push(ax, ay, lineZ, bx, by, lineZ);
-        colors.push(r, g, b, r, g, b);
-        importedLineOwners.push({ kind: 'object', objectId });
-        if (overlayBuf) overlayBuf.push(ax, ay, lineZ, bx, by, lineZ);
-        pairCount++;
-      }
-      if (objectId > 0 && pairCount > 0) {
-        const range: ColorRange = {
-          start: startVertex,
-          count: pairCount * 2,
-          base: [baseR, baseG, baseB],
-        };
-        const list = objectColorRanges.get(objectId);
-        if (list) list.push(range);
-        else objectColorRanges.set(objectId, [range]);
-      }
-      segIdx++;
-    }
-
-    // Text-layer previews. Each TextLayer renders client-side into a
-    // segment list cached by `text_preview`; the 2D canvas reads the
-    // same cache. Drawn in the accent color so they read as "live
-    // preview, not yet baked into the toolpath".
-    if (project.textLayers.length > 0) {
-      const previewC = cssColor('--accent', 0x4a8df0);
-      for (const layer of project.textLayers) {
-        // Segments come back translated to the layer's current origin, so
-        // the 3D position is correct without a re-render; refreshed once at
-        // drag-end via forceTextPreviewRefresh (no per-move GPU rebuild). (k9cz)
-        const segs = previewSegmentsFor(layer.id, layer.origin);
-        if (!segs || segs.length === 0) continue;
-        for (const seg of segs) {
-          const points = tessellate(seg);
-          for (let i = 0; i < points.length - 1; i++) {
-            const [ax, ay] = points[i];
-            const [bx, by] = points[i + 1];
-            positions.push(ax, ay, lineZ, bx, by, lineZ);
-            colors.push(previewC.r, previewC.g, previewC.b, previewC.r, previewC.g, previewC.b);
-            importedLineOwners.push({ kind: 'object', objectId: 0 });
-          }
-        }
-      }
-    }
-
-    if (positions.length > 0) {
-      importedLinesObject = buildFatLines(positions, colors);
-      importedLinesObject.visible = wireVisible;
-      geometryGroup.add(importedLinesObject);
-    }
-    // Selection set is now baked into the imported color attribute.
-    appliedSelection = new Set(project.selectedObjects);
-    updateSceneRadius(); // refresh sceneRadius before sizing dashes
-
-    // Multi-op dashed overlays. For an object in N ops we lay N dashed
-    // copies of its path, each in one op's color, with dashSize = L and
-    // gapSize = (N-1)·L so op i's dashes occupy slot i of an N·L period
-    // (dashOffset = -i·L). The slots tile the whole path → it reads as
-    // consecutive colored bands A B C A B C, every assigned op visible.
-    const lw = Math.max(0.5, project.settings.previewLineWidth);
-    const dash = Math.max(0.3, sceneRadius * 0.04);
-    const w0 = host?.clientWidth || 1;
-    const h0 = host?.clientHeight || 1;
-    for (const [objectId, pos] of overlayPosByObj) {
-      if (pos.length === 0) continue;
-      const ops = (objectToOps3d.get(objectId) ?? []).slice().sort((a, b) => a - b);
-      const n = ops.length;
-      if (n < 2) continue;
-      for (let i = 0; i < n; i++) {
-        const opId = ops[i];
-        const [hh, ss, ll] = opSourceHsl(opId, opId === selOpId);
-        const mat = new LineMaterial({
-          color: new THREE.Color().setHSL(hh, ss, ll).getHex(),
-          worldUnits: false,
-          linewidth: lw + 1,
-          dashed: true,
-          dashSize: dash,
-          gapSize: dash * (n - 1),
-        });
-        mat.dashOffset = -i * dash;
-        mat.resolution.set(w0, h0);
-        const geom = new LineSegmentsGeometry();
-        geom.setPositions(new Float32Array(pos));
-        const obj = new LineSegments2(geom, mat);
-        obj.computeLineDistances();
-        obj.renderOrder = 2; // sit on top of the base wireframe
-        obj.visible = wireVisible;
-        geometryGroup.add(obj);
-        assignmentOverlayObjects.push(obj);
-      }
-    }
-  }
 
   /// Generated toolpath wireframe. Rebuilds on `generated` /
   /// `operations` (op enable filter) only. Playhead fade + sim-warning
@@ -1532,12 +1255,12 @@
     }
 
     if (positions.length > 0) {
-      toolpathLinesObject = buildFatLines(positions, colors);
+      toolpathLinesObject = buildToolpathFatLines(positions, colors);
       toolpathLinesObject.visible = wireVisible;
       geometryGroup.add(toolpathLinesObject);
     }
     if (arrowPositions.length > 0) {
-      toolpathArrowsObject = buildFatLines(arrowPositions, arrowColors);
+      toolpathArrowsObject = buildToolpathFatLines(arrowPositions, arrowColors);
       toolpathArrowsObject.visible = wireVisible;
       // Render after the base line so the chevron sits on top.
       toolpathArrowsObject.renderOrder = 1;
@@ -1555,10 +1278,13 @@
   /// nothing's rendered yet.
   function combinedBoundingSphere(): THREE.Sphere | null {
     const spheres: THREE.Sphere[] = [];
-    for (const obj of [importedLinesObject, toolpathLinesObject]) {
-      if (!obj) continue;
-      obj.geometry.computeBoundingSphere();
-      if (obj.geometry.boundingSphere) spheres.push(obj.geometry.boundingSphere);
+    const imp = importedBuilder?.boundingSphere();
+    if (imp) spheres.push(imp);
+    if (toolpathLinesObject) {
+      toolpathLinesObject.geometry.computeBoundingSphere();
+      if (toolpathLinesObject.geometry.boundingSphere) {
+        spheres.push(toolpathLinesObject.geometry.boundingSphere);
+      }
     }
     if (spheres.length === 0) return null;
     if (spheres.length === 1) return spheres[0].clone();
@@ -1749,8 +1475,9 @@
   /// line.
   function handlePick(e: PointerEvent) {
     if (!camera || !renderer) return;
+    const importedPickable = importedBuilder?.pickable;
     const targets: LineSegments2[] = [];
-    if (importedLinesObject) targets.push(importedLinesObject);
+    if (importedPickable) targets.push(importedPickable);
     if (toolpathLinesObject) targets.push(toolpathLinesObject);
     if (targets.length === 0) return;
     const rect = renderer.domElement.getBoundingClientRect();
@@ -1774,7 +1501,8 @@
     // Resolve which owner array to consult based on which line object
     // produced the hit. Both are pickable; closer wins (Three's
     // intersectObjects sorts by distance).
-    const owners = hit.object === importedLinesObject ? importedLineOwners : toolpathLineOwners;
+    const owners =
+      hit.object === importedPickable ? (importedBuilder?.lineOwners ?? []) : toolpathLineOwners;
     const owner = owners[segIndex];
     if (!owner) return;
     if (owner.kind === 'object') {
@@ -1793,13 +1521,6 @@
         project.playhead = (owner.segIdx + 1) / segs;
       }
     }
-  }
-
-  function aciColor(c: number): THREE.Color {
-    // 7iej.12: shared palette + classification with the 2D canvas; the 3D
-    // copy previously omitted ACI 9.
-    const r = resolveAci(c);
-    return r.kind === 'fixed' ? new THREE.Color(r.hex) : cssColor(r.token, r.fallback);
   }
 </script>
 

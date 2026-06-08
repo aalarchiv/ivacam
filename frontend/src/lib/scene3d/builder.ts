@@ -29,6 +29,13 @@ export interface Builder {
   dispose(): void;
 }
 
+/// Picked-segment provenance for the two line buffers. The imported
+/// buffer tags each segment with the drawing object it belongs to
+/// (objectId 0 = text preview / unassigned); the toolpath buffer tags
+/// each with its toolpath segment index. handlePick reads the owner array
+/// that matches whichever LineSegments2 the ray hit.
+export type LineOwner = { kind: 'object'; objectId: number } | { kind: 'toolpath'; segIdx: number };
+
 /// A builder that renders fat lines (Line2 / LineSegments2). The host
 /// iterates these for the cross-cutting material effects — preview line
 /// width (68ab), the live canvas `resolution` uniform (must track canvas

@@ -2,22 +2,13 @@
   import { onMount, onDestroy } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  // Fat lines: WebGL caps LineBasicMaterial.linewidth to 1px, so the
-  // preview-line-width setting (68ab) drives Line2/LineMaterial instead,
-  // which renders width in screen pixels via a resolution uniform.
+  // Fat lines (Line2/LineSegments2): the pickable line buffers live in the
+  // imported + toolpath builders; the host only needs the type to raycast.
   import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
-  import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-  import {
-    project,
-    playheadToSegment,
-    simWarningSeverity,
-    simWarningSegmentIdx,
-  } from '../state/project.svelte';
+  import { project, playheadToSegment } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
-  import { opHue } from '../state/op-color';
   import { HeightfieldDriver } from '../sim/driver';
   import { pixelsPerCell } from '../scene3d/lod';
-  import { disposeGroup } from '../scene3d/dispose';
   import type { BuilderContext, CssColor } from '../scene3d/builder';
   import { StockBoxBuilder } from '../scene3d/stock_box';
   import { WorkAreaBuilder } from '../scene3d/work_area';
@@ -27,21 +18,12 @@
   import { FixturesBuilder } from '../scene3d/fixtures';
   import { ToolGlyphBuilder } from '../scene3d/tool_glyph';
   import { ImportedGeometryBuilder } from '../scene3d/imported_geometry';
-  import { buildFatLines } from '../scene3d/fat_lines';
-  import type { LineOwner } from '../scene3d/builder';
+  import { ToolpathBuilder } from '../scene3d/toolpath';
   import type { ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
-  import {
-    computeArrowChevron,
-    arrowSpacingMm,
-    resolveSegmentColor,
-    fadeColor,
-  } from '../scene3d/toolpath_buffers';
-  import { powerGrid, maxPower } from '../cam/raster_preview';
-  import { powerAtWorld, heatColor, type HeatGrid } from '../scene3d/raster_heatmap';
 
   interface Props {
     /// w5wx: mirrors EntityCanvas2D — after the right-click menu creates
@@ -56,7 +38,6 @@
   let scene: THREE.Scene | undefined;
   let camera: THREE.PerspectiveCamera | undefined;
   let controls: OrbitControls | undefined;
-  let geometryGroup: THREE.Group | undefined;
   let raf = 0;
   let observer: ResizeObserver | undefined;
   let intersectObserver: IntersectionObserver | undefined;
@@ -194,48 +175,11 @@
     else stopTick();
   }
 
-  // Pickable line meshes — split into two so editing operations or moving
-  // the playhead does NOT teardown + reupload the imported-geometry buffer
-  // (and vice versa). Each LineSegments owns its own positions / colors /
-  // owner array; raycaster.intersectObjects([…]) queries both at once.
-  //
-  //   importedLinesObject — imported drawing segments + text-layer
-  //     previews. Rebuilds on transformedImport / visibleLayers /
-  //     textLayers / previewVersion changes. Selection-color toggles
-  //     mutate its color attribute in place.
-  //
-  //   toolpathLinesObject — generated toolpath wireframe. Rebuilds on
-  //     generated / operations changes (op enable/disable filter is
-  //     reapplied). Playhead fade + sim-warning tints mutate its color
-  //     attribute in place.
-  // (imported wireframe now lives in ImportedGeometryBuilder, 4w2f part 4)
-  let toolpathLinesObject: LineSegments2 | undefined;
-  /// Direction-indicator chevrons drawn on top of the toolpath
-  /// wireframe. One pair of short line segments per qualifying
-  /// toolpath segment (cut / plunge / retract / arc; rapids omitted
-  /// — the user doesn't care about feed direction on positioning
-  /// moves). Decluttered by a min-length threshold + a cumulative
-  /// spacing rule so a dense raster pocket doesn't drown the scene
-  /// in arrowheads.
-  let toolpathArrowsObject: LineSegments2 | undefined;
-  let toolpathLineOwners: LineOwner[] = [];
+  // The imported wireframe + the generated toolpath wireframe each live in
+  // their own builder (ImportedGeometryBuilder / ToolpathBuilder, 4w2f);
+  // both expose a pickable LineSegments2 + owner array for handlePick and a
+  // bounding sphere for fit-to-view.
   let sceneRadius = 100;
-
-  /// Per-toolpath-segment color ranges into toolpathLinesObject's color
-  /// attribute, baked at rebuild time. Each entry covers exactly two
-  /// vertices (one line segment), records the segment's BASE color
-  /// (un-faded), and lets the playhead $effect mutate the attribute in
-  /// place on each tick instead of rebuilding the entire geometry —
-  /// which previously also reset the camera, killing user pan/zoom
-  /// during playback.
-  type ToolpathColor = { start: number; base: [number, number, number] };
-  let toolpathColors: ToolpathColor[] = [];
-  /// Head index the toolpath fade currently reflects.
-  let appliedHead = -1;
-  /// Per-segment override colors driven by sim warnings. Consumed by
-  /// applyToolpathFade so the affected segment is painted in the
-  /// severity color regardless of past/future state.
-  let warningSegmentColors = new Map<number, [number, number, number]>();
 
   /// Heightfield-based cutting simulator. Lazy-loaded on first need
   /// (the WASM module is async). Owns its own group inside `scene`;
@@ -295,31 +239,11 @@
   function cssColor(name: string, fallback: number): THREE.Color {
     return new THREE.Color(cssVar(name, '') || fallback);
   }
-  /// Deterministic hue in [0, 1) per op id. Delegates to the shared
-  /// `opHue` so the toolpath, the 3D source tint, and the 2D canvas all
-  /// land on the SAME color for a given op.
-  const opPalette = opHue;
-
-  /// Thin wrapper over the shared scene3d/fat_lines builder, filling in the
-  /// current preview-line-width + canvas size (still used by the toolpath
-  /// rebuild; the imported builder calls the shared helper directly).
-  function buildToolpathFatLines(positions: number[], colors: number[]): LineSegments2 {
-    return buildFatLines(
-      positions,
-      colors,
-      project.settings.previewLineWidth,
-      host?.clientWidth || 1,
-      host?.clientHeight || 1,
-    );
-  }
-
-  /// Push the canvas pixel size into every fat-line material's
+  /// Push the canvas pixel size into the line builders' fat-line materials'
   /// `resolution` uniform (they render wrong / invisible otherwise).
   function updateLineResolution(w: number, h: number) {
     importedBuilder?.setResolution(w, h);
-    for (const o of [toolpathLinesObject, toolpathArrowsObject]) {
-      (o?.material as LineMaterial | undefined)?.resolution.set(w, h);
-    }
+    toolpathBuilder?.setResolution(w, h);
   }
 
   onMount(() => {
@@ -372,14 +296,12 @@
     dir.position.set(100, -100, 200);
     scene.add(dir);
 
-    geometryGroup = new THREE.Group();
-    scene.add(geometryGroup);
-
     // Builders own their own groups inside the scene (4w2f). The host's
     // $effects read project fields and call builder.build(...).
     const builderCtx: BuilderContext = { scene, requestRender };
     const css: CssColor = cssColor;
     importedBuilder = new ImportedGeometryBuilder(builderCtx, css);
+    toolpathBuilder = new ToolpathBuilder(builderCtx, css);
     toolGlyphBuilder = new ToolGlyphBuilder(builderCtx, css);
     stockBuilder = new StockBoxBuilder(builderCtx, css);
     workAreaBuilder = new WorkAreaBuilder(builderCtx, css);
@@ -465,12 +387,11 @@
       (grid.material as THREE.Material).dispose();
       scene.add(newGrid);
     }
-    // After grid swap, re-emit both line buffers so the imported drawing
-    // + toolpath wireframe sit cleanly on top of the new grid. The imported
-    // builder re-runs via the themeVersion signal (its build effect deps on
-    // it); the toolpath rebuild is still a direct call until part 5.
+    // After grid swap, re-emit both line buffers so the imported drawing +
+    // toolpath wireframe sit cleanly on top of the new grid. Both build
+    // effects depend on themeVersion, so bumping it re-runs them with the
+    // new tokens (without re-skinning tabs/stock/fixtures/tool).
     themeVersion++;
-    rebuildToolpathGeometry();
   }
 
   onDestroy(() => {
@@ -504,20 +425,13 @@
     approachBuilder?.dispose();
     warningMarkersBuilder?.dispose();
     fixturesBuilder?.dispose();
-    importedBuilder?.dispose();
-    // 7iej.4: renderer.dispose() frees the GL context but does NOT walk
-    // the scene graph, so every owned group's geometry/material must be
-    // disposed explicitly. geometryGroup holds the toolpath lines +
-    // direction arrows (the imported wireframe moved to its own builder) —
-    // these leaked a full toolpath on every 2D↔3D pane swap (Scene3D
+    // 7iej.4: renderer.dispose() frees the GL context but does NOT walk the
+    // scene graph, so each builder frees its own group's geometry/material
+    // (the largest buffers — imported wireframe + toolpath lines + arrows)
+    // or they leak a full toolpath on every 2D↔3D pane swap (Scene3D
     // unmounts on each swap).
-    if (geometryGroup) {
-      disposeGroup(geometryGroup);
-      scene?.remove(geometryGroup);
-      geometryGroup = undefined;
-      toolpathLinesObject = undefined;
-      toolpathArrowsObject = undefined;
-    }
+    importedBuilder?.dispose();
+    toolpathBuilder?.dispose();
     driver?.destroy();
     driver = undefined;
     renderer?.dispose();
@@ -599,16 +513,27 @@
   });
 
   // Generated toolpath wireframe (re-emitted when a new pipeline run
-  // resolves or the user toggles an op enable / disable).
+  // resolves or the user toggles an op enable / disable). themeVersion
+  // re-runs it on a theme switch. The build re-applies the playhead fade to
+  // the fresh colors, so playhead/cum/total are read here (and stay deps).
   $effect(() => {
-    void project.generated;
-    void project.operations;
+    void themeVersion;
     // rt1.12 (nrob): the raster heatmap re-derives S from the source
-    // brightness + placement, so refresh when a source changes (swap /
-    // rescale / new image).
-    void project.reliefSources;
-    void project.settings.toolMoveArrowDensity; // arrow spacing
-    rebuildToolpathGeometry();
+    // brightness + placement, so refresh when a source changes.
+    toolpathBuilder?.build({
+      generated: project.generated,
+      operations: project.operations,
+      reliefSources: project.reliefSources,
+      arrowDensity: project.settings.toolMoveArrowDensity,
+      lineWidth: project.settings.previewLineWidth,
+      width: host?.clientWidth || 1,
+      height: host?.clientHeight || 1,
+      wireVisible,
+      playhead: project.playhead,
+      cumLen: project.toolpathCumLen,
+      totalLen: project.toolpathTotalLen,
+    });
+    updateSceneRadius();
     requestRender();
   });
 
@@ -617,10 +542,7 @@
   $effect(() => {
     const lw = Math.max(0.5, project.settings.previewLineWidth);
     importedBuilder?.setLineWidth(lw);
-    for (const o of [toolpathLinesObject, toolpathArrowsObject]) {
-      const m = o?.material as LineMaterial | undefined;
-      if (m) m.linewidth = lw;
-    }
+    toolpathBuilder?.setLineWidth(lw);
     requestRender();
   });
 
@@ -747,7 +669,7 @@
       tools: project.tools,
       machineMode: project.machine.mode,
     });
-    applyToolpathFade();
+    toolpathBuilder?.applyFade(project.playhead, project.toolpathCumLen, project.toolpathTotalLen);
     requestRender();
   });
 
@@ -798,8 +720,7 @@
     // the heightfield carved-stock mesh. wireVisible is a $derived at
     // module scope so the rebuild functions see the same value.
     importedBuilder?.setWireVisible(wireVisible);
-    if (toolpathLinesObject) toolpathLinesObject.visible = wireVisible;
-    if (toolpathArrowsObject) toolpathArrowsObject.visible = wireVisible;
+    toolpathBuilder?.setWireVisible(wireVisible);
     if (settings.previewMode === 'wireframe') {
       driver?.setVisible(false);
       requestRender();
@@ -946,83 +867,13 @@
     return driverInitPromise;
   }
 
-  /// Mutate the color attribute in place to reflect the current
-  /// playhead — segments before the head get their base color, segments
-  /// after get faded. Walks only the slice between appliedHead and the
-  /// new head so a 60fps playback is O(playhead delta) per tick, not
-  /// O(toolpath length). Replaces the per-frame full rebuild that
-  /// previously also reset the camera and broke pan/zoom during play.
-  function rebuildWarningSegmentColors() {
-    warningSegmentColors = new Map();
-    const warnings = project.simDiagnostics?.warnings ?? [];
-    for (const w of warnings) {
-      const idx = simWarningSegmentIdx(w);
-      const sev = simWarningSeverity(w);
-      // Critical wins over warning if both fired on the same segment.
-      const existing = warningSegmentColors.get(idx);
-      if (existing && sev !== 'critical') continue;
-      const tint: [number, number, number] =
-        sev === 'critical' ? [0.9, 0.28, 0.28] : [0.94, 0.75, 0.13];
-      warningSegmentColors.set(idx, tint);
-    }
-  }
-
+  // Sim-warning tints: rebuild the toolpath's per-segment override map and
+  // re-apply the fade (warnings can repaint any past/future segment).
   $effect(() => {
-    void project.simDiagnostics;
-    rebuildWarningSegmentColors();
-    appliedHead = -1;
-    applyToolpathFade();
+    toolpathBuilder?.setWarnings(project.simDiagnostics?.warnings ?? []);
+    toolpathBuilder?.applyFade(project.playhead, project.toolpathCumLen, project.toolpathTotalLen);
     requestRender();
   });
-
-  function applyToolpathFade() {
-    if (!toolpathLinesObject || toolpathColors.length === 0) return;
-    const total = toolpathColors.length;
-    // Arc-length mapping: head = segIdx + 1 so the segment currently
-    // under the cutter (segIdx) is rendered as "past" (fully colored)
-    // and everything strictly after is faded — matches the count-based
-    // behavior at segment boundaries while keeping playback uniform
-    // across short connectors and long edges.
-    const { segIdx } = playheadToSegment(
-      project.playhead,
-      project.toolpathCumLen,
-      project.toolpathTotalLen,
-    );
-    const head =
-      segIdx < 0
-        ? Math.max(0, Math.min(total, Math.round(project.playhead * total)))
-        : Math.max(0, Math.min(total, segIdx + 1));
-    if (head === appliedHead) return;
-    // LineSegmentsGeometry stores colors as one interleaved instance
-    // buffer (6 floats / segment: start-rgb, end-rgb) — the same layout
-    // the old flat color array used, so the `start * 3` offset math below
-    // is unchanged; only the buffer handle + dirty flag differ.
-    const colorAttr = toolpathLinesObject.geometry.getAttribute(
-      'instanceColorStart',
-    ) as THREE.InterleavedBufferAttribute;
-    const arr = colorAttr.array as Float32Array;
-    const f = 0.25; // fade factor for future moves
-    const fade_offset = 0.05;
-    const lo = appliedHead < 0 ? 0 : Math.min(appliedHead, head);
-    const hi = appliedHead < 0 ? total : Math.max(appliedHead, head);
-    for (let i = lo; i < hi; i++) {
-      const tc = toolpathColors[i];
-      const past = i < head;
-      // 7iej.20: a warning-tinted segment fades from its tint, else from
-      // its base color; the past/future offset math is the pure fadeColor.
-      const tint = warningSegmentColors.get(i);
-      const [r, g, b] = fadeColor(tint ?? tc.base, past, f, fade_offset);
-      const off = tc.start * 3;
-      arr[off] = r;
-      arr[off + 1] = g;
-      arr[off + 2] = b;
-      arr[off + 3] = r;
-      arr[off + 4] = g;
-      arr[off + 5] = b;
-    }
-    colorAttr.data.needsUpdate = true;
-    appliedHead = head;
-  }
 
   // Marker builders (4w2f): each owns its THREE.Group and rebuilds from
   // plain data the effects below hand it. Instantiated in onMount once the
@@ -1035,6 +886,7 @@
   let fixturesBuilder: FixturesBuilder | undefined;
   let toolGlyphBuilder: ToolGlyphBuilder | undefined;
   let importedBuilder: ImportedGeometryBuilder | undefined;
+  let toolpathBuilder: ToolpathBuilder | undefined;
 
   $effect(() => {
     void project.simDiagnostics;
@@ -1076,203 +928,6 @@
     if (fixturesBuilder?.flash(next)) requestRender();
   });
 
-  /// Generated toolpath wireframe. Rebuilds on `generated` /
-  /// `operations` (op enable filter) only. Playhead fade + sim-warning
-  /// tints mutate the color attribute in place after this.
-  function rebuildToolpathGeometry() {
-    if (!geometryGroup || !scene) return;
-    if (toolpathLinesObject) {
-      geometryGroup.remove(toolpathLinesObject);
-      toolpathLinesObject.geometry.dispose();
-      (toolpathLinesObject.material as THREE.Material).dispose();
-      toolpathLinesObject = undefined;
-    }
-    if (toolpathArrowsObject) {
-      geometryGroup.remove(toolpathArrowsObject);
-      toolpathArrowsObject.geometry.dispose();
-      (toolpathArrowsObject.material as THREE.Material).dispose();
-      toolpathArrowsObject = undefined;
-    }
-    toolpathLineOwners = [];
-    toolpathColors = [];
-    appliedHead = -1;
-    const gen = project.generated;
-    if (!gen) {
-      // Toolpath went away — the imported $effect also tracks
-      // `project.generated` and will rebuild with the un-faded baseline.
-      updateSceneRadius();
-      return;
-    }
-
-    const positions: number[] = [];
-    const colors: number[] = [];
-    // Direction-arrow geometry — separate buffer so it doesn't
-    // interfere with selectionDelta / playhead-fade range math on
-    // the main toolpath buffer.
-    const arrowPositions: number[] = [];
-    const arrowColors: number[] = [];
-    // 7iej.17: chevron geometry lives in scene3d/toolpath_buffers.ts (pure +
-    // unit-tested); the buffer assembly + spacing bookkeeping stay here.
-    const ARROW_PARAMS = {
-      minLen: 1.0, // mm; shorter segments never get an arrow
-      maxSize: 4.0, // mm; absolute cap on arrow size
-      sizeFrac: 0.2, // arrow size relative to segment length
-      halfWing: Math.tan((30 * Math.PI) / 180), // ±30° wings
-    };
-    // Arrow spacing is user-tunable (Settings → arrow density): higher
-    // density packs arrows closer. density 0 ⇒ Infinity spacing ⇒ no
-    // segment ever qualifies, so arrows are disabled.
-    const ARROW_MIN_SPACING = arrowSpacingMm(project.settings.toolMoveArrowDensity);
-    let lenSinceLastArrow = ARROW_MIN_SPACING; // emit on first qualifying segment
-    const moveTints: Record<string, THREE.Color> = {
-      rapid: cssColor('--toolpath-rapid', 0x35a2ff),
-      cut: cssColor('--toolpath-cut', 0xff5555),
-      plunge: cssColor('--toolpath-plunge', 0xffd23a),
-      retract: cssColor('--toolpath-retract', 0x5fd06e),
-      arc: cssColor('--toolpath-arc', 0xff8a3a),
-    };
-    // Per-op enable filter: disabling an op via OperationsList hides its
-    // segments without forcing a re-Generate (matches the gcode panel's
-    // commented-out chapter view).
-    const disabledOpIds = new Set<number>();
-    for (const o of project.operations) {
-      if (!o.enabled) disabledOpIds.add(o.id);
-    }
-
-    // rt1.12 (nrob): per-raster-op power grids for the toolpath heatmap.
-    // The wire toolpath carries no `S`, so re-derive it from the source
-    // brightness through the same power curve the backend emits from,
-    // then colour each cut span by the power at its midpoint.
-    const rasterHeat = new Map<number, { grid: HeatGrid; powers: number[]; peak: number }>();
-    for (const o of project.operations) {
-      if (o.kind !== 'raster_engrave' || !o.enabled) continue;
-      const src = project.reliefSources.find((s) => s.id === o.sourceId);
-      if (!src || src.cols <= 0 || src.rows <= 0) continue;
-      const powers = powerGrid(o.powerCurve, src.brightness, src.cols, src.rows);
-      if (powers.length === 0) continue;
-      rasterHeat.set(o.id, {
-        grid: {
-          originX: src.origin.x,
-          originY: src.origin.y,
-          cell: src.cell,
-          cols: src.cols,
-          rows: src.rows,
-        },
-        powers,
-        peak: Math.max(1, maxPower(o.powerCurve)),
-      });
-    }
-    // Dithered curves emit ~one span per pixel, so a large engrave can
-    // run to millions of segments. Downsample the heat spans to a fixed
-    // budget (~10k) by striding — the fat-line buffer stays bounded and
-    // the heatmap still reads. Non-raster moves are never dropped.
-    const RASTER_HEAT_BUDGET = 10000;
-    let rasterHeatTotal = 0;
-    if (rasterHeat.size > 0) {
-      for (let i = 0; i < gen.toolpath.length; i++) {
-        const s = gen.toolpath[i];
-        const oid = s.op_id ?? 0;
-        if (oid > 0 && disabledOpIds.has(oid)) continue;
-        if (rasterHeat.has(oid) && (s.kind === 'cut' || s.kind === 'arc')) rasterHeatTotal++;
-      }
-    }
-    const rasterStride =
-      rasterHeatTotal > RASTER_HEAT_BUDGET ? Math.ceil(rasterHeatTotal / RASTER_HEAT_BUDGET) : 1;
-    let rasterCutSeen = 0;
-
-    const total = gen.toolpath.length;
-    for (let i = 0; i < total; i++) {
-      const seg = gen.toolpath[i];
-      const opId = seg.op_id ?? 0;
-      if (opId > 0 && disabledOpIds.has(opId)) continue;
-
-      // rt1.12 (nrob): raster-engrave cut spans get a power heatmap
-      // instead of the op-hue colour. Travel moves (rapid) keep the
-      // normal tint. Dense engraves stride down to the segment budget.
-      const heat = rasterHeat.get(opId);
-      const isHeat = heat != null && (seg.kind === 'cut' || seg.kind === 'arc');
-      if (isHeat) {
-        const keep = rasterCutSeen % rasterStride === 0;
-        rasterCutSeen++;
-        if (!keep) continue;
-      }
-
-      let r: number;
-      let g: number;
-      let b: number;
-      if (isHeat && heat) {
-        const mx = (seg.from.x + seg.to.x) * 0.5;
-        const my = (seg.from.y + seg.to.y) * 0.5;
-        const p = powerAtWorld(mx, my, heat.grid, heat.powers);
-        const t = p == null ? 0 : Math.min(1, p / heat.peak);
-        [r, g, b] = heatColor(t);
-      } else {
-        const moveTint = moveTints[seg.kind] ?? moveTints.cut;
-        const opHueV = opId === 0 ? 0.0 : opPalette(opId);
-        const opCol = new THREE.Color().setHSL(opHueV, 0.55, 0.5);
-        // 7iej.20: THREE/theme resolution stays here; the op_id-0 vs
-        // boosted-hue channel math lives in the pure resolveSegmentColor.
-        [r, g, b] = resolveSegmentColor(
-          opId,
-          seg.kind,
-          [moveTint.r, moveTint.g, moveTint.b],
-          [opCol.r, opCol.g, opCol.b],
-        );
-      }
-      const startVertex = positions.length / 3;
-      positions.push(seg.from.x, seg.from.y, seg.from.z, seg.to.x, seg.to.y, seg.to.z);
-      colors.push(r, g, b, r, g, b);
-      toolpathLineOwners.push({ kind: 'toolpath', segIdx: i });
-      toolpathColors.push({ start: startVertex, base: [r, g, b] });
-
-      // Direction-arrow chevron at the segment midpoint when
-      // qualifying. Rapids skip — feed direction matters only for
-      // material-cutting moves. The cumulative-spacing guard
-      // prevents arrow noise on dense raster pockets.
-      const dx = seg.to.x - seg.from.x;
-      const dy = seg.to.y - seg.from.y;
-      const dz = seg.to.z - seg.from.z;
-      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (len > 0) lenSinceLastArrow += len;
-      // Spacing + move-kind eligibility stays here (caller state); the
-      // chevron geometry (incl. the per-segment minLen gate) is pure.
-      // rt1.12 (nrob): no direction arrows on raster heat spans — they'd
-      // swamp the heatmap and the scan direction is already obvious.
-      const spacingOk = lenSinceLastArrow >= ARROW_MIN_SPACING && seg.kind !== 'rapid' && !isHeat;
-      const chev = spacingOk ? computeArrowChevron(seg.from, seg.to, ARROW_PARAMS) : null;
-      if (chev) {
-        const { mid, wing1, wing2 } = chev;
-        arrowPositions.push(mid[0], mid[1], mid[2], wing1[0], wing1[1], wing1[2]);
-        arrowPositions.push(mid[0], mid[1], mid[2], wing2[0], wing2[1], wing2[2]);
-        // Slight brightness boost so arrows pop on top of the
-        // base line.
-        const ar = Math.min(1, r * 1.25);
-        const ag = Math.min(1, g * 1.25);
-        const ab = Math.min(1, b * 1.25);
-        arrowColors.push(ar, ag, ab, ar, ag, ab, ar, ag, ab, ar, ag, ab);
-        lenSinceLastArrow = 0;
-      }
-    }
-
-    if (positions.length > 0) {
-      toolpathLinesObject = buildToolpathFatLines(positions, colors);
-      toolpathLinesObject.visible = wireVisible;
-      geometryGroup.add(toolpathLinesObject);
-    }
-    if (arrowPositions.length > 0) {
-      toolpathArrowsObject = buildToolpathFatLines(arrowPositions, arrowColors);
-      toolpathArrowsObject.visible = wireVisible;
-      // Render after the base line so the chevron sits on top.
-      toolpathArrowsObject.renderOrder = 1;
-      geometryGroup.add(toolpathArrowsObject);
-    }
-    updateSceneRadius();
-    // Re-apply the past/future fade to the freshly-baked colors so the
-    // playhead tint is correct even when no playhead change triggered
-    // this rebuild.
-    applyToolpathFade();
-  }
-
   /// Bounding sphere across whichever line buffers exist. Used by
   /// fit-to-view and raycaster threshold scaling. Returns null when
   /// nothing's rendered yet.
@@ -1280,12 +935,8 @@
     const spheres: THREE.Sphere[] = [];
     const imp = importedBuilder?.boundingSphere();
     if (imp) spheres.push(imp);
-    if (toolpathLinesObject) {
-      toolpathLinesObject.geometry.computeBoundingSphere();
-      if (toolpathLinesObject.geometry.boundingSphere) {
-        spheres.push(toolpathLinesObject.geometry.boundingSphere);
-      }
-    }
+    const tp = toolpathBuilder?.boundingSphere();
+    if (tp) spheres.push(tp);
     if (spheres.length === 0) return null;
     if (spheres.length === 1) return spheres[0].clone();
     // Two spheres: take a sphere covering both. Cheap approximation
@@ -1478,7 +1129,7 @@
     const importedPickable = importedBuilder?.pickable;
     const targets: LineSegments2[] = [];
     if (importedPickable) targets.push(importedPickable);
-    if (toolpathLinesObject) targets.push(toolpathLinesObject);
+    if (toolpathBuilder?.pickable) targets.push(toolpathBuilder.pickable);
     if (targets.length === 0) return;
     const rect = renderer.domElement.getBoundingClientRect();
     ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1502,7 +1153,9 @@
     // produced the hit. Both are pickable; closer wins (Three's
     // intersectObjects sorts by distance).
     const owners =
-      hit.object === importedPickable ? (importedBuilder?.lineOwners ?? []) : toolpathLineOwners;
+      hit.object === importedPickable
+        ? (importedBuilder?.lineOwners ?? [])
+        : (toolpathBuilder?.lineOwners ?? []);
     const owner = owners[segIndex];
     if (!owner) return;
     if (owner.kind === 'object') {

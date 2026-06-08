@@ -1136,6 +1136,13 @@ class ProjectState {
       this.toolpathCumLen = null;
       this.toolpathTotalLen = 0;
     }
+    // A fresh toolpath invalidates the previous heightfield-sim run: its
+    // warnings (collisions, rapid-through-material) described the OLD
+    // program. Clear them so they don't linger against the new toolpath;
+    // the 3D pane's sim re-runs (keyed on generatedVersion) and repopulates
+    // when it's visible. Without this, a stale critical sim warning kept
+    // showing in the warning chip after a fix-and-regenerate.
+    this.simDiagnostics = null;
     this.dirty = false;
     this.error = null;
     this.playhead = 1.0;

@@ -312,12 +312,14 @@
 
   async function run() {
     if (!project.geometryView) return;
-    if (project.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
-      project.setError(
-        `Sim has ${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} — fix or disable the safety check in Settings`,
-      );
-      return;
-    }
+    // NOTE: Generate is deliberately NOT gated on `criticalCount`. The
+    // critical-warning safety check blocks DOWNLOAD (see downloadGcode +
+    // the SettingsDialog hint: "required before downloading G-code"), not
+    // generation. Gating Generate here deadlocked the fix loop: a critical
+    // warning (e.g. pocket_fill_incomplete) can only be cleared by
+    // re-generating after a parameter change, but the gate refused that
+    // very re-generate because the count still reflected the stale prior
+    // run — so the warning never went away.
     project.beginGenerate();
     abortController = new AbortController();
     try {
@@ -378,15 +380,19 @@
   }
 
   async function downloadGcode() {
-    // 94sf: if the most recent generate raised critical pipeline
-    // warnings (tool_too_large, op_order_suspect, …) and the user
-    // hasn't disabled the safety gate, refuse to write the file.
-    // The toolpath we'd ship is the one the pipeline flagged as
-    // substantively wrong — saving it to disk just gives the user
-    // a broken .ngc that ends up on a machine.
-    if (project.settings.blockOnCriticalSimWarnings && pipelineCriticalCount > 0) {
+    // 94sf: if the program we'd ship has critical warnings and the user
+    // hasn't disabled the safety gate, refuse to write the file — a broken
+    // / unsafe .ngc on a machine is the failure we're guarding against.
+    // This is the ONLY place the critical-warning safety check blocks
+    // (Generate stays open so the operator can iterate to a fix); it covers
+    // BOTH the pipeline's findings (tool_too_large, pocket_fill_incomplete,
+    // out_of_stock, …) AND the heightfield sim's collisions / rapid-through-
+    // material. `criticalCount` aggregates both, and simDiagnostics is
+    // cleared on every Generate (see setGenerated) so it always reflects
+    // the toolpath actually being exported.
+    if (project.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
       project.setError(
-        `Pipeline raised ${pipelineCriticalCount} critical warning${pipelineCriticalCount === 1 ? '' : 's'} on the last Generate — fix or disable the safety check in Settings`,
+        `${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} (collisions / unsafe cuts) — fix or disable the safety check in Settings before downloading`,
       );
       return;
     }

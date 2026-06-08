@@ -9,6 +9,7 @@
 /// in ../sim/driver.ts).
 
 import type * as THREE from 'three';
+import type { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 
 /// Wiring every builder needs: the scene to attach its group to, and a
 /// callback to mark the next animation frame dirty after a mutation.
@@ -45,4 +46,13 @@ export interface LineBuilder extends Builder {
   setLineWidth(lw: number): void;
   setResolution(w: number, h: number): void;
   setWireVisible(visible: boolean): void;
+}
+
+/// A line builder whose buffer is raycast-pickable: it exposes the
+/// LineSegments2 the ray tests against plus a per-segment owner array
+/// (one entry per segment, indexed by the hit's segment index). The Picker
+/// raycasts every pickable and reads the owners of whichever one was hit.
+export interface PickableLineBuilder extends LineBuilder {
+  readonly pickable: LineSegments2 | undefined;
+  readonly lineOwners: LineOwner[];
 }

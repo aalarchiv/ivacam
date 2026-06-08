@@ -26,7 +26,7 @@ import {
 import { powerGrid, maxPower } from '../cam/raster_preview';
 import { powerAtWorld, heatColor, type HeatGrid } from './raster_heatmap';
 import { buildFatLines } from './fat_lines';
-import type { BuilderContext, CssColor, LineBuilder, LineOwner } from './builder';
+import type { BuilderContext, CssColor, LineOwner, PickableLineBuilder } from './builder';
 
 export interface ToolpathInput {
   generated: GenerateResponse | null;
@@ -49,7 +49,7 @@ export interface ToolpathInput {
 /// first vertex, `base` its un-faded color.
 type ToolpathColor = { start: number; base: [number, number, number] };
 
-export class ToolpathBuilder implements LineBuilder {
+export class ToolpathBuilder implements PickableLineBuilder {
   readonly group = new THREE.Group();
   private lines: LineSegments2 | undefined;
   private arrows: LineSegments2 | undefined;

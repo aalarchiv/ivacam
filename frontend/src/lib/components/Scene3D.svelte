@@ -2,9 +2,6 @@
   import { onMount, onDestroy } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  // Fat lines (Line2/LineSegments2): the pickable line buffers live in the
-  // imported + toolpath builders; the host only needs the type to raycast.
-  import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
   import { project, playheadToSegment } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { HeightfieldDriver } from '../sim/driver';
@@ -19,6 +16,8 @@
   import { ToolGlyphBuilder } from '../scene3d/tool_glyph';
   import { ImportedGeometryBuilder } from '../scene3d/imported_geometry';
   import { ToolpathBuilder } from '../scene3d/toolpath';
+  import { Picker } from '../scene3d/picker';
+  import type { PickableLineBuilder } from '../scene3d/builder';
   import type { ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewVersion, requestPreview } from '../state/text_preview.svelte';
@@ -227,8 +226,7 @@
     const y = Math.max(4, Math.min(clientY - rect.top, host.clientHeight - 220));
     ctxMenu = { x, y };
   }
-  const raycaster = new THREE.Raycaster();
-  const ndc = new THREE.Vector2();
+  const picker = new Picker();
   const resVec = new THREE.Vector2();
 
   function cssVar(name: string, fallback: string): string {
@@ -1119,52 +1117,37 @@
     handlePick(e);
   }
 
-  /// Single-click pick: cast a ray through the cursor against the merged
-  /// LineSegments mesh and act on the closest hit. Imported geometry hits
-  /// drive object selection (mirrors the 2D pane); toolpath hits scrub
-  /// the playhead so the gcode panel scrolls + highlights the matching
-  /// line.
+  /// Single-click pick: cast a ray through the cursor against the line
+  /// builders' buffers and act on the closest hit. Imported geometry hits
+  /// drive object selection (mirrors the 2D pane); toolpath hits scrub the
+  /// playhead so the gcode panel scrolls + highlights the matching line.
+  /// The raycast + owner resolution live in the Picker; the store-side
+  /// actions (selection / playhead) stay here.
   function handlePick(e: PointerEvent) {
     if (!camera || !renderer) return;
-    const importedPickable = importedBuilder?.pickable;
-    const targets: LineSegments2[] = [];
-    if (importedPickable) targets.push(importedPickable);
-    if (toolpathBuilder?.pickable) targets.push(toolpathBuilder.pickable);
-    if (targets.length === 0) return;
-    const rect = renderer.domElement.getBoundingClientRect();
-    ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(ndc, camera);
-    // LineSegments2 raycasts in screen space against the line width;
-    // the threshold (px) widens the pick corridor so thin lines stay
-    // clickable.
-    raycaster.params.Line2 = { threshold: 8 };
-    const hits = raycaster.intersectObjects(targets, false);
-    if (hits.length === 0) {
+    const builders: PickableLineBuilder[] = [];
+    if (importedBuilder) builders.push(importedBuilder);
+    if (toolpathBuilder) builders.push(toolpathBuilder);
+    const result = picker.pick({
+      clientX: e.clientX,
+      clientY: e.clientY,
+      rect: renderer.domElement.getBoundingClientRect(),
+      camera,
+      builders,
+    });
+    if (result.kind === 'ignore') return;
+    if (result.kind === 'clear') {
       if (!e.shiftKey) project.clearSelection();
       return;
     }
-    const hit = hits[0];
-    // LineSegments2 reports the picked segment as `faceIndex`; the owner
-    // arrays hold one entry per segment, so it maps directly.
-    const segIndex = hit.faceIndex ?? (hit.index != null ? Math.floor(hit.index / 2) : null);
-    if (segIndex == null) return;
-    // Resolve which owner array to consult based on which line object
-    // produced the hit. Both are pickable; closer wins (Three's
-    // intersectObjects sorts by distance).
-    const owners =
-      hit.object === importedPickable
-        ? (importedBuilder?.lineOwners ?? [])
-        : (toolpathBuilder?.lineOwners ?? []);
-    const owner = owners[segIndex];
-    if (!owner) return;
+    const owner = result.owner;
     if (owner.kind === 'object') {
       if (owner.objectId > 0) project.toggleObject(owner.objectId, e.shiftKey);
       else if (!e.shiftKey) project.clearSelection();
     } else {
       // Set playhead so the arc-length mapping lands at the end of the
-      // picked segment (so the cutter sits there and gcode-panel
-      // scrolls to the matching line).
+      // picked segment (so the cutter sits there and gcode-panel scrolls
+      // to the matching line).
       const cum = project.toolpathCumLen;
       const total = project.toolpathTotalLen;
       const segs = project.generated?.toolpath.length ?? 0;

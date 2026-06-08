@@ -22,7 +22,7 @@ import { previewSegmentsFor } from '../state/text_preview.svelte';
 import { resolveAci } from '../canvas/aci-color';
 import { tessellate } from './tessellate';
 import { buildFatLines } from './fat_lines';
-import type { BuilderContext, CssColor, LineBuilder, LineOwner } from './builder';
+import type { BuilderContext, CssColor, LineOwner, PickableLineBuilder } from './builder';
 
 export interface ImportedGeometryInput {
   data: ImportResponse | null;
@@ -50,7 +50,7 @@ export interface ImportedGeometryInput {
 /// belong to it, `base` the original (non-selected) color to revert to.
 type ColorRange = { start: number; count: number; base: [number, number, number] };
 
-export class ImportedGeometryBuilder implements LineBuilder {
+export class ImportedGeometryBuilder implements PickableLineBuilder {
   readonly group = new THREE.Group();
   private lines: LineSegments2 | undefined;
   private overlays: LineSegments2[] = [];

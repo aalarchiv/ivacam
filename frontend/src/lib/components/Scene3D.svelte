@@ -18,7 +18,6 @@
   import { opHue, opSourceHsl } from '../state/op-color';
   import { HeightfieldDriver } from '../sim/driver';
   import { tessellate } from '../scene3d/tessellate';
-  import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
   import { pixelsPerCell } from '../scene3d/lod';
   import { disposeGroup } from '../scene3d/dispose';
   import type { BuilderContext, CssColor } from '../scene3d/builder';
@@ -28,6 +27,7 @@
   import { ApproachBuilder } from '../scene3d/approach';
   import { WarningMarkersBuilder } from '../scene3d/warning_markers';
   import { FixturesBuilder } from '../scene3d/fixtures';
+  import { ToolGlyphBuilder } from '../scene3d/tool_glyph';
   import type { ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
@@ -57,7 +57,6 @@
   let camera: THREE.PerspectiveCamera | undefined;
   let controls: OrbitControls | undefined;
   let geometryGroup: THREE.Group | undefined;
-  let toolGroup: THREE.Group | undefined;
   let raf = 0;
   let observer: ResizeObserver | undefined;
   let intersectObserver: IntersectionObserver | undefined;
@@ -248,15 +247,6 @@
   /// severity color regardless of past/future state.
   let warningSegmentColors = new Map<number, [number, number, number]>();
 
-  /// Persistent tool-tip mesh + the spec it was built for. updateTool()
-  /// fires every playhead change (60×/sec while playing), so creating a
-  /// fresh BufferGeometry + Mesh per tick churned ~60 GPU uploads / GC
-  /// cycles per second. We cache the mesh keyed by the tool/mode spec
-  /// and only rebuild when the spec changes; per-tick updates are now
-  /// position.set + material.color.setHex.
-  let toolMesh: THREE.Mesh | undefined;
-  let toolMeshKey = '';
-
   /// Heightfield-based cutting simulator. Lazy-loaded on first need
   /// (the WASM module is async). Owns its own group inside `scene`;
   /// shows / hides per project.settings.previewMode.
@@ -321,27 +311,6 @@
   function cssColor(name: string, fallback: number): THREE.Color {
     return new THREE.Color(cssVar(name, '') || fallback);
   }
-  /// Per-toolpath-kind tip colors for the playhead glyph (the small
-  /// cone/sphere at the cutter tip). Recomputed by `applyTheme` so
-  /// theme switches don't leave the tip a stale color while the rest
-  /// of the toolpath restyles.
-  let tipColorByKind: Record<string, number> = {
-    rapid: 0x35a2ff,
-    cut: 0xff5555,
-    plunge: 0xffd23a,
-    retract: 0x5fd06e,
-    arc: 0xff8a3a,
-  };
-  function refreshTipColors() {
-    tipColorByKind = {
-      rapid: cssColor('--toolpath-rapid', 0x35a2ff).getHex(),
-      cut: cssColor('--toolpath-cut', 0xff5555).getHex(),
-      plunge: cssColor('--toolpath-plunge', 0xffd23a).getHex(),
-      retract: cssColor('--toolpath-retract', 0x5fd06e).getHex(),
-      arc: cssColor('--toolpath-arc', 0xff8a3a).getHex(),
-    };
-  }
-
   /// Deterministic hue in [0, 1) per op id. Delegates to the shared
   /// `opHue` so the toolpath, the 3D source tint, and the 2D canvas all
   /// land on the SAME color for a given op.
@@ -431,13 +400,11 @@
     geometryGroup = new THREE.Group();
     scene.add(geometryGroup);
 
-    toolGroup = new THREE.Group();
-    scene.add(toolGroup);
-
-    // Marker builders own their own groups inside the scene (4w2f). The
-    // host's $effects read project fields and call builder.build(...).
+    // Builders own their own groups inside the scene (4w2f). The host's
+    // $effects read project fields and call builder.build(...).
     const builderCtx: BuilderContext = { scene, requestRender };
     const css: CssColor = cssColor;
+    toolGlyphBuilder = new ToolGlyphBuilder(builderCtx, css);
     stockBuilder = new StockBoxBuilder(builderCtx, css);
     workAreaBuilder = new WorkAreaBuilder(builderCtx, css);
     tabsBuilder = new TabsBuilder(builderCtx, css);
@@ -500,12 +467,12 @@
     // Populate the tip-color cache with the live tokens — without this
     // the first frame after mount would draw the playhead in the
     // dark-theme fallback even when the user's on light theme.
-    refreshTipColors();
+    toolGlyphBuilder?.refreshTipColors();
   });
 
   function applyTheme() {
     if (!scene) return;
-    refreshTipColors();
+    toolGlyphBuilder?.refreshTipColors();
     scene.background = cssColor('--bg-app', 0x0d0d0d);
     const grid = scene.getObjectByName('theme-grid') as THREE.GridHelper | undefined;
     if (grid) {
@@ -551,11 +518,8 @@
       simRebuildTimer = null;
     }
     controls?.dispose();
-    if (toolMesh) {
-      disposeMesh(toolMesh);
-      toolMesh = undefined;
-    }
-    // Marker builders own + free their groups (4w2f).
+    // Builders own + free their groups (4w2f).
+    toolGlyphBuilder?.dispose();
     stockBuilder?.dispose();
     workAreaBuilder?.dispose();
     tabsBuilder?.dispose();
@@ -785,13 +749,17 @@
   });
 
   $effect(() => {
-    void project.playhead;
-    void project.generated;
-    void project.tools;
-    void project.operations; // op→tool assignment drives the cutter mesh
-    void project.machine;
-    void project.selectedOpId;
-    updateTool();
+    void project.machine; // mode drives the cutter shape; whole-machine dep
+    toolGlyphBuilder?.build({
+      generated: project.generated,
+      playhead: project.playhead,
+      cumLen: project.toolpathCumLen,
+      totalLen: project.toolpathTotalLen,
+      operations: project.operations, // op→tool assignment drives the cutter
+      selectedOpId: project.selectedOpId,
+      tools: project.tools,
+      machineMode: project.machine.mode,
+    });
     applyToolpathFade();
     requestRender();
   });
@@ -1126,6 +1094,7 @@
   let approachBuilder: ApproachBuilder | undefined;
   let warningMarkersBuilder: WarningMarkersBuilder | undefined;
   let fixturesBuilder: FixturesBuilder | undefined;
+  let toolGlyphBuilder: ToolGlyphBuilder | undefined;
 
   $effect(() => {
     void project.simDiagnostics;
@@ -1166,110 +1135,6 @@
     // only when the set actually changed, so we render only then.
     if (fixturesBuilder?.flash(next)) requestRender();
   });
-
-  /// Tool-tip cone: a small inverted cone whose apex sits at the current
-  /// toolpath position. Color is the active move kind (cut/plunge/etc.) so
-  /// the user can see at a glance what the tool is doing right now.
-  /// Tool tip indicator: a real-scale endmill (cylinder), V-bit (cone),
-  /// or drag-knife (small blade) sitting above the work with the cutting
-  /// tip planted at the current toolpath point. The shape comes from
-  /// setup.machine.mode + setup.tool.{diameter,dragoff}; size matches the
-  /// configured tool diameter so it visibly differs between a 1 mm engraver
-  /// and a 6 mm endmill.
-  function updateTool() {
-    if (!toolGroup) return;
-    const gen = project.generated;
-    if (!gen || gen.toolpath.length === 0) {
-      // No toolpath → drop the cached mesh so a future regenerate starts
-      // clean instead of orbiting the previous program's tip.
-      if (toolMesh) {
-        toolGroup.remove(toolMesh);
-        disposeMesh(toolMesh);
-        toolMesh = undefined;
-        toolMeshKey = '';
-      }
-      return;
-    }
-    const total = gen.toolpath.length;
-    const mapped = playheadToSegment(
-      project.playhead,
-      project.toolpathCumLen,
-      project.toolpathTotalLen,
-    );
-    // Fall back to the count-based mapping only if the cum-length table
-    // hasn't been built yet (race between setGenerated and the first
-    // updateTool tick).
-    const headIdx =
-      mapped.segIdx >= 0
-        ? Math.max(0, Math.min(total - 1, mapped.segIdx))
-        : Math.max(0, Math.min(total - 1, Math.round(project.playhead * total) - 1));
-    const seg = gen.toolpath[headIdx];
-    if (!seg) return;
-    const t =
-      mapped.segIdx >= 0
-        ? Math.max(0, Math.min(1, mapped.segT))
-        : Math.max(0, Math.min(1, project.playhead * total - headIdx));
-    const px = seg.from.x + (seg.to.x - seg.from.x) * t;
-    const py = seg.from.y + (seg.to.y - seg.from.y) * t;
-    const pz = seg.from.z + (seg.to.z - seg.from.z) * t;
-
-    const colorHex = tipColorByKind[seg.kind] ?? tipColorByKind.cut;
-
-    // Pick the tool by the op actually cutting at the playhead (the
-    // segment's op), so the displayed cutter changes as the playhead
-    // crosses op boundaries. Fall back to the selected op, then the
-    // first op. (Previously this preferred the SELECTED op, which showed
-    // that op's tool throughout the whole program.)
-    const segOp = project.operations.find((o) => o.id === seg.op_id);
-    const selOp =
-      project.selectedOpId == null
-        ? null
-        : (project.operations.find((o) => o.id === project.selectedOpId) ?? null);
-    const opForTool = segOp ?? selOp ?? project.operations[0];
-    const tool = project.tools.find((t) => t.id === (opForTool?.toolId ?? 0)) ?? project.tools[0];
-    const diameter = Math.max(0.2, tool?.diameter ?? 3);
-    const mode = project.machine.mode;
-    const dragoff = tool?.dragoff;
-    const tipDiameter = tool?.tipDiameter;
-    const tipAngleDeg = tool?.tipAngleDeg;
-    const kind = tool?.kind ?? 'endmill';
-    const fluteLen = tool?.fluteLengthMm;
-    const shankDia = tool?.shankDiameterMm;
-    const holder = tool?.holder;
-    const lengthMm = tool?.lengthMm;
-
-    // Cache key — anything that changes the geometry shape. Color is NOT
-    // part of the key; we only mutate material.color on the cached mesh
-    // for that. Holder fields are JSON-stringified so the key updates
-    // whenever any part of the holder spec changes.
-    const key = `${kind}|${mode}|${diameter}|${tipDiameter ?? ''}|${tipAngleDeg ?? ''}|${dragoff ?? ''}|${fluteLen ?? ''}|${shankDia ?? ''}|${holder ? JSON.stringify(holder) : ''}|${lengthMm ?? ''}`;
-    if (key !== toolMeshKey || !toolMesh) {
-      if (toolMesh) {
-        toolGroup.remove(toolMesh);
-        disposeMesh(toolMesh);
-      }
-      toolMesh = buildToolMesh(
-        kind,
-        mode,
-        diameter,
-        tipDiameter,
-        dragoff,
-        colorHex,
-        fluteLen,
-        shankDia,
-        holder,
-        tipAngleDeg,
-        lengthMm,
-      );
-      toolGroup.add(toolMesh);
-      toolMeshKey = key;
-    } else {
-      // Cached mesh — just retint the material to match the active move.
-      const m = toolMesh.material as THREE.MeshBasicMaterial;
-      if (m.color.getHex() !== colorHex) m.color.setHex(colorHex);
-    }
-    toolMesh.position.set(px, py, pz);
-  }
 
   /// Imported drawing + text-layer previews. Independent of toolpath /
   /// op enable state — re-runs only on transformedImport / visibleLayers /

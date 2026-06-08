@@ -3279,6 +3279,75 @@ mod tests {
         );
     }
 
+    /// A thin annular pocket — Ø20 outer, Ø15 hole, 2.5 mm-wide ring — with
+    /// a Ø2 tool (R1) is cleared by two overlapping wall passes: the outer
+    /// wall (R9) + a tool-center pass along the island wall (R8.5). Before
+    /// the island-wall fix the cascade marched only inward from the outer
+    /// wall and collapsed across the 0.5 mm tool-center band, emitting ONLY
+    /// the is_pocket==0 boundary → a bogus `pocket_fill_incomplete` warning
+    /// + an under-cut pocket. Now an island wall pass is always emitted.
+    #[test]
+    fn thin_annulus_pocket_cuts_inner_wall() {
+        use crate::cam::offsets::{pocket_for_object, PocketEmit};
+        use crate::cam::VcObject;
+        let circle = |r: f64| -> Vec<Point2> {
+            (0..96)
+                .map(|i| {
+                    let a = std::f64::consts::TAU * (i as f64) / 96.0;
+                    Point2::new(r * a.cos(), r * a.sin())
+                })
+                .collect()
+        };
+        // Outer boundary: Ø20 circle as a closed segment loop.
+        let pts = circle(10.0);
+        let mut segs = Vec::new();
+        for i in 0..pts.len() {
+            let a = pts[i];
+            let b = pts[(i + 1) % pts.len()];
+            segs.push(Segment::line(a, b, "0", 7));
+        }
+        let obj = VcObject::new(segs, true);
+        let tool_radius = 1.0; // Ø2 endmill
+                               // Island handed to pocket_for_object is the tool-center boundary of the
+                               // Ø15 hole (caller inflates by tool_radius): R7.5 + 1 = R8.5.
+        let island = circle(8.5);
+        // overlap 0.1 ⇒ step = toolD·(1−0.1) = 1.8 mm.
+        let offs = pocket_for_object(
+            &obj,
+            tool_radius,
+            false,
+            6,
+            PocketEmit::Cascade,
+            std::slice::from_ref(&island),
+            1.8,
+            0.0,
+            None,
+            crate::project::tool::SpindleDirection::Cw,
+        );
+        let boundary = offs.iter().filter(|o| o.is_pocket == 0).count();
+        let fill = offs.iter().filter(|o| o.is_pocket >= 1).count();
+        assert!(boundary >= 1, "outer wall pass expected");
+        assert!(
+            fill >= 1,
+            "thin annulus must emit an interior (island wall) pass, got {fill}"
+        );
+        // The island wall pass should ride the tool-center boundary of the
+        // hole (~R8.5): every vertex within a hair of that radius. Find the
+        // interior ring whose points sit near R8.5 and check coverage so a
+        // future regression that emits a degenerate ring is caught.
+        let near_inner_wall = offs.iter().filter(|o| o.is_pocket >= 1).any(|o| {
+            !o.segments.is_empty()
+                && o.segments.iter().all(|s| {
+                    let r = s.start.x.hypot(s.start.y);
+                    (r - 8.5).abs() < 0.2
+                })
+        });
+        assert!(
+            near_inner_wall,
+            "expected a fill pass hugging the island wall at ~R8.5"
+        );
+    }
+
     /// Pocket with `xy_finish_allowance` emits an extra wall ring at
     /// the actual contour (`tool_radius` offset) AND the rough rings
     /// step inward from (`tool_radius` + allowance) — leaving stock at

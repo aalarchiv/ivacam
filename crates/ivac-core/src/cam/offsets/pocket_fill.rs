@@ -801,6 +801,62 @@ pub fn pocket_for_object(
             });
         }
     }
+    // Island wall passes. A pocket with holes/islands must cut a tool-center
+    // pass along each island wall, mirroring the outer wall ring emitted
+    // above. The fill cascade only marches INWARD from the outer wall, so it
+    // leaves the island wall uncut (a stepover-wide ribbon on wide pockets),
+    // and for a thin annulus — outer/island gap narrower than one stepover —
+    // it collapses to nothing, emitting only the outer wall plus the bogus
+    // `pocket_fill_incomplete` warning. The `islands` handed in are already
+    // tool_radius-inflated by the caller, so each island contour IS the
+    // cutter-centerline path that just kisses the raw hole wall.
+    if !nocontour && !islands.is_empty() {
+        // Material only exists where the island (tool-center boundary) lies
+        // INSIDE the inset outer boundary; skip islands the tool can't reach
+        // around (they'd cut air / outside the pocket).
+        let boundary_polys: Vec<Vec<Point2>> = boundary
+            .iter()
+            .map(|o| segments_to_points(&o.segments, interpolate))
+            .collect();
+        let wall = &boundary[0];
+        let (layer, color, src) = (wall.layer.clone(), wall.color, wall.source_object_idx);
+        // The island wall is a wall-defining ring like the outer wall: tag
+        // it as finish so emit_offset swaps in the finish-set rates, unless
+        // an allowance / dual-tool finish pass owns the wall (matches the
+        // outer-wall rule above).
+        let wall_is_finish = allowance <= 1e-9 && !has_dual_tool_finish;
+        for island in islands {
+            if island.len() < 3 {
+                continue;
+            }
+            let inside = boundary_polys
+                .iter()
+                .any(|poly| island.iter().all(|p| point_in_polygon(poly, p.x, p.y)));
+            if !inside {
+                continue;
+            }
+            let mut segs = Vec::with_capacity(island.len());
+            for win in island.windows(2) {
+                segs.push(Segment::line(win[0], win[1], layer.clone(), color));
+            }
+            if let (Some(first), Some(last)) = (island.first(), island.last()) {
+                if first.distance(*last) > 1e-6 {
+                    segs.push(Segment::line(*last, *first, layer.clone(), color));
+                }
+            }
+            out.push(PolylineOffset {
+                segments: segs,
+                closed: true,
+                level: 0,
+                is_pocket: 2,
+                layer: layer.clone(),
+                color,
+                source_object_idx: src,
+                tabs: Vec::new(),
+                is_finish: wall_is_finish,
+            });
+        }
+    }
     // rt1.24 / rt1.33: emit a dedicated finish-wall pass when either
     // an XY allowance is set (single-tool finishing pass) or a
     // dual-tool finish radius is set (smaller tool walks the wall).

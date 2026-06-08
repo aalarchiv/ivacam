@@ -177,7 +177,7 @@ export { isContourOp, isPathOp } from './op_types';
 import { bboxOfSegments, lineCrossesBBox } from '../canvas/selection-geometry';
 import { computeFootprint } from '../sim/driver';
 import { augmentWithStockOutline } from './stock-outline';
-import { pickBestToolForOp } from './tool_picker';
+import { buildOpEntry } from './op_defaults';
 
 function isAbsolutePath(p: string): boolean {
   return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
@@ -1457,204 +1457,20 @@ class ProjectState {
   // ── operation helpers ────────────────────────────────────────────────
 
   addOperation(kind: OpKind): OpEntry {
-    const nextId = this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
-    // rt1.34: Pause has no tool, no source, no geometry — only a
-    // message. Skip the source-selection presets and the geometry-side
-    // defaults that the variant types don't carry.
-    if (kind === 'pause') {
-      const pauseOp: OpEntry = {
-        id: nextId,
-        name: prettyOpKind(kind),
-        enabled: true,
-        kind: 'pause',
-        toolId: 0,
-        sourceCombine: 'auto',
-        sourceLayers: null,
-        message: '',
-      } as OpEntry;
-      this.history.exec(addOperationCommand(pauseOp), this.target());
-      this.selectedOpId = pauseOp.id;
-      return pauseOp;
-    }
-    // 8n4k: program-only building blocks. Same skeleton as Pause —
-    // no tool, no geometry, no Z schedule — but each carries its
-    // own kind-specific fields with sensible defaults.
-    if (kind === 'homing') {
-      const op: OpEntry = {
-        id: nextId,
-        name: prettyOpKind(kind),
-        enabled: true,
-        kind: 'homing',
-        toolId: 0,
-        sourceCombine: 'auto',
-        sourceLayers: null,
-        retractToSafeZ: true,
-      } as OpEntry;
-      this.history.exec(addOperationCommand(op), this.target());
-      this.selectedOpId = op.id;
-      return op;
-    }
-    if (kind === 'probe') {
-      const op: OpEntry = {
-        id: nextId,
-        name: prettyOpKind(kind),
-        enabled: true,
-        kind: 'probe',
-        toolId: 0,
-        sourceCombine: 'auto',
-        sourceLayers: null,
-        axis: 'z',
-        distanceMm: -10,
-        feedMmMin: 100,
-      } as OpEntry;
-      this.history.exec(addOperationCommand(op), this.target());
-      this.selectedOpId = op.id;
-      return op;
-    }
-    if (kind === 'cycle_marker') {
-      const op: OpEntry = {
-        id: nextId,
-        name: prettyOpKind(kind),
-        enabled: true,
-        kind: 'cycle_marker',
-        toolId: 0,
-        sourceCombine: 'auto',
-        sourceLayers: null,
-        label: '',
-      } as OpEntry;
-      this.history.exec(addOperationCommand(op), this.target());
-      this.selectedOpId = op.id;
-      return op;
-    }
-    // rxm9: external G-code include. Same program-only skeleton.
-    // path + content default to empty — the user picks a file via
-    // OpPropertiesPanel which reads the bytes and sets both fields.
-    if (kind === 'gcode_include') {
-      const op: OpEntry = {
-        id: nextId,
-        name: prettyOpKind(kind),
-        enabled: true,
-        kind: 'gcode_include',
-        toolId: 0,
-        sourceCombine: 'auto',
-        sourceLayers: null,
-        path: '',
-        content: '',
-        // xi2g: default off — the counted summary fires anyway when
-        // unsim lines exist; the user opts into the per-line fan-out
-        // via the OpPropertiesPanel checkbox.
-        verboseUnsimWarnings: false,
-      } as OpEntry;
-      this.history.exec(addOperationCommand(op), this.target());
-      this.selectedOpId = op.id;
-      return op;
-    }
-    // f60x: relief surfacing follows a target Z-surface, not source
-    // geometry — skip the offset/contour defaults. Prefer a ball-nose
-    // tool; bind to the first loaded relief source (0 = none yet).
-    if (kind === 'relief_mill') {
-      const ball =
-        this.tools.find((t) => t.kind === 'ball_nose' || t.kind === 'bull_nose') ?? this.tools[0];
-      const reliefOp: OpEntry = {
-        id: nextId,
-        name: prettyOpKind(kind),
-        enabled: true,
-        kind: 'relief_mill',
-        toolId: ball?.id ?? this.tools[0]?.id ?? 1,
-        sourceCombine: 'auto',
-        sourceLayers: null,
-        depth: -2,
-        startDepth: 0,
-        step: -1,
-        sourceId: this.reliefSources[0]?.id ?? 0,
-        zMinMm: -2,
-        zMaxMm: 0,
-        invert: false,
-        scallopHeightMm: 0.05,
-        stepoverMm: null,
-        scanDirection: 'along_x',
-        alongStepMm: 0.5,
-      } as OpEntry;
-      this.history.exec(addOperationCommand(reliefOp), this.target());
-      this.selectedOpId = reliefOp.id;
-      return reliefOp;
-    }
-    // rt1.12: laser raster engraving follows an image-derived power
-    // field, not source geometry — skip the offset/contour defaults
-    // (mirrors relief_mill). Prefer a laser tool; bind to the first
-    // loaded relief source (0 = none yet). Linear S0..S1000 ramp is the
-    // machine-agnostic GRBL default the user retunes per laser.
-    if (kind === 'raster_engrave') {
-      const laser = this.tools.find((t) => t.kind === 'laser_beam') ?? this.tools[0];
-      const rasterOp: OpEntry = {
-        id: nextId,
-        name: prettyOpKind(kind),
-        enabled: true,
-        kind: 'raster_engrave',
-        toolId: laser?.id ?? this.tools[0]?.id ?? 1,
-        sourceCombine: 'auto',
-        sourceLayers: null,
-        depth: 0,
-        startDepth: 0,
-        step: null,
-        sourceId: this.reliefSources[0]?.id ?? 0,
-        resolutionMm: 0.1,
-        powerCurve: { kind: 'linear', min: 0, max: 1000 },
-        scanDirection: 'along_x',
-        link: 'lift_between',
-        overscanFactor: 0,
-      } as OpEntry;
-      this.history.exec(addOperationCommand(rasterOp), this.target());
-      this.selectedOpId = rasterOp.id;
-      return rasterOp;
-    }
-    // When the user has objects selected on the canvas, pin the new op
-    // to that exact set. Most users select first, click "+ Pocket"
-    // expecting the op to apply to what they highlighted — the
-    // alternative (default to All) silently runs across every imported
-    // chain. Empty selection ⇒ keep the All default (sourceObjects
-    // undefined + sourceLayers: null).
-    const selectionIds = [...this.selectedObjects];
-    const presetSources = selectionIds.length > 0 ? { sourceObjects: selectionIds } : {};
-    // dx8p: when adding a drill against a square-ish selection, pick
-    // the library tool whose diameter best matches the inferred hole.
-    // Falls through to the first-tool default for other kinds or when
-    // the geometry signal is ambiguous.
-    const tool = pickBestToolForOp(
-      kind,
-      selectionIds,
-      this.transformedImport?.object_meta ?? [],
-      this.tools,
-    );
-    // The literal builds a merged shape with conditionally-included
-    // variant-specific fields (`offset` for profile/engrave/drag_knife,
-    // `pocketStrategy` for pocket, `drillCycle` for drill, …) — TS
-    // can't infer the discriminated union from the `kind` binding, so
-    // assert the constructed shape at the boundary.
-    const op = {
-      id: nextId,
-      name: prettyOpKind(kind),
-      enabled: true,
-      kind,
-      toolId: tool?.id ?? 1,
-      sourceCombine: 'auto',
-      sourceLayers: null,
-      ...presetSources,
-      depth: -2,
-      startDepth: 0,
-      step: -1,
-      offset:
-        kind === 'engrave' || kind === 'drag_knife' || kind === 't_slot' || kind === 'dovetail'
-          ? 'on'
-          : 'outside',
-      pocketStrategy: kind === 'pocket' ? 'cascade' : null,
-      ...(kind === 'drill' ? { drillCycle: { kind: 'simple', dwell_sec: 0 } as DrillCycle } : {}),
-      cutDirection: 'conventional',
-      finishCutDirection: 'conventional',
-      plunge: { kind: 'direct' },
-      xyOverlap: 0.5,
-      ...(kind === 'vcarve' ? { multiPassRefine: false } : {}),
-    } as OpEntry;
+    // zt1p: the per-kind default field set lives in the pure `buildOpEntry`
+    // registry (op_defaults.ts) so it's one source of truth, unit-tested
+    // without the rune runtime. This method only gathers the live context
+    // and runs the result through the command bus. When the user has
+    // objects selected on the canvas, geometry kinds pin to that set (most
+    // users select first, then click "+ Pocket"); empty selection keeps the
+    // All default.
+    const op = buildOpEntry(kind, {
+      nextId: this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1,
+      tools: this.tools,
+      reliefSources: this.reliefSources,
+      selectionIds: [...this.selectedObjects],
+      objectMeta: this.transformedImport?.object_meta ?? [],
+    });
     this.history.exec(addOperationCommand(op), this.target());
     this.selectedOpId = op.id;
     return op;

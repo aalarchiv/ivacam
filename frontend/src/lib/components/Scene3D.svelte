@@ -13,18 +13,21 @@
     playheadToSegment,
     simWarningSeverity,
     simWarningSegmentIdx,
-    isContourOp,
   } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { opHue, opSourceHsl } from '../state/op-color';
-  import { HeightfieldDriver, computeFootprint } from '../sim/driver';
-  import { autoTabTs, buildObjectPolylines, polylineAtT } from '../cam/tabs';
+  import { HeightfieldDriver } from '../sim/driver';
   import { tessellate } from '../scene3d/tessellate';
   import { buildToolMesh, disposeMesh } from '../scene3d/tool_mesh';
   import { pixelsPerCell } from '../scene3d/lod';
-  import { warningPosition } from '../scene3d/warning_position';
-  import { opIncludesObject } from '../state/op_source';
-  import type { SimWarning, ToolpathSegment } from '../api/types';
+  import { disposeGroup } from '../scene3d/dispose';
+  import type { BuilderContext, CssColor } from '../scene3d/builder';
+  import { StockBoxBuilder } from '../scene3d/stock_box';
+  import { WorkAreaBuilder } from '../scene3d/work_area';
+  import { TabsBuilder } from '../scene3d/tabs';
+  import { ApproachBuilder } from '../scene3d/approach';
+  import { WarningMarkersBuilder } from '../scene3d/warning_markers';
+  import type { ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
@@ -431,6 +434,16 @@
     toolGroup = new THREE.Group();
     scene.add(toolGroup);
 
+    // Marker builders own their own groups inside the scene (4w2f). The
+    // host's $effects read project fields and call builder.build(...).
+    const builderCtx: BuilderContext = { scene, requestRender };
+    const css: CssColor = cssColor;
+    stockBuilder = new StockBoxBuilder(builderCtx, css);
+    workAreaBuilder = new WorkAreaBuilder(builderCtx, css);
+    tabsBuilder = new TabsBuilder(builderCtx, css);
+    approachBuilder = new ApproachBuilder(builderCtx, css);
+    warningMarkersBuilder = new WarningMarkersBuilder(builderCtx, css);
+
     // Defer the resize-driven fit() to the next animation frame.
     // `fit()` calls `renderer.setSize(w, h)` which adjusts the
     // observed canvas, retriggering the observer in the same layout
@@ -541,12 +554,12 @@
       disposeMesh(toolMesh);
       toolMesh = undefined;
     }
-    disposeStockGroup();
-    if (workAreaGroup) {
-      disposeGroup(workAreaGroup);
-      scene?.remove(workAreaGroup);
-      workAreaGroup = undefined;
-    }
+    // Marker builders own + free their groups (4w2f).
+    stockBuilder?.dispose();
+    workAreaBuilder?.dispose();
+    tabsBuilder?.dispose();
+    approachBuilder?.dispose();
+    warningMarkersBuilder?.dispose();
     // 7iej.4: renderer.dispose() frees the GL context but does NOT walk
     // the scene graph, so every owned group's geometry/material must be
     // disposed explicitly. geometryGroup holds the imported wireframe,
@@ -562,16 +575,11 @@
       toolpathArrowsObject = undefined;
       assignmentOverlayObjects = [];
     }
-    for (const g of [tabsGroup, approachGroup, fixturesGroup, warningGroup]) {
-      if (g) {
-        disposeGroup(g);
-        scene?.remove(g);
-      }
+    if (fixturesGroup) {
+      disposeGroup(fixturesGroup);
+      scene?.remove(fixturesGroup);
+      fixturesGroup = undefined;
     }
-    tabsGroup = undefined;
-    approachGroup = undefined;
-    fixturesGroup = undefined;
-    warningGroup = undefined;
     driver?.destroy();
     driver = undefined;
     renderer?.dispose();
@@ -678,9 +686,10 @@
 
   // Tab markers: per-op tab placements + tabMode.
   $effect(() => {
-    void project.transformedImport;
-    void project.operations;
-    updateTabs();
+    tabsBuilder?.build({
+      imported: project.transformedImport,
+      operations: project.operations,
+    });
     requestRender();
   });
 
@@ -689,19 +698,23 @@
   // carries it (driven by selectedOpId) — otherwise the 3D view
   // stays uncluttered.
   $effect(() => {
-    void project.operations;
-    void project.selectedOpId;
-    void project.machine.fastMoveZ;
-    updateApproach();
+    approachBuilder?.build({
+      selectedOpId: project.selectedOpId,
+      operations: project.operations,
+      fastMoveZ: project.machine.fastMoveZ,
+    });
     requestRender();
   });
 
   // Stock bbox visual: stock config + toggle. Doesn't touch the
   // toolpath wireframe.
   $effect(() => {
-    void project.stock;
-    void project.settings.showStockBox;
-    updateStock();
+    stockBuilder?.build({
+      stock: project.stock,
+      showStockBox: project.settings.showStockBox,
+      imported: project.transformedImport,
+      workArea: project.machine.workArea,
+    });
     requestRender();
   });
 
@@ -710,8 +723,7 @@
   // as "limit, not solid", and dim opacity so it sits in the back of
   // the scene without competing with the toolpath.
   $effect(() => {
-    void project.machine.workArea;
-    updateWorkArea();
+    workAreaBuilder?.build({ workArea: project.machine.workArea });
     requestRender();
   });
 
@@ -1107,17 +1119,15 @@
     appliedSelection = new Set(next);
   }
 
-  let tabsGroup: THREE.Group | undefined;
-  let stockGroup: THREE.Group | undefined;
-  let workAreaGroup: THREE.Group | undefined;
+  // Marker builders (4w2f): each owns its THREE.Group and rebuilds from
+  // plain data the effects below hand it. Instantiated in onMount once the
+  // scene exists.
+  let stockBuilder: StockBoxBuilder | undefined;
+  let workAreaBuilder: WorkAreaBuilder | undefined;
+  let tabsBuilder: TabsBuilder | undefined;
+  let approachBuilder: ApproachBuilder | undefined;
+  let warningMarkersBuilder: WarningMarkersBuilder | undefined;
   let fixturesGroup: THREE.Group | undefined;
-  /// n79: a vertical needle (line) + tiny dot at the selected op's
-  /// approach point. Rebuilt on every relevant project change so
-  /// drag updates show live.
-  let approachGroup: THREE.Group | undefined;
-  /// Sim-warning markers (one mesh per critical / holder warning). Lazy
-  /// rebuilt whenever project.simDiagnostics changes.
-  let warningGroup: THREE.Group | undefined;
   /// Per-fixture-id → list of THREE.Material whose color we flip when
   /// the playhead crosses a `fixture_collision` warning's segment.
   let fixtureMaterials = new Map<number, THREE.MeshBasicMaterial[]>();
@@ -1126,49 +1136,13 @@
   /// Fixture ids currently flashing red (set by the playhead $effect).
   let flashingFixtures = new Set<number>();
 
-  function warningMarkerColor(w: SimWarning): THREE.Color {
-    return simWarningSeverity(w) === 'critical'
-      ? cssColor('--error', 0xe54848)
-      : cssColor('--warn', 0xf0c020);
-  }
-
-  function rebuildWarningMarkers() {
-    if (!scene) return;
-    if (!warningGroup) {
-      warningGroup = new THREE.Group();
-      scene.add(warningGroup);
-    }
-    while (warningGroup.children.length > 0) {
-      const child = warningGroup.children[0];
-      warningGroup.remove(child);
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose();
-        const m = child.material as THREE.Material | THREE.Material[];
-        if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-        else m.dispose();
-      }
-    }
-    const warnings = project.simDiagnostics?.warnings ?? [];
-    if (warnings.length === 0) return;
-    const radius = Math.max(0.5, sceneRadius * 0.012);
-    const geom = new THREE.TetrahedronGeometry(radius, 0);
-    for (const w of warnings) {
-      const pos = warningPosition(w, project.generated?.toolpath);
-      if (!pos) continue;
-      const mat = new THREE.MeshBasicMaterial({
-        color: warningMarkerColor(w),
-        transparent: true,
-        opacity: 0.9,
-      });
-      const mesh = new THREE.Mesh(geom, mat);
-      mesh.position.set(pos.x, pos.y, pos.z + radius);
-      warningGroup.add(mesh);
-    }
-  }
-
   $effect(() => {
     void project.simDiagnostics;
-    rebuildWarningMarkers();
+    warningMarkersBuilder?.build({
+      warnings: project.simDiagnostics?.warnings ?? [],
+      toolpath: project.generated?.toolpath,
+      sceneRadius,
+    });
     requestRender();
   });
 
@@ -1217,136 +1191,6 @@
       requestRender();
     }
   });
-
-  /// Translucent stock box + its wireframe. Always visible (not only in
-  /// sim mode) whenever an import is loaded and both `stock.visible` and
-  /// `settings.showStockBox` are on. The XY footprint comes from the
-  /// shared `computeFootprint` (auto = bbox + margin; manual = customX/Y
-  /// centered on the bbox); Z extents are `-stock.thickness..0`.
-  function updateStock() {
-    if (!scene) return;
-    if (!stockGroup) {
-      stockGroup = new THREE.Group();
-      scene.add(stockGroup);
-    }
-    disposeStockGroup();
-    const cfg = project.stock;
-    if (!cfg.visible || !project.settings.showStockBox) return;
-    const data = project.transformedImport;
-    // Stock-first: render the stock even without a drawing (falls back
-    // to machine work-area inside computeFootprint).
-    const fp = computeFootprint(data, cfg, project.machine.workArea);
-    const sizeX = fp.maxX - fp.minX;
-    const sizeY = fp.maxY - fp.minY;
-    const thickness = Math.max(0.1, cfg.thickness);
-    if (sizeX <= 0.1 || sizeY <= 0.1) return;
-
-    const cx = (fp.minX + fp.maxX) * 0.5;
-    const cy = (fp.minY + fp.maxY) * 0.5;
-    // ya00: stock top sits at offsetZ (default 0); box centered half a
-    // thickness below it, so it spans [offsetZ − thickness, offsetZ].
-    const cz = (cfg.offsetZ ?? 0) - thickness * 0.5;
-    const box = new THREE.BoxGeometry(sizeX, sizeY, thickness);
-    const fillMat = new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0.05,
-      // Theme-tracking neutral so the stock fill is visible against both
-      // the dark and light backdrops. `--stock-edge` is the matching
-      // outline token (used a few lines below).
-      color: cssColor('--stock-edge', 0xcccccc),
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const fill = new THREE.Mesh(box, fillMat);
-    fill.position.set(cx, cy, cz);
-    stockGroup.add(fill);
-
-    const edges = new THREE.EdgesGeometry(box);
-    const lineMat = new THREE.LineBasicMaterial({
-      color: cssColor('--stock-edge', 0x888888),
-      transparent: true,
-      opacity: 0.4,
-    });
-    const wire = new THREE.LineSegments(edges, lineMat);
-    wire.position.set(cx, cy, cz);
-    stockGroup.add(wire);
-  }
-
-  /// Build/refresh the machine work-area wireframe. A dashed box from
-  /// (0, 0, 0) to (workArea.x, workArea.y, workArea.z) so the user
-  /// sees the machinable envelope. Rebuilt whenever the user edits the
-  /// work area in MachineDialog.
-  function updateWorkArea() {
-    if (!scene) return;
-    if (!workAreaGroup) {
-      workAreaGroup = new THREE.Group();
-      workAreaGroup.name = 'work-area';
-      scene.add(workAreaGroup);
-    }
-    disposeGroup(workAreaGroup);
-    const wa = project.machine.workArea;
-    if (!wa || wa.x <= 0 || wa.y <= 0 || wa.z <= 0) return;
-    // Center the box on (wa.x/2, wa.y/2, wa.z/2) since BoxGeometry is
-    // centered on its local origin. The work area corner sits at (0, 0, 0).
-    const cx = wa.x * 0.5;
-    const cy = wa.y * 0.5;
-    const cz = wa.z * 0.5;
-    const box = new THREE.BoxGeometry(wa.x, wa.y, wa.z);
-    const edges = new THREE.EdgesGeometry(box);
-    const lineMat = new THREE.LineDashedMaterial({
-      color: cssColor('--text-muted', 0x888888),
-      dashSize: 3,
-      gapSize: 2,
-      transparent: true,
-      opacity: 0.45,
-    });
-    const wire = new THREE.LineSegments(edges, lineMat);
-    wire.computeLineDistances();
-    wire.position.set(cx, cy, cz);
-    workAreaGroup.add(wire);
-    box.dispose();
-  }
-
-  /// Generic group disposer — frees geometry + materials for every
-  /// LineSegments / Mesh child before removing them. Shared by the
-  /// stock + work-area cleanup paths.
-  function disposeGroup(g: THREE.Group) {
-    while (g.children.length > 0) {
-      const child = g.children[0];
-      g.remove(child);
-      // `THREE.Line` covers plain lines AND `LineSegments` (which extends
-      // it); `THREE.Mesh` covers meshes AND the fat-line `LineSegments2`
-      // (which extends Mesh). Both carry `.geometry` + `.material`.
-      // Disposing a geometry/material shared across several children
-      // (e.g. updateTabs reuses one SphereGeometry) more than once is a
-      // safe no-op in three.js.
-      if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
-        child.geometry.dispose();
-        const m = (child as THREE.Mesh | THREE.Line).material as THREE.Material | THREE.Material[];
-        if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-        else m.dispose();
-      }
-    }
-  }
-
-  /// Dispose all geometry + materials inside stockGroup before clearing.
-  /// THREE.Group.clear() only removes the children; without explicit
-  /// disposal the GPU buffers leak on every stock-config tweak.
-  function disposeStockGroup() {
-    if (!stockGroup) return;
-    while (stockGroup.children.length > 0) {
-      const child = stockGroup.children[0];
-      stockGroup.remove(child);
-      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
-        child.geometry.dispose();
-        const m = (child as THREE.Mesh | THREE.LineSegments).material as
-          | THREE.Material
-          | THREE.Material[];
-        if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-        else m.dispose();
-      }
-    }
-  }
 
   /// Build/refresh the 3D fixture group. Each fixture extrudes between
   /// `z_bottom..z_top` in its declared color; selected fixtures get an
@@ -1449,108 +1293,6 @@
         else m.color.set(base);
       }
     }
-  }
-
-  function updateTabs() {
-    if (!scene) return;
-    if (!tabsGroup) {
-      tabsGroup = new THREE.Group();
-      scene.add(tabsGroup);
-    }
-    // 7iej.4: dispose the previous run's geometry/material (the shared
-    // sphere geom+mat from the last call) — `.clear()` only detaches
-    // children and would leak a geom+mat pair on every op/transform edit.
-    disposeGroup(tabsGroup);
-    const imp = project.transformedImport;
-    if (!imp) return;
-    const color = cssColor('--tab-marker', 0xffd23a);
-    const radius = Math.max(0.5, (imp.bbox.max_x - imp.bbox.min_x || 100) * 0.008);
-    const geom = new THREE.SphereGeometry(radius, 12, 8);
-    const mat = new THREE.MeshBasicMaterial({ color });
-    // rt1.10 + hr5: tabs are per-op. Manual placements get resolved
-    // directly via (objectId, t); Auto / Mixed modes additionally
-    // walk every object the op covers and emit auto-spaced t values
-    // there. Same arc-length math as the 2D canvas + backend.
-    //
-    // Performance (90j): build the object-polyline cache ONCE and
-    // resolve placements inline against this local cache. The prior
-    // code called resolveTabPlacementToWorld(imp, tp) per manual
-    // placement, which internally re-ran buildObjectPolylines —
-    // O(N_placements × N_segments) on a multi-thousand-segment DXF.
-    const objects = buildObjectPolylines(imp);
-    const objectById = new Map(objects.map((o) => [o.objectId, o]));
-    for (const op of project.operations) {
-      if (!isContourOp(op)) continue;
-      const mode = op.tabMode;
-      if (!mode || mode.kind === 'off') continue;
-      // Manual placements (Manual + Mixed).
-      if (mode.kind === 'manual' || mode.kind === 'mixed') {
-        for (const tp of op.tabPlacements ?? []) {
-          const obj = objectById.get(tp.objectId);
-          if (!obj) continue;
-          const { point } = polylineAtT(obj.pts, tp.t, obj.closed);
-          const sphere = new THREE.Mesh(geom, mat);
-          sphere.position.set(point.x, point.y, 0);
-          tabsGroup.add(sphere);
-        }
-      }
-      // Auto-spaced placements (Auto + Mixed).
-      if (mode.kind === 'auto' || mode.kind === 'mixed') {
-        const count = mode.kind === 'auto' ? mode.count : mode.auto_count;
-        if (count <= 0) continue;
-        for (const obj of objects) {
-          if (!opIncludesObject(op, obj.objectId, imp)) continue;
-          const ts = autoTabTs(count, obj.closed);
-          for (const t of ts) {
-            const { point } = polylineAtT(obj.pts, t, obj.closed);
-            const sphere = new THREE.Mesh(geom, mat);
-            sphere.position.set(point.x, point.y, 0);
-            tabsGroup.add(sphere);
-          }
-        }
-      }
-    }
-  }
-
-  /// n79: render a small vertical needle from z=0 up to `fast_move_z`
-  /// at the selected op's `approachPoint`. Optional small sphere at
-  /// the base so the marker reads even when the camera is top-down.
-  /// The marker only appears when the active op carries one — same
-  /// data the 2D canvas paints from.
-  function updateApproach() {
-    if (!scene) return;
-    if (!approachGroup) {
-      approachGroup = new THREE.Group();
-      scene.add(approachGroup);
-    }
-    // 7iej.4: dispose the previous needle + dot geom/material — `.clear()`
-    // alone leaks them on every approach-point drag / op selection.
-    disposeGroup(approachGroup);
-    const opId = project.selectedOpId;
-    if (opId == null) return;
-    const op = project.operations.find((o) => o.id === opId);
-    if (!op) return;
-    if (op.kind !== 'profile' && op.kind !== 'pocket') return;
-    const ap = op.approachPoint;
-    if (!ap) return;
-    const [x, y] = ap;
-    const topZ = Math.max(1, project.machine.fastMoveZ);
-    const color = cssColor('--accent', 0x44aaaa);
-    // Vertical needle from (x, y, 0) up to (x, y, topZ).
-    const geom = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(x, y, 0),
-      new THREE.Vector3(x, y, topZ),
-    ]);
-    const mat = new THREE.LineBasicMaterial({ color, linewidth: 2 });
-    approachGroup.add(new THREE.Line(geom, mat));
-    // Base dot — tiny sphere at z=0 to anchor the needle visually
-    // when the camera is overhead.
-    const dotR = Math.max(0.4, topZ * 0.04);
-    const dotGeom = new THREE.SphereGeometry(dotR, 12, 8);
-    const dotMat = new THREE.MeshBasicMaterial({ color });
-    const dot = new THREE.Mesh(dotGeom, dotMat);
-    dot.position.set(x, y, 0);
-    approachGroup.add(dot);
   }
 
   /// Tool-tip cone: a small inverted cone whose apex sits at the current

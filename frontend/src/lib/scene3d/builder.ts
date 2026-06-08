@@ -17,6 +17,13 @@ export interface BuilderContext {
   requestRender: () => void;
 }
 
+/// Resolve a CSS custom property to a THREE.Color, falling back to `hex`
+/// when the host element / token is missing. The host owns the closure
+/// (it reads `getComputedStyle(host)` live, so theme switches are picked
+/// up on the next call) and passes it to the builders that paint with
+/// theme tokens.
+export type CssColor = (name: string, fallback: number) => THREE.Color;
+
 /// Minimal builder: owns a group, frees it on teardown.
 export interface Builder {
   dispose(): void;

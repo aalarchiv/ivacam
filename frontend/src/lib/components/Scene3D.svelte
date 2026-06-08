@@ -27,6 +27,7 @@
   import { TabsBuilder } from '../scene3d/tabs';
   import { ApproachBuilder } from '../scene3d/approach';
   import { WarningMarkersBuilder } from '../scene3d/warning_markers';
+  import { FixturesBuilder } from '../scene3d/fixtures';
   import type { ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewSegmentsFor, previewVersion, requestPreview } from '../state/text_preview.svelte';
@@ -41,7 +42,6 @@
   import { powerGrid, maxPower } from '../cam/raster_preview';
   import { powerAtWorld, heatColor, type HeatGrid } from '../scene3d/raster_heatmap';
   import { resolveAci } from '../canvas/aci-color';
-  import { unpackFixtureColor, DEFAULT_FIXTURE_COLOR } from '../canvas/fixture-color';
 
   interface Props {
     /// w5wx: mirrors EntityCanvas2D — after the right-click menu creates
@@ -443,6 +443,7 @@
     tabsBuilder = new TabsBuilder(builderCtx, css);
     approachBuilder = new ApproachBuilder(builderCtx, css);
     warningMarkersBuilder = new WarningMarkersBuilder(builderCtx, css);
+    fixturesBuilder = new FixturesBuilder(builderCtx, css);
 
     // Defer the resize-driven fit() to the next animation frame.
     // `fit()` calls `renderer.setSize(w, h)` which adjusts the
@@ -560,6 +561,7 @@
     tabsBuilder?.dispose();
     approachBuilder?.dispose();
     warningMarkersBuilder?.dispose();
+    fixturesBuilder?.dispose();
     // 7iej.4: renderer.dispose() frees the GL context but does NOT walk
     // the scene graph, so every owned group's geometry/material must be
     // disposed explicitly. geometryGroup holds the imported wireframe,
@@ -574,11 +576,6 @@
       toolpathLinesObject = undefined;
       toolpathArrowsObject = undefined;
       assignmentOverlayObjects = [];
-    }
-    if (fixturesGroup) {
-      disposeGroup(fixturesGroup);
-      scene?.remove(fixturesGroup);
-      fixturesGroup = undefined;
     }
     driver?.destroy();
     driver = undefined;
@@ -730,9 +727,10 @@
   // Fixture meshes: fixtures themselves + selection / playback flash.
   // No reason to rebuild the toolpath when the user clicks a fixture.
   $effect(() => {
-    void project.fixtures;
-    void project.selectedFixtureId;
-    updateFixtures();
+    fixturesBuilder?.build({
+      fixtures: project.fixtures,
+      selectedFixtureId: project.selectedFixtureId,
+    });
     requestRender();
   });
 
@@ -1127,14 +1125,7 @@
   let tabsBuilder: TabsBuilder | undefined;
   let approachBuilder: ApproachBuilder | undefined;
   let warningMarkersBuilder: WarningMarkersBuilder | undefined;
-  let fixturesGroup: THREE.Group | undefined;
-  /// Per-fixture-id → list of THREE.Material whose color we flip when
-  /// the playhead crosses a `fixture_collision` warning's segment.
-  let fixtureMaterials = new Map<number, THREE.MeshBasicMaterial[]>();
-  /// Recorded base colors so we can restore on un-flash.
-  let fixtureBaseColors = new Map<number, number>();
-  /// Fixture ids currently flashing red (set by the playhead $effect).
-  let flashingFixtures = new Set<number>();
+  let fixturesBuilder: FixturesBuilder | undefined;
 
   $effect(() => {
     void project.simDiagnostics;
@@ -1156,144 +1147,25 @@
     void project.fixtures;
     const warnings = project.simDiagnostics?.warnings ?? [];
     const collisions = warnings.filter((w) => w.kind === 'fixture_collision');
-    if (collisions.length === 0) {
-      if (flashingFixtures.size > 0) {
-        flashingFixtures = new Set();
-        applyFixtureFlash();
-        requestRender();
-      }
-      return;
-    }
-    const { segIdx } = playheadToSegment(
-      project.playhead,
-      project.toolpathCumLen,
-      project.toolpathTotalLen,
-    );
     const next = new Set<number>();
-    const window = 2;
-    for (const w of collisions) {
-      if (w.kind !== 'fixture_collision') continue;
-      if (Math.abs(w.segment_idx - segIdx) <= window) {
-        next.add(w.fixture_id);
-      }
-    }
-    let changed = next.size !== flashingFixtures.size;
-    if (!changed) {
-      for (const id of next)
-        if (!flashingFixtures.has(id)) {
-          changed = true;
-          break;
+    if (collisions.length > 0) {
+      const { segIdx } = playheadToSegment(
+        project.playhead,
+        project.toolpathCumLen,
+        project.toolpathTotalLen,
+      );
+      const window = 2;
+      for (const w of collisions) {
+        if (w.kind !== 'fixture_collision') continue;
+        if (Math.abs(w.segment_idx - segIdx) <= window) {
+          next.add(w.fixture_id);
         }
+      }
     }
-    if (changed) {
-      flashingFixtures = next;
-      applyFixtureFlash();
-      requestRender();
-    }
+    // FixturesBuilder owns the flashing set + materials; it returns true
+    // only when the set actually changed, so we render only then.
+    if (fixturesBuilder?.flash(next)) requestRender();
   });
-
-  /// Build/refresh the 3D fixture group. Each fixture extrudes between
-  /// `z_bottom..z_top` in its declared color; selected fixtures get an
-  /// accented outline. Lazily-rebuilt on every fixture-set change.
-  function updateFixtures() {
-    if (!scene) return;
-    if (!fixturesGroup) {
-      fixturesGroup = new THREE.Group();
-      scene.add(fixturesGroup);
-    }
-    while (fixturesGroup.children.length > 0) {
-      const child = fixturesGroup.children[0];
-      fixturesGroup.remove(child);
-      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
-        child.geometry.dispose();
-        const m = (child as THREE.Mesh | THREE.LineSegments).material as
-          | THREE.Material
-          | THREE.Material[];
-        if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-        else m.dispose();
-      }
-    }
-    fixtureMaterials = new Map();
-    fixtureBaseColors = new Map();
-    const accent = cssColor('--accent', 0x4a8df0);
-    for (const f of project.fixtures) {
-      // 7iej.12: shared unpack with the 2D canvas. Default alpha ~0.5 when
-      // the wire color omits it; the 3D opacity treatment stays here.
-      const { a, hex } = unpackFixtureColor(f.color);
-      const opacity = Math.max(0.2, Math.min(1.0, a > 0 ? a / 255 : 0.5));
-      fixtureBaseColors.set(f.id, hex);
-
-      const mat = new THREE.MeshBasicMaterial({
-        color: hex,
-        transparent: true,
-        opacity,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const matsForFix: THREE.MeshBasicMaterial[] = [mat];
-      const sizeZ = Math.max(0.05, f.z_top - f.z_bottom);
-      const cz = (f.z_top + f.z_bottom) * 0.5;
-
-      let geom: THREE.BufferGeometry | undefined;
-      if (f.kind.shape === 'box') {
-        geom = new THREE.BoxGeometry(
-          Math.max(0.01, f.kind.width),
-          Math.max(0.01, f.kind.depth),
-          sizeZ,
-        );
-      } else if (f.kind.shape === 'cylinder') {
-        geom = new THREE.CylinderGeometry(
-          Math.max(0.01, f.kind.radius),
-          Math.max(0.01, f.kind.radius),
-          sizeZ,
-          24,
-        );
-        // CylinderGeometry's axis is +Y; rotate so it stands on +Z.
-        geom.rotateX(Math.PI / 2);
-      } else if (f.kind.shape === 'polygon') {
-        const shape = new THREE.Shape(f.kind.vertices.map(([x, y]) => new THREE.Vector2(x, y)));
-        geom = new THREE.ExtrudeGeometry(shape, { depth: sizeZ, bevelEnabled: false });
-      }
-      if (!geom) continue;
-      const mesh = new THREE.Mesh(geom, mat);
-      if (f.kind.shape === 'polygon') {
-        // ExtrudeGeometry extrudes along +Z from the shape plane (Z=0).
-        // Translate so the extrusion sits in [z_bottom, z_top].
-        mesh.position.set(f.origin[0], f.origin[1], f.z_bottom);
-      } else {
-        mesh.position.set(f.origin[0], f.origin[1], cz);
-      }
-      fixturesGroup.add(mesh);
-
-      const isSelected = project.selectedFixtureId === f.id;
-      const edgeColor = isSelected ? accent : new THREE.Color(hex);
-      const edgesGeom = new THREE.EdgesGeometry(geom);
-      const edgeMat = new THREE.LineBasicMaterial({
-        color: edgeColor,
-        transparent: true,
-        opacity: isSelected ? 0.95 : 0.7,
-      });
-      const wire = new THREE.LineSegments(edgesGeom, edgeMat);
-      wire.position.copy(mesh.position);
-      fixturesGroup.add(wire);
-      fixtureMaterials.set(f.id, matsForFix);
-    }
-    applyFixtureFlash();
-  }
-
-  /// Re-apply the flashingFixtures color override. Called whenever the
-  /// flashing set changes (playhead crosses a fixture_collision segment).
-  function applyFixtureFlash() {
-    const flashColor = cssColor('--error', 0xe54848);
-    for (const [id, mats] of fixtureMaterials) {
-      const flash = flashingFixtures.has(id);
-      const base = fixtureBaseColors.get(id) ?? DEFAULT_FIXTURE_COLOR;
-      for (const m of mats) {
-        if (flash) m.color.copy(flashColor);
-        else m.color.set(base);
-      }
-    }
-  }
 
   /// Tool-tip cone: a small inverted cone whose apex sits at the current
   /// toolpath position. Color is the active move kind (cut/plunge/etc.) so

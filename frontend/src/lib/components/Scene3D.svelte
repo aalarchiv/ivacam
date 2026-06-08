@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { project, playheadToSegment } from '../state/project.svelte';
@@ -512,10 +512,22 @@
 
   // Generated toolpath wireframe (re-emitted when a new pipeline run
   // resolves or the user toggles an op enable / disable). themeVersion
-  // re-runs it on a theme switch. The build re-applies the playhead fade to
-  // the fresh colors, so playhead/cum/total are read here (and stay deps).
+  // re-runs it on a theme switch.
   $effect(() => {
     void themeVersion;
+    // ek5r: build() seeds the playhead fade on the freshly-baked colors,
+    // but the fade-seed (playhead + the arc-length tables it maps through)
+    // must NOT make this build effect depend on the playhead — otherwise
+    // every scrub/playback tick rebuilds the entire toolpath geometry,
+    // defeating the in-place applyFade() fast path. cum/total only change
+    // when `generated` changes (still tracked below), so reading all three
+    // untracked is safe; the separate playhead + warning effects drive the
+    // in-place fade during a scrub.
+    const fade = untrack(() => ({
+      playhead: project.playhead,
+      cumLen: project.toolpathCumLen,
+      totalLen: project.toolpathTotalLen,
+    }));
     // rt1.12 (nrob): the raster heatmap re-derives S from the source
     // brightness + placement, so refresh when a source changes.
     toolpathBuilder?.build({
@@ -527,9 +539,9 @@
       width: host?.clientWidth || 1,
       height: host?.clientHeight || 1,
       wireVisible,
-      playhead: project.playhead,
-      cumLen: project.toolpathCumLen,
-      totalLen: project.toolpathTotalLen,
+      playhead: fade.playhead,
+      cumLen: fade.cumLen,
+      totalLen: fade.totalLen,
     });
     updateSceneRadius();
     requestRender();

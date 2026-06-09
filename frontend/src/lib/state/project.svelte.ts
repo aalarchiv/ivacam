@@ -10,8 +10,7 @@ import type {
 } from '../api/types';
 import { History } from './history';
 import { computeUnsavedWork } from './unsaved';
-import { workspace } from './workspace.svelte';
-import { invalidatePreview, resetPreviewCache } from './text_preview.svelte';
+import { invalidatePreview } from './text_preview.svelte';
 import {
   GeneratedState,
   type PipelineNoteEvent,
@@ -33,8 +32,8 @@ export type { AppSettings };
 // Bring the union types into scope locally; project-types and op_types
 // re-export them through this module so callers can import them here too.
 import type { OpEntry, OpKind } from './op_types';
-import { migrateLegacyToolTerms } from './tool-migration';
 import * as importOps from './import-ops';
+import * as fileOps from './project-file-ops';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs
 // and non-Svelte helpers can import them without booting the rune
@@ -82,7 +81,6 @@ import type {
   WorkOffset,
 } from './project-types';
 import { defaultWorkOffset, isDefaultWorkOffset } from './project-types';
-import { migrateMachineSettings } from './project-types';
 import { combineImports } from './file-transform';
 
 export {
@@ -620,100 +618,22 @@ export class ProjectState {
     });
   }
 
-  /// Reset every project-scoped field to its empty / default state.
-  /// Preserves `tools` (per-user library) and `machine` (per-shop
-  /// config) — those persist across project boundaries by design.
-  /// Drops imports, ops, fixtures, textLayers, stock, generated
-  /// state, selections, dirty flag, history.
-  ///
-  /// Called by the open-file / open-recent flows before loading a
-  /// new drawing so leftover ops from the previous project don't
-  /// silently re-target unrelated objects in the new geometry.
+  /// Reset every project-scoped field (tools + machine persist by
+  /// design) — see state/project-file-ops.ts.
   clearProject() {
-    this.data.imports = [];
-    this.operations = [];
-    this.fixtures = [];
-    this.textLayers = [];
-    this.reliefSources = [];
-    this.groupOpsByTool = false;
-    this.stock = { ...this.stock };
-    // j4tv: workOffset is per-project (the user pre-zeros their machine
-    // at a different point per drawing), so reset to default like ops.
-    this.workOffset = defaultWorkOffset();
-    this.generated = null;
-    this.toolpathCumLen = null;
-    this.toolpathTotalLen = 0;
-    this.selectedEntities = new Set();
-    this.selectedObjects = new Set();
-    this.selectedOpId = null;
-    this.selectedFixtureId = null;
-    this.selectedTextLayerId = null;
-    this.hoverSegment = null;
-    this.visibleLayers = new Set();
-    this.activeProjectPath = null;
-    this.sourceFileStaleNotice = null;
-    this.error = null;
-    this.dirty = false;
-    this.savedToProject = false;
-    resetPreviewCache();
-    this.history.clear();
+    fileOps.clearProject(this);
   }
 
-  /// Switch the active project path and apply the persisted per-project
-  /// workspace state (visible_layers / selected_op_id / playhead). Call
-  /// AFTER `setImported` / `restore` so the layer set is already populated
-  /// — we filter the saved layer names against what the import actually
-  /// contains.
+  /// Switch the active project path and apply persisted per-project
+  /// workspace state — see state/project-file-ops.ts.
   setActiveProjectPath(path: string | null) {
-    this.activeProjectPath = path;
-    void this.refreshSourceWatch();
-    if (path == null) return;
-    const saved = workspace.get().per_project[path];
-    if (!saved) return;
-    const view = this.transformedImport;
-    if (view && saved.visible_layers.length > 0) {
-      const valid = new Set(view.layers.map((l) => l.name));
-      const restored = saved.visible_layers.filter((n) => valid.has(n));
-      if (restored.length > 0) this.visibleLayers = new Set(restored);
-    }
-    if (
-      saved.selected_op_id != null &&
-      this.operations.some((o) => o.id === saved.selected_op_id)
-    ) {
-      this.selectedOpId = saved.selected_op_id;
-    }
-    if (typeof saved.playhead === 'number') {
-      this.playhead = Math.max(0, Math.min(1, saved.playhead));
-    }
+    fileOps.setActiveProjectPath(this, path);
   }
 
-  /// Persist the current per-project view state. Called from $effects in
-  /// App.svelte when `visibleLayers` / `selectedOpId` / `playhead` change.
-  /// No-op when no path is active (browser uploads, samples, etc.).
-  ///
-  /// Defers the workspace write off the synchronous Svelte 5 effect flush
-  /// via queueMicrotask. The write would otherwise mutate
-  /// `workspace.version` ($state) inside the effect body — when the
-  /// dispatch chain landed on top of the eb8.6 commit, this caused the
-  /// entire reactivity scheduler to abort silently after the first DXF
-  /// import (toolbar buttons stopped responding, file picker opened but
-  /// imports didn't propagate, etc.). The try/catch guards against the
-  /// throw still leaking past the microtask boundary.
+  /// Persist the per-project view state (deferred off the effect
+  /// flush) — see state/project-file-ops.ts.
   persistPerProjectState() {
-    const path = this.activeProjectPath;
-    if (!path) return;
-    const snapshot = {
-      visible_layers: [...this.visibleLayers],
-      selected_op_id: this.selectedOpId,
-      playhead: this.playhead,
-    };
-    queueMicrotask(() => {
-      try {
-        workspace.setPerProject(path, snapshot);
-      } catch (e) {
-        console.warn('persist per-project state:', e);
-      }
-    });
+    fileOps.persistPerProjectState(this);
   }
 
   /// Cast to `CommandTarget` for command builders. Single helper so the
@@ -1032,91 +952,16 @@ export class ProjectState {
     importOps.removeImportedLayer(this, layerName);
   }
 
-  /// Snapshot for project save.
-  ///
-  /// View-state fields (`visibleLayers`, `selectedEntities`) are
-  /// intentionally OMITTED — they're per-installation UI preferences
-  /// owned by `workspace.per_project[path].visible_layers`. Including
-  /// them in the .ivac-project save caused a two-source-of-truth
-  /// conflict where workspace silently won on reopen, surprising
-  /// users who expected their saved file to dictate visibility (audit
-  /// vep). Old projects that still carry them load fine via the
-  /// `?? []` fallback in restore().
+  /// Snapshot for project save (view state intentionally omitted —
+  /// audit vep) — see state/project-file-ops.ts.
   snapshot(): ProjectFile {
-    return {
-      kind: 'ivac-project',
-      version: 1,
-      imports: this.data.imports,
-      visibleLayers: [],
-      selectedEntities: [],
-      stock: this.stock,
-      tools: this.tools,
-      machine: this.machine,
-      operations: this.operations,
-      fixtures: this.fixtures,
-      textLayers: this.textLayers,
-      ...(this.reliefSources.length > 0 ? { reliefSources: this.reliefSources } : {}),
-      // i5g4 / j4tv: only persist work_offset when non-default so legacy
-      // / unset projects keep their compact .ivac-project payloads. The
-      // restore() side defaults to defaultWorkOffset() when absent.
-      ...(isDefaultWorkOffset(this.workOffset) ? {} : { workOffset: this.workOffset }),
-      // l8lk: persist the tool-grouping toggle only when on.
-      ...(this.groupOpsByTool ? { groupOpsByTool: true } : {}),
-    };
+    return fileOps.snapshotProject(this);
   }
 
+  /// Load a saved .ivac-project file into the live state — see
+  /// state/project-file-ops.ts for the precedence rules.
   restore(file: ProjectFile) {
-    if (file.kind !== 'ivac-project') {
-      throw new Error('not a ivaCAM project file');
-    }
-    // wrsu Phase 1: imports[] is the canonical shape. Pre-wrsu project
-    // files (with bare `imported` / `fileTransform` / `lastImportPath`
-    // fields) are no longer loadable — the user explicitly waived
-    // backward compatibility for this migration.
-    this.data.imports = Array.isArray(file.imports) ? file.imports : [];
-    if (this.data.imports[0]) {
-      this.setImported(this.data.imports[0].source, this.data.imports[0].lastImportPath ?? null);
-    }
-    // Layer visibility precedence (best wins):
-    //   1. workspace.per_project[path].visible_layers (applied in
-    //      setActiveProjectPath after restore returns).
-    //   2. file.visibleLayers, when the saved project carries any —
-    //      e.g. a shared .ivac-project file from another machine
-    //      whose workspace we don't have.
-    //   3. setImported defaults (all layers visible).
-    // Empty `file.visibleLayers` is treated as "no opinion" and falls
-    // through to setImported defaults — new saves OMIT these fields
-    // (audit vep) so workspace can be the single source of truth.
-    if (Array.isArray(file.visibleLayers) && file.visibleLayers.length > 0) {
-      this.visibleLayers = new Set(file.visibleLayers);
-    }
-    if (Array.isArray(file.selectedEntities) && file.selectedEntities.length > 0) {
-      this.selectedEntities = new Set(file.selectedEntities);
-    }
-    if (file.stock) this.stock = { ...this.stock, ...file.stock };
-    if (Array.isArray(file.tools) && file.tools.length > 0)
-      this.tools = file.tools.map(migrateLegacyToolTerms);
-    if (file.machine) this.machine = { ...this.machine, ...migrateMachineSettings(file.machine) };
-    if (Array.isArray(file.operations)) this.operations = file.operations;
-    this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
-    this.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
-    this.reliefSources = Array.isArray(file.reliefSources) ? file.reliefSources : [];
-    // j4tv: restore the program-level WCS offset. Legacy files lack
-    // this field — fall back to all-zero @ G54, which matches the
-    // pre-i5g4 behavior (geometry origin = WCS origin).
-    this.workOffset = file.workOffset
-      ? { ...defaultWorkOffset(), ...file.workOffset }
-      : defaultWorkOffset();
-    // l8lk: restore the tool-grouping toggle (legacy files lack it → false).
-    this.groupOpsByTool = file.groupOpsByTool === true;
-    this.selectedFixtureId = null;
-    this.selectedOpId = null;
-    // This content came from a saved .ivac-project file — mark it saved
-    // so re-opening it (unedited) doesn't trigger the unsaved-work guard.
-    // Must run AFTER the internal setImported above, which clears it.
-    this.savedToProject = true;
-    // Loading a project resets to a clean undo baseline.
-    this.history.clear();
+    fileOps.restoreProject(this, file);
   }
 
   /// Append rendered AddTextDialog segments to the imported geometry

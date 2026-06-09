@@ -4,7 +4,7 @@
 // fields — what's pure is the formula from (bbox, viewport, user view)
 // to scale + offset.
 
-import type { BBox } from '../api/types';
+import type { BBox, Segment } from '../api/types';
 
 export interface ViewportSize {
   /// CSS-pixel width of the canvas surface.
@@ -95,4 +95,22 @@ export function placementsBBox(rects: readonly Rect[], marginFrac = 0.1): BBox |
   const mx = Math.max(1, (maxX - minX) * marginFrac);
   const my = Math.max(1, (maxY - minY) * marginFrac);
   return { min_x: minX - mx, min_y: minY - my, max_x: maxX + mx, max_y: maxY + my };
+}
+
+/// Axis-aligned bbox over a segment list's endpoints (good enough for
+/// view-fit + a drag hit-test; arc bulges are ignored). Null for an
+/// empty list.
+export function segsBBox(segs: readonly Segment[]): Rect | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const s of segs) {
+    minX = Math.min(minX, s.start.x, s.end.x);
+    minY = Math.min(minY, s.start.y, s.end.y);
+    maxX = Math.max(maxX, s.start.x, s.end.x);
+    maxY = Math.max(maxY, s.start.y, s.end.y);
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
 }

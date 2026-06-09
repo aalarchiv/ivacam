@@ -5,7 +5,7 @@
   import { STOCK_OUTLINE_LAYER } from '../state/stock-outline';
   import { consumeSelectHint } from '../state/ui-hints';
   import { buildObjectPolylines, polylineAtT, type ObjectPolyline } from '../cam/tabs';
-  import type { Segment, BBox } from '../api/types';
+  import type { BBox } from '../api/types';
   import {
     buildHitIndex as buildHitIndexPure,
     queryHit,
@@ -14,7 +14,12 @@
   import { fixtureAt } from '../canvas/fixture-hit';
   import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
-  import { computeViewportTransform, placementsBBox, type Rect } from '../canvas/viewport';
+  import {
+    computeViewportTransform,
+    placementsBBox,
+    segsBBox,
+    type Rect,
+  } from '../canvas/viewport';
   import { nearestTextLayer } from '../canvas/text-hit';
   import {
     applyPinch,
@@ -24,7 +29,16 @@
   } from '../canvas/touch-gestures';
   import { objectsContainedInBox } from '../canvas/box_select';
   import { resolveAci, hexToCss } from '../canvas/aci-color';
-  import { unpackFixtureColor } from '../canvas/fixture-color';
+  import { drawSegment } from '../canvas/render/segment';
+  import { drawGrid, drawAxes, drawWorkArea, drawStock } from '../canvas/render/chrome';
+  import { RegionPathCache, drawRegions } from '../canvas/render/regions';
+  import { drawTextPreview } from '../canvas/render/text';
+  import { drawImportedWireframe, drawEntityHalos } from '../canvas/render/entities';
+  import { drawTabs } from '../canvas/render/tabs';
+  import { drawApproachPoint } from '../canvas/render/approach';
+  import { drawFixtures } from '../canvas/render/fixtures';
+  import { RasterImageCache, drawRasterPlacements } from '../canvas/render/raster';
+  import { drawBoxSelect } from '../canvas/render/box-select';
   import {
     DEFAULT_OSNAP_SETTINGS,
     findOSnap,
@@ -40,7 +54,6 @@
     requestPreview,
     forceTextPreviewRefresh,
   } from '../state/text_preview.svelte';
-  import { brightnessToRgba } from '../cam/raster_preview';
   import type { ReliefSource, TextLayer } from '../state/project-types';
 
   interface Props {
@@ -289,14 +302,9 @@
     grabDY: number;
   } | null>(null);
 
-  /// Cache of the decoded brightness image per relief source, keyed by
-  /// source id. Invalidated when the source's `brightness` array
-  /// reference changes (origin / cell edits keep the same array, so a
-  /// drag never rebuilds the 256² ImageData).
-  const rasterImageCache = new Map<
-    number,
-    { brightness: readonly number[]; canvas: HTMLCanvasElement }
-  >();
+  /// Cache of the decoded brightness image per relief source — see
+  /// RasterImageCache (lib/canvas/render/raster.ts).
+  const rasterImageCache = new RasterImageCache();
 
   /// Precomputed OSnap target collection. Rebuilt only when the
   /// imported geometry changes — never per pointermove. (64p.)
@@ -1466,10 +1474,21 @@
       h,
     );
 
-    drawGrid(ctx, w, h, scale, offX, offY);
-    drawAxes(ctx, w, h, offX, offY);
-    drawWorkArea(ctx, project2);
-    drawStock(ctx, project2);
+    drawGrid(ctx, w, h, scale, offX, offY, {
+      minor: themeVar('--grid-minor', '#1a1a1a'),
+      major: themeVar('--grid-major', '#262626'),
+    });
+    drawAxes(ctx, w, h, offX, offY, {
+      x: themeVar('--axis-x', '#882222'),
+      y: themeVar('--axis-y', '#226622'),
+    });
+    drawWorkArea(ctx, project2, project.machine.workArea, themeVar('--text-muted', '#888'));
+    drawStock(
+      ctx,
+      project2,
+      computeFootprint(project.transformedImport, project.stock, project.machine.workArea),
+      themeVar('--stock-edge', '#888'),
+    );
 
     // Imported-geometry chrome (regions + base wireframe) — only when a
     // DXF is loaded. A placement-only project skips straight to the text
@@ -1480,7 +1499,16 @@
       // build_region_previews).
       const regions = project.generated?.regions ?? [];
       if (regions.length > 0 && project.regionsVisible) {
-        drawRegions(ctx, regions, scale, offX, offY);
+        drawRegions(
+          ctx,
+          regionPathCache,
+          regions,
+          scale,
+          offX,
+          offY,
+          project.selectedOpId,
+          themeVar('--accent', '#2d6cdf'),
+        );
       }
 
       // Imported segments — paint in BASE layer color only. State-bearing
@@ -1488,24 +1516,36 @@
       // overlay canvas, so editing those does NOT invalidate this layer.
       const visibleLayersSnap = new Set(project.visibleLayers);
       visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
-      ctx.lineWidth = project.settings.previewLineWidth;
-      for (let i = 0; i < data.segments.length; i++) {
-        const seg = data.segments[i];
-        if (!visibleLayersSnap.has(seg.layer)) continue;
-        ctx.strokeStyle = colorFor(seg.color);
-        drawSegment(ctx, seg, project2);
-      }
+      drawImportedWireframe(
+        ctx,
+        project2,
+        data.segments,
+        visibleLayersSnap,
+        project.settings.previewLineWidth,
+        colorFor,
+      );
     }
 
     // Text-layer previews. Rendered with OR without imported geometry so
     // a text-only engrave project is visible (and draggable) on a bare
     // canvas. The cache is filled by requestPreview() in the top-of-file
-    // effect; drawTextPreview also reads selectedTextLayerId for the
-    // highlight.
+    // effect; the active layer (selectedTextLayerId) gets the highlight.
     if (project.textLayers.length > 0) {
-      const accent = themeVar('--accent', '#2d6cdf');
-      const haloColor = themeVar('--text-strong', '#ffffff');
-      drawTextPreview(ctx, project2, accent, '', haloColor);
+      drawTextPreview(
+        ctx,
+        project2,
+        project.textLayers.map((layer) => ({
+          // Segments come back translated to the layer's current origin, so
+          // a drag repositions the glyphs with no re-render (k9cz).
+          segments: previewSegmentsFor(layer.id, layer.origin) ?? [],
+          isActive: project.selectedTextLayerId === layer.id,
+        })),
+        {
+          accent: themeVar('--accent', '#2d6cdf'),
+          halo: themeVar('--text-strong', '#ffffff'),
+          idle: themeVar('--obj-assigned-other', '#2a6f3b'),
+        },
+      );
     }
   }
 
@@ -1533,7 +1573,14 @@
 
     // rt1.12 (j7b4): faint raster-engrave placement images, painted
     // first so selection halos / chrome layer over them.
-    drawRasterPlacements(ctx, project2, scale);
+    drawRasterPlacements(
+      ctx,
+      project2,
+      scale,
+      rasterImageCache,
+      rasterPlacements().map(({ op, src }) => ({ src, selected: project.selectedOpId === op.id })),
+      { accent, border: themeVar('--border', '#555') },
+    );
 
     // fx06: hover highlight for the text layer under the cursor (the
     // selected-layer highlight stays on the bg in drawTextPreview). Drawn
@@ -1550,249 +1597,64 @@
     }
 
     if (hasGeom && data) {
-      const hoverColor = themeVar('--accent-strong', '#6e9ce6');
-      const selOpId = project.selectedOpId;
-      // Halo color = a high-contrast outline drawn UNDER selected /
-      // hovered / op-assigned objects so the state stays visible even
-      // when the underlying layer's ACI color happens to match the state
-      // color. Uses --text-strong so it inverts automatically in light
-      // theme.
-      const haloColor = themeVar('--text-strong', '#ffffff');
-      const hoverObj = hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0);
       const visibleLayersSnap = new Set(project.visibleLayers);
       visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
-      const selectedObjectsSnap = new Set(project.selectedObjects);
-      for (let i = 0; i < data.segments.length; i++) {
-        const seg = data.segments[i];
-        if (!visibleLayersSnap.has(seg.layer)) continue;
-        const objId = data.objects?.[i] ?? 0;
-        if (objId === 0) continue;
-        const selected = selectedObjectsSnap.has(objId);
-        const hovered = objId === hoverObj;
-        const assignedOps = objectToOps.get(objId);
-        if (!selected && !hovered && !assignedOps) continue;
-
-        // Per-op assignment outlines (concentric rings, one band per op).
-        // Each assigned op gets the SAME hue here as its toolpath in 3D.
-        // When an object belongs to several ops we draw nested rings —
-        // widest (outermost) first so narrower bands paint on top:
-        // "outline, outline of outline, …". The selected op is ordered
-        // innermost and rendered brighter so it reads as the primary
-        // assignment without hiding the others.
-        if (assignedOps && assignedOps.length > 0) {
-          // Selected op last → drawn innermost / on top.
-          const ids = [...assignedOps].sort(
-            (a, b) => (a === selOpId ? 1 : 0) - (b === selOpId ? 1 : 0) || a - b,
-          );
-          const n = ids.length;
-          const step = 2.4;
-          const innerWidth = 2.0;
-          // Faint contrast halo behind the widest band.
-          const prevAlpha = ctx.globalAlpha;
-          ctx.globalAlpha = 0.35;
-          ctx.lineWidth = innerWidth + (n - 1) * step + 3;
-          ctx.strokeStyle = haloColor;
-          drawSegment(ctx, seg, project2);
-          ctx.globalAlpha = prevAlpha;
-          for (let k = 0; k < n; k++) {
-            const opId = ids[k];
-            // k=0 is the outermost (widest) band; the last is innermost.
-            ctx.lineWidth = innerWidth + (n - 1 - k) * step;
-            ctx.strokeStyle = opSourceCss(opId, opId === selOpId);
-            drawSegment(ctx, seg, project2);
-          }
-        }
-
-        // Hover / selection strokes paint on top so they stay legible even
-        // over the assignment rings.
-        if (hovered && !selected) {
-          ctx.lineWidth = 1.8;
-          ctx.strokeStyle = hoverColor;
-          drawSegment(ctx, seg, project2);
-        }
-        if (selected) {
-          const prevAlpha = ctx.globalAlpha;
-          ctx.globalAlpha = 0.6;
-          ctx.lineWidth = 2.4 + 3;
-          ctx.strokeStyle = haloColor;
-          drawSegment(ctx, seg, project2);
-          ctx.globalAlpha = prevAlpha;
-          ctx.lineWidth = 2.4;
-          ctx.strokeStyle = accent;
-          drawSegment(ctx, seg, project2);
-        }
-      }
+      drawEntityHalos(ctx, project2, {
+        segments: data.segments,
+        objects: data.objects,
+        visibleLayers: visibleLayersSnap,
+        selectedObjects: new Set(project.selectedObjects),
+        hoverObjectId: hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0),
+        objectToOps,
+        selectedOpId: project.selectedOpId,
+        opColor: opSourceCss,
+        colors: {
+          hover: themeVar('--accent-strong', '#6e9ce6'),
+          // Uses --text-strong so the contrast halo inverts automatically
+          // in light theme.
+          halo: themeVar('--text-strong', '#ffffff'),
+          accent,
+        },
+      });
     }
 
-    drawFixtures(ctx, project2);
-    drawTabs(ctx, project2, scale);
-    drawApproachPoint(ctx, project2);
-    if (boxSelect && !boxSelect.armed) {
-      drawBoxSelect(ctx, accent);
-    }
-  }
-
-  /// Paint the approach-point marker (n79) for the currently selected
-  /// op when it has one set, plus the live preview while in pick mode
-  /// or actively dragging.
-  function drawApproachPoint(
-    ctx: CanvasRenderingContext2D,
-    project2: (x: number, y: number) => [number, number],
-  ): void {
-    const op = selectedOp;
-    if (!op) return;
+    drawFixtures(ctx, project2, project.fixtures, project.selectedFixtureId, accent);
+    drawTabs(
+      ctx,
+      project2,
+      scale,
+      project.operations.filter(isContourOp),
+      getObjectPolylines(),
+      // Ghost: selected op + manual/mixed mode + cursor over contour.
+      ghostTab && tabPlacementActive && selectedOp && isContourOp(selectedOp)
+        ? { tab: ghostTab, op: selectedOp }
+        : null,
+      {
+        fill: themeVar('--tab-marker', '#ffd23a'),
+        auto: themeVar('--tab-auto', '#ffeb88'),
+        stroke: themeVar('--bg-app', '#0d0d0d'),
+        accent,
+      },
+    );
     // approachPoint lives on ContourFields, currently shared only by
     // Profile + Pocket on the FE type side. (The BE accepts it on
     // Engrave / DragKnife too; expanding the FE types is a follow-up.)
-    if (op.kind !== 'profile' && op.kind !== 'pocket') return;
-
-    const markerColor = themeVar('--accent', '#3aa');
-    // green = locked-to-vertex (matches EstlCam). Pulls from `--success`
-    // so light theme gets the deeper #166534 forest instead of #3c3 which
-    // gets lost against pale canvas backgrounds.
-    const snapColor = themeVar('--success', '#3c3');
-    const ringColor = themeVar('--text', '#000');
-
-    // The committed point, when present.
-    if (op.approachPoint) {
-      const [sx, sy] = project2(op.approachPoint[0], op.approachPoint[1]);
-      ctx.beginPath();
-      ctx.arc(sx, sy, 6, 0, Math.PI * 2);
-      ctx.fillStyle = markerColor;
-      ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = ringColor;
-      ctx.stroke();
-      // Inner dot for precision feel.
-      ctx.beginPath();
-      ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = ringColor;
-      ctx.fill();
+    if (selectedOp && (selectedOp.kind === 'profile' || selectedOp.kind === 'pocket')) {
+      drawApproachPoint(
+        ctx,
+        project2,
+        selectedOp.approachPoint ?? null,
+        approachPickActive || approachDrag != null ? approachPreview : null,
+        {
+          marker: themeVar('--accent', '#3aa'),
+          snap: themeVar('--success', '#3c3'),
+          ring: themeVar('--text', '#000'),
+        },
+      );
     }
-
-    // Live preview during pick / drag.
-    if ((approachPickActive || approachDrag != null) && approachPreview) {
-      const [sx, sy] = project2(approachPreview.x, approachPreview.y);
-      const color = approachPreview.snap ? snapColor : markerColor;
-      // Dashed ring while picking (vs solid for the committed point)
-      // so the user sees clearly which is provisional.
-      ctx.save();
-      if (!op.approachPoint) {
-        // No committed point yet — make the preview the focal element.
-        ctx.beginPath();
-        ctx.arc(sx, sy, 6, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 0.5;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-      ctx.setLineDash([3, 3]);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = color;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 9, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Snap glyph by kind (64p):
-      //   endpoint     → ■ filled square
-      //   midpoint     → ▲ filled triangle
-      //   intersection → ✕ diagonal cross
-      //   center       → ◯ ring
-      //   grid         → + plus sign
-      if (approachPreview.snap) {
-        drawOSnapGlyph(ctx, sx, sy, approachPreview.snap, snapColor);
-      }
-      ctx.restore();
+    if (boxSelect && !boxSelect.armed) {
+      drawBoxSelect(ctx, boxSelect, accent);
     }
-  }
-
-  /// Paint the OSnap classification glyph (64p) at canvas position
-  /// (sx, sy). The glyph reads at a glance which CAD feature the
-  /// cursor latched onto.
-  function drawOSnapGlyph(
-    ctx: CanvasRenderingContext2D,
-    sx: number,
-    sy: number,
-    kind: OSnapCandidate['kind'],
-    color: string,
-  ): void {
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1.5;
-    const r = 7;
-    switch (kind) {
-      case 'endpoint': {
-        // Filled square outline.
-        ctx.beginPath();
-        ctx.rect(sx - r, sy - r, r * 2, r * 2);
-        ctx.stroke();
-        break;
-      }
-      case 'midpoint': {
-        // Triangle pointing up, outline only.
-        ctx.beginPath();
-        ctx.moveTo(sx, sy - r);
-        ctx.lineTo(sx + r, sy + r * 0.8);
-        ctx.lineTo(sx - r, sy + r * 0.8);
-        ctx.closePath();
-        ctx.stroke();
-        break;
-      }
-      case 'intersection': {
-        // Diagonal cross.
-        ctx.beginPath();
-        ctx.moveTo(sx - r, sy - r);
-        ctx.lineTo(sx + r, sy + r);
-        ctx.moveTo(sx - r, sy + r);
-        ctx.lineTo(sx + r, sy - r);
-        ctx.stroke();
-        break;
-      }
-      case 'center': {
-        // Ring (concentric with the preview ring, slightly smaller).
-        ctx.beginPath();
-        ctx.arc(sx, sy, r * 0.7, 0, Math.PI * 2);
-        ctx.stroke();
-        break;
-      }
-      case 'grid': {
-        // Axis-aligned plus.
-        ctx.beginPath();
-        ctx.moveTo(sx - r, sy);
-        ctx.lineTo(sx + r, sy);
-        ctx.moveTo(sx, sy - r);
-        ctx.lineTo(sx, sy + r);
-        ctx.stroke();
-        break;
-      }
-    }
-  }
-
-  /// Render every TextLayer's cached preview segments. Each layer's
-  /// segments live on the synthetic layer `__text_<id>`; selection
-  /// state is the text-list's `selectedTextLayerId`. The active layer
-  /// gets a bright halo + accent stroke; idle layers render in the
-  /// muted assigned-other tint so they're visible but don't draw the
-  /// eye.
-  /// rt1.12 (j7b4): build / fetch the cached grayscale canvas for a
-  /// relief source's brightness grid (top-down, ready for drawImage).
-  /// Cached by source id; rebuilt only when the `brightness` array
-  /// reference changes, so an origin / cell drag never re-decodes.
-  function rasterImageCanvas(src: ReliefSource): HTMLCanvasElement | null {
-    if (src.cols <= 0 || src.rows <= 0) return null;
-    const cached = rasterImageCache.get(src.id);
-    if (cached && cached.brightness === src.brightness) return cached.canvas;
-    const cv = document.createElement('canvas');
-    cv.width = src.cols;
-    cv.height = src.rows;
-    const ictx = cv.getContext('2d');
-    if (!ictx) return null;
-    const rgba = brightnessToRgba(src.brightness, src.cols, src.rows);
-    const img = ictx.createImageData(src.cols, src.rows);
-    img.data.set(rgba);
-    ictx.putImageData(img, 0, 0);
-    rasterImageCache.set(src.id, { brightness: src.brightness, canvas: cv });
-    return cv;
   }
 
   /// The distinct relief sources referenced by raster-engrave ops, each
@@ -1833,24 +1695,6 @@
       }
     }
     return null;
-  }
-
-  /// Axis-aligned bbox over a segment list's endpoints (good enough for
-  /// view-fit + a drag hit-test; arc bulges are ignored). Null for an
-  /// empty list.
-  function segsBBox(segs: readonly Segment[]): Rect | null {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const s of segs) {
-      minX = Math.min(minX, s.start.x, s.end.x);
-      minY = Math.min(minY, s.start.y, s.end.y);
-      maxX = Math.max(maxX, s.start.x, s.end.x);
-      maxY = Math.max(maxY, s.start.y, s.end.y);
-    }
-    if (!Number.isFinite(minX)) return null;
-    return { minX, minY, maxX, maxY };
   }
 
   /// rt1.12 (fvb0 / ywf9): a viewport bbox for a project with no imported
@@ -1902,544 +1746,9 @@
     return hit ? (project.textLayers.find((l) => l.id === hit.id) ?? null) : null;
   }
 
-  /// Paint the faint placed raster images (+ selection / placement
-  /// border) on the overlay, under the interaction chrome. Drawn from
-  /// `drawOverlay` so a source move repaints without touching the heavy
-  /// bg layer. Editable whenever a transform exists (imported geometry
-  /// or visible stock); a geometry-less project shows the empty canvas.
-  function drawRasterPlacements(
-    ctx: CanvasRenderingContext2D,
-    project2: (x: number, y: number) => [number, number],
-    scale: number,
-  ) {
-    const placements = rasterPlacements();
-    if (placements.length === 0) return;
-    const accent = themeVar('--accent', '#2d6cdf');
-    const border = themeVar('--border', '#555');
-    for (const { op, src } of placements) {
-      const cv = rasterImageCanvas(src);
-      if (!cv) continue;
-      const wmm = src.cols * src.cell;
-      const hmm = src.rows * src.cell;
-      const [x0, y0] = project2(src.origin.x, src.origin.y + hmm); // world top-left
-      const wpx = wmm * scale;
-      const hpx = hmm * scale;
-      const prevAlpha = ctx.globalAlpha;
-      const prevSmooth = ctx.imageSmoothingEnabled;
-      ctx.globalAlpha = 0.5;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(cv, x0, y0, wpx, hpx);
-      ctx.globalAlpha = prevAlpha;
-      ctx.imageSmoothingEnabled = prevSmooth;
-      const selected = project.selectedOpId === op.id;
-      ctx.lineWidth = selected ? 2 : 1;
-      ctx.strokeStyle = selected ? accent : border;
-      if (!selected) ctx.setLineDash([4, 3]);
-      ctx.strokeRect(x0, y0, wpx, hpx);
-      ctx.setLineDash([]);
-    }
-  }
-
-  function drawTextPreview(
-    ctx: CanvasRenderingContext2D,
-    p: (x: number, y: number) => [number, number],
-    accent: string,
-    _hoverColor: string,
-    haloColor: string,
-  ) {
-    const idleColor = themeVar('--obj-assigned-other', '#2a6f3b');
-    for (const layer of project.textLayers) {
-      // Segments come back translated to the layer's current origin, so a
-      // drag repositions the glyphs with no re-render (k9cz).
-      const segs = previewSegmentsFor(layer.id, layer.origin);
-      if (!segs || segs.length === 0) continue;
-      const isActive = project.selectedTextLayerId === layer.id;
-      const baseWidth = isActive ? 1.8 : 1.4;
-      const haloAlpha = isActive ? 0.55 : 0.3;
-      for (const seg of segs) {
-        const prevAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = haloAlpha;
-        ctx.lineWidth = baseWidth + 2.5;
-        ctx.strokeStyle = haloColor;
-        drawSegment(ctx, seg, p);
-        ctx.globalAlpha = prevAlpha;
-        ctx.lineWidth = baseWidth;
-        ctx.strokeStyle = isActive ? accent : idleColor;
-        drawSegment(ctx, seg, p);
-      }
-    }
-  }
-
-  /// Translucent rectangle for the active box-select drag (canvas
-  /// coords). Drawn last so it sits above everything else.
-  function drawBoxSelect(ctx: CanvasRenderingContext2D, accent: string) {
-    if (!boxSelect) return;
-    const x = Math.min(boxSelect.startX, boxSelect.curX);
-    const y = Math.min(boxSelect.startY, boxSelect.curY);
-    const w = Math.abs(boxSelect.curX - boxSelect.startX);
-    const h = Math.abs(boxSelect.curY - boxSelect.startY);
-    ctx.save();
-    ctx.fillStyle = `${accent}22`;
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
-    ctx.restore();
-  }
-
-  /// Paint each fixture as a translucent filled outline in its declared
-  /// color. Selected fixture gets a thicker accent stroke so it's
-  /// obvious which one the sidebar is editing.
-  function drawFixtures(
-    ctx: CanvasRenderingContext2D,
-    p: (x: number, y: number) => [number, number],
-  ) {
-    if (!project.fixtures || project.fixtures.length === 0) return;
-    const accent = themeVar('--accent', '#2d6cdf');
-    for (const f of project.fixtures) {
-      const { r, g, b, a } = unpackFixtureColor(f.color);
-      const fill = `rgba(${r}, ${g}, ${b}, ${Math.max(0.15, (a / 255) * 0.5)})`;
-      const stroke = `rgb(${r}, ${g}, ${b})`;
-      const isSel = project.selectedFixtureId === f.id;
-      ctx.fillStyle = fill;
-      ctx.strokeStyle = isSel ? accent : stroke;
-      ctx.lineWidth = isSel ? 2.4 : 1.4;
-      const [ox, oy] = f.origin;
-      if (f.kind.shape === 'box') {
-        const hw = f.kind.width / 2;
-        const hd = f.kind.depth / 2;
-        const [x0, y0] = p(ox - hw, oy - hd);
-        const [x1, y1] = p(ox + hw, oy + hd);
-        const xMin = Math.min(x0, x1);
-        const yMin = Math.min(y0, y1);
-        const w = Math.abs(x1 - x0);
-        const h = Math.abs(y1 - y0);
-        ctx.fillRect(xMin, yMin, w, h);
-        ctx.strokeRect(xMin, yMin, w, h);
-      } else if (f.kind.shape === 'cylinder') {
-        const [cx, cy] = p(ox, oy);
-        const [edgeX] = p(ox + f.kind.radius, oy);
-        const rPx = Math.abs(edgeX - cx);
-        ctx.beginPath();
-        ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      } else if (f.kind.shape === 'polygon') {
-        if (f.kind.vertices.length < 2) continue;
-        ctx.beginPath();
-        const [vx0, vy0] = p(ox + f.kind.vertices[0][0], oy + f.kind.vertices[0][1]);
-        ctx.moveTo(vx0, vy0);
-        for (let i = 1; i < f.kind.vertices.length; i++) {
-          const [vx, vy] = p(ox + f.kind.vertices[i][0], oy + f.kind.vertices[i][1]);
-          ctx.lineTo(vx, vy);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-  }
-
-  /// Path2D cache for region previews. Tracing each region's polygons by
-  /// hand on every redraw was O(total tessellated points) per draw, which
-  /// fires on hover, selection, layer toggle, etc. We build the Path2D
-  /// objects once in *data space* (no canvas transform applied) and
-  /// stamp them with ctx.setTransform during draw — re-rebuilt only when
-  /// project.generated.regions actually changes.
-  type RegionPath = {
-    op_id: number;
-    path: Path2D;
-  };
-  let regionPathCache: { regionsRef: unknown; paths: RegionPath[] } | null = null;
-
-  function regionPaths(regions: NonNullable<typeof project.generated>['regions']): RegionPath[] {
-    if (regionPathCache && regionPathCache.regionsRef === regions) {
-      return regionPathCache.paths;
-    }
-    const paths: RegionPath[] = (regions ?? []).map((r) => {
-      const path = new Path2D();
-      tracePolygonInto(path, r.outer);
-      for (const hole of r.holes ?? []) tracePolygonInto(path, hole);
-      return { op_id: r.op_id, path };
-    });
-    regionPathCache = { regionsRef: regions, paths };
-    return paths;
-  }
-
-  /// Paint each region's outer polygon and punch its holes via the
-  /// even-odd fill rule. The selected op's region is drawn in accent so
-  /// the user can spot it; others fade so the canvas doesn't get loud.
-  function drawRegions(
-    ctx: CanvasRenderingContext2D,
-    regions: NonNullable<typeof project.generated>['regions'],
-    scale: number,
-    offX: number,
-    offY: number,
-  ) {
-    const accent = themeVar('--accent', '#2d6cdf');
-    const paths = regionPaths(regions);
-    // Compose data → canvas transform on top of the existing dpr scale.
-    // Y is flipped (canvas y-down vs DXF y-up) so we use -scale on Y +
-    // offY as the canvas-space origin of data-y=0.
-    ctx.save();
-    ctx.transform(scale, 0, 0, -scale, offX, offY);
-    for (const rp of paths) {
-      const isSelected = project.selectedOpId === rp.op_id;
-      // Accent tint, clearly visible so toggling Regions is obvious (the
-      // old ~10% muted-grey fill was near-invisible). Selected op's
-      // region is brighter. Still translucent so contours read through.
-      ctx.fillStyle = isSelected
-        ? `${accent}66` // ~40% alpha
-        : `${accent}33`; // ~20% alpha
-      ctx.fill(rp.path, 'evenodd');
-    }
-    ctx.restore();
-  }
-
-  function tracePolygonInto(path: Path2D, pts: Array<{ x: number; y: number }>) {
-    if (pts.length < 3) return;
-    path.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      path.lineTo(pts[i].x, pts[i].y);
-    }
-    path.closePath();
-  }
-
-  function drawTabs(
-    ctx: CanvasRenderingContext2D,
-    p: (x: number, y: number) => [number, number],
-    scale: number,
-  ) {
-    const tabFill = themeVar('--tab-marker', '#ffd23a');
-    const tabAuto = themeVar('--tab-auto', '#ffeb88');
-    const tabStroke = themeVar('--bg-app', '#0d0d0d');
-    const objects = getObjectPolylines();
-    // Walk every op with tabs ON: render auto-spaced (per kind),
-    // manual placements, and the ghost (if the selected op). Tabs
-    // are only meaningful for closed-contour ops (profile + pocket),
-    // so narrow first.
-    for (const op of project.operations) {
-      if (!isContourOp(op)) continue;
-      const mode = op.tabMode?.kind ?? 'off';
-      const tabsActive = op.tabsActive ?? false;
-      // Skip ops with no tabs to draw.
-      if (mode === 'off' && (op.tabPlacements?.length ?? 0) === 0 && !tabsActive) continue;
-      const allowedObjects = op.sourceObjects;
-      const objFilter = (id: number) =>
-        !allowedObjects || allowedObjects.length === 0 || allowedObjects.includes(id);
-      // Manual / Mixed placements.
-      if (mode === 'manual' || mode === 'mixed') {
-        for (const tp of op.tabPlacements ?? []) {
-          const obj = objects.find((o) => o.objectId === tp.objectId);
-          if (!obj || !objFilter(obj.objectId)) continue;
-          const { point, tangent } = polylineAtT(obj.pts, tp.t, obj.closed);
-          drawTabMarker(
-            ctx,
-            p,
-            scale,
-            point.x,
-            point.y,
-            tangent.x,
-            tangent.y,
-            tp.widthOverrideMm ?? op.tabWidth ?? 10,
-            tp.heightOverrideMm ?? op.tabHeight ?? 1,
-            tabFill,
-            tabStroke,
-            'manual',
-          );
-        }
-      }
-      // Auto / Mixed: N evenly spaced tabs per allowed object.
-      if (op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed') {
-        const count = op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count;
-        if (count > 0) {
-          for (const obj of objects) {
-            if (!objFilter(obj.objectId)) continue;
-            const ts = obj.closed
-              ? Array.from({ length: count }, (_, i) => i / count)
-              : Array.from({ length: count }, (_, i) => (i + 0.5) / count);
-            for (const t of ts) {
-              const { point, tangent } = polylineAtT(obj.pts, t, obj.closed);
-              drawTabMarker(
-                ctx,
-                p,
-                scale,
-                point.x,
-                point.y,
-                tangent.x,
-                tangent.y,
-                op.tabWidth ?? 10,
-                op.tabHeight ?? 1,
-                tabAuto,
-                tabStroke,
-                'auto',
-              );
-            }
-          }
-        }
-      }
-    }
-    // Ghost (selected op + manual/mixed mode + cursor over contour).
-    if (ghostTab && tabPlacementActive && selectedOp && isContourOp(selectedOp)) {
-      const obj = objects.find((o) => o.objectId === ghostTab!.objectId);
-      if (obj) {
-        const { tangent } = polylineAtT(obj.pts, ghostTab.t, obj.closed);
-        ctx.save();
-        ctx.globalAlpha = 0.4;
-        ctx.setLineDash([4, 3]);
-        drawTabMarker(
-          ctx,
-          p,
-          scale,
-          ghostTab.x,
-          ghostTab.y,
-          tangent.x,
-          tangent.y,
-          selectedOp.tabWidth ?? 10,
-          selectedOp.tabHeight ?? 1,
-          tabFill,
-          tabStroke,
-          'manual',
-        );
-        ctx.restore();
-        // Snap indicator (1q3): a small accent dot next to the
-        // ghost when the cursor caught a secondary snap target
-        // (vertex / midpoint / existing tab).
-        if (ghostTab.snap !== 'contour') {
-          const [gx, gy] = p(ghostTab.x, ghostTab.y);
-          const accent = themeVar('--accent', '#2d6cdf');
-          ctx.beginPath();
-          ctx.arc(gx, gy, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = accent;
-          ctx.fill();
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = themeVar('--bg-app', '#0d0d0d');
-          ctx.stroke();
-        }
-      }
-    }
-  }
-
-  /// Draw one tab marker oriented along the contour tangent. Falls
-  /// back to a 6-px pill when the data-space size collapses too small
-  /// on screen so the marker stays visible at extreme zoom-out.
-  function drawTabMarker(
-    ctx: CanvasRenderingContext2D,
-    p: (x: number, y: number) => [number, number],
-    scale: number,
-    dataX: number,
-    dataY: number,
-    tanX: number,
-    tanY: number,
-    widthMm: number,
-    heightMm: number,
-    fill: string,
-    stroke: string,
-    _kind: 'auto' | 'manual',
-  ) {
-    const [cx, cy] = p(dataX, dataY);
-    const halfLenPx = Math.max(3, widthMm * 0.5 * scale);
-    const halfThickPx = Math.max(2, heightMm * scale);
-    // Canvas Y is flipped vs data Y. Mirror the tangent Y so the
-    // rendered orientation matches the contour in screen space.
-    const txPx = tanX;
-    const tyPx = -tanY;
-    const tLen = Math.hypot(txPx, tyPx) || 1;
-    const ux = txPx / tLen;
-    const uy = tyPx / tLen;
-    // Perpendicular (left of tangent in canvas space).
-    const px = -uy;
-    const py = ux;
-    ctx.beginPath();
-    const corners: [number, number][] = [
-      [cx - ux * halfLenPx - px * halfThickPx, cy - uy * halfLenPx - py * halfThickPx],
-      [cx + ux * halfLenPx - px * halfThickPx, cy + uy * halfLenPx - py * halfThickPx],
-      [cx + ux * halfLenPx + px * halfThickPx, cy + uy * halfLenPx + py * halfThickPx],
-      [cx - ux * halfLenPx + px * halfThickPx, cy - uy * halfLenPx + py * halfThickPx],
-    ];
-    ctx.moveTo(corners[0][0], corners[0][1]);
-    for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i][0], corners[i][1]);
-    ctx.closePath();
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.lineWidth = 1.25;
-    ctx.strokeStyle = stroke;
-    ctx.stroke();
-  }
-
-  function drawSegment(
-    ctx: CanvasRenderingContext2D,
-    seg: Segment,
-    p: (x: number, y: number) => [number, number],
-  ) {
-    const [sx, sy] = p(seg.start.x, seg.start.y);
-    const [ex, ey] = p(seg.end.x, seg.end.y);
-
-    if (seg.type === 'POINT') {
-      ctx.fillStyle = ctx.strokeStyle;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 2, 0, Math.PI * 2);
-      ctx.fill();
-      return;
-    }
-
-    if (Math.abs(seg.bulge) < 1e-9) {
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
-      return;
-    }
-
-    // Bulge-based arc. Recompute center for robustness — the importer
-    // sometimes leaves center=(0,0) on bulged polyline segments.
-    const dx = seg.end.x - seg.start.x;
-    const dy = seg.end.y - seg.start.y;
-    const chord = Math.hypot(dx, dy);
-    if (chord < 1e-9) return;
-    const bulge = seg.bulge;
-    const sagitta = (bulge * chord) / 2;
-    // Radius from chord and sagitta.
-    const radius = (chord / 2) ** 2 / (2 * Math.abs(sagitta)) + Math.abs(sagitta) / 2;
-    // Midpoint of the chord.
-    const mx = (seg.start.x + seg.end.x) / 2;
-    const my = (seg.start.y + seg.end.y) / 2;
-    // Perpendicular unit vector pointing toward the center.
-    const ux = -dy / chord;
-    const uy = dx / chord;
-    // Offset from midpoint to center.
-    const h = radius - Math.abs(sagitta);
-    const sign = bulge > 0 ? 1 : -1;
-    const cx = mx + ux * h * sign;
-    const cy = my + uy * h * sign;
-
-    const startAng = Math.atan2(seg.start.y - cy, seg.start.x - cx);
-    const endAng = Math.atan2(seg.end.y - cy, seg.end.x - cx);
-    const counterClockwise = bulge > 0;
-
-    const [pcx, pcy] = p(cx, cy);
-    // 7iej.19: screen-space radius by projecting a point `radius` away from
-    // the center and measuring. The viewport transform is a uniform scale,
-    // so direction is irrelevant — and this avoids the div-by-near-zero the
-    // old `(sx - pcx) / (seg.start.x - cx)` ratio hit on a vertical chord
-    // (start directly above/below the center).
-    const [prx, pry] = p(cx + radius, cy);
-    const r = Math.hypot(prx - pcx, pry - pcy);
-    // Reverse the y-flip on angles for canvas coords.
-    ctx.beginPath();
-    ctx.arc(pcx, pcy, r, -startAng, -endAng, counterClockwise);
-    ctx.stroke();
-  }
-
-  function drawGrid(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    scale: number,
-    offX: number,
-    offY: number,
-  ) {
-    // Major grid every 10 units, minor every 1, when the unit is small enough.
-    const majorStep = 10;
-    const minorStep = 1;
-    const px = Math.abs(scale * minorStep);
-    if (px < 6) return; // too tight to be useful
-    ctx.lineWidth = 1;
-    const minorColor = themeVar('--grid-minor', '#1a1a1a');
-    const majorColor = themeVar('--grid-major', '#262626');
-    for (const [step, color] of [
-      [minorStep, minorColor],
-      [majorStep, majorColor],
-    ] as const) {
-      ctx.strokeStyle = color;
-      const start = Math.floor(-offX / scale / step) * step;
-      const end = Math.ceil((w - offX) / scale / step) * step;
-      ctx.beginPath();
-      for (let x = start; x <= end; x += step) {
-        const X = x * scale + offX;
-        ctx.moveTo(X, 0);
-        ctx.lineTo(X, h);
-      }
-      const ystart = Math.floor((offY - h) / scale / step) * step;
-      const yend = Math.ceil(offY / scale / step) * step;
-      for (let y = ystart; y <= yend; y += step) {
-        const Y = offY - y * scale;
-        ctx.moveTo(0, Y);
-        ctx.lineTo(w, Y);
-      }
-      ctx.stroke();
-    }
-  }
-
-  function drawAxes(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    offX: number,
-    offY: number,
-  ) {
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = themeVar('--axis-x', '#882222');
-    ctx.beginPath();
-    ctx.moveTo(0, offY);
-    ctx.lineTo(w, offY);
-    ctx.stroke();
-    ctx.strokeStyle = themeVar('--axis-y', '#226622');
-    ctx.beginPath();
-    ctx.moveTo(offX, 0);
-    ctx.lineTo(offX, h);
-    ctx.stroke();
-  }
-
-  /// Dashed rectangle showing the machine work-area envelope in the
-  /// XY plane (0,0) → (workArea.x, workArea.y). Sits under the
-  /// imported geometry so the user always sees the cuttable area
-  /// regardless of what's loaded. Pairs with the dashed wireframe
-  /// the 3D scene draws for the full XYZ envelope.
-  function drawWorkArea(
-    ctx: CanvasRenderingContext2D,
-    p: (x: number, y: number) => [number, number],
-  ) {
-    const wa = project.machine.workArea;
-    if (!wa || wa.x <= 0 || wa.y <= 0) return;
-    const [x0, y0] = p(0, 0);
-    const [x1, y1] = p(wa.x, wa.y);
-    const minX = Math.min(x0, x1);
-    const maxX = Math.max(x0, x1);
-    const minY = Math.min(y0, y1);
-    const maxY = Math.max(y0, y1);
-    ctx.save();
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = themeVar('--text-muted', '#888');
-    ctx.setLineDash([6, 4]);
-    ctx.globalAlpha = 0.75;
-    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
-    ctx.restore();
-  }
-
-  /// Solid outline of the workpiece bounds in XY. Mirrors the
-  /// translucent stock box the 3D scene already paints — the 2D pane
-  /// previously omitted it entirely, so users couldn't see whether
-  /// their drawing sat inside the stock without flipping to 3D.
-  function drawStock(ctx: CanvasRenderingContext2D, p: (x: number, y: number) => [number, number]) {
-    const fp = computeFootprint(project.transformedImport, project.stock, project.machine.workArea);
-    const sizeX = fp.maxX - fp.minX;
-    const sizeY = fp.maxY - fp.minY;
-    if (sizeX <= 0 || sizeY <= 0) return;
-    const [x0, y0] = p(fp.minX, fp.minY);
-    const [x1, y1] = p(fp.maxX, fp.maxY);
-    const minX = Math.min(x0, x1);
-    const maxX = Math.max(x0, x1);
-    const minY = Math.min(y0, y1);
-    const maxY = Math.max(y0, y1);
-    ctx.save();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = themeVar('--stock-edge', '#888');
-    ctx.globalAlpha = 0.85;
-    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
-    ctx.restore();
-  }
+  /// Path2D cache for region previews — see RegionPathCache
+  /// (lib/canvas/render/regions.ts).
+  const regionPathCache = new RegionPathCache();
 </script>
 
 <svelte:window

@@ -1,0 +1,136 @@
+import type { ProjectFn } from './types';
+
+/// Static canvas chrome — grid, axes, machine work-area, stock outline.
+/// Pure painters: callers resolve theme colors and pass them in, so the
+/// modules never touch getComputedStyle / component state.
+
+export interface GridColors {
+  minor: string;
+  major: string;
+}
+
+/// Major grid every 10 units, minor every 1, when the unit is small enough.
+export function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  scale: number,
+  offX: number,
+  offY: number,
+  colors: GridColors,
+) {
+  const majorStep = 10;
+  const minorStep = 1;
+  const px = Math.abs(scale * minorStep);
+  if (px < 6) return; // too tight to be useful
+  ctx.lineWidth = 1;
+  for (const [step, color] of [
+    [minorStep, colors.minor],
+    [majorStep, colors.major],
+  ] as const) {
+    ctx.strokeStyle = color;
+    const start = Math.floor(-offX / scale / step) * step;
+    const end = Math.ceil((w - offX) / scale / step) * step;
+    ctx.beginPath();
+    for (let x = start; x <= end; x += step) {
+      const X = x * scale + offX;
+      ctx.moveTo(X, 0);
+      ctx.lineTo(X, h);
+    }
+    const ystart = Math.floor((offY - h) / scale / step) * step;
+    const yend = Math.ceil(offY / scale / step) * step;
+    for (let y = ystart; y <= yend; y += step) {
+      const Y = offY - y * scale;
+      ctx.moveTo(0, Y);
+      ctx.lineTo(w, Y);
+    }
+    ctx.stroke();
+  }
+}
+
+export interface AxisColors {
+  x: string;
+  y: string;
+}
+
+export function drawAxes(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  offX: number,
+  offY: number,
+  colors: AxisColors,
+) {
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = colors.x;
+  ctx.beginPath();
+  ctx.moveTo(0, offY);
+  ctx.lineTo(w, offY);
+  ctx.stroke();
+  ctx.strokeStyle = colors.y;
+  ctx.beginPath();
+  ctx.moveTo(offX, 0);
+  ctx.lineTo(offX, h);
+  ctx.stroke();
+}
+
+/// Dashed rectangle showing the machine work-area envelope in the
+/// XY plane (0,0) → (workArea.x, workArea.y). Sits under the
+/// imported geometry so the user always sees the cuttable area
+/// regardless of what's loaded. Pairs with the dashed wireframe
+/// the 3D scene draws for the full XYZ envelope.
+export function drawWorkArea(
+  ctx: CanvasRenderingContext2D,
+  p: ProjectFn,
+  workArea: { x: number; y: number } | null | undefined,
+  color: string,
+) {
+  if (!workArea || workArea.x <= 0 || workArea.y <= 0) return;
+  const [x0, y0] = p(0, 0);
+  const [x1, y1] = p(workArea.x, workArea.y);
+  const minX = Math.min(x0, x1);
+  const maxX = Math.max(x0, x1);
+  const minY = Math.min(y0, y1);
+  const maxY = Math.max(y0, y1);
+  ctx.save();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = color;
+  ctx.setLineDash([6, 4]);
+  ctx.globalAlpha = 0.75;
+  ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+  ctx.restore();
+}
+
+export interface Footprint {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/// Solid outline of the workpiece bounds in XY. Mirrors the
+/// translucent stock box the 3D scene already paints — the 2D pane
+/// previously omitted it entirely, so users couldn't see whether
+/// their drawing sat inside the stock without flipping to 3D.
+export function drawStock(
+  ctx: CanvasRenderingContext2D,
+  p: ProjectFn,
+  fp: Footprint,
+  color: string,
+) {
+  const sizeX = fp.maxX - fp.minX;
+  const sizeY = fp.maxY - fp.minY;
+  if (sizeX <= 0 || sizeY <= 0) return;
+  const [x0, y0] = p(fp.minX, fp.minY);
+  const [x1, y1] = p(fp.maxX, fp.maxY);
+  const minX = Math.min(x0, x1);
+  const maxX = Math.max(x0, x1);
+  const minY = Math.min(y0, y1);
+  const maxY = Math.max(y0, y1);
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.85;
+  ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+  ctx.restore();
+}

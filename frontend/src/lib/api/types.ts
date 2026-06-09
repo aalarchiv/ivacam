@@ -14,6 +14,7 @@ export type VersionResponse = components['schemas']['VersionResponse'];
 export type HealthResponse = components['schemas']['HealthResponse'];
 export type GenerateRequest = components['schemas']['GenerateRequest'];
 export type GenerateResponse = components['schemas']['GenerateResponse'];
+export type RegionPreview = components['schemas']['RegionPreview'];
 export type ToolpathSegment = components['schemas']['ToolpathSegment'];
 export type ToolpathKind = NonNullable<ToolpathSegment['kind']>;
 export type Pose3 = components['schemas']['Pose3'];

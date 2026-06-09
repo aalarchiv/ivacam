@@ -21,6 +21,7 @@
   import type { ToolpathSegment } from '../api/types';
   import type { ToolEntry } from '../state/project.svelte';
   import { previewVersion, requestPreview } from '../state/text_preview.svelte';
+  import { consumeSelectHint } from '../state/ui-hints';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
 
@@ -221,6 +222,10 @@
   /// touch long-press.
   function openCtxMenuAt(clientX: number, clientY: number) {
     if (!host) return;
+    // With nothing selected the menu is just the "click geometry to
+    // select" hint — show it at most once per session (shared with the
+    // 2D pane) instead of nagging on every empty right-click.
+    if (project.selectedObjects.size === 0 && !consumeSelectHint()) return;
     const rect = host.getBoundingClientRect();
     const x = Math.max(4, Math.min(clientX - rect.left, host.clientWidth - 260));
     const y = Math.max(4, Math.min(clientY - rect.top, host.clientHeight - 220));

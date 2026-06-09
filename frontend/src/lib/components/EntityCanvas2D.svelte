@@ -3,6 +3,7 @@
   import { project, isContourOp, type OpEntry } from '../state/project.svelte';
   import { opSourceCss } from '../state/op-color';
   import { STOCK_OUTLINE_LAYER } from '../state/stock-outline';
+  import { consumeSelectHint } from '../state/ui-hints';
   import { buildObjectPolylines, polylineAtT, type ObjectPolyline } from '../cam/tabs';
   import type { Segment, BBox } from '../api/types';
   import {
@@ -895,6 +896,20 @@
       const py = Math.max(8, Math.min(cy, ch - 160));
       tabPopover = { x: px, y: py, opId: hit.opId, placementIdx: hit.placementIdx };
       ctxMenu = null;
+      return;
+    }
+    // With nothing selected (no objects, no text layer) the menu is just
+    // the "select something to add an operation" hint — show it at most
+    // once per session (shared with the 3D pane) instead of nagging on
+    // every empty right-click. A right-click over a tab (handled above)
+    // or with a real selection still opens its menu every time.
+    if (
+      project.selectedTextLayerId == null &&
+      project.selectedObjects.size === 0 &&
+      !consumeSelectHint()
+    ) {
+      ctxMenu = null;
+      tabPopover = null;
       return;
     }
     // Convert canvas pixels → data-space mm so menu actions (like

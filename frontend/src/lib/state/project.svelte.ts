@@ -10,6 +10,7 @@ import type {
   WiacError,
 } from '../api/types';
 import { History } from './history';
+import { computeUnsavedWork } from './unsaved';
 import { workspace } from './workspace.svelte';
 import { invalidatePreview, resetPreviewCache } from './text_preview.svelte';
 import { isTauri as isTauriEnv } from '../api/env';
@@ -534,6 +535,26 @@ class ProjectState {
     this.data.dirty = v;
   }
 
+  /// True when discarding the current project would lose work the user
+  /// hasn't saved to disk — either unsaved edits (`dirty`) OR a drawing
+  /// that was imported but never saved as a project. Gates the
+  /// "discard?" confirmation before any destructive load (open file /
+  /// open project / sample / drag-drop) and the desktop quit prompt. See
+  /// [`computeUnsavedWork`] for the rule and why it's broader than
+  /// `dirty`.
+  get hasUnsavedWork(): boolean {
+    const empty =
+      !this.transformedImport &&
+      this.data.operations.length === 0 &&
+      this.data.textLayers.length === 0 &&
+      this.data.reliefSources.length === 0;
+    return computeUnsavedWork({
+      empty,
+      dirty: this.data.dirty,
+      savedToProject: this.savedToProject,
+    });
+  }
+
   get regionsVisible(): boolean {
     return this.data.regionsVisible;
   }
@@ -580,6 +601,15 @@ class ProjectState {
   /// flows. Not part of `snapshot()` — workspace state follows the
   /// path, the path is per-machine.
   activeProjectPath = $state<string | null>(null);
+
+  /// True when the current content lives in a saved `.ivac-project` file
+  /// — set when a project is loaded from one (`restore`) or written to
+  /// one (`saveProject`), cleared on a raw drawing import (`setImported`)
+  /// and on `clearProject`. Unlike `activeProjectPath` (which also points
+  /// at the source DXF/SVG after an import), this distinguishes "saved as
+  /// a project" from "imported but never saved". Drives `hasUnsavedWork`.
+  /// Runtime-only — not part of `snapshot()`.
+  savedToProject = $state(false);
 
   /// Source-file change indicator. Populated when the watcher fires and
   /// the user has `autoReloadSources` disabled. SourceStaleToast renders
@@ -639,6 +669,7 @@ class ProjectState {
     this.sourceFileStaleNotice = null;
     this.error = null;
     this.dirty = false;
+    this.savedToProject = false;
     resetPreviewCache();
     this.history.clear();
   }
@@ -895,6 +926,11 @@ class ProjectState {
     this.toolpathCumLen = null;
     this.toolpathTotalLen = 0;
     this.dirty = true;
+    // A raw drawing import is not a saved project — even before any edit,
+    // discarding it loses the user's imported work, so `hasUnsavedWork`
+    // must flag it. `restore()` calls setImported while loading a saved
+    // project and flips this back to true at its end.
+    this.savedToProject = false;
     this.error = null;
     this.visibleLayers = new Set(r.layers.map((l) => l.name));
     this.selectedEntities = new Set();
@@ -1324,6 +1360,10 @@ class ProjectState {
     this.groupOpsByTool = file.groupOpsByTool === true;
     this.selectedFixtureId = null;
     this.selectedOpId = null;
+    // This content came from a saved .ivac-project file — mark it saved
+    // so re-opening it (unedited) doesn't trigger the unsaved-work guard.
+    // Must run AFTER the internal setImported above, which clears it.
+    this.savedToProject = true;
     // Loading a project resets to a clean undo baseline.
     this.history.clear();
   }

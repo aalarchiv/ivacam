@@ -126,7 +126,11 @@ export async function openFile() {
 /// shares ONE confirmation dialog instead of a second native
 /// `window.confirm` (npig).
 export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
-  if (!project.dirty) return true;
+  // hasUnsavedWork (not just `dirty`) so a freshly imported drawing that
+  // was never saved as a project still prompts — `dirty` is reset to
+  // false right after every load, so it alone misses the "has not been
+  // saved" case the user can lose by opening another file.
+  if (!project.hasUnsavedWork) return true;
   if (typeof window === 'undefined') return true;
   const choice = await confirmStore.askChoice({
     title: 'Unsaved changes',
@@ -145,7 +149,10 @@ export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   // errors, dirty stays true — abort the load rather than silently
   // discarding the work the user just asked to keep.
   await saveProject();
-  return !project.dirty;
+  // Proceed only if the save actually landed and cleared the unsaved
+  // state. A cancelled native save dialog or a failed write leaves
+  // hasUnsavedWork true — abort rather than discard the kept work.
+  return !project.hasUnsavedWork;
 }
 
 /// Desktop: native open dialog for `.ivac-project.json`. Browser: same
@@ -337,6 +344,9 @@ export async function saveProject() {
         // dialog, the confirmDiscardIfDirty prompt on a later Open, and
         // the stale-gcode indicators all fire right after a save.
         project.dirty = false;
+        // The project now lives in a saved file — clears hasUnsavedWork
+        // so a later Open doesn't prompt on a just-saved project.
+        project.savedToProject = true;
       } catch (e) {
         project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -353,6 +363,7 @@ export async function saveProject() {
   // amwo: the browser download IS the save; mirror the desktop branch and
   // clear dirty so the snapshot just written to disk isn't reported unsaved.
   project.dirty = false;
+  project.savedToProject = true;
 }
 
 /// Save a project report as a Markdown file (vh6e). Desktop = native

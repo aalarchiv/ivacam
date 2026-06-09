@@ -398,7 +398,7 @@
   let unlistenCloseRequested: (() => void) | null = null;
   async function wireCloseConfirm() {
     unlistenCloseRequested = await wireCloseRequested(async () => {
-      if (project.dirty) {
+      if (project.hasUnsavedWork) {
         // Three-way so a misclick on the close button doesn't force a
         // choice between losing work and re-opening the app (ed67).
         const choice = await confirmStore.askChoice({
@@ -413,9 +413,9 @@
         if (choice === 'cancel') return;
         if (choice === 'primary') {
           await saveProject();
-          // Save cancelled (native dialog dismissed) or failed → dirty
-          // stays set; don't quit and lose the work the user kept.
-          if (project.dirty) return;
+          // Save cancelled (native dialog dismissed) or failed →
+          // hasUnsavedWork stays set; don't quit and lose the kept work.
+          if (project.hasUnsavedWork) return;
         }
         void confirmClose();
         return;

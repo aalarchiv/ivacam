@@ -41,8 +41,8 @@
     if (!Number.isFinite(minX)) return;
     patch('pattern', {
       ...pol,
-      center_x: (minX + maxX) * 0.5,
-      center_y: (minY + maxY) * 0.5,
+      centerX: (minX + maxX) * 0.5,
+      centerY: (minY + maxY) * 0.5,
     });
   }
 </script>
@@ -68,14 +68,14 @@
         } else if (v === 'linear') {
           patch('pattern', { kind: 'linear', count: 2, dx: 10, dy: 0 });
         } else if (v === 'grid') {
-          patch('pattern', { kind: 'grid', count_x: 2, count_y: 2, dx: 10, dy: 10 });
+          patch('pattern', { kind: 'grid', countX: 2, countY: 2, dx: 10, dy: 10 });
         } else if (v === 'polar') {
           patch('pattern', {
             kind: 'polar',
             count: 4,
-            center_x: 0,
-            center_y: 0,
-            angle_step_deg: 90,
+            centerX: 0,
+            centerY: 0,
+            angleStepDeg: 90,
           });
         }
       }}
@@ -142,10 +142,10 @@
         type="number"
         min="1"
         step="1"
-        value={grid.count_x}
+        value={grid.countX}
         onchange={(e) => {
           const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-          if (Number.isFinite(v) && v >= 1) patch('pattern', { ...grid, count_x: v });
+          if (Number.isFinite(v) && v >= 1) patch('pattern', { ...grid, countX: v });
         }}
       />
     </label>
@@ -155,10 +155,10 @@
         type="number"
         min="1"
         step="1"
-        value={grid.count_y}
+        value={grid.countY}
         onchange={(e) => {
           const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-          if (Number.isFinite(v) && v >= 1) patch('pattern', { ...grid, count_y: v });
+          if (Number.isFinite(v) && v >= 1) patch('pattern', { ...grid, countY: v });
         }}
       />
     </label>
@@ -213,10 +213,10 @@
         <input
           type="number"
           step="0.5"
-          value={pol.center_x}
+          value={pol.centerX}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            if (Number.isFinite(v)) patch('pattern', { ...pol, center_x: v });
+            if (Number.isFinite(v)) patch('pattern', { ...pol, centerX: v });
           }}
         />
         <span class="unit">mm</span>
@@ -228,10 +228,10 @@
         <input
           type="number"
           step="0.5"
-          value={pol.center_y}
+          value={pol.centerY}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            if (Number.isFinite(v)) patch('pattern', { ...pol, center_y: v });
+            if (Number.isFinite(v)) patch('pattern', { ...pol, centerY: v });
           }}
         />
         <span class="unit">mm</span>
@@ -246,10 +246,10 @@
         <input
           type="number"
           step="1"
-          value={pol.angle_step_deg}
+          value={pol.angleStepDeg}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            if (Number.isFinite(v)) patch('pattern', { ...pol, angle_step_deg: v });
+            if (Number.isFinite(v)) patch('pattern', { ...pol, angleStepDeg: v });
           }}
         />
         <span class="unit">°</span>
@@ -264,10 +264,10 @@
         <input
           type="number"
           step="1"
-          value={pol.start_angle_deg ?? 0}
+          value={pol.startAngleDeg ?? 0}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            if (Number.isFinite(v)) patch('pattern', { ...pol, start_angle_deg: v });
+            if (Number.isFinite(v)) patch('pattern', { ...pol, startAngleDeg: v });
           }}
         />
         <span class="unit">°</span>

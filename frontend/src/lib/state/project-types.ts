@@ -504,16 +504,16 @@ export type HalfpipeProfile =
 /// no pattern.
 export type PatternConfig =
   | { kind: 'linear'; count: number; dx: number; dy: number }
-  | { kind: 'grid'; count_x: number; count_y: number; dx: number; dy: number }
+  | { kind: 'grid'; countX: number; countY: number; dx: number; dy: number }
   | {
       kind: 'polar';
       count: number;
-      center_x: number;
-      center_y: number;
-      angle_step_deg: number;
+      centerX: number;
+      centerY: number;
+      angleStepDeg: number;
       /// First-instance angle offset around the center (degrees).
-      /// Default 0 — instance 0 sits at angle_step_deg * 0 + start.
-      start_angle_deg?: number;
+      /// Default 0 — instance 0 sits at angleStepDeg * 0 + start.
+      startAngleDeg?: number;
     };
 
 /// Per-op tab placement mode (rt1.10). Maps to
@@ -522,7 +522,7 @@ export type TabPlacementMode =
   | { kind: 'off' }
   | { kind: 'auto'; count: number }
   | { kind: 'manual' }
-  | { kind: 'mixed'; auto_count: number };
+  | { kind: 'mixed'; autoCount: number };
 
 /// A user-placed tab anchored geometry-relative (rt1.10). The
 /// `objectId` is 1-based to match `sourceObjects`; `t ∈ [0, 1)` is

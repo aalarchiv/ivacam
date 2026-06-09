@@ -85,7 +85,7 @@
                 op.tabMode?.kind === 'auto'
                   ? op.tabMode.count
                   : op.tabMode?.kind === 'mixed'
-                    ? op.tabMode.auto_count
+                    ? op.tabMode.autoCount
                     : 4;
               patch('tabMode', { kind: 'auto', count });
               patch('tabsActive', true);
@@ -93,13 +93,13 @@
               patch('tabMode', { kind: 'manual' });
               patch('tabsActive', true);
             } else {
-              const auto_count =
+              const autoCount =
                 op.tabMode?.kind === 'auto'
                   ? op.tabMode.count
                   : op.tabMode?.kind === 'mixed'
-                    ? op.tabMode.auto_count
+                    ? op.tabMode.autoCount
                     : 4;
-              patch('tabMode', { kind: 'mixed', auto_count });
+              patch('tabMode', { kind: 'mixed', autoCount });
               patch('tabsActive', true);
             }
           }}>{mk}</button
@@ -115,12 +115,12 @@
           type="number"
           min="1"
           step="1"
-          value={op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count}
+          value={op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.autoCount}
           onchange={(e) => {
             const n = Math.max(1, parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1);
             if (op.tabMode?.kind === 'auto') patch('tabMode', { kind: 'auto', count: n });
             else if (op.tabMode?.kind === 'mixed')
-              patch('tabMode', { kind: 'mixed', auto_count: n });
+              patch('tabMode', { kind: 'mixed', autoCount: n });
           }}
         />
       </div>

@@ -72,7 +72,7 @@ export function drawTabs(
     }
     // Auto / Mixed: N evenly spaced tabs per allowed object.
     if (op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed') {
-      const count = op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.auto_count;
+      const count = op.tabMode.kind === 'auto' ? op.tabMode.count : op.tabMode.autoCount;
       if (count > 0) {
         for (const obj of objects) {
           if (!objFilter(obj.objectId)) continue;

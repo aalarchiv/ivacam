@@ -911,7 +911,7 @@
                 ? `${op.tabPlacements?.length ?? 0} manual`
                 : op.tabMode.kind === 'auto'
                   ? `${op.tabMode.count} auto`
-                  : `${op.tabMode.auto_count} auto + ${op.tabPlacements?.length ?? 0} manual`}</span
+                  : `${op.tabMode.autoCount} auto + ${op.tabPlacements?.length ?? 0} manual`}</span
           >
         </summary>
         <TabsSection {op} {patch} />
@@ -1091,7 +1091,7 @@
               : op.pattern.kind === 'linear'
                 ? `linear · ${op.pattern.count}`
                 : op.pattern.kind === 'grid'
-                  ? `grid · ${op.pattern.count_x}×${op.pattern.count_y}`
+                  ? `grid · ${op.pattern.countX}×${op.pattern.countY}`
                   : `polar · ${op.pattern.count}`}</span
           >
         </summary>

@@ -65,7 +65,7 @@ export class TabsBuilder implements Builder {
       }
       // Auto-spaced placements (Auto + Mixed).
       if (mode.kind === 'auto' || mode.kind === 'mixed') {
-        const count = mode.kind === 'auto' ? mode.count : mode.auto_count;
+        const count = mode.kind === 'auto' ? mode.count : mode.autoCount;
         if (count <= 0) continue;
         for (const obj of objects) {
           if (!opIncludesObject(op, obj.objectId, imp)) continue;

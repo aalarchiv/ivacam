@@ -399,7 +399,12 @@ function buildContourParams(op: FlatOp): Record<string, unknown> {
     c.tabs = tabs;
   }
   if (op.tabMode && op.tabMode.kind !== 'off') {
-    c.tab_mode = op.tabMode;
+    // 0euf: the FE op model is camelCase (autoCount); the wire stays
+    // snake_case. Convert here so the boundary is the network call.
+    c.tab_mode =
+      op.tabMode.kind === 'mixed'
+        ? { kind: 'mixed', auto_count: op.tabMode.autoCount }
+        : op.tabMode;
   }
   if (op.tabPlacements && op.tabPlacements.length > 0) {
     c.tab_placements = op.tabPlacements.map((p) => ({
@@ -521,9 +526,23 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       if (op.chamferAfterWidthMm !== undefined && op.chamferAfterWidthMm > 0) {
         drill.chamfer_after_width_mm = op.chamferAfterWidthMm;
       }
-      // Pattern repetition (kbx5: Drill-only now).
+      // Pattern repetition (kbx5: Drill-only now). 0euf: FE model is
+      // camelCase; convert to the snake_case wire shape here.
       if (op.pattern && (op.pattern as { kind?: string }).kind) {
-        drill.pattern = op.pattern;
+        const p = op.pattern;
+        drill.pattern =
+          p.kind === 'grid'
+            ? { kind: 'grid', count_x: p.countX, count_y: p.countY, dx: p.dx, dy: p.dy }
+            : p.kind === 'polar'
+              ? {
+                  kind: 'polar',
+                  count: p.count,
+                  center_x: p.centerX,
+                  center_y: p.centerY,
+                  angle_step_deg: p.angleStepDeg,
+                  ...(p.startAngleDeg !== undefined ? { start_angle_deg: p.startAngleDeg } : {}),
+                }
+              : p;
       }
       // r2af / u64o: spot-drill pre-pass.
       if (op.spotFirst && op.spotFirst.spotToolId > 0) {

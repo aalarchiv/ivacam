@@ -505,7 +505,11 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
         } as WireOpKind;
       }
       if (strategy === 'halfpipe') {
-        const profile = op.halfpipeProfile ?? { kind: 'circular_arc' as const, radius_mm: 5 };
+        const fe = op.halfpipeProfile ?? { kind: 'circular_arc' as const, radiusMm: 5 };
+        const profile =
+          fe.kind === 'circular_arc'
+            ? { kind: 'circular_arc', radius_mm: fe.radiusMm }
+            : { kind: 'v_bottom', included_angle_deg: fe.includedAngleDeg };
         return {
           type: 'pocket',
           strategy: {
@@ -655,11 +659,11 @@ function mapDrillCycle(c: DrillOp['drillCycle']): WireDrillCycle {
   // explicitly rather than omitting — 0 round-trips identically.
   switch (c.kind) {
     case 'simple':
-      return { kind: 'simple', dwell_sec: c.dwell_sec ?? 0 };
+      return { kind: 'simple', dwell_sec: c.dwellSec ?? 0 };
     case 'peck':
-      return { kind: 'peck', peck_step_mm: c.peck_step_mm, dwell_sec: c.dwell_sec ?? 0 };
+      return { kind: 'peck', peck_step_mm: c.peckStepMm, dwell_sec: c.dwellSec ?? 0 };
     case 'chip_break':
-      return { kind: 'chip_break', peck_step_mm: c.peck_step_mm, dwell_sec: c.dwell_sec ?? 0 };
+      return { kind: 'chip_break', peck_step_mm: c.peckStepMm, dwell_sec: c.dwellSec ?? 0 };
   }
 }
 
@@ -710,7 +714,17 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
       ...(op.step !== null && op.step !== undefined ? { step: op.step } : {}),
       fast_move_z: machine.fastMoveZ,
       objectorder: 'nearest',
-      ...(op.plunge && op.plunge.kind !== 'direct' ? { plunge: op.plunge } : {}),
+      ...(op.plunge && op.plunge.kind === 'ramp'
+        ? { plunge: { kind: 'ramp', angle_deg: op.plunge.angleDeg } }
+        : op.plunge && op.plunge.kind === 'helix'
+          ? {
+              plunge: {
+                kind: 'helix',
+                angle_deg: op.plunge.angleDeg,
+                radius_mm: op.plunge.radiusMm,
+              },
+            }
+          : {}),
       ...(op.feedRateOverride !== undefined && op.feedRateOverride > 0
         ? { feed_rate_override: op.feedRateOverride }
         : {}),

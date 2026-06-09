@@ -494,8 +494,8 @@ export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal' | 'h
 /// ball-bottom slot with the given radius; `v_bottom` for a V-bottom
 /// slot with the given included angle (equivalent to V-Carve).
 export type HalfpipeProfile =
-  | { kind: 'circular_arc'; radius_mm: number }
-  | { kind: 'v_bottom'; included_angle_deg: number };
+  | { kind: 'circular_arc'; radiusMm: number }
+  | { kind: 'v_bottom'; includedAngleDeg: number };
 
 /// Pattern repetition for an Operation. Mirrors
 /// `ivac_core::project::PatternConfig`. Each tagged variant matches
@@ -555,16 +555,16 @@ export type CutDirection = 'conventional' | 'climb';
 /// the helix to the largest inscribed circle of the pocket boundary.
 export type PlungeStrategy =
   | { kind: 'direct' }
-  | { kind: 'ramp'; angle_deg: number }
-  | { kind: 'helix'; angle_deg: number; radius_mm: number | null };
+  | { kind: 'ramp'; angleDeg: number }
+  | { kind: 'helix'; angleDeg: number; radiusMm: number | null };
 /// Drill cycle for an OperationKind::Drill op. Mirrors ivac_core::project::DrillCycle.
 /// `simple` → G81; `peck` → G83 (full retract between pecks); `chip_break` → G73
 /// (small partial retract between pecks). `dwell_sec` is the dwell at bottom in
 /// seconds (0 = no dwell). `peck_step_mm` is the per-peck Z step.
 export type DrillCycle =
-  | { kind: 'simple'; dwell_sec?: number }
-  | { kind: 'peck'; peck_step_mm: number; dwell_sec?: number }
-  | { kind: 'chip_break'; peck_step_mm: number; dwell_sec?: number };
+  | { kind: 'simple'; dwellSec?: number }
+  | { kind: 'peck'; peckStepMm: number; dwellSec?: number }
+  | { kind: 'chip_break'; peckStepMm: number; dwellSec?: number };
 
 /// Thin frontend mirror of ivac_core::project::Operation. Tracks just
 /// what the UI needs to show + edit; the wire format expands to the

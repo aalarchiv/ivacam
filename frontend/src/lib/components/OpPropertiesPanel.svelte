@@ -113,8 +113,8 @@
   // off restores it instead of jumping back to the default.
   let lastManualHelixRadius = $state<number>(3);
   $effect(() => {
-    if (op?.plunge?.kind === 'helix' && op.plunge.radius_mm != null) {
-      lastManualHelixRadius = op.plunge.radius_mm;
+    if (op?.plunge?.kind === 'helix' && op.plunge.radiusMm != null) {
+      lastManualHelixRadius = op.plunge.radiusMm;
     }
   });
 
@@ -133,7 +133,7 @@
     op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.diameter ?? null),
   );
   const helixAutoActive = $derived(
-    op != null && op.plunge != null && op.plunge.kind === 'helix' && op.plunge.radius_mm === null,
+    op != null && op.plunge != null && op.plunge.kind === 'helix' && op.plunge.radiusMm === null,
   );
   const helixHasGeometry = $derived(
     project.transformedImport != null && (project.transformedImport.segments?.length ?? 0) > 0,
@@ -750,7 +750,7 @@
               if (v === 'ramp') {
                 patch('plunge', {
                   kind: 'ramp',
-                  angle_deg: op.plunge && op.plunge.kind === 'ramp' ? op.plunge.angle_deg : 3,
+                  angleDeg: op.plunge && op.plunge.kind === 'ramp' ? op.plunge.angleDeg : 3,
                 });
               } else if (v === 'helix') {
                 // Sane default helix radius: 1.5 × tool radius, fallback 3mm.
@@ -758,9 +758,9 @@
                 const defaultRadius = tool ? Math.max(0.1, tool.diameter * 0.75) : 3;
                 patch('plunge', {
                   kind: 'helix',
-                  angle_deg: op.plunge && op.plunge.kind === 'helix' ? op.plunge.angle_deg : 3,
-                  radius_mm:
-                    op.plunge && op.plunge.kind === 'helix' ? op.plunge.radius_mm : defaultRadius,
+                  angleDeg: op.plunge && op.plunge.kind === 'helix' ? op.plunge.angleDeg : 3,
+                  radiusMm:
+                    op.plunge && op.plunge.kind === 'helix' ? op.plunge.radiusMm : defaultRadius,
                 });
               } else {
                 patch('plunge', { kind: 'direct' });
@@ -784,11 +784,11 @@
                 step="0.5"
                 min="0.5"
                 max="45"
-                value={op.plunge.angle_deg}
+                value={op.plunge.angleDeg}
                 onchange={(e) => {
                   const v = parseFloat((e.currentTarget as HTMLInputElement).value);
                   if (!isNaN(v))
-                    patch('plunge', { kind: 'ramp', angle_deg: Math.max(0.5, Math.min(45, v)) });
+                    patch('plunge', { kind: 'ramp', angleDeg: Math.max(0.5, Math.min(45, v)) });
                 }}
               />
               <span class="unit">°</span>
@@ -808,14 +808,14 @@
                   step="0.5"
                   min="0.5"
                   max="45"
-                  value={op.plunge.angle_deg}
+                  value={op.plunge.angleDeg}
                   onchange={(e) => {
                     const v = parseFloat((e.currentTarget as HTMLInputElement).value);
                     if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
                       patch('plunge', {
                         kind: 'helix',
-                        angle_deg: Math.max(0.5, Math.min(45, v)),
-                        radius_mm: op.plunge.radius_mm,
+                        angleDeg: Math.max(0.5, Math.min(45, v)),
+                        radiusMm: op.plunge.radiusMm,
                       });
                   }}
                 />
@@ -829,20 +829,20 @@
               <span>Auto-fit helix</span>
               <input
                 type="checkbox"
-                checked={op.plunge.radius_mm === null}
+                checked={op.plunge.radiusMm === null}
                 onchange={(e) => {
                   const checked = (e.currentTarget as HTMLInputElement).checked;
                   if (op.plunge && op.plunge.kind === 'helix') {
                     patch('plunge', {
                       kind: 'helix',
-                      angle_deg: op.plunge.angle_deg,
-                      radius_mm: checked ? null : lastManualHelixRadius,
+                      angleDeg: op.plunge.angleDeg,
+                      radiusMm: checked ? null : lastManualHelixRadius,
                     });
                   }
                 }}
               />
             </label>
-            {#if op.plunge.radius_mm === null}
+            {#if op.plunge.radiusMm === null}
               <div
                 class="row"
                 title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at G-code time."
@@ -876,14 +876,14 @@
                     step="0.1"
                     min="0.1"
                     max="50"
-                    value={op.plunge.radius_mm}
+                    value={op.plunge.radiusMm}
                     onchange={(e) => {
                       const v = parseFloat((e.currentTarget as HTMLInputElement).value);
                       if (!isNaN(v) && op.plunge && op.plunge.kind === 'helix')
                         patch('plunge', {
                           kind: 'helix',
-                          angle_deg: op.plunge.angle_deg,
-                          radius_mm: Math.max(0.1, Math.min(50, v)),
+                          angleDeg: op.plunge.angleDeg,
+                          radiusMm: Math.max(0.1, Math.min(50, v)),
                         });
                     }}
                   />

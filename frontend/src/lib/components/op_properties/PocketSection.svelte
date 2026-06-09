@@ -119,7 +119,7 @@
           if (op?.loopRadiusFactor === undefined) patches.loopRadiusFactor = 0.6;
         }
         if (v === 'halfpipe' && op?.halfpipeProfile === undefined) {
-          patches.halfpipeProfile = { kind: 'circular_arc', radius_mm: 5 };
+          patches.halfpipeProfile = { kind: 'circular_arc', radiusMm: 5 };
         }
         if (op) project.updateOperation(op.id, patches);
       }}
@@ -152,15 +152,15 @@
             if (v === 'circular_arc') {
               patch('halfpipeProfile', {
                 kind: 'circular_arc',
-                radius_mm:
-                  op.halfpipeProfile?.kind === 'circular_arc' ? op.halfpipeProfile.radius_mm : 5,
+                radiusMm:
+                  op.halfpipeProfile?.kind === 'circular_arc' ? op.halfpipeProfile.radiusMm : 5,
               });
             } else if (v === 'v_bottom') {
               patch('halfpipeProfile', {
                 kind: 'v_bottom',
-                included_angle_deg:
+                includedAngleDeg:
                   op.halfpipeProfile?.kind === 'v_bottom'
-                    ? op.halfpipeProfile.included_angle_deg
+                    ? op.halfpipeProfile.includedAngleDeg
                     : 60,
               });
             }
@@ -181,11 +181,11 @@
               type="number"
               step="0.1"
               min="0.1"
-              value={op.halfpipeProfile.radius_mm}
+              value={op.halfpipeProfile.radiusMm}
               onchange={(e) => {
                 const v = parseFloat((e.currentTarget as HTMLInputElement).value);
                 if (!isNaN(v) && v > 0)
-                  patch('halfpipeProfile', { kind: 'circular_arc', radius_mm: v });
+                  patch('halfpipeProfile', { kind: 'circular_arc', radiusMm: v });
               }}
             />
             <span class="unit">mm</span>
@@ -204,14 +204,14 @@
               step="1"
               min="1"
               max="179"
-              value={op.halfpipeProfile.included_angle_deg}
+              value={op.halfpipeProfile.includedAngleDeg}
               onchange={(e) => {
                 const v = parseFloat((e.currentTarget as HTMLInputElement).value);
                 // Match the HTML min/max guards (1..179) — the prior
                 // `v > 0` accepted 200° which produced a degenerate
                 // V-bit profile with no warning.
                 if (!isNaN(v) && v >= 1 && v <= 179)
-                  patch('halfpipeProfile', { kind: 'v_bottom', included_angle_deg: v });
+                  patch('halfpipeProfile', { kind: 'v_bottom', includedAngleDeg: v });
               }}
             />
             <span class="unit">°</span>

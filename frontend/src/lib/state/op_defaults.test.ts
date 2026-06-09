@@ -155,7 +155,7 @@ describe('buildOpEntry — geometry kinds', () => {
   it('drill: simple cycle default', () => {
     expect(buildOpEntry('drill', ctx())).toMatchObject({
       offset: 'outside',
-      drillCycle: { kind: 'simple', dwell_sec: 0 },
+      drillCycle: { kind: 'simple', dwellSec: 0 },
     });
   });
 

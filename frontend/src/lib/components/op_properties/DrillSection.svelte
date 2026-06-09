@@ -29,22 +29,22 @@
       value={op.drillCycle?.kind ?? 'simple'}
       onchange={(e) => {
         const v = (e.currentTarget as HTMLSelectElement).value as 'simple' | 'peck' | 'chip_break';
-        const cur = op.drillCycle ?? ({ kind: 'simple', dwell_sec: 0 } as DrillCycle);
-        const dwell = cur.dwell_sec ?? 0;
-        const step = cur.kind === 'peck' || cur.kind === 'chip_break' ? cur.peck_step_mm : 1.0;
+        const cur = op.drillCycle ?? ({ kind: 'simple', dwellSec: 0 } as DrillCycle);
+        const dwell = cur.dwellSec ?? 0;
+        const step = cur.kind === 'peck' || cur.kind === 'chip_break' ? cur.peckStepMm : 1.0;
         if (v === 'simple') {
-          patch('drillCycle', { kind: 'simple', dwell_sec: dwell } as DrillCycle);
+          patch('drillCycle', { kind: 'simple', dwellSec: dwell } as DrillCycle);
         } else if (v === 'peck') {
           patch('drillCycle', {
             kind: 'peck',
-            peck_step_mm: step,
-            dwell_sec: dwell,
+            peckStepMm: step,
+            dwellSec: dwell,
           } as DrillCycle);
         } else {
           patch('drillCycle', {
             kind: 'chip_break',
-            peck_step_mm: step,
-            dwell_sec: dwell,
+            peckStepMm: step,
+            dwellSec: dwell,
           } as DrillCycle);
         }
       }}
@@ -71,7 +71,7 @@
             type="number"
             step="0.1"
             min="0.1"
-            value={op.drillCycle.peck_step_mm}
+            value={op.drillCycle.peckStepMm}
             onchange={(e) => {
               const v = parseFloat((e.currentTarget as HTMLInputElement).value);
               if (!isNaN(v) && v > 0 && op.drillCycle) {
@@ -79,7 +79,7 @@
                 if (cur.kind === 'peck' || cur.kind === 'chip_break') {
                   patch('drillCycle', {
                     ...cur,
-                    peck_step_mm: v,
+                    peckStepMm: v,
                   } as DrillCycle);
                 }
               }
@@ -97,12 +97,12 @@
         type="number"
         step="0.1"
         min="0"
-        value={op.drillCycle?.dwell_sec ?? 0}
+        value={op.drillCycle?.dwellSec ?? 0}
         onchange={(e) => {
           const v = parseFloat((e.currentTarget as HTMLInputElement).value);
           if (!isNaN(v) && v >= 0) {
             const cur = op.drillCycle ?? ({ kind: 'simple' } as DrillCycle);
-            patch('drillCycle', { ...cur, dwell_sec: v } as DrillCycle);
+            patch('drillCycle', { ...cur, dwellSec: v } as DrillCycle);
           }
         }}
       />

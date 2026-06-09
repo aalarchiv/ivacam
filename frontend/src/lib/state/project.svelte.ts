@@ -36,7 +36,6 @@ export type { AppSettings };
 // re-export them through this module so callers can import them here too.
 import { isContourOp, type OpEntry, type OpKind, type OpPatch } from './op_types';
 import { migrateLegacyToolTerms } from './tool-migration';
-import { migrateLegacyOpFields } from './op-migration';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs
 // and non-Svelte helpers can import them without booting the rune
@@ -1347,7 +1346,7 @@ class ProjectState {
     if (Array.isArray(file.tools) && file.tools.length > 0)
       this.tools = file.tools.map(migrateLegacyToolTerms);
     if (file.machine) this.machine = { ...this.machine, ...migrateMachineSettings(file.machine) };
-    if (Array.isArray(file.operations)) this.operations = file.operations.map(migrateLegacyOpFields);
+    if (Array.isArray(file.operations)) this.operations = file.operations;
     this.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
     this.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
     this.reliefSources = Array.isArray(file.reliefSources) ? file.reliefSources : [];

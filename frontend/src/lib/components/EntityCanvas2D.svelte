@@ -14,6 +14,7 @@
   import { fixtureAt } from '../canvas/fixture-hit';
   import { projectGhostTab, type GhostTab } from '../canvas/ghost-tab';
   import { reduceCanvasClick } from '../canvas/entity-selection';
+  import { reducePointerDown } from '../canvas/pointer-down';
   import {
     computeViewportTransform,
     placementsBBox,
@@ -1167,148 +1168,125 @@
       }, LONG_PRESS_MS);
     }
 
-    // Middle-button drag = pan. Capture the pointer so the drag
-    // continues if the cursor leaves the canvas.
-    if (e.button === 1) {
-      e.preventDefault();
-      panDrag = { startX: e.clientX, startY: e.clientY, pointerId: e.pointerId };
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch {}
-      canvas.style.cursor = 'grabbing';
-      return;
-    }
-
-    // n79: approach-point pick mode. Left-click commits the snapped
-    // (or free, if Shift) cursor position into op.approachPoint and
-    // STAYS in pick mode (sticky — ESC exits). Right-click bails
-    // out without committing.
-    if (approachPickActive && selectedOp && e.button === 0) {
-      const data = pxToData(cx, cy);
-      if (data) {
-        const tol = approachSnapToleranceData();
-        const snap = shiftDown ? null : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
-        const x = snap ? snap.x : data.x;
-        const y = snap ? snap.y : data.y;
-        project.updateOperation(selectedOp.id, { approachPoint: [x, y] });
-        approachPreview = { x, y, snap: snap?.kind ?? null };
-      }
-      e.preventDefault();
-      return;
-    }
-    if (approachPickActive && e.button === 2) {
-      project.pickMode = null;
-      approachPreview = null;
-      e.preventDefault();
-      return;
-    }
-
-    // Past this point we only handle LEFT-click. Right-click (button 2)
-    // is exclusively a context-menu trigger — onContextMenu runs next
-    // and reads the current selection. Letting right-click fall through
-    // into the hit-test + selection reducer collapsed multi-selections
-    // (user report) and silently fired tab placements / approach-marker
-    // drags. Forward / back navigation buttons (3, 4) also bail here.
-    if (e.button !== 0) return;
-
-    // n79: dragging an already-placed approach marker. Only allowed
-    // when the selected op has one and we're NOT in pick mode.
-    if (
-      !approachPickActive &&
-      selectedOp &&
-      (selectedOp.kind === 'profile' || selectedOp.kind === 'pocket') &&
-      selectedOp.approachPoint &&
-      e.button === 0
-    ) {
-      const data = pxToData(cx, cy);
-      const hitR = approachMarkerHitRadiusData();
-      if (data) {
+    // The branch ORDER (pan → pick → marker drag → raster → text → tab
+    // → fixture → entity selection) lives in the pure reducer
+    // (lib/canvas/pointer-down.ts); this handler supplies the lazy
+    // hit-tests and performs the side effects the intent names.
+    const intent = reducePointerDown({
+      button: e.button,
+      approachPickActive,
+      tabPlacementActive,
+      approachMarkerHit: () => {
+        if (
+          !selectedOp ||
+          (selectedOp.kind !== 'profile' && selectedOp.kind !== 'pocket') ||
+          !selectedOp.approachPoint
+        ) {
+          return false;
+        }
+        const data = pxToData(cx, cy);
+        if (!data) return false;
+        const hitR = approachMarkerHitRadiusData();
         const [ax, ay] = selectedOp.approachPoint;
         const dx = data.x - ax;
         const dy = data.y - ay;
-        if (dx * dx + dy * dy <= hitR * hitR) {
-          approachDrag = { opId: selectedOp.id, pointerId: e.pointerId };
-          try {
-            canvas.setPointerCapture(e.pointerId);
-          } catch {}
-          canvas.style.cursor = 'grabbing';
-          e.preventDefault();
-          return;
-        }
-      }
-    }
-
-    // rt1.12 (j7b4): grab a raster-engrave placement image to drag it.
-    // Clicking the image also selects its op (raster ops have no source
-    // geometry, so the canvas is their only spatial handle). Gated out
-    // of the pick / tab modes above.
-    if (!approachPickActive && !tabPlacementActive) {
-      const data = pxToData(cx, cy);
-      const hit = data ? rasterPlacementAtData(data.x, data.y) : null;
-      if (data && hit) {
-        project.selectedOpId = hit.op.id;
-        rasterDrag = {
+        return dx * dx + dy * dy <= hitR * hitR;
+      },
+      rasterHit: () => {
+        const data = pxToData(cx, cy);
+        const hit = data ? rasterPlacementAtData(data.x, data.y) : null;
+        if (!data || !hit) return null;
+        return {
+          opId: hit.op.id,
           sourceId: hit.src.id,
-          pointerId: e.pointerId,
           grabDX: data.x - hit.src.origin.x,
           grabDY: data.y - hit.src.origin.y,
         };
-        try {
-          canvas.setPointerCapture(e.pointerId);
-        } catch {}
-        canvas.style.cursor = 'grabbing';
+      },
+      textHit: () => {
+        const data = pxToData(cx, cy);
+        const hit = data ? textHitAtData(data.x, data.y) : null;
+        if (!data || !hit) return null;
+        return { id: hit.id, grabDX: data.x - hit.origin.x, grabDY: data.y - hit.origin.y };
+      },
+      tabGhost: () => {
+        const ghost = ghostTabAt(cx, cy);
+        return ghost ? { objectId: ghost.objectId, t: ghost.t } : null;
+      },
+      fixtureHit: () => fixtureHit(cx, cy),
+    });
+
+    const grabPointer = () => {
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* not all browsers / older versions; harmless */
+      }
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault();
+    };
+
+    switch (intent.kind) {
+      case 'pan':
+        panDrag = { startX: e.clientX, startY: e.clientY, pointerId: e.pointerId };
+        grabPointer();
+        return;
+      case 'approach-commit': {
+        // Commits the snapped (or free, if Shift) cursor position.
+        const data = pxToData(cx, cy);
+        if (data && selectedOp) {
+          const tol = approachSnapToleranceData();
+          const snap = shiftDown
+            ? null
+            : findOSnap(osnapTargets, data.x, data.y, tol, osnapSettings);
+          const x = snap ? snap.x : data.x;
+          const y = snap ? snap.y : data.y;
+          project.updateOperation(selectedOp.id, { approachPoint: [x, y] });
+          approachPreview = { x, y, snap: snap?.kind ?? null };
+        }
         e.preventDefault();
         return;
       }
-    }
-
-    // fx06: click a text glyph stroke to select that layer AND start
-    // dragging its origin in one gesture (precise stroke hit-test, so the
-    // mostly-whitespace bbox doesn't hijack clicks meant for geometry).
-    // Text selection is mutually exclusive with the object/fixture
-    // selection. Same mode gating as the raster grab.
-    if (!approachPickActive && !tabPlacementActive) {
-      const data = pxToData(cx, cy);
-      const hit = data ? textHitAtData(data.x, data.y) : null;
-      if (data && hit) {
-        project.selectedTextLayerId = hit.id;
+      case 'approach-exit':
+        project.pickMode = null;
+        approachPreview = null;
+        e.preventDefault();
+        return;
+      case 'ignore':
+      case 'tab-miss':
+        return;
+      case 'approach-drag':
+        approachDrag = { opId: selectedOp!.id, pointerId: e.pointerId };
+        grabPointer();
+        return;
+      case 'raster-drag':
+        project.selectedOpId = intent.grab.opId;
+        rasterDrag = {
+          sourceId: intent.grab.sourceId,
+          pointerId: e.pointerId,
+          grabDX: intent.grab.grabDX,
+          grabDY: intent.grab.grabDY,
+        };
+        grabPointer();
+        return;
+      case 'text-drag':
+        project.selectedTextLayerId = intent.grab.id;
         project.clearSelection();
         project.selectFixture(null);
-        textDrag = {
-          id: hit.id,
-          pointerId: e.pointerId,
-          grabDX: data.x - hit.origin.x,
-          grabDY: data.y - hit.origin.y,
-        };
-        try {
-          canvas.setPointerCapture(e.pointerId);
-        } catch {}
-        canvas.style.cursor = 'grabbing';
-        e.preventDefault();
+        textDrag = { ...intent.grab, pointerId: e.pointerId };
+        grabPointer();
         return;
-      }
-    }
-
-    // rt1.10: tab-placement mode (selected op has Manual / Mixed
-    // tab_mode). Click toggles a placement at the contour projection
-    // — Estlcam-style. ToleranceT picks the "is this near an existing
-    // tab" threshold: ~3 px of contour length.
-    if (tabPlacementActive && selectedOp) {
-      const ghost = ghostTabAt(cx, cy);
-      if (!ghost) return;
-      // Tolerance in t-units: ~3 px of contour length. Without an
-      // exact polyline length we conservatively use 0.01 (1% of contour).
-      project.toggleTabPlacement(selectedOp.id, { objectId: ghost.objectId, t: ghost.t }, 0.01);
-      return;
-    }
-
-    // Fixture hit-test runs before segment selection so clicking a fixture
-    // outline snaps the right-hand panel's edit form to it.
-    const fixId = fixtureHit(cx, cy);
-    if (fixId != null) {
-      project.selectFixture(fixId);
-      project.selectedTextLayerId = null; // fx06: keep selection single-domain
-      return;
+      case 'tab-toggle':
+        // Tolerance in t-units: ~3 px of contour length. Without an
+        // exact polyline length we conservatively use 0.01 (1% of contour).
+        project.toggleTabPlacement(selectedOp!.id, intent.at, 0.01);
+        return;
+      case 'fixture-select':
+        project.selectFixture(intent.id);
+        project.selectedTextLayerId = null; // fx06: keep selection single-domain
+        return;
+      case 'entity-click':
+        break;
     }
 
     // fx06: a left-click on geometry / empty space (not consumed by a

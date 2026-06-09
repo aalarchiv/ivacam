@@ -27,15 +27,15 @@ import type { ProjectState } from './project.svelte';
 /// silently re-target unrelated objects in the new geometry.
 export function clearProject(p: ProjectState) {
   p.data.imports = [];
-  p.operations = [];
-  p.fixtures = [];
-  p.textLayers = [];
-  p.reliefSources = [];
-  p.groupOpsByTool = false;
-  p.stock = { ...p.stock };
+  p.data.operations = [];
+  p.data.fixtures = [];
+  p.data.textLayers = [];
+  p.data.reliefSources = [];
+  p.data.groupOpsByTool = false;
+  p.data.stock = { ...p.stock };
   // j4tv: workOffset is per-project (the user pre-zeros their machine
   // at a different point per drawing), so reset to default like ops.
-  p.workOffset = defaultWorkOffset();
+  p.data.workOffset = defaultWorkOffset();
   p.generated = null;
   p.toolpathCumLen = null;
   p.toolpathTotalLen = 0;
@@ -170,22 +170,22 @@ export function restoreProject(p: ProjectState, file: ProjectFile) {
   if (Array.isArray(file.selectedEntities) && file.selectedEntities.length > 0) {
     p.selectedEntities = new Set(file.selectedEntities);
   }
-  if (file.stock) p.stock = { ...p.stock, ...file.stock };
+  if (file.stock) p.data.stock = { ...p.stock, ...file.stock };
   if (Array.isArray(file.tools) && file.tools.length > 0)
-    p.tools = file.tools.map(migrateLegacyToolTerms);
-  if (file.machine) p.machine = { ...p.machine, ...migrateMachineSettings(file.machine) };
-  if (Array.isArray(file.operations)) p.operations = file.operations;
-  p.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
-  p.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
-  p.reliefSources = Array.isArray(file.reliefSources) ? file.reliefSources : [];
+    p.data.tools = file.tools.map(migrateLegacyToolTerms);
+  if (file.machine) p.data.machine = { ...p.machine, ...migrateMachineSettings(file.machine) };
+  if (Array.isArray(file.operations)) p.data.operations = file.operations;
+  p.data.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
+  p.data.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
+  p.data.reliefSources = Array.isArray(file.reliefSources) ? file.reliefSources : [];
   // j4tv: restore the program-level WCS offset. Legacy files lack
   // this field — fall back to all-zero @ G54, which matches the
   // pre-i5g4 behavior (geometry origin = WCS origin).
-  p.workOffset = file.workOffset
+  p.data.workOffset = file.workOffset
     ? { ...defaultWorkOffset(), ...file.workOffset }
     : defaultWorkOffset();
   // l8lk: restore the tool-grouping toggle (legacy files lack it → false).
-  p.groupOpsByTool = file.groupOpsByTool === true;
+  p.data.groupOpsByTool = file.groupOpsByTool === true;
   p.selectedFixtureId = null;
   p.selectedOpId = null;
   // This content came from a saved .ivac-project file — mark it saved

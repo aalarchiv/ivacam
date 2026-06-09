@@ -146,7 +146,7 @@ export function setImported(p: ProjectState, r: ImportResponse, sourcePath?: str
     max_x: r.bbox.max_x + placement.translate.x,
     max_y: r.bbox.max_y + placement.translate.y,
   };
-  p.workOffset = inferDefaultWorkOffset(placedBbox, p.workOffset);
+  p.data.workOffset = inferDefaultWorkOffset(placedBbox, p.workOffset);
   // Replacing the imported geometry implies a new project boundary —
   // drop any text-preview segments cached from the previous project
   // so we don't paint stale TextLayer glyphs over the new file.

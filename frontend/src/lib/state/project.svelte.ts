@@ -243,9 +243,6 @@ export class ProjectState {
   get imports(): ImportEntry[] {
     return this.data.imports;
   }
-  set imports(v: ImportEntry[]) {
-    this.data.imports = v;
-  }
 
   /// All imports merged into one ImportResponse with each entry's
   /// fileTransform applied (wrsu Phase 2). Every visual consumer (canvas
@@ -410,9 +407,6 @@ export class ProjectState {
   get fixtures(): Fixture[] {
     return this.data.fixtures;
   }
-  set fixtures(v: Fixture[]) {
-    this.data.fixtures = v;
-  }
   get selectedFixtureId(): number | null {
     return this.sel.selectedFixtureId;
   }
@@ -423,9 +417,6 @@ export class ProjectState {
   get stock(): StockConfig {
     return this.data.stock;
   }
-  set stock(v: StockConfig) {
-    this.data.stock = v;
-  }
 
   /// i5g4: program-level WCS offset (j4tv wiring). Defaults to all-zero
   /// at G54, which serializes as "no work_offset field" on the wire to
@@ -433,29 +424,17 @@ export class ProjectState {
   get workOffset(): WorkOffset {
     return this.data.workOffset;
   }
-  set workOffset(v: WorkOffset) {
-    this.data.workOffset = v;
-  }
 
   get tools(): ToolEntry[] {
     return this.data.tools;
-  }
-  set tools(v: ToolEntry[]) {
-    this.data.tools = v;
   }
 
   get machine(): MachineSettings {
     return this.data.machine;
   }
-  set machine(v: MachineSettings) {
-    this.data.machine = v;
-  }
 
   get operations(): OpEntry[] {
     return this.data.operations;
-  }
-  set operations(v: OpEntry[]) {
-    this.data.operations = v;
   }
   get selectedOpId(): number | null {
     return this.sel.selectedOpId;
@@ -467,9 +446,6 @@ export class ProjectState {
   get reliefSources(): ReliefSource[] {
     return this.data.reliefSources;
   }
-  set reliefSources(v: ReliefSource[]) {
-    this.data.reliefSources = v;
-  }
 
   /// l8lk: opt-in tool-change-order optimization (group ops by tool).
   /// Changing it reorders the emitted program, so it invalidates the
@@ -478,17 +454,10 @@ export class ProjectState {
   get groupOpsByTool(): boolean {
     return this.data.groupOpsByTool;
   }
-  /// 7iej.8: PLAIN setter — used by the command apply/revert, restore(),
-  /// and clearProject(). It deliberately does NOT mark dirty, invalidate
-  /// the toolpath, or touch history: a UI toggle must go through
-  /// `setGroupOpsByTool` (below) so it's undoable, while load/clear paths
-  /// manage dirty + generated + history themselves. Routing the UI edit
-  /// through here directly (the old behavior) bypassed the command bus and
-  /// left the toggle un-undoable.
-  set groupOpsByTool(v: boolean) {
-    this.data.groupOpsByTool = v;
-  }
-  /// Undoable UI entry point for the tool-grouping toggle. Routes through
+  /// Undoable UI entry point for the tool-grouping toggle (7iej.8 —
+  /// the plain write lives on the data slice for command apply/revert
+  /// and load/clear paths, which manage dirty + generated + history
+  /// themselves). Routes through
   /// the command bus (so Ctrl+Z reverses it) and invalidates the cached
   /// toolpath — the reorder changes emitted-program order, so a toolpath
   /// generated against the prior setting isn't safe to draw/download.
@@ -501,9 +470,6 @@ export class ProjectState {
 
   get textLayers(): TextLayer[] {
     return this.data.textLayers;
-  }
-  set textLayers(v: TextLayer[]) {
-    this.data.textLayers = v;
   }
   get selectedTextLayerId(): number | null {
     return this.sel.selectedTextLayerId;
@@ -547,9 +513,6 @@ export class ProjectState {
 
   get settings(): AppSettings {
     return this.data.settings;
-  }
-  set settings(v: AppSettings) {
-    this.data.settings = v;
   }
 
   /// Most recent sim diagnostics, written through by the sim driver
@@ -641,7 +604,7 @@ export class ProjectState {
   /// Command-bus view of this state — used by History.exec callers
   /// here and in state/import-ops.ts.
   target(): CommandTarget {
-    return this as unknown as CommandTarget;
+    return this.data;
   }
 
   undo(): boolean {
@@ -689,7 +652,7 @@ export class ProjectState {
   }
 
   updateSettings(patch: Partial<AppSettings>) {
-    this.settings = { ...this.settings, ...patch };
+    this.data.settings = { ...this.settings, ...patch };
     this.saveSettings();
   }
 

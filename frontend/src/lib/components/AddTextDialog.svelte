@@ -22,6 +22,7 @@
   import { computeFootprint } from '../sim/driver';
   import { selectionOrigin } from '../canvas/selection-geometry';
   import { formatLength } from '../cam/units';
+  import { DialogDraft } from './dialog-draft.svelte';
   import Modal from './Modal.svelte';
   import { onMount } from 'svelte';
 
@@ -72,33 +73,54 @@
   /// pick visually based on the shapes that actually matter.
   const FONT_SAMPLE = 'AaBb 0123 äöß€';
 
-  /// Initial values for every editable field — used by `isDirty` so the
-  /// close path can detect "user has typed something" and prompt instead
+  /// Every editable field, composed into one DialogDraft (kdfh) so a
+  /// single dirty check + discard guard covers the whole form: the
+  /// close path detects "user has typed something" and prompts instead
   /// of silently discarding the draft.
-  const INITIAL_TEXT = 'Text';
-  const INITIAL_STYLE: TextStyle = 'engraving';
-  const INITIAL_SIZE_MM = 12;
-  const INITIAL_WIDTH_PCT = 100;
-  const INITIAL_POS_X = 0;
-  const INITIAL_POS_Y = 0;
-  const INITIAL_DEPTH = -0.5;
-  const INITIAL_TOOL_ID = 1;
-  const INITIAL_USE_USER_FONT = false;
-  const INITIAL_BUNDLED_FONT_PATH = BUNDLED_FONTS[0]?.path ?? '';
+  interface TextDraft {
+    text: string;
+    style: TextStyle;
+    sizeMm: number;
+    /// 969h: horizontal stretch as a percentage. UI exposes 50–200 %;
+    /// stored on TextLayer as a 0.5–2.0 multiplier.
+    widthPct: number;
+    posX: number;
+    posY: number;
+    depth: number;
+    toolId: number;
+    useUserFont: boolean;
+    bundledFontPath: string;
+    /// Name of the picked custom font file. The File object itself
+    /// lives outside the draft (it isn't clone/compare material); the
+    /// name stands in for it so a picked font still trips the dirty
+    /// guard even after switching back to a bundled font.
+    userFontName: string | null;
+  }
 
-  let text = $state(INITIAL_TEXT);
-  let style = $state<TextStyle>(INITIAL_STYLE);
-  let sizeMm = $state(INITIAL_SIZE_MM);
-  /// 969h: horizontal stretch as a percentage. UI exposes 50–200 %;
-  /// stored on TextLayer as a 0.5–2.0 multiplier.
-  let widthPct = $state(INITIAL_WIDTH_PCT);
-  let posX = $state(INITIAL_POS_X);
-  let posY = $state(INITIAL_POS_Y);
-  let depth = $state(INITIAL_DEPTH);
-  let toolId = $state<number>(INITIAL_TOOL_ID);
+  function freshDraft(): TextDraft {
+    return {
+      text: 'Text',
+      style: 'engraving',
+      sizeMm: 12,
+      widthPct: 100,
+      posX: 0,
+      posY: 0,
+      depth: -0.5,
+      toolId: 1,
+      useUserFont: false,
+      bundledFontPath: BUNDLED_FONTS[0]?.path ?? '',
+      userFontName: null,
+    };
+  }
+
+  const dd = new DialogDraft<TextDraft>();
+  dd.open(freshDraft());
+  /// Narrow alias so the form reads/binds `d.text`, `d.sizeMm`, … —
+  /// two-way bindings mutate the deeply-reactive dd.draft underneath.
+  /// The `??` arm is unreachable (dd is opened at init, never closed).
+  const d = $derived(dd.draft ?? freshDraft());
+
   let userFontFile = $state<File | null>(null);
-  let bundledFontPath = $state<string>(INITIAL_BUNDLED_FONT_PATH);
-  let useUserFont = $state(INITIAL_USE_USER_FONT);
   /// 6y3m: dropdown popover state. Each bundled font is registered as a
   /// FontFace at mount so the rows + selected chip can render in the
   /// actual font's glyphs (vs the platform default that <select>'s
@@ -129,10 +151,10 @@
       cancelled = true;
     };
   });
-  const selectedBundledFont = $derived(BUNDLED_FONTS.find((f) => f.path === bundledFontPath));
+  const selectedBundledFont = $derived(BUNDLED_FONTS.find((f) => f.path === d.bundledFontPath));
   function pickBundledFont(path: string) {
-    bundledFontPath = path;
-    useUserFont = false;
+    d.bundledFontPath = path;
+    d.useUserFont = false;
     fontDropdownOpen = false;
   }
   let busy = $state(false);
@@ -152,22 +174,20 @@
 
   const client = defaultClient();
 
-  // Reset the form when reopened. Center position starts from current
-  // imported bbox / stock, falling back to (0, 0).
+  // Reset the form when reopened (dd.open also re-baselines the dirty
+  // check, so the freshly-seeded form counts as clean). Center position
+  // starts from current imported bbox / stock, falling back to (0, 0).
   $effect(() => {
     if (!open) return;
     const def = defaultPosition();
-    posX = def.x;
-    posY = def.y;
-    text = 'Text';
-    sizeMm = 12;
-    widthPct = 100;
-    style = 'engraving';
-    bundledFontPath = BUNDLED_FONTS[0]?.path ?? '';
-    useUserFont = false;
+    dd.open({
+      ...freshDraft(),
+      posX: def.x,
+      posY: def.y,
+      depth: STYLE_TABLE['engraving'].defaultDepth ?? -0.5,
+      toolId: pickDefaultTool('engraving'),
+    });
     userFontFile = null;
-    depth = STYLE_TABLE[style].defaultDepth ?? -0.5;
-    toolId = pickDefaultTool(style);
     errorMsg = null;
     previewSegments = null;
     lastFontIsSingleLine = null;
@@ -176,9 +196,9 @@
 
   // Re-pick a sensible default tool + depth when style changes.
   $effect(() => {
-    const spec = STYLE_TABLE[style];
-    if (spec.defaultDepth != null) depth = spec.defaultDepth;
-    toolId = pickDefaultTool(style);
+    const spec = STYLE_TABLE[d.style];
+    if (spec.defaultDepth != null) d.depth = spec.defaultDepth;
+    d.toolId = pickDefaultTool(d.style);
   });
 
   // Re-render preview whenever the text geometry inputs change. Keeps
@@ -220,17 +240,17 @@
   }
 
   const filteredTools = $derived.by(() => {
-    const want = STYLE_TABLE[style].toolKind;
+    const want = STYLE_TABLE[d.style].toolKind;
     if (!want) return project.tools;
     return project.tools.filter((t) => t.kind === want);
   });
 
   const styleEngravingMismatch = $derived(
-    engravingMismatch(style, lastFontIsSingleLine, previewSegments?.length ?? 0),
+    engravingMismatch(d.style, lastFontIsSingleLine, previewSegments?.length ?? 0),
   );
 
   async function loadFontBytes(): Promise<Uint8Array | null> {
-    if (useUserFont) {
+    if (d.useUserFont) {
       if (!userFontFile) return null;
       const key = `user:${userFontFile.name}:${userFontFile.size}`;
       const cached = fontCache.get(key);
@@ -239,7 +259,7 @@
       fontCache.set(key, buf);
       return buf;
     }
-    const url = bundledFontPath;
+    const url = d.bundledFontPath;
     if (!url) return null;
     const cached = fontCache.get(url);
     if (cached) return cached;
@@ -253,7 +273,7 @@
   }
 
   async function renderPreview(): Promise<void> {
-    if (!text.trim()) {
+    if (!d.text.trim()) {
       previewSegments = [];
       return;
     }
@@ -266,9 +286,9 @@
       const req: RenderTextRequest = {
         // dya2: font_bytes is a base64 string on the wire now.
         font_bytes: bytesToBase64(bytes),
-        text,
-        origin: { x: posX, y: posY },
-        height_mm: sizeMm,
+        text: d.text,
+        origin: { x: d.posX, y: d.posY },
+        height_mm: d.sizeMm,
         layer: 'TEXT',
         color: 7,
       };
@@ -279,15 +299,17 @@
       // by scaling every segment endpoint about the text origin's x. Y is
       // untouched; arc centers stretch too so the preview matches glyph
       // curve behaviour after the real render.
-      const xs = Math.max(0.5, Math.min(2.0, widthPct / 100));
+      const xs = Math.max(0.5, Math.min(2.0, d.widthPct / 100));
       previewSegments =
         Math.abs(xs - 1) < 1e-9
           ? resp.segments
           : resp.segments.map((s) => ({
               ...s,
-              start: { ...s.start, x: posX + (s.start.x - posX) * xs },
-              end: { ...s.end, x: posX + (s.end.x - posX) * xs },
-              ...(s.center ? { center: { ...s.center, x: posX + (s.center.x - posX) * xs } } : {}),
+              start: { ...s.start, x: d.posX + (s.start.x - d.posX) * xs },
+              end: { ...s.end, x: d.posX + (s.end.x - d.posX) * xs },
+              ...(s.center
+                ? { center: { ...s.center, x: d.posX + (s.center.x - d.posX) * xs } }
+                : {}),
             }));
       lastFontIsSingleLine = resp.single_line;
       lastFontFamily = resp.family_name ?? null;
@@ -318,7 +340,7 @@
       if (!bytes) {
         throw new Error('No font selected.');
       }
-      const trimmed = text.trim();
+      const trimmed = d.text.trim();
       if (trimmed.length === 0) {
         throw new Error('Text must not be empty.');
       }
@@ -327,7 +349,7 @@
       await renderPreview();
 
       const bytes_b64 = bytesToBase64(bytes);
-      const fontSource: TextFontSource = useUserFont
+      const fontSource: TextFontSource = d.useUserFont
         ? {
             kind: 'user',
             filename: userFontFile?.name ?? 'font.ttf',
@@ -335,7 +357,7 @@
           }
         : {
             kind: 'bundled',
-            path: bundledFontPath,
+            path: d.bundledFontPath,
             bytes_b64,
           };
       const isMultiline = trimmed.includes('\n');
@@ -343,29 +365,29 @@
         kind: isMultiline ? 'MTEXT' : 'TEXT',
         text: trimmed,
         fontSource,
-        sizeMm,
-        origin: { x: posX, y: posY },
+        sizeMm: d.sizeMm,
+        origin: { x: d.posX, y: d.posY },
         rotationDeg: 0,
         letterSpacingMm: 0,
         lineSpacingMm: 0,
         alignment: 'left',
-        widthScale: widthPct / 100,
+        widthScale: d.widthPct / 100,
         singleLine: lastFontIsSingleLine === true,
       };
 
       project.history.beginTransaction('Add text');
       txOpen = true;
       const layer = project.addTextLayer(layerSeed);
-      if (style !== 'plain') {
+      if (d.style !== 'plain') {
         const op = project.addOperation('engrave');
         const opName =
-          style === 'engraving'
+          d.style === 'engraving'
             ? `Engrave ${layer.name}`
-            : `${STYLE_TABLE[style].label} ${layer.name}`;
+            : `${STYLE_TABLE[d.style].label} ${layer.name}`;
         project.updateOperation(op.id, {
           name: opName,
-          toolId,
-          depth,
+          toolId: d.toolId,
+          depth: d.depth,
           sourceObjects: undefined,
           sourceLayers: [`__text_${layer.id}`],
           offset: 'on',
@@ -387,7 +409,7 @@
     // Heuristic: there's no bundled engraving font in v1 (license-vetting
     // pending — see issue n4y). Best we can do is point the user at the
     // file picker.
-    useUserFont = true;
+    d.useUserFont = true;
     errorMsg =
       'Pick a single-line / Hershey TTF via "Custom font" — no engraving font is bundled yet.';
   }
@@ -397,46 +419,17 @@
     const f = t.files?.[0];
     if (f) {
       userFontFile = f;
-      useUserFont = true;
+      d.userFontName = f.name;
+      d.useUserFont = true;
     }
   }
 
-  /// True when any draft field has diverged from its initial value, or
-  /// the user has dropped a custom font file. Drives the discard-prompt
-  /// in close() — without this, ESC/backdrop/× discards typed text + a
-  /// painstakingly-picked font without asking.
-  const isDirty = $derived(
-    text !== INITIAL_TEXT ||
-      style !== INITIAL_STYLE ||
-      sizeMm !== INITIAL_SIZE_MM ||
-      widthPct !== INITIAL_WIDTH_PCT ||
-      posX !== INITIAL_POS_X ||
-      posY !== INITIAL_POS_Y ||
-      depth !== INITIAL_DEPTH ||
-      toolId !== INITIAL_TOOL_ID ||
-      useUserFont !== INITIAL_USE_USER_FONT ||
-      bundledFontPath !== INITIAL_BUNDLED_FONT_PATH ||
-      userFontFile != null,
-  );
-
-  /// Two-step close on dirty — mirrors MachineDialog. ESC / backdrop /
-  /// × all route through close(); the first call arms the prompt, the
-  /// "Discard" button in the prompt fires onClose() for real.
-  let confirmingDiscard = $state(false);
-
+  /// Discard guard — without it, ESC/backdrop/× discards typed text +
+  /// a painstakingly-picked font without asking. DialogDraft owns the
+  /// dirty check + the two-step confirm: the first close() on a dirty
+  /// draft arms the prompt, the "Discard" button confirms for real.
   function close() {
-    if (isDirty) {
-      confirmingDiscard = true;
-      return;
-    }
-    onClose();
-  }
-  function discardAndClose() {
-    confirmingDiscard = false;
-    onClose();
-  }
-  function cancelDiscard() {
-    confirmingDiscard = false;
+    if (dd.requestClose()) onClose();
   }
 </script>
 
@@ -450,7 +443,7 @@
     <div class="body">
       <label class="full" title="Text to render. Newlines split into multiple lines (MTEXT).">
         <span>Text</span>
-        <textarea bind:value={text} rows="2"></textarea>
+        <textarea bind:value={d.text} rows="2"></textarea>
       </label>
 
       <fieldset class="full">
@@ -459,12 +452,12 @@
           class="row"
           title="Use a font bundled with ivacam. Bundled fonts are filled-outline (good for V-carve / pocket / drag-knife — not single-line engraving)."
         >
-          <input type="radio" bind:group={useUserFont} value={false} />
+          <input type="radio" bind:group={d.useUserFont} value={false} />
           <div class="font-dd" class:open={fontDropdownOpen}>
             <button
               type="button"
               class="font-dd-button"
-              disabled={useUserFont}
+              disabled={d.useUserFont}
               aria-haspopup="listbox"
               aria-expanded={fontDropdownOpen}
               onclick={() => (fontDropdownOpen = !fontDropdownOpen)}
@@ -480,14 +473,14 @@
               <span class="font-dd-label">{selectedBundledFont?.label ?? '—'}</span>
               <span class="font-dd-caret">▾</span>
             </button>
-            {#if fontDropdownOpen && !useUserFont}
+            {#if fontDropdownOpen && !d.useUserFont}
               <ul class="font-dd-list" role="listbox">
                 {#each BUNDLED_FONTS as f (f.path)}
                   <li
                     role="option"
                     tabindex="0"
-                    aria-selected={f.path === bundledFontPath}
-                    class:active={f.path === bundledFontPath}
+                    aria-selected={f.path === d.bundledFontPath}
+                    class:active={f.path === d.bundledFontPath}
                     onclick={() => pickBundledFont(f.path)}
                     onkeydown={(e) => {
                       // Keyboard-accessible font picker: Enter / Space
@@ -521,7 +514,7 @@
           class="row"
           title="Load any TTF/OTF from disk. Single-line / Hershey fonts are auto-detected and required for the Engraving style."
         >
-          <input type="radio" bind:group={useUserFont} value={true} />
+          <input type="radio" bind:group={d.useUserFont} value={true} />
           <span class="picker">
             <input type="file" accept=".ttf,.otf" onchange={onUserFontPick} />
             {#if userFontFile}
@@ -539,7 +532,7 @@
       <label title="Cap height of the text in millimeters.">
         <span>Size</span>
         <span class="field"
-          ><input type="number" bind:value={sizeMm} step="0.5" min="0.1" /><span class="unit"
+          ><input type="number" bind:value={d.sizeMm} step="0.5" min="0.1" /><span class="unit"
             >mm</span
           ></span
         >
@@ -547,7 +540,7 @@
       <label title="Horizontal stretch (50–200 %). 100 % = the font's natural width.">
         <span>Width</span>
         <span class="field"
-          ><input type="number" bind:value={widthPct} step="5" min="50" max="200" /><span
+          ><input type="number" bind:value={d.widthPct} step="5" min="50" max="200" /><span
             class="unit">%</span
           ></span
         >
@@ -555,13 +548,13 @@
       <label title="X-position of the text origin (left baseline) in stock coordinates.">
         <span>Position X</span>
         <span class="field"
-          ><input type="number" bind:value={posX} step="1" /><span class="unit">mm</span></span
+          ><input type="number" bind:value={d.posX} step="1" /><span class="unit">mm</span></span
         >
       </label>
       <label title="Y-position of the text origin (left baseline) in stock coordinates.">
         <span>Position Y</span>
         <span class="field"
-          ><input type="number" bind:value={posY} step="1" /><span class="unit">mm</span></span
+          ><input type="number" bind:value={d.posY} step="1" /><span class="unit">mm</span></span
         >
       </label>
 
@@ -570,7 +563,7 @@
         <div class="grid">
           {#each Object.entries(STYLE_TABLE) as [k, spec] (k)}
             <label class="style-opt" title={spec.help}>
-              <input type="radio" bind:group={style} value={k as TextStyle} />
+              <input type="radio" bind:group={d.style} value={k as TextStyle} />
               <span>{spec.label}</span>
             </label>
           {/each}
@@ -586,31 +579,32 @@
         </div>
       {/if}
 
-      {#if STYLE_TABLE[style].toolKind != null}
+      {#if STYLE_TABLE[d.style].toolKind != null}
         <label
           title="Tool to use for this text op. The list is filtered to tools matching the style's required kind."
         >
           <span>Tool</span>
-          <select bind:value={toolId}>
+          <select bind:value={d.toolId}>
             {#each filteredTools as t (t.id)}
               <option value={t.id}
                 >{t.name} ({t.kind}, {formatLength(t.diameter, project.machine.unit)})</option
               >
             {/each}
             {#if filteredTools.length === 0}
-              <option value={0}>(no {STYLE_TABLE[style].toolKind} in library)</option>
+              <option value={0}>(no {STYLE_TABLE[d.style].toolKind} in library)</option>
             {/if}
           </select>
         </label>
       {/if}
 
-      {#if STYLE_TABLE[style].defaultDepth != null}
+      {#if STYLE_TABLE[d.style].defaultDepth != null}
         <label
           title="Final Z depth for the text op. Negative values cut into the stock — e.g. -0.5 mm for a typical engraving."
         >
           <span>Depth</span>
           <span class="field"
-            ><input type="number" bind:value={depth} step="0.1" /><span class="unit">mm</span></span
+            ><input type="number" bind:value={d.depth} step="0.1" /><span class="unit">mm</span
+            ></span
           >
         </label>
       {/if}
@@ -621,10 +615,10 @@
     </div>
 
     <footer>
-      {#if confirmingDiscard}
+      {#if dd.confirmingDiscard}
         <span class="discard-prompt">Discard unsaved text?</span>
-        <button class="btn-secondary" onclick={cancelDiscard}>Keep editing</button>
-        <button class="btn-danger" onclick={discardAndClose}>Discard</button>
+        <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
+        <button class="btn-danger" onclick={close}>Discard</button>
       {:else}
         <button class="btn-secondary" onclick={close}>Cancel</button>
         <button class="btn-primary" onclick={apply} disabled={busy}>Add</button>

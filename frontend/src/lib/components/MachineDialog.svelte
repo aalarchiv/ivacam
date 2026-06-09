@@ -12,6 +12,7 @@
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
   import PostProcessorEditor from './PostProcessorEditor.svelte';
+  import { DialogDraft } from './dialog-draft.svelte';
   import * as fileOps from '../services/file_ops';
 
   interface Props {
@@ -20,81 +21,52 @@
   }
   let { open, onClose }: Props = $props();
 
-  // Local working copy so the user can cancel without committing.
-  let draft = $state<MachineSettings>(cloneSettings(project.machine));
-
   // PostProcessor editor (uzz) — the heavy editing surface lives in
   // a dedicated dialog with a live preview pane and JSON I/O. We just
   // own the "is it open" flag.
   let editorOpen = $state(false);
 
-  // Jerk fields — toggled by a single checkbox, default off (trapezoidal
-  // profile only; S-curve refinement is Phase 2).
-  let jerkEnabled = $state(!!project.machine.jerk);
-  let jerkDraft = $state<AxisLimits>(project.machine.jerk ?? { x: 100, y: 100, z: 50 });
-
-  // Snapshot captured at open — the dirty check stringifies draft+jerk
-  // and compares to this string so X / Esc / click-outside can prompt
-  // before silently discarding edits (audit-dh1n).
-  let pristine = $state<string>('');
-
-  /// Build the dirty-check fingerprint. Wrapped in try/catch because a
-  /// throw inside `$derived.by` (which calls this) would propagate into
-  /// the Svelte 5 reactivity scheduler and abort it — and a dead
-  /// scheduler manifests exactly as "every button still fires its
-  /// onclick, but visible state stops updating" (see App.svelte:117).
-  /// On error, return an empty string — the comparison against
-  /// `pristine` then degrades to "assume clean", which is the safer
-  /// default than "assume dirty" (the dialog would refuse to close on
-  /// every attempt).
-  function snapshotKey(): string {
-    try {
-      return JSON.stringify({
-        draft,
-        jerk: jerkEnabled ? jerkDraft : null,
-      });
-    } catch (e) {
-      console.error('MachineDialog.snapshotKey: serialize failed', e);
-      return '';
-    }
+  /// The dialog edits two top-level pieces — the machine settings plus
+  /// the jerk fields (a single enable checkbox + AxisLimits, default
+  /// off: trapezoidal profile only; S-curve refinement is Phase 2) —
+  /// so the DialogDraft (kdfh) wraps them as one composite. One draft,
+  /// one pristine snapshot, one dirty check covering both.
+  interface MachineDraft {
+    machine: MachineSettings;
+    jerkEnabled: boolean;
+    jerk: AxisLimits;
   }
+
+  function compositeOf(m: MachineSettings): MachineDraft {
+    return {
+      machine: cloneSettings(m),
+      jerkEnabled: !!m.jerk,
+      jerk: m.jerk ? { ...m.jerk } : { x: 100, y: 100, z: 50 },
+    };
+  }
+
+  const dd = new DialogDraft<MachineDraft>();
+  dd.open(compositeOf(project.machine));
+  /// Narrow aliases so the template / commit path keep reading
+  /// `draft.*` / `jerkDraft.*` — two-way bindings still mutate the
+  /// deeply-reactive dd.draft underneath. The `??` arms are unreachable
+  /// (dd is opened at init and never close()d) but keep the types
+  /// null-free.
+  const composite = $derived(dd.draft ?? compositeOf(project.machine));
+  const draft = $derived(composite.machine);
+  const jerkDraft = $derived(composite.jerk);
 
   $effect(() => {
     if (open) {
+      // try/catch so a throw from cloning can't propagate into the
+      // Svelte 5 reactivity scheduler and abort it — a dead scheduler
+      // manifests as "every button still fires its onclick, but
+      // visible state stops updating" (see App.svelte:117).
       try {
-        // Build snapshots from local vars BEFORE assigning the
-        // $state. Calling snapshotKey() here would re-read the
-        // proxies we just wrote — Svelte tracks those reads as
-        // dependencies of this very effect, and the writes then
-        // re-schedule it. After ~1000 self-runs Svelte throws
-        // `effect_update_depth_exceeded`, which kills the reactivity
-        // scheduler for the whole app — every button still fires
-        // onclick but the UI never repaints. That's the bug the
-        // Machine dialog manifested as "X / Cancel / OK don't close".
-        const m = project.machine;
-        const newDraft = cloneSettings(m);
-        const newJerkEnabled = !!m.jerk;
-        const newJerkDraft = m.jerk ? { ...m.jerk } : { x: 100, y: 100, z: 50 };
-        const newPristine = JSON.stringify({
-          draft: newDraft,
-          jerk: newJerkEnabled ? newJerkDraft : null,
-        });
-        draft = newDraft;
-        jerkEnabled = newJerkEnabled;
-        jerkDraft = newJerkDraft;
-        pristine = newPristine;
+        dd.open(compositeOf(project.machine));
       } catch (e) {
         console.error('MachineDialog.open: init failed', e);
       }
-    }
-  });
-
-  let isDirty = $derived.by(() => {
-    try {
-      return open && snapshotKey() !== pristine;
-    } catch (e) {
-      console.error('MachineDialog.isDirty: derive failed', e);
-      return false;
     }
   });
 
@@ -183,17 +155,17 @@
   }
 
   function commit() {
-    // JSON round-trip the $state proxy so `setMachineCommand` receives
-    // a plain object — Svelte 5 proxies can trip `structuredClone` on
+    // $state.snapshot the proxy so `setMachineCommand` receives a
+    // plain object — Svelte 5 proxies can trip `structuredClone` on
     // some WebKit builds, silently aborting the commit.
     //
-    // Whole body in try/catch so any throw from JSON serialise or
+    // Whole body in try/catch so any throw from the snapshot or
     // setMachine still reaches `onClose()` — otherwise OK appears
     // broken. The error is logged and surfaces via the global error
     // banner so the underlying bug stays visible.
     try {
-      const snap = structuredClone(draft) as MachineSettings;
-      snap.jerk = jerkEnabled ? { ...jerkDraft } : undefined;
+      const snap = $state.snapshot(draft) as MachineSettings;
+      snap.jerk = composite.jerkEnabled ? { ...jerkDraft } : undefined;
       project.setMachine(snap);
     } catch (e) {
       console.error('MachineDialog.commit: setMachine failed', e);
@@ -201,29 +173,14 @@
     onClose();
   }
 
-  /// Two-step close-on-dirty: first attempt arms `confirmingDiscard`
-  /// so the footer swaps to a "Discard / Keep editing" pair; second
-  /// click on Discard actually fires `onClose`. Replaces the prior
-  /// `window.confirm` prompt, which silently returns false in some
-  /// Tauri / WebKitGTK builds — the project's audit-C10 note already
-  /// flagged `window.confirm` as unreliable for this reason.
-  let confirmingDiscard = $state(false);
-
+  /// Close protocol (dd.requestClose): the first attempt on a dirty
+  /// draft arms the inline "Discard / Keep editing" footer pair; the
+  /// second confirms. The inline bar replaces the prior `window.confirm`
+  /// prompt, which silently returns false in some Tauri / WebKitGTK
+  /// builds — the project's audit-C10 note already flagged
+  /// `window.confirm` as unreliable for this reason.
   function close() {
-    if (isDirty) {
-      confirmingDiscard = true;
-      return;
-    }
-    onClose();
-  }
-
-  function discardAndClose() {
-    confirmingDiscard = false;
-    onClose();
-  }
-
-  function cancelDiscard() {
-    confirmingDiscard = false;
+    if (dd.requestClose()) onClose();
   }
 </script>
 
@@ -669,10 +626,10 @@
         class="check"
         title="Use S-curve (jerk-limited) acceleration in the simulator. Better matches modern controllers (LinuxCNC trajectory planner, MachineKit). Off = simple trapezoidal velocity profile."
       >
-        <input type="checkbox" bind:checked={jerkEnabled} />
+        <input type="checkbox" bind:checked={composite.jerkEnabled} />
         Enable jerk limits (S-curve, Phase 2)
       </label>
-      {#if jerkEnabled}
+      {#if composite.jerkEnabled}
         <div class="triplet-label">Jerk X / Y / Z <span class="unit">mm/s³</span></div>
         <div class="triplet">
           <input
@@ -874,10 +831,10 @@
     </div>
 
     <footer>
-      {#if confirmingDiscard}
+      {#if dd.confirmingDiscard}
         <span class="discard-prompt">Discard unsaved changes?</span>
-        <button class="btn-secondary" onclick={cancelDiscard}>Keep editing</button>
-        <button class="btn-danger" onclick={discardAndClose}>Discard</button>
+        <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
+        <button class="btn-danger" onclick={close}>Discard</button>
       {:else}
         <button
           class="btn-secondary"
@@ -898,9 +855,15 @@
             await fileOps.loadMachine();
             // Refresh draft so the dialog shows the freshly-loaded
             // values; otherwise it still mirrors the old pre-load draft.
-            draft = structuredClone(project.machine) as MachineSettings;
-            jerkDraft = draft.jerk ? { ...draft.jerk } : { x: 0, y: 0, z: 0 };
-            jerkEnabled = !!draft.jerk;
+            // Assigned directly (not dd.open) so the pristine snapshot
+            // from open is kept — loading a different config counts as
+            // an unsaved change, same as before.
+            const m = $state.snapshot(project.machine) as MachineSettings;
+            dd.draft = {
+              machine: m,
+              jerkEnabled: !!m.jerk,
+              jerk: m.jerk ? { ...m.jerk } : { x: 0, y: 0, z: 0 },
+            };
           }}
           title="Replace the active machine config with the contents of a .ivac-machine.json file."
         >

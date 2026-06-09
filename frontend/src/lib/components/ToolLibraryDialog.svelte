@@ -12,6 +12,7 @@
     type FormProfileSample,
   } from '../state/project.svelte';
   import Modal from './Modal.svelte';
+  import { DialogDraft } from './dialog-draft.svelte';
   import * as fileOps from '../services/file_ops';
   import { attrApplies, KIND_DISPLAY_LABELS } from '../state/tool_family';
   import {
@@ -31,7 +32,13 @@
   }
   let { open, onClose }: Props = $props();
 
-  let draft = $state<ToolEntry[]>([]);
+  /// Draft / pristine / dirty / discard lifecycle lives in DialogDraft
+  /// (kdfh) so X / Esc / click-outside can prompt before silently
+  /// discarding edits (audit-dh1n). The `draft` alias keeps the table
+  /// markup terse — row rebuilds always reassign `dd.draft`, never the
+  /// alias.
+  const dd = new DialogDraft<ToolEntry[]>();
+  const draft = $derived(dd.draft ?? []);
   /// Per-row UI flag — Holder sub-panel collapsed by default to keep the
   /// table compact. Stored as a Set of row ids so reorders / additions
   /// don't accidentally move the toggle to a different tool.
@@ -40,105 +47,30 @@
   /// request (the "edit this tool" link in OpPropertiesPanel).
   let highlightedId = $state<number | null>(null);
   let bodyEl = $state<HTMLDivElement | null>(null);
-  /// Snapshot captured at open — dirty check compares a deep clone of
-  /// the draft (via the deepEqual helper) so X / Esc / click-outside
-  /// can prompt before silently discarding edits (audit-dh1n).
-  ///
-  /// 1xgj: was `JSON.stringify(newDraft)` vs `JSON.stringify(draft)`,
-  /// which is sensitive to key-order shuffle on $state proxies.
-  /// Likely benign in practice — object literal updates via `...t`
-  /// preserve key order — but a deep-equal compare is robust to any
-  /// future code path that rebuilds the row by destructuring.
-  let pristine = $state<ToolEntry[]>([]);
-
-  /// 1xgj: minimal recursive deep-equal. Handles primitives, arrays,
-  /// and plain object records — which is everything we ever store in a
-  /// ToolEntry (no Dates, Maps, Sets, class instances). Skips
-  /// prototype-walking, getters, and circular detection on purpose:
-  /// ToolEntry is a flat JSON shape so none of those apply.
-  function deepEqual(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (a === null || b === null) return false;
-    if (typeof a !== 'object' || typeof b !== 'object') return false;
-    if (Array.isArray(a) !== Array.isArray(b)) return false;
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length) return false;
-      for (let i = 0; i < a.length; i++) {
-        if (!deepEqual(a[i], b[i])) return false;
-      }
-      return true;
-    }
-    const ao = a as Record<string, unknown>;
-    const bo = b as Record<string, unknown>;
-    const aKeys = Object.keys(ao);
-    const bKeys = Object.keys(bo);
-    if (aKeys.length !== bKeys.length) return false;
-    for (const k of aKeys) {
-      if (!Object.prototype.hasOwnProperty.call(bo, k)) return false;
-      if (!deepEqual(ao[k], bo[k])) return false;
-    }
-    return true;
-  }
 
   $effect(() => {
     if (open) {
-      // Build the pristine snapshot from a local before assigning the
-      // $state proxies. Reading `draft` after we've just written it
-      // makes the effect depend on draft, and the write reschedules
-      // the effect — Svelte throws `effect_update_depth_exceeded`
-      // after ~1000 self-runs, killing the reactivity scheduler for
-      // the whole app (same root cause we just fixed in
-      // MachineDialog).
-      const newDraft = project.tools.map((t) => ({ ...t }));
-      draft = newDraft;
+      dd.open(project.tools);
       // k94n: tools whose kind has a REQUIRED kind-specific field
       // open by default so the user sees `dragoff` / `cornerRadiusMm`
       // / T-slot neck dims without hunting for them. Other kinds
       // start collapsed.
-      expanded = new Set(newDraft.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id));
-      // 1xgj: snapshot a deep clone so subsequent edits to nested
-      // fields (e.g. `tool.holder.diameter_mm`) don't mutate the
-      // pristine reference. structuredClone handles the nested
-      // `holder` discriminated union correctly.
-      pristine = structuredClone(newDraft) as ToolEntry[];
+      expanded = new Set(project.tools.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id));
     }
   });
-
-  /// Kinds whose kind-specific block in the expanded row is
-  /// LOAD-BEARING — without those fields the gcode emitter falls
-  // 1xgj: was `JSON.stringify(draft) !== pristine` — fragile because
-  // a Svelte 5 $state proxy could in principle iterate keys in a
-  // different order than the source object, falsely flagging the
-  // dialog as dirty. Deep-equal is invariant to key order.
-  let isDirty = $derived.by(() => open && !deepEqual(draft, pristine));
 
   // jkgj: numeric-field validation, fieldApplies, and the per-kind
   // disabled-reason tooltips all live in lib/state/tool_validation.ts;
   // the dialog wires them in via the imports up top.
   let hasInvalidRow = $derived(draft.some(rowInvalid));
 
-  /// Two-step close-on-dirty: first attempt arms `confirmingDiscard`
-  /// so the footer swaps to a "Discard / Keep editing" pair; second
-  /// click on Discard actually fires `onClose`. Replaces the prior
-  /// `window.confirm` prompt, which silently returns false in some
-  /// Tauri / WebKitGTK builds (audit-C10).
-  let confirmingDiscard = $state(false);
-
+  /// Close protocol (dd.requestClose): the first attempt on a dirty
+  /// draft arms the inline "Discard / Keep editing" footer pair; the
+  /// second confirms. The inline bar replaces the prior `window.confirm`
+  /// prompt, which silently returns false in some Tauri / WebKitGTK
+  /// builds (audit-C10).
   function close() {
-    if (isDirty) {
-      confirmingDiscard = true;
-      return;
-    }
-    onClose();
-  }
-
-  function discardAndClose() {
-    confirmingDiscard = false;
-    onClose();
-  }
-
-  function cancelDiscard() {
-    confirmingDiscard = false;
+    if (dd.requestClose()) onClose();
   }
 
   $effect(() => {
@@ -180,7 +112,7 @@
 
   function addTool() {
     const nextId = (draft.reduce((m, t) => Math.max(m, t.id), 0) || 0) + 1;
-    draft = [
+    dd.draft = [
       ...draft,
       {
         id: nextId,
@@ -198,11 +130,11 @@
 
   function removeAt(idx: number) {
     if (draft.length <= 1) return;
-    draft = draft.filter((_, i) => i !== idx);
+    dd.draft = draft.filter((_, i) => i !== idx);
   }
 
   function updateField<K extends keyof ToolEntry>(idx: number, key: K, value: ToolEntry[K]) {
-    draft = draft.map((t, i) => (i === idx ? { ...t, [key]: value } : t));
+    dd.draft = draft.map((t, i) => (i === idx ? { ...t, [key]: value } : t));
   }
 
   // ───────────────────────── 1wit: form-profile editor ──────────────
@@ -294,7 +226,7 @@
   /// are preserved.
   function onKindChange(idx: number, kind: ToolKind) {
     let touchedId: number | null = null;
-    draft = draft.map((t, i) => {
+    dd.draft = draft.map((t, i) => {
       if (i !== idx) return t;
       const next: ToolEntry = { ...t, kind };
       if (kind === 'drill') {
@@ -413,7 +345,7 @@
     if (!p) return;
     const cur = draft[idx];
     const patch = p.apply(cur);
-    draft = draft.map((t, i) => (i === idx ? { ...t, ...patch } : t));
+    dd.draft = draft.map((t, i) => (i === idx ? { ...t, ...patch } : t));
   }
 
   type HolderKind = HolderShape['kind'] | 'none';
@@ -453,14 +385,14 @@
               };
         break;
     }
-    draft = draft.map((t, i) => (i === idx ? { ...t, holder: next } : t));
+    dd.draft = draft.map((t, i) => (i === idx ? { ...t, holder: next } : t));
   }
 
   function updateHolderField(idx: number, key: string, value: number) {
     const cur = draft[idx];
     if (!cur.holder) return;
     const updated = { ...cur.holder, [key]: value } as HolderShape;
-    draft = draft.map((t, i) => (i === idx ? { ...t, holder: updated } : t));
+    dd.draft = draft.map((t, i) => (i === idx ? { ...t, holder: updated } : t));
   }
 
   // Display labels for the kind dropdown live in tool_family.ts so the
@@ -1718,10 +1650,10 @@
       <button class="add" onclick={addTool}>+ Add tool</button>
     </div>
     <footer>
-      {#if confirmingDiscard}
+      {#if dd.confirmingDiscard}
         <span class="discard-prompt">Discard unsaved changes?</span>
-        <button class="btn-secondary" onclick={cancelDiscard}>Keep editing</button>
-        <button class="btn-danger" onclick={discardAndClose}>Discard</button>
+        <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
+        <button class="btn-danger" onclick={close}>Discard</button>
       {:else}
         <button
           class="btn-secondary"
@@ -1737,8 +1669,10 @@
           onclick={async () => {
             await fileOps.loadToolset('replace');
             // Editor draft must follow the new tools so the dialog
-            // doesn't keep showing stale entries.
-            draft = project.tools.map((t) => ({ ...t }));
+            // doesn't keep showing stale entries. Assigned directly
+            // (not dd.open) so the pristine snapshot from open is
+            // kept — a load counts as an unsaved change.
+            dd.draft = project.tools.map((t) => ({ ...t }));
           }}
           title="Replace the current tools with the contents of a .ivac-toolset.json file."
         >
@@ -1748,7 +1682,7 @@
           class="btn-secondary"
           onclick={async () => {
             await fileOps.loadToolset('add');
-            draft = project.tools.map((t) => ({ ...t }));
+            dd.draft = project.tools.map((t) => ({ ...t }));
           }}
           title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
         >

@@ -38,7 +38,7 @@ pub enum SegmentKind {
 /// A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between
 /// `start` and `end` (bulge = `tan(included_angle / 4)`).
 ///
-/// `layer` is `Arc<str>` rather than `String` (jzpl Phase 2). A typical
+/// `layer` is `Arc<str>` rather than `String`. A typical
 /// DXF has thousands of segments across a handful of layer names — the
 /// Arc lets every segment on the same layer share one allocation. Clone
 /// becomes a refcount bump; serde + `JsonSchema` treat it as a normal

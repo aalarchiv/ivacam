@@ -15,7 +15,7 @@ fn default_rapid_subkind() -> RapidCollisionSubkind {
     RapidCollisionSubkind::Tip
 }
 
-/// 50eq: which part of the tool struck stock during a rapid — the
+/// Which part of the tool struck stock during a rapid — the
 /// flutes/tip (the typical "rapid past retract plane" failure) or
 /// the shank/holder (broken-collet scenario: cutter tip is in air
 /// but the shank drags through tall walls).
@@ -35,7 +35,7 @@ pub enum SimWarning {
         worst_y: f64,
         worst_cell_z: f32,
         rapid_pz: f64,
-        /// 50eq: defaults to `Tip` so older serialized warnings
+        /// Defaults to `Tip` so older serialized warnings
         /// deserialize cleanly. `Shank` flags shank/holder hits — the
         /// broken-collet G0-through-stock pattern.
         #[serde(default = "default_rapid_subkind")]
@@ -53,7 +53,7 @@ pub enum SimWarning {
         worst_y: f64,
         wall_z: f32,
         required_clearance_mm: f32,
-        /// 24ht: every cell that exceeded the holder envelope on this
+        /// Every cell that exceeded the holder envelope on this
         /// segment, sorted worst-first. Element 0 mirrors
         /// `worst_x/worst_y/wall_z/required_clearance_mm` for back-compat
         /// callers that only need the worst cell. Older serialized
@@ -62,7 +62,7 @@ pub enum SimWarning {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cells: Vec<crate::sim::holder_check::HolderCollisionCell>,
     },
-    /// wpzm: the simulator coarsened `cell_size` to fit the user's
+    /// The simulator coarsened `cell_size` to fit the user's
     /// `maxSimulationCells` budget. Without this surfaced, tool-engagement
     /// issues and small features get silently smoothed away — the user has
     /// no signal that the sim accuracy dropped. The warning carries both

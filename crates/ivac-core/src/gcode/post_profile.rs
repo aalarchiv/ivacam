@@ -61,13 +61,13 @@ pub struct PostProfile {
     pub coolant_mist_on: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coolant_mist_off: Option<String>,
-    /// Per-axis output format (hev). When set, replaces the hard-coded
+    /// Per-axis output format. When set, replaces the hard-coded
     /// `X{val} Y{val} Z{val}` / `I{val} J{val}` / `F{rate}` / `S{rpm}`
     /// emission with the user's axis names + printf-ish format + scale,
     /// with per-axis enable so disabled axes drop out entirely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axes: Option<AxesConfig>,
-    /// nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P.
+    /// Dwell-word unit for G82/G83/G73 P-values and G4 P.
     /// `LinuxCNC` reads `P` in SECONDS; Mach3 / Mach4 / Centroid /
     /// many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time
     /// scaling lives at the post boundary so the pipeline keeps
@@ -75,7 +75,7 @@ pub struct PostProfile {
     /// `None` ⇒ Seconds (`LinuxCNC` default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dwell_unit: Option<DwellUnit>,
-    /// tsay: decimal places used by `fmt_num` when the project is in
+    /// Decimal places used by `fmt_num` when the project is in
     /// Inch mode. The default of 4 (i.e. 0.0001 in = 0.00254 mm) is
     /// borderline for sub-mil work — shops authoring in tenths or
     /// micro-inches want 5 or 6. `None` ⇒ keep the 4-decimal default.
@@ -85,7 +85,7 @@ pub struct PostProfile {
     pub decimal_places_inch: Option<u8>,
 }
 
-/// nxn0: which time unit the post emits for `P<value>` dwell words.
+/// Which time unit the post emits for `P<value>` dwell words.
 /// `LinuxCNC` and Smoothieware read P in seconds; Mach3/Mach4/Centroid/
 /// most Fanuc-derived controllers read P in milliseconds. Defaulting
 /// to Seconds keeps the existing `LinuxCNC` golden snapshots stable.

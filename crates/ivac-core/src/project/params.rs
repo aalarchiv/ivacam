@@ -36,7 +36,7 @@ impl CutDirection {
     }
 }
 
-/// A user-placed tab anchored geometry-relative (rt1.10). The
+/// A user-placed tab anchored geometry-relative. The
 /// `object_id` is 1-based to match `OpSource::Objects::ids`;
 /// `t ∈ [0, 1)` is the arc-length parameter along the chained
 /// object's segments. `cam/tabs.rs::polyline_at_t` resolves the
@@ -56,11 +56,11 @@ pub struct TabPlacement {
     pub height_override_mm: Option<f64>,
 }
 
-/// How an op sources tab positions (rt1.10).
+/// How an op sources tab positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TabPlacementMode {
-    /// No tabs emitted. Default — matches the pre-rt1.10 behavior
+    /// No tabs emitted. Default — matches the historical behavior
     /// of "user must opt in". Distinct from `TabsConfig.active`
     /// (which is the SHAPE config's active flag).
     #[default]
@@ -86,7 +86,7 @@ impl TabPlacementMode {
 /// Engrave / `DragKnife`). Embedded in the matching [`super::op::OpKind`]
 /// variants. Holds tab shape + placement, lead-in / lead-out, cut
 /// direction, corner-feed reduction, and the optional user-picked
-/// approach point. (kbx5 step 1.)
+/// approach point.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContourParams {
     /// Per-op tab SHAPE config: width / height / kind (rectangle vs
@@ -94,7 +94,7 @@ pub struct ContourParams {
     /// `tab_placements` (manual) and / or `tab_mode` (auto-spaced).
     #[serde(default)]
     pub tabs: TabsConfig,
-    /// How tab positions are sourced for this op (rt1.10).
+    /// How tab positions are sourced for this op.
     #[serde(default, skip_serializing_if = "TabPlacementMode::is_default")]
     pub tab_mode: TabPlacementMode,
     /// User-placed tabs, anchored geometry-relative as
@@ -115,13 +115,13 @@ pub struct ContourParams {
     /// When > 0, slow the feed at sharp corners by this fraction.
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub corner_feed_reduction: f64,
-    /// Anfahrpunkt (rt1.26): user-picked XY where the cutter enters
+    /// Anfahrpunkt: user-picked XY where the cutter enters
     /// each closed-contour ring. `None` = auto.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approach_point: Option<(f64, f64)>,
 }
 
-/// Parameters specific to [`super::op::OpKind::Pocket`]. (kbx5 step 1.)
+/// Parameters specific to [`super::op::OpKind::Pocket`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PocketParams {
     /// XY overlap between consecutive pocket cuts (0..1). Stored at 0.0
@@ -134,7 +134,7 @@ pub struct PocketParams {
     /// Skip the wall-defining ring (contour cut).
     #[serde(default)]
     pub pocket_nocontour: bool,
-    /// XY stock allowance left uncut by roughing (rt1.24).
+    /// XY stock allowance left uncut by roughing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_xy_allowance_mm: Option<f64>,
     /// Pocket-Outside wrapper shape. Set only on ops created via the
@@ -149,7 +149,7 @@ pub struct PocketParams {
     pub frame_corner_radius_mm: Option<f64>,
 }
 
-/// Parameters specific to [`super::op::OpKind::Profile`]. (kbx5 step 1.)
+/// Parameters specific to [`super::op::OpKind::Profile`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ProfileParams {
     /// Dip into sharp inner corners so the cutter clears the geometric
@@ -164,7 +164,7 @@ pub struct ProfileParams {
     pub helix: bool,
 }
 
-/// Parameters specific to [`super::op::OpKind::VCarve`]. (kbx5 step 1.)
+/// Parameters specific to [`super::op::OpKind::VCarve`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VCarveParams {
     /// V-Carve cap on the inscribed-circle radius (mm). `None` = no cap.
@@ -174,7 +174,7 @@ pub struct VCarveParams {
     /// points whose first pass fell short of the geometric target.
     #[serde(default)]
     pub multi_pass_refine: bool,
-    /// r8ut: trace the full medial axis (creates extra spine cuts
+    /// Trace the full medial axis (creates extra spine cuts
     /// through the interior of wide regions). Default `false` matches
     /// Estlcam's behaviour — the toolpath traces the BOUNDARY offset
     /// inward by `R = effective_r_cap`, plunged to depth
@@ -184,7 +184,7 @@ pub struct VCarveParams {
     /// Aspire-style relief).
     #[serde(default)]
     pub full_medial_axis: bool,
-    /// rt1.7: extra inward offset applied to the source region BEFORE
+    /// Extra inward offset applied to the source region BEFORE
     /// the V-Carve pass. Used to build the "plug" side of an inlay pair:
     /// the plug is `gap_mm` smaller per side than the pocket, so when
     /// glued in it wedges into the tapered pocket walls with that
@@ -206,14 +206,14 @@ pub struct VCarveParams {
 /// - V-Carve cap / second-pass → [`VCarveParams`]
 /// - Drill Stufenfase chamfer width → [`super::op::OpKind::Drill`]
 ///
-/// (kbx5 step 3: the flat-junk-drawer `OpParams` was reduced to this
+/// (The flat-junk-drawer `OpParams` was reduced to this
 /// common struct after readers and writers all moved to the variant
 /// structs.)
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct OpParamsCommon {
     /// Final cut depth (negative number — a depth, not a height).
     ///
-    /// 4dxb: `#[serde(default)]` so program-only ops (Pause, Homing,
+    /// `#[serde(default)]` so program-only ops (Pause, Homing,
     /// Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful
     /// depth schedule and whose FE constructors omit the field —
     /// deserialize without a "missing field `depth`" error. Cutting
@@ -223,7 +223,7 @@ pub struct OpParamsCommon {
     pub depth: f64,
     /// Z at which the first pass starts.
     ///
-    /// 4dxb: same rationale as `depth` — defaulted to 0.0 so
+    /// Same rationale as `depth` — defaulted to 0.0 so
     /// program-only ops decode cleanly.
     #[serde(default)]
     pub start_depth: f64,
@@ -238,7 +238,7 @@ pub struct OpParamsCommon {
     pub step: Option<f64>,
     /// Z for rapid moves between cuts.
     ///
-    /// 4dxb: defaulted to 0.0 alongside the other two universal
+    /// Defaulted to 0.0 alongside the other two universal
     /// scalars. Program-only ops never use this; cutting ops always
     /// emit it explicitly.
     #[serde(default)]
@@ -275,7 +275,7 @@ pub struct OpParamsCommon {
     /// minor stock thickness variation. 0.0 = no extension.
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub through_depth: f64,
-    /// 1mlv: leave this much XY stock unmachined on every wall (Profile
+    /// Leave this much XY stock unmachined on every wall (Profile
     /// inside/outside cascade, Pocket cascade). Positive number — the
     /// cutter stays this far away from the geometric wall, so a later
     /// finishing pass (different tool / op) can clean it up. Differs

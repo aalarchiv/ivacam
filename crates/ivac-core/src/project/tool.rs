@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// 1wit: one cross-section sample of a form / profile cutter outline,
+/// One cross-section sample of a form / profile cutter outline,
 /// measured up from the cutting tip. The cutter is treated as
 /// cylindrically symmetric, so a sorted list of these describes the
 /// full profile (cove / ogee / dovetail / custom). See
@@ -37,7 +37,7 @@ pub struct ToolEntry {
     /// Drag-knife trailing offset (None for everything else).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dragoff: Option<f64>,
-    /// 0t9o: drag-knife self-alignment threshold in degrees. Corners
+    /// Drag-knife self-alignment threshold in degrees. Corners
     /// whose tangent change is smaller than this angle skip the
     /// explicit swivel arc + linear pre-move — real drag knives
     /// self-align below ~30° via the trailing offset, so emitting a
@@ -91,17 +91,17 @@ pub struct ToolEntry {
     pub default_step: Option<f64>,
     /// Default XY overlap (0..1) for pocket / cascade ops that don't set
     /// their own [`crate::project::PocketParams::xy_overlap`]. Mirrors
-    /// the `default_step` pattern (dr5). None = fall through to the
+    /// the `default_step` pattern. None = fall through to the
     /// global 0.5 default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_xy_overlap: Option<f64>,
-    /// Free-text comment / description (rt1.31). Surfaced as the
+    /// Free-text comment / description. Surfaced as the
     /// tooltip on the tool dropdown in `OpPropertiesPanel` and as an
     /// expandable text area in `ToolLibraryDialog`. Empty / None = no
     /// comment; doesn't affect any pipeline output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
-    /// Per-tool Z origin offset (rt1.30 / Estlcam `Z_Shift`). For
+    /// Per-tool Z origin offset (Estlcam `Z_Shift`). For
     /// machines without automatic tool-length probing — the user
     /// pre-measures each tool's tip Z relative to a reference tool and
     /// records the delta here (positive = sticks out further; negative
@@ -110,14 +110,14 @@ pub struct ToolEntry {
     /// the reference tool used. mm. None = no shift.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z_shift_mm: Option<f64>,
-    /// Laser pierce time (rt1.29 / Estlcam `T_Pierce_Time)`: seconds the
+    /// Laser pierce time (Estlcam `T_Pierce_Time)`: seconds the
     /// beam dwells at the start point BEFORE the cut begins so it
     /// burns through thick stock. Honored only when `kind ==
     /// LaserBeam`. The post emits a `G4 P<seconds>` after the
     /// laser-on before each plunge. None = no pierce dwell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub laser_pierce_sec: Option<f64>,
-    /// mmu8: laser kerf width (mm) — the heightmap-side spot radius the
+    /// Laser kerf width (mm) — the heightmap-side spot radius the
     /// sim carves at. Honored only when `kind == LaserBeam`. Lets the
     /// preview show actual cut width for fine-engraving (0.05 mm
     /// fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of
@@ -126,7 +126,7 @@ pub struct ToolEntry {
     /// registers some carve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kerf_mm: Option<f64>,
-    /// Laser lead-in distance (rt1.29 / Estlcam `T_Lead_In)`: mm of
+    /// Laser lead-in distance (Estlcam `T_Lead_In)`: mm of
     /// approach travel the head takes along the entry tangent before
     /// the cut starts, to reduce edge entry burn. Honored only when
     /// `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time
@@ -134,14 +134,14 @@ pub struct ToolEntry {
     /// None = no tool-level lead-in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub laser_lead_in_mm: Option<f64>,
-    /// Bull-nose / radius-endmill corner radius (rt1.28). Honored
+    /// Bull-nose / radius-endmill corner radius. Honored
     /// only when `kind == BullNose`. The corner radius produces a
     /// fillet on the cut floor edge — relevant for sim cross-section
     /// (the sim envelope falls below `corner_radius_mm` of the
     /// nominal flat floor). mm, positive only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub corner_radius_mm: Option<f64>,
-    /// 1wit: form / profile cutter cross-section, tip → top. Each
+    /// Form / profile cutter cross-section, tip → top. Each
     /// sample is `(z_above_tip_mm, radius_mm)`; the sim carves at the
     /// interpolated radius for each Z slice. Honored only when
     /// `kind == FormProfile` and at least two samples are present —
@@ -151,7 +151,7 @@ pub struct ToolEntry {
     /// rows for cove / ogee / custom bits. Empty for every other kind.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_profile_mm: Vec<FormProfileSample>,
-    /// Whirl (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning.
+    /// Whirl (Estlcam `T_Wirbeln)`: automatic chip-thinning.
     /// When `true`, Pocket ops using this tool clamp their effective
     /// `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)`
     /// — the classic chip-thinning rule that bounds radial engagement
@@ -160,25 +160,25 @@ pub struct ToolEntry {
     /// overload at high-engagement points. Default `false`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub whirl: bool,
-    /// Whirl stepover override (rt1.25). When `whirl` is `true`,
+    /// Whirl stepover override. When `whirl` is `true`,
     /// this is the **stride along the toolpath per full revolution of
     /// the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm,
-    /// positive only. None = use the half-radius default. (3e5 made
-    /// this the spiral stride; before 3e5 it was the cascade-step
+    /// positive only. None = use the half-radius default. (This is
+    /// now the spiral stride; it was previously the cascade-step
     /// clamp, which was the "fake Whirl" v1 implementation.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whirl_stepover_mm: Option<f64>,
-    /// Whirl extra-width (Estlcam `T_Wirbelzusatzbreite` /
-    /// rt1.25 / 3e5). The *diameter* in mm by which the helical
+    /// Whirl extra-width (Estlcam `T_Wirbelzusatzbreite`).
+    /// The *diameter* in mm by which the helical
     /// overlay widens the effective cut path: the cutter centerline
     /// scrolls on a small circle of radius `whirl_extra_width_mm /
     /// 2` around the cascade ring. Net cut width is
     /// `diameter + whirl_extra_width_mm`. None / 0 ⇒ overlay
     /// disabled even when `whirl == true` (which then falls back
-    /// to a no-op — the v1 step clamp is gone in 3e5).
+    /// to a no-op — the v1 step clamp is gone).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whirl_extra_width_mm: Option<f64>,
-    /// Whirl Z-wobble amplitude (Estlcam `T_Osc`, 3e5). When > 0,
+    /// Whirl Z-wobble amplitude (Estlcam `T_Osc`). When > 0,
     /// the spiral overlay adds a `cos(3·θ) · osc − osc` Z ripple so
     /// the cutter dips slightly below the cut plane between
     /// revolutions — improves chip evacuation on the wobbly cutters
@@ -193,7 +193,7 @@ pub struct ToolEntry {
         skip_serializing_if = "is_default_tool_pause"
     )]
     pub pause: u32,
-    /// z1y0: spindle direction the post should command when this tool
+    /// Spindle direction the post should command when this tool
     /// is selected. Most cutters are right-hand and want `Cw` (M3);
     /// left-hand cutters, reverse-threading, and a few specialty
     /// holders want `Ccw` (M4). Defaults to `Cw` (most cutters are
@@ -204,7 +204,7 @@ pub struct ToolEntry {
     /// Length of cutting flutes (mm). None = treat entire tool as cutting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flute_length_mm: Option<f64>,
-    /// dhh0: overall / usable tool length (mm), tip → where the shank
+    /// Overall / usable tool length (mm), tip → where the shank
     /// enters the collet (Estlcam `Length`). Display + 3D-preview only in
     /// v1 — it does NOT affect emitted gcode (reach / collision is driven
     /// by `flute_length_mm` + `stickout_length_mm` + `holder`). It sets
@@ -213,7 +213,7 @@ pub struct ToolEntry {
     /// diameter-derived heuristic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_mm: Option<f64>,
-    /// dhh0: compression / up-down cutter flute-transition height (mm
+    /// Compression / up-down cutter flute-transition height (mm
     /// above the tip) where the down-cut flutes flip to up-cut (Estlcam
     /// `Obenunten`). Honored only when `kind == Compression`. Display +
     /// preview marker in v1 — the carved cross-section is unchanged (a
@@ -222,7 +222,7 @@ pub struct ToolEntry {
     /// the preview assumes the flute midpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression_transition_mm: Option<f64>,
-    /// gm1u: thread pitch (mm) for a thread mill (Estlcam `Pitch`) — the
+    /// Thread pitch (mm) for a thread mill (Estlcam `Pitch`) — the
     /// axial advance per orbit. Honored only when `kind == ThreadMill`.
     /// Drives the helical Z-advance of the Thread op and a label in the
     /// tool library. None = the Thread op must specify its own pitch.
@@ -231,7 +231,7 @@ pub struct ToolEntry {
     /// Shank diameter (mm). None = same as `diameter` (parallel-shank bit).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shank_diameter_mm: Option<f64>,
-    /// q0kc: free shank length between the top of the cutting flutes and
+    /// Free shank length between the top of the cutting flutes and
     /// the bottom of the holder/collet (mm). Models the real-world case
     /// where the collet doesn't grip right above the flutes — common for
     /// reach-extension tooling. Defaults to 0 (collet sits directly on
@@ -241,7 +241,7 @@ pub struct ToolEntry {
     /// Holder geometry above the shank. None = no holder check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder: Option<HolderShape>,
-    /// zpuk: plasma pierce height (mm above stock). Honored only when
+    /// Plasma pierce height (mm above stock). Honored only when
     /// the active machine mode is `Plasma`. The pierce arc is
     /// established at this height — too close and the torch sticks
     /// to the stock as it slags up; too far and the arc misses or
@@ -249,13 +249,13 @@ pub struct ToolEntry {
     /// default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pierce_height_mm: Option<f64>,
-    /// zpuk: plasma cut height (mm above stock, generally < pierce
+    /// Plasma cut height (mm above stock, generally < pierce
     /// height). After the pierce dwell the torch drops to this
     /// height for the actual cut. Typical 1.5–2.5 mm for thin steel.
     /// None ⇒ 1.5 mm default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cut_height_mm: Option<f64>,
-    /// zpuk: plasma pierce delay in seconds. The torch dwells at
+    /// Plasma pierce delay in seconds. The torch dwells at
     /// `pierce_height_mm` for this many seconds before dropping to
     /// `cut_height_mm`. Long enough to pierce the stock; too long
     /// and the arc starts to undercut the rim of the pierce hole.
@@ -263,11 +263,11 @@ pub struct ToolEntry {
     /// ⇒ 0.5 s default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pierce_delay_sec: Option<f64>,
-    /// ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from
+    /// V-Carve / Stufenfase lead-in ramp angle, degrees from
     /// horizontal. Controls how steeply the cutter walks into the
     /// material at the start of each cut to avoid a vertical plunge
     /// at the R≈0 medial-axis endpoint (V-bits have effectively zero
-    /// safe plunge depth). pmpk originally hardcoded this to 10°
+    /// safe plunge depth). This was originally hardcoded to 10°
     /// (Vectric / Estlcam default) inside
     /// [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets
     /// shops dial it per-tool — harder materials want shallower
@@ -310,7 +310,7 @@ fn is_default_tool_pause(v: &u32) -> bool {
     *v == 1
 }
 
-/// z1y0: per-tool spindle direction — right-hand (`Cw`, M3) for the
+/// Per-tool spindle direction — right-hand (`Cw`, M3) for the
 /// 99% of cutters, left-hand (`Ccw`, M4) for reverse-thread / mirror
 /// /-helix tooling. Mirrored into `ToolConfig.spindle_direction` at
 /// synth time so the gcode emitter can route between `spindle_cw`
@@ -429,26 +429,26 @@ pub enum ToolKind {
     Drill,
     /// Used for laser cutting / etching — no physical tool radius.
     LaserBeam,
-    /// Bull-nose / radius-corner endmill (rt1.28): flat endmill with
+    /// Bull-nose / radius-corner endmill: flat endmill with
     /// a rounded transition between the cylindrical wall and the flat
     /// floor. Cuts a fillet on the floor edge.
     /// `ToolEntry.corner_radius_mm` carries the radius.
     BullNose,
-    /// Compression / up-down spiral endmill (rt1.28 / Estlcam
+    /// Compression / up-down spiral endmill (Estlcam
     /// Obenunten). Cuts down on top half, up on bottom half — clean
     /// edges on both faces of sheet material. v1 treats it like an
     /// Endmill at the cutting algorithm; the variant is here so the
     /// tool library can label it accurately for the user.
     Compression,
-    /// Form / profile cutter (rt1.28 / Estlcam Profil): bull-nose /
+    /// Form / profile cutter (Estlcam Profil): bull-nose /
     /// cove / ogee / dovetail / T-slot / custom — a profile bit with a
     /// fixed `(z, r)` cross-section carried in
     /// [`ToolEntry::form_profile_mm`]. The tool-library editor generates
     /// the samples from dovetail / T-slot / cove presets or raw rows.
-    /// (z5yw: the former dedicated `TSlot` kind folded in here — a
+    /// (The former dedicated `TSlot` kind folded in here — a
     /// T-slot is just a wide-disk-then-narrow-neck profile.)
     FormProfile,
-    /// Tapered / conical endmill (90hd / Estlcam Kegel). A cutter whose
+    /// Tapered / conical endmill (Estlcam Kegel). A cutter whose
     /// flank tapers from a small tip (`tip_diameter`, 0 for a pointed
     /// bit) up to the full `diameter` at the top of the flutes, at the
     /// included `tip_angle_deg`. Unlike a V-bit it cuts along the whole
@@ -457,7 +457,7 @@ pub enum ToolKind {
     /// truncated cone (Kegelstumpf). Shares the conical cut profile with
     /// the V-bit in the sim.
     Kegel,
-    /// Single-point thread mill (gm1u / Estlcam Gewinde). A small cutter
+    /// Single-point thread mill (Estlcam Gewinde). A small cutter
     /// with a thread-form tooth (the `tip_angle_deg` is the thread flank
     /// angle — 60° metric / 55° Whitworth) that cuts internal or external
     /// threads by helical interpolation, advancing one `thread_pitch_mm`

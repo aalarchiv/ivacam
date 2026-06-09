@@ -76,7 +76,7 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_layers: Vec<TextLayer>,
 
-    /// i5g4 (MVP): explicit work-offset between the geometry frame
+    /// Explicit work-offset (MVP) between the geometry frame
     /// (where the DXF / SVG was drawn) and the gcode WCS origin
     /// (where the user zeros the spindle on the real machine). All
     /// zeros (default) means "geometry origin = WCS origin". Full
@@ -87,7 +87,7 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "WorkOffset::is_default")]
     pub work_offset: WorkOffset,
 
-    /// vrrr: physical stock envelope, resolved to an axis-aligned box in
+    /// Physical stock envelope, resolved to an axis-aligned box in
     /// the geometry frame. The frontend derives this from its auto/manual
     /// stock UI (margin / custom dims / offset) via `computeFootprint`
     /// and sends the resolved box; a CLI / server consumer sets the
@@ -99,7 +99,7 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stock: Option<StockConfig>,
 
-    /// f60x: relief / 3-axis surfacing sources — the target Z(x,y) surfaces
+    /// Relief / 3-axis surfacing sources — the target Z(x,y) surfaces
     /// that [`OpKind::ReliefMill`] ops finish. Stored at project level (like
     /// `text_layers`) and referenced by `source_id`, not embedded in the op,
     /// because a surface grid is large and ops get cloned + hashed. Each
@@ -108,7 +108,7 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relief_sources: Vec<ReliefSource>,
 
-    /// l8lk: when `true`, the pipeline runs an optional tool-change-order
+    /// When `true`, the pipeline runs an optional tool-change-order
     /// optimization that groups consecutive same-tool work so a
     /// `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change
     /// instead of two. Matters most on manual machines, where every swap
@@ -122,11 +122,11 @@ pub struct Project {
     pub group_ops_by_tool: bool,
 }
 
-/// f60x: a target surface source for relief / ball-nose surfacing. Holds a
+/// A target surface source for relief / ball-nose surfacing. Holds a
 /// row-major normalized-brightness grid (each value in `[0, 1]`) plus its
 /// world placement; the depth mapping (brightness → Z) lives on the
 /// [`OpKind::ReliefMill`] op so the user can retune depth without
-/// re-uploading the image. The first producer (f60x-D) decodes a grayscale
+/// re-uploading the image. The first producer decodes a grayscale
 /// image frontend-side; a future STL rasterizer would populate the same
 /// grid. The driver turns it into a [`crate::cam::surface::SurfaceField`]
 /// via `SurfaceField::from_grayscale`.
@@ -148,7 +148,7 @@ pub struct ReliefSource {
     pub brightness: Vec<f32>,
 }
 
-/// vrrr: resolved stock box. See [`Project::stock`]. Kept deliberately
+/// Resolved stock box. See [`Project::stock`]. Kept deliberately
 /// thin — the auto/manual/margin derivation lives frontend-side (it's a
 /// UI convenience for sizing the box to imported geometry); the core
 /// only needs the final axis-aligned envelope for the `out_of_stock`
@@ -165,7 +165,7 @@ pub struct StockConfig {
     /// Material thickness (mm). The stock body spans
     /// z ∈ [`top_z_mm` − thickness, `top_z_mm`].
     pub thickness_mm: f64,
-    /// ya00: Z of the stock TOP plane (mm) in the WCS frame. Default 0 ⇒
+    /// Z of the stock TOP plane (mm) in the WCS frame. Default 0 ⇒
     /// the top sits at the WCS origin plane (the legacy assumption), body
     /// extending down to `-thickness_mm`. A non-zero value models zeroing
     /// the machine somewhere other than the stock top (e.g. on the bed,
@@ -177,7 +177,7 @@ pub struct StockConfig {
     pub top_z_mm: f64,
 }
 
-/// i5g4: program-level work-coordinate offset. Defaults to all
+/// Program-level work-coordinate offset. Defaults to all
 /// zeros — geometry origin == WCS origin. When the user zeros the
 /// machine somewhere different from the geometry origin, set this
 /// so the sim can align the heightmap to the WCS frame. The full

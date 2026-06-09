@@ -16,7 +16,7 @@ pub struct TabPoint {
     pub y: f64,
     /// Per-tab width override (mm). When `Some`, this tab uses the
     /// override; when `None`, falls back to the op-level setup width
-    /// (`setup.tabs.width`). Audit 3wv: was hashed into the cache key
+    /// (`setup.tabs.width`). Audit finding: was hashed into the cache key
     /// but never consumed by `emit_path_with_tabs` — toggling overrides
     /// produced identical output. Now drives the per-tab crossing
     /// radius + zone half-width.

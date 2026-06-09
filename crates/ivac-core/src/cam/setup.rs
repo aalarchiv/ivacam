@@ -25,7 +25,7 @@ pub struct Setup {
     pub pockets: PocketConfig,
     pub tabs: TabsConfig,
     pub leads: LeadsConfig,
-    /// e2mq: program-active work coordinate system. Threaded in from
+    /// Program-active work coordinate system. Threaded in from
     /// `Project.work_offset.wcs` by the pipeline `setup_resolver` /
     /// `header_setup_for` builders. The post's `program_begin`
     /// emits the explicit `G54..G59` from this and pins the same

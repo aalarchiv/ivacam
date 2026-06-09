@@ -24,7 +24,7 @@ pub struct Op {
     /// id of a `Project.tools` entry. For dual-tool Pocket ops this is
     /// the roughing tool; the finish ring is cut by `finish_tool_id`.
     pub tool_id: u32,
-    /// Optional finish tool id for dual-tool Pocket ops (rt1.33 / Estlcam
+    /// Optional finish tool id for dual-tool Pocket ops (Estlcam
     /// TS slot). When `Some(id)` and `id != tool_id`, the pipeline emits
     /// a toolchange after the rough cascade and runs the wall-defining
     /// ring with the finish tool's geometry + finish-set feed/speed. When
@@ -34,7 +34,7 @@ pub struct Op {
     pub finish_tool_id: Option<u32>,
     pub source: OpSource,
     pub params: OpParams,
-    /// dp6b: optional group label. Consecutive enabled ops sharing
+    /// Optional group label. Consecutive enabled ops sharing
     /// the same value belong to the same logical phase ("rough",
     /// "finish", "drill cycle"), and the pipeline emits a
     /// `; === GROUP: <name> ===` comment at every boundary so the
@@ -44,7 +44,7 @@ pub struct Op {
     /// same as `None` at emit time). Defaults to `None` (no group).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
-    /// l8lk: pin this op's position when the program-level
+    /// Pin this op's position when the program-level
     /// [`Project::group_ops_by_tool`] reorder is on. A pinned op — like
     /// any program-only op (Pause / Homing / …) — is a fixed barrier:
     /// it keeps its declared slot and the tool-grouping pass never moves
@@ -258,7 +258,7 @@ pub enum PatternConfig {
 pub enum OpKind {
     /// Contour cut — equivalent to today's "mill" with a parallel-offset
     /// pass at `offset` of the tool radius. Embedded `contour` and
-    /// `profile` carry the per-kind params (kbx5 step 1); legacy
+    /// `profile` carry the per-kind params; legacy
     /// payloads land them at default and the migration deserializer
     /// fills them from the flat `OpParams` bag.
     Profile {
@@ -281,17 +281,16 @@ pub enum OpKind {
     /// Drill cycle — point or circle smaller than tool. Carries a
     /// [`DrillCycle`] that picks G81 / G83 / G73 (or the manual G0/G1
     /// fallback for posts that don't support canned cycles). Also
-    /// carries the Stufenfase post-drill chamfer width (rt1.20), the
-    /// optional pattern (kbx5 step 1 — Drill is the only kind
-    /// patternable for now), and the optional spot/centerdrill pre-pass
-    /// (r2af).
+    /// carries the Stufenfase post-drill chamfer width, the
+    /// optional pattern (Drill is the only kind patternable for
+    /// now), and the optional spot/centerdrill pre-pass.
     Drill {
         cycle: DrillCycle,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         chamfer_after_width_mm: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pattern: Option<PatternConfig>,
-        /// r2af: optional spot/centerdrill pre-pass. When `Some`, the
+        /// Optional spot/centerdrill pre-pass. When `Some`, the
         /// driver emits a shallow spot-drill block at every hole center
         /// BEFORE the main drill block. Twist drills walk on hard /
         /// polished stock — the spot dimple locks the chisel edge so
@@ -306,7 +305,7 @@ pub enum OpKind {
     /// source must be a closed circle (single Circle / closed Arc
     /// loop); the helix radius derives from the circle's radius plus
     /// tool radius for internal threads, or minus tool radius for
-    /// external. (rt1.17)
+    /// external.
     Thread {
         /// Thread pitch in mm — Z descent per full revolution.
         /// Positive; defaults to 1.0 mm (M6 fine).
@@ -321,7 +320,7 @@ pub enum OpKind {
         /// almost always favors conventional even for threading.
         #[serde(default)]
         climb: bool,
-        /// sqnh: number of radial roughing passes from
+        /// Number of radial roughing passes from
         /// `start_radius` → final thread radius. Single helix at full
         /// engagement is too aggressive for hard materials; multi-
         /// pass schedules let the chipload soften. Default 1
@@ -329,15 +328,15 @@ pub enum OpKind {
         /// helix at radius = `lerp(start_radius_frac` → 1.0, i/N).
         #[serde(default = "default_thread_radial_passes")]
         radial_passes: u32,
-        /// 6uns: starting angle of the helix in radians, measured CCW
+        /// Starting angle of the helix in radians, measured CCW
         /// from the +X axis. Default 0 (helix starts at
-        /// `(center.x + radius, center.y)`) — the pre-6uns behavior.
+        /// `(center.x + radius, center.y)`) — the historical behavior.
         /// Override to re-cut partial threads where the previous run
         /// stopped mid-helix; the new run can pick up where the
         /// last one left off.
         #[serde(default)]
         start_angle_rad: f64,
-        /// mniu: radial thread depth (single-flank, mm). For an ISO
+        /// Radial thread depth (single-flank, mm). For an ISO
         /// metric 60° thread the canonical depth is
         /// `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The
         /// driver applies this as the cutter's radial bite past the
@@ -356,7 +355,7 @@ pub enum OpKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thread_depth_mm: Option<f64>,
     },
-    /// V-bit edge break (rt1.18). The cutter walks the source path
+    /// V-bit edge break. The cutter walks the source path
     /// itself at a single Z computed from the bit's cone angle and the
     /// desired chamfer width: `z = -width_mm / tan(tip_angle / 2)`.
     /// One pass at that depth carves a beveled edge whose horizontal
@@ -371,7 +370,7 @@ pub enum OpKind {
         width_mm: f64,
         /// When `true`, the chamfer is cut twice — once at the rough
         /// feed (cleanup) and once at the tool's finish-set feed
-        /// (rt1.27) for surface quality. Default `false`.
+        /// for surface quality. Default `false`.
         #[serde(default)]
         finish_pass: bool,
     },
@@ -387,7 +386,7 @@ pub enum OpKind {
         #[serde(default)]
         contour: ContourParams,
     },
-    /// T-slot / undercut pass (3g6u). Drives a T-slot / keyway cutter
+    /// T-slot / undercut pass. Drives a T-slot / keyway cutter
     /// (`ToolKind::TSlot`: wide cutting head at the tip, narrow neck
     /// above) along the source path as the slot centerline, at a single
     /// floor Z (= `params.depth`). The head sweeps its full diameter to
@@ -404,7 +403,7 @@ pub enum OpKind {
         #[serde(default)]
         contour: ContourParams,
     },
-    /// Dovetail / form-profile undercut pass (b7qz). Drives a form /
+    /// Dovetail / form-profile undercut pass. Drives a form /
     /// profile cutter (`ToolKind::FormProfile` — e.g. a dovetail bit,
     /// widest at the bottom face) along the source path as the groove
     /// centerline, at a single floor Z (= `params.depth`). The bit's
@@ -435,7 +434,7 @@ pub enum OpKind {
         #[serde(default)]
         carve: VCarveParams,
     },
-    /// rt1.34: program-level optional-stop. Emits `M5` (spindle off) +
+    /// Program-level optional-stop. Emits `M5` (spindle off) +
     /// `M0` + an operator-readable comment + `M3` (spindle back on) where
     /// the op sits in the operations list. The cutter doesn't move and no
     /// source geometry is required — the op exists purely to pause the
@@ -449,7 +448,7 @@ pub enum OpKind {
         #[serde(default)]
         message: String,
     },
-    /// 8n4k: machine-home building block. Emits `G28` (move to the
+    /// Machine-home building block. Emits `G28` (move to the
     /// predefined machine-home position), optionally followed by a
     /// rapid Z retract to the program's safe Z so the NEXT op's
     /// rapid traversal starts from a known clearance. Like `Pause`,
@@ -466,7 +465,7 @@ pub enum OpKind {
         #[serde(default = "default_true")]
         retract_to_safe_z: bool,
     },
-    /// 8n4k: touch-probe building block. Emits `G38.2 <axis><distance>
+    /// Touch-probe building block. Emits `G38.2 <axis><distance>
     /// F<feed>` — a probing-feed move along the chosen axis that
     /// stops as soon as the probe trips. Used at program start
     /// (zero the WCS Z to the stock top), between ops (verify a
@@ -490,7 +489,7 @@ pub enum OpKind {
         /// enough that the run doesn't take forever).
         feed_mm_min: u32,
     },
-    /// 8n4k: program navigation marker. Emits ONLY an operator-
+    /// Program navigation marker. Emits ONLY an operator-
     /// readable comment line at its slot in the op stream — the
     /// cutter doesn't move and no controller state changes.
     /// Pendants and gcode-viewer UIs that index by program line
@@ -505,7 +504,7 @@ pub enum OpKind {
         #[serde(default)]
         label: String,
     },
-    /// rxm9: external G-code include block. Splices a user-provided
+    /// External G-code include block. Splices a user-provided
     /// gcode file's contents into the program stream at this op's
     /// slot — manufacturer pierce / probe canned cycles, hand-tuned
     /// safety preambles, return-to-position macros, post-processed
@@ -527,13 +526,13 @@ pub enum OpKind {
     /// typo doesn't silently leave a half-substituted line in the
     /// shipped program.
     ///
-    /// Sim coverage (yhen): the heightmap-side simulator classifies
+    /// Sim coverage: the heightmap-side simulator classifies
     /// the included body line-by-line. Lines that map to G0, G1, G2,
     /// G3 or canned cycles G73 / G81 / G82 / G83 are carved by the
     /// unified preview-interpret pass at `run_pipeline`'s tail.
     /// Everything else fires a counted `gcode_include_lines_skipped`
     /// summary warning so the user knows the carve is incomplete.
-    /// When `verbose_unsim_warnings` is set (xi2g), the summary is
+    /// When `verbose_unsim_warnings` is set, the summary is
     /// followed by one `gcode_include_unsim_line` warning per
     /// skipped line for users debugging an exotic block.
     GcodeInclude {
@@ -548,7 +547,7 @@ pub enum OpKind {
         /// newline is optional.
         #[serde(default)]
         content: String,
-        /// xi2g: when `true`, fan out one `gcode_include_unsim_line`
+        /// When `true`, fan out one `gcode_include_unsim_line`
         /// warning per skipped line in addition to the
         /// `gcode_include_lines_skipped` summary. Off by default so
         /// the warnings panel doesn't drown on a multi-skip block;
@@ -557,7 +556,7 @@ pub enum OpKind {
         #[serde(default)]
         verbose_unsim_warnings: bool,
     },
-    /// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
+    /// 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
     /// surface (a [`crate::project::ReliefSource`] referenced by
     /// `source_id`, e.g. a grayscale-image relief) with a ball-nose cutter:
     /// the drop-cutter engine (`cam::surface_mill`) produces gouge-free
@@ -595,14 +594,14 @@ pub enum OpKind {
         #[serde(default = "default_relief_along_step")]
         along_step_mm: f64,
     },
-    /// rt1.12: photo / greyscale laser raster engrave. Walks a
+    /// Photo / greyscale laser raster engrave. Walks a
     /// [`crate::project::ReliefSource`]'s normalized-brightness grid one
     /// row at a time, modulating laser power (the `S` word) per pixel via
     /// [`crate::cam::raster::PowerCurve`] (dark burns hotter). Reuses the
     /// relief image-source representation — brightness → power here vs
     /// brightness → Z for [`OpKind::ReliefMill`]. Laser-only. (The grid →
-    /// power mapping lives in `cam::raster`; the gcode emit is rt1.12
-    /// phase 3.)
+    /// power mapping lives in `cam::raster`; the gcode emit is a
+    /// later phase.)
     RasterEngrave {
         /// Id of the [`crate::project::ReliefSource`] (in
         /// `Project.relief_sources`) providing the brightness grid. No
@@ -665,7 +664,7 @@ fn default_probe_axis() -> ProbeAxis {
     ProbeAxis::Z
 }
 
-/// 8n4k: axis selector for `OpKind::Probe`. Serializes as the bare
+/// Axis selector for `OpKind::Probe`. Serializes as the bare
 /// lowercase letter (`"x"` / `"y"` / `"z"`) for a wire-friendly
 /// payload that drops straight into the G38.2 word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -722,7 +721,7 @@ impl Default for DrillCycle {
     }
 }
 
-/// r2af: spot / centerdrill pre-pass config attached to
+/// Spot / centerdrill pre-pass config attached to
 /// [`OpKind::Drill::spot_first`]. The driver emits a shallow drill
 /// block at every hole center BEFORE the main drill block, using
 /// the named spot tool. Hardens hole position on hard / polished
@@ -1051,7 +1050,7 @@ pub enum SourceCombine {
     /// Symmetric difference (xor) of all selected closed polygons.
     Xor,
     /// No combination — emit one boundary per selected object as-is. This
-    /// is the pre-j7y behavior, kept for callers who explicitly want it.
+    /// is the historical behavior, kept for callers who explicitly want it.
     None,
 }
 

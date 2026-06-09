@@ -49,7 +49,7 @@ pub enum HolderCheck {
     },
 }
 
-/// 24ht: per-cell holder-wall overlap record. `required_clearance_mm` is
+/// Per-cell holder-wall overlap record. `required_clearance_mm` is
 /// how much extra clearance the holder would need at this cell for the
 /// envelope to fit; `wall_z` is the cell's current heightmap value (the
 /// top of the wall the holder is hitting).

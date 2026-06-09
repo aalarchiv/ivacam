@@ -34,7 +34,7 @@ pub struct ToolConfig {
     pub diameter: f64,
     pub speed: u32,
     /// User-facing tool name, for token substitution in
-    /// post-profile templates (rt1.15 `<n>`). Empty by default.
+    /// post-profile templates (`<n>`). Empty by default.
     #[serde(default)]
     pub name: String,
     /// Spindle warm-up pause in seconds.
@@ -43,7 +43,7 @@ pub struct ToolConfig {
     pub flood: bool,
     /// Drag-knife offset (if present, otherwise None).
     pub dragoff: Option<f64>,
-    /// 0t9o: drag-knife self-alignment threshold in radians. The walk
+    /// Drag-knife self-alignment threshold in radians. The walk
     /// emitter skips the swivel + linear pre-move whenever the corner's
     /// tangent change is below this threshold — real drag knives
     /// self-align below ~30° via the trailing offset. Resolved from
@@ -67,14 +67,14 @@ pub struct ToolConfig {
     /// Resolved cutting feedrate for the finishing pass. mm/min.
     #[serde(default)]
     pub rate_h_finish: u32,
-    /// Laser pierce time (rt1.29) — seconds to dwell after laser-on
+    /// Laser pierce time — seconds to dwell after laser-on
     /// before each plunge so the beam burns through stock. Resolved
     /// from `ToolEntry.laser_pierce_sec` at synth time; 0 = no
     /// pierce dwell.
     #[serde(default)]
     pub pierce_sec: f64,
-    /// Whirl helical-overlay spiral radius (3e5). > 0 enables the
-    /// `cos/sin` displacement on every cut move; 0 disables. Resolved
+    /// Whirl helical-overlay spiral radius. > 0 enables the
+    /// sine/cosine displacement on every cut move; 0 disables. Resolved
     /// from `ToolEntry.whirl_extra_width_mm / 2` at synth time when
     /// the tool is Whirl-tagged.
     #[serde(default)]
@@ -95,7 +95,7 @@ pub struct ToolConfig {
     /// matches Estlcam's `Einstellungen.Gleichlauf` flag.
     #[serde(default = "default_true")]
     pub whirl_climb: bool,
-    /// Per-tool default XY overlap (dr5). Resolved from
+    /// Per-tool default XY overlap. Resolved from
     /// [`crate::project::ToolEntry::default_xy_overlap`] at synth time;
     /// `None` = no tool-level default, fall through to global 0.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,14 +115,14 @@ pub struct ToolConfig {
     /// 0 — no auto-extend needed.
     #[serde(default)]
     pub tip_diameter_mm: f64,
-    /// z1y0: spindle direction for this tool (`Cw` → M3, `Ccw` → M4).
+    /// Spindle direction for this tool (`Cw` → M3, `Ccw` → M4).
     /// Mirrored from `ToolEntry.spindle_direction` at synth time so
     /// the gcode emitter can route between `post.spindle_cw` /
     /// `post.spindle_ccw` without reaching back into the tool
     /// library. Defaults to `Cw` (M3).
     #[serde(default)]
     pub spindle_direction: crate::project::tool::SpindleDirection,
-    /// zpuk: plasma pierce height in mm (above stock top). The cut
+    /// Plasma pierce height in mm (above stock top). The cut
     /// emitter does a rapid to this Z, dwells `pierce_delay_sec`,
     /// then plunges to `cut_height_mm` for the actual cut.
     /// Resolved from
@@ -131,19 +131,19 @@ pub struct ToolConfig {
     /// when `setup.machine.mode == MachineMode::Plasma`.
     #[serde(default)]
     pub pierce_height_mm: f64,
-    /// zpuk: plasma cut height (mm above stock top). Generally
+    /// Plasma cut height (mm above stock top). Generally
     /// smaller than `pierce_height_mm`. Resolved from
     /// [`crate::project::ToolEntry::cut_height_mm`] at synth time;
     /// 0.0 ⇒ defaults to 1.5 mm at emit time.
     #[serde(default)]
     pub cut_height_mm: f64,
-    /// zpuk: plasma pierce delay in seconds — torch dwells at
+    /// Plasma pierce delay in seconds — torch dwells at
     /// `pierce_height` while the arc pierces. Resolved from
     /// [`crate::project::ToolEntry::pierce_delay_sec`] at synth
     /// time; 0.0 ⇒ defaults to 0.5 s at emit time.
     #[serde(default)]
     pub pierce_delay_sec: f64,
-    /// ot80: V-Carve lead-in ramp angle (degrees from horizontal).
+    /// V-Carve lead-in ramp angle (degrees from horizontal).
     /// Resolved from
     /// [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`] at
     /// synth time; clamped to (0°, 90°). 0.0 ⇒ inherit the legacy

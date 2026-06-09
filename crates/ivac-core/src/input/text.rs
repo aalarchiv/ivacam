@@ -82,7 +82,7 @@ pub struct RenderTextRequest {
     /// The font file as bytes (TTF / OTF). Marshalled as a base64 string on
     /// the wire (see [`font_bytes_b64`]) — compact and cheap to pass across
     /// HTTP / Tauri / WASM, where the live preview re-sends it on every
-    /// debounced render (dya2). Deserialize still accepts the legacy
+    /// debounced render. Deserialize still accepts the legacy
     /// integer-array form for back-compat.
     #[serde(with = "font_bytes_b64")]
     #[schemars(with = "String")]

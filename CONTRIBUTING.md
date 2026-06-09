@@ -203,6 +203,12 @@ HPGL today). Mirror the simplest existing one (GRBL):
   asserts a non-empty linuxcnc program comes out — keep it green.
 - Conventional commit messages preferred (`feat:`, `fix:`, `refactor:`, …)
   and reference the bd issue ID where relevant.
+- Keep bd issue IDs OUT of doc comments on wire types (anything
+  `#[derive(JsonSchema)]` or otherwise registered in `schema.rs`): those
+  comments become public text in `schema/openapi.yaml` and the generated
+  `frontend/src/lib/api/generated.ts`, where a bare tracker id resolves
+  to nothing for a third-party reader. Provenance belongs in the commit
+  message trailer, not inline (njw9).
 
 ## Reporting bugs
 

@@ -59,7 +59,7 @@ pub struct PolylineOffset {
     pub color: i32,
     pub source_object_idx: usize,
     /// Tab positions (data-space XY) the cutter should lift over while
-    /// cutting this offset. Frontend places these via mtm.10; the gcode
+    /// cutting this offset. Frontend places these via the tab-placement UI; the gcode
     /// emitter splits the cut at each crossing and lifts Z to tabs.height.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tabs: Vec<TabPoint>,

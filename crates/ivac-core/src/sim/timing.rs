@@ -47,7 +47,7 @@ pub struct TimeEstimate {
     pub arc_s: f64,
     pub toolchange_s: f64,
     pub spindle_warmup_s: f64,
-    /// kg13: total time spent in explicit G4 P-seconds / X-seconds
+    /// Total time spent in explicit G4 P-seconds / X-seconds
     /// pauses (drill dwell, finishing dwell, etc.). Distinct from
     /// `toolchange_s` (M6 timing) and `spindle_warmup_s` (per-tool
     /// pause). Older serialized estimates without this field

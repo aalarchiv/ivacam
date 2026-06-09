@@ -34,7 +34,7 @@ impl AxisLimits {
     }
 }
 
-/// cb5y: how the post-processor handles a tool change at an op boundary.
+/// How the post-processor handles a tool change at an op boundary.
 /// Widened from the historical `supports_toolchange: bool` because the two
 /// *manual* behaviors need different emission: grblHAL / FluidNC accept
 /// `M6` as a prompt (the controller parks, prompts the operator, and can
@@ -128,7 +128,7 @@ pub struct MachineConfig {
     pub comments: bool,
     /// Whether the machine emits arc commands (G2/G3).
     pub arcs: bool,
-    /// cb5y: tool-change strategy. See [`ToolChangeStrategy`]. A
+    /// Tool-change strategy. See [`ToolChangeStrategy`]. A
     /// `supports_toolchange` serde alias also accepts the boolean form
     /// `true/false` via a bool-aware deserializer (`true → Atc`,
     /// `false → ManualM0Pause`).
@@ -157,7 +157,6 @@ pub struct MachineConfig {
     /// time to spin down before the chuck is touched. `None` (and the
     /// default `0.5 s`) covers most VFD-driven spindles; high-inertia
     /// big-iron may want 1–2 s. Set to `Some(0.0)` to skip entirely.
-    /// See bd issues eaeq / m8sq / rwv8 / rfow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_stop_dwell_sec: Option<f64>,
     /// Spindle-start dwell (seconds) inserted into the M6 toolchange
@@ -192,7 +191,7 @@ pub struct MachineConfig {
     /// `arcs == true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arc_fit_tolerance_mm: Option<f64>,
-    /// Decimal separator for emitted numbers (rt1.36). `'.'` (default)
+    /// Decimal separator for emitted numbers. `'.'` (default)
     /// suits `LinuxCNC` / GRBL / Mach3 and any controller configured in
     /// US locale. `','` covers European-locale Siemens / Heidenhain
     /// controllers that require `X1,5` instead of `X1.5`. Anything
@@ -202,13 +201,13 @@ pub struct MachineConfig {
         skip_serializing_if = "is_default_decimal_separator"
     )]
     pub decimal_separator: char,
-    /// Starting line number for `N<n>` prefixes (rt1.36). `None` (the
+    /// Starting line number for `N<n>` prefixes. `None` (the
     /// default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`,
     /// `N30`, … incrementing by 10. Required by some FANUC / vintage
     /// controllers; useful operator reference even on modern ones.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_number_start: Option<u32>,
-    /// Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the
+    /// Plot-mode Z (Estlcam `c_PP.Z_Up_Dn)`: when true, the
     /// pipeline collapses every cut to ONE pass at the op's cut depth
     /// and skips the multi-step descent / ramp / helix machinery.
     /// Z values written into gcode are restricted to `fast_move_z`
@@ -217,19 +216,19 @@ pub struct MachineConfig {
     /// 3D-printer extrusion and drag-knife controllers.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub plot_mode_z: bool,
-    /// User-configurable post-processor profile (rt1.15). When
+    /// User-configurable post-processor profile. When
     /// `Some`, the built-in posts (linuxcnc / grbl) read its
     /// templates instead of emitting their hard-coded
     /// `program_start` / `program_end` / `tool_change` / coolant lines.
     /// `None` = hard-coded defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_profile: Option<crate::gcode::post_profile::PostProfile>,
-    /// h0tx: free-text identifier for the machine setup ("Shop CNC",
+    /// Free-text identifier for the machine setup ("Shop CNC",
     /// "Garage MPCNC", …). Empty string by default; persisted into
     /// the project file + the `.ivac-machine.json` save/load files.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
-    /// h0tx: which op kinds the machine can run. Drives the
+    /// Which op kinds the machine can run. Drives the
     /// frontend's `OpKindPicker` filter — a laser-only machine
     /// doesn't show milling ops. `mode` (above) stays as the
     /// PRIMARY mode used by the gcode emitter; capabilities is the
@@ -238,13 +237,13 @@ pub struct MachineConfig {
     /// `[mode]` (the default when `capabilities` is absent).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<MachineMode>,
-    /// 3nnj: lower bound on the spindle RPM the controller will
+    /// Lower bound on the spindle RPM the controller will
     /// accept. Tool / op RPMs below this clamp UP to the min and
     /// emit a `spindle_speed_clamped_below_min` warning. `None`
     /// disables the floor (default, back-compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm_min: Option<u32>,
-    /// 3nnj: upper bound on the spindle RPM the controller will
+    /// Upper bound on the spindle RPM the controller will
     /// accept. Tool / op RPMs above this clamp DOWN to the max
     /// and emit a `spindle_speed_clamped_above_max` warning.
     /// Without this clamp some controllers refuse the command
@@ -252,7 +251,7 @@ pub struct MachineConfig {
     /// `None` disables the ceiling (default, back-compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm_max: Option<u32>,
-    /// jcmx: upper bound on the cutting / plunge feed (mm/min) the
+    /// Upper bound on the cutting / plunge feed (mm/min) the
     /// machine can actually drive. Tool / op feeds above this clamp
     /// DOWN to the max and emit a `feed_clamped_above_max` warning, so
     /// an out-of-range feed (a fat-fingered op override, an aggressive
@@ -262,7 +261,7 @@ pub struct MachineConfig {
     /// `None` disables the ceiling (default, back-compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_feed_mm_min: Option<u32>,
-    /// syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0`
+    /// When true, the `program_end` footer adds a `G53 G0 X0 Y0`
     /// retract-to-machine-home before the spindle-off + M30 sequence.
     /// Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts
     /// it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in
@@ -271,14 +270,14 @@ pub struct MachineConfig {
     /// first.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub park_at_home: bool,
-    /// syol: optional explicit park XY (mm, in WCS coordinates). When
+    /// Optional explicit park XY (mm, in WCS coordinates). When
     /// `Some`, the `program_end` footer routes the head to this point
     /// after the safe-Z lift, overriding the machine-home / work-zero
     /// fallback. Useful for a known tool-station / load-station that
     /// isn't (0, 0) in either frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub park_xy: Option<(f64, f64)>,
-    /// ad0v: optional tool-change position (mm, in MACHINE coordinates).
+    /// Optional tool-change position (mm, in MACHINE coordinates).
     /// When `Some`, the toolchange envelope rapids the head here via
     /// `G53 G0 X<x> Y<y>` after the safe-Z lift and BEFORE the M0 / M6
     /// pause, so a manual bit-swap happens at a fixed, reachable station
@@ -292,7 +291,7 @@ pub struct MachineConfig {
     /// `rapid_machine_xy`, which HPGL / pen posts drop.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toolchange_xy: Option<(f64, f64)>,
-    /// hat3: how the post re-establishes the new tool's Z tip position
+    /// How the post re-establishes the new tool's Z tip position
     /// after a tool change. A manual hand-swap leaves the new tool's
     /// length unknown; the default `PostChangeZStrategy::None` applies
     /// only the static per-tool `ToolEntry.z_shift_mm`, which assumes
@@ -304,7 +303,7 @@ pub struct MachineConfig {
     /// `None` keeps existing output byte-for-byte.
     #[serde(default, skip_serializing_if = "PostChangeZStrategy::is_none")]
     pub post_change_z: PostChangeZStrategy,
-    /// llkf: opt-in tool-length compensation via the controller's tool
+    /// Opt-in tool-length compensation via the controller's tool
     /// table. When `true` on an ATC machine (`tool_change == Atc`), the
     /// toolchange envelope emits `G43 H<n>` after `T<n> M6` so the
     /// controller applies the pre-measured length for tool `<n>`, and
@@ -315,7 +314,7 @@ pub struct MachineConfig {
     /// an M6 tool table.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub use_tool_length_offsets: bool,
-    /// 4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop)
+    /// Emit `M1` (optional stop) instead of `M0` (mandatory stop)
     /// at every program pause — both the `Pause` op and the manual
     /// (`ManualM0Pause`) tool-change halt. `M1` is honored only when the
     /// controller's optional-stop switch is ON, so a vetted program can
@@ -323,20 +322,20 @@ pub struct MachineConfig {
     /// demand. Default `false` keeps the mandatory `M0`.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub optional_stop: bool,
-    /// z9zh: opt-in GRBL dynamic-power laser mode. When `true` on a GRBL
+    /// Opt-in GRBL dynamic-power laser mode. When `true` on a GRBL
     /// post, laser cuts/engraving arm + fire with `M4` instead of `M3`,
     /// so the controller ramps `S` power with the actual feed rate —
     /// corners and edges (where the head slows) don't over-burn, and
     /// rapids force `S0` automatically. GRBL-specific (`$32=1` laser
     /// mode); on `LinuxCNC` `M4` means spindle-CCW, so the flag is honored
     /// ONLY by the GRBL post (others keep `M3`). "Strongly preferred" for
-    /// laser engraving per the rt1.12 spec. Default `false` keeps the
+    /// laser engraving. Default `false` keeps the
     /// portable `M3` output byte-for-byte.
     #[serde(default, skip_serializing_if = "is_false_bool")]
     pub laser_dynamic_power: bool,
 }
 
-/// hat3: post-tool-change Z re-establish strategy. Internally tagged
+/// Post-tool-change Z re-establish strategy. Internally tagged
 /// (`{"mode": "...", ...}`) like [`PlungeStrategy`], so adding a variant
 /// is additive in the schema.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -537,7 +536,7 @@ pub enum MachineMode {
     Mill,
     Laser,
     Drag,
-    /// zpuk: plasma torch. Emits a two-step Z entry — rapid to
+    /// Plasma torch. Emits a two-step Z entry — rapid to
     /// `pierce_height_mm` above stock, dwell `pierce_delay_sec`
     /// while the arc starts and pierces, then G1 to `cut_height_mm`
     /// for the cut. The torch-on / -off lines reuse the laser

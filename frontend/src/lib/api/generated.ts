@@ -72,7 +72,7 @@ export interface paths {
         put?: never;
         /**
          * Generate gcode + 3D toolpath preview from imported geometry
-         * @description Stub for Stage-1; full setup-tree input lands in d0d follow-ups.
+         * @description Stub for Stage-1; full setup-tree input lands in follow-ups.
          */
         post: operations["generate"];
         delete?: never;
@@ -192,9 +192,9 @@ export interface components {
             /** Format: double */
             min_y: number;
         };
-        /** @description Parameters shared by every closed-contour op (Profile / Pocket / Engrave / `DragKnife`). Embedded in the matching [`super::op::OpKind`] variants. Holds tab shape + placement, lead-in / lead-out, cut direction, corner-feed reduction, and the optional user-picked approach point. (kbx5 step 1.) */
+        /** @description Parameters shared by every closed-contour op (Profile / Pocket / Engrave / `DragKnife`). Embedded in the matching [`super::op::OpKind`] variants. Holds tab shape + placement, lead-in / lead-out, cut direction, corner-feed reduction, and the optional user-picked approach point. */
         ContourParams: {
-            /** @description Anfahrpunkt (rt1.26): user-picked XY where the cutter enters each closed-contour ring. `None` = auto. */
+            /** @description Anfahrpunkt: user-picked XY where the cutter enters each closed-contour ring. `None` = auto. */
             approach_point?: [
                 number,
                 number
@@ -218,7 +218,7 @@ export interface components {
              *     }
              */
             leads: components["schemas"]["LeadsConfig"];
-            /** @description How tab positions are sourced for this op (rt1.10). */
+            /** @description How tab positions are sourced for this op. */
             tab_mode?: components["schemas"]["TabPlacementMode"];
             /** @description User-placed tabs, anchored geometry-relative as `(object_id, t)`. Honored when `tab_mode` is `Manual` or `Mixed`; `Off` / `Auto` ignore. */
             tab_placements?: components["schemas"]["TabPlacement"][];
@@ -276,7 +276,7 @@ export interface components {
             peck_step_mm: number;
         };
         /**
-         * @description nxn0: which time unit the post emits for `P<value>` dwell words. `LinuxCNC` and Smoothieware read P in seconds; Mach3/Mach4/Centroid/ most Fanuc-derived controllers read P in milliseconds. Defaulting to Seconds keeps the existing `LinuxCNC` golden snapshots stable.
+         * @description Which time unit the post emits for `P<value>` dwell words. `LinuxCNC` and Smoothieware read P in seconds; Mach3/Mach4/Centroid/ most Fanuc-derived controllers read P in milliseconds. Defaulting to Seconds keeps the existing `LinuxCNC` golden snapshots stable.
          * @enum {string}
          */
         DwellUnit: "seconds" | "milliseconds";
@@ -331,7 +331,7 @@ export interface components {
                 number
             ][];
         };
-        /** @description 1wit: one cross-section sample of a form / profile cutter outline, measured up from the cutting tip. The cutter is treated as cylindrically symmetric, so a sorted list of these describes the full profile (cove / ogee / dovetail / custom). See [`ToolEntry::form_profile_mm`]. */
+        /** @description One cross-section sample of a form / profile cutter outline, measured up from the cutting tip. The cutter is treated as cylindrically symmetric, so a sorted list of these describes the full profile (cove / ogee / dovetail / custom). See [`ToolEntry::form_profile_mm`]. */
         FormProfileSample: {
             /**
              * Format: double
@@ -400,7 +400,7 @@ export interface components {
              */
             radius_mm?: number | null;
         };
-        /** @description 24ht: per-cell holder-wall overlap record. `required_clearance_mm` is how much extra clearance the holder would need at this cell for the envelope to fit; `wall_z` is the cell's current heightmap value (the top of the wall the holder is hitting). */
+        /** @description Per-cell holder-wall overlap record. `required_clearance_mm` is how much extra clearance the holder would need at this cell for the envelope to fit; `wall_z` is the cell's current heightmap value (the top of the wall the holder is hitting). */
         HolderCollisionCell: {
             /** Format: double */
             cell_x: number;
@@ -527,42 +527,42 @@ export interface components {
             arc_fit_tolerance_mm?: number | null;
             /** @description Whether the machine emits arc commands (G2/G3). */
             arcs: boolean;
-            /** @description h0tx: which op kinds the machine can run. Drives the frontend's `OpKindPicker` filter — a laser-only machine doesn't show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (the default when `capabilities` is absent). */
+            /** @description Which op kinds the machine can run. Drives the frontend's `OpKindPicker` filter — a laser-only machine doesn't show milling ops. `mode` (above) stays as the PRIMARY mode used by the gcode emitter; capabilities is the broader set so a multi-purpose machine can pick the right op set without flipping `mode`. Empty Vec ⇒ implicitly `[mode]` (the default when `capabilities` is absent). */
             capabilities?: components["schemas"]["MachineMode"][];
             comments: boolean;
-            /** @description Decimal separator for emitted numbers (rt1.36). `'.'` (default) suits `LinuxCNC` / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'. */
+            /** @description Decimal separator for emitted numbers. `'.'` (default) suits `LinuxCNC` / GRBL / Mach3 and any controller configured in US locale. `','` covers European-locale Siemens / Heidenhain controllers that require `X1,5` instead of `X1.5`. Anything other than '.' / ',' silently falls back to '.'. */
             decimal_separator?: string;
             /** @description Per-axis jerk in mm/s³. None ⇒ trapezoidal-only profiling (S-curve refinement is Phase 2). */
             jerk?: components["schemas"]["AxisLimits"] | null;
-            /** @description z9zh: opt-in GRBL dynamic-power laser mode. When `true` on a GRBL post, laser cuts/engraving arm + fire with `M4` instead of `M3`, so the controller ramps `S` power with the actual feed rate — corners and edges (where the head slows) don't over-burn, and rapids force `S0` automatically. GRBL-specific (`$32=1` laser mode); on `LinuxCNC` `M4` means spindle-CCW, so the flag is honored ONLY by the GRBL post (others keep `M3`). "Strongly preferred" for laser engraving per the rt1.12 spec. Default `false` keeps the portable `M3` output byte-for-byte. */
+            /** @description Opt-in GRBL dynamic-power laser mode. When `true` on a GRBL post, laser cuts/engraving arm + fire with `M4` instead of `M3`, so the controller ramps `S` power with the actual feed rate — corners and edges (where the head slows) don't over-burn, and rapids force `S0` automatically. GRBL-specific (`$32=1` laser mode); on `LinuxCNC` `M4` means spindle-CCW, so the flag is honored ONLY by the GRBL post (others keep `M3`). "Strongly preferred" for laser engraving. Default `false` keeps the portable `M3` output byte-for-byte. */
             laser_dynamic_power?: boolean;
             /**
              * Format: uint32
-             * @description Starting line number for `N<n>` prefixes (rt1.36). `None` (the default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`, `N30`, … incrementing by 10. Required by some FANUC / vintage controllers; useful operator reference even on modern ones.
+             * @description Starting line number for `N<n>` prefixes. `None` (the default) emits unnumbered lines. `Some(10)` emits `N10`, `N20`, `N30`, … incrementing by 10. Required by some FANUC / vintage controllers; useful operator reference even on modern ones.
              */
             line_number_start?: number | null;
             /**
              * Format: uint32
-             * @description jcmx: upper bound on the cutting / plunge feed (mm/min) the machine can actually drive. Tool / op feeds above this clamp DOWN to the max and emit a `feed_clamped_above_max` warning, so an out-of-range feed (a fat-fingered op override, an aggressive tool-library value) can't reach the controller as a verbatim `F<huge>` — which some controllers fault on and others silently cap, both producing a program that doesn't run as previewed. `None` disables the ceiling (default, back-compat).
+             * @description Upper bound on the cutting / plunge feed (mm/min) the machine can actually drive. Tool / op feeds above this clamp DOWN to the max and emit a `feed_clamped_above_max` warning, so an out-of-range feed (a fat-fingered op override, an aggressive tool-library value) can't reach the controller as a verbatim `F<huge>` — which some controllers fault on and others silently cap, both producing a program that doesn't run as previewed. `None` disables the ceiling (default, back-compat).
              */
             max_feed_mm_min?: number | null;
             mode: components["schemas"]["MachineMode"];
-            /** @description h0tx: free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.ivac-machine.json` save/load files. */
+            /** @description Free-text identifier for the machine setup ("Shop CNC", "Garage MPCNC", …). Empty string by default; persisted into the project file + the `.ivac-machine.json` save/load files. */
             name?: string;
-            /** @description 4lq5: emit `M1` (optional stop) instead of `M0` (mandatory stop) at every program pause — both the `Pause` op and the manual (`ManualM0Pause`) tool-change halt. `M1` is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (the switch off skips the pauses) yet still stop on demand. Default `false` keeps the mandatory `M0`. */
+            /** @description Emit `M1` (optional stop) instead of `M0` (mandatory stop) at every program pause — both the `Pause` op and the manual (`ManualM0Pause`) tool-change halt. `M1` is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (the switch off skips the pauses) yet still stop on demand. Default `false` keeps the mandatory `M0`. */
             optional_stop?: boolean;
-            /** @description syol: when true, the `program_end` footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first. */
+            /** @description When true, the `program_end` footer adds a `G53 G0 X0 Y0` retract-to-machine-home before the spindle-off + M30 sequence. Most hobby controllers (`LinuxCNC`, Mach3) honor G53; GRBL accepts it from v1.1 onward. When false, falls back to a `G0 X0 Y0` in the current WCS (the work zero) — still safer than leaving the spindle parked over the part. Both modes lift to `fast_move_z` first. */
             park_at_home?: boolean;
-            /** @description syol: optional explicit park XY (mm, in WCS coordinates). When `Some`, the `program_end` footer routes the head to this point after the safe-Z lift, overriding the machine-home / work-zero fallback. Useful for a known tool-station / load-station that isn't (0, 0) in either frame. */
+            /** @description Optional explicit park XY (mm, in WCS coordinates). When `Some`, the `program_end` footer routes the head to this point after the safe-Z lift, overriding the machine-home / work-zero fallback. Useful for a known tool-station / load-station that isn't (0, 0) in either frame. */
             park_xy?: [
                 number,
                 number
             ] | null;
-            /** @description Plot-mode Z (rt1.35 / Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op's cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op's `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers. */
+            /** @description Plot-mode Z (Estlcam `c_PP.Z_Up_Dn)`: when true, the pipeline collapses every cut to ONE pass at the op's cut depth and skips the multi-step descent / ramp / helix machinery. Z values written into gcode are restricted to `fast_move_z` (pen up between cuts) and the op's `depth` (pen down on cut moves). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers. */
             plot_mode_z?: boolean;
-            /** @description hat3: how the post re-establishes the new tool's Z tip position after a tool change. A manual hand-swap leaves the new tool's length unknown; the default `PostChangeZStrategy::None` applies only the static per-tool `ToolEntry.z_shift_mm`, which assumes perfectly repeatable collet seating + pre-known lengths — false for most hobby swaps. Best practice re-measures Z after every change. Maps onto grblHAL `$341` modes / Estlcam's tool-measure policies. Applied by `emit_toolchange_envelope` to NON-first changes (the first tool is operator-loaded at program start); `None` keeps existing output byte-for-byte. */
+            /** @description How the post re-establishes the new tool's Z tip position after a tool change. A manual hand-swap leaves the new tool's length unknown; the default `PostChangeZStrategy::None` applies only the static per-tool `ToolEntry.z_shift_mm`, which assumes perfectly repeatable collet seating + pre-known lengths — false for most hobby swaps. Best practice re-measures Z after every change. Maps onto grblHAL `$341` modes / Estlcam's tool-measure policies. Applied by `emit_toolchange_envelope` to NON-first changes (the first tool is operator-loaded at program start); `None` keeps existing output byte-for-byte. */
             post_change_z?: components["schemas"]["PostChangeZStrategy"];
-            /** @description User-configurable post-processor profile (rt1.15). When `Some`, the built-in posts (linuxcnc / grbl) read its templates instead of emitting their hard-coded `program_start` / `program_end` / `tool_change` / coolant lines. `None` = hard-coded defaults. */
+            /** @description User-configurable post-processor profile. When `Some`, the built-in posts (linuxcnc / grbl) read its templates instead of emitting their hard-coded `program_start` / `program_end` / `tool_change` / coolant lines. `None` = hard-coded defaults. */
             post_profile?: components["schemas"]["PostProfile"] | null;
             /**
              * Format: double
@@ -571,12 +571,12 @@ export interface components {
             rapid_speed?: number | null;
             /**
              * Format: uint32
-             * @description 3nnj: upper bound on the spindle RPM the controller will accept. Tool / op RPMs above this clamp DOWN to the max and emit a `spindle_speed_clamped_above_max` warning. Without this clamp some controllers refuse the command mid-program; others silently cap and produce wrong chipload. `None` disables the ceiling (default, back-compat).
+             * @description Upper bound on the spindle RPM the controller will accept. Tool / op RPMs above this clamp DOWN to the max and emit a `spindle_speed_clamped_above_max` warning. Without this clamp some controllers refuse the command mid-program; others silently cap and produce wrong chipload. `None` disables the ceiling (default, back-compat).
              */
             spindle_rpm_max?: number | null;
             /**
              * Format: uint32
-             * @description 3nnj: lower bound on the spindle RPM the controller will accept. Tool / op RPMs below this clamp UP to the min and emit a `spindle_speed_clamped_below_min` warning. `None` disables the floor (default, back-compat).
+             * @description Lower bound on the spindle RPM the controller will accept. Tool / op RPMs below this clamp UP to the min and emit a `spindle_speed_clamped_below_min` warning. `None` disables the floor (default, back-compat).
              */
             spindle_rpm_min?: number | null;
             /**
@@ -586,11 +586,11 @@ export interface components {
             spindle_start_dwell_sec?: number | null;
             /**
              * Format: double
-             * @description Spindle-stop dwell (seconds) inserted into the M6 toolchange envelope between `M5` and the actual `T<n> M6`. Gives the spindle time to spin down before the chuck is touched. `None` (and the default `0.5 s`) covers most VFD-driven spindles; high-inertia big-iron may want 1–2 s. Set to `Some(0.0)` to skip entirely. See bd issues eaeq / m8sq / rwv8 / rfow.
+             * @description Spindle-stop dwell (seconds) inserted into the M6 toolchange envelope between `M5` and the actual `T<n> M6`. Gives the spindle time to spin down before the chuck is touched. `None` (and the default `0.5 s`) covers most VFD-driven spindles; high-inertia big-iron may want 1–2 s. Set to `Some(0.0)` to skip entirely.
              */
             spindle_stop_dwell_sec?: number | null;
             /**
-             * @description cb5y: tool-change strategy. See [`ToolChangeStrategy`]. A `supports_toolchange` serde alias also accepts the boolean form `true/false` via a bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).
+             * @description Tool-change strategy. See [`ToolChangeStrategy`]. A `supports_toolchange` serde alias also accepts the boolean form `true/false` via a bool-aware deserializer (`true → Atc`, `false → ManualM0Pause`).
              * @default manual_m0_pause
              */
             tool_change: components["schemas"]["ToolChangeStrategy"];
@@ -599,7 +599,7 @@ export interface components {
              * @description Tool-change time in seconds.
              */
             toolchange_s?: number;
-            /** @description ad0v: optional tool-change position (mm, in MACHINE coordinates). When `Some`, the toolchange envelope rapids the head here via `G53 G0 X<x> Y<y>` after the safe-Z lift and BEFORE the M0 / M6 pause, so a manual bit-swap happens at a fixed, reachable station instead of directly over the workpiece / clamps. MACHINE coords (not WCS like `park_xy`) because a tool-change station is a physical machine location independent of where the part zero sits — re-zeroing a job must not move the changer. Applies to both manual and ATC paths; on an ATC whose M6 macro homes to its own changer, leave this `None`. `None` (default) keeps the prior behavior: lift to `fast_move_z` only. Emitted via the post's `rapid_machine_xy`, which HPGL / pen posts drop. */
+            /** @description Optional tool-change position (mm, in MACHINE coordinates). When `Some`, the toolchange envelope rapids the head here via `G53 G0 X<x> Y<y>` after the safe-Z lift and BEFORE the M0 / M6 pause, so a manual bit-swap happens at a fixed, reachable station instead of directly over the workpiece / clamps. MACHINE coords (not WCS like `park_xy`) because a tool-change station is a physical machine location independent of where the part zero sits — re-zeroing a job must not move the changer. Applies to both manual and ATC paths; on an ATC whose M6 macro homes to its own changer, leave this `None`. `None` (default) keeps the prior behavior: lift to `fast_move_z` only. Emitted via the post's `rapid_machine_xy`, which HPGL / pen posts drop. */
             toolchange_xy?: [
                 number,
                 number
@@ -607,7 +607,7 @@ export interface components {
             unit: components["schemas"]["UnitSystem"];
             /** @description When true (the default), use the accel/jerk-aware integrator. Set to false for the legacy length/feed-only estimator. */
             use_kinematic_time_estimate?: boolean;
-            /** @description llkf: opt-in tool-length compensation via the controller's tool table. When `true` on an ATC machine (`tool_change == Atc`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can't run an M6 tool table. */
+            /** @description Opt-in tool-length compensation via the controller's tool table. When `true` on an ATC machine (`tool_change == Atc`), the toolchange envelope emits `G43 H<n>` after `T<n> M6` so the controller applies the pre-measured length for tool `<n>`, and SKIPS the static `z_shift` / `post_change_z` flow (mutually exclusive — G43 supersedes both). `program_end` cancels with `G49`. Default `false`: existing static-`z_shift` users are unaffected. Ignored on manual (non-ATC) machines, which can't run an M6 tool table. */
             use_tool_length_offsets?: boolean;
             /** @description Machine work area envelope in mm. Drives the stock's auto-mode fallback when no geometry is imported (the stock then sizes to the work-area XY footprint), and surfaces as the soft-limit reference in future sim warnings. Default 200×300×50 — a typical hobby gantry; users override in `MachineDialog`. */
             work_area?: components["schemas"]["AxisLimits"];
@@ -675,17 +675,17 @@ export interface components {
             enabled: boolean;
             /**
              * Format: uint32
-             * @description Optional finish tool id for dual-tool Pocket ops (rt1.33 / Estlcam TS slot). When `Some(id)` and `id != tool_id`, the pipeline emits a toolchange after the rough cascade and runs the wall-defining ring with the finish tool's geometry + finish-set feed/speed. When `None` or equal to `tool_id`, the op runs single-tool (current behavior).
+             * @description Optional finish tool id for dual-tool Pocket ops (Estlcam TS slot). When `Some(id)` and `id != tool_id`, the pipeline emits a toolchange after the rough cascade and runs the wall-defining ring with the finish tool's geometry + finish-set feed/speed. When `None` or equal to `tool_id`, the op runs single-tool (current behavior).
              */
             finish_tool_id?: number | null;
-            /** @description dp6b: optional group label. Consecutive enabled ops sharing the same value belong to the same logical phase ("rough", "finish", "drill cycle"), and the pipeline emits a `; === GROUP: <name> ===` comment at every boundary so the operator scrolling the gcode can see where each phase starts. Empty / `None` means the op carries no group and participates in no boundary line (a `Some("")` is treated the same as `None` at emit time). Defaults to `None` (no group). */
+            /** @description Optional group label. Consecutive enabled ops sharing the same value belong to the same logical phase ("rough", "finish", "drill cycle"), and the pipeline emits a `; === GROUP: <name> ===` comment at every boundary so the operator scrolling the gcode can see where each phase starts. Empty / `None` means the op carries no group and participates in no boundary line (a `Some("")` is treated the same as `None` at emit time). Defaults to `None` (no group). */
             group?: string | null;
             /** Format: uint32 */
             id: number;
             kind: components["schemas"]["OpKind"];
             name: string;
             params: components["schemas"]["OpParamsCommon"];
-            /** @description l8lk: pin this op's position when the program-level [`Project::group_ops_by_tool`] reorder is on. A pinned op — like any program-only op (Pause / Homing / …) — is a fixed barrier: it keeps its declared slot and the tool-grouping pass never moves another op across it. Use it to lock a stability-critical cut order (tabs, thin walls) while still grouping the rest of the program. Ignored when grouping is off. Defaults to `false` (unpinned). */
+            /** @description Pin this op's position when the program-level [`Project::group_ops_by_tool`] reorder is on. A pinned op — like any program-only op (Pause / Homing / …) — is a fixed barrier: it keeps its declared slot and the tool-grouping pass never moves another op across it. Use it to lock a stability-critical cut order (tabs, thin walls) while still grouping the rest of the program. Ignored when grouping is off. Defaults to `false` (unpinned). */
             pin_order?: boolean;
             source: components["schemas"]["OpSource"];
             /**
@@ -757,7 +757,7 @@ export interface components {
             chamfer_after_width_mm?: number | null;
             cycle: components["schemas"]["DrillCycle"];
             pattern?: components["schemas"]["PatternConfig"] | null;
-            /** @description r2af: optional spot/centerdrill pre-pass. When `Some`, the driver emits a shallow spot-drill block at every hole center BEFORE the main drill block. Twist drills walk on hard / polished stock — the spot dimple locks the chisel edge so the main drill plunges on-nominal instead of drifting by tip/2+. None ⇒ no spot pre-pass. */
+            /** @description Optional spot/centerdrill pre-pass. When `Some`, the driver emits a shallow spot-drill block at every hole center BEFORE the main drill block. Twist drills walk on hard / polished stock — the spot dimple locks the chisel edge so the main drill plunges on-nominal instead of drifting by tip/2+. None ⇒ no spot pre-pass. */
             spot_first?: components["schemas"]["SpotConfig"] | null;
             /** @enum {string} */
             type: "drill";
@@ -780,19 +780,19 @@ export interface components {
             pitch_mm: number;
             /**
              * Format: uint32
-             * @description sqnh: number of radial roughing passes from `start_radius` → final thread radius. Single helix at full engagement is too aggressive for hard materials; multi- pass schedules let the chipload soften. Default 1 (single-pass; backward-compatible). Each pass cuts a deeper helix at radius = `lerp(start_radius_frac` → 1.0, i/N).
+             * @description Number of radial roughing passes from `start_radius` → final thread radius. Single helix at full engagement is too aggressive for hard materials; multi- pass schedules let the chipload soften. Default 1 (single-pass; backward-compatible). Each pass cuts a deeper helix at radius = `lerp(start_radius_frac` → 1.0, i/N).
              * @default 1
              */
             radial_passes: number;
             /**
              * Format: double
-             * @description 6uns: starting angle of the helix in radians, measured CCW from the +X axis. Default 0 (helix starts at `(center.x + radius, center.y)`) — the pre-6uns behavior. Override to re-cut partial threads where the previous run stopped mid-helix; the new run can pick up where the last one left off.
+             * @description Starting angle of the helix in radians, measured CCW from the +X axis. Default 0 (helix starts at `(center.x + radius, center.y)`) — the historical behavior. Override to re-cut partial threads where the previous run stopped mid-helix; the new run can pick up where the last one left off.
              * @default 0
              */
             start_angle_rad: number;
             /**
              * Format: double
-             * @description mniu: radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter's radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud's flank by `thread_depth`).
+             * @description Radial thread depth (single-flank, mm). For an ISO metric 60° thread the canonical depth is `0.6495 × pitch_mm` (H × 5/8 where H = pitch × √3/2). The driver applies this as the cutter's radial bite past the source-circle radius: * internal: cutter outer edge sits at `bore_radius + thread_depth` (engages the wall by `thread_depth`), * external: cutter inner edge sits at `stud_radius - thread_depth` (cuts the stud's flank by `thread_depth`).
              *
              *     `None` ⇒ ISO 60° default. Set explicitly for non-ISO thread forms (UN, Whitworth, ACME, …). Older serialized projects without this field deserialize as `None` and pick up the ISO default at planning time — backward compatible.
              */
@@ -801,7 +801,7 @@ export interface components {
             type: "thread";
         } | {
             /**
-             * @description When `true`, the chamfer is cut twice — once at the rough feed (cleanup) and once at the tool's finish-set feed (rt1.27) for surface quality. Default `false`.
+             * @description When `true`, the chamfer is cut twice — once at the rough feed (cleanup) and once at the tool's finish-set feed for surface quality. Default `false`.
              * @default false
              */
             finish_pass: boolean;
@@ -962,7 +962,7 @@ export interface components {
             /** @enum {string} */
             type: "gcode_include";
             /**
-             * @description xi2g: when `true`, fan out one `gcode_include_unsim_line` warning per skipped line in addition to the `gcode_include_lines_skipped` summary. Off by default so the warnings panel doesn't drown on a multi-skip block; power users debugging an exotic canned cycle flip this on to see exactly which lines were skipped and why.
+             * @description When `true`, fan out one `gcode_include_unsim_line` warning per skipped line in addition to the `gcode_include_lines_skipped` summary. Off by default so the warnings panel doesn't drown on a multi-skip block; power users debugging an exotic canned cycle flip this on to see exactly which lines were skipped and why.
              * @default false
              */
             verbose_unsim_warnings: boolean;
@@ -1058,14 +1058,14 @@ export interface components {
          *
          *     - Closed-contour params (tabs, leads, cut direction, approach point, corner-feed) → [`ContourParams`] - Pocket cascade / islands / Pocket-Outside frame → [`PocketParams`] - Profile overcut / reverse / helix → [`ProfileParams`] - V-Carve cap / second-pass → [`VCarveParams`] - Drill Stufenfase chamfer width → [`super::op::OpKind::Drill`]
          *
-         *     (kbx5 step 3: the flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
+         *     (The flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
          */
         OpParams: {
             /**
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
              *
-             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+             *     `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
              * @default 0
              */
             depth: number;
@@ -1075,7 +1075,7 @@ export interface components {
              * Format: double
              * @description Z for rapid moves between cuts.
              *
-             *     4dxb: defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
+             *     Defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
              * @default 0
              */
             fast_move_z: number;
@@ -1105,7 +1105,7 @@ export interface components {
              * Format: double
              * @description Z at which the first pass starts.
              *
-             *     4dxb: same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
+             *     Same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
              * @default 0
              */
             start_depth: number;
@@ -1116,7 +1116,7 @@ export interface components {
             step?: number | null;
             /**
              * Format: double
-             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default).
+             * @description Leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default).
              */
             stock_to_leave_mm?: number;
             /**
@@ -1130,14 +1130,14 @@ export interface components {
          *
          *     - Closed-contour params (tabs, leads, cut direction, approach point, corner-feed) → [`ContourParams`] - Pocket cascade / islands / Pocket-Outside frame → [`PocketParams`] - Profile overcut / reverse / helix → [`ProfileParams`] - V-Carve cap / second-pass → [`VCarveParams`] - Drill Stufenfase chamfer width → [`super::op::OpKind::Drill`]
          *
-         *     (kbx5 step 3: the flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
+         *     (The flat-junk-drawer `OpParams` was reduced to this common struct after readers and writers all moved to the variant structs.)
          */
         OpParamsCommon: {
             /**
              * Format: double
              * @description Final cut depth (negative number — a depth, not a height).
              *
-             *     4dxb: `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
+             *     `#[serde(default)]` so program-only ops (Pause, Homing, Probe, `CycleMarker`, `GcodeInclude`) — which have no meaningful depth schedule and whose FE constructors omit the field — deserialize without a "missing field `depth`" error. Cutting ops always emit the field explicitly; this default only fires for program-only ops whose params bag is ignored anyway.
              * @default 0
              */
             depth: number;
@@ -1147,7 +1147,7 @@ export interface components {
              * Format: double
              * @description Z for rapid moves between cuts.
              *
-             *     4dxb: defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
+             *     Defaulted to 0.0 alongside the other two universal scalars. Program-only ops never use this; cutting ops always emit it explicitly.
              * @default 0
              */
             fast_move_z: number;
@@ -1177,7 +1177,7 @@ export interface components {
              * Format: double
              * @description Z at which the first pass starts.
              *
-             *     4dxb: same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
+             *     Same rationale as `depth` — defaulted to 0.0 so program-only ops decode cleanly.
              * @default 0
              */
             start_depth: number;
@@ -1188,7 +1188,7 @@ export interface components {
             step?: number | null;
             /**
              * Format: double
-             * @description 1mlv: leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default).
+             * @description Leave this much XY stock unmachined on every wall (Profile inside/outside cascade, Pocket cascade). Positive number — the cutter stays this far away from the geometric wall, so a later finishing pass (different tool / op) can clean it up. Differs from `PocketParams.finish_xy_allowance_mm` which is Pocket-only and triggers an extra contour pass; `stock_to_leave_mm` applies to ALL offset-cascade ops and is the universal "rough leaves material" knob. 0.0 = cutter walks the geometric wall (the default).
              */
             stock_to_leave_mm?: number;
             /**
@@ -1294,11 +1294,11 @@ export interface components {
             nocontour: boolean;
             zigzag: boolean;
         };
-        /** @description Parameters specific to [`super::op::OpKind::Pocket`]. (kbx5 step 1.) */
+        /** @description Parameters specific to [`super::op::OpKind::Pocket`]. */
         PocketParams: {
             /**
              * Format: double
-             * @description XY stock allowance left uncut by roughing (rt1.24).
+             * @description XY stock allowance left uncut by roughing.
              */
             finish_xy_allowance_mm?: number | null;
             /**
@@ -1384,7 +1384,7 @@ export interface components {
             segments: components["schemas"]["Segment"][];
             /** Format: uint */
             source_object_idx: number;
-            /** @description Tab positions (data-space XY) the cutter should lift over while cutting this offset. Frontend places these via mtm.10; the gcode emitter splits the cut at each crossing and lifts Z to tabs.height. */
+            /** @description Tab positions (data-space XY) the cutter should lift over while cutting this offset. Frontend places these via the tab-placement UI; the gcode emitter splits the cut at each crossing and lifts Z to tabs.height. */
             tabs?: components["schemas"]["TabPoint"][];
         };
         Pose3: {
@@ -1395,7 +1395,7 @@ export interface components {
             /** Format: double */
             z: number;
         };
-        /** @description hat3: post-tool-change Z re-establish strategy. Internally tagged (`{"mode": "...", ...}`) like [`PlungeStrategy`], so adding a variant is additive in the schema. */
+        /** @description Post-tool-change Z re-establish strategy. Internally tagged (`{"mode": "...", ...}`) like [`PlungeStrategy`], so adding a variant is additive in the schema. */
         PostChangeZStrategy: {
             /** @enum {string} */
             mode: "none";
@@ -1450,7 +1450,7 @@ export interface components {
         PostProcessorKind: "linuxcnc" | "grbl" | "hpgl";
         /** @description A named bundle of override templates the user attaches to a machine config. Any field left at `None` keeps the built-in emitter's default behavior. The active variant of `PostProcessorKind` is unaffected — ivac's linuxcnc / grbl / hpgl emitters continue to drive line-level formatting (delta encoding, arc fitting, drill cycles). The profile only swaps the PROGRAM-LEVEL strings. */
         PostProfile: {
-            /** @description Per-axis output format (hev). When set, replaces the hard-coded `X{val} Y{val} Z{val}` / `I{val} J{val}` / `F{rate}` / `S{rpm}` emission with the user's axis names + printf-ish format + scale, with per-axis enable so disabled axes drop out entirely. */
+            /** @description Per-axis output format. When set, replaces the hard-coded `X{val} Y{val} Z{val}` / `I{val} J{val}` / `F{rate}` / `S{rpm}` emission with the user's axis names + printf-ish format + scale, with per-axis enable so disabled axes drop out entirely. */
             axes?: components["schemas"]["AxesConfig"] | null;
             coolant_flood_off?: string | null;
             /** @description `COOLANT_FLOOD` ON / OFF templates. Replace `M8` / `M9`. */
@@ -1460,10 +1460,10 @@ export interface components {
             coolant_mist_on?: string | null;
             /**
              * Format: uint8
-             * @description tsay: decimal places used by `fmt_num` when the project is in Inch mode. The default of 4 (i.e. 0.0001 in = 0.00254 mm) is borderline for sub-mil work — shops authoring in tenths or micro-inches want 5 or 6. `None` ⇒ keep the 4-decimal default. The mm path is untouched: it stays at 4 decimals (0.0001 mm = 0.1 µm) which is already finer than any realistic CNC repeats.
+             * @description Decimal places used by `fmt_num` when the project is in Inch mode. The default of 4 (i.e. 0.0001 in = 0.00254 mm) is borderline for sub-mil work — shops authoring in tenths or micro-inches want 5 or 6. `None` ⇒ keep the 4-decimal default. The mm path is untouched: it stays at 4 decimals (0.0001 mm = 0.1 µm) which is already finer than any realistic CNC repeats.
              */
             decimal_places_inch?: number | null;
-            /** @description nxn0: dwell-word unit for G82/G83/G73 P-values and G4 P. `LinuxCNC` reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (`LinuxCNC` default). */
+            /** @description Dwell-word unit for G82/G83/G73 P-values and G4 P. `LinuxCNC` reads `P` in SECONDS; Mach3 / Mach4 / Centroid / many Fanuc-derived posts read `P` in MILLISECONDS. Emit-time scaling lives at the post boundary so the pipeline keeps passing seconds and the post multiplies by 1000 for ms posts. `None` ⇒ Seconds (`LinuxCNC` default). */
             dwell_unit?: components["schemas"]["DwellUnit"] | null;
             /** @description File extension for save-to-disk (no leading dot). Default `"nc"`. Mach3 commonly uses `"tap"`, GRBL stays `"nc"`. */
             file_extension?: string | null;
@@ -1518,11 +1518,11 @@ export interface components {
             power: number;
         };
         /**
-         * @description 8n4k: axis selector for `OpKind::Probe`. Serializes as the bare lowercase letter (`"x"` / `"y"` / `"z"`) for a wire-friendly payload that drops straight into the G38.2 word.
+         * @description Axis selector for `OpKind::Probe`. Serializes as the bare lowercase letter (`"x"` / `"y"` / `"z"`) for a wire-friendly payload that drops straight into the G38.2 word.
          * @enum {string}
          */
         ProbeAxis: "x" | "y" | "z";
-        /** @description Parameters specific to [`super::op::OpKind::Profile`]. (kbx5 step 1.) */
+        /** @description Parameters specific to [`super::op::OpKind::Profile`]. */
         ProfileParams: {
             /**
              * @description Helical descent inside a closed contour.
@@ -1543,24 +1543,24 @@ export interface components {
         Project: {
             /** @description Fixtures (clamps, dogs, vise jaws, hold-downs) the cutter must avoid throughout the entire program — including rapids. The sim pass tests every toolpath segment against this set and emits `SimWarning::FixtureCollision` on overlap. Default empty: a project with no fixtures behaves exactly as before. */
             fixtures?: components["schemas"]["Fixture"][];
-            /** @description l8lk: when `true`, the pipeline runs an optional tool-change-order optimization that groups consecutive same-tool work so a `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change instead of two. Matters most on manual machines, where every swap is minutes + a re-probe + operator-error risk. The reorder is barrier-aware: program-only ops (Pause / Homing / …) and any op with [`Op::pin_order`] stay put and nothing moves across them, so a deliberate cut order (tabs, thin walls) is preserved. `false` (default) keeps the declared op order unchanged. See `order_ops_by_tool` in the pipeline. */
+            /** @description When `true`, the pipeline runs an optional tool-change-order optimization that groups consecutive same-tool work so a `T1 / T2 / T1` program emits `T1, T1, T2` with ONE tool change instead of two. Matters most on manual machines, where every swap is minutes + a re-probe + operator-error risk. The reorder is barrier-aware: program-only ops (Pause / Homing / …) and any op with [`Op::pin_order`] stay put and nothing moves across them, so a deliberate cut order (tabs, thin walls) is preserved. `false` (default) keeps the declared op order unchanged. See `order_ops_by_tool` in the pipeline. */
             group_ops_by_tool?: boolean;
             machine: components["schemas"]["MachineConfig"];
             operations: components["schemas"]["Op"][];
-            /** @description f60x: relief / 3-axis surfacing sources — the target Z(x,y) surfaces that [`OpKind::ReliefMill`] ops finish. Stored at project level (like `text_layers`) and referenced by `source_id`, not embedded in the op, because a surface grid is large and ops get cloned + hashed. Each carries a normalized-brightness grid; the op maps it to Z at planning time. Default empty: projects with no relief ops are unchanged. */
+            /** @description Relief / 3-axis surfacing sources — the target Z(x,y) surfaces that [`OpKind::ReliefMill`] ops finish. Stored at project level (like `text_layers`) and referenced by `source_id`, not embedded in the op, because a surface grid is large and ops get cloned + hashed. Each carries a normalized-brightness grid; the op maps it to Z at planning time. Default empty: projects with no relief ops are unchanged. */
             relief_sources?: components["schemas"]["ReliefSource"][];
             /** @description Imported geometry — the same `segments` the existing pipeline consumes. We keep it inline rather than referencing it by id so the project file is self-contained. */
             segments: components["schemas"]["Segment"][];
-            /** @description vrrr: physical stock envelope, resolved to an axis-aligned box in the geometry frame. The frontend derives this from its auto/manual stock UI (margin / custom dims / offset) via `computeFootprint` and sends the resolved box; a CLI / server consumer sets the dimensions directly. `None` (default) skips the `out_of_stock` scan, so a transport that doesn't model stock simply gets no out-of-stock checks. The stock top sits at z = 0 (the WCS / geometry origin plane); the body extends downward by `thickness_mm`. */
+            /** @description Physical stock envelope, resolved to an axis-aligned box in the geometry frame. The frontend derives this from its auto/manual stock UI (margin / custom dims / offset) via `computeFootprint` and sends the resolved box; a CLI / server consumer sets the dimensions directly. `None` (default) skips the `out_of_stock` scan, so a transport that doesn't model stock simply gets no out-of-stock checks. The stock top sits at z = 0 (the WCS / geometry origin plane); the body extends downward by `thickness_mm`. */
             stock?: components["schemas"]["StockConfig"] | null;
             /** @description First-class editable text entities — content / font / size / position / rotation / spacing. The pipeline pre-pass renders each `TextLayer` to segments before any op runs so the existing `Engrave` (and friends) op can target the rendered geometry by layer name `__text_<id>`. Edits to a `TextLayer` re-run the pipeline; cache keys include `text_layers` content. */
             text_layers?: components["schemas"]["TextLayer"][];
             tools: components["schemas"]["ToolEntry"][];
-            /** @description i5g4 (MVP): explicit work-offset between the geometry frame (where the DXF / SVG was drawn) and the gcode WCS origin (where the user zeros the spindle on the real machine). All zeros (default) means "geometry origin = WCS origin". Full G54..G59 + per-fixture origins are a future feature; this field gives a single offset the sim and the WCS warning consult. Persisted into project files; legacy files lacking the field default to zeros and behave exactly as before. */
+            /** @description Explicit work-offset (MVP) between the geometry frame (where the DXF / SVG was drawn) and the gcode WCS origin (where the user zeros the spindle on the real machine). All zeros (default) means "geometry origin = WCS origin". Full G54..G59 + per-fixture origins are a future feature; this field gives a single offset the sim and the WCS warning consult. Persisted into project files; legacy files lacking the field default to zeros and behave exactly as before. */
             work_offset?: components["schemas"]["WorkOffset"];
         };
         /**
-         * @description 50eq: which part of the tool struck stock during a rapid — the flutes/tip (the typical "rapid past retract plane" failure) or the shank/holder (broken-collet scenario: cutter tip is in air but the shank drags through tall walls).
+         * @description Which part of the tool struck stock during a rapid — the flutes/tip (the typical "rapid past retract plane" failure) or the shank/holder (broken-collet scenario: cutter tip is in air but the shank drags through tall walls).
          * @enum {string}
          */
         RapidCollisionSubkind: "tip" | "shank";
@@ -1573,7 +1573,7 @@ export interface components {
             op_id: number;
             outer: components["schemas"]["Point2"][];
         };
-        /** @description f60x: a target surface source for relief / ball-nose surfacing. Holds a row-major normalized-brightness grid (each value in `[0, 1]`) plus its world placement; the depth mapping (brightness → Z) lives on the [`OpKind::ReliefMill`] op so the user can retune depth without re-uploading the image. The first producer (f60x-D) decodes a grayscale image frontend-side; a future STL rasterizer would populate the same grid. The driver turns it into a [`crate::cam::surface::SurfaceField`] via `SurfaceField::from_grayscale`. */
+        /** @description A target surface source for relief / ball-nose surfacing. Holds a row-major normalized-brightness grid (each value in `[0, 1]`) plus its world placement; the depth mapping (brightness → Z) lives on the [`OpKind::ReliefMill`] op so the user can retune depth without re-uploading the image. The first producer decodes a grayscale image frontend-side; a future STL rasterizer would populate the same grid. The driver turns it into a [`crate::cam::surface::SurfaceField`] via `SurfaceField::from_grayscale`. */
         ReliefSource: {
             /** @description Row-major normalized brightness in `[0, 1]`. Length must be `cols * rows`. */
             brightness: number[];
@@ -1612,7 +1612,7 @@ export interface components {
              * @default 7
              */
             color: number;
-            /** @description The font file as bytes (TTF / OTF). Marshalled as a base64 string on the wire (see [`font_bytes_b64`]) — compact and cheap to pass across HTTP / Tauri / WASM, where the live preview re-sends it on every debounced render (dya2). Deserialize still accepts the legacy integer-array form for back-compat. */
+            /** @description The font file as bytes (TTF / OTF). Marshalled as a base64 string on the wire (see [`font_bytes_b64`]) — compact and cheap to pass across HTTP / Tauri / WASM, where the live preview re-sends it on every debounced render. Deserialize still accepts the legacy integer-array form for back-compat. */
             font_bytes: string;
             /** Format: double */
             height_mm: number;
@@ -1637,7 +1637,7 @@ export interface components {
         /**
          * @description A flat LINE/ARC primitive. ARC geometry is encoded as the bulge between `start` and `end` (bulge = `tan(included_angle / 4)`).
          *
-         *     `layer` is `Arc<str>` rather than `String` (jzpl Phase 2). A typical DXF has thousands of segments across a handful of layer names — the Arc lets every segment on the same layer share one allocation. Clone becomes a refcount bump; serde + `JsonSchema` treat it as a normal string on the wire.
+         *     `layer` is `Arc<str>` rather than `String`. A typical DXF has thousands of segments across a handful of layer names — the Arc lets every segment on the same layer share one allocation. Clone becomes a refcount bump; serde + `JsonSchema` treat it as a normal string on the wire.
          */
         Segment: {
             /**
@@ -1666,7 +1666,7 @@ export interface components {
             pockets: components["schemas"]["PocketConfig"];
             tabs: components["schemas"]["TabsConfig"];
             tool: components["schemas"]["ToolConfig"];
-            /** @description e2mq: program-active work coordinate system. Threaded in from `Project.work_offset.wcs` by the pipeline `setup_resolver` / `header_setup_for` builders. The post's `program_begin` emits the explicit `G54..G59` from this and pins the same value into `PostState.wcs` so `tool_z_shift` writes its `G10 L20 P<n>` against the *active* WCS (P1=G54, …, P6=G59), not a hardcoded P1. Defaults to G54 — back-compat for projects that don't set `work_offset.wcs`. */
+            /** @description Program-active work coordinate system. Threaded in from `Project.work_offset.wcs` by the pipeline `setup_resolver` / `header_setup_for` builders. The post's `program_begin` emits the explicit `G54..G59` from this and pins the same value into `PostState.wcs` so `tool_z_shift` writes its `G10 L20 P<n>` against the *active* WCS (P1=G54, …, P6=G59), not a hardcoded P1. Defaults to G54 — back-compat for projects that don't set `work_offset.wcs`. */
             wcs?: components["schemas"]["Wcs"];
         };
         SimDiagnostics: {
@@ -1682,7 +1682,7 @@ export interface components {
             /** Format: uint */
             segment_idx: number;
             /**
-             * @description 50eq: defaults to `Tip` so older serialized warnings deserialize cleanly. `Shank` flags shank/holder hits — the broken-collet G0-through-stock pattern.
+             * @description Defaults to `Tip` so older serialized warnings deserialize cleanly. `Shank` flags shank/holder hits — the broken-collet G0-through-stock pattern.
              * @default tip
              */
             subkind: components["schemas"]["RapidCollisionSubkind"];
@@ -1704,7 +1704,7 @@ export interface components {
             /** Format: uint */
             segment_idx: number;
         } | {
-            /** @description 24ht: every cell that exceeded the holder envelope on this segment, sorted worst-first. Element 0 mirrors `worst_x/worst_y/wall_z/required_clearance_mm` for back-compat callers that only need the worst cell. Older serialized warnings without this field deserialize to an empty vec via `serde(default)`. */
+            /** @description Every cell that exceeded the holder envelope on this segment, sorted worst-first. Element 0 mirrors `worst_x/worst_y/wall_z/required_clearance_mm` for back-compat callers that only need the worst cell. Older serialized warnings without this field deserialize to an empty vec via `serde(default)`. */
             cells?: components["schemas"]["HolderCollisionCell"][];
             /** @enum {string} */
             kind: "holder_collision";
@@ -1738,12 +1738,12 @@ export interface components {
             line: number;
         };
         /**
-         * @description z1y0: per-tool spindle direction — right-hand (`Cw`, M3) for the 99% of cutters, left-hand (`Ccw`, M4) for reverse-thread / mirror /-helix tooling. Mirrored into `ToolConfig.spindle_direction` at synth time so the gcode emitter can route between `spindle_cw` and `spindle_ccw` without reaching back into the tool library.
+         * @description Per-tool spindle direction — right-hand (`Cw`, M3) for the 99% of cutters, left-hand (`Ccw`, M4) for reverse-thread / mirror /-helix tooling. Mirrored into `ToolConfig.spindle_direction` at synth time so the gcode emitter can route between `spindle_cw` and `spindle_ccw` without reaching back into the tool library.
          * @enum {string}
          */
         SpindleDirection: "cw" | "ccw";
         /**
-         * @description r2af: spot / centerdrill pre-pass config attached to [`OpKind::Drill::spot_first`]. The driver emits a shallow drill block at every hole center BEFORE the main drill block, using the named spot tool. Hardens hole position on hard / polished stock where a twist drill's chisel edge would otherwise walk until it scratched a divot — costing 0.1–0.5 mm of positional accuracy.
+         * @description Spot / centerdrill pre-pass config attached to [`OpKind::Drill::spot_first`]. The driver emits a shallow drill block at every hole center BEFORE the main drill block, using the named spot tool. Hardens hole position on hard / polished stock where a twist drill's chisel edge would otherwise walk until it scratched a divot — costing 0.1–0.5 mm of positional accuracy.
          *
          *     Wire format: `{ "spot_depth_mm": -0.5, "spot_tool_id": 7 }`. `spot_depth_mm` is negative (depth below stock); positive values are clamped to 0 at emit time (= a no-op spot). The spot block uses `DrillCycle::Simple { dwell_sec: 0 }` regardless of the main op's cycle — pecking on a 0.5 mm spot is pointless.
          */
@@ -1759,7 +1759,7 @@ export interface components {
              */
             spot_tool_id: number;
         };
-        /** @description vrrr: resolved stock box. See [`Project::stock`]. Kept deliberately thin — the auto/manual/margin derivation lives frontend-side (it's a UI convenience for sizing the box to imported geometry); the core only needs the final axis-aligned envelope for the `out_of_stock` scan (and, in future, stock-aware sim / rapid / holder checks). */
+        /** @description Resolved stock box. See [`Project::stock`]. Kept deliberately thin — the auto/manual/margin derivation lives frontend-side (it's a UI convenience for sizing the box to imported geometry); the core only needs the final axis-aligned envelope for the `out_of_stock` scan (and, in future, stock-aware sim / rapid / holder checks). */
         StockConfig: {
             /**
              * Format: double
@@ -1781,7 +1781,7 @@ export interface components {
             thickness_mm: number;
             /**
              * Format: double
-             * @description ya00: Z of the stock TOP plane (mm) in the WCS frame. Default 0 ⇒ the top sits at the WCS origin plane (the legacy assumption), body extending down to `-thickness_mm`. A non-zero value models zeroing the machine somewhere other than the stock top (e.g. on the bed, `top_z_mm = +thickness`); the `out_of_stock` scan and the sim heightmap shift with it. Distinct from `WorkOffset::z_mm` (which moves the WCS origin relative to the geometry) — this moves the stock material relative to that origin.
+             * @description Z of the stock TOP plane (mm) in the WCS frame. Default 0 ⇒ the top sits at the WCS origin plane (the legacy assumption), body extending down to `-thickness_mm`. A non-zero value models zeroing the machine somewhere other than the stock top (e.g. on the bed, `top_z_mm = +thickness`); the `out_of_stock` scan and the sim heightmap shift with it. Distinct from `WorkOffset::z_mm` (which moves the WCS origin relative to the geometry) — this moves the stock material relative to that origin.
              */
             top_z_mm?: number;
             /**
@@ -1790,7 +1790,7 @@ export interface components {
              */
             width_mm: number;
         };
-        /** @description A user-placed tab anchored geometry-relative (rt1.10). The `object_id` is 1-based to match `OpSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms. */
+        /** @description A user-placed tab anchored geometry-relative. The `object_id` is 1-based to match `OpSource::Objects::ids`; `t ∈ [0, 1)` is the arc-length parameter along the chained object's segments. `cam/tabs.rs::polyline_at_t` resolves the parameter to a world point at gcode-emission time, so the tab follows the geometry through transforms. */
         TabPlacement: {
             /**
              * Format: double
@@ -1807,7 +1807,7 @@ export interface components {
              */
             width_override_mm?: number | null;
         };
-        /** @description How an op sources tab positions (rt1.10). */
+        /** @description How an op sources tab positions. */
         TabPlacementMode: {
             /** @enum {string} */
             kind: "off";
@@ -1833,7 +1833,7 @@ export interface components {
             height_override_mm?: number | null;
             /**
              * Format: double
-             * @description Per-tab width override (mm). When `Some`, this tab uses the override; when `None`, falls back to the op-level setup width (`setup.tabs.width`). Audit 3wv: was hashed into the cache key but never consumed by `emit_path_with_tabs` — toggling overrides produced identical output. Now drives the per-tab crossing radius + zone half-width.
+             * @description Per-tab width override (mm). When `Some`, this tab uses the override; when `None`, falls back to the op-level setup width (`setup.tabs.width`). Audit finding: was hashed into the cache key but never consumed by `emit_path_with_tabs` — toggling overrides produced identical output. Now drives the per-tab crossing radius + zone half-width.
              */
             width_override_mm?: number | null;
             /** Format: double */
@@ -1869,7 +1869,7 @@ export interface components {
         TextLayer: {
             /** @default left */
             alignment: components["schemas"]["TextAlignment"];
-            /** @description TTF/OTF font as a byte vector. Marshalled as a base64 string on the wire (see [`crate::input::text::font_bytes_b64`]) — matches the [`crate::input::text::RenderTextRequest`] convention and keeps the live-preview re-send cheap (dya2). Deserialize still accepts the legacy integer-array form so older project files load unchanged. */
+            /** @description TTF/OTF font as a byte vector. Marshalled as a base64 string on the wire (see [`crate::input::text::font_bytes_b64`]) — matches the [`crate::input::text::RenderTextRequest`] convention and keeps the live-preview re-send cheap. Deserialize still accepts the legacy integer-array form so older project files load unchanged. */
             font_bytes: string;
             /** Format: uint32 */
             id: number;
@@ -1918,7 +1918,7 @@ export interface components {
             cut_s: number;
             /**
              * Format: double
-             * @description kg13: total time spent in explicit G4 P-seconds / X-seconds pauses (drill dwell, finishing dwell, etc.). Distinct from `toolchange_s` (M6 timing) and `spindle_warmup_s` (per-tool pause). Older serialized estimates without this field deserialize as `0.0`.
+             * @description Total time spent in explicit G4 P-seconds / X-seconds pauses (drill dwell, finishing dwell, etc.). Distinct from `toolchange_s` (M6 timing) and `spindle_warmup_s` (per-tool pause). Older serialized estimates without this field deserialize as `0.0`.
              * @default 0
              */
             dwell_s: number;
@@ -1935,25 +1935,25 @@ export interface components {
             /** Format: double */
             total_s: number;
         };
-        /** @description cb5y: how the post-processor handles a tool change at an op boundary. Widened from the historical `supports_toolchange: bool` because the two *manual* behaviors need different emission: grblHAL / FluidNC accept `M6` as a prompt (the controller parks, prompts the operator, and can run a semi-automatic tool-length probe), while stock GRBL / Marlin reject `M6` (`error:20`) and must fall back to a portable `M0` program pause. Serde also accepts a plain bool via [`deserialize_toolchange`] (`true → Atc`, `false → ManualM0Pause`). */
+        /** @description How the post-processor handles a tool change at an op boundary. Widened from the historical `supports_toolchange: bool` because the two *manual* behaviors need different emission: grblHAL / FluidNC accept `M6` as a prompt (the controller parks, prompts the operator, and can run a semi-automatic tool-length probe), while stock GRBL / Marlin reject `M6` (`error:20`) and must fall back to a portable `M0` program pause. Serde also accepts a plain bool via [`deserialize_toolchange`] (`true → Atc`, `false → ManualM0Pause`). */
         ToolChangeStrategy: "atc" | "manual_m6_prompt" | "manual_m0_pause" | "ignore";
         ToolConfig: {
             /**
              * Format: double
-             * @description zpuk: plasma cut height (mm above stock top). Generally smaller than `pierce_height_mm`. Resolved from [`crate::project::ToolEntry::cut_height_mm`] at synth time; 0.0 ⇒ defaults to 1.5 mm at emit time.
+             * @description Plasma cut height (mm above stock top). Generally smaller than `pierce_height_mm`. Resolved from [`crate::project::ToolEntry::cut_height_mm`] at synth time; 0.0 ⇒ defaults to 1.5 mm at emit time.
              * @default 0
              */
             cut_height_mm: number;
             /**
              * Format: double
-             * @description Per-tool default XY overlap (dr5). Resolved from [`crate::project::ToolEntry::default_xy_overlap`] at synth time; `None` = no tool-level default, fall through to global 0.5.
+             * @description Per-tool default XY overlap. Resolved from [`crate::project::ToolEntry::default_xy_overlap`] at synth time; `None` = no tool-level default, fall through to global 0.5.
              */
             default_xy_overlap?: number | null;
             /** Format: double */
             diameter: number;
             /**
              * Format: double
-             * @description 0t9o: drag-knife self-alignment threshold in radians. The walk emitter skips the swivel + linear pre-move whenever the corner's tangent change is below this threshold — real drag knives self-align below ~30° via the trailing offset. Resolved from [`crate::project::ToolEntry::drag_knife_self_align_angle_deg`] at synth time. 0.0 forces the legacy "swivel every corner" behaviour; the default 30° is applied in setup synthesis.
+             * @description Drag-knife self-alignment threshold in radians. The walk emitter skips the swivel + linear pre-move whenever the corner's tangent change is below this threshold — real drag knives self-align below ~30° via the trailing offset. Resolved from [`crate::project::ToolEntry::drag_knife_self_align_angle_deg`] at synth time. 0.0 forces the legacy "swivel every corner" behaviour; the default 30° is applied in setup synthesis.
              * @default 0
              */
             drag_self_align_angle_rad: number;
@@ -1965,7 +1965,7 @@ export interface components {
             flood: boolean;
             mist: boolean;
             /**
-             * @description User-facing tool name, for token substitution in post-profile templates (rt1.15 `<n>`). Empty by default.
+             * @description User-facing tool name, for token substitution in post-profile templates (`<n>`). Empty by default.
              * @default
              */
             name: string;
@@ -1978,19 +1978,19 @@ export interface components {
             pause: number;
             /**
              * Format: double
-             * @description zpuk: plasma pierce delay in seconds — torch dwells at `pierce_height` while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.
+             * @description Plasma pierce delay in seconds — torch dwells at `pierce_height` while the arc pierces. Resolved from [`crate::project::ToolEntry::pierce_delay_sec`] at synth time; 0.0 ⇒ defaults to 0.5 s at emit time.
              * @default 0
              */
             pierce_delay_sec: number;
             /**
              * Format: double
-             * @description zpuk: plasma pierce height in mm (above stock top). The cut emitter does a rapid to this Z, dwells `pierce_delay_sec`, then plunges to `cut_height_mm` for the actual cut. Resolved from [`crate::project::ToolEntry::pierce_height_mm`] at synth time; 0.0 ⇒ plasma defaults at emit time (3.8 mm). Only honored when `setup.machine.mode == MachineMode::Plasma`.
+             * @description Plasma pierce height in mm (above stock top). The cut emitter does a rapid to this Z, dwells `pierce_delay_sec`, then plunges to `cut_height_mm` for the actual cut. Resolved from [`crate::project::ToolEntry::pierce_height_mm`] at synth time; 0.0 ⇒ plasma defaults at emit time (3.8 mm). Only honored when `setup.machine.mode == MachineMode::Plasma`.
              * @default 0
              */
             pierce_height_mm: number;
             /**
              * Format: double
-             * @description Laser pierce time (rt1.29) — seconds to dwell after laser-on before each plunge so the beam burns through stock. Resolved from `ToolEntry.laser_pierce_sec` at synth time; 0 = no pierce dwell.
+             * @description Laser pierce time — seconds to dwell after laser-on before each plunge so the beam burns through stock. Resolved from `ToolEntry.laser_pierce_sec` at synth time; 0 = no pierce dwell.
              * @default 0
              */
             pierce_sec: number;
@@ -2025,7 +2025,7 @@ export interface components {
              */
             speed_finish: number;
             /**
-             * @description z1y0: spindle direction for this tool (`Cw` → M3, `Ccw` → M4). Mirrored from `ToolEntry.spindle_direction` at synth time so the gcode emitter can route between `post.spindle_cw` / `post.spindle_ccw` without reaching back into the tool library. Defaults to `Cw` (M3).
+             * @description Spindle direction for this tool (`Cw` → M3, `Ccw` → M4). Mirrored from `ToolEntry.spindle_direction` at synth time so the gcode emitter can route between `post.spindle_cw` / `post.spindle_ccw` without reaching back into the tool library. Defaults to `Cw` (M3).
              * @default cw
              */
             spindle_direction: components["schemas"]["SpindleDirection"];
@@ -2043,7 +2043,7 @@ export interface components {
             tip_diameter_mm: number;
             /**
              * Format: double
-             * @description ot80: V-Carve lead-in ramp angle (degrees from horizontal). Resolved from [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`] at synth time; clamped to (0°, 90°). 0.0 ⇒ inherit the legacy 10° default at emit time inside [`crate::cam::vcarve_emit::ratchet_emit`].
+             * @description V-Carve lead-in ramp angle (degrees from horizontal). Resolved from [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`] at synth time; clamped to (0°, 90°). 0.0 ⇒ inherit the legacy 10° default at emit time inside [`crate::cam::vcarve_emit::ratchet_emit`].
              * @default 0
              */
             vcarve_lead_in_angle_deg: number;
@@ -2060,7 +2060,7 @@ export interface components {
             whirl_osc: number;
             /**
              * Format: double
-             * @description Whirl helical-overlay spiral radius (3e5). > 0 enables the `cos/sin` displacement on every cut move; 0 disables. Resolved from `ToolEntry.whirl_extra_width_mm / 2` at synth time when the tool is Whirl-tagged.
+             * @description Whirl helical-overlay spiral radius. > 0 enables the sine/cosine displacement on every cut move; 0 disables. Resolved from `ToolEntry.whirl_extra_width_mm / 2` at synth time when the tool is Whirl-tagged.
              * @default 0
              */
             whirl_radius: number;
@@ -2072,22 +2072,22 @@ export interface components {
             whirl_stepover: number;
         };
         ToolEntry: {
-            /** @description Free-text comment / description (rt1.31). Surfaced as the tooltip on the tool dropdown in `OpPropertiesPanel` and as an expandable text area in `ToolLibraryDialog`. Empty / None = no comment; doesn't affect any pipeline output. */
+            /** @description Free-text comment / description. Surfaced as the tooltip on the tool dropdown in `OpPropertiesPanel` and as an expandable text area in `ToolLibraryDialog`. Empty / None = no comment; doesn't affect any pipeline output. */
             comment?: string | null;
             /**
              * Format: double
-             * @description dhh0: compression / up-down cutter flute-transition height (mm above the tip) where the down-cut flutes flip to up-cut (Estlcam `Obenunten`). Honored only when `kind == Compression`. Display + preview marker in v1 — the carved cross-section is unchanged (a compression cutter removes the same material as a plain endmill; the split only affects which face the chips break toward). None = the preview assumes the flute midpoint.
+             * @description Compression / up-down cutter flute-transition height (mm above the tip) where the down-cut flutes flip to up-cut (Estlcam `Obenunten`). Honored only when `kind == Compression`. Display + preview marker in v1 — the carved cross-section is unchanged (a compression cutter removes the same material as a plain endmill; the split only affects which face the chips break toward). None = the preview assumes the flute midpoint.
              */
             compression_transition_mm?: number | null;
             coolant: components["schemas"]["Coolant"];
             /**
              * Format: double
-             * @description Bull-nose / radius-endmill corner radius (rt1.28). Honored only when `kind == BullNose`. The corner radius produces a fillet on the cut floor edge — relevant for sim cross-section (the sim envelope falls below `corner_radius_mm` of the nominal flat floor). mm, positive only.
+             * @description Bull-nose / radius-endmill corner radius. Honored only when `kind == BullNose`. The corner radius produces a fillet on the cut floor edge — relevant for sim cross-section (the sim envelope falls below `corner_radius_mm` of the nominal flat floor). mm, positive only.
              */
             corner_radius_mm?: number | null;
             /**
              * Format: double
-             * @description zpuk: plasma cut height (mm above stock, generally < pierce height). After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.
+             * @description Plasma cut height (mm above stock, generally < pierce height). After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.
              */
             cut_height_mm?: number | null;
             /**
@@ -2102,14 +2102,14 @@ export interface components {
             default_step?: number | null;
             /**
              * Format: double
-             * @description Default XY overlap (0..1) for pocket / cascade ops that don't set their own [`crate::project::PocketParams::xy_overlap`]. Mirrors the `default_step` pattern (dr5). None = fall through to the global 0.5 default.
+             * @description Default XY overlap (0..1) for pocket / cascade ops that don't set their own [`crate::project::PocketParams::xy_overlap`]. Mirrors the `default_step` pattern. None = fall through to the global 0.5 default.
              */
             default_xy_overlap?: number | null;
             /** Format: double */
             diameter: number;
             /**
              * Format: double
-             * @description 0t9o: drag-knife self-alignment threshold in degrees. Corners whose tangent change is smaller than this angle skip the explicit swivel arc + linear pre-move — real drag knives self-align below ~30° via the trailing offset, so emitting a swivel for every chord-of-a-circle pivot bloats output and stresses the blade pivot. Honored only when `dragoff` is also set. `None` ⇒ 30° default; `Some(0.0)` forces the legacy "swivel every corner" behaviour.
+             * @description Drag-knife self-alignment threshold in degrees. Corners whose tangent change is smaller than this angle skip the explicit swivel arc + linear pre-move — real drag knives self-align below ~30° via the trailing offset, so emitting a swivel for every chord-of-a-circle pivot bloats output and stresses the blade pivot. Honored only when `dragoff` is also set. `None` ⇒ 30° default; `Some(0.0)` forces the legacy "swivel every corner" behaviour.
              */
             drag_knife_self_align_angle_deg?: number | null;
             /**
@@ -2139,7 +2139,7 @@ export interface components {
             flute_length_mm?: number | null;
             /** Format: uint8 */
             flutes: number;
-            /** @description 1wit: form / profile cutter cross-section, tip → top. Each sample is `(z_above_tip_mm, radius_mm)`; the sim carves at the interpolated radius for each Z slice. Honored only when `kind == FormProfile` and at least two samples are present — otherwise the sim falls back to a `(tip_diameter, diameter)` 2-segment taper. The tool-library UI generates these from a dovetail (angle / tip ⌀ / cut height) preset or accepts raw rows for cove / ogee / custom bits. Empty for every other kind. */
+            /** @description Form / profile cutter cross-section, tip → top. Each sample is `(z_above_tip_mm, radius_mm)`; the sim carves at the interpolated radius for each Z slice. Honored only when `kind == FormProfile` and at least two samples are present — otherwise the sim falls back to a `(tip_diameter, diameter)` 2-segment taper. The tool-library UI generates these from a dovetail (angle / tip ⌀ / cut height) preset or accepts raw rows for cove / ogee / custom bits. Empty for every other kind. */
             form_profile_mm?: components["schemas"]["FormProfileSample"][];
             /** @description Holder geometry above the shank. None = no holder check. */
             holder?: components["schemas"]["HolderShape"] | null;
@@ -2147,23 +2147,23 @@ export interface components {
             id: number;
             /**
              * Format: double
-             * @description mmu8: laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Honored only when `kind == LaserBeam`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
+             * @description Laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Honored only when `kind == LaserBeam`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
              */
             kerf_mm?: number | null;
             kind: components["schemas"]["ToolKind"];
             /**
              * Format: double
-             * @description Laser lead-in distance (rt1.29 / Estlcam `T_Lead_In)`: mm of approach travel the head takes along the entry tangent before the cut starts, to reduce edge entry burn. Honored only when `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time — the per-op lead-in field overrides this if set explicitly. None = no tool-level lead-in.
+             * @description Laser lead-in distance (Estlcam `T_Lead_In)`: mm of approach travel the head takes along the entry tangent before the cut starts, to reduce edge entry burn. Honored only when `kind == LaserBeam`. Wired into `LeadsConfig` at op synth time — the per-op lead-in field overrides this if set explicitly. None = no tool-level lead-in.
              */
             laser_lead_in_mm?: number | null;
             /**
              * Format: double
-             * @description Laser pierce time (rt1.29 / Estlcam `T_Pierce_Time)`: seconds the beam dwells at the start point BEFORE the cut begins so it burns through thick stock. Honored only when `kind == LaserBeam`. The post emits a `G4 P<seconds>` after the laser-on before each plunge. None = no pierce dwell.
+             * @description Laser pierce time (Estlcam `T_Pierce_Time)`: seconds the beam dwells at the start point BEFORE the cut begins so it burns through thick stock. Honored only when `kind == LaserBeam`. The post emits a `G4 P<seconds>` after the laser-on before each plunge. None = no pierce dwell.
              */
             laser_pierce_sec?: number | null;
             /**
              * Format: double
-             * @description dhh0: overall / usable tool length (mm), tip → where the shank enters the collet (Estlcam `Length`). Display + 3D-preview only in v1 — it does NOT affect emitted gcode (reach / collision is driven by `flute_length_mm` + `stickout_length_mm` + `holder`). It sets the preview mesh's total height so the rendered tool matches the real tool's proportions. None = the preview falls back to its diameter-derived heuristic.
+             * @description Overall / usable tool length (mm), tip → where the shank enters the collet (Estlcam `Length`). Display + 3D-preview only in v1 — it does NOT affect emitted gcode (reach / collision is driven by `flute_length_mm` + `stickout_length_mm` + `holder`). It sets the preview mesh's total height so the rendered tool matches the real tool's proportions. None = the preview falls back to its diameter-derived heuristic.
              */
             length_mm?: number | null;
             name: string;
@@ -2174,12 +2174,12 @@ export interface components {
             pause?: number;
             /**
              * Format: double
-             * @description zpuk: plasma pierce delay in seconds. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.
+             * @description Plasma pierce delay in seconds. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.
              */
             pierce_delay_sec?: number | null;
             /**
              * Format: double
-             * @description zpuk: plasma pierce height (mm above stock). Honored only when the active machine mode is `Plasma`. The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.
+             * @description Plasma pierce height (mm above stock). Honored only when the active machine mode is `Plasma`. The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.
              */
             pierce_height_mm?: number | null;
             /**
@@ -2214,16 +2214,16 @@ export interface components {
              * @description Spindle RPM override for the finishing pass (the wall-defining level=0 ring of a Pocket). None = inherit `speed`. Hard-material finish quality usually wants a slower RPM than roughing.
              */
             speed_finish?: number | null;
-            /** @description z1y0: spindle direction the post should command when this tool is selected. Most cutters are right-hand and want `Cw` (M3); left-hand cutters, reverse-threading, and a few specialty holders want `Ccw` (M4). Defaults to `Cw` (most cutters are right-hand). The default is skipped on serialize so the JSON stays small. */
+            /** @description Spindle direction the post should command when this tool is selected. Most cutters are right-hand and want `Cw` (M3); left-hand cutters, reverse-threading, and a few specialty holders want `Ccw` (M4). Defaults to `Cw` (most cutters are right-hand). The default is skipped on serialize so the JSON stays small. */
             spindle_direction?: components["schemas"]["SpindleDirection"];
             /**
              * Format: double
-             * @description q0kc: free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models the real-world case where the collet doesn't grip right above the flutes — common for reach-extension tooling. Defaults to 0 (collet sits directly on the flutes). None = same as `Some(0.0)` for the sim.
+             * @description Free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models the real-world case where the collet doesn't grip right above the flutes — common for reach-extension tooling. Defaults to 0 (collet sits directly on the flutes). None = same as `Some(0.0)` for the sim.
              */
             stickout_length_mm?: number | null;
             /**
              * Format: double
-             * @description gm1u: thread pitch (mm) for a thread mill (Estlcam `Pitch`) — the axial advance per orbit. Honored only when `kind == ThreadMill`. Drives the helical Z-advance of the Thread op and a label in the tool library. None = the Thread op must specify its own pitch.
+             * @description Thread pitch (mm) for a thread mill (Estlcam `Pitch`) — the axial advance per orbit. Honored only when `kind == ThreadMill`. Drives the helical Z-advance of the Thread op and a label in the tool library. None = the Thread op must specify its own pitch.
              */
             thread_pitch_mm?: number | null;
             /**
@@ -2239,29 +2239,29 @@ export interface components {
             tip_diameter?: number | null;
             /**
              * Format: double
-             * @description ot80: V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). pmpk originally hardcoded this to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the 10° default.
+             * @description V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). This was originally hardcoded to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the 10° default.
              */
             vcarve_lead_in_angle_deg?: number | null;
-            /** @description Whirl (rt1.25 / Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
+            /** @description Whirl (Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
             whirl?: boolean;
             /**
              * Format: double
-             * @description Whirl extra-width (Estlcam `T_Wirbelzusatzbreite` / rt1.25 / 3e5). The *diameter* in mm by which the helical overlay widens the effective cut path: the cutter centerline scrolls on a small circle of radius `whirl_extra_width_mm / 2` around the cascade ring. Net cut width is `diameter + whirl_extra_width_mm`. None / 0 ⇒ overlay disabled even when `whirl == true` (which then falls back to a no-op — the v1 step clamp is gone in 3e5).
+             * @description Whirl extra-width (Estlcam `T_Wirbelzusatzbreite`). The *diameter* in mm by which the helical overlay widens the effective cut path: the cutter centerline scrolls on a small circle of radius `whirl_extra_width_mm / 2` around the cascade ring. Net cut width is `diameter + whirl_extra_width_mm`. None / 0 ⇒ overlay disabled even when `whirl == true` (which then falls back to a no-op — the v1 step clamp is gone).
              */
             whirl_extra_width_mm?: number | null;
             /**
              * Format: double
-             * @description Whirl Z-wobble amplitude (Estlcam `T_Osc`, 3e5). When > 0, the spiral overlay adds a `cos(3·θ) · osc − osc` Z ripple so the cutter dips slightly below the cut plane between revolutions — improves chip evacuation on the wobbly cutters the feature targets. mm, positive only. None / 0 ⇒ flat (no Z motion added by the overlay).
+             * @description Whirl Z-wobble amplitude (Estlcam `T_Osc`). When > 0, the spiral overlay adds a `cos(3·θ) · osc − osc` Z ripple so the cutter dips slightly below the cut plane between revolutions — improves chip evacuation on the wobbly cutters the feature targets. mm, positive only. None / 0 ⇒ flat (no Z motion added by the overlay).
              */
             whirl_osc_mm?: number | null;
             /**
              * Format: double
-             * @description Whirl stepover override (rt1.25). When `whirl` is `true`, this is the **stride along the toolpath per full revolution of the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm, positive only. None = use the half-radius default. (3e5 made this the spiral stride; before 3e5 it was the cascade-step clamp, which was the "fake Whirl" v1 implementation.)
+             * @description Whirl stepover override. When `whirl` is `true`, this is the **stride along the toolpath per full revolution of the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm, positive only. None = use the half-radius default. (This is now the spiral stride; it was previously the cascade-step clamp, which was the "fake Whirl" v1 implementation.)
              */
             whirl_stepover_mm?: number | null;
             /**
              * Format: double
-             * @description Per-tool Z origin offset (rt1.30 / Estlcam `Z_Shift`). For machines without automatic tool-length probing — the user pre-measures each tool's tip Z relative to a reference tool and records the delta here (positive = sticks out further; negative = shorter). At toolchange / program-start the post emits a `G92 Z<shift>` that pins the new tool's tip at the same work-Z the reference tool used. mm. None = no shift.
+             * @description Per-tool Z origin offset (Estlcam `Z_Shift`). For machines without automatic tool-length probing — the user pre-measures each tool's tip Z relative to a reference tool and records the delta here (positive = sticks out further; negative = shorter). At toolchange / program-start the post emits a `G92 Z<shift>` that pins the new tool's tip at the same work-Z the reference tool used. mm. None = no shift.
              */
             z_shift_mm?: number | null;
         };
@@ -2289,7 +2289,7 @@ export interface components {
         TransportKind: "python-bridge" | "rust-server" | "tauri" | "wasm";
         /** @enum {string} */
         UnitSystem: "mm" | "inch";
-        /** @description Parameters specific to [`super::op::OpKind::VCarve`]. (kbx5 step 1.) */
+        /** @description Parameters specific to [`super::op::OpKind::VCarve`]. */
         VCarveParams: {
             /**
              * Format: double
@@ -2297,7 +2297,7 @@ export interface components {
              */
             carve_max_width_mm?: number | null;
             /**
-             * @description r8ut: trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam's behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true for the rare "carve a depth gradient across the whole interior" workflow — the full medial axis (think Aspire-style relief).
+             * @description Trace the full medial axis (creates extra spine cuts through the interior of wide regions). Default `false` matches Estlcam's behaviour — the toolpath traces the BOUNDARY offset inward by `R = effective_r_cap`, plunged to depth `-R / tan(angle / 2)`, and the centre plateau is left untouched. Set true for the rare "carve a depth gradient across the whole interior" workflow — the full medial axis (think Aspire-style relief).
              * @default false
              */
             full_medial_axis: boolean;
@@ -2308,7 +2308,7 @@ export interface components {
             multi_pass_refine: boolean;
             /**
              * Format: double
-             * @description rt1.7: extra inward offset applied to the source region BEFORE the V-Carve pass. Used to build the "plug" side of an inlay pair: the plug is `gap_mm` smaller per side than the pocket, so when glued in it wedges into the tapered pocket walls with that clearance. The pocket side uses `None` / `0`; the plug uses the shared `gap_mm` value (typical 0.05–0.2 mm). The offset is applied to both the medial-axis and perimeter modes.
+             * @description Extra inward offset applied to the source region BEFORE the V-Carve pass. Used to build the "plug" side of an inlay pair: the plug is `gap_mm` smaller per side than the pocket, so when glued in it wedges into the tapered pocket walls with that clearance. The pocket side uses `None` / `0`; the plug uses the shared `gap_mm` value (typical 0.05–0.2 mm). The offset is applied to both the medial-axis and perimeter modes.
              */
             source_inset_mm?: number | null;
         };
@@ -2382,7 +2382,7 @@ export interface components {
             /** Format: uint32 */
             line: number;
         };
-        /** @description i5g4: program-level work-coordinate offset. Defaults to all zeros — geometry origin == WCS origin. When the user zeros the machine somewhere different from the geometry origin, set this so the sim can align the heightmap to the WCS frame. The full per-fixture / G54..G59 selector is a follow-up feature. */
+        /** @description Program-level work-coordinate offset. Defaults to all zeros — geometry origin == WCS origin. When the user zeros the machine somewhere different from the geometry origin, set this so the sim can align the heightmap to the WCS frame. The full per-fixture / G54..G59 selector is a follow-up feature. */
         WorkOffset: {
             /** @description Which work coordinate system this offset applies to. The gcode emitter doesn't (yet) flip between G54..G59 — this is a labelling field for the UI + future expansion. */
             wcs?: components["schemas"]["Wcs"];
@@ -2482,7 +2482,7 @@ export interface operations {
                 "multipart/form-data": {
                     /** Format: binary */
                     file: string;
-                    /** @description Optional explicit format hint (dxf|svg|hpgl|ngc|stl). Inferred from filename otherwise. */
+                    /** @description Optional explicit format hint (DXF|SVG|HPGL|NGC|STL). Inferred from filename otherwise. */
                     format?: string;
                 };
             };

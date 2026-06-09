@@ -2253,3 +2253,14 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 2);
     }
 }
+
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<PipelineRequest>(map, "GenerateRequest");
+    crate::schema::insert::<PipelineResponse>(map, "GenerateResponse");
+    crate::schema::insert::<PipelineStats>(map, "GenerateStats");
+    crate::schema::insert::<RegionPreview>(map, "RegionPreview");
+    crate::schema::insert::<PipelineWarning>(map, "PipelineWarning");
+}

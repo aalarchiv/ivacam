@@ -293,3 +293,13 @@ mod tests {
         assert_eq!(bbox.max_y, 4.0);
     }
 }
+
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<Point2>(map, "Point2");
+    crate::schema::insert::<BBox>(map, "BBox");
+    crate::schema::insert::<Layer>(map, "Layer");
+    crate::schema::insert::<Segment>(map, "Segment");
+}

@@ -348,3 +348,28 @@ mod tests {
         );
     }
 }
+
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<Project>(map, "Project");
+    crate::schema::insert::<Op>(map, "Op");
+    crate::schema::insert::<OpKind>(map, "OpKind");
+    crate::schema::insert::<DrillCycle>(map, "DrillCycle");
+    crate::schema::insert::<OpParams>(map, "OpParams");
+    crate::schema::insert::<OpSource>(map, "OpSource");
+    crate::schema::insert::<SourceCombine>(map, "SourceCombine");
+    crate::schema::insert::<CutDirection>(map, "CutDirection");
+    crate::schema::insert::<PlungeStrategy>(map, "PlungeStrategy");
+    crate::schema::insert::<PocketStrategy>(map, "PocketStrategy");
+    crate::schema::insert::<PatternConfig>(map, "PatternConfig");
+    crate::schema::insert::<ToolEntry>(map, "ToolEntry");
+    crate::schema::insert::<ToolKind>(map, "ToolKind");
+    crate::schema::insert::<Coolant>(map, "Coolant");
+    crate::schema::insert::<Fixture>(map, "Fixture");
+    crate::schema::insert::<FixtureKind>(map, "FixtureKind");
+    crate::schema::insert::<TextLayer>(map, "TextLayer");
+    crate::schema::insert::<TextLayerKind>(map, "TextLayerKind");
+    crate::schema::insert::<TextAlignment>(map, "TextAlignment");
+}

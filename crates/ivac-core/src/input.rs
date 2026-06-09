@@ -249,3 +249,14 @@ pub(crate) fn summarize_layers(
         })
         .collect()
 }
+
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<ImportedTextEntity>(map, "ImportedTextEntity");
+    crate::schema::insert::<ImportedTextKind>(map, "ImportedTextKind");
+    crate::schema::insert::<text::RenderTextRequest>(map, "RenderTextRequest");
+    crate::schema::insert::<text::RenderTextResponse>(map, "RenderTextResponse");
+    crate::schema::insert::<text::RenderTextLayerResponse>(map, "RenderTextLayerResponse");
+}

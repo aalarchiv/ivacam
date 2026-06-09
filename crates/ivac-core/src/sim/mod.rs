@@ -31,3 +31,13 @@ pub use diagnostics::{kind_str, severity, Severity, SimDiagnostics, SimWarning};
 pub use fixture_check::{check_segment_against_fixtures, FixtureCheck};
 pub use holder::HolderProfile;
 pub use holder_check::{check_segment_holder_against_walls, HolderCheck};
+
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<diagnostics::SimWarning>(map, "SimWarning");
+    crate::schema::insert::<diagnostics::SimDiagnostics>(map, "SimDiagnostics");
+    crate::schema::insert::<diagnostics::Severity>(map, "SimSeverity");
+    crate::schema::insert::<timing::TimeEstimate>(map, "TimeEstimate");
+}

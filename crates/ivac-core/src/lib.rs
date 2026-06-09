@@ -179,3 +179,12 @@ mod tests {
         assert!(!reason.is_empty(), "fallback_reason should be non-empty");
     }
 }
+
+/// Register the crate-root wire types in the OpenAPI components map.
+/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut schema::SchemaMap) {
+    schema::insert::<ImportOutput>(map, "ImportResponse");
+    schema::insert::<HelixRadiusRequest>(map, "HelixRadiusRequest");
+    schema::insert::<HelixRadiusResponse>(map, "HelixRadiusResponse");
+}

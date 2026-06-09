@@ -14,12 +14,6 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::cam::offsets::PolylineOffset;
-use crate::cam::VcObject;
-use crate::gcode::preview::ToolpathSegment;
-use crate::geometry::{BBox, Layer, Point2, Segment};
-use crate::sim::diagnostics::{Severity, SimDiagnostics, SimWarning};
-use crate::ImportOutput;
 
 // ─── HTTP envelope types ──────────────────────────────────────────────────
 //
@@ -69,68 +63,36 @@ pub struct ErrorResponse {
 #[must_use]
 pub fn components_schemas() -> Value {
     let mut schemas = serde_json::Map::new();
-    insert::<Point2>(&mut schemas, "Point2");
-    insert::<BBox>(&mut schemas, "BBox");
-    insert::<Layer>(&mut schemas, "Layer");
-    insert::<Segment>(&mut schemas, "Segment");
-    insert::<ImportOutput>(&mut schemas, "ImportResponse");
-    insert::<crate::input::ImportedTextEntity>(&mut schemas, "ImportedTextEntity");
-    insert::<crate::input::ImportedTextKind>(&mut schemas, "ImportedTextKind");
-    insert::<VcObject>(&mut schemas, "VcObject");
-    insert::<PolylineOffset>(&mut schemas, "PolylineOffset");
-    insert::<ToolpathSegment>(&mut schemas, "ToolpathSegment");
+    // kb1y: each module registers its own wire types next to their
+    // definitions; this function just composes them. Adding a type is a
+    // same-file edit in the module that owns it. Output order is
+    // independent of call order (serde_json::Map is sorted), and the
+    // izup collision assert + schema drift guard still protect renames.
+    crate::geometry::register_schemas(&mut schemas);
+    crate::input::register_schemas(&mut schemas);
+    crate::cam::register_schemas(&mut schemas);
+    crate::gcode::preview::register_schemas(&mut schemas);
+    crate::project::register_schemas(&mut schemas);
+    crate::pipeline::register_schemas(&mut schemas);
+    crate::sim::register_schemas(&mut schemas);
+    crate::errors::register_schemas(&mut schemas);
+    crate::register_schemas(&mut schemas);
 
-    // New project / operations / tools shapes — ship them so the frontend
-    // can codegen the matching TS types ahead of UX-4..-7.
-    insert::<crate::project::Project>(&mut schemas, "Project");
-    insert::<crate::project::Op>(&mut schemas, "Op");
-    insert::<crate::project::OpKind>(&mut schemas, "OpKind");
-    insert::<crate::project::DrillCycle>(&mut schemas, "DrillCycle");
-    insert::<crate::project::OpParams>(&mut schemas, "OpParams");
-    insert::<crate::project::OpSource>(&mut schemas, "OpSource");
-    insert::<crate::project::SourceCombine>(&mut schemas, "SourceCombine");
-    insert::<crate::project::CutDirection>(&mut schemas, "CutDirection");
-    insert::<crate::project::PlungeStrategy>(&mut schemas, "PlungeStrategy");
-    insert::<crate::pipeline::RegionPreview>(&mut schemas, "RegionPreview");
-    insert::<crate::pipeline::PipelineWarning>(&mut schemas, "PipelineWarning");
-    insert::<crate::project::PocketStrategy>(&mut schemas, "PocketStrategy");
-    insert::<crate::project::PatternConfig>(&mut schemas, "PatternConfig");
-    insert::<crate::project::ToolEntry>(&mut schemas, "ToolEntry");
-    insert::<crate::project::ToolKind>(&mut schemas, "ToolKind");
-    insert::<crate::project::Coolant>(&mut schemas, "Coolant");
-    insert::<crate::project::Fixture>(&mut schemas, "Fixture");
-    insert::<crate::project::FixtureKind>(&mut schemas, "FixtureKind");
-    insert::<crate::project::TextLayer>(&mut schemas, "TextLayer");
-    insert::<crate::project::TextLayerKind>(&mut schemas, "TextLayerKind");
-    insert::<crate::project::TextAlignment>(&mut schemas, "TextAlignment");
-
-    insert::<SimWarning>(&mut schemas, "SimWarning");
-    insert::<SimDiagnostics>(&mut schemas, "SimDiagnostics");
-    insert::<Severity>(&mut schemas, "SimSeverity");
-
+    // HTTP envelope types defined in this module.
     insert::<HealthResponse>(&mut schemas, "HealthResponse");
     insert::<VersionResponse>(&mut schemas, "VersionResponse");
-    insert::<GenerateRequest>(&mut schemas, "GenerateRequest");
-    insert::<GenerateResponse>(&mut schemas, "GenerateResponse");
-    insert::<GenerateStats>(&mut schemas, "GenerateStats");
-    insert::<crate::HelixRadiusRequest>(&mut schemas, "HelixRadiusRequest");
-    insert::<crate::HelixRadiusResponse>(&mut schemas, "HelixRadiusResponse");
-    insert::<crate::sim::timing::TimeEstimate>(&mut schemas, "TimeEstimate");
-    insert::<crate::input::text::RenderTextRequest>(&mut schemas, "RenderTextRequest");
-    insert::<crate::input::text::RenderTextResponse>(&mut schemas, "RenderTextResponse");
-    insert::<crate::input::text::RenderTextLayerResponse>(&mut schemas, "RenderTextLayerResponse");
     insert::<ErrorResponse>(&mut schemas, "Error");
-    insert::<crate::errors::Error>(&mut schemas, "WiacError");
-    insert::<crate::errors::ErrorKind>(&mut schemas, "WiacErrorKind");
-    insert::<crate::errors::AutoFix>(&mut schemas, "WiacAutoFix");
-    insert::<crate::errors::SourceSpan>(&mut schemas, "WiacSourceSpan");
 
     let mut value = Value::Object(schemas);
     rewrite_refs(&mut value);
     value
 }
 
-fn insert<T: schemars::JsonSchema>(map: &mut serde_json::Map<String, Value>, name: &str) {
+/// The components/schemas accumulator each module's `register_schemas`
+/// writes into (kb1y).
+pub(crate) type SchemaMap = serde_json::Map<String, Value>;
+
+pub(crate) fn insert<T: schemars::JsonSchema>(map: &mut SchemaMap, name: &str) {
     let s = schema_for!(T);
     let mut v = serde_json::to_value(s).unwrap();
     if let Some(obj) = v.as_object_mut() {

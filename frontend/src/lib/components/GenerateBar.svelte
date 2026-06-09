@@ -19,6 +19,7 @@
     type PipelineWarning,
   } from '../api/pipeline-warnings';
   import GenerateProgress from './GenerateProgress.svelte';
+  import FloatingPanel from './FloatingPanel.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { inferDefaultWorkOffset } from '../state/project-types';
   import { warningFocus } from '../state/warning-focus.svelte';
@@ -101,48 +102,6 @@
   let warningPanelOpen = $state(false);
   let abortController: AbortController | null = null;
 
-  // ──────────────────────────────────────────────────────────────────
-  // Warnings floating panel: drag-movable header + resize handle (aw8j).
-  // Position is in viewport pixels relative to (0,0); size is the
-  // panel's content box. Defaults sit the panel in the top-right
-  // (same place it lived when it was inline-absolute), but the user
-  // can drag the header to reposition and pull the bottom-right corner
-  // to resize. State is component-local — re-opening resets to the
-  // last in-session position unless the window has shrunk past it,
-  // in which case `clampPanelRect` snaps it back into view.
-  const WP_DEFAULT_W = 480;
-  const WP_DEFAULT_H = Math.round(typeof window === 'undefined' ? 480 : window.innerHeight * 0.6);
-  let wpX = $state<number | null>(null); // null = uncomputed → default to top-right on first open
-  let wpY = $state<number | null>(null);
-  let wpW = $state<number>(WP_DEFAULT_W);
-  let wpH = $state<number>(WP_DEFAULT_H);
-  let wpDrag: { mode: 'move' | 'resize'; offX: number; offY: number; pointerId: number } | null =
-    null;
-
-  function clampPanelRect() {
-    if (typeof window === 'undefined') return;
-    const minW = 320,
-      minH = 220;
-    wpW = Math.max(minW, Math.min(window.innerWidth - 16, wpW));
-    wpH = Math.max(minH, Math.min(window.innerHeight - 16, wpH));
-    if (wpX != null) wpX = Math.max(8, Math.min(window.innerWidth - wpW - 8, wpX));
-    if (wpY != null) wpY = Math.max(8, Math.min(window.innerHeight - wpH - 8, wpY));
-  }
-
-  function onWarningPanelOpen() {
-    if (typeof window === 'undefined') return;
-    if (wpX == null || wpY == null) {
-      // First-open default: top-right with 1rem (~16 px) margins, matches
-      // the inline-absolute position the panel had before.
-      wpX = Math.max(16, window.innerWidth - wpW - 16);
-      wpY = 56; // toolbar height + a bit
-    }
-    clampPanelRect();
-  }
-  $effect(() => {
-    if (warningPanelOpen) onWarningPanelOpen();
-  });
-
   /// 4kzy: react to a per-op warning-focus request (set by the op
   /// status badge in OperationsList). Open the warnings panel, then —
   /// after the rows render — expand every <details> for that op and
@@ -165,54 +124,6 @@
       warningFocus.clear();
     });
   });
-
-  function wpHeaderPointerDown(e: PointerEvent) {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('button')) return; // don't grab a drag from the close button
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    wpDrag = {
-      mode: 'move',
-      offX: e.clientX - (wpX ?? 0),
-      offY: e.clientY - (wpY ?? 0),
-      pointerId: e.pointerId,
-    };
-    e.preventDefault();
-  }
-  function wpResizePointerDown(e: PointerEvent) {
-    if (e.button !== 0) return;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    wpDrag = {
-      mode: 'resize',
-      offX: e.clientX - wpW,
-      offY: e.clientY - wpH,
-      pointerId: e.pointerId,
-    };
-    e.preventDefault();
-  }
-  function wpPointerMove(e: PointerEvent) {
-    if (!wpDrag || e.pointerId !== wpDrag.pointerId) return;
-    if (wpDrag.mode === 'move') {
-      wpX = e.clientX - wpDrag.offX;
-      wpY = e.clientY - wpDrag.offY;
-    } else {
-      wpW = e.clientX - wpDrag.offX;
-      wpH = e.clientY - wpDrag.offY;
-    }
-    clampPanelRect();
-  }
-  function wpPointerUp(e: PointerEvent) {
-    if (!wpDrag || e.pointerId !== wpDrag.pointerId) return;
-    wpDrag = null;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
-  }
-  // Re-clamp when the viewport changes so a previously-sized panel can't
-  // sit off-screen after the user shrinks the window.
-  function onWindowResize() {
-    if (warningPanelOpen) clampPanelRect();
-  }
 
   function cancelRun() {
     if (project.pipelineState !== 'running') return;
@@ -605,123 +516,90 @@
        drive the single warnings chip's critical color. One button now. -->
 </div>
 
-<svelte:window onresize={onWindowResize} />
-
-{#if warningPanelOpen}
-  <!-- aw8j: floating, drag-movable + resizable panel. Each row is a
-       browser-dev-tools-style <details> — summary collapses to a one-line
-       header (dot · source · kind · ellipsed msg + Go-to for sim rows),
-       expanded body shows the full message with user-select: text so the
-       user can drag-select and copy. dvs4: lists both sim + pipeline
-       warnings, tagged by source. -->
-  <div
-    class="panel"
-    role="dialog"
-    aria-label="Warnings"
-    style:left="{wpX ?? 0}px"
-    style:top="{wpY ?? 0}px"
-    style:width="{wpW}px"
-    style:height="{wpH}px"
-  >
-    <header
-      role="toolbar"
-      tabindex="-1"
-      aria-label="Warnings panel header — drag to move"
-      onpointerdown={wpHeaderPointerDown}
-      onpointermove={wpPointerMove}
-      onpointerup={wpPointerUp}
-      onpointercancel={wpPointerUp}
-      title="Drag to move"
-    >
-      <h3>Warnings ({totalWarningCount})</h3>
-      <button class="dlg-close" onclick={() => (warningPanelOpen = false)} aria-label="Close"
-        >×</button
-      >
-    </header>
-    <div class="list">
-      {#if totalWarningCount === 0}
-        <p class="empty">No warnings — sim and pipeline are clean.</p>
-      {:else}
-        {#each warnings as w, i (`sim-${i}`)}
-          {@const sev = simWarningSeverity(w)}
-          {@const summary = simWarningSummary(w)}
-          <details class="row severity-{sev}">
-            <summary>
-              <span class="dot" aria-hidden="true"></span>
-              <span class="source" title="Surfaced by the simulator after G-code generation."
-                >sim</span
-              >
-              <span class="kind">{w.kind}</span>
-              <span class="msg">{summary}</span>
+<!-- aw8j: floating, drag-movable + resizable panel (mechanics live in
+     FloatingPanel; it stays mounted so the in-session position/size
+     survive close + reopen). Each row is a browser-dev-tools-style
+     <details> — summary collapses to a one-line header (dot · source ·
+     kind · ellipsed msg + Go-to for sim rows), expanded body shows the
+     full message with user-select: text so the user can drag-select and
+     copy. dvs4: lists both sim + pipeline warnings, tagged by source. -->
+<FloatingPanel
+  open={warningPanelOpen}
+  onClose={() => (warningPanelOpen = false)}
+  title="Warnings ({totalWarningCount})"
+  ariaLabel="Warnings"
+>
+  <div class="list">
+    {#if totalWarningCount === 0}
+      <p class="empty">No warnings — sim and pipeline are clean.</p>
+    {:else}
+      {#each warnings as w, i (`sim-${i}`)}
+        {@const sev = simWarningSeverity(w)}
+        {@const summary = simWarningSummary(w)}
+        <details class="row severity-{sev}">
+          <summary>
+            <span class="dot" aria-hidden="true"></span>
+            <span class="source" title="Surfaced by the simulator after G-code generation."
+              >sim</span
+            >
+            <span class="kind">{w.kind}</span>
+            <span class="msg">{summary}</span>
+            <button
+              type="button"
+              class="row-action"
+              onclick={(e) => {
+                e.stopPropagation();
+                flyToWarning(w);
+              }}
+              title="Move the 3D playhead to this warning"
+              aria-label="Go to warning in 3D scene"
+            >
+              go to
+            </button>
+          </summary>
+          <div class="row-body">
+            <p class="full-msg">{summary}</p>
+            <pre class="json">{JSON.stringify(w, null, 2)}</pre>
+          </div>
+        </details>
+      {/each}
+      {#each allPipelineWarnings as pw, i (`pipe-${i}`)}
+        {@const sev = pipelineWarningSeverity(pw)}
+        {@const hasFix = pw.kind === 'stock_origin_outside_geometry_bbox'}
+        <details class="row severity-{sev} pipeline" data-op-id={pw.op_id ?? undefined}>
+          <summary>
+            <span class="dot" aria-hidden="true"></span>
+            <span
+              class="source pipeline"
+              title="Surfaced by the CAM pipeline during G-code generation.">pipeline</span
+            >
+            <span class="kind">{pw.kind}</span>
+            <span class="msg">{pw.message}</span>
+            {#if hasFix}
               <button
                 type="button"
                 class="row-action"
                 onclick={(e) => {
                   e.stopPropagation();
-                  flyToWarning(w);
+                  applyWcsBboxSnapFix();
                 }}
-                title="Move the 3D playhead to this warning"
-                aria-label="Go to warning in 3D scene"
+                disabled={!project.transformedImport}
+                title="Snap the WCS origin to the geometry bbox's bottom-left corner — the canonical CNC zeroing convention."
+                aria-label="Apply suggested WCS origin"
               >
-                go to
+                apply fix
               </button>
-            </summary>
-            <div class="row-body">
-              <p class="full-msg">{summary}</p>
-              <pre class="json">{JSON.stringify(w, null, 2)}</pre>
-            </div>
-          </details>
-        {/each}
-        {#each allPipelineWarnings as pw, i (`pipe-${i}`)}
-          {@const sev = pipelineWarningSeverity(pw)}
-          {@const hasFix = pw.kind === 'stock_origin_outside_geometry_bbox'}
-          <details class="row severity-{sev} pipeline" data-op-id={pw.op_id ?? undefined}>
-            <summary>
-              <span class="dot" aria-hidden="true"></span>
-              <span
-                class="source pipeline"
-                title="Surfaced by the CAM pipeline during G-code generation.">pipeline</span
-              >
-              <span class="kind">{pw.kind}</span>
-              <span class="msg">{pw.message}</span>
-              {#if hasFix}
-                <button
-                  type="button"
-                  class="row-action"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    applyWcsBboxSnapFix();
-                  }}
-                  disabled={!project.transformedImport}
-                  title="Snap the WCS origin to the geometry bbox's bottom-left corner — the canonical CNC zeroing convention."
-                  aria-label="Apply suggested WCS origin"
-                >
-                  apply fix
-                </button>
-              {/if}
-            </summary>
-            <div class="row-body">
-              <p class="full-msg">{pw.message}</p>
-              <pre class="json">{JSON.stringify(pw, null, 2)}</pre>
-            </div>
-          </details>
-        {/each}
-      {/if}
-    </div>
-    <!-- Bottom-right resize handle. svg corner-glyph repeats the
-         convention used by every other floating-resizable widget on
-         the platform. -->
-    <div
-      class="resize-handle"
-      onpointerdown={wpResizePointerDown}
-      onpointermove={wpPointerMove}
-      onpointerup={wpPointerUp}
-      onpointercancel={wpPointerUp}
-      title="Drag to resize"
-      aria-hidden="true"
-    ></div>
+            {/if}
+          </summary>
+          <div class="row-body">
+            <p class="full-msg">{pw.message}</p>
+            <pre class="json">{JSON.stringify(pw, null, 2)}</pre>
+          </div>
+        </details>
+      {/each}
+    {/if}
   </div>
-{/if}
+</FloatingPanel>
 
 <style>
   .bar {
@@ -966,44 +844,10 @@
     margin-right: 0.25rem;
     font-weight: bold;
   }
-  /* aw8j: floating panel — fixed positioning so the drag-movable
-     top/left coordinates work in screen space rather than inheriting
-     a relative offset from the toolbar. Resize handle in the SE
-     corner; user-select: text on the body so users can copy. */
-  .panel {
-    position: fixed;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 18px var(--shadow-modal);
-    z-index: var(--z-floating);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    min-width: 320px;
-    min-height: 220px;
-  }
-  .panel header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.7rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-elevated);
-    cursor: grab;
-    user-select: none;
-    touch-action: none;
-  }
-  .panel header:active {
-    cursor: grabbing;
-  }
-  .panel h3 {
-    font-size: 0.85rem;
-    margin: 0;
-    color: var(--text-strong);
-  }
-  /* The panel's close uses the shared `.dlg-close` (audit hbi7). */
-  .panel .list {
+  /* aw8j: warnings content inside the FloatingPanel body — `flex: 1`
+     fills the panel's column layout; user-select: text on the body so
+     users can copy. */
+  .list {
     flex: 1;
     overflow: auto;
     padding: 0.4rem;
@@ -1012,7 +856,7 @@
     gap: 0.25rem;
     user-select: text;
   }
-  .panel .empty {
+  .list .empty {
     color: var(--text-muted);
     font-size: 0.78rem;
     margin: 0.5rem;
@@ -1022,7 +866,7 @@
      grid with the chevron suppressed (we don't need the default
      browser caret next to the dot — the row already signals
      interactivity via background/hover). */
-  .panel details.row {
+  .list details.row {
     background: var(--bg-elevated);
     color: var(--text);
     border: 1px solid var(--border);
@@ -1030,7 +874,7 @@
     font-size: 0.74rem;
     overflow: hidden;
   }
-  .panel details.row > summary {
+  .list details.row > summary {
     display: grid;
     grid-template-columns: 0.8rem 3.6rem 8rem minmax(0, 1fr) auto;
     align-items: center;
@@ -1039,31 +883,31 @@
     cursor: pointer;
     list-style: none;
   }
-  .panel details.row > summary::-webkit-details-marker {
+  .list details.row > summary::-webkit-details-marker {
     display: none;
   }
-  .panel details.row > summary:hover {
+  .list details.row > summary:hover {
     background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
   }
-  .panel details.row[open] > summary {
+  .list details.row[open] > summary {
     border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
   }
-  .panel .dot {
+  .list .dot {
     width: 0.6rem;
     height: 0.6rem;
     border-radius: 50%;
   }
-  .panel .severity-critical .dot {
+  .list .severity-critical .dot {
     background: var(--marker-critical);
   }
-  .panel .severity-warning .dot {
+  .list .severity-warning .dot {
     background: var(--marker-warn);
   }
-  .panel .severity-info .dot {
+  .list .severity-info .dot {
     background: var(--marker-info);
   }
-  .panel .source {
+  .list .source {
     font-size: 0.66rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1075,24 +919,24 @@
     line-height: 1.3;
     background: var(--bg-app);
   }
-  .panel .source.pipeline {
+  .list .source.pipeline {
     color: var(--accent);
     border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   }
-  .panel .kind {
+  .list .kind {
     font-family: ui-monospace, monospace;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .panel .msg {
+  .list .msg {
     color: var(--text-strong);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .panel .row-action {
+  .list .row-action {
     background: transparent;
     color: var(--accent);
     border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
@@ -1102,7 +946,7 @@
     cursor: pointer;
     line-height: 1.3;
   }
-  .panel .row-action:hover {
+  .list .row-action:hover {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--accent-strong);
     border-color: var(--accent-strong);
@@ -1110,12 +954,12 @@
   /* Expanded body — full message + JSON dump. user-select: text so
      drag-select to copy works (previously the row was a <button>
      which broke selection in some browsers). */
-  .panel .row-body {
+  .list .row-body {
     padding: 0.4rem 0.6rem 0.55rem;
     background: var(--bg-app);
     user-select: text;
   }
-  .panel .row-body .full-msg {
+  .list .row-body .full-msg {
     margin: 0 0 0.35rem;
     color: var(--text-strong);
     font-size: 0.78rem;
@@ -1123,7 +967,7 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  .panel .row-body .json {
+  .list .row-body .json {
     margin: 0;
     padding: 0.4rem 0.55rem;
     background: var(--bg-input);
@@ -1137,52 +981,5 @@
     overflow: auto;
     white-space: pre;
     user-select: text;
-  }
-  .panel .resize-handle {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 14px;
-    height: 14px;
-    cursor: nwse-resize;
-    touch-action: none;
-    /* Two diagonal lines drawn as a corner glyph — matches the
-       OS-native resize affordance. */
-    background:
-      linear-gradient(
-          135deg,
-          transparent 45%,
-          var(--text-muted) 45%,
-          var(--text-muted) 55%,
-          transparent 55%
-        )
-        center / 100% 100% no-repeat,
-      linear-gradient(
-          135deg,
-          transparent 70%,
-          var(--text-muted) 70%,
-          var(--text-muted) 80%,
-          transparent 80%
-        )
-        center / 100% 100% no-repeat;
-  }
-  .panel .resize-handle:hover {
-    background:
-      linear-gradient(
-          135deg,
-          transparent 45%,
-          var(--text-strong) 45%,
-          var(--text-strong) 55%,
-          transparent 55%
-        )
-        center / 100% 100% no-repeat,
-      linear-gradient(
-          135deg,
-          transparent 70%,
-          var(--text-strong) 70%,
-          var(--text-strong) 80%,
-          transparent 80%
-        )
-        center / 100% 100% no-repeat;
   }
 </style>

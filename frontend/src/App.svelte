@@ -11,6 +11,7 @@
   import OperationsList from './lib/components/OperationsList.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
+  import MenuBar from './lib/components/MenuBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
   // Heavy / seldom-touched components — dynamic-imported on first
   // open so the main bundle stays light. Each gets a $state slot and
@@ -70,12 +71,6 @@
       document.title = `ivaCAM v${pkgVersion}`;
     }
   });
-  /// Startup banner: when set, the user was previously editing a
-  /// project and we offer to reopen it. Styled in-app instead of a
-  /// native window.confirm so the first impression of the app isn't
-  /// an unstyled OS dialog (audit C10).
-  let reopenPrompt = $state<{ path: string; filename: string } | null>(null);
-
   // Open the Tool library dialog when OpPropertiesPanel's "edit this
   // tool" icon requests focus on a specific tool row. The dialog reads
   // project.toolsDialogFocusId and handles scroll/highlight.
@@ -92,39 +87,29 @@
   let gcodeOpen = $state(false);
   import { project } from './lib/state/project.svelte';
   import { workspace } from './lib/state/workspace.svelte';
-  import { confirmStore } from './lib/state/confirm.svelte';
   import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
+  import { openFile, openProject, saveProject } from './lib/services/file_ops';
   import {
-    openFile,
-    openProject,
-    loadFromPath,
-    loadProjectPath,
-    loadFile,
-    loadProjectFile,
-    loadSample,
-    saveProject,
-    exportGeneratedGcode,
-    exportSimulatedStockStl,
-    confirmDiscardIfDirty,
-    SAMPLES,
-  } from './lib/services/file_ops';
+    sessionUi,
+    loadWorkspaceAndMaybeReopen,
+    acceptReopen,
+    dismissReopen,
+    dismissReopenOnceLoaded,
+    persistPerProjectStateOnChange,
+    openRecentProject,
+    wireSourceWatch,
+    wireCloseConfirm,
+    unwireSession,
+    onDragEnter,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+  } from './lib/services/workspace-session.svelte';
   import { onMount } from 'svelte';
-  import {
-    isDesktop,
-    wireSourceWatch as wireDesktopSourceWatch,
-    wireCloseRequested,
-    confirmClose,
-    logErrorToStderr,
-    isDebugSession,
-  } from './lib/state/desktop';
+  import { logErrorToStderr, isDebugSession } from './lib/state/desktop';
   import { computeFootprint } from './lib/sim/driver';
   import { togglePane, revealPane, type SidebarPane } from './lib/state/sidebar-pane';
-  import {
-    resolveShortcut,
-    nextMenuItemIndex,
-    dragHasFiles,
-    type MenuId,
-  } from './lib/state/app-menu';
+  import { resolveShortcut } from './lib/state/app-menu';
 
   /// Live label for the Stock panel summary — shows the current
   /// dimensions inline so the user sees the workpiece size at a glance
@@ -268,170 +253,21 @@
     void wireSourceWatch();
     void wireCloseConfirm();
     void loadWorkspaceAndMaybeReopen();
-    return () => {
-      unlistenSourceWatch?.();
-      unlistenSourceWatch = null;
-      unlistenCloseRequested?.();
-      unlistenCloseRequested = null;
-    };
+    return () => unwireSession();
   });
 
-  /// Pull persisted workspace state at startup. After load completes,
-  /// prune any per-project / recent entries pointing at files that have
-  /// disappeared (desktop only — both `pruneMissingProjects` and the
-  /// reopen prompt self-guard via the workspace API, which returns null
-  /// for `last_project` on web because there's no filesystem path).
-  async function loadWorkspaceAndMaybeReopen() {
-    try {
-      await workspace.load();
-    } catch {
-      // ignore — defaults are fine.
-    }
-    // Await prune so a deleted-last-project entry has already been
-    // dropped by the time we read `last_project` below. Without the
-    // await, the reopen banner can appear for a path that prune is
-    // about to remove — clicking Reopen then falls into an import-path
-    // error toast for a file the user no longer has.
-    try {
-      await workspace.pruneMissingProjects();
-    } catch {
-      // ignore — best-effort cleanup.
-    }
-    if (isDesktop()) {
-      const last = workspace.get().last_project;
-      if (last) {
-        const filename = last.split(/[\\/]/).pop() ?? last;
-        reopenPrompt = { path: last, filename };
-      }
-    }
-  }
-
-  async function acceptReopen() {
-    if (!reopenPrompt) return;
-    const path = reopenPrompt.path;
-    reopenPrompt = null;
-    const isProjectFile = /\.(ivac|vc)-project\.json$|\.json$/i.test(path);
-    if (isProjectFile) await loadProjectPath(path);
-    else await loadFromPath(path);
-    // If the project file already restored layer-visibility from
-    // per-project workspace state, leave it alone — overwriting was
-    // the previous behavior (audit zxee). If the user had every layer
-    // hidden when they closed (rare but possible), expand to
-    // all-visible so the user isn't staring at an empty canvas.
-    if (project.transformedImport && project.visibleLayers.size === 0) {
-      project.visibleLayers = new Set(project.transformedImport.layers.map((l) => l.name));
-    }
-  }
-  function dismissReopen() {
-    reopenPrompt = null;
-  }
-
   // Auto-dismiss the reopen banner once a project / drawing is loaded by
-  // any path (the user clicked Open, dragged a file, or accepted the
-  // banner). The banner only makes sense as a startup affordance.
+  // any path — body (and WHY) in workspace-session; the synchronous
+  // project reads inside it register this effect's subscriptions.
   $effect(() => {
-    const hasImport = project.transformedImport;
-    const hasPath = project.activeProjectPath;
-    if (!hasImport && !hasPath) return;
-    // Deferred so the prompt clear runs outside the effect scheduler.
-    // Inline mutation would self-trigger this effect (it reads
-    // `reopenPrompt` itself), which works but is fragile to refactor.
-    // queueMicrotask matches the locale-sync effect above.
-    queueMicrotask(() => {
-      if (reopenPrompt) reopenPrompt = null;
-    });
+    dismissReopenOnceLoaded();
   });
 
   /// Persist per-project workspace state when the user adjusts visible
-  /// layers / selected op / playhead.
+  /// layers / selected op / playhead (subscriptions registered inside).
   $effect(() => {
-    void project.visibleLayers;
-    void project.selectedOpId;
-    void project.playhead;
-    if (project.activeProjectPath) {
-      project.persistPerProjectState();
-    }
+    persistPerProjectStateOnChange();
   });
-
-  /// Reactive view of the workspace recent list. `void workspace.version`
-  /// subscribes the derived to the store's mutation counter.
-  const recentProjects = $derived.by(() => {
-    void workspace.version;
-    return workspace.get().recent_projects;
-  });
-
-  async function clickRecent(path: string) {
-    closeAllMenus();
-    // Dirty-check once for the Recent click so we don't double-prompt
-    // when loadFromPath / loadProjectPath also vet it. `openFile` /
-    // `openProject` do their own check; the path variants don't,
-    // because the OS file-association launch + reopen banner cases
-    // intentionally skip the prompt. npig: route through the shared
-    // styled ConfirmPrompt (same dialog as Open / Quit) rather than a
-    // native window.confirm.
-    if (!(await confirmDiscardIfDirty('load the recent project'))) return;
-    const isProjectFile = /\.(ivac|vc)-project\.json$|\.json$/i.test(path);
-    if (isProjectFile) await loadProjectPath(path);
-    else await loadFromPath(path);
-  }
-  function clickClearRecents() {
-    closeAllMenus();
-    workspace.clearRecentProjects();
-  }
-
-  /// Subscribe to backend `source-file-changed` events emitted by the
-  /// project watcher. Stored so onMount's cleanup can disable the watch
-  /// on HMR / component-tree teardown — without it the listener leaks
-  /// every time App.svelte is reloaded during dev. Implementation lives
-  /// in `lib/state/desktop.ts`; this local trampoline preserves the
-  /// HMR-safe cleanup binding.
-  let unlistenSourceWatch: (() => void) | null = null;
-  async function wireSourceWatch() {
-    unlistenSourceWatch = await wireDesktopSourceWatch();
-  }
-
-  /// qjec: desktop close interception. Always confirm — accidental
-  /// closes lose work even on a "clean" project (camera, panel sizes,
-  /// in-progress text not yet committed via Add). The double-click
-  /// escape hatch in the Tauri backend covers the case where the user
-  /// really wants out fast.
-  let unlistenCloseRequested: (() => void) | null = null;
-  async function wireCloseConfirm() {
-    unlistenCloseRequested = await wireCloseRequested(async () => {
-      if (project.hasUnsavedWork) {
-        // Three-way so a misclick on the close button doesn't force a
-        // choice between losing work and re-opening the app (ed67).
-        const choice = await confirmStore.askChoice({
-          title: 'Quit ivaCAM?',
-          body: 'You have unsaved changes. Save before you quit?',
-          primaryLabel: 'Save & quit',
-          extraLabel: 'Discard & quit',
-          cancelLabel: 'Keep editing',
-          danger: false,
-          extraDanger: true,
-        });
-        if (choice === 'cancel') return;
-        if (choice === 'primary') {
-          await saveProject();
-          // Save cancelled (native dialog dismissed) or failed →
-          // hasUnsavedWork stays set; don't quit and lose the kept work.
-          if (project.hasUnsavedWork) return;
-        }
-        void confirmClose();
-        return;
-      }
-      // Clean project: still confirm — an accidental close loses camera,
-      // panel sizes, and in-progress text not yet committed via Add.
-      const ok = await confirmStore.ask({
-        title: 'Quit ivaCAM?',
-        body: 'Are you sure you want to quit?',
-        primaryLabel: 'Quit',
-        cancelLabel: 'Cancel',
-        danger: false,
-      });
-      if (ok) void confirmClose();
-    });
-  }
 
   $effect(() => {
     document.documentElement.dataset.theme = project.settings.theme;
@@ -575,15 +411,6 @@
     }
   });
 
-  /// Bumped to `performance.now()` whenever an undo/redo is attempted on
-  /// an empty stack — drives the shake animation on the Edit-menu items.
-  let undoShakeAt = $state(0);
-  let redoShakeAt = $state(0);
-  function shake(which: 'undo' | 'redo') {
-    if (which === 'undo') undoShakeAt = performance.now();
-    else redoShakeAt = performance.now();
-  }
-
   // Keyboard shortcut dispatch. The decision ("which action?") is the pure
   // `resolveShortcut` in lib/state/app-menu.ts (unit-tested); App.svelte is
   // the shell that performs the component-coupled effect for each action.
@@ -593,10 +420,10 @@
     if (res.preventDefault) e.preventDefault();
     switch (res.action) {
       case 'undo':
-        if (!project.undo()) shake('undo');
+        if (!project.undo()) menuBar?.shake('undo');
         break;
       case 'redo':
-        if (!project.redo()) shake('redo');
+        if (!project.redo()) menuBar?.shake('redo');
         break;
       case 'open':
         void openFile();
@@ -606,7 +433,7 @@
         break;
       case 'escape':
         if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
-        closeAllMenus();
+        menuBar?.closeAllMenus();
         break;
       case 'add-text':
         addTextOpen = true;
@@ -617,130 +444,11 @@
     }
   }
 
-  const undoLabel = $derived(project.undoLabel());
-  const redoLabel = $derived(project.redoLabel());
-  const canUndo = $derived(project.canUndo());
-  const canRedo = $derived(project.canRedo());
-
   // ---- Menu bar ---------------------------------------------------------
-  let openMenu = $state<MenuId | null>(null);
-  function toggleMenu(id: MenuId) {
-    openMenu = openMenu === id ? null : id;
-  }
-  function closeAllMenus() {
-    openMenu = null;
-  }
-  function onWindowClick(e: MouseEvent) {
-    if (openMenu == null) return;
-    const target = e.target as HTMLElement | null;
-    // Clicks inside the menu (button or dropdown) keep it open — the
-    // item handlers themselves call closeAllMenus when they should.
-    if (target?.closest('.menu')) return;
-    closeAllMenus();
-  }
-
-  /// Arrow-key / Home / End nav inside an open menubar dropdown. Wired
-  /// to the dropdown div's onkeydown — keeps focus inside the menu and
-  /// matches the WAI-ARIA pattern for `role="menu"`. ESC is handled at
-  /// the window level (which already calls closeAllMenus).
-  function onMenuKey(e: KeyboardEvent) {
-    const dropdown = (e.currentTarget as HTMLElement) ?? null;
-    if (!dropdown) return;
-    const items = Array.from(
-      dropdown.querySelectorAll<HTMLElement>('button[role="menuitem"]:not(:disabled)'),
-    );
-    const active = document.activeElement as HTMLElement | null;
-    const idx = active ? items.indexOf(active) : -1;
-    const next = nextMenuItemIndex(e.key, idx, items.length);
-    if (next === null) return;
-    e.preventDefault();
-    items[next]?.focus();
-  }
-  /// Svelte action that auto-focuses the first menuitem inside the
-  /// dropdown on mount. Without it, keyboard users opening the File menu
-  /// would have to Tab past every preceding control to reach the first
-  /// item — combined with `onMenuKey` above, arrow keys then walk items.
-  function focusFirstMenuItemAction(node: HTMLElement) {
-    queueMicrotask(() => {
-      const first = node.querySelector<HTMLElement>('button[role="menuitem"]:not(:disabled)');
-      first?.focus();
-    });
-  }
-
-  // dteo: window-level drag-and-drop import. Accept .dxf / .svg
-  // (loadFile) and .ivac-project.json / .json (loadProjectFile). The
-  // overlay only paints while a drag with a `Files` payload is over
-  // the window; we count enter / leave to avoid flicker when the
-  // cursor crosses child elements.
-  let dragOver = $state(false);
-  let dragDepth = 0;
-  function onDragEnter(e: DragEvent) {
-    if (!dragHasFiles(e)) return;
-    dragDepth += 1;
-    dragOver = true;
-  }
-  function onDragOver(e: DragEvent) {
-    if (!dragHasFiles(e)) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-  }
-  function onDragLeave(e: DragEvent) {
-    if (!dragHasFiles(e)) return;
-    dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) dragOver = false;
-  }
-  async function onDrop(e: DragEvent) {
-    if (!dragHasFiles(e)) return;
-    e.preventDefault();
-    dragOver = false;
-    dragDepth = 0;
-    const file = e.dataTransfer?.files?.[0];
-    if (!file) return;
-    const name = file.name.toLowerCase();
-    // .ivac-project.json / *-project.json / bare .json are treated as a
-    // project; anything else (.dxf / .svg / …) as a drawing. Both are
-    // REPLACE loads, so gate on unsaved changes like the menu paths do —
-    // a drop is just as destructive as File ▸ Open (944t).
-    const isProject =
-      name.endsWith('.ivac-project.json') ||
-      name.endsWith('-project.json') ||
-      name.endsWith('.json');
-    if (
-      !(await confirmDiscardIfDirty(
-        isProject ? 'open the dropped project' : 'open the dropped drawing',
-      ))
-    )
-      return;
-    if (isProject) {
-      // Bare .json is also routed here; loadProjectFile validates the
-      // kind: 'ivac-project' field and rejects otherwise.
-      await loadProjectFile(file);
-    } else {
-      await loadFile(file);
-    }
-  }
-  function pickMenu<T>(fn: () => T): T {
-    closeAllMenus();
-    return fn();
-  }
-  function doUndo() {
-    closeAllMenus();
-    if (!project.undo()) shake('undo');
-  }
-  function doRedo() {
-    closeAllMenus();
-    if (!project.redo()) shake('redo');
-  }
-
-  async function exportGcode() {
-    // Read the last-used post processor from the workspace store so the
-    // File-menu export matches the toolbar's Download button without
-    // having to reach across the DOM (was querySelector('button.download')
-    // .click() — a 'a40m' audit item).
-    const raw = workspace.get().last_post_processor;
-    const post: 'linuxcnc' | 'grbl' | 'hpgl' = raw === 'grbl' || raw === 'hpgl' ? raw : 'linuxcnc';
-    await exportGeneratedGcode(post);
-  }
+  // Markup + open/close state machine live in MenuBar.svelte; App keeps a
+  // ref so the global keyboard dispatch above can close the menus (Escape)
+  // and trigger the empty-stack undo/redo shake.
+  let menuBar: ReturnType<typeof MenuBar> | undefined;
 
   // ---- Resizable layout ------------------------------------------------
   // Sidebar width in px; clamped against the current viewport in
@@ -907,7 +615,6 @@
 
 <svelte:window
   onkeydown={onKeyDown}
-  onclick={onWindowClick}
   ondragenter={onDragEnter}
   ondragover={onDragOver}
   ondragleave={onDragLeave}
@@ -917,261 +624,18 @@
 
 <div class="app">
   <!-- ============== MENU BAR =================================== -->
-  <nav class="menubar" aria-label="Main menu">
-    <div class="menu" class:open={openMenu === 'file'}>
-      <button
-        type="button"
-        class="menu-btn"
-        onclick={() => toggleMenu('file')}
-        aria-haspopup="menu"
-        aria-expanded={openMenu === 'file'}>File</button
-      >
-      {#if openMenu === 'file'}
-        <div
-          class="dropdown"
-          role="menu"
-          tabindex="-1"
-          onmouseleave={closeAllMenus}
-          onkeydown={onMenuKey}
-          use:focusFirstMenuItemAction
-        >
-          <button role="menuitem" class="item" onclick={() => pickMenu(openFile)}>
-            <span class="label">Open file…</span><span class="kbd">Ctrl+O</span>
-          </button>
-          <button role="menuitem" class="item" onclick={() => pickMenu(openProject)}>
-            <span class="label">Open project…</span>
-          </button>
-          <button
-            role="menuitem"
-            class="item"
-            disabled={!project.transformedImport}
-            onclick={() => pickMenu(saveProject)}
-          >
-            <span class="label">Save project…</span><span class="kbd">Ctrl+S</span>
-          </button>
-          <button
-            role="menuitem"
-            class="item"
-            disabled={!project.generated}
-            onclick={() => pickMenu(exportGcode)}
-          >
-            <span class="label">Export G-code…</span>
-          </button>
-          <button
-            role="menuitem"
-            class="item"
-            disabled={!project.generated}
-            onclick={() => pickMenu(exportSimulatedStockStl)}
-            title="Save the carved simulated stock as a binary STL. Run Generate first so the heightfield reflects the planned cuts."
-          >
-            <span class="label">Export simulated stock as STL…</span>
-          </button>
-          <button
-            role="menuitem"
-            class="item"
-            onclick={() => pickMenu(() => (reportOpen = true))}
-            title="Printable project summary — toolpath stats, time estimate, tools, ops, warnings."
-          >
-            <span class="label">Report…</span>
-          </button>
-          <div class="divider"></div>
-          <div class="submenu">
-            <div class="sub-head">Samples</div>
-            {#each SAMPLES as s (s.url)}
-              <button
-                role="menuitem"
-                class="item"
-                onclick={() => pickMenu(() => loadSample(s.url))}
-              >
-                <span class="label">{s.label}</span>
-              </button>
-            {/each}
-          </div>
-          <div class="divider"></div>
-          <div class="submenu">
-            <div class="sub-head">Recent projects</div>
-            {#if recentProjects.length === 0}
-              <div class="item empty">No recent projects</div>
-            {:else}
-              {#each recentProjects as r (r.path)}
-                <button
-                  role="menuitem"
-                  class="item"
-                  title={r.path}
-                  onclick={() => clickRecent(r.path)}
-                >
-                  <span class="label">{r.filename}</span>
-                </button>
-              {/each}
-              <button
-                role="menuitem"
-                class="item subtle"
-                onclick={clickClearRecents}
-                title="Clear the recent projects list"
-              >
-                <span class="label">Clear recent projects</span>
-              </button>
-            {/if}
-          </div>
-        </div>
-      {/if}
-    </div>
-
-    <div class="menu" class:open={openMenu === 'edit'}>
-      <button
-        type="button"
-        class="menu-btn"
-        onclick={() => toggleMenu('edit')}
-        aria-haspopup="menu"
-        aria-expanded={openMenu === 'edit'}>Edit</button
-      >
-      {#if openMenu === 'edit'}
-        <div
-          class="dropdown"
-          role="menu"
-          tabindex="-1"
-          onmouseleave={closeAllMenus}
-          onkeydown={onMenuKey}
-          use:focusFirstMenuItemAction
-        >
-          <button
-            role="menuitem"
-            class="item"
-            class:shake={undoShakeAt > 0}
-            onanimationend={() => (undoShakeAt = 0)}
-            disabled={!canUndo}
-            onclick={doUndo}
-          >
-            <span class="label">Undo{undoLabel ? `: ${undoLabel}` : ''}</span>
-            <span class="kbd">Ctrl+Z</span>
-          </button>
-          <button
-            role="menuitem"
-            class="item"
-            class:shake={redoShakeAt > 0}
-            onanimationend={() => (redoShakeAt = 0)}
-            disabled={!canRedo}
-            onclick={doRedo}
-          >
-            <span class="label">Redo{redoLabel ? `: ${redoLabel}` : ''}</span>
-            <span class="kbd">Ctrl+Y</span>
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <div class="menu" class:open={openMenu === 'view'}>
-      <button
-        type="button"
-        class="menu-btn"
-        onclick={() => toggleMenu('view')}
-        aria-haspopup="menu"
-        aria-expanded={openMenu === 'view'}>View</button
-      >
-      {#if openMenu === 'view'}
-        <div
-          class="dropdown"
-          role="menu"
-          tabindex="-1"
-          onmouseleave={closeAllMenus}
-          onkeydown={onMenuKey}
-          use:focusFirstMenuItemAction
-        >
-          <button
-            role="menuitem"
-            class="item"
-            class:checked={activePane === '2d'}
-            onclick={() => pickMenu(() => (activePane = '2d'))}
-          >
-            <span class="label">2D view</span>
-          </button>
-          <button
-            role="menuitem"
-            class="item"
-            class:checked={activePane === '3d'}
-            onclick={() => pickMenu(() => (activePane = '3d'))}
-          >
-            <span class="label">3D view</span>
-          </button>
-          <div class="divider"></div>
-          <button
-            role="menuitem"
-            class="item"
-            class:checked={gcodeOpen}
-            disabled={!project.generated}
-            onclick={() => pickMenu(() => (gcodeOpen = !gcodeOpen))}
-          >
-            <span class="label">G-code panel</span>
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <div class="menu" class:open={openMenu === 'tools'}>
-      <button
-        type="button"
-        class="menu-btn"
-        onclick={() => toggleMenu('tools')}
-        aria-haspopup="menu"
-        aria-expanded={openMenu === 'tools'}>Tools</button
-      >
-      {#if openMenu === 'tools'}
-        <div
-          class="dropdown"
-          role="menu"
-          tabindex="-1"
-          onmouseleave={closeAllMenus}
-          onkeydown={onMenuKey}
-          use:focusFirstMenuItemAction
-        >
-          <button role="menuitem" class="item" onclick={() => pickMenu(() => (toolsOpen = true))}>
-            <span class="label">Tool library…</span>
-          </button>
-          <button role="menuitem" class="item" onclick={() => pickMenu(() => (machineOpen = true))}>
-            <span class="label">Machine…</span>
-          </button>
-          <button
-            role="menuitem"
-            class="item"
-            onclick={() => pickMenu(() => (settingsOpen = true))}
-          >
-            <span class="label">Settings…</span>
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <div class="menu" class:open={openMenu === 'help'}>
-      <button
-        type="button"
-        class="menu-btn"
-        onclick={() => toggleMenu('help')}
-        aria-haspopup="menu"
-        aria-expanded={openMenu === 'help'}>Help</button
-      >
-      {#if openMenu === 'help'}
-        <div
-          class="dropdown"
-          role="menu"
-          tabindex="-1"
-          onmouseleave={closeAllMenus}
-          onkeydown={onMenuKey}
-          use:focusFirstMenuItemAction
-        >
-          <button
-            role="menuitem"
-            class="item"
-            onclick={() => pickMenu(() => (shortcutHelpOpen = true))}
-          >
-            <span class="label">Keyboard shortcuts…</span><span class="kbd">?</span>
-          </button>
-          <button role="menuitem" class="item" onclick={() => pickMenu(() => (aboutOpen = true))}>
-            <span class="label">About ivaCAM…</span>
-          </button>
-        </div>
-      {/if}
-    </div>
-  </nav>
+  <MenuBar
+    bind:this={menuBar}
+    bind:activePane
+    bind:gcodeOpen
+    onOpenMachine={() => (machineOpen = true)}
+    onOpenTools={() => (toolsOpen = true)}
+    onOpenSettings={() => (settingsOpen = true)}
+    onOpenShortcutHelp={() => (shortcutHelpOpen = true)}
+    onOpenReport={() => (reportOpen = true)}
+    onOpenAbout={() => (aboutOpen = true)}
+    onOpenRecent={(path) => void openRecentProject(path)}
+  />
 
   <!-- ============== TOOLBAR (single row) ====================== -->
   <div class="toolbar">
@@ -1387,7 +851,7 @@
           onActivate={() => activateSidebarPane('layers')}
           onOpenFileClick={() => openFile()}
           onAddTextClick={() => (addTextOpen = true)}
-          {reopenPrompt}
+          reopenPrompt={sessionUi.reopenPrompt}
           onReopenAccept={acceptReopen}
           onReopenDismiss={dismissReopen}
         />
@@ -1455,7 +919,7 @@
       {/if}
     {/if}
   </footer>
-  {#if dragOver}
+  {#if sessionUi.dragOver}
     <div class="drop-overlay" aria-hidden="true">
       <div class="drop-card">
         <div class="drop-glyph">⤓</div>
@@ -1477,7 +941,9 @@
     height: 100vh;
     width: 100vw;
   }
-  .app > .menubar,
+  /* .menubar lives in MenuBar.svelte — :global so App's flex rule
+     still reaches it across the component scope boundary. */
+  .app > :global(.menubar),
   .app > .toolbar {
     flex: 0 0 auto;
   }
@@ -1487,138 +953,6 @@
   }
   .app > footer {
     flex: 0 0 auto;
-  }
-
-  /* ---------- menu bar ----------------------------------------- */
-  .menubar {
-    display: flex;
-    align-items: stretch;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
-    padding: 0 0.25rem;
-    min-height: 1.85rem;
-  }
-  .menu {
-    position: relative;
-  }
-  .menu-btn {
-    background: transparent;
-    color: var(--text);
-    border: 0;
-    padding: 0.25rem 0.7rem;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border-radius: 3px;
-    line-height: 1.3;
-  }
-  .menu-btn:hover {
-    background: var(--bg-elevated);
-  }
-  .menu.open .menu-btn {
-    background: var(--bg-elevated);
-    color: var(--text-strong);
-  }
-  .dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    min-width: 240px;
-    background: var(--bg-elevated);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    box-shadow: 0 6px 18px var(--shadow-modal);
-    padding: 0.2rem;
-    z-index: var(--z-dropdown);
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
-  }
-  .dropdown .item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.7rem;
-    background: transparent;
-    color: var(--text);
-    border: 0;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.78rem;
-    border-radius: 3px;
-    cursor: pointer;
-    text-align: left;
-    width: 100%;
-  }
-  .dropdown .item:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-  }
-  .dropdown .item:disabled {
-    color: var(--text-faint);
-    cursor: not-allowed;
-  }
-  .dropdown .item.checked .label::before {
-    content: '✓ ';
-    color: var(--accent);
-  }
-  .dropdown .item.empty {
-    color: var(--text-faint);
-    font-style: italic;
-    cursor: default;
-  }
-  .dropdown .item.subtle {
-    color: var(--text-muted);
-    font-size: 0.72rem;
-  }
-  .dropdown .label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    /* Cap relative to viewport so wide windows can show longer filenames
-       (Recent Projects in particular); narrow windows still ellipsis. */
-    max-width: min(420px, 80vw);
-  }
-  .dropdown .kbd {
-    color: var(--text-muted);
-    font-size: 0.7rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .dropdown .divider {
-    height: 1px;
-    background: var(--border);
-    margin: 0.2rem 0.05rem;
-  }
-  .dropdown .submenu {
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
-  }
-  .dropdown .sub-head {
-    padding: 0.25rem 0.55rem 0.05rem;
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-  }
-  /* Shake animation on undo/redo when stack is empty. */
-  @keyframes ivac-undo-shake {
-    0% {
-      transform: translateX(0);
-    }
-    25% {
-      transform: translateX(-3px);
-    }
-    50% {
-      transform: translateX(3px);
-    }
-    75% {
-      transform: translateX(-2px);
-    }
-    100% {
-      transform: translateX(0);
-    }
-  }
-  .dropdown .item.shake {
-    animation: ivac-undo-shake 100ms ease-in-out;
   }
 
   /* ---------- toolbar ------------------------------------------ */
